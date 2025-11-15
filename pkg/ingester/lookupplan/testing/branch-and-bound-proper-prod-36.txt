@@ -1,0 +1,855 @@
+GOROOT=/usr/local/go #gosetup
+GOPATH=/Users/dimitar/go #gosetup
+/usr/local/go/bin/go test -c -o /Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkQueryExecution_prod_36.test github.com/grafana/mimir/pkg/ingester/lookupplan/testing #gosetup
+/Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkQueryExecution_prod_36.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkQueryExecution\E$ -test.run ^$ -test.benchtime=1x -data-dir=/users/dimitar/proba/2025-11-prod-36-exported-data/exported-prod-36-data/ -query-file=/users/dimitar/proba/2025-11-prod-36-exported-data/queries.json -query-sample=0.01 #gosetup
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/mimir/pkg/ingester/lookupplan/testing
+cpu: Apple M1 Pro
+BenchmarkQueryExecution
+    benchmarks_test.go:108: Prepared 10000 queries (malformed: 22, sampled: 1.000000% of all queries)
+level=warn msg="-blocks-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem"
+    benchmarks_test.go:117: Starting benchmark
+BenchmarkQueryExecution/query=19087/selector=0
+BenchmarkQueryExecution/query=19087/selector=0-10         	       1	  31842000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22092760 B/op	   98923 allocs/op
+BenchmarkQueryExecution/query=19089/selector=0
+BenchmarkQueryExecution/query=19089/selector=0-10         	       1	     50042 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19095/selector=0
+BenchmarkQueryExecution/query=19095/selector=0-10         	       1	  44403708 ns/op	       413.6 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       413.6 bnb_total_costs	       223.0 chunks	         0 exhaustive_total_costs	        44.00 series	         0 third_best_total_costs	24215536 B/op	  116236 allocs/op
+BenchmarkQueryExecution/query=19096/selector=0
+BenchmarkQueryExecution/query=19096/selector=0-10         	       1	     36917 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19102/selector=0
+BenchmarkQueryExecution/query=19102/selector=0-10         	       1	  32866959 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22108840 B/op	   98898 allocs/op
+BenchmarkQueryExecution/query=19129/selector=0
+BenchmarkQueryExecution/query=19129/selector=0-10         	       1	     37583 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19131/selector=0
+BenchmarkQueryExecution/query=19131/selector=0-10         	       1	  31559750 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22088672 B/op	   98867 allocs/op
+BenchmarkQueryExecution/query=19137/selector=0
+BenchmarkQueryExecution/query=19137/selector=0-10         	       1	     41417 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19138/selector=0
+BenchmarkQueryExecution/query=19138/selector=0-10         	       1	  44817125 ns/op	       413.6 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       413.6 bnb_total_costs	       223.0 chunks	         0 exhaustive_total_costs	        44.00 series	         0 third_best_total_costs	24210440 B/op	  116165 allocs/op
+BenchmarkQueryExecution/query=19141/selector=0
+BenchmarkQueryExecution/query=19141/selector=0-10         	       1	     42042 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19146/selector=0
+BenchmarkQueryExecution/query=19146/selector=0-10         	       1	   9229000 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	       140.0 chunks	         0 exhaustive_total_costs	        46.00 series	         0 third_best_total_costs	  548808 B/op	    6631 allocs/op
+BenchmarkQueryExecution/query=19147/selector=0
+BenchmarkQueryExecution/query=19147/selector=0-10         	       1	  31587583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22088448 B/op	   98863 allocs/op
+BenchmarkQueryExecution/query=19152/selector=0
+BenchmarkQueryExecution/query=19152/selector=0-10         	       1	   1134667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	       140.0 chunks	         0 exhaustive_total_costs	        46.00 series	         0 third_best_total_costs	  546632 B/op	    6596 allocs/op
+BenchmarkQueryExecution/query=19153/selector=0
+BenchmarkQueryExecution/query=19153/selector=0-10         	       1	     46667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19154/selector=0
+BenchmarkQueryExecution/query=19154/selector=0-10         	       1	  39618083 ns/op	       245.8 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24894784 B/op	  112351 allocs/op
+BenchmarkQueryExecution/query=19158/selector=0
+BenchmarkQueryExecution/query=19158/selector=0-10         	       1	  39275417 ns/op	       245.8 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24676576 B/op	  111358 allocs/op
+BenchmarkQueryExecution/query=19160/selector=0
+BenchmarkQueryExecution/query=19160/selector=0-10         	       1	  30964875 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21925544 B/op	   98161 allocs/op
+BenchmarkQueryExecution/query=19161/selector=0
+BenchmarkQueryExecution/query=19161/selector=0-10         	       1	     62708 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19165/selector=0
+BenchmarkQueryExecution/query=19165/selector=0-10         	       1	  44885667 ns/op	      1169 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1169 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25405880 B/op	  116627 allocs/op
+BenchmarkQueryExecution/query=19166/selector=0
+BenchmarkQueryExecution/query=19166/selector=0-10         	       1	     41625 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19167/selector=0
+BenchmarkQueryExecution/query=19167/selector=0-10         	       1	     45250 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19174/selector=0
+BenchmarkQueryExecution/query=19174/selector=0-10         	       1	  38719667 ns/op	       246.2 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.3 bnb_total_costs	        37.00 chunks	         0 exhaustive_total_costs	         9.000 series	         0 third_best_total_costs	23609608 B/op	  110397 allocs/op
+BenchmarkQueryExecution/query=19179/selector=0
+BenchmarkQueryExecution/query=19179/selector=0-10         	       1	     48709 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19180/selector=0
+BenchmarkQueryExecution/query=19180/selector=0-10         	       1	  44219667 ns/op	      1169 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1169 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25405880 B/op	  116622 allocs/op
+BenchmarkQueryExecution/query=19183/selector=0
+BenchmarkQueryExecution/query=19183/selector=0-10         	       1	     45542 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=19186/selector=0
+BenchmarkQueryExecution/query=19186/selector=0-10         	       1	  38572542 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        24.00 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	23586384 B/op	  110132 allocs/op
+BenchmarkQueryExecution/query=27246/selector=0
+BenchmarkQueryExecution/query=27246/selector=0-10         	       1	  31956458 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21937296 B/op	   98067 allocs/op
+BenchmarkQueryExecution/query=27259/selector=0
+BenchmarkQueryExecution/query=27259/selector=0-10         	       1	     46125 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=27260/selector=0
+BenchmarkQueryExecution/query=27260/selector=0-10         	       1	     46291 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=27265/selector=0
+BenchmarkQueryExecution/query=27265/selector=0-10         	       1	  43559542 ns/op	       815.8 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.8 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25582952 B/op	  114984 allocs/op
+BenchmarkQueryExecution/query=27269/selector=0
+BenchmarkQueryExecution/query=27269/selector=0-10         	       1	     49750 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=27270/selector=0
+BenchmarkQueryExecution/query=27270/selector=0-10         	       1	  39422250 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23540328 B/op	  109619 allocs/op
+BenchmarkQueryExecution/query=27275/selector=0
+BenchmarkQueryExecution/query=27275/selector=0-10         	       1	  31569458 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	20366856 B/op	   97198 allocs/op
+BenchmarkQueryExecution/query=27279/selector=0
+BenchmarkQueryExecution/query=27279/selector=0-10         	       1	  41987958 ns/op	       785.7 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       785.7 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25296224 B/op	  113416 allocs/op
+BenchmarkQueryExecution/query=27280/selector=0
+BenchmarkQueryExecution/query=27280/selector=0-10         	       1	  41510959 ns/op	       840.2 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       840.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24777672 B/op	  114218 allocs/op
+BenchmarkQueryExecution/query=27281/selector=0
+BenchmarkQueryExecution/query=27281/selector=0-10         	       1	  42233291 ns/op	       840.2 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       840.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24757288 B/op	  114197 allocs/op
+BenchmarkQueryExecution/query=27283/selector=0
+BenchmarkQueryExecution/query=27283/selector=0-10         	       1	  43523833 ns/op	      1044 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1044 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24877880 B/op	  114861 allocs/op
+BenchmarkQueryExecution/query=27286/selector=0
+BenchmarkQueryExecution/query=27286/selector=0-10         	       1	  33340000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	20367984 B/op	   97208 allocs/op
+BenchmarkQueryExecution/query=27287/selector=0
+BenchmarkQueryExecution/query=27287/selector=0-10         	       1	  39360375 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23381912 B/op	  108930 allocs/op
+BenchmarkQueryExecution/query=27288/selector=0
+BenchmarkQueryExecution/query=27288/selector=0-10         	       1	  43143542 ns/op	      1044 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1044 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24896584 B/op	  114952 allocs/op
+BenchmarkQueryExecution/query=27300/selector=0
+BenchmarkQueryExecution/query=27300/selector=0-10         	       1	  40755708 ns/op	       785.7 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       785.7 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25218536 B/op	  113027 allocs/op
+BenchmarkQueryExecution/query=27301/selector=0
+BenchmarkQueryExecution/query=27301/selector=0-10         	       1	  38576958 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24627768 B/op	  110610 allocs/op
+BenchmarkQueryExecution/query=27302/selector=0
+BenchmarkQueryExecution/query=27302/selector=0-10         	       1	  39125542 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24607512 B/op	  110590 allocs/op
+BenchmarkQueryExecution/query=27304/selector=0
+BenchmarkQueryExecution/query=27304/selector=0-10         	       1	     45417 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=27307/selector=0
+BenchmarkQueryExecution/query=27307/selector=0-10         	       1	  44359375 ns/op	      1163 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1163 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25407824 B/op	  116567 allocs/op
+BenchmarkQueryExecution/query=27339/selector=0
+BenchmarkQueryExecution/query=27339/selector=0-10         	       1	  31589084 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22516800 B/op	   98168 allocs/op
+BenchmarkQueryExecution/query=27344/selector=0
+BenchmarkQueryExecution/query=27344/selector=0-10         	       1	  32364125 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	20417088 B/op	   97596 allocs/op
+BenchmarkQueryExecution/query=43180/selector=0
+BenchmarkQueryExecution/query=43180/selector=0-10         	       1	     49458 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=43229/selector=0
+BenchmarkQueryExecution/query=43229/selector=0-10         	       1	  31710291 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22664536 B/op	   98893 allocs/op
+BenchmarkQueryExecution/query=43234/selector=0
+BenchmarkQueryExecution/query=43234/selector=0-10         	       1	  39028792 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24678360 B/op	  110858 allocs/op
+BenchmarkQueryExecution/query=43255/selector=0
+BenchmarkQueryExecution/query=43255/selector=0-10         	       1	  31433000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22518880 B/op	   98179 allocs/op
+BenchmarkQueryExecution/query=43269/selector=0
+BenchmarkQueryExecution/query=43269/selector=0-10         	       1	     47292 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=59696/selector=0
+BenchmarkQueryExecution/query=59696/selector=0-10         	       1	     51542 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=68153/selector=0
+BenchmarkQueryExecution/query=68153/selector=0-10         	       1	  32097000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22087736 B/op	   98858 allocs/op
+BenchmarkQueryExecution/query=77652/selector=0
+BenchmarkQueryExecution/query=77652/selector=0-10         	       1	  45519125 ns/op	      1281 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1281 bnb_total_costs	        67.00 chunks	         0 exhaustive_total_costs	        15.00 series	         0 third_best_total_costs	25556824 B/op	  117778 allocs/op
+BenchmarkQueryExecution/query=83868/selector=0
+BenchmarkQueryExecution/query=83868/selector=0-10         	       1	  31333209 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22518264 B/op	   98177 allocs/op
+BenchmarkQueryExecution/query=83892/selector=0
+BenchmarkQueryExecution/query=83892/selector=0-10         	       1	  31234958 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21939352 B/op	   98089 allocs/op
+BenchmarkQueryExecution/query=83893/selector=0
+BenchmarkQueryExecution/query=83893/selector=0-10         	       1	     45958 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=83916/selector=0
+BenchmarkQueryExecution/query=83916/selector=0-10         	       1	     45666 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=83922/selector=0
+BenchmarkQueryExecution/query=83922/selector=0-10         	       1	  31516958 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22084600 B/op	   98801 allocs/op
+BenchmarkQueryExecution/query=83931/selector=0
+BenchmarkQueryExecution/query=83931/selector=0-10         	       1	  42785583 ns/op	      1105 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1105 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24944920 B/op	  115241 allocs/op
+BenchmarkQueryExecution/query=83945/selector=0
+BenchmarkQueryExecution/query=83945/selector=0-10         	       1	  43341000 ns/op	      1105 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1105 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24875152 B/op	  114899 allocs/op
+BenchmarkQueryExecution/query=83947/selector=0
+BenchmarkQueryExecution/query=83947/selector=0-10         	       1	  31411250 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21925848 B/op	   98168 allocs/op
+BenchmarkQueryExecution/query=90609/selector=0
+BenchmarkQueryExecution/query=90609/selector=0-10         	       1	  41888541 ns/op	       388.3 bnb_proper_total_costs	         1.060 bnb_proper_vs_bnb_ratio	       366.3 bnb_total_costs	        32.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	24140480 B/op	  111896 allocs/op
+BenchmarkQueryExecution/query=90612/selector=0
+BenchmarkQueryExecution/query=90612/selector=0-10         	       1	  42427167 ns/op	       388.3 bnb_proper_total_costs	         1.060 bnb_proper_vs_bnb_ratio	       366.3 bnb_total_costs	        32.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	24060096 B/op	  111667 allocs/op
+BenchmarkQueryExecution/query=90615/selector=0
+BenchmarkQueryExecution/query=90615/selector=0-10         	       1	  43505708 ns/op	      1055 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1055 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25016320 B/op	  114867 allocs/op
+BenchmarkQueryExecution/query=90619/selector=0
+BenchmarkQueryExecution/query=90619/selector=0-10         	       1	  42571875 ns/op	      1055 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1055 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24993472 B/op	  114755 allocs/op
+BenchmarkQueryExecution/query=90627/selector=0
+BenchmarkQueryExecution/query=90627/selector=0-10         	       1	  42767333 ns/op	       936.9 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       936.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24811960 B/op	  114230 allocs/op
+BenchmarkQueryExecution/query=90631/selector=0
+BenchmarkQueryExecution/query=90631/selector=0-10         	       1	  43598791 ns/op	       936.9 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       936.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24806656 B/op	  114195 allocs/op
+BenchmarkQueryExecution/query=90637/selector=0
+BenchmarkQueryExecution/query=90637/selector=0-10         	       1	  43375292 ns/op	       414.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       414.3 bnb_total_costs	        88.00 chunks	         0 exhaustive_total_costs	        15.00 series	         0 third_best_total_costs	24342328 B/op	  111889 allocs/op
+BenchmarkQueryExecution/query=90638/selector=0
+BenchmarkQueryExecution/query=90638/selector=0-10         	       1	  42276666 ns/op	       414.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       414.3 bnb_total_costs	        88.00 chunks	         0 exhaustive_total_costs	        15.00 series	         0 third_best_total_costs	24343672 B/op	  111901 allocs/op
+BenchmarkQueryExecution/query=90644/selector=0
+BenchmarkQueryExecution/query=90644/selector=0-10         	       1	  30954334 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21938280 B/op	   98078 allocs/op
+BenchmarkQueryExecution/query=90648/selector=0
+BenchmarkQueryExecution/query=90648/selector=0-10         	       1	  40568500 ns/op	       245.8 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24690800 B/op	  110902 allocs/op
+BenchmarkQueryExecution/query=90651/selector=0
+BenchmarkQueryExecution/query=90651/selector=0-10         	       1	  42526875 ns/op	       785.6 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       785.6 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24786808 B/op	  113866 allocs/op
+BenchmarkQueryExecution/query=90653/selector=0
+BenchmarkQueryExecution/query=90653/selector=0-10         	       1	  31720583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21937056 B/op	   98063 allocs/op
+BenchmarkQueryExecution/query=90658/selector=0
+BenchmarkQueryExecution/query=90658/selector=0-10         	       1	  39640458 ns/op	       245.8 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24690768 B/op	  110901 allocs/op
+BenchmarkQueryExecution/query=90676/selector=0
+BenchmarkQueryExecution/query=90676/selector=0-10         	       1	  37695000 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24449800 B/op	  108149 allocs/op
+BenchmarkQueryExecution/query=90679/selector=0
+BenchmarkQueryExecution/query=90679/selector=0-10         	       1	  43310875 ns/op	       876.2 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       876.2 bnb_total_costs	         1.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24792464 B/op	  113936 allocs/op
+BenchmarkQueryExecution/query=90692/selector=0
+BenchmarkQueryExecution/query=90692/selector=0-10         	       1	  31901959 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22020984 B/op	   98993 allocs/op
+BenchmarkQueryExecution/query=106495/selector=0
+BenchmarkQueryExecution/query=106495/selector=0-10        	       1	  33459709 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22157872 B/op	   99471 allocs/op
+BenchmarkQueryExecution/query=106513/selector=0
+BenchmarkQueryExecution/query=106513/selector=0-10        	       1	  38192125 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24593392 B/op	  109137 allocs/op
+BenchmarkQueryExecution/query=106519/selector=0
+BenchmarkQueryExecution/query=106519/selector=0-10        	       1	  39640209 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24547696 B/op	  108913 allocs/op
+BenchmarkQueryExecution/query=106539/selector=0
+BenchmarkQueryExecution/query=106539/selector=0-10        	       1	  31618459 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22528480 B/op	   98324 allocs/op
+BenchmarkQueryExecution/query=106550/selector=0
+BenchmarkQueryExecution/query=106550/selector=0-10        	       1	  31944625 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21919808 B/op	   98075 allocs/op
+BenchmarkQueryExecution/query=106583/selector=0
+BenchmarkQueryExecution/query=106583/selector=0-10        	       1	  31181250 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22529296 B/op	   98328 allocs/op
+BenchmarkQueryExecution/query=125853/selector=0
+BenchmarkQueryExecution/query=125853/selector=0-10        	       1	  38996083 ns/op	       224.1 bnb_proper_total_costs	         2.032 bnb_proper_vs_bnb_ratio	       110.3 bnb_total_costs	         2.000 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24796112 B/op	  112046 allocs/op
+BenchmarkQueryExecution/query=125855/selector=0
+BenchmarkQueryExecution/query=125855/selector=0-10        	       1	  31290792 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22519440 B/op	   98191 allocs/op
+BenchmarkQueryExecution/query=125867/selector=0
+BenchmarkQueryExecution/query=125867/selector=0-10        	       1	  45608834 ns/op	      1428 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1428 bnb_total_costs	        54.00 chunks	         0 exhaustive_total_costs	         8.000 series	         0 third_best_total_costs	25498688 B/op	  118670 allocs/op
+BenchmarkQueryExecution/query=125893/selector=0
+BenchmarkQueryExecution/query=125893/selector=0-10        	       1	     56250 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4024 B/op	      52 allocs/op
+BenchmarkQueryExecution/query=125903/selector=0
+BenchmarkQueryExecution/query=125903/selector=0-10        	       1	  31919458 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23356888 B/op	  100960 allocs/op
+BenchmarkQueryExecution/query=125904/selector=0
+BenchmarkQueryExecution/query=125904/selector=0-10        	       1	  46606083 ns/op	      1428 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1428 bnb_total_costs	        54.00 chunks	         0 exhaustive_total_costs	         8.000 series	         0 third_best_total_costs	25498208 B/op	  118662 allocs/op
+BenchmarkQueryExecution/query=125911/selector=0
+BenchmarkQueryExecution/query=125911/selector=0-10        	       1	   2039292 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	  139400 B/op	    1574 allocs/op
+BenchmarkQueryExecution/query=125926/selector=0
+BenchmarkQueryExecution/query=125926/selector=0-10        	       1	     43375 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4592 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=125941/selector=0
+BenchmarkQueryExecution/query=125941/selector=0-10        	       1	     32667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=143922/selector=0
+BenchmarkQueryExecution/query=143922/selector=0-10        	       1	  33031916 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23349008 B/op	  100849 allocs/op
+BenchmarkQueryExecution/query=143931/selector=0
+BenchmarkQueryExecution/query=143931/selector=0-10        	       1	  45006583 ns/op	      1206 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1198 bnb_total_costs	        26.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	26028096 B/op	  117997 allocs/op
+BenchmarkQueryExecution/query=154320/selector=0
+BenchmarkQueryExecution/query=154320/selector=0-10        	       1	  41020959 ns/op	       664.6 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       664.6 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25792008 B/op	  113092 allocs/op
+BenchmarkQueryExecution/query=154325/selector=0
+BenchmarkQueryExecution/query=154325/selector=0-10        	       1	  32477250 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23189320 B/op	  100198 allocs/op
+BenchmarkQueryExecution/query=154348/selector=0
+BenchmarkQueryExecution/query=154348/selector=0-10        	       1	     35625 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=154354/selector=0
+BenchmarkQueryExecution/query=154354/selector=0-10        	       1	  32804708 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23353856 B/op	  100917 allocs/op
+BenchmarkQueryExecution/query=160699/selector=0
+BenchmarkQueryExecution/query=160699/selector=0-10        	       1	  39076208 ns/op	       201.8 bnb_proper_total_costs	         1.423 bnb_proper_vs_bnb_ratio	       141.8 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24830344 B/op	  113444 allocs/op
+BenchmarkQueryExecution/query=160708/selector=0
+BenchmarkQueryExecution/query=160708/selector=0-10        	       1	  39579792 ns/op	       201.8 bnb_proper_total_costs	         1.423 bnb_proper_vs_bnb_ratio	       141.8 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24778120 B/op	  113197 allocs/op
+BenchmarkQueryExecution/query=160711/selector=0
+BenchmarkQueryExecution/query=160711/selector=0-10        	       1	  32268166 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22633464 B/op	  100197 allocs/op
+BenchmarkQueryExecution/query=160712/selector=0
+BenchmarkQueryExecution/query=160712/selector=0-10        	       1	  31852209 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22633920 B/op	  100200 allocs/op
+BenchmarkQueryExecution/query=160722/selector=0
+BenchmarkQueryExecution/query=160722/selector=0-10        	       1	  39797500 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24778424 B/op	  112703 allocs/op
+BenchmarkQueryExecution/query=160725/selector=0
+BenchmarkQueryExecution/query=160725/selector=0-10        	       1	  39131541 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24728648 B/op	  112459 allocs/op
+BenchmarkQueryExecution/query=160733/selector=0
+BenchmarkQueryExecution/query=160733/selector=0-10        	       1	  45406750 ns/op	      1427 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1427 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	25338312 B/op	  117287 allocs/op
+BenchmarkQueryExecution/query=160746/selector=0
+BenchmarkQueryExecution/query=160746/selector=0-10        	       1	  32738750 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23209592 B/op	  100225 allocs/op
+BenchmarkQueryExecution/query=160752/selector=0
+BenchmarkQueryExecution/query=160752/selector=0-10        	       1	  32115833 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210000 B/op	  100227 allocs/op
+BenchmarkQueryExecution/query=160761/selector=0
+BenchmarkQueryExecution/query=160761/selector=0-10        	       1	  45837583 ns/op	      1176 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1176 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25878240 B/op	  117206 allocs/op
+BenchmarkQueryExecution/query=160764/selector=0
+BenchmarkQueryExecution/query=160764/selector=0-10        	       1	  44805916 ns/op	      1176 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1176 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25831448 B/op	  116889 allocs/op
+BenchmarkQueryExecution/query=179251/selector=0
+BenchmarkQueryExecution/query=179251/selector=0-10        	       1	  50766417 ns/op	      2576 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      2576 bnb_total_costs	       110.0 chunks	         0 exhaustive_total_costs	        29.00 series	         0 third_best_total_costs	26148344 B/op	  124866 allocs/op
+BenchmarkQueryExecution/query=179256/selector=0
+BenchmarkQueryExecution/query=179256/selector=0-10        	       1	  51278625 ns/op	      2576 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      2576 bnb_total_costs	       110.0 chunks	         0 exhaustive_total_costs	        29.00 series	         0 third_best_total_costs	26148208 B/op	  124848 allocs/op
+BenchmarkQueryExecution/query=179259/selector=0
+BenchmarkQueryExecution/query=179259/selector=0-10        	       1	  42662500 ns/op	       430.2 bnb_proper_total_costs	         1.067 bnb_proper_vs_bnb_ratio	       403.3 bnb_total_costs	        28.00 chunks	         0 exhaustive_total_costs	         6.000 series	         0 third_best_total_costs	24994280 B/op	  113132 allocs/op
+BenchmarkQueryExecution/query=179268/selector=0
+BenchmarkQueryExecution/query=179268/selector=0-10        	       1	  42820291 ns/op	       430.2 bnb_proper_total_costs	         1.067 bnb_proper_vs_bnb_ratio	       403.3 bnb_total_costs	        28.00 chunks	         0 exhaustive_total_costs	         6.000 series	         0 third_best_total_costs	24995864 B/op	  113147 allocs/op
+BenchmarkQueryExecution/query=179303/selector=0
+BenchmarkQueryExecution/query=179303/selector=0-10        	       1	  39763125 ns/op	       224.2 bnb_proper_total_costs	         1.526 bnb_proper_vs_bnb_ratio	       146.8 bnb_total_costs	         5.000 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	24801048 B/op	  112455 allocs/op
+BenchmarkQueryExecution/query=179306/selector=0
+BenchmarkQueryExecution/query=179306/selector=0-10        	       1	  39545500 ns/op	       224.2 bnb_proper_total_costs	         1.526 bnb_proper_vs_bnb_ratio	       146.8 bnb_total_costs	         5.000 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	24786384 B/op	  112381 allocs/op
+BenchmarkQueryExecution/query=179331/selector=0
+BenchmarkQueryExecution/query=179331/selector=0-10        	       1	  31719042 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22637328 B/op	  100227 allocs/op
+BenchmarkQueryExecution/query=183743/selector=0
+BenchmarkQueryExecution/query=183743/selector=0-10        	       1	     44792 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=183745/selector=0
+BenchmarkQueryExecution/query=183745/selector=0-10        	       1	  32726333 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22780752 B/op	  100928 allocs/op
+BenchmarkQueryExecution/query=183779/selector=0
+BenchmarkQueryExecution/query=183779/selector=0-10        	       1	  38988875 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        25.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	24133784 B/op	  110642 allocs/op
+BenchmarkQueryExecution/query=183785/selector=0
+BenchmarkQueryExecution/query=183785/selector=0-10        	       1	  32297583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22616104 B/op	  100195 allocs/op
+BenchmarkQueryExecution/query=183811/selector=0
+BenchmarkQueryExecution/query=183811/selector=0-10        	       1	  32470750 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22635568 B/op	  100217 allocs/op
+BenchmarkQueryExecution/query=183812/selector=0
+BenchmarkQueryExecution/query=183812/selector=0-10        	       1	  32264375 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22635096 B/op	  100214 allocs/op
+BenchmarkQueryExecution/query=183817/selector=0
+BenchmarkQueryExecution/query=183817/selector=0-10        	       1	     44042 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=199793/selector=0
+BenchmarkQueryExecution/query=199793/selector=0-10        	       1	  32937583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22779528 B/op	  100913 allocs/op
+BenchmarkQueryExecution/query=199795/selector=0
+BenchmarkQueryExecution/query=199795/selector=0-10        	       1	  43296000 ns/op	       936.9 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       936.9 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25585680 B/op	  116650 allocs/op
+BenchmarkQueryExecution/query=199802/selector=0
+BenchmarkQueryExecution/query=199802/selector=0-10        	       1	  44422667 ns/op	      1206 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1198 bnb_total_costs	        26.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	25943576 B/op	  117678 allocs/op
+BenchmarkQueryExecution/query=199803/selector=0
+BenchmarkQueryExecution/query=199803/selector=0-10        	       1	  43373625 ns/op	       414.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       414.3 bnb_total_costs	        88.00 chunks	         0 exhaustive_total_costs	        15.00 series	         0 third_best_total_costs	25054504 B/op	  112871 allocs/op
+BenchmarkQueryExecution/query=199804/selector=0
+BenchmarkQueryExecution/query=199804/selector=0-10        	       1	  45050791 ns/op	      1206 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1198 bnb_total_costs	        26.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	25992392 B/op	  117820 allocs/op
+BenchmarkQueryExecution/query=199808/selector=0
+BenchmarkQueryExecution/query=199808/selector=0-10        	       1	  32195209 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22633464 B/op	  100197 allocs/op
+BenchmarkQueryExecution/query=199812/selector=0
+BenchmarkQueryExecution/query=199812/selector=0-10        	       1	  40325667 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24818416 B/op	  113065 allocs/op
+BenchmarkQueryExecution/query=199814/selector=0
+BenchmarkQueryExecution/query=199814/selector=0-10        	       1	  39563375 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24745416 B/op	  112794 allocs/op
+BenchmarkQueryExecution/query=199821/selector=0
+BenchmarkQueryExecution/query=199821/selector=0-10        	       1	  42987583 ns/op	       936.9 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       936.9 bnb_total_costs	        17.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	26121944 B/op	  116627 allocs/op
+BenchmarkQueryExecution/query=199839/selector=0
+BenchmarkQueryExecution/query=199839/selector=0-10        	       1	  38936917 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24568408 B/op	  109104 allocs/op
+BenchmarkQueryExecution/query=199840/selector=0
+BenchmarkQueryExecution/query=199840/selector=0-10        	       1	  43245083 ns/op	       924.0 bnb_proper_total_costs	         1.009 bnb_proper_vs_bnb_ratio	       916.0 bnb_total_costs	         5.000 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	25638248 B/op	  116026 allocs/op
+BenchmarkQueryExecution/query=199842/selector=0
+BenchmarkQueryExecution/query=199842/selector=0-10        	       1	  39121917 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24569584 B/op	  109118 allocs/op
+BenchmarkQueryExecution/query=199854/selector=0
+BenchmarkQueryExecution/query=199854/selector=0-10        	       1	  42150708 ns/op	       846.0 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       846.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25456000 B/op	  115438 allocs/op
+BenchmarkQueryExecution/query=199880/selector=0
+BenchmarkQueryExecution/query=199880/selector=0-10        	       1	  43695458 ns/op	      1051 bnb_proper_total_costs	         1.008 bnb_proper_vs_bnb_ratio	      1043 bnb_total_costs	        38.00 chunks	         0 exhaustive_total_costs	         9.000 series	         0 third_best_total_costs	25661456 B/op	  117480 allocs/op
+BenchmarkQueryExecution/query=199885/selector=0
+BenchmarkQueryExecution/query=199885/selector=0-10        	       1	  43134583 ns/op	       404.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       404.3 bnb_total_costs	        25.00 chunks	         0 exhaustive_total_costs	        11.00 series	         0 third_best_total_costs	25031112 B/op	  113075 allocs/op
+BenchmarkQueryExecution/query=199886/selector=0
+BenchmarkQueryExecution/query=199886/selector=0-10        	       1	  32006084 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210008 B/op	  100231 allocs/op
+BenchmarkQueryExecution/query=199887/selector=0
+BenchmarkQueryExecution/query=199887/selector=0-10        	       1	  33218416 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210416 B/op	  100233 allocs/op
+BenchmarkQueryExecution/query=207900/selector=0
+BenchmarkQueryExecution/query=207900/selector=0-10        	       1	  45321000 ns/op	      1212 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1204 bnb_total_costs	        62.00 chunks	         0 exhaustive_total_costs	        13.00 series	         0 third_best_total_costs	26155608 B/op	  118679 allocs/op
+BenchmarkQueryExecution/query=213363/selector=0
+BenchmarkQueryExecution/query=213363/selector=0-10        	       1	  31893750 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22633464 B/op	  100197 allocs/op
+BenchmarkQueryExecution/query=213367/selector=0
+BenchmarkQueryExecution/query=213367/selector=0-10        	       1	  44263792 ns/op	      1069 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1061 bnb_total_costs	        19.00 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	25771384 B/op	  117246 allocs/op
+BenchmarkQueryExecution/query=213395/selector=0
+BenchmarkQueryExecution/query=213395/selector=0-10        	       1	  32034167 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210008 B/op	  100231 allocs/op
+BenchmarkQueryExecution/query=213404/selector=0
+BenchmarkQueryExecution/query=213404/selector=0-10        	       1	  33046417 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22633208 B/op	  100182 allocs/op
+BenchmarkQueryExecution/query=213406/selector=0
+BenchmarkQueryExecution/query=213406/selector=0-10        	       1	  32194541 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22633192 B/op	  100182 allocs/op
+BenchmarkQueryExecution/query=213411/selector=0
+BenchmarkQueryExecution/query=213411/selector=0-10        	       1	  33369584 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22634280 B/op	  100201 allocs/op
+BenchmarkQueryExecution/query=213421/selector=0
+BenchmarkQueryExecution/query=213421/selector=0-10        	       1	  45255917 ns/op	      1200 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1192 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	26169152 B/op	  118089 allocs/op
+BenchmarkQueryExecution/query=213426/selector=0
+BenchmarkQueryExecution/query=213426/selector=0-10        	       1	  32364291 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22638536 B/op	  100242 allocs/op
+BenchmarkQueryExecution/query=213432/selector=0
+BenchmarkQueryExecution/query=213432/selector=0-10        	       1	  39968000 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24840312 B/op	  113794 allocs/op
+BenchmarkQueryExecution/query=213434/selector=0
+BenchmarkQueryExecution/query=213434/selector=0-10        	       1	  32801583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22638536 B/op	  100242 allocs/op
+BenchmarkQueryExecution/query=213439/selector=0
+BenchmarkQueryExecution/query=213439/selector=0-10        	       1	  40546625 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24840312 B/op	  113794 allocs/op
+BenchmarkQueryExecution/query=220411/selector=0
+BenchmarkQueryExecution/query=220411/selector=0-10        	       1	     50667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=220413/selector=0
+BenchmarkQueryExecution/query=220413/selector=0-10        	       1	  33406000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22780400 B/op	  100919 allocs/op
+BenchmarkQueryExecution/query=220414/selector=0
+BenchmarkQueryExecution/query=220414/selector=0-10        	       1	  39176250 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24778832 B/op	  112705 allocs/op
+BenchmarkQueryExecution/query=220415/selector=0
+BenchmarkQueryExecution/query=220415/selector=0-10        	       1	     44875 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=220431/selector=0
+BenchmarkQueryExecution/query=220431/selector=0-10        	       1	  44597083 ns/op	      1129 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1121 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25874312 B/op	  117522 allocs/op
+BenchmarkQueryExecution/query=220432/selector=0
+BenchmarkQueryExecution/query=220432/selector=0-10        	       1	  43817625 ns/op	      1129 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1121 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25644104 B/op	  116481 allocs/op
+BenchmarkQueryExecution/query=220439/selector=0
+BenchmarkQueryExecution/query=220439/selector=0-10        	       1	  39442875 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24806656 B/op	  113715 allocs/op
+BenchmarkQueryExecution/query=220444/selector=0
+BenchmarkQueryExecution/query=220444/selector=0-10        	       1	  39898500 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24826096 B/op	  113722 allocs/op
+BenchmarkQueryExecution/query=220448/selector=0
+BenchmarkQueryExecution/query=220448/selector=0-10        	       1	  39036416 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24632072 B/op	  110037 allocs/op
+BenchmarkQueryExecution/query=220450/selector=0
+BenchmarkQueryExecution/query=220450/selector=0-10        	       1	     49334 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=220451/selector=0
+BenchmarkQueryExecution/query=220451/selector=0-10        	       1	  33792958 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23354272 B/op	  100921 allocs/op
+BenchmarkQueryExecution/query=220453/selector=0
+BenchmarkQueryExecution/query=220453/selector=0-10        	       1	  33451708 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23207520 B/op	  100184 allocs/op
+BenchmarkQueryExecution/query=220457/selector=0
+BenchmarkQueryExecution/query=220457/selector=0-10        	       1	  32470375 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23211640 B/op	  100248 allocs/op
+BenchmarkQueryExecution/query=220459/selector=0
+BenchmarkQueryExecution/query=220459/selector=0-10        	       1	     57375 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=220463/selector=0
+BenchmarkQueryExecution/query=220463/selector=0-10        	       1	  32921125 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22783640 B/op	  100954 allocs/op
+BenchmarkQueryExecution/query=220465/selector=0
+BenchmarkQueryExecution/query=220465/selector=0-10        	       1	  33476000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23190144 B/op	  100204 allocs/op
+BenchmarkQueryExecution/query=220466/selector=0
+BenchmarkQueryExecution/query=220466/selector=0-10        	       1	  32853584 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23224912 B/op	  100181 allocs/op
+BenchmarkQueryExecution/query=220468/selector=0
+BenchmarkQueryExecution/query=220468/selector=0-10        	       1	  32018542 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210416 B/op	  100233 allocs/op
+BenchmarkQueryExecution/query=220471/selector=0
+BenchmarkQueryExecution/query=220471/selector=0-10        	       1	  44218083 ns/op	      1148 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1140 bnb_total_costs	        17.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	25835136 B/op	  117452 allocs/op
+BenchmarkQueryExecution/query=220474/selector=0
+BenchmarkQueryExecution/query=220474/selector=0-10        	       1	  42285958 ns/op	       876.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       876.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25448104 B/op	  115384 allocs/op
+BenchmarkQueryExecution/query=220479/selector=0
+BenchmarkQueryExecution/query=220479/selector=0-10        	       1	  39963292 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24614264 B/op	  110047 allocs/op
+BenchmarkQueryExecution/query=220480/selector=0
+BenchmarkQueryExecution/query=220480/selector=0-10        	       1	  31859375 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22638800 B/op	  100253 allocs/op
+BenchmarkQueryExecution/query=220482/selector=0
+BenchmarkQueryExecution/query=220482/selector=0-10        	       1	     51375 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=220485/selector=0
+BenchmarkQueryExecution/query=220485/selector=0-10        	       1	  42964791 ns/op	       876.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       876.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25661744 B/op	  116423 allocs/op
+BenchmarkQueryExecution/query=220487/selector=0
+BenchmarkQueryExecution/query=220487/selector=0-10        	       1	     51167 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=220494/selector=0
+BenchmarkQueryExecution/query=220494/selector=0-10        	       1	   2740834 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	        76.00 chunks	         0 exhaustive_total_costs	        13.00 series	         0 third_best_total_costs	  307488 B/op	    3735 allocs/op
+BenchmarkQueryExecution/query=220497/selector=0
+BenchmarkQueryExecution/query=220497/selector=0-10        	       1	  39325875 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	        30.00 chunks	         0 exhaustive_total_costs	         7.000 series	         0 third_best_total_costs	24288128 B/op	  111461 allocs/op
+BenchmarkQueryExecution/query=220504/selector=0
+BenchmarkQueryExecution/query=220504/selector=0-10        	       1	    928584 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	        76.00 chunks	         0 exhaustive_total_costs	        13.00 series	         0 third_best_total_costs	  307488 B/op	    3735 allocs/op
+BenchmarkQueryExecution/query=220506/selector=0
+BenchmarkQueryExecution/query=220506/selector=0-10        	       1	  39076625 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	        30.00 chunks	         0 exhaustive_total_costs	         7.000 series	         0 third_best_total_costs	24288064 B/op	  111459 allocs/op
+BenchmarkQueryExecution/query=220507/selector=0
+BenchmarkQueryExecution/query=220507/selector=0-10        	       1	  44503833 ns/op	       967.1 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       967.1 bnb_total_costs	        32.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	25558752 B/op	  116837 allocs/op
+BenchmarkQueryExecution/query=235158/selector=0
+BenchmarkQueryExecution/query=235158/selector=0-10        	       1	  38900542 ns/op	       245.8 bnb_proper_total_costs	         1.023 bnb_proper_vs_bnb_ratio	       240.3 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24083104 B/op	  110284 allocs/op
+BenchmarkQueryExecution/query=235162/selector=0
+BenchmarkQueryExecution/query=235162/selector=0-10        	       1	  42606708 ns/op	       876.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       876.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25454424 B/op	  115494 allocs/op
+BenchmarkQueryExecution/query=235192/selector=0
+BenchmarkQueryExecution/query=235192/selector=0-10        	       1	  46385042 ns/op	      1310 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1310 bnb_total_costs	        35.00 chunks	         0 exhaustive_total_costs	         8.000 series	         0 third_best_total_costs	26204256 B/op	  119041 allocs/op
+BenchmarkQueryExecution/query=235210/selector=0
+BenchmarkQueryExecution/query=235210/selector=0-10        	       1	  39840583 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24804112 B/op	  113520 allocs/op
+BenchmarkQueryExecution/query=246134/selector=0
+BenchmarkQueryExecution/query=246134/selector=0-10        	       1	  44369583 ns/op	      1082 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1074 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25649904 B/op	  116996 allocs/op
+BenchmarkQueryExecution/query=246143/selector=0
+BenchmarkQueryExecution/query=246143/selector=0-10        	       1	  43666250 ns/op	      1025 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1025 bnb_total_costs	         1.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25676872 B/op	  116605 allocs/op
+BenchmarkQueryExecution/query=246175/selector=0
+BenchmarkQueryExecution/query=246175/selector=0-10        	       1	  43762209 ns/op	       977.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       977.4 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25585056 B/op	  116145 allocs/op
+BenchmarkQueryExecution/query=246187/selector=0
+BenchmarkQueryExecution/query=246187/selector=0-10        	       1	  43209334 ns/op	       846.0 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       846.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25989632 B/op	  115220 allocs/op
+BenchmarkQueryExecution/query=246216/selector=0
+BenchmarkQueryExecution/query=246216/selector=0-10        	       1	  42923791 ns/op	       815.8 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.8 bnb_total_costs	         2.000 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	26026944 B/op	  115733 allocs/op
+BenchmarkQueryExecution/query=262962/selector=0
+BenchmarkQueryExecution/query=262962/selector=0-10        	       1	  40917250 ns/op	       604.1 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       604.1 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	25747128 B/op	  112892 allocs/op
+BenchmarkQueryExecution/query=273975/selector=0
+BenchmarkQueryExecution/query=273975/selector=0-10        	       1	  32493208 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23189408 B/op	  100196 allocs/op
+BenchmarkQueryExecution/query=273976/selector=0
+BenchmarkQueryExecution/query=273976/selector=0-10        	       1	  43797166 ns/op	       404.7 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       404.7 bnb_total_costs	        27.00 chunks	         0 exhaustive_total_costs	         6.000 series	         0 third_best_total_costs	25066584 B/op	  112885 allocs/op
+BenchmarkQueryExecution/query=273979/selector=0
+BenchmarkQueryExecution/query=273979/selector=0-10        	       1	  43860375 ns/op	      1024 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1024 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25704864 B/op	  116783 allocs/op
+BenchmarkQueryExecution/query=273995/selector=0
+BenchmarkQueryExecution/query=273995/selector=0-10        	       1	  32639875 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23209232 B/op	  100215 allocs/op
+BenchmarkQueryExecution/query=274000/selector=0
+BenchmarkQueryExecution/query=274000/selector=0-10        	       1	  42333000 ns/op	       755.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       755.3 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25469864 B/op	  115411 allocs/op
+BenchmarkQueryExecution/query=274006/selector=0
+BenchmarkQueryExecution/query=274006/selector=0-10        	       1	  42829333 ns/op	       815.8 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.8 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25404576 B/op	  115025 allocs/op
+BenchmarkQueryExecution/query=274010/selector=0
+BenchmarkQueryExecution/query=274010/selector=0-10        	       1	  43609542 ns/op	       404.7 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       404.7 bnb_total_costs	        27.00 chunks	         0 exhaustive_total_costs	         6.000 series	         0 third_best_total_costs	25029032 B/op	  112710 allocs/op
+BenchmarkQueryExecution/query=274019/selector=0
+BenchmarkQueryExecution/query=274019/selector=0-10        	       1	  41655834 ns/op	       466.3 bnb_proper_total_costs	         1.028 bnb_proper_vs_bnb_ratio	       453.8 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25754488 B/op	  116525 allocs/op
+BenchmarkQueryExecution/query=274028/selector=0
+BenchmarkQueryExecution/query=274028/selector=0-10        	       1	  42381917 ns/op	       755.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       755.3 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25405400 B/op	  115086 allocs/op
+BenchmarkQueryExecution/query=274029/selector=0
+BenchmarkQueryExecution/query=274029/selector=0-10        	       1	  32439041 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23192192 B/op	  100244 allocs/op
+BenchmarkQueryExecution/query=274041/selector=0
+BenchmarkQueryExecution/query=274041/selector=0-10        	       1	  33287958 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23211072 B/op	  100249 allocs/op
+BenchmarkQueryExecution/query=274046/selector=0
+BenchmarkQueryExecution/query=274046/selector=0-10        	       1	  38866417 ns/op	       246.4 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.6 bnb_total_costs	        49.00 chunks	         0 exhaustive_total_costs	         9.000 series	         0 third_best_total_costs	24165792 B/op	  111001 allocs/op
+BenchmarkQueryExecution/query=274053/selector=0
+BenchmarkQueryExecution/query=274053/selector=0-10        	       1	  45372625 ns/op	      1259 bnb_proper_total_costs	         1.006 bnb_proper_vs_bnb_ratio	      1251 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26147520 B/op	  118232 allocs/op
+BenchmarkQueryExecution/query=274056/selector=0
+BenchmarkQueryExecution/query=274056/selector=0-10        	       1	  39118250 ns/op	       246.4 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.6 bnb_total_costs	        49.00 chunks	         0 exhaustive_total_costs	         9.000 series	         0 third_best_total_costs	24122544 B/op	  110789 allocs/op
+BenchmarkQueryExecution/query=274058/selector=0
+BenchmarkQueryExecution/query=274058/selector=0-10        	       1	  45245041 ns/op	      1259 bnb_proper_total_costs	         1.006 bnb_proper_vs_bnb_ratio	      1251 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26148744 B/op	  118247 allocs/op
+BenchmarkQueryExecution/query=295995/selector=0
+BenchmarkQueryExecution/query=295995/selector=0-10        	       1	     46167 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=295996/selector=0
+BenchmarkQueryExecution/query=295996/selector=0-10        	       1	     49125 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=295997/selector=0
+BenchmarkQueryExecution/query=295997/selector=0-10        	       1	  41009917 ns/op	       245.8 bnb_proper_total_costs	         1.862 bnb_proper_vs_bnb_ratio	       132.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24923296 B/op	  112527 allocs/op
+BenchmarkQueryExecution/query=296001/selector=0
+BenchmarkQueryExecution/query=296001/selector=0-10        	       1	     50500 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296002/selector=0
+BenchmarkQueryExecution/query=296002/selector=0-10        	       1	  40481625 ns/op	       245.8 bnb_proper_total_costs	         1.862 bnb_proper_vs_bnb_ratio	       132.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24924568 B/op	  112543 allocs/op
+BenchmarkQueryExecution/query=296004/selector=0
+BenchmarkQueryExecution/query=296004/selector=0-10        	       1	  42164791 ns/op	       406.5 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       406.5 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24968568 B/op	  111993 allocs/op
+BenchmarkQueryExecution/query=296006/selector=0
+BenchmarkQueryExecution/query=296006/selector=0-10        	       1	  33375166 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22634584 B/op	  100204 allocs/op
+BenchmarkQueryExecution/query=296007/selector=0
+BenchmarkQueryExecution/query=296007/selector=0-10        	       1	     46917 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296009/selector=0
+BenchmarkQueryExecution/query=296009/selector=0-10        	       1	  32164292 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22781464 B/op	  100933 allocs/op
+BenchmarkQueryExecution/query=296010/selector=0
+BenchmarkQueryExecution/query=296010/selector=0-10        	       1	     50708 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296014/selector=0
+BenchmarkQueryExecution/query=296014/selector=0-10        	       1	     50667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296015/selector=0
+BenchmarkQueryExecution/query=296015/selector=0-10        	       1	  32782375 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22778144 B/op	  100893 allocs/op
+BenchmarkQueryExecution/query=296019/selector=0
+BenchmarkQueryExecution/query=296019/selector=0-10        	       1	  38514208 ns/op	       246.5 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.6 bnb_total_costs	         9.000 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24109528 B/op	  110352 allocs/op
+BenchmarkQueryExecution/query=296021/selector=0
+BenchmarkQueryExecution/query=296021/selector=0-10        	       1	  42622958 ns/op	       876.2 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       876.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25493696 B/op	  115795 allocs/op
+BenchmarkQueryExecution/query=296029/selector=0
+BenchmarkQueryExecution/query=296029/selector=0-10        	       1	     50750 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296030/selector=0
+BenchmarkQueryExecution/query=296030/selector=0-10        	       1	    728667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	        33.00 chunks	         0 exhaustive_total_costs	         8.000 series	         0 third_best_total_costs	  206848 B/op	    2433 allocs/op
+BenchmarkQueryExecution/query=296031/selector=0
+BenchmarkQueryExecution/query=296031/selector=0-10        	       1	     49792 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296032/selector=0
+BenchmarkQueryExecution/query=296032/selector=0-10        	       1	  40528292 ns/op	       246.5 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.6 bnb_total_costs	         9.000 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24256000 B/op	  111079 allocs/op
+BenchmarkQueryExecution/query=296034/selector=0
+BenchmarkQueryExecution/query=296034/selector=0-10        	       1	     48875 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296035/selector=0
+BenchmarkQueryExecution/query=296035/selector=0-10        	       1	  43185000 ns/op	       815.9 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.9 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25736592 B/op	  117400 allocs/op
+BenchmarkQueryExecution/query=296036/selector=0
+BenchmarkQueryExecution/query=296036/selector=0-10        	       1	  32219084 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22614016 B/op	  100176 allocs/op
+BenchmarkQueryExecution/query=296037/selector=0
+BenchmarkQueryExecution/query=296037/selector=0-10        	       1	  40400584 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24778832 B/op	  112705 allocs/op
+BenchmarkQueryExecution/query=296038/selector=0
+BenchmarkQueryExecution/query=296038/selector=0-10        	       1	  42638417 ns/op	       815.9 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.9 bnb_total_costs	        10.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25541152 B/op	  116441 allocs/op
+BenchmarkQueryExecution/query=296039/selector=0
+BenchmarkQueryExecution/query=296039/selector=0-10        	       1	  40054709 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24709208 B/op	  112452 allocs/op
+BenchmarkQueryExecution/query=296040/selector=0
+BenchmarkQueryExecution/query=296040/selector=0-10        	       1	     44708 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4024 B/op	      52 allocs/op
+BenchmarkQueryExecution/query=296042/selector=0
+BenchmarkQueryExecution/query=296042/selector=0-10        	       1	     47584 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296043/selector=0
+BenchmarkQueryExecution/query=296043/selector=0-10        	       1	     49750 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296046/selector=0
+BenchmarkQueryExecution/query=296046/selector=0-10        	       1	  46517500 ns/op	      1219 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1211 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	26247368 B/op	  118877 allocs/op
+BenchmarkQueryExecution/query=296056/selector=0
+BenchmarkQueryExecution/query=296056/selector=0-10        	       1	  40144750 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        25.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	24089312 B/op	  110415 allocs/op
+BenchmarkQueryExecution/query=296057/selector=0
+BenchmarkQueryExecution/query=296057/selector=0-10        	       1	    479916 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	  138648 B/op	    1568 allocs/op
+BenchmarkQueryExecution/query=296060/selector=0
+BenchmarkQueryExecution/query=296060/selector=0-10        	       1	    515375 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	  138632 B/op	    1568 allocs/op
+BenchmarkQueryExecution/query=296062/selector=0
+BenchmarkQueryExecution/query=296062/selector=0-10        	       1	    813500 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	        33.00 chunks	         0 exhaustive_total_costs	         8.000 series	         0 third_best_total_costs	  207408 B/op	    2435 allocs/op
+BenchmarkQueryExecution/query=296063/selector=0
+BenchmarkQueryExecution/query=296063/selector=0-10        	       1	  33877584 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22327672 B/op	   99975 allocs/op
+BenchmarkQueryExecution/query=296065/selector=0
+BenchmarkQueryExecution/query=296065/selector=0-10        	       1	  38684291 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        25.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	24137456 B/op	  110651 allocs/op
+BenchmarkQueryExecution/query=296068/selector=0
+BenchmarkQueryExecution/query=296068/selector=0-10        	       1	  43938584 ns/op	      1090 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1090 bnb_total_costs	        29.00 chunks	         0 exhaustive_total_costs	        13.00 series	         0 third_best_total_costs	25791608 B/op	  117839 allocs/op
+BenchmarkQueryExecution/query=296072/selector=0
+BenchmarkQueryExecution/query=296072/selector=0-10        	       1	     48208 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296074/selector=0
+BenchmarkQueryExecution/query=296074/selector=0-10        	       1	     50417 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296078/selector=0
+BenchmarkQueryExecution/query=296078/selector=0-10        	       1	  32107375 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22780752 B/op	  100928 allocs/op
+BenchmarkQueryExecution/query=296079/selector=0
+BenchmarkQueryExecution/query=296079/selector=0-10        	       1	     46833 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296080/selector=0
+BenchmarkQueryExecution/query=296080/selector=0-10        	       1	     44125 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296081/selector=0
+BenchmarkQueryExecution/query=296081/selector=0-10        	       1	     49500 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4024 B/op	      52 allocs/op
+BenchmarkQueryExecution/query=296083/selector=0
+BenchmarkQueryExecution/query=296083/selector=0-10        	       1	   1360208 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	  104488 B/op	    1291 allocs/op
+BenchmarkQueryExecution/query=296084/selector=0
+BenchmarkQueryExecution/query=296084/selector=0-10        	       1	  41564542 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24924080 B/op	  113417 allocs/op
+BenchmarkQueryExecution/query=296086/selector=0
+BenchmarkQueryExecution/query=296086/selector=0-10        	       1	     67625 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4024 B/op	      52 allocs/op
+BenchmarkQueryExecution/query=296087/selector=0
+BenchmarkQueryExecution/query=296087/selector=0-10        	       1	  42060125 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24924080 B/op	  113417 allocs/op
+BenchmarkQueryExecution/query=296089/selector=0
+BenchmarkQueryExecution/query=296089/selector=0-10        	       1	     67250 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=296090/selector=0
+BenchmarkQueryExecution/query=296090/selector=0-10        	       1	  44392708 ns/op	      1090 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1090 bnb_total_costs	        29.00 chunks	         0 exhaustive_total_costs	        13.00 series	         0 third_best_total_costs	25980768 B/op	  118776 allocs/op
+BenchmarkQueryExecution/query=296091/selector=0
+BenchmarkQueryExecution/query=296091/selector=0-10        	       1	  43681417 ns/op	      1028 bnb_proper_total_costs	         1.008 bnb_proper_vs_bnb_ratio	      1020 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25551792 B/op	  116273 allocs/op
+BenchmarkQueryExecution/query=296092/selector=0
+BenchmarkQueryExecution/query=296092/selector=0-10        	       1	  31852042 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22634688 B/op	  100212 allocs/op
+BenchmarkQueryExecution/query=308019/selector=0
+BenchmarkQueryExecution/query=308019/selector=0-10        	       1	  45765000 ns/op	      1222 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1222 bnb_total_costs	        26.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	26246528 B/op	  118888 allocs/op
+BenchmarkQueryExecution/query=308020/selector=0
+BenchmarkQueryExecution/query=308020/selector=0-10        	       1	  32312542 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21083752 B/op	   99263 allocs/op
+BenchmarkQueryExecution/query=308035/selector=0
+BenchmarkQueryExecution/query=308035/selector=0-10        	       1	  40016125 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	        36.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	24153216 B/op	  110847 allocs/op
+BenchmarkQueryExecution/query=308039/selector=0
+BenchmarkQueryExecution/query=308039/selector=0-10        	       1	  32745583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210008 B/op	  100231 allocs/op
+BenchmarkQueryExecution/query=308040/selector=0
+BenchmarkQueryExecution/query=308040/selector=0-10        	       1	  31541083 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23191536 B/op	  100228 allocs/op
+BenchmarkQueryExecution/query=308042/selector=0
+BenchmarkQueryExecution/query=308042/selector=0-10        	       1	  32987625 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21613104 B/op	   99276 allocs/op
+BenchmarkQueryExecution/query=308044/selector=0
+BenchmarkQueryExecution/query=308044/selector=0-10        	       1	  45536875 ns/op	      1222 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1222 bnb_total_costs	        26.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	26236264 B/op	  118754 allocs/op
+BenchmarkQueryExecution/query=308045/selector=0
+BenchmarkQueryExecution/query=308045/selector=0-10        	       1	  32853292 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21613104 B/op	   99276 allocs/op
+BenchmarkQueryExecution/query=308047/selector=0
+BenchmarkQueryExecution/query=308047/selector=0-10        	       1	     41666 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=308048/selector=0
+BenchmarkQueryExecution/query=308048/selector=0-10        	       1	  39429625 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	        36.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	24295608 B/op	  111545 allocs/op
+BenchmarkQueryExecution/query=308050/selector=0
+BenchmarkQueryExecution/query=308050/selector=0-10        	       1	  42662875 ns/op	      1088 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1080 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25590488 B/op	  116485 allocs/op
+BenchmarkQueryExecution/query=308052/selector=0
+BenchmarkQueryExecution/query=308052/selector=0-10        	       1	  32652208 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21083752 B/op	   99263 allocs/op
+BenchmarkQueryExecution/query=308056/selector=0
+BenchmarkQueryExecution/query=308056/selector=0-10        	       1	  42147583 ns/op	       755.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       755.3 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25471904 B/op	  115412 allocs/op
+BenchmarkQueryExecution/query=308061/selector=0
+BenchmarkQueryExecution/query=308061/selector=0-10        	       1	  43651166 ns/op	      1088 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1080 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25589544 B/op	  116401 allocs/op
+BenchmarkQueryExecution/query=308065/selector=0
+BenchmarkQueryExecution/query=308065/selector=0-10        	       1	  32511750 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22682592 B/op	  100724 allocs/op
+BenchmarkQueryExecution/query=308068/selector=0
+BenchmarkQueryExecution/query=308068/selector=0-10        	       1	  31628833 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22637048 B/op	  100233 allocs/op
+BenchmarkQueryExecution/query=308071/selector=0
+BenchmarkQueryExecution/query=308071/selector=0-10        	       1	  44473084 ns/op	       404.7 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       404.7 bnb_total_costs	        27.00 chunks	         0 exhaustive_total_costs	         6.000 series	         0 third_best_total_costs	25068232 B/op	  112902 allocs/op
+BenchmarkQueryExecution/query=308072/selector=0
+BenchmarkQueryExecution/query=308072/selector=0-10        	       1	  42605125 ns/op	       404.7 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       404.7 bnb_total_costs	        27.00 chunks	         0 exhaustive_total_costs	         6.000 series	         0 third_best_total_costs	25029440 B/op	  112712 allocs/op
+BenchmarkQueryExecution/query=308074/selector=0
+BenchmarkQueryExecution/query=308074/selector=0-10        	       1	  38984167 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	        12.00 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	24055256 B/op	  110193 allocs/op
+BenchmarkQueryExecution/query=308084/selector=0
+BenchmarkQueryExecution/query=308084/selector=0-10        	       1	  42940000 ns/op	       755.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       755.3 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25474192 B/op	  115700 allocs/op
+BenchmarkQueryExecution/query=308085/selector=0
+BenchmarkQueryExecution/query=308085/selector=0-10        	       1	  40261584 ns/op	       246.4 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.6 bnb_total_costs	        49.00 chunks	         0 exhaustive_total_costs	         9.000 series	         0 third_best_total_costs	24184880 B/op	  111455 allocs/op
+BenchmarkQueryExecution/query=308088/selector=0
+BenchmarkQueryExecution/query=308088/selector=0-10        	       1	  42761792 ns/op	       246.4 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.6 bnb_total_costs	        49.00 chunks	         0 exhaustive_total_costs	         9.000 series	         0 third_best_total_costs	24173208 B/op	  111329 allocs/op
+BenchmarkQueryExecution/query=308090/selector=0
+BenchmarkQueryExecution/query=308090/selector=0-10        	       1	  43325250 ns/op	       876.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       876.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25490360 B/op	  115741 allocs/op
+BenchmarkQueryExecution/query=308092/selector=0
+BenchmarkQueryExecution/query=308092/selector=0-10        	       1	    894166 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	  157672 B/op	    1802 allocs/op
+BenchmarkQueryExecution/query=308093/selector=0
+BenchmarkQueryExecution/query=308093/selector=0-10        	       1	  32502000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23355168 B/op	  100930 allocs/op
+BenchmarkQueryExecution/query=308096/selector=0
+BenchmarkQueryExecution/query=308096/selector=0-10        	       1	  42705292 ns/op	       876.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       876.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25533200 B/op	  115951 allocs/op
+BenchmarkQueryExecution/query=308104/selector=0
+BenchmarkQueryExecution/query=308104/selector=0-10        	       1	  33793583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23207880 B/op	  100199 allocs/op
+BenchmarkQueryExecution/query=308106/selector=0
+BenchmarkQueryExecution/query=308106/selector=0-10        	       1	  38579667 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	        12.00 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	24094168 B/op	  110383 allocs/op
+BenchmarkQueryExecution/query=308108/selector=0
+BenchmarkQueryExecution/query=308108/selector=0-10        	       1	  46739000 ns/op	      1259 bnb_proper_total_costs	         1.006 bnb_proper_vs_bnb_ratio	      1251 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26147760 B/op	  118236 allocs/op
+BenchmarkQueryExecution/query=308109/selector=0
+BenchmarkQueryExecution/query=308109/selector=0-10        	       1	    599833 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	  157704 B/op	    1802 allocs/op
+BenchmarkQueryExecution/query=308111/selector=0
+BenchmarkQueryExecution/query=308111/selector=0-10        	       1	  44658125 ns/op	       785.5 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       785.5 bnb_total_costs	         4.000 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	25542464 B/op	  114961 allocs/op
+BenchmarkQueryExecution/query=308115/selector=0
+BenchmarkQueryExecution/query=308115/selector=0-10        	       1	  45406375 ns/op	      1259 bnb_proper_total_costs	         1.006 bnb_proper_vs_bnb_ratio	      1251 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26127936 B/op	  118136 allocs/op
+BenchmarkQueryExecution/query=308117/selector=0
+BenchmarkQueryExecution/query=308117/selector=0-10        	       1	  33686333 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22174880 B/op	   99455 allocs/op
+BenchmarkQueryExecution/query=321784/selector=0
+BenchmarkQueryExecution/query=321784/selector=0-10        	       1	  31936458 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21085792 B/op	   99273 allocs/op
+BenchmarkQueryExecution/query=321825/selector=0
+BenchmarkQueryExecution/query=321825/selector=0-10        	       1	     49916 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=321834/selector=0
+BenchmarkQueryExecution/query=321834/selector=0-10        	       1	  31968959 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21227776 B/op	   99978 allocs/op
+BenchmarkQueryExecution/query=321850/selector=0
+BenchmarkQueryExecution/query=321850/selector=0-10        	       1	     46583 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=339106/selector=0
+BenchmarkQueryExecution/query=339106/selector=0-10        	       1	  32367000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22779528 B/op	  100913 allocs/op
+BenchmarkQueryExecution/query=339107/selector=0
+BenchmarkQueryExecution/query=339107/selector=0-10        	       1	  31751875 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22614312 B/op	  100177 allocs/op
+BenchmarkQueryExecution/query=339114/selector=0
+BenchmarkQueryExecution/query=339114/selector=0-10        	       1	  31642917 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22634280 B/op	  100201 allocs/op
+BenchmarkQueryExecution/query=339116/selector=0
+BenchmarkQueryExecution/query=339116/selector=0-10        	       1	  40392042 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        19.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	24106432 B/op	  110080 allocs/op
+BenchmarkQueryExecution/query=339120/selector=0
+BenchmarkQueryExecution/query=339120/selector=0-10        	       1	  43281708 ns/op	      1054 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1054 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25668208 B/op	  116299 allocs/op
+BenchmarkQueryExecution/query=339121/selector=0
+BenchmarkQueryExecution/query=339121/selector=0-10        	       1	  43456292 ns/op	      1054 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1054 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25645360 B/op	  116187 allocs/op
+BenchmarkQueryExecution/query=339122/selector=0
+BenchmarkQueryExecution/query=339122/selector=0-10        	       1	  40567292 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24804112 B/op	  113520 allocs/op
+BenchmarkQueryExecution/query=339124/selector=0
+BenchmarkQueryExecution/query=339124/selector=0-10        	       1	  38271000 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        19.00 chunks	         0 exhaustive_total_costs	         4.000 series	         0 third_best_total_costs	23997504 B/op	  109363 allocs/op
+BenchmarkQueryExecution/query=339132/selector=0
+BenchmarkQueryExecution/query=339132/selector=0-10        	       1	  32309833 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21611880 B/op	   99261 allocs/op
+BenchmarkQueryExecution/query=339136/selector=0
+BenchmarkQueryExecution/query=339136/selector=0-10        	       1	  31958625 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21593408 B/op	   99258 allocs/op
+BenchmarkQueryExecution/query=339144/selector=0
+BenchmarkQueryExecution/query=339144/selector=0-10        	       1	  43354209 ns/op	      1028 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1028 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25564320 B/op	  116410 allocs/op
+BenchmarkQueryExecution/query=339146/selector=0
+BenchmarkQueryExecution/query=339146/selector=0-10        	       1	  44204208 ns/op	      1028 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1028 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25470200 B/op	  116037 allocs/op
+BenchmarkQueryExecution/query=339148/selector=0
+BenchmarkQueryExecution/query=339148/selector=0-10        	       1	  31912625 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23190928 B/op	  100231 allocs/op
+BenchmarkQueryExecution/query=339151/selector=0
+BenchmarkQueryExecution/query=339151/selector=0-10        	       1	  39939500 ns/op	       223.6 bnb_proper_total_costs	         1.121 bnb_proper_vs_bnb_ratio	       199.5 bnb_total_costs	         9.000 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	24745200 B/op	  112149 allocs/op
+BenchmarkQueryExecution/query=339157/selector=0
+BenchmarkQueryExecution/query=339157/selector=0-10        	       1	  33123250 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23209400 B/op	  100234 allocs/op
+BenchmarkQueryExecution/query=339160/selector=0
+BenchmarkQueryExecution/query=339160/selector=0-10        	       1	  39195792 ns/op	       223.6 bnb_proper_total_costs	         1.121 bnb_proper_vs_bnb_ratio	       199.5 bnb_total_costs	         9.000 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	24745200 B/op	  112149 allocs/op
+BenchmarkQueryExecution/query=339163/selector=0
+BenchmarkQueryExecution/query=339163/selector=0-10        	       1	  39674084 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24730688 B/op	  112469 allocs/op
+BenchmarkQueryExecution/query=339173/selector=0
+BenchmarkQueryExecution/query=339173/selector=0-10        	       1	  39336000 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24729872 B/op	  112474 allocs/op
+BenchmarkQueryExecution/query=339176/selector=0
+BenchmarkQueryExecution/query=339176/selector=0-10        	       1	  42048834 ns/op	       755.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       755.3 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25358656 B/op	  114802 allocs/op
+BenchmarkQueryExecution/query=339182/selector=0
+BenchmarkQueryExecution/query=339182/selector=0-10        	       1	  39295833 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24805352 B/op	  113535 allocs/op
+BenchmarkQueryExecution/query=339183/selector=0
+BenchmarkQueryExecution/query=339183/selector=0-10        	       1	  40167459 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24805760 B/op	  113537 allocs/op
+BenchmarkQueryExecution/query=340102/selector=0
+BenchmarkQueryExecution/query=340102/selector=0-10        	       1	  32073833 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210560 B/op	  100235 allocs/op
+BenchmarkQueryExecution/query=340104/selector=0
+BenchmarkQueryExecution/query=340104/selector=0-10        	       1	  32562333 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23192200 B/op	  100231 allocs/op
+BenchmarkQueryExecution/query=340105/selector=0
+BenchmarkQueryExecution/query=340105/selector=0-10        	       1	  43271917 ns/op	       425.2 bnb_proper_total_costs	         1.052 bnb_proper_vs_bnb_ratio	       404.2 bnb_total_costs	        38.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	25088232 B/op	  113290 allocs/op
+BenchmarkQueryExecution/query=340112/selector=0
+BenchmarkQueryExecution/query=340112/selector=0-10        	       1	  32803791 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210040 B/op	  100238 allocs/op
+BenchmarkQueryExecution/query=340113/selector=0
+BenchmarkQueryExecution/query=340113/selector=0-10        	       1	  33017750 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210448 B/op	  100240 allocs/op
+BenchmarkQueryExecution/query=340119/selector=0
+BenchmarkQueryExecution/query=340119/selector=0-10        	       1	  44401125 ns/op	      1056 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1056 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25776880 B/op	  117319 allocs/op
+BenchmarkQueryExecution/query=340130/selector=0
+BenchmarkQueryExecution/query=340130/selector=0-10        	       1	  32711458 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22646600 B/op	  100312 allocs/op
+BenchmarkQueryExecution/query=340134/selector=0
+BenchmarkQueryExecution/query=340134/selector=0-10        	       1	  33796333 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22637208 B/op	  100239 allocs/op
+BenchmarkQueryExecution/query=340135/selector=0
+BenchmarkQueryExecution/query=340135/selector=0-10        	       1	  43865042 ns/op	      1056 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1056 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25778088 B/op	  117334 allocs/op
+BenchmarkQueryExecution/query=340176/selector=0
+BenchmarkQueryExecution/query=340176/selector=0-10        	       1	  33225958 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22636112 B/op	  100226 allocs/op
+BenchmarkQueryExecution/query=340177/selector=0
+BenchmarkQueryExecution/query=340177/selector=0-10        	       1	  32572917 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22636520 B/op	  100228 allocs/op
+BenchmarkQueryExecution/query=340199/selector=0
+BenchmarkQueryExecution/query=340199/selector=0-10        	       1	  38977708 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24085472 B/op	  110014 allocs/op
+BenchmarkQueryExecution/query=358804/selector=0
+BenchmarkQueryExecution/query=358804/selector=0-10        	       1	     47042 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=364111/selector=0
+BenchmarkQueryExecution/query=364111/selector=0-10        	       1	  34032041 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23365128 B/op	  101080 allocs/op
+BenchmarkQueryExecution/query=364114/selector=0
+BenchmarkQueryExecution/query=364114/selector=0-10        	       1	  40207042 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24876416 B/op	  113985 allocs/op
+BenchmarkQueryExecution/query=364121/selector=0
+BenchmarkQueryExecution/query=364121/selector=0-10        	       1	  32897666 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23201800 B/op	  100376 allocs/op
+BenchmarkQueryExecution/query=364123/selector=0
+BenchmarkQueryExecution/query=364123/selector=0-10        	       1	  41063625 ns/op	       254.8 bnb_proper_total_costs	         1.066 bnb_proper_vs_bnb_ratio	       238.9 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24876416 B/op	  113985 allocs/op
+BenchmarkQueryExecution/query=364131/selector=0
+BenchmarkQueryExecution/query=364131/selector=0-10        	       1	  32907125 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22616216 B/op	  100209 allocs/op
+BenchmarkQueryExecution/query=364138/selector=0
+BenchmarkQueryExecution/query=364138/selector=0-10        	       1	  32098333 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22634736 B/op	  100197 allocs/op
+BenchmarkQueryExecution/query=364139/selector=0
+BenchmarkQueryExecution/query=364139/selector=0-10        	       1	  32012500 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22635144 B/op	  100199 allocs/op
+BenchmarkQueryExecution/query=364143/selector=0
+BenchmarkQueryExecution/query=364143/selector=0-10        	       1	  40450125 ns/op	       201.9 bnb_proper_total_costs	         1.637 bnb_proper_vs_bnb_ratio	       123.3 bnb_total_costs	         2.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24736720 B/op	  112052 allocs/op
+BenchmarkQueryExecution/query=364144/selector=0
+BenchmarkQueryExecution/query=364144/selector=0-10        	       1	  39911334 ns/op	       201.9 bnb_proper_total_costs	         1.637 bnb_proper_vs_bnb_ratio	       123.3 bnb_total_costs	         2.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24685296 B/op	  111791 allocs/op
+BenchmarkQueryExecution/query=364165/selector=0
+BenchmarkQueryExecution/query=364165/selector=0-10        	       1	  31842875 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22633464 B/op	  100197 allocs/op
+BenchmarkQueryExecution/query=364173/selector=0
+BenchmarkQueryExecution/query=364173/selector=0-10        	       1	  43708416 ns/op	       614.6 bnb_proper_total_costs	         1.009 bnb_proper_vs_bnb_ratio	       609.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26022480 B/op	  116701 allocs/op
+BenchmarkQueryExecution/query=364178/selector=0
+BenchmarkQueryExecution/query=364178/selector=0-10        	       1	  33242083 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22664568 B/op	  100583 allocs/op
+BenchmarkQueryExecution/query=364181/selector=0
+BenchmarkQueryExecution/query=364181/selector=0-10        	       1	  42668250 ns/op	       614.6 bnb_proper_total_costs	         1.009 bnb_proper_vs_bnb_ratio	       609.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26022480 B/op	  116701 allocs/op
+BenchmarkQueryExecution/query=364185/selector=0
+BenchmarkQueryExecution/query=364185/selector=0-10        	       1	  39792875 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24568376 B/op	  109103 allocs/op
+BenchmarkQueryExecution/query=364188/selector=0
+BenchmarkQueryExecution/query=364188/selector=0-10        	       1	  32458750 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22664568 B/op	  100583 allocs/op
+BenchmarkQueryExecution/query=364202/selector=0
+BenchmarkQueryExecution/query=364202/selector=0-10        	       1	  38711084 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24117768 B/op	  110466 allocs/op
+BenchmarkQueryExecution/query=364204/selector=0
+BenchmarkQueryExecution/query=364204/selector=0-10        	       1	  32201917 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23211232 B/op	  100246 allocs/op
+BenchmarkQueryExecution/query=364205/selector=0
+BenchmarkQueryExecution/query=364205/selector=0-10        	       1	  39730667 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24620720 B/op	  109334 allocs/op
+BenchmarkQueryExecution/query=364208/selector=0
+BenchmarkQueryExecution/query=364208/selector=0-10        	       1	  33772334 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210008 B/op	  100231 allocs/op
+BenchmarkQueryExecution/query=373004/selector=0
+BenchmarkQueryExecution/query=373004/selector=0-10        	       1	     50541 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=373007/selector=0
+BenchmarkQueryExecution/query=373007/selector=0-10        	       1	  40711375 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24924080 B/op	  113417 allocs/op
+BenchmarkQueryExecution/query=373012/selector=0
+BenchmarkQueryExecution/query=373012/selector=0-10        	       1	     49667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=373016/selector=0
+BenchmarkQueryExecution/query=373016/selector=0-10        	       1	  43543458 ns/op	       815.8 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.8 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	26245136 B/op	  116507 allocs/op
+BenchmarkQueryExecution/query=373022/selector=0
+BenchmarkQueryExecution/query=373022/selector=0-10        	       1	  38497583 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24729464 B/op	  112472 allocs/op
+BenchmarkQueryExecution/query=373025/selector=0
+BenchmarkQueryExecution/query=373025/selector=0-10        	       1	  43448541 ns/op	       815.8 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.8 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	26049688 B/op	  115549 allocs/op
+BenchmarkQueryExecution/query=373028/selector=0
+BenchmarkQueryExecution/query=373028/selector=0-10        	       1	     50791 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=373034/selector=0
+BenchmarkQueryExecution/query=373034/selector=0-10        	       1	  39371500 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24229856 B/op	  110815 allocs/op
+BenchmarkQueryExecution/query=373035/selector=0
+BenchmarkQueryExecution/query=373035/selector=0-10        	       1	  41984916 ns/op	       840.2 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       840.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25459520 B/op	  115847 allocs/op
+BenchmarkQueryExecution/query=373036/selector=0
+BenchmarkQueryExecution/query=373036/selector=0-10        	       1	  39822959 ns/op	       246.1 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24042192 B/op	  109904 allocs/op
+BenchmarkQueryExecution/query=373041/selector=0
+BenchmarkQueryExecution/query=373041/selector=0-10        	       1	     48833 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=373047/selector=0
+BenchmarkQueryExecution/query=373047/selector=0-10        	       1	  33258875 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21208120 B/op	   99745 allocs/op
+BenchmarkQueryExecution/query=373053/selector=0
+BenchmarkQueryExecution/query=373053/selector=0-10        	       1	     64125 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=373056/selector=0
+BenchmarkQueryExecution/query=373056/selector=0-10        	       1	  33417791 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21208104 B/op	   99745 allocs/op
+BenchmarkQueryExecution/query=373060/selector=0
+BenchmarkQueryExecution/query=373060/selector=0-10        	       1	  42887250 ns/op	      1052 bnb_proper_total_costs	         1.008 bnb_proper_vs_bnb_ratio	      1044 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25665416 B/op	  116774 allocs/op
+BenchmarkQueryExecution/query=373069/selector=0
+BenchmarkQueryExecution/query=373069/selector=0-10        	       1	     47792 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=373071/selector=0
+BenchmarkQueryExecution/query=373071/selector=0-10        	       1	  43996250 ns/op	      1052 bnb_proper_total_costs	         1.008 bnb_proper_vs_bnb_ratio	      1044 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25804952 B/op	  117458 allocs/op
+BenchmarkQueryExecution/query=373077/selector=0
+BenchmarkQueryExecution/query=373077/selector=0-10        	       1	  39762125 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24710432 B/op	  112467 allocs/op
+BenchmarkQueryExecution/query=373086/selector=0
+BenchmarkQueryExecution/query=373086/selector=0-10        	       1	  40099334 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24710432 B/op	  112467 allocs/op
+BenchmarkQueryExecution/query=373098/selector=0
+BenchmarkQueryExecution/query=373098/selector=0-10        	       1	  42969250 ns/op	       840.2 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       840.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25452584 B/op	  115813 allocs/op
+BenchmarkQueryExecution/query=382660/selector=0
+BenchmarkQueryExecution/query=382660/selector=0-10        	       1	  31825125 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23211232 B/op	  100246 allocs/op
+BenchmarkQueryExecution/query=382662/selector=0
+BenchmarkQueryExecution/query=382662/selector=0-10        	       1	  39557750 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24639072 B/op	  109755 allocs/op
+BenchmarkQueryExecution/query=382679/selector=0
+BenchmarkQueryExecution/query=382679/selector=0-10        	       1	  44672250 ns/op	       967.1 bnb_proper_total_costs	         1.008 bnb_proper_vs_bnb_ratio	       959.2 bnb_total_costs	        21.00 chunks	         0 exhaustive_total_costs	         7.000 series	         0 third_best_total_costs	25653648 B/op	  117055 allocs/op
+BenchmarkQueryExecution/query=382698/selector=0
+BenchmarkQueryExecution/query=382698/selector=0-10        	       1	  43517209 ns/op	       967.1 bnb_proper_total_costs	         1.008 bnb_proper_vs_bnb_ratio	       959.2 bnb_total_costs	        21.00 chunks	         0 exhaustive_total_costs	         7.000 series	         0 third_best_total_costs	25624744 B/op	  116914 allocs/op
+BenchmarkQueryExecution/query=382735/selector=0
+BenchmarkQueryExecution/query=382735/selector=0-10        	       1	  38423500 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        18.00 chunks	         0 exhaustive_total_costs	         3.000 series	         0 third_best_total_costs	24592832 B/op	  109438 allocs/op
+BenchmarkQueryExecution/query=382736/selector=0
+BenchmarkQueryExecution/query=382736/selector=0-10        	       1	  32520042 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23191120 B/op	  100222 allocs/op
+BenchmarkQueryExecution/query=395497/selector=0
+BenchmarkQueryExecution/query=395497/selector=0-10        	       1	  46199584 ns/op	      1201 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1193 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26107888 B/op	  117562 allocs/op
+BenchmarkQueryExecution/query=395499/selector=0
+BenchmarkQueryExecution/query=395499/selector=0-10        	       1	  45498958 ns/op	      1201 bnb_proper_total_costs	         1.007 bnb_proper_vs_bnb_ratio	      1193 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	26041640 B/op	  117238 allocs/op
+BenchmarkQueryExecution/query=395510/selector=0
+BenchmarkQueryExecution/query=395510/selector=0-10        	       1	  40431708 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24056928 B/op	  110235 allocs/op
+BenchmarkQueryExecution/query=395559/selector=0
+BenchmarkQueryExecution/query=395559/selector=0-10        	       1	  44820334 ns/op	      1083 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1083 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25721520 B/op	  117019 allocs/op
+BenchmarkQueryExecution/query=410485/selector=0
+BenchmarkQueryExecution/query=410485/selector=0-10        	       1	  31998666 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23211232 B/op	  100246 allocs/op
+BenchmarkQueryExecution/query=410487/selector=0
+BenchmarkQueryExecution/query=410487/selector=0-10        	       1	  33230917 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23211640 B/op	  100248 allocs/op
+BenchmarkQueryExecution/query=410537/selector=0
+BenchmarkQueryExecution/query=410537/selector=0-10        	       1	  32087958 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22636928 B/op	  100230 allocs/op
+BenchmarkQueryExecution/query=410550/selector=0
+BenchmarkQueryExecution/query=410550/selector=0-10        	       1	  32502583 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22617640 B/op	  100223 allocs/op
+BenchmarkQueryExecution/query=410554/selector=0
+BenchmarkQueryExecution/query=410554/selector=0-10        	       1	     53334 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=428767/selector=0
+BenchmarkQueryExecution/query=428767/selector=0-10        	       1	  44581916 ns/op	       840.2 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       840.2 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25646808 B/op	  116756 allocs/op
+BenchmarkQueryExecution/query=428783/selector=0
+BenchmarkQueryExecution/query=428783/selector=0-10        	       1	  33118000 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21068160 B/op	   99059 allocs/op
+BenchmarkQueryExecution/query=428792/selector=0
+BenchmarkQueryExecution/query=428792/selector=0-10        	       1	  44999791 ns/op	       983.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       983.3 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25674024 B/op	  116865 allocs/op
+BenchmarkQueryExecution/query=428802/selector=0
+BenchmarkQueryExecution/query=428802/selector=0-10        	       1	     72042 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=428805/selector=0
+BenchmarkQueryExecution/query=428805/selector=0-10        	       1	  39136125 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24924080 B/op	  113417 allocs/op
+BenchmarkQueryExecution/query=428806/selector=0
+BenchmarkQueryExecution/query=428806/selector=0-10        	       1	  43518750 ns/op	       983.3 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       983.3 bnb_total_costs	         8.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	25618096 B/op	  116591 allocs/op
+BenchmarkQueryExecution/query=428807/selector=0
+BenchmarkQueryExecution/query=428807/selector=0-10        	       1	  41244125 ns/op	       201.8 bnb_proper_total_costs	         2.293 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24728240 B/op	  112457 allocs/op
+BenchmarkQueryExecution/query=428810/selector=0
+BenchmarkQueryExecution/query=428810/selector=0-10        	       1	  35247167 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	21066936 B/op	   99044 allocs/op
+BenchmarkQueryExecution/query=428813/selector=0
+BenchmarkQueryExecution/query=428813/selector=0-10        	       1	     53166 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=428824/selector=0
+BenchmarkQueryExecution/query=428824/selector=0-10        	       1	  41867458 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24763512 B/op	  110150 allocs/op
+BenchmarkQueryExecution/query=428827/selector=0
+BenchmarkQueryExecution/query=428827/selector=0-10        	       1	     51667 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=428832/selector=0
+BenchmarkQueryExecution/query=428832/selector=0-10        	       1	  40547083 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24763512 B/op	  110150 allocs/op
+BenchmarkQueryExecution/query=428835/selector=0
+BenchmarkQueryExecution/query=428835/selector=0-10        	       1	  44279541 ns/op	      1009 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1009 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25612352 B/op	  116389 allocs/op
+BenchmarkQueryExecution/query=428837/selector=0
+BenchmarkQueryExecution/query=428837/selector=0-10        	       1	     54833 ns/op	         0 bnb_proper_total_costs	               NaN bnb_proper_vs_bnb_ratio	         0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	    4584 B/op	      54 allocs/op
+BenchmarkQueryExecution/query=428846/selector=0
+BenchmarkQueryExecution/query=428846/selector=0-10        	       1	  43708584 ns/op	      1009 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1009 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25797584 B/op	  117288 allocs/op
+BenchmarkQueryExecution/query=431839/selector=0
+BenchmarkQueryExecution/query=431839/selector=0-10        	       1	  44405667 ns/op	       425.2 bnb_proper_total_costs	         1.052 bnb_proper_vs_bnb_ratio	       404.2 bnb_total_costs	        38.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	25048200 B/op	  113091 allocs/op
+BenchmarkQueryExecution/query=431843/selector=0
+BenchmarkQueryExecution/query=431843/selector=0-10        	       1	  44511250 ns/op	       425.2 bnb_proper_total_costs	         1.052 bnb_proper_vs_bnb_ratio	       404.2 bnb_total_costs	        38.00 chunks	         0 exhaustive_total_costs	         5.000 series	         0 third_best_total_costs	25047400 B/op	  113078 allocs/op
+BenchmarkQueryExecution/query=431850/selector=0
+BenchmarkQueryExecution/query=431850/selector=0-10        	       1	  55330708 ns/op	      2928 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      2928 bnb_total_costs	       300.0 chunks	         0 exhaustive_total_costs	        59.00 series	         0 third_best_total_costs	26648984 B/op	  130971 allocs/op
+BenchmarkQueryExecution/query=431861/selector=0
+BenchmarkQueryExecution/query=431861/selector=0-10        	       1	  53243375 ns/op	      2928 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      2928 bnb_total_costs	       300.0 chunks	         0 exhaustive_total_costs	        59.00 series	         0 third_best_total_costs	26632936 B/op	  130893 allocs/op
+BenchmarkQueryExecution/query=431864/selector=0
+BenchmarkQueryExecution/query=431864/selector=0-10        	       1	  44643208 ns/op	      1056 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1056 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25721000 B/op	  117045 allocs/op
+BenchmarkQueryExecution/query=431876/selector=0
+BenchmarkQueryExecution/query=431876/selector=0-10        	       1	  32579458 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23207808 B/op	  100201 allocs/op
+BenchmarkQueryExecution/query=431877/selector=0
+BenchmarkQueryExecution/query=431877/selector=0-10        	       1	  32317792 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23208200 B/op	  100203 allocs/op
+BenchmarkQueryExecution/query=431879/selector=0
+BenchmarkQueryExecution/query=431879/selector=0-10        	       1	  44315833 ns/op	      1056 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1056 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	25778104 B/op	  117334 allocs/op
+BenchmarkQueryExecution/query=431919/selector=0
+BenchmarkQueryExecution/query=431919/selector=0-10        	       1	  32179708 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	22635560 B/op	  100222 allocs/op
+BenchmarkQueryExecution/query=441321/selector=0
+BenchmarkQueryExecution/query=441321/selector=0-10        	       1	  39076000 ns/op	       246.0 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.1 bnb_total_costs	        16.00 chunks	         0 exhaustive_total_costs	         2.000 series	         0 third_best_total_costs	24100728 B/op	  110454 allocs/op
+BenchmarkQueryExecution/query=453428/selector=0
+BenchmarkQueryExecution/query=453428/selector=0-10        	       1	  38727500 ns/op	       245.9 bnb_proper_total_costs	         1.029 bnb_proper_vs_bnb_ratio	       239.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	24546080 B/op	  108896 allocs/op
+BenchmarkQueryExecution/query=453454/selector=0
+BenchmarkQueryExecution/query=453454/selector=0-10        	       1	  40312958 ns/op	       201.8 bnb_proper_total_costs	         1.891 bnb_proper_vs_bnb_ratio	       106.7 bnb_total_costs	         1.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24761752 B/op	  112795 allocs/op
+BenchmarkQueryExecution/query=453473/selector=0
+BenchmarkQueryExecution/query=453473/selector=0-10        	       1	  40897791 ns/op	       201.8 bnb_proper_total_costs	         1.891 bnb_proper_vs_bnb_ratio	       106.7 bnb_total_costs	         1.000 chunks	         0 exhaustive_total_costs	         1.000 series	         0 third_best_total_costs	24750328 B/op	  112748 allocs/op
+BenchmarkQueryExecution/query=453492/selector=0
+BenchmarkQueryExecution/query=453492/selector=0-10        	       1	  42786417 ns/op	       634.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       634.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25800824 B/op	  113295 allocs/op
+BenchmarkQueryExecution/query=453495/selector=0
+BenchmarkQueryExecution/query=453495/selector=0-10        	       1	  32962792 ns/op	        88.00 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	        88.00 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	23210664 B/op	  100247 allocs/op
+BenchmarkQueryExecution/query=453503/selector=0
+BenchmarkQueryExecution/query=453503/selector=0-10        	       1	  42126334 ns/op	       634.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       634.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25853952 B/op	  113554 allocs/op
+BenchmarkQueryExecution/query=463754/selector=0
+BenchmarkQueryExecution/query=463754/selector=0-10        	       1	  42761667 ns/op	       725.1 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       725.1 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25356464 B/op	  114500 allocs/op
+BenchmarkQueryExecution/query=463766/selector=0
+BenchmarkQueryExecution/query=463766/selector=0-10        	       1	  42533584 ns/op	       815.8 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       815.8 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25422792 B/op	  115017 allocs/op
+BenchmarkQueryExecution/query=463770/selector=0
+BenchmarkQueryExecution/query=463770/selector=0-10        	       1	  41840042 ns/op	       611.3 bnb_proper_total_costs	         1.012 bnb_proper_vs_bnb_ratio	       604.0 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25720936 B/op	  113470 allocs/op
+BenchmarkQueryExecution/query=463773/selector=0
+BenchmarkQueryExecution/query=463773/selector=0-10        	       1	  44166292 ns/op	       997.4 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       997.4 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25501648 B/op	  116121 allocs/op
+BenchmarkQueryExecution/query=463780/selector=0
+BenchmarkQueryExecution/query=463780/selector=0-10        	       1	  45430291 ns/op	      1008 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	      1008 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25597104 B/op	  116693 allocs/op
+BenchmarkQueryExecution/query=463798/selector=0
+BenchmarkQueryExecution/query=463798/selector=0-10        	       1	  44535625 ns/op	       991.5 bnb_proper_total_costs	         1.000 bnb_proper_vs_bnb_ratio	       991.5 bnb_total_costs	         0 chunks	         0 exhaustive_total_costs	         0 series	         0 third_best_total_costs	25504776 B/op	  116102 allocs/op
+BenchmarkQueryExecution/query=463799/selector=0
+
+Process finished with the exit code 130 (interrupted by signal 2:SIGINT)

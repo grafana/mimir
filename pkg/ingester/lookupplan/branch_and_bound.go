@@ -162,6 +162,79 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 	return morePlans.Iterator()
 }
 
+func (p CostBasedPlanner) generatePlansProperBranchAndBound(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) iter.Seq[plan] {
+	basePlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
+
+	// Initialize priority queue with the root partial plan (all predicates undecided)
+	partial := partialPlan{
+		planWithCost:      planWithCost{plan: basePlan, totalCost: 0},
+		decidedPredicates: make([]bool, len(basePlan.predicates)),
+	}
+	partial.totalCost = partial.LowerBoundCost()
+	prospectPlans := &partialPlans{partial}
+	heap.Init(prospectPlans)
+
+	completePlans := &partialPlans{}
+	bestCompleteCost := float64(1<<63 - 1) // Start with max float64
+	allDecided := slices.Repeat([]bool{true}, len(basePlan.predicates))
+
+	// Branch and bound exploration
+	iterationsLeft := maxPlansForPlanning
+	for prospectPlans.Len() > 0 && iterationsLeft > 0 {
+		current := heap.Pop(prospectPlans).(partialPlan)
+
+		// Calculate lower bound for this partial plan
+		lowerBound := current.LowerBoundCost()
+
+		// Prune: if lower bound is worse than best complete plan, skip this branch
+		if lowerBound >= bestCompleteCost {
+			continue
+		}
+
+		// Check if this is a complete plan (all predicates decided)
+		if slices.Equal(current.decidedPredicates, allDecided) {
+			actualCost := current.plan.TotalCost()
+			current.totalCost = actualCost
+			heap.Push(completePlans, current)
+
+			// Update best complete cost for pruning
+			if actualCost < bestCompleteCost {
+				bestCompleteCost = actualCost
+			}
+			iterationsLeft--
+			continue
+		}
+
+		// Branch: create children by deciding the next undecided predicate
+		firstUndecided := current.firstUndecidedPredicateIdx()
+
+		// Try using index for this predicate
+		indexChild := current.plan.UseIndexFor(firstUndecided)
+		indexDecided := slices.Clone(current.decidedPredicates)
+		indexDecided[firstUndecided] = true
+		partial := partialPlan{
+			planWithCost:      planWithCost{plan: indexChild, totalCost: 0},
+			decidedPredicates: indexDecided,
+		}
+		partial.totalCost = partial.LowerBoundCost()
+		heap.Push(prospectPlans, partial)
+
+		// Try using scan for this predicate (keep current plan)
+		scanDecided := slices.Clone(current.decidedPredicates)
+		scanDecided[firstUndecided] = true
+		partial = partialPlan{
+			planWithCost:      planWithCost{plan: current.plan, totalCost: 0},
+			decidedPredicates: scanDecided,
+		}
+		partial.totalCost = partial.LowerBoundCost()
+		heap.Push(prospectPlans, partial)
+
+		iterationsLeft--
+	}
+
+	return completePlans.Iterator()
+}
+
 func (p partialPlan) LowerBoundCost() float64 {
 	return p.indexLookupCost() + p.intersectionCost() + p.seriesRetrievalCost() + p.filterCost()
 }

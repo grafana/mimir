@@ -91,6 +91,7 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 
 var (
 	BnBTotalCosts        = atomic.NewFloat64(0)
+	BnBProperTotalCosts  = atomic.NewFloat64(0)
 	ExhaustiveTotalCosts = atomic.NewFloat64(0)
 	ThirdBestTotalCosts  = atomic.NewFloat64(0)
 )
@@ -132,18 +133,22 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
 	allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
+	allPlansBnB := p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+	bestPlanBnB := p.chooseBestPlan(allPlansBnB)
+
 	lookupPlan := p.chooseBestPlan(allPlans)
 	if lookupPlan == nil {
 		return nil, fmt.Errorf("no plan with index matchers found")
 	}
 
-	allPlansExhaustive := p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
-	allPlansExhaustive = p.sortPlansByCost(memPools, allPlansExhaustive)
-	bestPlanOverall := p.chooseBestPlan(plansIteratorFromSlice(allPlansExhaustive))
+	//allPlansExhaustive := p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
+	//allPlansExhaustive = p.sortPlansByCost(memPools, allPlansExhaustive)
+	//bestPlanOverall := p.chooseBestPlan(plansIteratorFromSlice(allPlansExhaustive))
 
 	BnBTotalCosts.Add(lookupPlan.TotalCost())
-	ExhaustiveTotalCosts.Add(bestPlanOverall.TotalCost())
-	ThirdBestTotalCosts.Add(allPlansExhaustive[min(2, len(allPlansExhaustive)-1)].TotalCost())
+	BnBProperTotalCosts.Add(bestPlanBnB.TotalCost())
+	//ExhaustiveTotalCosts.Add(bestPlanOverall.TotalCost())
+	//ThirdBestTotalCosts.Add(allPlansExhaustive[min(2, len(allPlansExhaustive)-1)].TotalCost())
 
 	return lookupPlan, nil
 }
