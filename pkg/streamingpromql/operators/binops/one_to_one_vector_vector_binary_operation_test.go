@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -691,8 +692,8 @@ func TestOneToOneVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEa
 	for _, closeAfterFirstSeries := range []bool{true, false} {
 		t.Run(fmt.Sprintf("close after first series=%v", closeAfterFirstSeries), func(t *testing.T) {
 			leftSeries := []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2"),
 			}
 
 			rightSeries := []labels.Labels{

@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
@@ -225,11 +226,11 @@ func TestQuerySharding_NonMonotonicHistogramBuckets(t *testing.T) {
 
 	var series []storage.Series
 	for i := 0; i < 100; i++ {
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "10"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(1)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "20"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "30"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "40"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
-		series = append(series, testdatagen.NewSeries(labels.FromStrings(labels.MetricName, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "+Inf"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(model.MetricNameLabel, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "10"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(1)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(model.MetricNameLabel, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "20"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(model.MetricNameLabel, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "30"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(model.MetricNameLabel, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "40"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
+		series = append(series, testdatagen.NewSeries(labels.FromStrings(model.MetricNameLabel, "metric_histogram_bucket", "app", strconv.Itoa(i), "le", "+Inf"), start.Add(-lookbackDelta), end, step, testdatagen.ArithmeticSequence(3)))
 	}
 
 	// Create a queryable on the fixtures.
@@ -347,7 +348,7 @@ func TestQueryshardingDeterminism(t *testing.T) {
 		to   = from.Add(step)
 	)
 
-	labelsForShard := labelsForShardsGenerator([]labels.Label{{Name: labels.MetricName, Value: "metric"}}, shards)
+	labelsForShard := labelsForShardsGenerator([]labels.Label{{Name: model.MetricNameLabel, Value: "metric"}}, shards)
 	storageSeries := []storage.Series{
 		testdatagen.NewSeries(labelsForShard(0), from, to, step, constant(evilFloatA)),
 		testdatagen.NewSeries(labelsForShard(1), from, to, step, constant(evilFloatA)),

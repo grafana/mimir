@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -68,12 +69,12 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on each side matched and both sides' series are in the same order": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "a"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b"),
 			},
 
 			op:       parser.ADD,
@@ -87,12 +88,12 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on each side matched and both sides' series are in different order with group_left": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a"),
 			},
 
 			op:       parser.ADD,
@@ -107,12 +108,12 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on each side matched and both sides' series are in different order with group_right": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a"),
 			},
 
 			op:       parser.ADD,
@@ -127,16 +128,16 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to a single series on right side with group_left": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "2"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx", "2"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a"),
 			},
 
 			op:       parser.ADD,
@@ -155,16 +156,16 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to a single series on right side with group_right": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "2"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx", "2"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a"),
 			},
 
 			op:       parser.ADD,
@@ -179,16 +180,16 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on left side match to multiple series on right side with group_left": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "2"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx", "2"),
 			},
 
 			op:       parser.ADD,
@@ -203,16 +204,16 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"single series on left side match to multiple series on right side with group_right": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "2"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "3"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "1"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx", "2"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx", "3"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx", "1"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx", "2"),
 			},
 
 			op:       parser.ADD,
@@ -231,20 +232,20 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to multiple series on right side with group_left": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "2"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx_left", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx_left", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx_left", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx_left", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx_left", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx_left", "2"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "4"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "5"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "6"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "5"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "4"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "6"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx_right", "4"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx_right", "5"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx_right", "6"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx_right", "5"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx_right", "4"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx_right", "6"),
 			},
 
 			op:       parser.ADD,
@@ -263,20 +264,20 @@ func TestGroupedVectorVectorBinaryOperation_OutputSeriesSorting(t *testing.T) {
 
 		"multiple series on left side match to multiple series on right side with group_right": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "2"),
-				labels.FromStrings(labels.MetricName, "left", "group", "a", "idx_left", "3"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "1"),
-				labels.FromStrings(labels.MetricName, "left", "group", "b", "idx_left", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx_left", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx_left", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx_left", "2"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "a", "idx_left", "3"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx_left", "1"),
+				labels.FromStrings(model.MetricNameLabel, "left", "group", "b", "idx_left", "2"),
 			},
 			rightSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "4"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "5"),
-				labels.FromStrings(labels.MetricName, "right", "group", "b", "idx_right", "6"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "5"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "4"),
-				labels.FromStrings(labels.MetricName, "right", "group", "a", "idx_right", "6"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx_right", "4"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx_right", "5"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "b", "idx_right", "6"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx_right", "5"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx_right", "4"),
+				labels.FromStrings(model.MetricNameLabel, "right", "group", "a", "idx_right", "6"),
 			},
 
 			op:       parser.ADD,
@@ -544,8 +545,8 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 	}{
 		"closed after reading no series: multiple series from 'many' side match to a single 'one' series": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("group", "1", "env", "prod"),
@@ -553,13 +554,13 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 0,
 
 			expectedOutputSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2", "env", "prod"),
 			},
 		},
 		"closed after reading no series: multiple series from 'one' side match to a single 'many' series": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("group", "1", "env", "prod"),
@@ -568,14 +569,14 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 0,
 
 			expectedOutputSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "test"),
 			},
 		},
 		"closed after reading first series: multiple series from 'many' side match to a single 'one' series": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("group", "1", "env", "prod"),
@@ -583,13 +584,13 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 1,
 
 			expectedOutputSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2", "env", "prod"),
 			},
 		},
 		"closed after reading first series: multiple series from 'one' side match to a single 'many' series": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("group", "1", "env", "prod"),
@@ -598,14 +599,14 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			seriesToRead: 1,
 
 			expectedOutputSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "test"),
 			},
 		},
 		"closed after reading all 'one' side input series in a match group, but not all output series for that match group": {
 			leftSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2"),
 			},
 			rightSeries: []labels.Labels{
 				labels.FromStrings("group", "1", "env", "prod"),
@@ -615,10 +616,10 @@ func TestGroupedVectorVectorBinaryOperation_ReleasesIntermediateStateIfClosedEar
 			emptyInputSeries: true, // Don't bother populating the input series with data: we run this test as an instant query, so if both 'one' side series have samples, they conflict with each other.
 
 			expectedOutputSeries: []labels.Labels{
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "prod"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_1", "env", "test"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "prod"),
-				labels.FromStrings("group", "1", labels.MetricName, "left_2", "env", "test"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_1", "env", "test"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2", "env", "prod"),
+				labels.FromStrings("group", "1", model.MetricNameLabel, "left_2", "env", "test"),
 			},
 		},
 	}

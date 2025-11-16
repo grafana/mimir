@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,7 @@ func TestIngester_ActiveSeries(t *testing.T) {
 		return mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(
-					labels.FromStrings(labels.MetricName, "test", "lbl", fmt.Sprintf(tpl, index))),
+					labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
 				Samples: samples,
 			},
 		}
@@ -55,7 +56,7 @@ func TestIngester_ActiveSeries(t *testing.T) {
 
 	// Get active series
 	req, err := client.ToActiveSeriesRequest([]*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 	})
 	require.NoError(t, err)
 
@@ -88,7 +89,7 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 		require.Greater(t, size, 24, "minimum message size is 24 bytes")
 		tpl := fmt.Sprintf("%%0%dd", size-24)
 		ts := &mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "test", "lbl", fmt.Sprintf(tpl, index))),
+			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "test", "lbl", fmt.Sprintf(tpl, index))),
 		}
 		if isHistogram {
 			ts.Histograms = histograms
@@ -120,7 +121,7 @@ func TestIngester_ActiveNativeHistogramSeries(t *testing.T) {
 
 	// Get active series
 	req, err := client.ToActiveSeriesRequest([]*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
+		labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test"),
 	})
 	req.Type = client.NATIVE_HISTOGRAM_SERIES
 	require.NoError(t, err)
@@ -161,7 +162,7 @@ func BenchmarkIngester_ActiveSeries(b *testing.B) {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
-					labels.MetricName, metricName,
+					model.MetricNameLabel, metricName,
 					// Use mod prime to make label values repeat every n series
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_4199", strconv.Itoa(s%(13*17*19)))),
