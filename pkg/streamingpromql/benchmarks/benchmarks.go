@@ -289,6 +289,20 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "topk by (le) (5, h_X)",
 		},
+
+		{
+			Expr: "limitk(1, a_X)",
+		},
+		{
+			Expr: "limitk(5, a_X)",
+		},
+		{
+			Expr: "limit_ratio(0.2, a_X)",
+		},
+		{
+			Expr: "limit_ratio(-0.8, a_X)",
+		},
+
 		{
 			Expr: "quantile(0.9, a_X)",
 		},

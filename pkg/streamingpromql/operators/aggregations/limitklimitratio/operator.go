@@ -143,15 +143,11 @@ func (o *Operator) NextSeries(ctx context.Context) (types.InstantVectorSeriesDat
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
-	defer func() {
-		// Note this will also close() the group if it's series ref count has reached 0
-		o.seriesToGroups[o.nextSeriesIndex].releaseSeries(o.nextSeriesIndex)
-		// clear these references to allow the GC to clean up sooner
-		o.seriesToGroups[o.nextSeriesIndex] = nil
-		o.nextSeriesIndex++
-	}()
-
 	g := o.seriesToGroups[o.nextSeriesIndex]
+	o.seriesToGroups[o.nextSeriesIndex] = nil
+
+	thisSeriesIndex := o.nextSeriesIndex
+	o.nextSeriesIndex++
 
 	// In the future there could be a fast path here to move the next series iterator if the group has already been filled and avoiding reading the data.
 	data, err := o.Inner.NextSeries(ctx)
@@ -160,7 +156,7 @@ func (o *Operator) NextSeries(ctx context.Context) (types.InstantVectorSeriesDat
 	}
 
 	// Note that the data slices are not reclaimed here unless there is an error or the limited series has no samples.
-	retData, err := g.limitSeriesData(o.nextSeriesIndex, data, o.TimeRange)
+	retData, err := g.limitSeriesData(thisSeriesIndex, data, o.TimeRange)
 	if err != nil {
 		types.PutInstantVectorSeriesData(data, o.MemoryConsumptionTracker)
 		return types.InstantVectorSeriesData{}, err
@@ -308,9 +304,6 @@ type groupLimiter interface {
 
 	// limitSeriesData reduces the series data to meet the k/ratio limit requirements
 	limitSeriesData(seriesIndex int, value types.InstantVectorSeriesData, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error)
-
-	// releaseSeries informs the groupLimiter that this series has finished being accumulated and any internal resources related to this series can be released
-	releaseSeries(seriesIndex int)
 }
 
 type groupLimiterRatio struct {
@@ -368,10 +361,6 @@ func (q *groupLimiterRatio) initSeries(seriesIndex int, series types.SeriesMetad
 	q.seriesHashMap[seriesIndex] = float64(series.Labels.Hash()) / float64MaxUint64
 }
 
-func (q *groupLimiterRatio) releaseSeries(_ int) {
-	// nothing to do here
-}
-
 type groupLimiterK struct {
 	seriesRefCount int
 	stepCounter    *limitStepCounter // A utility to track the number of samples at each step which have been accumulated across the observed series
@@ -387,7 +376,7 @@ func (q *groupLimiterK) initSeries(_ int, _ types.SeriesMetadata) {
 	// not used
 }
 
-func (q *groupLimiterK) releaseSeries(_ int) {
+func (q *groupLimiterK) decreaseSeriesCount() {
 	q.seriesRefCount--
 	if q.seriesRefCount == 0 {
 		q.close()
@@ -409,6 +398,11 @@ func (q *groupLimiterK) accumulateSampleAtStep(step int) bool {
 }
 
 func (q *groupLimiterK) limitSeriesData(_ int, value types.InstantVectorSeriesData, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+
+	defer func() {
+		// Note this will also close() the group if it's series ref count has reached 0
+		q.decreaseSeriesCount()
+	}()
 
 	if q.stepsFilled == q.stepArg.stepCount {
 		return types.InstantVectorSeriesData{}, nil
