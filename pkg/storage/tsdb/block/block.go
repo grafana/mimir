@@ -74,14 +74,21 @@ func (e *UploadError) Unwrap() error {
 
 // Download downloads a directory meant to be a block directory. If any one of the files
 // has a hash calculated in the meta file and it matches with what is in the destination path then
-// we do not download it. We always re-download the meta file.
-func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, options ...objstore.DownloadOption) error {
+// we do not download it. If a meta is provided, we will write that to disk instead of re-downloading
+// the meta from object storage.
+func Download(ctx context.Context, logger log.Logger, bucket objstore.Bucket, id ulid.ULID, dst string, meta *Meta, options ...objstore.DownloadOption) error {
 	if err := os.MkdirAll(dst, 0750); err != nil {
 		return errors.Wrap(err, "create dir")
 	}
 
-	if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), filepath.Join(dst, MetaFilename)); err != nil {
-		return err
+	if meta == nil {
+		if err := objstore.DownloadFile(ctx, logger, bucket, path.Join(id.String(), MetaFilename), filepath.Join(dst, MetaFilename)); err != nil {
+			return err
+		}
+	} else {
+		if err := meta.WriteToDir(logger, dst); err != nil {
+			return errors.Wrapf(err, "write meta for block %s", meta.ULID)
+		}
 	}
 
 	ignoredPaths := []string{MetaFilename}
