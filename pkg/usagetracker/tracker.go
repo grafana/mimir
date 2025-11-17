@@ -665,15 +665,12 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	t.partitionsMtx.RLock()
-	p, ok := t.partitions[req.Partition]
-	t.partitionsMtx.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("partition handler %d not found", req.Partition)
+	partition := req.Partition
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
 	}
-	if p.State() != services.Running {
-		return nil, fmt.Errorf("partition handler %d is not running (state: %s)", req.Partition, p.State())
-	}
+
 	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
@@ -684,12 +681,9 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 // GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
 	partition := req.Partition
-
-	t.partitionsMtx.RLock()
-	p, ok := t.partitions[partition]
-	t.partitionsMtx.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("partition handler %d not found", partition)
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
 	}
 
 	userIDs := p.store.getSortedUsersCloseToLimit()
@@ -697,6 +691,19 @@ func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetracker
 		SortedUserIds: userIDs,
 		Partition:     partition,
 	}, nil
+}
+
+func (t *UsageTracker) runningPartition(partition int32) (*partitionHandler, error) {
+	t.partitionsMtx.RLock()
+	p, ok := t.partitions[partition]
+	t.partitionsMtx.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("partition handler %d not found", partition)
+	}
+	if p.State() != services.Running {
+		return nil, fmt.Errorf("partition handler %d is not running (state: %s)", partition, p.State())
+	}
+	return p, nil
 }
 
 // CheckReady performs a readiness check.

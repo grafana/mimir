@@ -552,44 +552,61 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 }
 
 func TestUsageTracker_GetUsersCloseToLimit(t *testing.T) {
-	makeSeries := func(n int) []uint64 {
-		series := make([]uint64, n)
-		for i := range series {
-			series[i] = uint64(i)
+	t.Run("happy case", func(t *testing.T) {
+		makeSeries := func(n int) []uint64 {
+			series := make([]uint64, n)
+			for i := range series {
+				series[i] = uint64(i)
+			}
+			return series
 		}
-		return series
-	}
 
-	tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
-		"a": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
-		"b": {MaxActiveSeriesPerUser: 2000 * testPartitionsCount},
-		"c": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
-		"d": {MaxActiveSeriesPerUser: 2000 * testPartitionsCount},
-		"e": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
-	})
-
-	for _, tenant := range []string{"a", "b", "c", "d", "e"} {
-		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-			UserID:       tenant,
-			Partition:    0,
-			SeriesHashes: makeSeries(900),
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"a": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
+			"b": {MaxActiveSeriesPerUser: 2000 * testPartitionsCount},
+			"c": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
+			"d": {MaxActiveSeriesPerUser: 2000 * testPartitionsCount},
+			"e": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
 		})
-		require.NoError(t, err)
-		require.Empty(t, resp.RejectedSeriesHashes)
-	}
 
-	// Call updateLimits (on all partitions, although we only need partition 0.
-	withRLock(&tracker.partitionsMtx, func() {
-		for _, p := range tracker.partitions {
-			done := make(chan struct{})
-			p.forceUpdateLimitsForTests <- done
-			<-done
+		for _, tenant := range []string{"a", "b", "c", "d", "e"} {
+			resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+				UserID:       tenant,
+				Partition:    0,
+				SeriesHashes: makeSeries(900),
+			})
+			require.NoError(t, err)
+			require.Empty(t, resp.RejectedSeriesHashes)
 		}
+
+		// Call updateLimits (on all partitions, although we only need partition 0.
+		withRLock(&tracker.partitionsMtx, func() {
+			for _, p := range tracker.partitions {
+				done := make(chan struct{})
+				p.forceUpdateLimitsForTests <- done
+				<-done
+			}
+		})
+
+		resp, err := tracker.GetUsersCloseToLimit(t.Context(), &usagetrackerpb.GetUsersCloseToLimitRequest{Partition: 0})
+		require.NoError(t, err)
+		require.Equal(t, []string{"a", "c", "e"}, resp.SortedUserIds, "List of users close to the limit should be sorted lexicographically")
 	})
 
-	resp, err := tracker.GetUsersCloseToLimit(t.Context(), &usagetrackerpb.GetUsersCloseToLimitRequest{Partition: 0})
-	require.NoError(t, err)
-	require.Equal(t, []string{"a", "c", "e"}, resp.SortedUserIds, "List of users close to the limit should be sorted lexicographically")
+	t.Run("partition handler is not running", func(t *testing.T) {
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"a": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
+		})
+
+		// Call updateLimits (on all partitions, although we only need partition 0.
+		withRLock(&tracker.partitionsMtx, func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker.partitions[0]))
+		})
+
+		_, err := tracker.GetUsersCloseToLimit(t.Context(), &usagetrackerpb.GetUsersCloseToLimitRequest{Partition: 0})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "partition handler 0 is not running (state: Terminated)")
+	})
 }
 
 func callPrepareDownscaleEndpoint(t *testing.T, ut *UsageTracker, method string) {
