@@ -188,7 +188,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.SchedulerMaxLeasingBackoff, "compactor.scheduler-max-leasing-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
 	f.DurationVar(&cfg.ExecutorRetryMinBackoff, "compactor.executor-min-retry-backoff", 1*time.Second, "Minimum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.ExecutorRetryMaxBackoff, "compactor.executor-max-retry-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
-	f.DurationVar(&cfg.CompactionDirCleanupInterval, "compactor.compaction-dir-cleanup-interval", 30*time.Minute, "How frequently to cleanup the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
+	f.DurationVar(&cfg.CompactionDirCleanupInterval, "compactor.compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+

@@ -5517,9 +5517,10 @@ sharding_ring:
 # CLI flag: -compactor.executor-max-retry-backoff
 [executor_retry_max_backoff: <duration> | default = 32s]
 
-# (experimental) How frequently to cleanup the compaction working directory. The
-# directory is cleaned on startup and then only when this interval has elapsed
-# since the last cleanup. Set to 0 to disable periodic cleanup.
+# (experimental) Defines how frequently to clean up the compaction working
+# directory. The directory is cleaned on startup and then only when this
+# interval has elapsed since the last cleanup. Set to 0 to disable periodic
+# cleanup.
 # CLI flag: -compactor.compaction-dir-cleanup-interval
 [compaction_dir_cleanup_interval: <duration> | default = 30m]
 ```
