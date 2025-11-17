@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -959,11 +960,11 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	// Generate series.
 	series := make([]storage.Series, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
-		series = append(series, newSeries(newTestCounterLabels(i), minTime, maxTime, step, factor(float64(i))))
+		series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(i), minTime, maxTime, step, testdatagen.Factor(float64(i))))
 	}
 
 	// Create a queryable on the fixtures.
-	queryable := storageSeriesQueryable(series)
+	queryable := testdatagen.StorageSeriesQueryable(series)
 	_, engine := newEngineForTesting(t, querier.MimirEngine)
 
 	// Create a downstream handler serving range queries based on the provided queryable.
