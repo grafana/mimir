@@ -133,8 +133,8 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
 	allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
-	allPlansBnB := p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
-	bestPlanBnB := p.chooseBestPlan(allPlansBnB)
+	//allPlansBnB := p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+	//bestPlanBnB := p.chooseBestPlan(allPlansBnB)
 
 	lookupPlan := p.chooseBestPlan(allPlans)
 	if lookupPlan == nil {
@@ -146,7 +146,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	//bestPlanOverall := p.chooseBestPlan(plansIteratorFromSlice(allPlansExhaustive))
 
 	BnBTotalCosts.Add(lookupPlan.TotalCost())
-	BnBProperTotalCosts.Add(bestPlanBnB.TotalCost())
+	//BnBProperTotalCosts.Add(bestPlanBnB.TotalCost())
 	//ExhaustiveTotalCosts.Add(bestPlanOverall.TotalCost())
 	//ThirdBestTotalCosts.Add(allPlansExhaustive[min(2, len(allPlansExhaustive)-1)].TotalCost())
 
