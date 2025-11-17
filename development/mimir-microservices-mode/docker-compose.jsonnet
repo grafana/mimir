@@ -28,7 +28,7 @@ std.manifestYamlDoc({
     // Two additional Prometheus instances are started that scrape the same memcached-exporter and load-generator
     // targets and remote write to distributor-2.
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
-    // Wether to use Prometheus Remote-Write 2.0 or not for the main Prometheus. This also turns on NHCB conversion.
+    // Whether to use Prometheus Remote-Write 2.0 or not for the main Prometheus. This also turns on NHCB conversion.
     enable_prometheus_rw2: false,
     enable_otel_collector: false,
 
