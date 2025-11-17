@@ -55,7 +55,7 @@ Params:
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
 {{- $image := $componentSection.image | default dict -}}
 {{- $image = mustMerge $image .ctx.Values.image -}}
-{{ $image.registry }}/{{ $image.repository }}:{{ $image.tag }}
+{{ $image.repository }}:{{ $image.tag }}
 {{- end -}}
 
 {{/*
