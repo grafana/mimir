@@ -326,12 +326,12 @@ func (q *groupLimiterRatio) increaseSeriesCount() {
 func (q *groupLimiterRatio) limitSeriesData(seriesIndex int, value types.InstantVectorSeriesData, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
 
 	value.Histograms = slices.DeleteFunc(value.Histograms, func(p promql.HPoint) bool {
-		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		step := timeRange.PointIndex(p.T)
 		return !q.accumulateSampleAtStep(seriesIndex, int(step))
 	})
 
 	value.Floats = slices.DeleteFunc(value.Floats, func(p promql.FPoint) bool {
-		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		step := timeRange.PointIndex(p.T)
 		return !q.accumulateSampleAtStep(seriesIndex, int(step))
 	})
 
@@ -368,7 +368,7 @@ func (q *groupLimiterRatio) initSeries(seriesIndex int, series types.SeriesMetad
 	q.seriesHashMap[seriesIndex] = float64(series.Labels.Hash()) / float64MaxUint64
 }
 
-func (q *groupLimiterRatio) releaseSeries(seriesIndex int) {
+func (q *groupLimiterRatio) releaseSeries(_ int) {
 	// nothing to do here
 }
 
@@ -415,12 +415,12 @@ func (q *groupLimiterK) limitSeriesData(_ int, value types.InstantVectorSeriesDa
 	}
 
 	value.Histograms = slices.DeleteFunc(value.Histograms, func(p promql.HPoint) bool {
-		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		step := timeRange.PointIndex(p.T)
 		return !q.accumulateSampleAtStep(int(step))
 	})
 
 	value.Floats = slices.DeleteFunc(value.Floats, func(p promql.FPoint) bool {
-		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		step := timeRange.PointIndex(p.T)
 		return !q.accumulateSampleAtStep(int(step))
 	})
 
