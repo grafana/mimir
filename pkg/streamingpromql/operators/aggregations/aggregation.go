@@ -168,6 +168,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 			g.group = groupPool.Get()
 			g.group.aggregation = a.aggregationGroupFactory()
 			g.group.remainingSeriesCount = 0
+			g.dropName = series.DropName
 
 			groups[string(groupLabelsString)] = g
 		}
@@ -175,7 +176,8 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 		g.group.remainingSeriesCount++
 		g.group.lastSeriesIndex = seriesIdx
 		a.remainingInnerSeriesToGroup = append(a.remainingInnerSeriesToGroup, g.group)
-		if g.dropName != series.DropName {
+		// If at least 1 series drops the name, we drop the name for all series.
+		if !g.dropName && series.DropName {
 			g.dropName = series.DropName
 			groups[string(groupLabelsString)] = g
 		}
