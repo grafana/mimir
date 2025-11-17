@@ -887,48 +887,6 @@ func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 	}
 }
 
-func (d *PrometheusData) MarshalJSON() ([]byte, error) {
-	if d == nil {
-		return []byte("null"), nil
-	}
-
-	switch d.ResultType {
-	case model.ValString.String():
-		return json.Marshal(struct {
-			Type   model.ValueType     `json:"resultType"`
-			Result stringSampleStreams `json:"result"`
-		}{
-			Type:   model.ValString,
-			Result: d.Result,
-		})
-
-	case model.ValScalar.String():
-		return json.Marshal(struct {
-			Type   model.ValueType     `json:"resultType"`
-			Result scalarSampleStreams `json:"result"`
-		}{
-			Type:   model.ValScalar,
-			Result: d.Result,
-		})
-
-	case model.ValVector.String():
-		return json.Marshal(struct {
-			Type   model.ValueType      `json:"resultType"`
-			Result []vectorSampleStream `json:"result"`
-		}{
-			Type:   model.ValVector,
-			Result: asVectorSampleStreams(d.Result),
-		})
-
-	case model.ValMatrix.String():
-		type plain *PrometheusData
-		return json.Marshal(plain(d))
-
-	default:
-		return nil, fmt.Errorf("can't marshal prometheus result type %q", d.ResultType)
-	}
-}
-
 func prometheusDataJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	d := (*PrometheusData)(ptr)
 	stream.WriteObjectStart()
@@ -989,17 +947,6 @@ func stringSampleEncode(sss []SampleStream, stream *jsoniter.Stream) {
 
 type stringSampleStreams []SampleStream
 
-func (sss stringSampleStreams) MarshalJSON() ([]byte, error) {
-	if err := validateStringSampleStream(sss); err != nil {
-		return nil, err
-	}
-	ss := sss[0]
-	l := ss.Labels[0]
-	s := ss.Samples[0]
-
-	return json.Marshal(model.String{Value: l.Value, Timestamp: model.Time(s.TimestampMs)})
-}
-
 func (sss *stringSampleStreams) UnmarshalJSON(b []byte) error {
 	var sv model.String
 	if err := json.Unmarshal(b, &sv); err != nil {
@@ -1035,18 +982,6 @@ func scalarSampleEncode(sss []SampleStream, stream *jsoniter.Stream) {
 
 type scalarSampleStreams []SampleStream
 
-func (sss scalarSampleStreams) MarshalJSON() ([]byte, error) {
-	if err := validateScalarSampleStream(sss); err != nil {
-		return nil, err
-	}
-	ss := sss[0]
-	s := ss.Samples[0]
-	return json.Marshal(model.Scalar{
-		Timestamp: model.Time(s.TimestampMs),
-		Value:     model.SampleValue(s.Value),
-	})
-}
-
 func (sss *scalarSampleStreams) UnmarshalJSON(b []byte) error {
 	var sv model.Scalar
 	if err := json.Unmarshal(b, &sv); err != nil {
@@ -1056,12 +991,6 @@ func (sss *scalarSampleStreams) UnmarshalJSON(b []byte) error {
 		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
 	}}
 	return nil
-}
-
-// asVectorSampleStreams converts a slice of SampleStream into a slice of vectorSampleStream.
-// This can be done as vectorSampleStream is defined as a SampleStream.
-func asVectorSampleStreams(ss []SampleStream) []vectorSampleStream {
-	return *(*[]vectorSampleStream)(unsafe.Pointer(&ss))
 }
 
 // fromVectorSampleStreams is the inverse of asVectorSampleStreams.
@@ -1085,27 +1014,6 @@ func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
 		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
 	}
 	return nil
-}
-
-func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
-	if (len(vs.Samples) == 1) == (len(vs.Histograms) == 1) { // not XOR
-		return nil, fmt.Errorf("vector sample stream should have exactly one sample or one histogram, got %d samples and %d histograms", len(vs.Samples), len(vs.Histograms))
-	}
-	var sample model.Sample
-	if len(vs.Samples) == 1 {
-		sample = model.Sample{
-			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-			Timestamp: model.Time(vs.Samples[0].TimestampMs),
-			Value:     model.SampleValue(vs.Samples[0].Value),
-		}
-	} else {
-		sample = model.Sample{
-			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-			Timestamp: model.Time(vs.Histograms[0].TimestampMs),
-			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
-		}
-	}
-	return json.Marshal(sample)
 }
 
 func validateVectorSampleStream(vss []SampleStream) error {
