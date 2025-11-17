@@ -30,7 +30,7 @@ type RangeVectorSelector struct {
 	extendedRangeFloats *types.FPointRingBuffer // A buffer we use to create views for smoothed/anchored extended ranges which have added/modified points from the original floats buffer
 	histograms          *types.HPointRingBuffer
 	stepData            *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
-	reusableView        *types.FPointRingBufferView
+	extendedRangeView   *types.FPointRingBufferView
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	anchored                 bool // The anchored modifier has been used for this range query
@@ -41,16 +41,21 @@ var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
 func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, anchored bool, smoothed bool) *RangeVectorSelector {
 
-	return &RangeVectorSelector{
+	rangeVectorSelector := RangeVectorSelector{
 		Selector:                 selector,
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
-		extendedRangeFloats:      types.NewFPointRingBuffer(memoryConsumptionTracker),
 		stepData:                 &types.RangeVectorStepData{Anchored: anchored, Smoothed: smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
 		anchored:                 anchored,
 		smoothed:                 smoothed,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
+
+	if anchored || smoothed {
+		rangeVectorSelector.extendedRangeFloats = types.NewFPointRingBuffer(memoryConsumptionTracker)
+	}
+
+	return &rangeVectorSelector
 }
 
 func (m *RangeVectorSelector) ExpressionPosition() posrange.PositionRange {
@@ -74,7 +79,9 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	m.nextStepT = m.Selector.TimeRange.StartT
 	m.floats.Reset()
 	m.histograms.Reset()
-	m.extendedRangeFloats.Reset()
+	if m.extendedRangeFloats != nil {
+		m.extendedRangeFloats.Reset()
+	}
 	return nil
 }
 
@@ -101,7 +108,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	originalRangeEnd := rangeEnd
 
 	// When the smoothed/anchored modifiers are used, the selector (fillBuffer) will return a wider range of points.
-	// The range boundaries are modified accordingly so that we do not discard these extended points.
+	// Modify the range boundaries accordingly so that we do not discard these extended points.
 	if m.anchored {
 		rangeStart -= m.Selector.LookbackDelta.Milliseconds()
 	} else if m.smoothed {
@@ -120,9 +127,6 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	}
 
 	if m.anchored || m.smoothed {
-
-		// Release the temporary ring buffer and initialise it off our given buff.
-		// The ring buffer will release the buff back to the slice pool.
 		m.extendedRangeFloats.Release()
 
 		// Histograms are not supported for these modified range queries
@@ -131,11 +135,11 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		}
 
 		// Note the extended range end is used since smoothed will have extended this
-		m.reusableView = m.floats.ViewUntilSearchingForwards(rangeEnd, m.reusableView)
+		m.extendedRangeView = m.floats.ViewUntilSearchingForwards(rangeEnd, m.extendedRangeView)
 
 		// buff is a new slice of points which includes points for the range boundaries
 		// smoothedHead/Tail are special cases of the boundary points which will be used by any rate/increase function which consumes this vector.
-		buff, smoothedHead, smoothedTail, err := extendRangeVectorPoints(m.reusableView, originalRangeStart, originalRangeEnd, m.smoothed, m.memoryConsumptionTracker)
+		buff, smoothedHead, smoothedTail, err := extendRangeVectorPoints(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.smoothed, m.memoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +236,9 @@ func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
 func (m *RangeVectorSelector) Close() {
 	m.Selector.Close()
 	m.floats.Close()
-	m.extendedRangeFloats.Close()
+	if m.extendedRangeFloats != nil {
+		m.extendedRangeFloats.Close()
+	}
 	m.histograms.Close()
 	m.chunkIterator = nil
 }

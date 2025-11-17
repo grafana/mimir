@@ -12,33 +12,32 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 const (
-	allExperimentalOperators = "all"
+	allExperimentalFeatures = "all"
 )
 
-type experimentalOperationType struct {
+type experimentalFeatureType struct {
 	label string
 }
 
-var functionType = experimentalOperationType{label: "function"}
-var aggregationType = experimentalOperationType{label: "aggregation"}
-var extendedRangeSelectorModifierType = experimentalOperationType{label: "extended range selector modifier"}
+var functionType = experimentalFeatureType{label: "function"}
+var aggregationType = experimentalFeatureType{label: "aggregation"}
+var extendedRangeSelectorModifierType = experimentalFeatureType{label: "extended range selector modifier"}
 
-// experimentalOperatorsMiddleware manages the per-tenant access to experimental functions, aggregations and extended range selector modifiers.
-type experimentalOperatorsMiddleware struct {
+// experimentalFeaturesMiddleware manages the per-tenant access to experimental functions, aggregations and extended range selector modifiers.
+type experimentalFeaturesMiddleware struct {
 	next   MetricsQueryHandler
 	limits Limits
 	logger log.Logger
 }
 
-// newExperimentalOperatorsMiddleware creates a middleware that blocks queries that contain PromQL experimental functions, aggregates or range selector modifiers
-// that are not enabled for the active tenant(s), allowing us to enable specific operations only for selected tenants.
-func newExperimentalOperatorsMiddleware(limits Limits, logger log.Logger) MetricsQueryMiddleware {
+// newExperimentalFeaturesMiddleware creates a middleware that blocks queries that contain PromQL experimental functions, aggregates or range selector modifiers
+// that are not enabled for the active tenant(s), allowing us to enable specific features only for selected tenants.
+func newExperimentalFeaturesMiddleware(limits Limits, logger log.Logger) MetricsQueryMiddleware {
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
-		return &experimentalOperatorsMiddleware{
+		return &experimentalFeaturesMiddleware{
 			next:   next,
 			limits: limits,
 			logger: logger,
@@ -46,7 +45,7 @@ func newExperimentalOperatorsMiddleware(limits Limits, logger log.Logger) Metric
 	})
 }
 
-func (m *experimentalOperatorsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
+func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (Response, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
@@ -58,7 +57,7 @@ func (m *experimentalOperatorsMiddleware) Do(ctx context.Context, req MetricsQue
 		// note that this includes both functions and aggregations (ie limitk, limit_ratio)
 		enabled := m.limits.EnabledPromQLExperimentalFunctions(tenantID)
 		enabledExperimentalFunctions[tenantID] = enabled
-		if len(enabled) == 0 || enabled[0] != allExperimentalOperators {
+		if len(enabled) == 0 || enabled[0] != allExperimentalFeatures {
 			allExperimentalFunctionsEnabled = false
 		}
 	}
@@ -68,7 +67,7 @@ func (m *experimentalOperatorsMiddleware) Do(ctx context.Context, req MetricsQue
 	for _, tenantID := range tenantIDs {
 		enabled := m.limits.EnabledPromQLExtendedRangeSelectors(tenantID)
 		enabledExtendedRangeSelectors[tenantID] = enabled
-		if len(enabled) == 0 || enabled[0] != allExperimentalOperators {
+		if len(enabled) == 0 || enabled[0] != allExperimentalFeatures {
 			allExtendedRangeSelectorsEnabled = false
 		}
 	}
@@ -79,20 +78,17 @@ func (m *experimentalOperatorsMiddleware) Do(ctx context.Context, req MetricsQue
 		return m.next.Do(ctx, req)
 	}
 
-	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
-	}
-	operations := containedExperimentalOperations(expr)
-	if len(operations) == 0 {
+	expr := req.GetParsedQuery()
+	features := containedExperimentalFeatures(expr)
+	if len(features) == 0 {
 		// This query does not contain any experimental functions, so we can continue to the next middleware.
 		return m.next.Do(ctx, req)
 	}
 
-	// Make sure that every used experimental operation is enabled for all the tenants here.
+	// Make sure that every used experimental feature is enabled for all the tenants here.
 	var tenantMap map[string][]string
-	for op, operationType := range operations {
-		switch operationType {
+	for feature, featureType := range features {
+		switch featureType {
 		case functionType, aggregationType:
 			tenantMap = enabledExperimentalFunctions
 		case extendedRangeSelectorModifierType:
@@ -100,29 +96,29 @@ func (m *experimentalOperatorsMiddleware) Do(ctx context.Context, req MetricsQue
 		}
 
 		for _, enabled := range tenantMap {
-			if len(enabled) > 0 && enabled[0] == allExperimentalOperators {
-				// If the first item matches the const value of allExperimentalOperations, then all experimental
-				// operations are enabled for this tenant.
+			if len(enabled) > 0 && enabled[0] == allExperimentalFeatures {
+				// If the first item matches the const value of allExperimentalFeatures, then all experimental
+				// features are enabled for this tenant.
 				continue
 			}
-			if !slices.Contains(enabled, op) {
-				return nil, createExperimentalOperationError(operationType, op)
+			if !slices.Contains(enabled, feature) {
+				return nil, createExperimentalFeatureError(featureType, feature)
 			}
 		}
 	}
 
-	// Every used experimental operation is enabled for the tenant(s).
+	// Every used experimental feature is enabled for the tenant(s).
 	return m.next.Do(ctx, req)
 }
 
-func createExperimentalOperationError(operationType experimentalOperationType, operation string) error {
-	err := fmt.Errorf("%s \"%s\" is not enabled for tenant", operationType.label, operation)
+func createExperimentalFeatureError(featureType experimentalFeatureType, feature string) error {
+	err := fmt.Errorf("experimental %s %q is not enabled for tenant", featureType.label, feature)
 	return apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 }
 
-// containedExperimentalOperations returns any PromQL experimental functions, aggregations or range selector modifiers used in the query.
-func containedExperimentalOperations(expr parser.Expr) map[string]experimentalOperationType {
-	expFuncNames := map[string]experimentalOperationType{}
+// containedExperimentalFeatures returns any PromQL experimental functions, aggregations or range selector modifiers used in the query.
+func containedExperimentalFeatures(expr parser.Expr) map[string]experimentalFeatureType {
+	expFuncNames := map[string]experimentalFeatureType{}
 	_ = inspect(expr, func(node parser.Node) error {
 		switch n := node.(type) {
 		case *parser.Call:

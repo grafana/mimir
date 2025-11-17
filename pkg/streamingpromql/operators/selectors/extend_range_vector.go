@@ -37,8 +37,8 @@ func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, range
 	if err != nil {
 		return nil, nil, nil, err
 	}
-
-	it := types.NewFPointRingBufferViewIterator(view)
+	// TODO here
+	it := view.Iterator(nil)
 
 	// Find the last point before the rangeStart, or the first point >= rangeStart
 	first := it.Seek(rangeStart)

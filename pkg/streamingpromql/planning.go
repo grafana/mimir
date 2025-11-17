@@ -6,7 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,6 +31,14 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+var smoothedIncompatibleFunctionPrefix string
+var anchoredIncompatibleFunctionPrefix string
+
+func init() {
+	smoothedIncompatibleFunctionPrefix = fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
+	anchoredIncompatibleFunctionPrefix = fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
+}
 
 type QueryPlanner struct {
 	activeQueryTracker       QueryTracker
@@ -836,28 +845,15 @@ func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx
 	return s.version, nil
 }
 
-var smoothedIncompatibleFunctionPrefix string
-var anchoredIncompatibleFunctionPrefix string
-
 func getSmoothedIncompatibleFunctionError(fncName string) error {
-	if len(smoothedIncompatibleFunctionPrefix) == 0 {
-		smoothedIncompatibleFunctionPrefix = fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
-	}
 	return fmt.Errorf("%s%s", smoothedIncompatibleFunctionPrefix, fncName)
 }
 
 func getAnchoredIncompatibleFunctionError(fncName string) error {
-	if len(anchoredIncompatibleFunctionPrefix) == 0 {
-		anchoredIncompatibleFunctionPrefix = fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
-	}
 	return fmt.Errorf("%s%s", anchoredIncompatibleFunctionPrefix, fncName)
 }
 
 func sortImplode(m map[string]struct{}) string {
-	tmp := make([]string, 0, len(m))
-	for k := range m {
-		tmp = append(tmp, k)
-	}
-	sort.Strings(tmp)
+	tmp := slices.Sorted(maps.Keys(m))
 	return strings.Join(tmp, ", ")
 }
