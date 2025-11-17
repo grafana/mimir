@@ -50,6 +50,13 @@ type QueryPlan struct {
 	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
 	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
 	Version QueryPlanVersion
+
+	// If true, guarantees that there is no DeduplicateAndMerge nodes in the plan.
+	// If false there might or might not be DeduplicateAndMerge nodes in the plan.
+	NoDeduplicateAndMergeNodes bool
+	
+	ProjectionLabels           []string
+	ProjectionInclude          bool
 }
 
 // Node represents a node in the query plan graph.

@@ -82,6 +82,8 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
 		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		ProjectionLabels:         params.Plan.ProjectionLabels,
+		ProjectionInclude:        params.Plan.ProjectionInclude,
 	}
 
 	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
