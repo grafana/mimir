@@ -131,10 +131,9 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	// Repartition the matchers. We don't trust other planners.
 	// Allocate a new slice so that we don't mess up the slice of the caller.
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+	//allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
-	//allPlansBnB := p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
-	//bestPlanBnB := p.chooseBestPlan(allPlansBnB)
+	allPlans = p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
 	lookupPlan := p.chooseBestPlan(allPlans)
 	if lookupPlan == nil {

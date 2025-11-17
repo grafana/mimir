@@ -1,0 +1,467 @@
+GOROOT=/usr/local/go #gosetup
+GOPATH=/Users/dimitar/go #gosetup
+/usr/local/go/bin/go test -c -o /Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkCostBasedPlannerPlanIndexLookup_in_github_com_grafana_mimir_pkg_ingester_lookupplan.test github.com/grafana/mimir/pkg/ingester/lookupplan #gosetup
+/Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkCostBasedPlannerPlanIndexLookup_in_github_com_grafana_mimir_pkg_ingester_lookupplan.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkCostBasedPlannerPlanIndexLookup\E$ -test.run ^$ -test.count=6 #gosetup
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/mimir/pkg/ingester/lookupplan
+cpu: Apple M1 Pro
+BenchmarkCostBasedPlannerPlanIndexLookup
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name-10         	  426129	      2347 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name-10         	  503893	      2349 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name-10         	  526149	      2348 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name-10         	  502040	      2353 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name-10         	  496554	      2354 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name-10         	  520165	      2349 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name-10          	  521070	      2246 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name-10          	  533977	      2250 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name-10          	  510009	      2337 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name-10          	  533817	      2259 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name-10          	  535244	      2263 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name-10          	  535112	      2378 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name#01
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name#01-10       	   10000	    101432 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name#01-10       	   10000	    100532 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name#01-10       	   10000	    101101 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name#01-10       	   10000	    102030 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name#01-10       	   10000	    103153 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_label_name#01-10       	   10000	    102601 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_low_cardinality_label_name
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_low_cardinality_label_name-10   	   56076	     21061 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_low_cardinality_label_name-10   	   56791	     21052 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_low_cardinality_label_name-10   	   57057	     21106 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_low_cardinality_label_name-10   	   56827	     20869 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_low_cardinality_label_name-10   	   56972	     21169 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_low_cardinality_label_name-10   	   56244	     21024 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/specific_low_cardinality_label_high_cardinality_metric_name
+BenchmarkCostBasedPlannerPlanIndexLookup/specific_low_cardinality_label_high_cardinality_metric_name-10         	   52300	     22905 ns/op	    3746 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/specific_low_cardinality_label_high_cardinality_metric_name-10         	   51829	     22902 ns/op	    3746 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/specific_low_cardinality_label_high_cardinality_metric_name-10         	   52560	     22655 ns/op	    3745 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/specific_low_cardinality_label_high_cardinality_metric_name-10         	   51993	     22970 ns/op	    3746 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/specific_low_cardinality_label_high_cardinality_metric_name-10         	   52332	     22964 ns/op	    3746 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/specific_low_cardinality_label_high_cardinality_metric_name-10         	   52483	     23187 ns/op	    3746 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_prefix_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_prefix_matcher-10                               	   29896	     39366 ns/op	    2313 B/op	      29 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_prefix_matcher-10                               	   30712	     38924 ns/op	    2313 B/op	      29 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_prefix_matcher-10                               	   30800	     38800 ns/op	    2313 B/op	      29 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_prefix_matcher-10                               	   29991	     39019 ns/op	    2313 B/op	      29 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_prefix_matcher-10                               	   30828	     38923 ns/op	    2313 B/op	      29 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_prefix_matcher-10                               	   30715	     38981 ns/op	    2313 B/op	      29 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher-10                                      	  495738	      2358 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher-10                                      	  506992	      2373 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher-10                                      	  505478	      2366 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher-10                                      	  501294	      2368 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher-10                                      	  518367	      2362 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher-10                                      	  504499	      2482 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher#01
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher#01-10                                   	  472777	      2412 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher#01-10                                   	  500982	      2495 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher#01-10                                   	  515448	      2341 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher#01-10                                   	  513609	      2490 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher#01-10                                   	  491946	      2305 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher#01-10                                   	  529584	      2320 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_label
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_label-10                                                  	  540844	      2183 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_label-10                                                  	  538354	      2234 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_label-10                                                  	  566116	      2185 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_label-10                                                  	  547108	      2161 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_label-10                                                  	  537969	      2201 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_label-10                                                  	  548008	      2666 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matchers-10                                     	  215832	      6141 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matchers-10                                     	  194139	      5345 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matchers-10                                     	  244104	      5034 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matchers-10                                     	  238927	      5169 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matchers-10                                     	  238863	      5029 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matchers-10                                     	  241776	      5190 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/higher_cardinality_regex_prefix_and_exact_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/higher_cardinality_regex_prefix_and_exact_matcher-10                   	  227859	      5286 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/higher_cardinality_regex_prefix_and_exact_matcher-10                   	  229668	      5157 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/higher_cardinality_regex_prefix_and_exact_matcher-10                   	  233598	      5166 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/higher_cardinality_regex_prefix_and_exact_matcher-10                   	  229209	      5161 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/higher_cardinality_regex_prefix_and_exact_matcher-10                   	  230230	      5155 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/higher_cardinality_regex_prefix_and_exact_matcher-10                   	  232477	      5149 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/negative_exact_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/negative_exact_matcher-10                                              	  526255	      2346 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/negative_exact_matcher-10                                              	  509028	      2351 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/negative_exact_matcher-10                                              	  520334	      2343 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/negative_exact_matcher-10                                              	  521667	      2340 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/negative_exact_matcher-10                                              	  496568	      2412 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/negative_exact_matcher-10                                              	  470944	      2348 ns/op	    2329 B/op	      30 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/empty_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/empty_matchers-10                                                      	  231902	      5137 ns/op	    4369 B/op	      42 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/empty_matchers-10                                                      	  233234	      5114 ns/op	    4369 B/op	      42 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/empty_matchers-10                                                      	  232854	      5161 ns/op	    4369 B/op	      42 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/empty_matchers-10                                                      	  228291	      5148 ns/op	    4369 B/op	      42 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/empty_matchers-10                                                      	  232599	      5132 ns/op	    4369 B/op	      42 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/empty_matchers-10                                                      	  234104	      5152 ns/op	    4369 B/op	      42 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/exact_non_existent_metric_high_cardinality_method
+BenchmarkCostBasedPlannerPlanIndexLookup/exact_non_existent_metric_high_cardinality_method-10                   	  239930	      5014 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/exact_non_existent_metric_high_cardinality_method-10                   	  241302	      5023 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/exact_non_existent_metric_high_cardinality_method-10                   	  238218	      5125 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/exact_non_existent_metric_high_cardinality_method-10                   	  240864	      5008 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/exact_non_existent_metric_high_cardinality_method-10                   	  236950	      5003 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/exact_non_existent_metric_high_cardinality_method-10                   	  235105	      5000 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_set_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_set_matcher-10                                  	  513808	      2400 ns/op	    2377 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_set_matcher-10                                  	  497264	      2405 ns/op	    2377 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_set_matcher-10                                  	  500587	      2401 ns/op	    2377 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_set_matcher-10                                  	  494446	      2406 ns/op	    2377 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_set_matcher-10                                  	  494162	      2407 ns/op	    2377 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_set_matcher-10                                  	  498182	      2399 ns/op	    2377 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_negative_metchers
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_negative_metchers-10                                  	  236505	      5031 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_negative_metchers-10                                  	  241623	      5077 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_negative_metchers-10                                  	  230662	      5086 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_negative_metchers-10                                  	  236835	      5259 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_negative_metchers-10                                  	  236902	      5012 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_negative_metchers-10                                  	  238497	      5035 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_negative_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_negative_matchers-10                         	  102728	     11655 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_negative_matchers-10                         	  102595	     11761 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_negative_matchers-10                         	  101643	     12141 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_negative_matchers-10                         	  104055	     11576 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_negative_matchers-10                         	  103914	     11609 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_negative_matchers-10                         	  102709	     11633 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_wildcard_regex_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_wildcard_regex_matchers-10                   	   42823	     27924 ns/op	   17567 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_wildcard_regex_matchers-10                   	   43053	     27906 ns/op	   17567 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_wildcard_regex_matchers-10                   	   43190	     27582 ns/op	   17567 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_wildcard_regex_matchers-10                   	   43170	     27843 ns/op	   17567 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_wildcard_regex_matchers-10                   	   43075	     27926 ns/op	   17567 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_wildcard_regex_matchers-10                   	   43208	     27813 ns/op	   17567 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers-10                            	   44730	     26392 ns/op	   16534 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers-10                            	   45255	     26328 ns/op	   16534 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers-10                            	   44974	     26406 ns/op	   16534 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers-10                            	   45703	     26332 ns/op	   16534 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers-10                            	   45460	     26877 ns/op	   16534 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers-10                            	   43998	     26364 ns/op	   16534 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_mixed_matcher_types
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_mixed_matcher_types-10                                	   44457	     26694 ns/op	   16566 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_mixed_matcher_types-10                                	   44856	     26562 ns/op	   16566 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_mixed_matcher_types-10                                	   44697	     26594 ns/op	   16566 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_mixed_matcher_types-10                                	   44763	     26607 ns/op	   16566 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_mixed_matcher_types-10                                	   45207	     26635 ns/op	   16566 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_mixed_matcher_types-10                                	   44788	     26594 ns/op	   16566 B/op	     122 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method-10    	   10000	    106755 ns/op	    6458 B/op	      52 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method-10    	   10000	    106642 ns/op	    6458 B/op	      52 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method-10    	   10000	    106340 ns/op	    6458 B/op	      52 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method-10    	   10000	    106640 ns/op	    6458 B/op	      52 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method-10    	   10000	    106413 ns/op	    6458 B/op	      52 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method-10    	   10000	    107542 ns/op	    6459 B/op	      52 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric-10               	   10000	    102725 ns/op	    3745 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric-10               	   10000	    102923 ns/op	    3745 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric-10               	   10000	    102693 ns/op	    3745 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric-10               	   10000	    102971 ns/op	    3745 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric-10               	   10000	    102683 ns/op	    3745 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric-10               	   10000	    102735 ns/op	    3745 B/op	      38 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_with_exact_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_with_exact_matcher-10                           	   28616	     42214 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_with_exact_matcher-10                           	   27978	     42368 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_with_exact_matcher-10                           	   28510	     41896 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_with_exact_matcher-10                           	   28641	     41814 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_with_exact_matcher-10                           	   28579	     41795 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_with_exact_matcher-10                           	   28561	     41745 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_matcher-10                          	   28632	     41866 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_matcher-10                          	   28252	     41831 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_matcher-10                          	   28524	     41850 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_matcher-10                          	   28521	     41820 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_matcher-10                          	   28621	     42950 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_matcher-10                          	   28536	     41837 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_high_cardinality_exact_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_high_cardinality_exact_matchers-10                            	  233980	      5150 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_high_cardinality_exact_matchers-10                            	  233635	      5134 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_high_cardinality_exact_matchers-10                            	  232147	      5150 ns/op	    4418 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_high_cardinality_exact_matchers-10                            	  235327	      5158 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_high_cardinality_exact_matchers-10                            	  234274	      5147 ns/op	    4418 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_high_cardinality_exact_matchers-10                            	  233926	      5146 ns/op	    4417 B/op	      45 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_exact_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_exact_matchers-10                                    	  102822	     11572 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_exact_matchers-10                                    	  103628	     11537 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_exact_matchers-10                                    	  103052	     11759 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_exact_matchers-10                                    	  103093	     11681 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_exact_matchers-10                                    	  103056	     11548 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_exact_matchers-10                                    	  103692	     11499 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_exact_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_exact_matcher-10                            	    5985	    201382 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_exact_matcher-10                            	    5914	    201527 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_exact_matcher-10                            	    5911	    201287 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_exact_matcher-10                            	    6009	    201579 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_exact_matcher-10                            	    5980	    200892 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_exact_matcher-10                            	    5931	    200703 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_negative_empty_metric_name
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_negative_empty_metric_name-10            	   10000	    103667 ns/op	    4385 B/op	      43 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_negative_empty_metric_name-10            	   10000	    103884 ns/op	    4385 B/op	      43 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_negative_empty_metric_name-10            	   10000	    103487 ns/op	    4385 B/op	      43 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_negative_empty_metric_name-10            	   10000	    103388 ns/op	    4385 B/op	      43 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_negative_empty_metric_name-10            	   10000	    104609 ns/op	    4385 B/op	      43 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_negative_empty_metric_name-10            	   10000	    105908 ns/op	    4385 B/op	      43 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_specific_metric
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_specific_metric-10                       	   10000	    103649 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_specific_metric-10                       	   10000	    103780 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_specific_metric-10                       	   10000	    103511 ns/op	    4402 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_specific_metric-10                       	   10000	    103476 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_specific_metric-10                       	   10000	    104499 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_specific_metric-10                       	   10000	    103317 ns/op	    4401 B/op	      44 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_pattern_with_exact_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_pattern_with_exact_matcher-10                   	   27733	     43073 ns/op	    5418 B/op	      59 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_pattern_with_exact_matcher-10                   	   27704	     43234 ns/op	    5418 B/op	      59 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_pattern_with_exact_matcher-10                   	   27825	     43897 ns/op	    5418 B/op	      59 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_pattern_with_exact_matcher-10                   	   27936	     42929 ns/op	    5418 B/op	      59 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_pattern_with_exact_matcher-10                   	   27838	     42895 ns/op	    5418 B/op	      59 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_regex_pattern_with_exact_matcher-10                   	   27801	     42919 ns/op	    5418 B/op	      59 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_mixed_cardinality_labels
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_mixed_cardinality_labels-10               	  101888	     11692 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_mixed_cardinality_labels-10               	  101876	     11683 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_mixed_cardinality_labels-10               	  101970	     11690 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_mixed_cardinality_labels-10               	  101583	     11748 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_mixed_cardinality_labels-10               	  103122	     11741 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_mixed_cardinality_labels-10               	  102417	     11625 ns/op	    8475 B/op	      72 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_with_regex_and_exact_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_with_regex_and_exact_matchers-10                     	    5275	    224368 ns/op	   16518 B/op	     121 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_with_regex_and_exact_matchers-10                     	    5444	    222685 ns/op	   16518 B/op	     121 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_with_regex_and_exact_matchers-10                     	    5391	    222926 ns/op	   16518 B/op	     121 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_with_regex_and_exact_matchers-10                     	    5356	    222628 ns/op	   16518 B/op	     121 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_with_regex_and_exact_matchers-10                     	    5413	    222461 ns/op	   16518 B/op	     121 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/mixed_cardinality_with_regex_and_exact_matchers-10                     	    5455	    222486 ns/op	   16518 B/op	     121 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_and_exact_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_and_exact_matchers-10               	   19816	     60744 ns/op	   15207 B/op	     109 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_and_exact_matchers-10               	   19743	     60247 ns/op	   15207 B/op	     109 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_and_exact_matchers-10               	   19746	     60556 ns/op	   15207 B/op	     109 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_and_exact_matchers-10               	   19707	     60392 ns/op	   15207 B/op	     109 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_and_exact_matchers-10               	   19772	     60553 ns/op	   15207 B/op	     109 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_metric_with_regex_and_exact_matchers-10               	   19836	     60528 ns/op	   15207 B/op	     109 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_high_cardinality_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_high_cardinality_matchers-10                	    5504	    220168 ns/op	   15190 B/op	     108 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_high_cardinality_matchers-10                	    5491	    220311 ns/op	   15190 B/op	     108 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_high_cardinality_matchers-10                	    5451	    219538 ns/op	   15190 B/op	     108 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_high_cardinality_matchers-10                	    5547	    219615 ns/op	   15190 B/op	     108 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_high_cardinality_matchers-10                	    5500	    219328 ns/op	   15190 B/op	     108 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_regex_with_high_cardinality_matchers-10                	    5488	    219826 ns/op	   15190 B/op	     108 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers-10              	    4099	    292743 ns/op	   32518 B/op	     218 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers-10              	    4149	    292765 ns/op	   32517 B/op	     218 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers-10              	    4159	    293167 ns/op	   32518 B/op	     218 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers-10              	    4141	    291740 ns/op	   32517 B/op	     218 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers-10              	    4129	    293241 ns/op	   32517 B/op	     218 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers-10              	    4195	    292742 ns/op	   32517 B/op	     218 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/conflicting_instance_matchers_exact_wins
+BenchmarkCostBasedPlannerPlanIndexLookup/conflicting_instance_matchers_exact_wins-10                            	    3804	    318777 ns/op	   18775 B/op	     164 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/conflicting_instance_matchers_exact_wins-10                            	    3790	    318590 ns/op	   18775 B/op	     164 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/conflicting_instance_matchers_exact_wins-10                            	    3691	    318568 ns/op	   18775 B/op	     164 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/conflicting_instance_matchers_exact_wins-10                            	    3741	    318496 ns/op	   18775 B/op	     164 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/conflicting_instance_matchers_exact_wins-10                            	    3693	    317685 ns/op	   18775 B/op	     164 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/conflicting_instance_matchers_exact_wins-10                            	    3793	    318612 ns/op	   18775 B/op	     164 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_regex_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_regex_in_a_regular_query-10                               	    4701	    252543 ns/op	    9988 B/op	      89 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_regex_in_a_regular_query-10                               	    4827	    250055 ns/op	    9988 B/op	      89 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_regex_in_a_regular_query-10                               	    4822	    249816 ns/op	    9987 B/op	      89 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_regex_in_a_regular_query-10                               	    4802	    252719 ns/op	    9987 B/op	      89 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_regex_in_a_regular_query-10                               	    4776	    250897 ns/op	    9987 B/op	      89 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_regex_in_a_regular_query-10                               	    4736	    253339 ns/op	    9988 B/op	      89 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_regexp_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_regexp_in_a_regular_query-10                     	    3378	    355074 ns/op	   61802 B/op	     394 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_regexp_in_a_regular_query-10                     	    3337	    355555 ns/op	   61802 B/op	     394 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_regexp_in_a_regular_query-10                     	    3363	    355988 ns/op	   61802 B/op	     394 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_regexp_in_a_regular_query-10                     	    3385	    354989 ns/op	   61802 B/op	     394 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_regexp_in_a_regular_query-10                     	    3382	    355266 ns/op	   61803 B/op	     394 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_regexp_in_a_regular_query-10                     	    3312	    356743 ns/op	   61801 B/op	     394 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_in_a_regular_query-10                                     	    4870	    248772 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_in_a_regular_query-10                                     	    4856	    248273 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_in_a_regular_query-10                                     	    4767	    248430 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_in_a_regular_query-10                                     	    4876	    248025 ns/op	    8172 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_in_a_regular_query-10                                     	    4845	    247658 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_in_a_regular_query-10                                     	    4824	    248181 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_in_a_regular_query-10                            	    3465	    345849 ns/op	   57361 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_in_a_regular_query-10                            	    3400	    351658 ns/op	   57360 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_in_a_regular_query-10                            	    3019	    345421 ns/op	   57360 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_in_a_regular_query-10                            	    3510	    344167 ns/op	   57361 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_in_a_regular_query-10                            	    3501	    344446 ns/op	   57361 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_negative_in_a_regular_query-10                            	    3500	    344101 ns/op	   57361 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_regex_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_regex_in_a_regular_query-10                         	    3577	    329390 ns/op	   52093 B/op	     297 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_regex_in_a_regular_query-10                         	    3570	    327890 ns/op	   52093 B/op	     297 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_regex_in_a_regular_query-10                         	    3650	    327758 ns/op	   52093 B/op	     297 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_regex_in_a_regular_query-10                         	    3638	    327726 ns/op	   52093 B/op	     297 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_regex_in_a_regular_query-10                         	    3667	    327864 ns/op	   52093 B/op	     297 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_regex_in_a_regular_query-10                         	    3618	    328664 ns/op	   52093 B/op	     297 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_set_value_regex_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_set_value_regex_in_a_regular_query-10                     	    4851	    247885 ns/op	    8219 B/op	      66 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_set_value_regex_in_a_regular_query-10                     	    4870	    248057 ns/op	    8219 B/op	      66 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_set_value_regex_in_a_regular_query-10                     	    4869	    248572 ns/op	    8219 B/op	      66 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_set_value_regex_in_a_regular_query-10                     	    4860	    248049 ns/op	    8219 B/op	      66 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_set_value_regex_in_a_regular_query-10                     	    4831	    248391 ns/op	    8219 B/op	      66 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_set_value_regex_in_a_regular_query-10                     	    4874	    247799 ns/op	    8219 B/op	      66 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_regexp_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_regexp_in_a_regular_query-10               	    3439	    345614 ns/op	   57344 B/op	     345 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_regexp_in_a_regular_query-10               	    3475	    353363 ns/op	   57344 B/op	     345 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_regexp_in_a_regular_query-10               	    3510	    344041 ns/op	   57344 B/op	     345 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_regexp_in_a_regular_query-10               	    3456	    344791 ns/op	   57345 B/op	     345 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_regexp_in_a_regular_query-10               	    3504	    344031 ns/op	   57345 B/op	     345 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_regexp_in_a_regular_query-10               	    3508	    345274 ns/op	   57344 B/op	     345 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_in_a_regular_query-10                               	    4833	    247901 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_in_a_regular_query-10                               	    4824	    247689 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_in_a_regular_query-10                               	    4611	    248654 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_in_a_regular_query-10                               	    4868	    247642 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_in_a_regular_query-10                               	    4782	    247737 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_in_a_regular_query-10                               	    4861	    247632 ns/op	    8171 B/op	      65 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_in_a_regular_query
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_in_a_regular_query-10                      	    3498	    348103 ns/op	   57360 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_in_a_regular_query-10                      	    3422	    344897 ns/op	   57361 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_in_a_regular_query-10                      	    3471	    344190 ns/op	   57360 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_in_a_regular_query-10                      	    3475	    345254 ns/op	   57360 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_in_a_regular_query-10                      	    3492	    344773 ns/op	   57361 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/non_existent_value_negative_in_a_regular_query-10                      	    3478	    344599 ns/op	   57361 B/op	     346 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_with_empty_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_with_empty_matcher-10         	    3882	    305853 ns/op	    7715 B/op	      63 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_with_empty_matcher-10         	    3958	    305848 ns/op	    7715 B/op	      63 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_with_empty_matcher-10         	    3956	    305706 ns/op	    7715 B/op	      63 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_with_empty_matcher-10         	    3927	    305768 ns/op	    7715 B/op	      63 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_with_empty_matcher-10         	    3925	    305345 ns/op	    7715 B/op	      63 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_with_empty_matcher-10         	    3912	    305792 ns/op	    7715 B/op	      63 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_matching_a_lot_of_values
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_matching_a_lot_of_values-10   	    3914	    307224 ns/op	   12652 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_matching_a_lot_of_values-10   	    3936	    306999 ns/op	   12653 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_matching_a_lot_of_values-10   	    3919	    306996 ns/op	   12653 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_matching_a_lot_of_values-10   	    3939	    307566 ns/op	   12652 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_matching_a_lot_of_values-10   	    3874	    306943 ns/op	   12653 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/multiple_instance_matchers_one_with_low_cardinality_another_matching_a_lot_of_values-10   	    3909	    306635 ns/op	   12653 B/op	     131 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars-10                                             	    5714	    212166 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars-10                                             	    5697	    212032 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars-10                                             	    5668	    212395 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars-10                                             	    5641	    212039 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars-10                                             	    5734	    211753 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars-10                                             	    5668	    211866 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars_and_a_negative_matcher
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars_and_a_negative_matcher-10                      	    5593	    212259 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars_and_a_negative_matcher-10                      	    5695	    212381 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars_and_a_negative_matcher-10                      	    5686	    211715 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars_and_a_negative_matcher-10                      	    5688	    211991 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars_and_a_negative_matcher-10                      	    5726	    212382 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/expensive_alternating_regex_with_dot_stars_and_a_negative_matcher-10                      	    5748	    212114 ns/op	   14549 B/op	     150 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_exact_high_cardinality
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_exact_high_cardinality-10                                             	    4999	    238893 ns/op	   27892 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_exact_high_cardinality-10                                             	    5004	    238341 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_exact_high_cardinality-10                                             	    4952	    238588 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_exact_high_cardinality-10                                             	    5085	    238705 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_exact_high_cardinality-10                                             	    5064	    237910 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_exact_high_cardinality-10                                             	    5079	    237691 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_mixed_types_with_low_cardinality
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_mixed_types_with_low_cardinality-10                                       	    3918	    304288 ns/op	   35105 B/op	     234 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_mixed_types_with_low_cardinality-10                                       	    3915	    304420 ns/op	   35105 B/op	     234 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_mixed_types_with_low_cardinality-10                                       	    3948	    303951 ns/op	   35103 B/op	     234 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_mixed_types_with_low_cardinality-10                                       	    3944	    303158 ns/op	   35105 B/op	     234 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_mixed_types_with_low_cardinality-10                                       	    3966	    304018 ns/op	   35103 B/op	     234 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_mixed_types_with_low_cardinality-10                                       	    3900	    304045 ns/op	   35105 B/op	     234 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_regex_patterns
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_regex_patterns-10                                                     	    2958	    407387 ns/op	   35465 B/op	     216 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_regex_patterns-10                                                     	    2930	    407882 ns/op	   35464 B/op	     216 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_regex_patterns-10                                                     	    2959	    408081 ns/op	   35464 B/op	     216 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_regex_patterns-10                                                     	    2936	    408512 ns/op	   35464 B/op	     216 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_regex_patterns-10                                                     	    2940	    407696 ns/op	   35464 B/op	     216 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_regex_patterns-10                                                     	    2966	    407357 ns/op	   35465 B/op	     216 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_exact
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_exact-10                                                     	     282	   4255905 ns/op	 1121352 B/op	    5178 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_exact-10                                                     	     280	   4238330 ns/op	 1121435 B/op	    5179 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_exact-10                                                     	     279	   4259858 ns/op	 1121490 B/op	    5179 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_exact-10                                                     	     278	   4251094 ns/op	 1121380 B/op	    5178 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_exact-10                                                     	     280	   4343916 ns/op	 1121388 B/op	    5178 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_exact-10                                                     	     283	   4234661 ns/op	 1121344 B/op	    5178 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_regex
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_regex-10                                                     	     327	   3635697 ns/op	  594772 B/op	    3531 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_regex-10                                                     	     326	   3638748 ns/op	  594777 B/op	    3531 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_regex-10                                                     	     328	   3627578 ns/op	  594827 B/op	    3531 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_regex-10                                                     	     328	   3634943 ns/op	  594733 B/op	    3531 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_regex-10                                                     	     327	   3635954 ns/op	  594812 B/op	    3531 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_all_negative_regex-10                                                     	     327	   3628186 ns/op	  594749 B/op	    3531 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_non_existent_labels
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_non_existent_labels-10                                               	    4831	    250460 ns/op	   30518 B/op	     195 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_non_existent_labels-10                                               	    4815	    250083 ns/op	   30518 B/op	     195 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_non_existent_labels-10                                               	    4807	    249356 ns/op	   30519 B/op	     195 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_non_existent_labels-10                                               	    4905	    248895 ns/op	   30519 B/op	     195 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_non_existent_labels-10                                               	    4798	    249851 ns/op	   30518 B/op	     195 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_non_existent_labels-10                                               	    4812	    249411 ns/op	   30519 B/op	     195 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_half_existent_half_nonexistent_exact
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_half_existent_half_nonexistent_exact-10                                   	   10000	    118938 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_half_existent_half_nonexistent_exact-10                                   	   10000	    118950 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_half_existent_half_nonexistent_exact-10                                   	   10000	    118594 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_half_existent_half_nonexistent_exact-10                                   	   10000	    118783 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_half_existent_half_nonexistent_exact-10                                   	   10000	    118851 ns/op	   27893 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_half_existent_half_nonexistent_exact-10                                   	   10000	    118675 ns/op	   27894 B/op	     168 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_expensive_regex_patterns
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_expensive_regex_patterns-10                                               	    2758	    433641 ns/op	   71275 B/op	     698 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_expensive_regex_patterns-10                                               	    2792	    433575 ns/op	   71274 B/op	     698 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_expensive_regex_patterns-10                                               	    2799	    434324 ns/op	   71276 B/op	     698 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_expensive_regex_patterns-10                                               	    2785	    433543 ns/op	   71275 B/op	     698 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_expensive_regex_patterns-10                                               	    2793	    433072 ns/op	   71274 B/op	     698 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_expensive_regex_patterns-10                                               	    2742	    433796 ns/op	   71274 B/op	     698 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_empty_values
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_empty_values-10                                                      	     266	   4408567 ns/op	 1121078 B/op	    5160 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_empty_values-10                                                      	     270	   4396147 ns/op	 1121077 B/op	    5160 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_empty_values-10                                                      	     271	   4433384 ns/op	 1121178 B/op	    5161 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_empty_values-10                                                      	     267	   4436358 ns/op	 1121176 B/op	    5161 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_empty_values-10                                                      	     270	   4414055 ns/op	 1121109 B/op	    5160 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_with_empty_values-10                                                      	     267	   4400795 ns/op	 1121074 B/op	    5160 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_duplicate_label_low_cardinality_wins
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_duplicate_label_low_cardinality_wins-10                                   	    2695	    448604 ns/op	   31311 B/op	     209 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_duplicate_label_low_cardinality_wins-10                                   	    2694	    448428 ns/op	   31311 B/op	     209 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_duplicate_label_low_cardinality_wins-10                                   	    2661	    447066 ns/op	   31311 B/op	     209 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_duplicate_label_low_cardinality_wins-10                                   	    2676	    447729 ns/op	   31311 B/op	     209 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_duplicate_label_low_cardinality_wins-10                                   	    2686	    448382 ns/op	   31311 B/op	     209 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/twenty_matchers_duplicate_label_low_cardinality_wins-10                                   	    2701	    447354 ns/op	   31311 B/op	     209 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name_with_sharding
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name_with_sharding-10                                              	  500683	      2391 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name_with_sharding-10                                              	  504992	      2396 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name_with_sharding-10                                              	  512366	      2393 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name_with_sharding-10                                              	  494612	      2383 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name_with_sharding-10                                              	  497914	      2369 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/simple_existing_metric_name_with_sharding-10                                              	  504898	      2393 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher_with_sharding
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher_with_sharding-10                                           	  500331	      2391 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher_with_sharding-10                                           	  489681	      2392 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher_with_sharding-10                                           	  496143	      2441 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher_with_sharding-10                                           	  471690	      2390 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher_with_sharding-10                                           	  497662	      2425 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/high_cardinality_exact_matcher_with_sharding-10                                           	  499767	      2387 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers_with_sharding
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers_with_sharding-10                                 	   44858	     27017 ns/op	   16550 B/op	     123 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers_with_sharding-10                                 	   45218	     26356 ns/op	   16550 B/op	     123 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers_with_sharding-10                                 	   45571	     26310 ns/op	   16550 B/op	     123 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers_with_sharding-10                                 	   45402	     26254 ns/op	   16550 B/op	     123 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers_with_sharding-10                                 	   45262	     26278 ns/op	   16550 B/op	     123 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/metric_name_with_multiple_exact_matchers_with_sharding-10                                 	   45247	     26306 ns/op	   16550 B/op	     123 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method_with_sharding
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method_with_sharding-10         	   10000	    105681 ns/op	    6474 B/op	      53 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method_with_sharding-10         	   10000	    105828 ns/op	    6474 B/op	      53 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method_with_sharding-10         	   10000	    106879 ns/op	    6475 B/op	      53 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method_with_sharding-10         	   10000	    106210 ns/op	    6475 B/op	      53 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method_with_sharding-10         	   10000	    108178 ns/op	    6474 B/op	      53 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/low_cardinality_instance_with_high_cardinality_metric_and_method_with_sharding-10         	   10000	    105811 ns/op	    6474 B/op	      53 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers_with_sharding
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers_with_sharding-10                   	    4131	    294470 ns/op	   32534 B/op	     219 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers_with_sharding-10                   	    4164	    292704 ns/op	   32534 B/op	     219 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers_with_sharding-10                   	    4161	    298588 ns/op	   32533 B/op	     219 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers_with_sharding-10                   	    4124	    292499 ns/op	   32533 B/op	     219 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers_with_sharding-10                   	    4135	    292067 ns/op	   32534 B/op	     219 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/complex_high_cardinality_metric_with_multiple_matchers_with_sharding-10                   	    4072	    291769 ns/op	   32534 B/op	     219 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/edge_case_low_cardinality_with_high_shard_count
+BenchmarkCostBasedPlannerPlanIndexLookup/edge_case_low_cardinality_with_high_shard_count-10                                        	  519589	      2370 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/edge_case_low_cardinality_with_high_shard_count-10                                        	  503564	      2389 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/edge_case_low_cardinality_with_high_shard_count-10                                        	  497386	      2387 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/edge_case_low_cardinality_with_high_shard_count-10                                        	  506240	      2380 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/edge_case_low_cardinality_with_high_shard_count-10                                        	  512361	      2379 ns/op	    2345 B/op	      31 allocs/op
+BenchmarkCostBasedPlannerPlanIndexLookup/edge_case_low_cardinality_with_high_shard_count-10                                        	  507378	      2382 ns/op	    2345 B/op	      31 allocs/op
+PASS
+
+Process finished with the exit code 0
