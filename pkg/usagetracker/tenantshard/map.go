@@ -170,8 +170,8 @@ func (m *Map) load(key uint64, value clock.Minutes) {
 	}
 }
 
-// count returns the number of alive elements in the Map.
-func (m *Map) count() int {
+// Count returns the number of alive elements in the Map.
+func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
@@ -267,7 +267,7 @@ func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 	keysClone := pooledClone(m.keys, keysPool)
 	dataClone := pooledClone(m.data, dataPool)
-	count := m.count()
+	count := m.Count()
 
 	return count, func(yield func(uint64, clock.Minutes) bool) {
 		if count == 0 {

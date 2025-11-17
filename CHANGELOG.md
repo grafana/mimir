@@ -4,6 +4,7 @@
 
 ### Grafana Mimir
 
+* [CHANGE] Usage tracker: `loadSnapshot()` now checks shard emptiness instead of using explicit `first` parameter. #13534
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] API: The `/api/v1/user_limits` endpoint is now stable and no longer experimental. #13218
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
