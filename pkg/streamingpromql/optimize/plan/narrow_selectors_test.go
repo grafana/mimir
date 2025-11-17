@@ -234,6 +234,37 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 								- param 3: StringLiteral: "workload"
 			`,
 		},
+		"binary expression with label_replace on one side for non-hint label": {
+			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_replace(second_metric, "region", "$1", "job", ".+/(.+)"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env, region)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, region)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: VectorSelector: {__name__="second_metric"}
+								- param 1: StringLiteral: "region"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "job"
+								- param 4: StringLiteral: ".+/(.+)"
+			`,
+		},
+		"binary expression with label_join on one side for non-hint label": {
+			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_join(second_metric, "region", "job", "workload"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env, region)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, region)
+						- DeduplicateAndMerge
+							- FunctionCall: label_join(...)
+								- param 0: VectorSelector: {__name__="second_metric"}
+								- param 1: StringLiteral: "region"
+								- param 2: StringLiteral: "job"
+								- param 3: StringLiteral: "workload"
+			`,
+		},
 	}
 
 	ctx := context.Background()
