@@ -501,6 +501,7 @@
   "querier.scheduler-client.connect-backoff-base-delay": 1000000000,
   "querier.scheduler-client.connect-backoff-max-delay": 5000000000,
   "querier.scheduler-client.cluster-validation.label": "",
+  "querier.frontend-health-check-grace-period": 0,
   "query-frontend.log-queries-longer-than": 0,
   "query-frontend.log-query-request-headers": "",
   "query-frontend.max-body-size": 10485760,
