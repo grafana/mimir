@@ -49,51 +49,50 @@ type Operator struct {
 // initParam validates the given parameter and determines the k or ratio for each step.
 // This function will also initialise the groupLimiterFactory() factory func which will return new groupLimiter instances with specific logic for limitk vs limit_ratio.
 // The function will return a bool indicating if k/ratio arguments are non-zero, and a second bool which indicates if the groupLimiter requires each series metadata to be initialised/registered with it.
-func (o *Operator) initParam(ctx context.Context, annotations *annotations.Annotations, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stepCount int, param types.ScalarOperator) (ok bool, requiresSeriesInit bool, err error) {
+func (o *Operator) initParam(ctx context.Context) (canReturnAnyResults bool, err error) {
 
 	if o.isRatio {
-		stepArg, zeros, err := newLimitRatioArgument(ctx, annotations, memoryConsumptionTracker, stepCount, param)
+		stepArg, zeros, err := newLimitRatioArgument(ctx, o.annotations, o.MemoryConsumptionTracker, o.TimeRange.StepCount, o.Param)
 		if err != nil {
-			return false, false, err
+			return false, err
 		}
 		o.stepArg = stepArg
 		o.groupLimiterFactory = func() (groupLimiter, error) {
 			return &groupLimiterRatio{stepArg: stepArg}, nil
 		}
-		return zeros < stepCount, true, nil
+		return zeros < o.TimeRange.StepCount, nil
 	}
 
-	stepArg, zeros, err := newLimitkArgument(ctx, memoryConsumptionTracker, stepCount, param)
+	stepArg, zeros, err := newLimitkArgument(ctx, o.MemoryConsumptionTracker, o.TimeRange.StepCount, o.Param)
 	if err != nil {
-		return false, false, err
+		return false, err
 	}
 	o.stepArg = stepArg
 	o.groupLimiterFactory = func() (groupLimiter, error) {
 
-		counter, err := newStepCounter(stepCount, memoryConsumptionTracker)
+		counter, err := newStepCounter(o.TimeRange.StepCount, o.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
 
 		return &groupLimiterK{
-			memoryConsumptionTracker: memoryConsumptionTracker,
-			stepCounter:              counter,
-			stepArg:                  stepArg,
-			stepsFilled:              zeros,
+			stepCounter: counter,
+			stepArg:     stepArg,
+			stepsFilled: zeros,
 		}, nil
 	}
 
-	return zeros < stepCount, false, nil
+	return zeros < o.TimeRange.StepCount, nil
 }
 
 func (o *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 
 	// parse and validate the given input argument for this aggregate (ie k or ratio)
 	// also initialises the factory method for creating new groupLimiters
-	ok, requiresSeriesInit, err := o.initParam(ctx, o.annotations, o.MemoryConsumptionTracker, o.TimeRange.StepCount, o.Param)
+	canReturnAnyResults, err := o.initParam(ctx)
 	if err != nil {
 		return nil, err
-	} else if !ok {
+	} else if !canReturnAnyResults {
 		// all the k/ratio values are 0 so we will have nothing to return
 		return nil, nil
 	}
@@ -124,81 +123,18 @@ func (o *Operator) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 			groups[string(groupLabelsString)] = g
 		}
 
-		g.incSeriesRefCount()
+		g.increaseSeriesCount()
 		o.seriesToGroups[idx] = g
 	}
 
 	// Perform a second iteration of all the series to initialize each series into its group.
 	// This is done as a second step since now we know how many series are in each group.
 	// This is only done for limit_ratio, as this step allows the caching of the series label hash
-	if requiresSeriesInit {
-		for idx, g := range o.seriesToGroups {
-			g.initSeries(idx, innerSeries[idx])
-		}
+	for idx, g := range o.seriesToGroups {
+		g.initSeries(idx, innerSeries[idx])
 	}
 
 	return innerSeries, nil
-}
-
-// accumulateValue walks the given series and modifies it to produce a sparse vector which will meet the group k/ratio limits.
-// If the group limits have already been reached, then the series is discarded.
-// This function will return false if the given series is empty, can be fully discarded or has no samples which can contribute to the group.
-func (o *Operator) accumulateValue(seriesIndex int, value *types.InstantVectorSeriesData, g groupLimiter) (bool, error) {
-
-	iterator := &types.InstantVectorSeriesDataIterator{}
-	iterator.Reset(*value)
-
-	// The slices of floats and histograms within the given value will be modified to remove any steps which would exceed the k/ratio limit for the group.
-	// Samples are shifted left, overriding samples which are not needed for a given step.
-	nextFloatIndex := 0
-	nextHistogramIndex := 0
-
-	// read the first point in the series
-	ts, f, h, _, ok := iterator.Next()
-	if !ok {
-		return false, nil
-	}
-
-	// If the group is already filled then these samples can be discarded and an empty series returned
-	if !g.accumulateSeries() {
-		return false, nil
-	}
-
-	step := 0
-	for pt := o.TimeRange.StartT; pt <= o.TimeRange.EndT; pt += o.TimeRange.IntervalMilliseconds {
-
-		// move the iterator to the next ts
-		for ts < pt {
-			ts, f, h, _, ok = iterator.Next()
-			if !ok {
-				break
-			}
-		}
-
-		if pt != ts {
-			step++
-			continue
-		}
-
-		if g.accumulateSampleAtStep(seriesIndex, step) {
-			if h != nil {
-				value.Histograms[nextHistogramIndex].T = ts
-				value.Histograms[nextHistogramIndex].H = h
-				nextHistogramIndex++
-			} else {
-				value.Floats[nextFloatIndex].T = ts
-				value.Floats[nextFloatIndex].F = f
-				nextFloatIndex++
-			}
-		}
-		step++
-	}
-
-	// prune off excess samples which have been copied left
-	value.Histograms = value.Histograms[:nextHistogramIndex]
-	value.Floats = value.Floats[:nextFloatIndex]
-
-	return len(value.Histograms)+len(value.Floats) > 0, nil
 }
 
 func (o *Operator) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
@@ -223,18 +159,17 @@ func (o *Operator) NextSeries(ctx context.Context) (types.InstantVectorSeriesDat
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	// Note that the data slices are not reclaimed unless there is an error or the series does not need to be accumulated.
-	// The existing slices are used for the accumulation and will be reclaimed by the NextSeries() consumer.
-	hasData, err := o.accumulateValue(o.nextSeriesIndex, &data, g)
+	// Note that the data slices are not reclaimed here unless there is an error or the limited series has no samples.
+	retData, err := g.limitSeriesData(o.nextSeriesIndex, data, o.TimeRange)
 	if err != nil {
 		types.PutInstantVectorSeriesData(data, o.MemoryConsumptionTracker)
 		return types.InstantVectorSeriesData{}, err
-	} else if !hasData {
+	} else if len(retData.Floats) == 0 && len(retData.Histograms) == 0 {
 		types.PutInstantVectorSeriesData(data, o.MemoryConsumptionTracker)
 		return types.InstantVectorSeriesData{}, nil
 	}
 
-	return data, nil
+	return retData, nil
 }
 
 func (o *Operator) ExpressionPosition() posrange.PositionRange {
@@ -365,21 +300,17 @@ func newStepCounter(size int, memoryConsumptionTracker *limiter.MemoryConsumptio
 type groupLimiter interface {
 	close()
 
-	incSeriesRefCount()
+	// increaseSeriesCount tracks the number of series associated with this group
+	increaseSeriesCount()
 
-	// initSeries informs the groupLimiter that this series will be included in it's grouping
+	// initSeries informs the groupLimiter that this series will be included in its group
 	initSeries(seriesIndex int, series types.SeriesMetadata)
+
+	// limitSeriesData reduces the series data to meet the k/ratio limit requirements
+	limitSeriesData(seriesIndex int, value types.InstantVectorSeriesData, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error)
 
 	// releaseSeries informs the groupLimiter that this series has finished being accumulated and any internal resources related to this series can be released
 	releaseSeries(seriesIndex int)
-
-	// accumulateSeries is invoked each time we start accumulating data for a series.
-	// false is returned when this series should not be accumulated - its data can be discarded
-	accumulateSeries() bool
-
-	// accumulateSampleAtStep is invoked for each step in accumulating the data for a series
-	// false is returned if the sample at this step is not required - it can be discarded
-	accumulateSampleAtStep(seriesIndex int, step int) bool
 }
 
 type groupLimiterRatio struct {
@@ -388,11 +319,25 @@ type groupLimiterRatio struct {
 	seriesHashMap  map[int]float64
 }
 
-func (q *groupLimiterRatio) incSeriesRefCount() {
+func (q *groupLimiterRatio) increaseSeriesCount() {
 	q.seriesRefCount++
 }
 
-func (q *groupLimiterRatio) accumulateSeries() bool { return true }
+func (q *groupLimiterRatio) limitSeriesData(seriesIndex int, value types.InstantVectorSeriesData, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+
+	value.Histograms = slices.DeleteFunc(value.Histograms, func(p promql.HPoint) bool {
+		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		return !q.accumulateSampleAtStep(seriesIndex, int(step))
+	})
+
+	value.Floats = slices.DeleteFunc(value.Floats, func(p promql.FPoint) bool {
+		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		return !q.accumulateSampleAtStep(seriesIndex, int(step))
+	})
+
+	return value, nil
+}
+
 func (q *groupLimiterRatio) accumulateSampleAtStep(seriesIndex int, step int) bool {
 	ratioLimit := q.stepArg.r[step]
 	sampleOffset := q.seriesHashMap[seriesIndex]
@@ -420,27 +365,21 @@ func (q *groupLimiterRatio) initSeries(seriesIndex int, series types.SeriesMetad
 	const (
 		float64MaxUint64 = float64(math.MaxUint64)
 	)
-	sample := &promql.Sample{Metric: series.Labels}
-	q.seriesHashMap[seriesIndex] = float64(sample.Metric.Hash()) / float64MaxUint64
+	q.seriesHashMap[seriesIndex] = float64(series.Labels.Hash()) / float64MaxUint64
 }
 
 func (q *groupLimiterRatio) releaseSeries(seriesIndex int) {
-	delete(q.seriesHashMap, seriesIndex)
-	q.seriesRefCount--
-	if q.seriesRefCount == 0 {
-		q.close()
-	}
+	// nothing to do here
 }
 
 type groupLimiterK struct {
-	seriesRefCount           int
-	stepCounter              *limitStepCounter // A utility to track the number of samples at each step which have been accumulated across the observed series
-	stepsFilled              int               // Track the number of steps where we have k samples within the group. When stepsFilled == steps then this group is all filled.
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	stepArg                  *limitkArgument
+	seriesRefCount int
+	stepCounter    *limitStepCounter // A utility to track the number of samples at each step which have been accumulated across the observed series
+	stepsFilled    int               // Track the number of steps where we have k samples within the group. When stepsFilled == steps then this group is all filled.
+	stepArg        *limitkArgument
 }
 
-func (q *groupLimiterK) incSeriesRefCount() {
+func (q *groupLimiterK) increaseSeriesCount() {
 	q.seriesRefCount++
 }
 
@@ -455,11 +394,7 @@ func (q *groupLimiterK) releaseSeries(_ int) {
 	}
 }
 
-func (q *groupLimiterK) accumulateSeries() bool {
-	return q.stepsFilled < q.stepArg.stepCount
-}
-
-func (q *groupLimiterK) accumulateSampleAtStep(_ int, step int) bool {
+func (q *groupLimiterK) accumulateSampleAtStep(step int) bool {
 	if int64(q.stepCounter.count(step)) == q.stepArg.k[step] {
 		return false
 	}
@@ -471,6 +406,25 @@ func (q *groupLimiterK) accumulateSampleAtStep(_ int, step int) bool {
 	}
 
 	return true
+}
+
+func (q *groupLimiterK) limitSeriesData(_ int, value types.InstantVectorSeriesData, timeRange types.QueryTimeRange) (types.InstantVectorSeriesData, error) {
+
+	if q.stepsFilled == q.stepArg.stepCount {
+		return types.InstantVectorSeriesData{}, nil
+	}
+
+	value.Histograms = slices.DeleteFunc(value.Histograms, func(p promql.HPoint) bool {
+		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		return !q.accumulateSampleAtStep(int(step))
+	})
+
+	value.Floats = slices.DeleteFunc(value.Floats, func(p promql.FPoint) bool {
+		step := (p.T - timeRange.StartT) / timeRange.IntervalMilliseconds
+		return !q.accumulateSampleAtStep(int(step))
+	})
+
+	return value, nil
 }
 
 func (q *groupLimiterK) close() {

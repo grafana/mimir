@@ -6,7 +6,7 @@ This document provides developer-level notes explaining how aggregation operator
 
 MQE operators include the following lifecycle:
 
-1. **`SeriesMetadata()`** — Determines which series appear in this operation's result. Some of these series may return no samples from `NextSeries()`.
+1. **`SeriesMetadata()`** — Determines which series appear in this operator's result. Some of these series may return no samples from `NextSeries()`.
 2. **`NextSeries()`** — Computes the samples for the next series (in the same order as returned by `SeriesMetadata()`), and performs any aggregations or transformations before returning the samples for the next series. `NextSeries()` might call `NextSeries()` multiple times on the inner operator, for example if the next output series is the sum of many input series that have not already been read.
 
 Note that additional label matchers applied during query evaluation may further restrict the set of returned series.
