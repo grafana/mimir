@@ -671,6 +671,9 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 	if !ok {
 		return nil, fmt.Errorf("partition handler %d not found", req.Partition)
 	}
+	if p.State() != services.Running {
+		return nil, fmt.Errorf("partition handler %d is not running (state: %s)", req.Partition, p.State())
+	}
 	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err

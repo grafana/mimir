@@ -60,6 +60,28 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.Len(t, resp.RejectedSeriesHashes, 1)
 	})
 
+	t.Run("should not use partitions that are not in running state", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"tenant": {
+				MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+				MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+			},
+		})
+		withRLock(&tracker.partitionsMtx, func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), tracker.partitions[0]))
+		})
+
+		_, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+			UserID:       "tenant",
+			Partition:    0,
+			SeriesHashes: []uint64{0, 1},
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "partition handler 0 is not running (state: Terminated)")
+	})
+
 	t.Run("applies global series limit when configured", func(t *testing.T) {
 		t.Parallel()
 

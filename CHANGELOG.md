@@ -78,6 +78,7 @@
 * [BUGFIX] Cost attribution: Fix panic when metrics are created with invalid labels. #13273
 * [BUGFIX]: Distributor: Fix in-flight request counter when the reactive limiter is full. #13406
 * [BUGFIX]: Ingester: Panic when push and read reactive limiters are enabled with prioritization. #13482
+* [BUGFIX]: Usage-tracker: Prevent tracking requests to be handled by partition handlers that are not in Running state. #13532
 
 ### Mixin
 
