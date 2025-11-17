@@ -295,14 +295,14 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, users *ownedUsers, logge
 		userLogger := util_log.WithUserID(userID, logger)
 		if users.deleted[userID] {
 			if err := c.deleteUserMarkedForDeletion(ctx, userID, userLogger); err != nil {
-				return fmt.Errorf("failed to delete user marked for deletion: %s: %w", userID, err)
+				return fmt.Errorf("failed to delete user %s marked for deletion: %w", userID, err)
 			}
 
 			return nil
 		}
 
 		if err := c.cleanUser(ctx, userID, userLogger); err != nil {
-			return fmt.Errorf("failed to delete blocks for user: %s: %w", userID, err)
+			return fmt.Errorf("failed to delete blocks for user %s: %w", userID, err)
 		}
 
 		return nil
