@@ -99,9 +99,10 @@ func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandl
 	})
 
 	poolConfig := client.PoolConfig{
-		CheckInterval:      5 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 1 * time.Second,
+		CheckInterval:          5 * time.Second,
+		HealthCheckEnabled:     true,
+		HealthCheckTimeout:     1 * time.Second,
+		HealthCheckGracePeriod: cfg.QueryFrontendHealthCheckGracePeriod,
 	}
 
 	p.frontendPool = client.NewPool("frontend", poolConfig, nil, client.PoolAddrFunc(p.createFrontendClient), frontendClientsGauge, log)
