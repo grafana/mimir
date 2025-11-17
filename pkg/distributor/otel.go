@@ -207,6 +207,21 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
+func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
+	resourceMetricsSlice := req.Metrics().ResourceMetrics()
+	pushMetrics.ObserveOTLPArrayLengths("resource_metrics", resourceMetricsSlice.Len())
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		resourceMetrics := resourceMetricsSlice.At(i)
+		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+		pushMetrics.ObserveOTLPArrayLengths("scope_metrics", scopeMetricsSlice.Len())
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			scopeMetrics := scopeMetricsSlice.At(j)
+			metricSlice := scopeMetrics.Metrics()
+			pushMetrics.ObserveOTLPArrayLengths("metrics", metricSlice.Len())
+		}
+	}
+}
+
 func newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
@@ -349,6 +364,8 @@ func newOTLPParser(
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
+		pushMetrics.IncOTLPContentType(contentType)
+		observeOTLPFieldsCount(pushMetrics, otlpReq)
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),

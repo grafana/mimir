@@ -377,8 +377,11 @@ type PushMetrics struct {
 	influxRequestCounter       *prometheus.CounterVec
 	influxUncompressedBodySize *prometheus.HistogramVec
 	// OTLP metrics.
-	otlpRequestCounter   *prometheus.CounterVec
-	uncompressedBodySize *prometheus.HistogramVec
+	otlpRequestCounter     *prometheus.CounterVec
+	uncompressedBodySize   *prometheus.HistogramVec
+	otlpContentTypeCounter *prometheus.CounterVec
+	// Temporary to better understand which array (ResourceMetrics/ScopeMetrics/Metrics) is usually large
+	otlpArrayLengths *prometheus.HistogramVec
 }
 
 func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
@@ -405,6 +408,17 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user", "handler"}),
+		otlpContentTypeCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_otlp_requests_by_content_type_total",
+			Help: "Total number of requests with a given content type.",
+		}, []string{"content_type"}),
+		otlpArrayLengths: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_otlp_array_lengths",
+			Help:                            "Number of elements in the arrays of OTLP requests.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"field"}),
 	}
 }
 
@@ -429,6 +443,18 @@ func (m *PushMetrics) IncOTLPRequest(user string) {
 func (m *PushMetrics) ObserveUncompressedBodySize(user string, handler string, size float64) {
 	if m != nil {
 		m.uncompressedBodySize.WithLabelValues(user, handler).Observe(size)
+	}
+}
+
+func (m *PushMetrics) IncOTLPContentType(contentType string) {
+	if m != nil {
+		m.otlpContentTypeCounter.WithLabelValues(contentType).Inc()
+	}
+}
+
+func (m *PushMetrics) ObserveOTLPArrayLengths(field string, length int) {
+	if m != nil {
+		m.otlpArrayLengths.WithLabelValues(field).Observe(float64(length))
 	}
 }
 
