@@ -5,7 +5,6 @@ package selectors
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -35,6 +34,10 @@ type Selector struct {
 
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
+
+	// When these range selector modifiers are used the start/end timestamps are adjusted to query for a larger range of points
+	Anchored bool
+	Smoothed bool
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -119,7 +122,7 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		return errors.New("should not call Selector.loadSeriesSet() multiple times")
 	}
 
-	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta)
+	startTimestamp, endTimestamp := ComputeQueriedTimeRange(s.TimeRange, s.Timestamp, s.Range, s.Offset, s.LookbackDelta, s.Anchored, s.Smoothed)
 
 	hints := &storage.SelectHints{
 		Start: startTimestamp,
@@ -154,11 +157,7 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	return nil
 }
 
-func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration) (int64, int64) {
-	if lookbackDelta != 0 && selectorRange != 0 {
-		panic(fmt.Sprintf("both lookback delta (%s) and selector range (%s) are non-zero", lookbackDelta, selectorRange))
-	}
-
+func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, selectorRange time.Duration, offset int64, lookbackDelta time.Duration, anchored bool, smoothed bool) (int64, int64) {
 	startTimestamp := timeRange.StartT
 	endTimestamp := timeRange.EndT
 
@@ -172,6 +171,14 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, s
 	rangeMilliseconds := selectorRange.Milliseconds()
 	startTimestamp = startTimestamp - lookbackDelta.Milliseconds() - rangeMilliseconds - offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
 	endTimestamp = endTimestamp - offset
+
+	if anchored || smoothed {
+		startTimestamp -= selectorRange.Milliseconds() + lookbackDelta.Milliseconds()
+	}
+
+	if smoothed {
+		endTimestamp += lookbackDelta.Milliseconds()
+	}
 
 	return startTimestamp, endTimestamp
 }

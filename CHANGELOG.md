@@ -29,6 +29,7 @@
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing, in order to reduce memberlist cross-AZ data transfer. #13129
 * [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058
+* [FEATURE] MQE: Add support for experimental extended range selector modifiers `smoothed` and `anchored`. These can be enabled with `-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored` #13398
 * [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
@@ -55,6 +56,7 @@
   * `-common.storage.gcs.max-retries`
   * `-ruler-storage.gcs.max-retries`
 * [ENHANCEMENT] Usage-tracker: Improve first snapshot loading & rehash speed. #13284
+* [ENHANCEMENT] Query-frontend: Limits middleware will record different error messages when experimental functions, aggregations, or extended range selector modifiers are used but not enabled for a tenant. #13398
 * [ENHANCEMENT] Usage-tracker, distributor: Make usage-tracker calls asynchronous for users who are far enough from the series limits. #13427
 * [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313, #13470
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_block_discovery_latency_seconds` metric to track time from block creation to discovery by store-gateway. #13489

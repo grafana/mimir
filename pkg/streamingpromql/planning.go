@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -377,6 +379,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Smoothed:           expr.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here.
 				// This is done in the skip histogram buckets optimization pass, after common subexpression elimination is applied,
 				// to simplify the logic in the common subexpression elimination optimization pass. Otherwise it would have to deal
@@ -397,6 +400,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Anchored:           vs.Anchored,
+				Smoothed:           vs.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here. See the explanation above.
 			},
 		}, nil
@@ -500,6 +505,19 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			node, err := p.nodeFromExpr(arg)
 			if err != nil {
 				return nil, err
+			}
+			matrixSelector, ok := node.(*core.MatrixSelector)
+			if ok && matrixSelector.Anchored {
+				_, supported := promql.AnchoredSafeFunctions[expr.Func.Name]
+				if !supported {
+					return nil, getAnchoredIncompatibleFunctionError(expr.Func.Name)
+				}
+			}
+			if ok && matrixSelector.Smoothed {
+				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]
+				if !supported {
+					return nil, getSmoothedIncompatibleFunctionError(expr.Func.Name)
+				}
 			}
 
 			args = append(args, node)
@@ -816,4 +834,30 @@ type staticQueryPlanVersionProvider struct {
 
 func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	return s.version, nil
+}
+
+var smoothedIncompatibleFunctionPrefix string
+var anchoredIncompatibleFunctionPrefix string
+
+func getSmoothedIncompatibleFunctionError(fncName string) error {
+	if len(smoothedIncompatibleFunctionPrefix) == 0 {
+		smoothedIncompatibleFunctionPrefix = fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
+	}
+	return fmt.Errorf("%s%s", smoothedIncompatibleFunctionPrefix, fncName)
+}
+
+func getAnchoredIncompatibleFunctionError(fncName string) error {
+	if len(anchoredIncompatibleFunctionPrefix) == 0 {
+		anchoredIncompatibleFunctionPrefix = fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
+	}
+	return fmt.Errorf("%s%s", anchoredIncompatibleFunctionPrefix, fncName)
+}
+
+func sortImplode(m map[string]struct{}) string {
+	tmp := make([]string, 0, len(m))
+	for k := range m {
+		tmp = append(tmp, k)
+	}
+	sort.Strings(tmp)
+	return strings.Join(tmp, ", ")
 }

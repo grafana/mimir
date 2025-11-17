@@ -264,6 +264,9 @@ func newQueryTripperware(
 	// This enables duration arithmetic https://github.com/prometheus/prometheus/pull/16249.
 	parser.ExperimentalDurationExpr = true
 
+	// This enables the anchored and smoothed selector modifiers
+	parser.EnableExtendedRangeSelectors = true
+
 	var c cache.Cache
 	if cfg.CacheResults || cfg.cardinalityBasedShardingEnabled() {
 		var err error
@@ -483,7 +486,7 @@ func newQueryMiddlewares(
 
 	// Does not apply to remote read as those are executed remotely and the enabling of PromQL experimental
 	// functions for those are not controlled here.
-	experimentalFunctionsMiddleware := newExperimentalFunctionsMiddleware(limits, log)
+	experimentalFunctionsMiddleware := newExperimentalOperatorsMiddleware(limits, log)
 	queryRangeMiddleware = append(
 		queryRangeMiddleware,
 		newInstrumentMiddleware("experimental_functions", metrics),

@@ -106,6 +106,16 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 	return existing
 }
 
+// ViewAll returns a view which includes all points in the ring buffer.
+// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBufferView {
+	if existing == nil {
+		existing = &FPointRingBufferView{buffer: b}
+	}
+	existing.size = b.size
+	return existing
+}
+
 // ViewUntilSearchingBackwards is like ViewUntilSearchingForwards, except it examines the points from the end of the buffer, so
 // is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
 func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
@@ -292,6 +302,124 @@ func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer,
 	}
 
 	return view, buffer, nil
+}
+
+// FPointRingBufferViewIterator is an iterator which can be used over a FPointRingBufferView
+type FPointRingBufferViewIterator struct {
+	idx  int
+	view *FPointRingBufferView
+}
+
+func NewFPointRingBufferViewIterator(view *FPointRingBufferView) *FPointRingBufferViewIterator {
+	return &FPointRingBufferViewIterator{view: view}
+}
+
+func (i *FPointRingBufferViewIterator) HasNext() bool {
+	return i.idx < i.view.Count()
+}
+
+// Next moves the iterator forward, returning the next point.
+// This function will panic if moving the iterator would result in an index out of bounds.
+func (i *FPointRingBufferViewIterator) Next() promql.FPoint {
+	if i.idx >= i.view.Count() {
+		panic(fmt.Sprintf("next(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
+	}
+	p := i.view.PointAt(i.idx)
+	i.idx++
+	return p
+}
+
+func (i *FPointRingBufferViewIterator) At() promql.FPoint {
+	return i.view.PointAt(i.idx)
+}
+
+// Prev moves the iterator backwards, returning the previous point.
+// This function will panic if moving the iterator would result in an index out of bounds.
+func (i *FPointRingBufferViewIterator) Prev() promql.FPoint {
+	if i.idx <= 0 {
+		panic(fmt.Sprintf("prev(): out of range, requested index %v", i.idx-1))
+	}
+	i.idx--
+	return i.view.PointAt(i.idx)
+}
+
+// advance will move the iterator forward.
+func (i *FPointRingBufferViewIterator) advance() {
+	if i.idx < i.view.Count() {
+		i.idx++
+	}
+}
+
+// reverse will move the iterator backwards.
+func (i *FPointRingBufferViewIterator) reverse() {
+	if i.idx > 0 {
+		i.idx--
+	}
+}
+
+// Peek returns the next point, but does not move the iterator forward.
+// This function will panic if this look ahead would result in an index out of bounds.
+func (i *FPointRingBufferViewIterator) Peek() promql.FPoint {
+	if i.idx >= i.view.Count() {
+		panic(fmt.Sprintf("peek(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
+	}
+	return i.view.PointAt(i.idx)
+}
+
+// Seek will return the point which is closest to being <= time, or the first point after this time.
+// The iterator will be positioned to the first point > time.
+func (i *FPointRingBufferViewIterator) Seek(time int64) promql.FPoint {
+	var first *promql.FPoint
+
+	for i.HasNext() {
+		next := i.Peek()
+
+		if next.T < time {
+			first = &next
+			i.advance()
+			continue
+		}
+
+		if next.T == time {
+			i.advance()
+			return next
+		}
+
+		if first != nil {
+			return *first
+		}
+
+		return next
+	}
+
+	return *first
+}
+
+// CopyRemainingPointsTo will accumulate all points <= time into the given buff.
+// The iterator will be positioned at the first point which is >= time.
+// If there is no point >= time, then the iterator is positioned at the last point < time.
+func (i *FPointRingBufferViewIterator) CopyRemainingPointsTo(time int64, buff []promql.FPoint) []promql.FPoint {
+	for i.HasNext() {
+		next := i.Next()
+
+		if next.T <= time {
+			buff = append(buff, next)
+
+			if next.T == time {
+				// move the iterator back so that the the at() call will return this 'next' point
+				i.reverse()
+				return buff
+			}
+
+		} else {
+			// This is the first point to be >= rangeEnd
+			break
+		}
+	}
+
+	// move the iterator back so that the the at() call will return this last point which caused our loop to exit
+	i.reverse()
+	return buff
 }
 
 // These hooks exist so we can override them during unit tests.

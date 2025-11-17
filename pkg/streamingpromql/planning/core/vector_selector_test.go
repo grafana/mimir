@@ -316,6 +316,69 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			expectEquivalent: true,
 		},
+		"one with smoothed and one without": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: false,
+		},
+		"both smoothed": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			expectEquivalent: true,
+		},
+		"both not smoothed": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: true,
+		},
 	}
 
 	for name, testCase := range testCases {

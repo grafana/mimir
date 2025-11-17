@@ -563,3 +563,133 @@ func setupRingBufferTestingPools(t *testing.T) {
 		putHPointSliceForRingBuffer = originalPutHPointSlice
 	})
 }
+
+func TestFPointRingBufferEmptySet(t *testing.T) {
+	floats := NewFPointRingBuffer(&limiter.MemoryConsumptionTracker{})
+	require.NoError(t, floats.Use([]promql.FPoint{}))
+	it := NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.False(t, it.HasNext())
+	it.advance()
+	it.advance()
+	require.False(t, it.HasNext())
+}
+
+func TestFPointRingBufferSinglePoint(t *testing.T) {
+	floats := NewFPointRingBuffer(&limiter.MemoryConsumptionTracker{})
+	require.NoError(t, floats.Use([]promql.FPoint{{T: 0, F: 1}}))
+	it := NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Peek())
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Next())
+	require.False(t, it.HasNext())
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Prev())
+}
+
+func TestFPointRingBufferDoublePoint(t *testing.T) {
+	floats := NewFPointRingBuffer(&limiter.MemoryConsumptionTracker{})
+	require.NoError(t, floats.Use([]promql.FPoint{{T: 0, F: 1}, {T: 1, F: 1}}))
+	it := NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Peek())
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Next())
+	require.Equal(t, promql.FPoint{T: 1, F: 1}, it.Peek())
+	require.Equal(t, promql.FPoint{T: 1, F: 1}, it.Next())
+	require.False(t, it.HasNext())
+}
+
+func TestFPointRingBufferAdvance(t *testing.T) {
+	floats := NewFPointRingBuffer(&limiter.MemoryConsumptionTracker{})
+	require.NoError(t, floats.Use([]promql.FPoint{{T: 0, F: 1}, {T: 1, F: 1}, {T: 2, F: 1}, {T: 3, F: 1}, {T: 4, F: 1}, {T: 5, F: 1}, {T: 6, F: 1}, {T: 7, F: 1}}))
+	it := NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	i := 0
+	for i < 8 {
+		require.Equal(t, promql.FPoint{T: int64(i), F: 1}, it.Peek())
+		require.Equal(t, promql.FPoint{T: int64(i), F: 1}, it.Next())
+
+		if i > 0 {
+			require.Equal(t, promql.FPoint{T: int64(i), F: 1}, it.Prev())
+			it.advance()
+		}
+		i++
+	}
+	require.False(t, it.HasNext())
+}
+
+func TestFPointRingBufferSeek(t *testing.T) {
+	floats := NewFPointRingBuffer(&limiter.MemoryConsumptionTracker{})
+	require.NoError(t, floats.Use([]promql.FPoint{{T: 0, F: 1}, {T: 1, F: 1}, {T: 2, F: 1}, {T: 4, F: 1}, {T: 5, F: 1}, {T: 6, F: 1}, {T: 8, F: 1}, {T: 9, F: 1}}))
+	it := NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Seek(-1))
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Next())
+
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, it.Seek(0))
+	require.Equal(t, promql.FPoint{T: 1, F: 1}, it.Next())
+
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 2, F: 1}, it.Seek(2))
+	require.Equal(t, promql.FPoint{T: 4, F: 1}, it.Next())
+
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 2, F: 1}, it.Seek(3))
+	require.Equal(t, promql.FPoint{T: 4, F: 1}, it.Next())
+
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 8, F: 1}, it.Seek(8))
+	require.Equal(t, promql.FPoint{T: 9, F: 1}, it.Next())
+
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	require.Equal(t, promql.FPoint{T: 9, F: 1}, it.Seek(9))
+	require.False(t, it.HasNext())
+}
+
+func TestFPointRingBufferCopyRemainingPoints(t *testing.T) {
+	floats := NewFPointRingBuffer(&limiter.MemoryConsumptionTracker{})
+	require.NoError(t, floats.Use([]promql.FPoint{{T: 0, F: 1}, {T: 1, F: 1}, {T: 2, F: 1}, {T: 4, F: 1}, {T: 5, F: 1}, {T: 6, F: 1}, {T: 8, F: 1}, {T: 10, F: 1}}))
+	it := NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	buff := make([]promql.FPoint, 0, it.view.Count())
+	buff = it.CopyRemainingPointsTo(-1, buff)
+	last := it.At()
+
+	require.Equal(t, 0, len(buff))
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, last)
+
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	buff = it.CopyRemainingPointsTo(0, buff)
+	last = it.At()
+	require.Equal(t, 1, len(buff))
+	require.Equal(t, promql.FPoint{T: 0, F: 1}, last)
+
+	buff = buff[:0]
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	buff = it.CopyRemainingPointsTo(1, buff)
+	last = it.At()
+	require.Equal(t, 2, len(buff))
+	require.Equal(t, promql.FPoint{T: 1, F: 1}, last)
+
+	buff = buff[:0]
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	buff = it.CopyRemainingPointsTo(3, buff)
+	last = it.At()
+	require.Equal(t, 3, len(buff))
+	require.Equal(t, promql.FPoint{T: 4, F: 1}, last)
+
+	buff = buff[:0]
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	buff = it.CopyRemainingPointsTo(4, buff)
+	last = it.At()
+	require.Equal(t, 4, len(buff))
+	require.Equal(t, promql.FPoint{T: 4, F: 1}, last)
+
+	buff = buff[:0]
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	buff = it.CopyRemainingPointsTo(8, buff)
+	last = it.At()
+	require.Equal(t, 7, len(buff))
+	require.Equal(t, promql.FPoint{T: 8, F: 1}, last)
+
+	buff = buff[:0]
+	it = NewFPointRingBufferViewIterator(floats.ViewAll(nil))
+	buff = it.CopyRemainingPointsTo(9, buff)
+	last = it.At()
+	require.Equal(t, 7, len(buff))
+	require.Equal(t, promql.FPoint{T: 10, F: 1}, last)
+}
