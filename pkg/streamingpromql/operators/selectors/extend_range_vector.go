@@ -6,124 +6,11 @@
 package selectors
 
 import (
-	"fmt"
-
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
-
-type fPointRingBufferViewIterator struct {
-	idx  int
-	view *types.FPointRingBufferView
-}
-
-func (i *fPointRingBufferViewIterator) hasNext() bool {
-	return i.idx < i.view.Count()
-}
-
-// next moves the iterator forward, returning the next point.
-// This function will panic if moving the iterator would result in an index out of bounds.
-func (i *fPointRingBufferViewIterator) next() promql.FPoint {
-	if i.idx >= i.view.Count() {
-		panic(fmt.Sprintf("next(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
-	}
-	p := i.view.PointAt(i.idx)
-	i.idx++
-	return p
-}
-
-func (i *fPointRingBufferViewIterator) at() promql.FPoint {
-	return i.view.PointAt(i.idx)
-}
-
-// next moves the iterator backwards, returning the previous point.
-// This function will panic if moving the iterator would result in an index out of bounds.
-func (i *fPointRingBufferViewIterator) prev() promql.FPoint {
-	if i.idx <= 0 {
-		panic(fmt.Sprintf("prev(): out of range, requested index %v", i.idx-1))
-	}
-	i.idx--
-	return i.view.PointAt(i.idx)
-}
-
-func (i *fPointRingBufferViewIterator) advance() {
-	if i.idx < i.view.Count() {
-		i.idx++
-	}
-}
-
-func (i *fPointRingBufferViewIterator) reverse() {
-	if i.idx > 0 {
-		i.idx--
-	}
-}
-
-// peek returns the next point, but does not move the iterator forward.
-// This function will panic if this look ahead would result in an index out of bounds.
-func (i *fPointRingBufferViewIterator) peek() promql.FPoint {
-	if i.idx >= i.view.Count() {
-		panic(fmt.Sprintf("peek(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
-	}
-	return i.view.PointAt(i.idx)
-}
-
-// seek will return the point which is closest to being <= time, or the first point after this time.
-// The iterator will be positioned to the first point > time.
-func (i *fPointRingBufferViewIterator) seek(time int64) promql.FPoint {
-	var first *promql.FPoint
-
-	for i.hasNext() {
-		next := i.peek()
-
-		if next.T < time {
-			first = &next
-			i.advance()
-			continue
-		}
-
-		if next.T == time {
-			i.advance()
-			return next
-		}
-
-		if first != nil {
-			return *first
-		}
-
-		return next
-	}
-
-	return *first
-}
-
-// copyRemainingPointsTo will accumulate all points <= time into the given buff.
-// The iterator will be positioned at the first point which is >= time.
-// If there is no point >= time, then the iterator is positioned at the last point < time.
-func (i *fPointRingBufferViewIterator) copyRemainingPointsTo(time int64, buff []promql.FPoint) []promql.FPoint {
-	for i.hasNext() {
-		next := i.next()
-
-		if next.T <= time {
-			buff = append(buff, next)
-
-			if next.T == time {
-				// move the iterator back so that the the at() call will return this 'next' point
-				i.reverse()
-				return buff
-			}
-
-		} else {
-			// This is the first point to be >= rangeEnd
-			break
-		}
-	}
-
-	// move the iterator back so that the the at() call will return this last point which caused our loop to exit
-	i.reverse()
-	return buff
-}
 
 // extendRangeVectorPoints will return a slice of points which has been adjusted to have anchored/smoothed points on the bounds of the given range.
 // This is used with the anchored/smoothed range query modifiers.
@@ -151,18 +38,18 @@ func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, range
 		return nil, nil, nil, err
 	}
 
-	it := fPointRingBufferViewIterator{view: view}
+	it := types.NewFPointRingBufferViewIterator(view)
 
 	// Find the last point before the rangeStart, or the first point >= rangeStart
-	first := it.seek(rangeStart)
+	first := it.Seek(rangeStart)
 
 	// Use this first value as the range boundary value
 	buff = append(buff, promql.FPoint{T: rangeStart, F: first.F})
 
 	// Accumulate the points <= rangeEnd into the buffer.
 	// Note - if the first.T > rangeStart, it will also be accumulated into buff as the 2nd point in the buffer.
-	buff = it.copyRemainingPointsTo(rangeEnd, buff)
-	last := it.at()
+	buff = it.CopyRemainingPointsTo(rangeEnd, buff)
+	last := it.At()
 
 	if last.T != rangeEnd {
 		// Use the last point >= rangeEnd, or the point immediately preceding as the value for the end boundary
