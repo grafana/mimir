@@ -451,6 +451,10 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
 			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
+
+			// Record block discovery latency as time from block creation (ULID timestamp) to now.
+			blockCreationTime := time.UnixMilli(int64(meta.ULID.Time()))
+			s.metrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
 		}
 	}()
 	s.metrics.blockLoads.Inc()

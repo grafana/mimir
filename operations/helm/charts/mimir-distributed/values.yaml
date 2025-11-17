@@ -2531,6 +2531,9 @@ chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
 
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
+
   # -- Total number of chunks-cache replicas
   replicas: 1
 
@@ -2632,6 +2635,9 @@ chunks-cache:
 index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
   enabled: false
+
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
 
   # -- Total number of index-cache replicas
   replicas: 1
@@ -2735,6 +2741,9 @@ metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
   enabled: false
 
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
+
   # -- Total number of metadata-cache replicas
   replicas: 1
 
@@ -2836,6 +2845,9 @@ metadata-cache:
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
   enabled: false
+
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
 
   # -- Total number of results-cache replicas
   replicas: 1
