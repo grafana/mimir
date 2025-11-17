@@ -349,7 +349,7 @@ require (
 	golang.org/x/tools v0.39.0
 	google.golang.org/genproto v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250929231259-57b25ae835d4 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251103181224-f26f9409b101
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20251111163417-95abcf5c77ba
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
