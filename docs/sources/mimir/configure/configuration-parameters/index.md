@@ -3110,6 +3110,15 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # do).
 # CLI flag: -querier.response-streaming-enabled
 [response_streaming_enabled: <boolean> | default = false]
+
+# (experimental) The grace period for query-frontend health checks. If a
+# query-frontend connection consistently fails health checks for this period,
+# any open connections are closed. The querier will attempt to reconnect to the
+# query-frontend if a subsequent request is received from it. Set to 0 to
+# immediately remove query-frontend connections on the first health check
+# failure.
+# CLI flag: -querier.frontend-health-check-grace-period
+[frontend_health_check_grace_period: <duration> | default = 0s]
 ```
 
 ### etcd
