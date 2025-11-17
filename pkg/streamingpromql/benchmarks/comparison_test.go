@@ -7,7 +7,6 @@ package benchmarks
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/promql/parser"
 	"math"
 	"os"
 	"testing"
@@ -23,6 +22,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
@@ -104,7 +104,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	defer func() {
 		parser.EnableExperimentalFunctions = enableExperimentalFunctions
 	}()
-	
+
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)
