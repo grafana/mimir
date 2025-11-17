@@ -596,7 +596,12 @@ alertmanager:
     whenDeleted: Retain
     whenScaled: Retain
     selector: {}
-
+    # matchLabels:
+    #   release: "stable"
+    # matchExpressions:
+    #   - key: environment
+    #.    operator: In
+    #     values: [dev]
   readinessProbe:
     httpGet:
       path: /ready
@@ -996,6 +1001,12 @@ ingester:
     whenDeleted: Retain
     whenScaled: Retain
     selector: {}
+    # matchLabels:
+    #   release: "stable"
+    # matchExpressions:
+    #   - key: environment
+    #.    operator: In
+    #     values: [dev]
 
     # Ingester data Persistent Volume Storage Class
     # If defined, storageClassName: <storageClass>
@@ -2197,7 +2208,12 @@ store_gateway:
     whenDeleted: Retain
     whenScaled: Retain
     selector: {}
-
+    # matchLabels:
+    #   release: "stable"
+    # matchExpressions:
+    #   - key: environment
+    #.    operator: In
+    #     values: [dev]
   readinessProbe:
     httpGet:
       path: /ready
@@ -2441,7 +2457,12 @@ compactor:
     whenDeleted: Retain
     whenScaled: Retain
     selector: {}
-
+    # matchLabels:
+    #   release: "stable"
+    # matchExpressions:
+    #   - key: environment
+    #.    operator: In
+    #     values: [dev]
   readinessProbe:
     httpGet:
       path: /ready
