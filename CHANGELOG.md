@@ -3,6 +3,7 @@
 ## main / unreleased
 
 ### Grafana Mimir
+* [CHANGE] Compactor: Add readiness probe health check which periodically tests read/write access to the data volume. #13067
 
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] API: The `/api/v1/user_limits` endpoint is now stable and no longer experimental. #13218
