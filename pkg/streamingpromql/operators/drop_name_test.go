@@ -6,6 +6,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
@@ -26,9 +27,9 @@ func TestDropName(t *testing.T) {
 	}{
 		"with dropName set partially": {
 			inputSeries: []labels.Labels{
-				labels.FromStrings(labels.MetricName, "metric", "foo", "1"),
-				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
-				labels.FromStrings(labels.MetricName, "metric", "foo", "3"),
+				labels.FromStrings(model.MetricNameLabel, "metric", "foo", "1"),
+				labels.FromStrings(model.MetricNameLabel, "metric", "foo", "2"),
+				labels.FromStrings(model.MetricNameLabel, "metric", "foo", "3"),
 			},
 			inputData: []types.InstantVectorSeriesData{
 				{Floats: []promql.FPoint{{T: 0, F: 0}, {T: 1, F: 1}}},
@@ -43,7 +44,7 @@ func TestDropName(t *testing.T) {
 
 			expectedOutputSeries: []labels.Labels{
 				labels.FromStrings("foo", "1"),
-				labels.FromStrings(labels.MetricName, "metric", "foo", "2"),
+				labels.FromStrings(model.MetricNameLabel, "metric", "foo", "2"),
 				labels.FromStrings("foo", "3"),
 			},
 			expectedOutputData: []types.InstantVectorSeriesData{

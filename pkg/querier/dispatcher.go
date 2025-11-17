@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -245,7 +246,12 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 	}
 
 	if err := w.write(ctx, resp); err != nil {
-		level.Warn(w.logger).Log("msg", "failed to write message to stream", "err", err)
+		if grpcutil.IsCanceled(err) {
+			level.Debug(w.logger).Log("msg", "failed to write message to query-frontend stream because the request was canceled", "err", err)
+		} else {
+			level.Warn(w.logger).Log("msg", "failed to write message to query-frontend stream", "err", err)
+		}
+
 		return err
 	}
 
@@ -277,7 +283,11 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apier
 	}
 
 	if err := w.write(ctx, resp); err != nil {
-		level.Warn(w.logger).Log("msg", "failed to write error to stream", "writeErr", err, "originalErr", msg)
+		if grpcutil.IsCanceled(err) {
+			level.Debug(w.logger).Log("msg", "failed to write error to query-frontend stream because the request was canceled", "writeErr", err, "originalErr", msg)
+		} else {
+			level.Warn(w.logger).Log("msg", "failed to write error to query-frontend stream", "writeErr", err, "originalErr", msg)
+		}
 	}
 }
 

@@ -353,8 +353,14 @@ func TestIngester_StartReadRequest(t *testing.T) {
 	}
 }
 
+func mustNewNativeHistogramValidationError(t *testing.T, originalErr error, timestamp model.Time, seriesLabels []mimirpb.LabelAdapter) nativeHistogramValidationError {
+	res, ok := newNativeHistogramValidationError(originalErr, timestamp, seriesLabels)
+	require.True(t, ok)
+	return res
+}
+
 func TestIngester_Push(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
@@ -1791,7 +1797,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, fmt.Errorf("21 observations found in buckets, but the Count field is 22: histogram's observation count should equal the number of observations found in the buckets (in absence of NaN)"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("21 observations found in buckets, but the Count field is 22: %w", histogram.ErrHistogramCountMismatch), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1832,7 +1838,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, fmt.Errorf("21 observations found in buckets, but the Count field is 20: histogram's observation count should be at least the number of observations found in the buckets"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("21 observations found in buckets, but the Count field is 20: %w", histogram.ErrHistogramCountNotBigEnough), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1873,7 +1879,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, fmt.Errorf("positive side: span number 2 with offset -2: histogram has a span whose offset is negative"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("positive side: span number 2 with offset -2: %w", histogram.ErrHistogramSpanNegativeOffset), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -1914,7 +1920,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, fmt.Errorf("positive side: spans need 5 buckets, have 4 buckets: histogram spans specify different number of buckets than provided"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("positive side: spans need 5 buckets, have 4 buckets: %w", histogram.ErrHistogramSpansBucketsMismatch), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2006,7 +2012,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, fmt.Errorf("custom buckets: only 1 custom bounds defined which is insufficient to cover total span length of 5: histogram custom bounds are too few"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("custom buckets: only 1 custom bounds defined which is insufficient to cover total span length of 5: %w", histogram.ErrHistogramCustomBucketsMismatch), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2047,7 +2053,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, fmt.Errorf("custom buckets: previous bound is 100.000000 and current is 50.000000: histogram custom bounds must be in strictly increasing order"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("custom buckets: previous bound is 100.000000 and current is 50.000000: %w", histogram.ErrHistogramCustomBucketsInvalid), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2088,7 +2094,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, fmt.Errorf("custom buckets: last +Inf bound must not be explicitly defined: histogram custom bounds must be finite"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("custom buckets: last +Inf bound must not be explicitly defined: %w", histogram.ErrHistogramCustomBucketsInfinite), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -2247,7 +2253,7 @@ func TestIngester_Push(t *testing.T) {
 				),
 			},
 			// Expect the error string instead of constructing the error to catch if Prometheus changes the error message.
-			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, fmt.Errorf("negative side: bucket number 2 has observation count of -98: histogram has a bucket whose observation count is negative"), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
+			expectedErr: newErrorWithStatus(wrapOrAnnotateWithUser(mustNewNativeHistogramValidationError(t, fmt.Errorf("negative side: bucket number 2 has observation count of -98: %w", histogram.ErrHistogramNegativeBucketCount), model.Time(10), []mimirpb.LabelAdapter{metricLabelAdapters[0]}), userID), codes.InvalidArgument),
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested per user.
 				# TYPE cortex_ingester_ingested_samples_total counter
@@ -4264,7 +4270,7 @@ func TestIngester_Push(t *testing.T) {
 			err = i.QueryStream(&client.QueryRequest{
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
-				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}},
+				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*"}},
 			}, s)
 			require.NoError(t, err)
 
@@ -4280,7 +4286,7 @@ func TestIngester_Push(t *testing.T) {
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
 				Matchers: []*client.LabelMatchers{
-					{Matchers: []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}}},
+					{Matchers: []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*"}}},
 				},
 			})
 
@@ -4346,8 +4352,8 @@ func TestIngester_Push(t *testing.T) {
 }
 
 func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
+	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
+	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -4452,8 +4458,8 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 }
 
 func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
-	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
-	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test_histogram"}}}
+	metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
+	metricLabelAdaptersHist := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test_histogram"}}}
 	metricNames := []string{
 		"cortex_ingester_memory_series_created_total",
 		"cortex_ingester_memory_series_removed_total",
@@ -4589,7 +4595,7 @@ func BenchmarkIngesterPush(b *testing.B) {
 					startAndWaitHealthy(b, ingester, r)
 
 					// Push a single time series to set the TSDB min time.
-					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}}
+					metricLabelAdapters := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}}
 					startTime := util.TimeToMillis(time.Now())
 
 					currTimeReq := mimirpb.ToWriteRequest(
@@ -4679,7 +4685,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a single time series to set the TSDB min time.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}}},
+					[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
 					nil,
@@ -4705,7 +4711,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
 					currTimeReq := mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 						nil,
 						nil,
@@ -4734,7 +4740,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with a metric name different than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "another"}}},
+					[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "another"}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
@@ -4759,7 +4765,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Push a series with the same metric name but different labels than the one used during the benchmark.
 				currTimeReq := mimirpb.ToWriteRequest(
-					[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: "another"}}},
+					[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: metricName}, {Name: "cardinality", Value: "another"}}},
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					nil,
@@ -4786,7 +4792,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Send a lot of samples
-				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, "test"), 1, 10000))
 				require.NoError(b, err)
 
 				ingester.ingestionRate.Tick()
@@ -4810,7 +4816,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
 				// Send some samples for one tenant (not the same that is used during the test)
 				ctx := user.InjectOrgID(context.Background(), "different_tenant")
-				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
@@ -4830,7 +4836,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				return true
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, _ int) {
-				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics [][]mimirpb.LabelAdapter, samples []mimirpb.Sample) {
@@ -4896,7 +4902,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					metrics := make([][]mimirpb.LabelAdapter, 0, scenario.numSeriesPerRequest)
 					samples := make([]mimirpb.Sample, 0, scenario.numSeriesPerRequest)
 					for i := 0; i < scenario.numSeriesPerRequest; i++ {
-						metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
+						metrics = append(metrics, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
 						samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: sampleTimestamp})
 					}
 
@@ -4932,10 +4938,10 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
-		{labels.FromStrings(labels.MetricName, "test_3", "status", "500"), 2, 200000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "500", "route", "get_user"), 1, 110000},
+		{labels.FromStrings(model.MetricNameLabel, "test_2"), 2, 200000},
+		{labels.FromStrings(model.MetricNameLabel, "test_3", "status", "500"), 2, 200000},
 	}
 
 	registry := prometheus.NewRegistry()
@@ -5043,9 +5049,9 @@ func Test_Ingester_LabelValues(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "500", "route", "get_user"), 1, 110000},
+		{labels.FromStrings(model.MetricNameLabel, "test_2"), 2, 200000},
 	}
 
 	expected := map[string][]string{
@@ -5111,15 +5117,15 @@ func l2m(lbls labels.Labels) model.Metric {
 func Test_Ingester_Query(t *testing.T) {
 	series := []util_test.Series{
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200", "route", "get_user"),
 			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "test_1", "status", "500", "route", "get_user"),
 			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "test_2", "status", "500", "route", "get_user"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "test_2", "status", "500", "route", "get_user"),
 			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
 		},
 	}
@@ -5241,19 +5247,19 @@ func Test_Ingester_Query(t *testing.T) {
 func TestIngester_LabelNamesAndValues(t *testing.T) {
 	series := []util_test.Series{
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_0", "status", "500"),
 			Samples: []util_test.Sample{{TS: 100000, Val: 1}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_0", "status", "200"),
 			Samples: []util_test.Sample{{TS: 110000, Val: 1}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1", "env", "prod"),
 			Samples: []util_test.Sample{{TS: 200000, Val: 2}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1", "env", "prod", "status", "300"),
 			Samples: []util_test.Sample{{TS: 200000, Val: 3}},
 		},
 	}
@@ -5266,14 +5272,14 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 		{testName: "expected all label with values",
 			matchers: []*client.LabelMatcher{},
 			expected: []*client.LabelValues{
-				{LabelName: labels.MetricName, Values: []string{"metric_0", "metric_1"}},
+				{LabelName: model.MetricNameLabel, Values: []string{"metric_0", "metric_1"}},
 				{LabelName: "status", Values: []string{"200", "300", "500"}},
 				{LabelName: "env", Values: []string{"prod"}}},
 		},
 		{testName: "expected label values only from `metric_0`",
 			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_0"}},
 			expected: []*client.LabelValues{
-				{LabelName: labels.MetricName, Values: []string{"metric_0"}},
+				{LabelName: model.MetricNameLabel, Values: []string{"metric_0"}},
 				{LabelName: "status", Values: []string{"200", "500"}},
 			},
 		},
@@ -5305,19 +5311,19 @@ func TestIngester_LabelNamesAndValues(t *testing.T) {
 func TestIngester_LabelValuesCardinality(t *testing.T) {
 	series := []util_test.Series{
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "500"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_0", "status", "500"),
 			Samples: []util_test.Sample{{TS: 100000, Val: 1.5}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_0", "status", "200"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_0", "status", "200"),
 			Samples: []util_test.Sample{{TS: 110030, Val: 1.5}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1", "env", "prod"),
 			Samples: []util_test.Sample{{TS: 100060, Val: 1.5}},
 		},
 		{
-			Labels:  labels.FromStrings(labels.MetricName, "metric_1", "env", "prod", "status", "300"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "metric_1", "env", "prod", "status", "300"),
 			Samples: []util_test.Sample{{TS: 100090, Val: 1.5}},
 		},
 	}
@@ -5327,7 +5333,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		expectedItems []*client.LabelValueSeriesCount
 	}{
 		"expected all label values cardinality": {
-			labelNames: []string{labels.MetricName, "env", "status"},
+			labelNames: []string{model.MetricNameLabel, "env", "status"},
 			matchers:   []*client.LabelMatcher{},
 			expectedItems: []*client.LabelValueSeriesCount{
 				{
@@ -5339,7 +5345,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 					},
 				},
 				{
-					LabelName: labels.MetricName,
+					LabelName: model.MetricNameLabel,
 					LabelValueSeries: map[string]uint64{
 						"metric_0": 2,
 						"metric_1": 2,
@@ -5356,7 +5362,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		"expected status values cardinality applying matchers": {
 			labelNames: []string{"status"},
 			matchers: []*client.LabelMatcher{
-				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "metric_1"},
 			},
 			expectedItems: []*client.LabelValueSeriesCount{
 				{
@@ -5442,7 +5448,7 @@ func TestIngester_QueryStream_QuerySharding(t *testing.T) {
 	// and finally we push the remaining series. This way we can both test querying back series both
 	// from compacted blocks and head.
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
-		lbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID))
+		lbls := labels.FromStrings(model.MetricNameLabel, "foo", "series_id", strconv.Itoa(seriesID))
 		req := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
 		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
@@ -5530,7 +5536,7 @@ func TestIngester_QueryStream_QueryShardingShouldGuaranteeSeriesShardingConsiste
 
 	// Push all series.
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
-		lbls := labels.FromStrings(labels.MetricName, "test", "series_id", strconv.Itoa(seriesID))
+		lbls := labels.FromStrings(model.MetricNameLabel, "test", "series_id", strconv.Itoa(seriesID))
 		req := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
 		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
@@ -5663,7 +5669,7 @@ func TestIngester_Push_ShouldNotCreateTSDBIngesterServiceIsNotInRunningState(t *
 	// Mock request
 	userID := "test"
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 0)
+	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, 0)
 
 	res, err := pushWithSimulatedGRPCHandler(ctx, i, req)
 
@@ -5683,12 +5689,12 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200"), 1, 100000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "500"), 1, 110000},
+		{labels.FromStrings(model.MetricNameLabel, "test_2"), 2, 200000},
 		// The two following series have the same FastFingerprint=e002a3a451262627
-		{labels.FromStrings(labels.MetricName, "collision", "app", "l", "uniq0", "0", "uniq1", "1"), 1, 300000},
-		{labels.FromStrings(labels.MetricName, "collision", "app", "m", "uniq0", "1", "uniq1", "1"), 1, 300000},
+		{labels.FromStrings(model.MetricNameLabel, "collision", "app", "l", "uniq0", "0", "uniq1", "1"), 1, 300000},
+		{labels.FromStrings(model.MetricNameLabel, "collision", "app", "m", "uniq0", "1", "uniq1", "1"), 1, 300000},
 	}
 
 	tests := map[string]struct {
@@ -5931,7 +5937,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 			samples := make([]mimirpb.Sample, 0, batchSize)
 
 			for s := 0; s < batchSize; s++ {
-				metrics = append(metrics, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", o+s)}})
+				metrics = append(metrics, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: fmt.Sprintf("test_%d", o+s)}})
 				samples = append(samples, mimirpb.Sample{
 					TimestampMs: ts,
 					Value:       1,
@@ -5965,17 +5971,17 @@ func TestIngester_QueryStream(t *testing.T) {
 	const numSeries = 1000
 
 	for seriesID := 0; seriesID < numSeries; seriesID++ {
-		floatLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "float")
+		floatLbls := labels.FromStrings(model.MetricNameLabel, "foo", "series_id", strconv.Itoa(seriesID), "type", "float")
 		floatReq := mockWriteRequest(t, floatLbls, float64(seriesID), int64(seriesID))
 		_, err = i.Push(ctx, floatReq)
 		require.NoError(t, err)
 
-		histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "histogram")
+		histLbls := labels.FromStrings(model.MetricNameLabel, "foo", "series_id", strconv.Itoa(seriesID), "type", "histogram")
 		histReq := mockHistogramWriteRequest(histLbls, int64(seriesID), seriesID, false)
 		_, err = i.Push(ctx, histReq)
 		require.NoError(t, err)
 
-		fhistLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(seriesID), "type", "floathistogram")
+		fhistLbls := labels.FromStrings(model.MetricNameLabel, "foo", "series_id", strconv.Itoa(seriesID), "type", "floathistogram")
 		fhistReq := mockHistogramWriteRequest(fhistLbls, int64(seriesID), seriesID, true)
 		_, err = i.Push(ctx, fhistReq)
 		require.NoError(t, err)
@@ -6181,15 +6187,15 @@ func setupQueryingManySamplesAsChunksTest(ctx context.Context, t *testing.T, cfg
 	samples := generateSamples(sampleCount)
 
 	// 100k samples in chunks use about 154 KiB
-	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "1"), samples[0:100000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(model.MetricNameLabel, "foo", "l", "1"), samples[0:100000]))
 	require.NoError(t, err)
 
 	// 1M samples in chunks use about 1.51 MiB
-	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "2"), samples))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(model.MetricNameLabel, "foo", "l", "2"), samples))
 	require.NoError(t, err)
 
 	// 500k samples in chunks need 775 KiB
-	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", "3"), samples[0:500000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(model.MetricNameLabel, "foo", "l", "3"), samples[0:500000]))
 	require.NoError(t, err)
 
 	// Create a GRPC server used to query back the data.
@@ -6251,9 +6257,9 @@ func TestIngester_QueryStream_StreamingWithManySamples(t *testing.T) {
 
 	seriesLabelsMsg := client.QueryStreamResponse{
 		StreamingSeries: []client.QueryStreamSeries{
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "1")), ChunkCount: 834},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "2")), ChunkCount: 8334},
-			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "foo", "l", "3")), ChunkCount: 4167},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "foo", "l", "1")), ChunkCount: 834},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "foo", "l", "2")), ChunkCount: 8334},
+			{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "foo", "l", "3")), ChunkCount: 4167},
 		},
 		IsEndOfSeriesStream: true,
 	}
@@ -6315,7 +6321,7 @@ func TestIngester_QueryStream_StreamingWithManySeries(t *testing.T) {
 			samples = largeSampleSet
 		}
 
-		l := labels.FromStrings(labels.MetricName, "foo", "l", fmt.Sprintf("%3v", idx))
+		l := labels.FromStrings(model.MetricNameLabel, "foo", "l", fmt.Sprintf("%3v", idx))
 		expectedSeries = append(expectedSeries, l.Copy())
 
 		_, err = i.Push(ctx, writeRequestSingleSeries(l, samples))
@@ -6462,7 +6468,7 @@ func TestIngester_QueryStream_CounterResets(t *testing.T) {
 	// Push series.
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	histLbls := labels.FromStrings(labels.MetricName, "foo", "series_id", strconv.Itoa(0), "type", "histogram")
+	histLbls := labels.FromStrings(model.MetricNameLabel, "foo", "series_id", strconv.Itoa(0), "type", "histogram")
 	histReq := mockHistogramWriteRequest(histLbls, int64(0), 4, false)
 	_, err = i.Push(ctx, histReq)
 	require.NoError(t, err)
@@ -6658,7 +6664,7 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
-		_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", strconv.Itoa(s)), samples))
+		_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(model.MetricNameLabel, "foo", "l", strconv.Itoa(s)), samples))
 		require.NoError(b, err)
 	}
 
@@ -6674,7 +6680,7 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
-		_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(labels.MetricName, "foo", "l", strconv.Itoa(s)), samples))
+		_, err = i.Push(ctx, writeRequestSingleSeries(labels.FromStrings(model.MetricNameLabel, "foo", "l", strconv.Itoa(s)), samples))
 		require.NoError(b, err)
 	}
 
@@ -7332,7 +7338,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	sampleTimestamp := int64(model.Now())
 
 	{
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, sampleTimestamp)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, sampleTimestamp)
 		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -7347,7 +7353,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 
 	// Push another sample to the same metric and timestamp, with different value. We expect to get error.
 	{
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 1, sampleTimestamp)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 1, sampleTimestamp)
 		_, err = i.Push(ctx, req)
 		require.Error(t, err)
 	}
@@ -7753,9 +7759,9 @@ func Test_Ingester_UserStats(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "200", "route", "get_user"), 1, 100000},
-		{labels.FromStrings(labels.MetricName, "test_1", "status", "500", "route", "get_user"), 1, 110000},
-		{labels.FromStrings(labels.MetricName, "test_2"), 2, 200000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "200", "route", "get_user"), 1, 100000},
+		{labels.FromStrings(model.MetricNameLabel, "test_1", "status", "500", "route", "get_user"), 1, 110000},
+		{labels.FromStrings(model.MetricNameLabel, "test_2"), 2, 200000},
 	}
 
 	registry := prometheus.NewRegistry()
@@ -7803,11 +7809,11 @@ func Test_Ingester_AllUserStats(t *testing.T) {
 		value     float64
 		timestamp int64
 	}{
-		{"user-1", labels.FromStrings(labels.MetricName, "test_1_1", "status", "200", "route", "get_user"), 1, 100000},
-		{"user-1", labels.FromStrings(labels.MetricName, "test_1_1", "status", "500", "route", "get_user"), 1, 110000},
-		{"user-1", labels.FromStrings(labels.MetricName, "test_1_2"), 2, 200000},
-		{"user-2", labels.FromStrings(labels.MetricName, "test_2_1"), 2, 200000},
-		{"user-2", labels.FromStrings(labels.MetricName, "test_2_2"), 2, 200000},
+		{"user-1", labels.FromStrings(model.MetricNameLabel, "test_1_1", "status", "200", "route", "get_user"), 1, 100000},
+		{"user-1", labels.FromStrings(model.MetricNameLabel, "test_1_1", "status", "500", "route", "get_user"), 1, 110000},
+		{"user-1", labels.FromStrings(model.MetricNameLabel, "test_1_2"), 2, 200000},
+		{"user-2", labels.FromStrings(model.MetricNameLabel, "test_2_1"), 2, 200000},
+		{"user-2", labels.FromStrings(model.MetricNameLabel, "test_2_2"), 2, 200000},
 	}
 
 	// Create ingester
@@ -8047,7 +8053,7 @@ func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
 
 func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
+	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, util.TimeToMillis(time.Now()))
 	req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: "test", Help: "a help for metric", Unit: "", Type: mimirpb.COUNTER})
 	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
@@ -8055,7 +8061,7 @@ func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 
 func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, ts)
+	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, ts)
 	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
 }
@@ -8171,7 +8177,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	// Push some data to create 3 blocks.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -8198,7 +8204,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -8230,7 +8236,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(6); j < 7; j++ {
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -8275,7 +8281,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 	// Push some data to create 3 blocks.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -8305,7 +8311,7 @@ func TestIngesterNotDeleteShippedBlocksUntilRetentionExpires(t *testing.T) {
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -8347,7 +8353,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	// Push some data to create 3 blocks.
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
-		req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, j*chunkRangeMilliSec)
+		req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, j*chunkRangeMilliSec)
 		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -8363,7 +8369,7 @@ func TestIngesterWithShippingDisabledDeletesBlocksOnlyAfterRetentionExpires(t *t
 	time.Sleep(cfg.BlocksStorageConfig.TSDB.Retention)
 
 	// Add more samples that could trigger another compaction and hence reload of blocks.
-	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, 5*chunkRangeMilliSec)
+	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, 5*chunkRangeMilliSec)
 	_, err = i.Push(ctx, req)
 	require.NoError(t, err)
 	require.NoError(t, db.Compact())
@@ -8396,7 +8402,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	require.True(t, ok)
 
 	// Ingestion should fail with a 503.
-	req := mockWriteRequest(t, labels.FromStrings(labels.MetricName, "test"), 0, util.TimeToMillis(time.Now()))
+	req := mockWriteRequest(t, labels.FromStrings(model.MetricNameLabel, "test"), 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.Push(ctx, req)
 	expectedErr := newErrorWithStatus(wrapOrAnnotateWithUser(errTSDBForcedCompaction, userID), codes.Internal)
@@ -8470,7 +8476,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test"}}},
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						[]*mimirpb.MetricMetadata{
@@ -8489,7 +8495,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8497,7 +8503,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test2"}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8516,7 +8522,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8526,7 +8532,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 
 				"user2": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test2"}}}, // another series
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test2"}}}, // another series
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8545,7 +8551,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
 						nil,
@@ -8553,7 +8559,7 @@ func TestIngester_PushInstanceLimits(t *testing.T) {
 					),
 
 					mimirpb.ToWriteRequest(
-						[][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "test1"}}},
+						[][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "test1"}}},
 						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
 						nil,
@@ -8649,7 +8655,7 @@ func TestIngester_PushGrpcMethod_Disabled(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 	req := writeRequestSingleSeries(
-		labels.FromStrings(labels.MetricName, "foo", "l", "1"),
+		labels.FromStrings(model.MetricNameLabel, "foo", "l", "1"),
 		[]mimirpb.Sample{{TimestampMs: 1_000, Value: 1}},
 	)
 	_, err = i.Push(ctx, req)
@@ -8761,7 +8767,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 	})
 
 	g.Go(func() error {
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
+		req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, "testcase"), 1, 1024)
 
 		select {
 		case <-ctx.Done():
@@ -8842,7 +8848,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 	})
 
 	g.Go(func() error {
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase1"), 1, 1024)
+		req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, "testcase1"), 1, 1024)
 
 		var requestSize int
 		select {
@@ -8898,7 +8904,7 @@ func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i
 
 	// Find right series&samples count to make sure that push takes given target duration.
 	for {
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("test-%d-%d", ser, samples)), ser, samples)
+		req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("test-%d-%d", ser, samples)), ser, samples)
 
 		start := time.Now()
 		_, err := i.Push(ctx, req)
@@ -8920,7 +8926,7 @@ func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i
 	}
 
 	// Now repeat push with number of samples calibrated to our target request duration.
-	req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("real-%d-%d", ser, samples)), ser, samples)
+	req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("real-%d-%d", ser, samples)), ser, samples)
 	return req
 }
 
@@ -9182,7 +9188,7 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	startAndWaitHealthy(t, ing, r)
 
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-	lbls := [][]mimirpb.LabelAdapter{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: ""}, {Name: "bar", Value: ""}}}
+	lbls := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: ""}, {Name: "bar", Value: ""}}}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, mimirpb.ToWriteRequest(
@@ -9194,12 +9200,12 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	))
 	require.NoError(t, err)
 
-	res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, labels.MetricName, "testmetric")
+	res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, model.MetricNameLabel, "testmetric")
 
 	require.NoError(t, err)
 	expected := model.Matrix{
 		{
-			Metric: model.Metric{labels.MetricName: "testmetric"},
+			Metric: model.Metric{model.MetricNameLabel: "testmetric"},
 			Values: []model.SamplePair{
 				{Timestamp: 1, Value: 0},
 			},
@@ -9239,7 +9245,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	// Series
-	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -9248,7 +9254,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
-	labels3 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels3 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
 		Value:       3,
@@ -9335,7 +9341,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	ing := newIngester()
 
 	userID := "1"
-	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -9344,7 +9350,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		TimestampMs: 1,
 		Value:       2,
 	}
-	labels3 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	labels3 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
 	sample3 := mimirpb.Sample{
 		TimestampMs: 1,
 		Value:       3,
@@ -9459,22 +9465,22 @@ func (t *TenantLimitsMock) ByUserID(userID string) *validation.Limits {
 
 func TestIngesterActiveSeries(t *testing.T) {
 	labelsToPush := [][]mimirpb.LabelAdapter{
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 	labelsToPushOTLP := [][]mimirpb.LabelAdapter{
-		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric_otlp"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 	labelsToPushHist := [][]mimirpb.LabelAdapter{
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 
 	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
@@ -9793,7 +9799,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 				// Query first shard of test_metric, expect one series.
 				shard1 := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"),
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_metric"),
 					sharding.ShardSelector{ShardIndex: 0, ShardCount: 2}.Matcher(),
 				}
 				series, err = listActiveSeries(context.Background(), ingester.getTSDB(userID), shard1)
@@ -9803,7 +9809,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 				// Query second shard of test_metric, expect remaining three series.
 				shard2 := []*labels.Matcher{
-					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test_metric"),
+					labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_metric"),
 					sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}.Matcher(),
 				}
 				series, err = listActiveSeries(context.Background(), ingester.getTSDB(userID), shard2)
@@ -9848,16 +9854,16 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 func TestIngesterActiveSeriesConfigChanges(t *testing.T) {
 	labelsToPush := [][]mimirpb.LabelAdapter{
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 	labelsToPushHist := [][]mimirpb.LabelAdapter{
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
-		{{Name: labels.MetricName, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "false"}, {Name: "team", Value: "b"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "a"}},
+		{{Name: model.MetricNameLabel, Value: "test_histogram_metric"}, {Name: "bool", Value: "true"}, {Name: "team", Value: "b"}},
 	}
 
 	req := func(lbls []mimirpb.LabelAdapter, t time.Time) *mimirpb.WriteRequest {
@@ -10432,7 +10438,7 @@ func testIngesterOutOfOrder(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
+		s := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "status", Value: "200"}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		if expErr {
@@ -10675,7 +10681,7 @@ func testIngesterOutOfOrderCompactHead(t *testing.T,
 		start = start * time.Minute.Milliseconds()
 		end = end * time.Minute.Milliseconds()
 
-		s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
+		s := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "status", Value: "200"}}
 		wReq := makeWriteRequest(start, end, s)
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
@@ -10753,7 +10759,7 @@ func testIngesterOutOfOrderCompactHeadStillActive(t *testing.T,
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	pushSamples := func(ts int64, series string) {
-		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "series", Value: series}})
+		wReq := makeWriteRequest(ts*time.Minute.Milliseconds(), []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "series", Value: series}})
 		_, err = i.Push(ctx, wReq)
 		require.NoError(t, err)
 	}
@@ -10831,7 +10837,7 @@ func Test_Ingester_ShipperLabelsOutOfOrderBlocksOnUpload(t *testing.T) {
 				start = start * time.Minute.Milliseconds()
 				end = end * time.Minute.Milliseconds()
 
-				s := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}
+				s := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test_1"}, {Name: "status", Value: "200"}}
 				var samples []mimirpb.Sample
 				var lbls [][]mimirpb.LabelAdapter
 				for ts := start; ts <= end; ts += time.Minute.Milliseconds() {
@@ -10946,7 +10952,7 @@ func testIngesterCanEnableIngestAndQueryNativeHistograms(t *testing.T, sampleHis
 
 	ing := newIngester()
 
-	labels1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	labels1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: 0,
 		Value:       1,
@@ -11082,7 +11088,7 @@ func TestIngester_GetOpenTSDBsConcurrencyConfig(t *testing.T) {
 }
 
 func TestIngester_PushWithSampledErrors(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}}
 	metricNames := []string{
 		"cortex_discarded_samples_total",
 	}
@@ -11552,8 +11558,8 @@ func TestIngester_SampledUserLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
-	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
-	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
+	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "bar"}}
+	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "biz"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
 		Value:       1,
@@ -11650,8 +11656,8 @@ func TestIngester_SampledMetricLimitExceeded(t *testing.T) {
 
 	userID := "1"
 	timestamp := int64(1575043969)
-	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "bar"}}
-	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}, {Name: "foo", Value: "biz"}}
+	metricLabelAdapters1 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "bar"}}
+	metricLabelAdapters2 := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}, {Name: "foo", Value: "biz"}}
 	sample1 := mimirpb.Sample{
 		TimestampMs: timestamp + 1,
 		Value:       1,
@@ -12209,7 +12215,7 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 				{
 					TimeSeries: &mimirpb.TimeSeries{
 						Labels: []mimirpb.LabelAdapter{
-							{Name: labels.MetricName, Value: "test_metric"},
+							{Name: model.MetricNameLabel, Value: "test_metric"},
 						},
 						Samples: []mimirpb.Sample{
 							{Value: 1, TimestampMs: time.Now().UnixMilli()},

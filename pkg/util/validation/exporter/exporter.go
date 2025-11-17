@@ -18,7 +18,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -92,7 +91,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 // Validate validates the configuration for an overrides-exporter.
 func (c *Config) Validate() error {
 	if err := c.Ring.Validate(); err != nil {
-		return errors.Wrap(err, "invalid overrides-exporter.ring config")
+		return fmt.Errorf("invalid overrides-exporter.ring config: %w", err)
 	}
 	fieldRegistry := newLimitsFieldRegistry()
 	for _, metricName := range c.EnabledMetrics {
@@ -154,7 +153,7 @@ func NewOverridesExporter(
 
 		exporter.ring, err = newRing(config.Ring, log, registerer)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to create ring/lifecycler")
+			return nil, fmt.Errorf("failed to create ring/lifecycler: %w", err)
 		}
 	}
 

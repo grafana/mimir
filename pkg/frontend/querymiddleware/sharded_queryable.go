@@ -90,7 +90,7 @@ func (q *shardedQuerier) Select(ctx context.Context, _ bool, hints *storage.Sele
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
-		if matcher.Name == labels.MetricName && matcher.Value == astmapper.EmbeddedQueriesMetricName {
+		if matcher.Name == model.MetricNameLabel && matcher.Value == astmapper.EmbeddedQueriesMetricName {
 			isEmbedded = true
 		}
 

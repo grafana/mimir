@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,13 +21,13 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 		SkipLabelValidation: true,
 		Timeseries: []PreallocTimeseries{
 			{TimeSeries: &TimeSeries{
-				Labels:     FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1", "pod", "test-application-123456")),
+				Labels:     FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1", "pod", "test-application-123456")),
 				Samples:    []Sample{{TimestampMs: 20}},
 				Exemplars:  []Exemplar{{TimestampMs: 30}},
 				Histograms: []Histogram{{Timestamp: 10}},
 			}},
 			{TimeSeries: &TimeSeries{
-				Labels:  FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2", "pod", "test-application-123456")),
+				Labels:  FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2", "pod", "test-application-123456")),
 				Samples: []Sample{{TimestampMs: 30}},
 			}},
 		},
@@ -95,7 +96,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "This is the first test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -111,7 +112,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_2", "pod", "test-application-123456", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -125,7 +126,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -153,7 +154,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -177,7 +178,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -204,7 +205,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "This is the first test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -220,7 +221,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_2", "pod", "test-application-123456", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -234,7 +235,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -294,7 +295,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			{
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "This is the first test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -310,7 +311,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_2", "pod", "test-application-123456", "This is the second test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_2", "pod", "test-application-123456", "This is the second test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2, 3, 4},
@@ -324,7 +325,7 @@ func TestSplitWriteRequestByMaxMarshalSize(t *testing.T) {
 			}, {
 				Source:              RULE,
 				SkipLabelValidation: true,
-				SymbolsRW2:          []string{"", labels.MetricName, "series_3", "This is the third test metric."},
+				SymbolsRW2:          []string{"", model.MetricNameLabel, "series_3", "This is the third test metric."},
 				TimeseriesRW2: []TimeSeriesRW2{
 					{
 						LabelsRefs: []uint32{1, 2},
@@ -616,7 +617,7 @@ func generateWriteRequest(numSeries, numLabelsPerSeries, numSamplesPerSeries, nu
 
 		// Generate series labels.
 		builder.Reset()
-		builder.Add(labels.MetricName, fmt.Sprintf("series_%d", i))
+		builder.Add(model.MetricNameLabel, fmt.Sprintf("series_%d", i))
 		for l := 1; l < numLabelsPerSeries; l++ {
 			builder.Add(fmt.Sprintf("label_%d", l), fmt.Sprintf("this-is-the-value-of-label-%d", l))
 		}
@@ -673,7 +674,7 @@ func testReqV2Static(t *testing.T) *WriteRequest {
 	reqv2 := &WriteRequest{
 		Source:              RULE,
 		SkipLabelValidation: true,
-		SymbolsRW2:          []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric.", "series_3", "This is the third test metric."},
+		SymbolsRW2:          []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "This is the first test metric.", "series_2", "This is the second test metric.", "series_3", "This is the third test metric."},
 		TimeseriesRW2: []TimeSeriesRW2{
 			{
 				LabelsRefs: []uint32{1, 2, 3, 4},
@@ -771,7 +772,7 @@ func mergeRW2s(partials []*WriteRequest) *WriteRequest {
 func TestRW2SymbolSplitting(t *testing.T) {
 	t.Run("timeseries size estimation", func(t *testing.T) {
 		t.Run("symbols size matches proto size", func(t *testing.T) {
-			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			syms := []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
 				Samples:    []Sample{{TimestampMs: 20}},
@@ -790,7 +791,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 		})
 
 		t.Run("symbols size only considers referenced symbols", func(t *testing.T) {
-			syms := []string{"", labels.MetricName, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
+			syms := []string{"", model.MetricNameLabel, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 4, 5, 6},
 				Samples:    []Sample{{TimestampMs: 20}},
@@ -810,7 +811,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 		})
 
 		t.Run("upper bound grows with possible symbol magnitude", func(t *testing.T) {
-			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			syms := []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
 				Samples:    []Sample{{TimestampMs: 20}},
@@ -837,7 +838,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 		})
 
 		t.Run("common symbol refs only count the ref and not the symbol", func(t *testing.T) {
-			syms := []string{"", labels.MetricName, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
+			syms := []string{"", model.MetricNameLabel, "series_1", "series_2", "series_3", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unrelated text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{11, 14, 15, 16, 7, 8}, // References a couple common symbols, outside the range
 				Samples:    []Sample{{TimestampMs: 20}},
@@ -864,7 +865,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 	t.Run("resymbolizeTimeSeriesRW2", func(t *testing.T) {
 		t.Run("no change required", func(t *testing.T) {
 			newTable := NewFastSymbolsTable(0)
-			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			syms := []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
 				Samples:    []Sample{{TimestampMs: 20}},
@@ -884,7 +885,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 		t.Run("excludes unrelated strings in original symbols", func(t *testing.T) {
 			newTable := NewFastSymbolsTable(0)
-			syms := []string{"", "unrelated1", "unrelated2", "unrelated3", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			syms := []string{"", "unrelated1", "unrelated2", "unrelated3", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{4, 5, 6, 7},
 				Samples:    []Sample{{TimestampMs: 20}},
@@ -898,7 +899,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
-			expSymbols := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			expSymbols := []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			require.Equal(t, expSymbols, newTable.Symbols())
 			require.Equal(t, []uint32{1, 2, 3, 4}, resymbolized.LabelsRefs)
 			require.Equal(t, []uint32{5, 6}, resymbolized.Exemplars[0].LabelsRefs)
@@ -910,10 +911,10 @@ func TestRW2SymbolSplitting(t *testing.T) {
 			newTable := NewFastSymbolsTable(0)
 			newTable.Symbolize("unrelated1")
 			newTable.Symbolize("unrelated2")
-			newTable.Symbolize(labels.MetricName)
+			newTable.Symbolize(model.MetricNameLabel)
 			newTable.Symbolize("series_1")
 			prevSize := newTable.SymbolsSizeProto()
-			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			syms := []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
 				Samples:    []Sample{{TimestampMs: 20}},
@@ -927,7 +928,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 
 			resymbolized := resymbolizeTimeSeriesRW2(&ts, syms, newTable)
 
-			expSyms := []string{"", "unrelated1", "unrelated2", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
+			expSyms := []string{"", "unrelated1", "unrelated2", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text"}
 			require.Equal(t, expSyms, newTable.Symbols())
 			require.Equal(t, []uint32{3, 4, 5, 6}, resymbolized.LabelsRefs)
 			require.Equal(t, []uint32{7, 8}, resymbolized.Exemplars[0].LabelsRefs)
@@ -944,7 +945,7 @@ func TestRW2SymbolSplitting(t *testing.T) {
 				newTable.Symbolize(fmt.Sprintf("%d", i))
 			}
 
-			syms := []string{"", labels.MetricName, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unit"}
+			syms := []string{"", model.MetricNameLabel, "series_1", "pod", "test-application-123456", "trace_id", "12345", "Help Text", "unit"}
 			ts := TimeSeriesRW2{
 				LabelsRefs: []uint32{1, 2, 3, 4},
 				Samples:    []Sample{{TimestampMs: 20}},

@@ -8,10 +8,12 @@ package ruler
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -31,7 +33,9 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	notifierCfg "github.com/grafana/mimir/pkg/ruler/notifier"
+	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -89,12 +93,12 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
-func (a *PusherAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *PusherAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
-func (a *PusherAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *PusherAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *PusherAppender) Commit() error {
@@ -178,12 +182,12 @@ func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ i
 	return 0, nil
 }
 
-func (a *NoopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *NoopAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
-func (a *NoopAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *NoopAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *NoopAppender) Commit() error {
@@ -231,7 +235,6 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 		if err == nil {
 			return result, nil
 		}
-
 		failureReason := failureReasonServerError
 		qerr := QueryableError{}
 		if errors.As(err, &qerr) {
@@ -246,7 +249,7 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 			//
 			// All errors will still be counted towards "evaluation failures" metrics and logged by Prometheus Ruler,
 			// but we only want internal errors here.
-			if _, ok := querier.TranslateToPromqlAPIError(origErr).(promql.ErrStorage); ok {
+			if isStorageError(origErr) {
 				failedQueries.WithLabelValues(userID, failureReason).Inc()
 			}
 
@@ -261,6 +264,12 @@ func MetricsQueryFunc(qf rules.QueryFunc, userID string, queries, failedQueries 
 		}
 		return result, err
 	}
+}
+
+// isStorageError returns true if the error is classified as a storage error (5xx)
+func isStorageError(err error) bool {
+	_, ok := querier.TranslateToPromqlAPIError(err).(promql.ErrStorage)
+	return ok
 }
 
 func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime, zeroFetchedSeriesCount prometheus.Counter, remoteQuerier bool, logger log.Logger) rules.QueryFunc {
@@ -392,7 +401,6 @@ func DefaultTenantManagerFactory(
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 			zeroFetchedSeriesCount = zeroFetchedSeriesQueries.WithLabelValues(userID)
 		}
-
 		// Wrap the query function with our custom logic.
 		wrappedQueryFunc := WrapQueryFuncWithReadConsistency(queryFunc, overrides, userID, logger)
 		remoteQuerier := cfg.QueryFrontend.Address != ""
@@ -435,7 +443,8 @@ func DefaultTenantManagerFactory(
 				// to metric that haven't been forwarded to Mimir yet.
 				return overrides.RulerEvaluationDelay(userID)
 			},
-			RuleConcurrencyController: concurrencyController.NewTenantConcurrencyControllerFor(userID),
+			RuleConcurrencyController:           concurrencyController.NewTenantConcurrencyControllerFor(userID),
+			OperatorControllableErrorClassifier: NewRulerErrorClassifier(remoteQuerier),
 		})
 	}
 }
@@ -458,4 +467,52 @@ func WrapQueryableErrors(err error) error {
 	}
 
 	return QueryableError{err: err}
+}
+
+type rulerErrorClassifier struct {
+	remoteQuerier bool
+}
+
+func NewRulerErrorClassifier(remoteQuerier bool) *rulerErrorClassifier {
+	return &rulerErrorClassifier{
+		remoteQuerier: remoteQuerier,
+	}
+}
+
+// IsOperatorControllable classifies rule evaluation errors as operator-controllable or user-controllable.
+func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
+		if code >= 400 && code < 500 {
+			return code == http.StatusTooManyRequests
+		}
+		return true // 5xx
+	}
+
+	if status, ok := grpcutil.ErrorToStatus(err); ok {
+		for _, details := range status.Details() {
+			if errDetails, ok := details.(*mimirpb.ErrorDetails); ok {
+				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
+			}
+		}
+	}
+
+	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+
+	// If internal Ruler is used, then we classify only promql.ErrStorage errors as operator-controllable.
+	// Internal Ruler unknown errors are considered user-controllable.
+	if !c.remoteQuerier {
+		var (
+			errStorage promql.ErrStorage
+		)
+		return errors.As(err, &errStorage)
+	}
+
+	// Unknown errors
+	return true
 }

@@ -2528,6 +2528,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_reduce_matchers",
+              "required": false,
+              "desc": "Enable eliminating duplicate or redundant matchers that are part of selector expressions.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-reduce-matchers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -7315,6 +7326,17 @@
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "frontend_health_check_grace_period",
+          "required": false,
+          "desc": "The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.frontend-health-check-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -11273,7 +11295,7 @@
                   "required": false,
                   "desc": "Cost for retrieving series from the index and checking if a series belongs to the query's shard.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 10,
+                  "fieldDefaultValue": 15,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost",
                   "fieldType": "float",
                   "fieldCategory": "advanced"

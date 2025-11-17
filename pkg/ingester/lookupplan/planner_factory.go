@@ -46,5 +46,5 @@ func (p *PlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexRea
 		return NoopPlanner{}
 	}
 
-	return index.ChainLookupPlanners(MatcherReducerPlanner{}, NewCostBasedPlanner(p.metrics, stats, p.config))
+	return NewCostBasedPlanner(p.metrics, stats, p.config)
 }

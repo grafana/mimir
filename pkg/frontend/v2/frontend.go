@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/netutil"
 	"github.com/grafana/dskit/services"
@@ -825,7 +826,7 @@ func (f *Frontend) receiveFromStream(stream frontendv2pb.FrontendForQuerier_Quer
 		return nil, nil
 	}
 
-	if errors.Is(err, context.Canceled) {
+	if grpcutil.IsCanceled(err) {
 		if cause := context.Cause(stream.Context()); cause != nil {
 			return nil, fmt.Errorf("aborted streaming on canceled context: %w", cause)
 		}

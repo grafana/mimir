@@ -10,7 +10,7 @@ help:
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc check-reference-help push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool check-mixin-runbooks check-mixin-mimirtool-rules build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started mixin-screenshots
 .DEFAULT_GOAL := all
 
 # Version number
@@ -329,6 +329,16 @@ lint: check-makefiles check-merge-conflicts
 	# Ensure all errors are reported as APIError
 	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
+	# Gradually removing use of the github.com/pkg/errors package entirely. It's unmaintained and all functionality
+	# now exists in the standard library errors package. Prevent it from being used in packages that have already
+	# completely migrated.
+	faillint -paths "github.com/pkg/errors=errors" \
+		./pkg/alertmanager/... \
+		./pkg/api/... \
+		./pkg/util/... \
+		./cmd/... \
+		./integration/...
+
 	# errors.Cause() only work on errors wrapped by github.com/pkg/errors, while it doesn't work
 	# on errors wrapped by golang standard errors package. In Mimir we currently use github.com/pkg/errors
 	# but other vendors we depend on (e.g. Prometheus) just uses the standard errors package.
@@ -646,6 +656,15 @@ check-doc: ## Check the documentation files are up to date.
 check-doc: doc
 	@find . -name "*.md" | xargs git diff --exit-code -- \
 	|| (echo "Please update generated documentation by running 'make doc' and committing the changes" && false)
+
+check-reference-help: ## Check the reference help documentation is up to date.
+check-reference-help: reference-help
+	@git diff --exit-code -- \
+		cmd/mimir/help.txt.tmpl \
+		cmd/mimir/help-all.txt.tmpl \
+		cmd/mimir/config-descriptor.json \
+		operations/mimir/mimir-flags-defaults.json \
+	|| (echo "Please update generated reference documentation by running 'make reference-help' and committing the changes" && false)
 
 # Tool is developed in the grafana/technical-documentation repository:
 # https://github.com/grafana/technical-documentation/tree/main/tools/doc-validator

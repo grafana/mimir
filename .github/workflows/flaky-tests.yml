@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5
         with:
           fetch-depth: '0' # we need all commits so that the git history check returns valid commits
 
@@ -38,14 +38,14 @@ jobs:
 
       - name: Generate GitHub App Token
         id: github-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2
         with:
           app-id: ${{ env.APP_ID }}
           private-key: ${{ env.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
       - name: Run Flaky Tests Analysis
-        uses: grafana/shared-workflows/actions/go-flaky-tests@c8ac4a279df46ebd1f85064119a0835098b88092
+        uses: grafana/shared-workflows/actions/go-flaky-tests@8b88213bca76e86f9f59b43038cc5d7545452436
         with:
           loki-url: ${{ env.LOKI_URL }}
           loki-username: ${{ env.LOKI_USERNAME }}
@@ -54,6 +54,6 @@ jobs:
           time-range: "7d"
           top-k: "3"
           skip-posting-issues: ${{ github.event_name == 'workflow_dispatch' && inputs.skip-posting-issues || 'false' }}
-          ignored-tests: "TestOurUpstreamTestCasesAreInSyncWithUpstream,TestConfigDescriptorIsUpToDate" # TestOurUpstreamTestCasesAreInSyncWithUpstream is supposed to block upstream mimir-prometheus updates, so it's also expected to fail. TestConfigDescriptorIsUpToDate is flaky.
+          ignored-tests: "TestOurUpstreamTestCasesAreInSyncWithUpstream" # TestOurUpstreamTestCasesAreInSyncWithUpstream is supposed to block upstream mimir-prometheus updates, so it's also expected to fail.
         env:
           GITHUB_TOKEN: ${{ steps.github-token.outputs.token }}

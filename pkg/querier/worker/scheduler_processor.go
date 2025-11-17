@@ -99,9 +99,10 @@ func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandl
 	})
 
 	poolConfig := client.PoolConfig{
-		CheckInterval:      5 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 1 * time.Second,
+		CheckInterval:          5 * time.Second,
+		HealthCheckEnabled:     true,
+		HealthCheckTimeout:     1 * time.Second,
+		HealthCheckGracePeriod: cfg.QueryFrontendHealthCheckGracePeriod,
 	}
 
 	p.frontendPool = client.NewPool("frontend", poolConfig, nil, client.PoolAddrFunc(p.createFrontendClient), frontendClientsGauge, log)
@@ -535,7 +536,12 @@ func (g *grpcStreamWriter) Write(ctx context.Context, msg *frontendv2pb.QueryRes
 		// If this fails, don't retry, as we can't know if the message made it to the frontend or not, which could lead to incorrect query results.
 		if err := g.writeMessageToStream(g.stream, g.client, msg); err != nil {
 			g.failed = true
-			level.Warn(g.logger).Log("msg", "attempt to send subsequent message to query-frontend failed", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+			if grpcutil.IsCanceled(err) {
+				level.Debug(g.logger).Log("msg", "attempt to send subsequent message to query-frontend failed because the request was canceled", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+			} else {
+				level.Warn(g.logger).Log("msg", "attempt to send subsequent message to query-frontend failed", "err", err, "frontendAddress", g.frontendAddress, "queryID", msg.QueryID)
+			}
+
 			return err
 		}
 
@@ -627,7 +633,11 @@ func (g *grpcStreamWriter) Close(ctx context.Context) {
 
 	if g.stream != nil {
 		if _, err := g.stream.CloseAndRecv(); err != nil {
-			level.Warn(g.logger).Log("msg", "error closing query-frontend stream", "err", err)
+			if grpcutil.IsCanceled(err) {
+				level.Debug(g.logger).Log("msg", "error closing query-frontend stream because the request was canceled", "err", err)
+			} else {
+				level.Warn(g.logger).Log("msg", "error closing query-frontend stream", "err", err)
+			}
 		}
 	}
 }

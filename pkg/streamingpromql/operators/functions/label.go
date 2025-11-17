@@ -59,7 +59,7 @@ func LabelJoinFactory(dstLabelOp, separatorOp types.StringOperator, srcLabelOps 
 			}
 		}
 
-		if enableDelayedNameRemoval && dst == labels.MetricName {
+		if enableDelayedNameRemoval && dst == model.MetricNameLabel {
 			for i := range seriesMetadata {
 				seriesMetadata[i].DropName = false
 			}
@@ -101,7 +101,7 @@ func LabelReplaceFactory(dstLabelOp, replacementOp, srcLabelOp, regexOp types.St
 			}
 		}
 
-		if enableDelayedNameRemoval && dst == labels.MetricName {
+		if enableDelayedNameRemoval && dst == model.MetricNameLabel {
 			for i := range seriesMetadata {
 				seriesMetadata[i].DropName = false
 			}

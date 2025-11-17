@@ -19,6 +19,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -87,9 +88,18 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 	}
 }
 
-func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _ *storage.SelectHints) (retPlan index.LookupPlan, retErr error) {
+func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan index.LookupPlan, retErr error) {
 	if planningDisabled(ctx) {
 		return inPlan, nil
+	}
+
+	// Extract shard information from hints
+	var shard *sharding.ShardSelector
+	if hints != nil && hints.ShardCount > 0 {
+		shard = &sharding.ShardSelector{
+			ShardIndex: hints.ShardIndex,
+			ShardCount: hints.ShardCount,
+		}
 	}
 
 	var allPlans []plan
@@ -114,12 +124,12 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return inPlan, errTooManyMatchers
 	}
 
-	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers, memPools)
+	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers, memPools, shard)
 
 	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
 	allPlansWithCosts := memPools.plansWithCostPool.Get(len(allPlansUnordered))
 	for i, p := range allPlansUnordered {
-		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.totalCost()}
+		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.TotalCost()}
 	}
 
 	slices.SortFunc(allPlansWithCosts, func(a, b planWithCost) int {
@@ -146,8 +156,8 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
-func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools) []plan {
-	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool)
+func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) []plan {
+	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
 	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
 
 	return generatePredicateCombinations(allPlans, noopPlan, 0)
@@ -166,7 +176,7 @@ func generatePredicateCombinations(plans []plan, currentPlan plan, decidedPredic
 	// The copy is then added to the list of plans to be returned.
 	plans = generatePredicateCombinations(plans, currentPlan, decidedPredicates+1)
 
-	p := currentPlan.useIndexFor(decidedPredicates)
+	p := currentPlan.UseIndexFor(decidedPredicates)
 	plans = generatePredicateCombinations(plans, p, decidedPredicates+1)
 
 	return plans
@@ -199,8 +209,8 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 	default:
 		selectedPlan := allPlans[0]
 		if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
-			queryStats.SetEstimatedSelectedPostings(selectedPlan.intersectionSize())
-			queryStats.SetEstimatedFinalCardinality(selectedPlan.cardinality())
+			queryStats.SetEstimatedSelectedPostings(selectedPlan.NumSelectedPostings())
+			queryStats.SetEstimatedFinalCardinality(selectedPlan.FinalCardinality())
 		}
 
 		outcome = "success"
@@ -216,7 +226,7 @@ func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, select
 	span.AddEvent("selected lookup plan", trace.WithAttributes(
 		attribute.Stringer("duration", time.Since(start)),
 	))
-	selectedPlan.addPredicatesToSpan(span)
+	selectedPlan.AddPredicatesToSpan(span)
 
 	const topKPlans = 2
 	for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
@@ -224,7 +234,7 @@ func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, select
 		if i > 0 {
 			planName = strconv.Itoa(i + 1)
 		}
-		plan.addSpanEvent(span, planName)
+		plan.AddSpanEvent(span, planName)
 	}
 }
 

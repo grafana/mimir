@@ -76,7 +76,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, normal value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
@@ -87,7 +87,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
@@ -96,7 +96,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "ALERTS, normal value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "ALERT", labels.AlertName, "boop"),
 					Samples: []test.Sample{{TS: 120_000, Val: 1.234}},
 				},
 			},
@@ -106,7 +106,7 @@ func TestPusherAppendable(t *testing.T) {
 			hasNanSample: true,
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "ALERT", labels.AlertName, "boop"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "ALERT", labels.AlertName, "boop"),
 					Samples: []test.Sample{{TS: 120_000, Val: math.Float64frombits(value.StaleNaN)}},
 				},
 			},
@@ -115,7 +115,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, histogram value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 200_000, Hist: test.GenerateTestHistogram(10)}},
 				},
 			},
@@ -124,7 +124,7 @@ func TestPusherAppendable(t *testing.T) {
 			name: "tenant without delay, float histogram value",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar"),
 					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 			},
@@ -133,19 +133,19 @@ func TestPusherAppendable(t *testing.T) {
 			name: "mix of float and float histogram",
 			series: []test.Series{
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar1"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar1"),
 					Samples: []test.Sample{{TS: 230_000, Val: 999}},
 				},
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar3"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar3"),
 					Samples: []test.Sample{{TS: 230_000, Val: 888}},
 				},
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar2"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar2"),
 					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(10)}},
 				},
 				{
-					Labels:  labels.FromStrings(labels.MetricName, "foo_bar4"),
+					Labels:  labels.FromStrings(model.MetricNameLabel, "foo_bar4"),
 					Samples: []test.Sample{{TS: 230_000, FloatHist: test.GenerateTestFloatHistogram(99)}},
 				},
 			},
@@ -837,7 +837,7 @@ func TestDefaultManagerFactory_ShouldInjectStrongReadConsistencyToContextWhenQue
 		// to fire, so we return a non-empty series set.
 		return series.NewConcreteSeriesSetFromUnsortedSeries([]storage.Series{
 			series.NewConcreteSeries(
-				labels.FromStrings(labels.MetricName, metricName),
+				labels.FromStrings(model.MetricNameLabel, metricName),
 				[]model.SamplePair{{Timestamp: model.Time(hints.End - 1), Value: 1.0}},
 				nil,
 			),
@@ -908,4 +908,318 @@ func mustStatusWithDetails(code codes.Code, cause mimirpb.ErrorCause) *status.St
 		panic(err)
 	}
 	return s
+}
+
+func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
+	tests := []struct {
+		name                   string
+		err                    error
+		expectedUserFailed     bool
+		expectedOperatorFailed bool
+		remoteQuerier          bool
+	}{
+		// PromQL errors
+		{
+			name:                   "promql error - timeout (user, local querier)",
+			err:                    promql.ErrQueryTimeout("query timeout"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "promql error - cancelled (user, local querier)",
+			err:                    promql.ErrQueryCanceled("query cancelled"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "promql.ErrStorage (operator, local querier)",
+			err:                    promql.ErrStorage{Err: errors.New("storage unavailable")},
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
+		},
+
+		// HTTP status codes - same for both remote and local
+		{
+			name:                   "500 internal server error (operator, local querier)",
+			err:                    httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "500 internal server error (operator, remote querier)",
+			err:                    httpgrpc.Errorf(http.StatusInternalServerError, "internal error"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
+		},
+		{
+			name:                   "429 rate limited (operator, local querier)",
+			err:                    httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "429 rate limited (operator, remote querier)",
+			err:                    httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
+		},
+		{
+			name:                   "400 bad request (user, local querier)",
+			err:                    httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "400 bad request (user, remote querier)",
+			err:                    httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
+		},
+
+		// Context errors - same for both remote and local
+		{
+			name:                   "context cancelled (user, local querier)",
+			err:                    context.Canceled,
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "context cancelled (user, remote querier)",
+			err:                    context.Canceled,
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
+		},
+
+		// Generic errors - behavior differs based on remoteQuerier
+		{
+			name:                   "generic error without status code (user, local querier)",
+			err:                    errors.New("some generic error"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "generic error without status code (operator, remote querier)",
+			err:                    errors.New("some generic error"),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
+		},
+
+		// Push errors with error details - same for both remote and local
+		{
+			name:                   "BAD_DATA push error (user, local querier)",
+			err:                    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "BAD_DATA push error (user, remote querier)",
+			err:                    mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
+		},
+		{
+			name:                   "METHOD_NOT_ALLOWED push error (operator, local querier)",
+			err:                    mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
+		},
+		{
+			name:                   "METHOD_NOT_ALLOWED push error (operator, remote querier)",
+			err:                    mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			classifier := NewRulerErrorClassifier(tt.remoteQuerier)
+			result := classifier.IsOperatorControllable(tt.err)
+			require.Equal(t, tt.expectedOperatorFailed, result)
+			require.Equal(t, tt.expectedUserFailed, !result)
+		})
+	}
+}
+
+func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing.T) {
+	const userID = "tenant-1"
+	const interval100ms = 100 * time.Millisecond
+
+	tests := map[string]struct {
+		queryError             error
+		writeError             error
+		expectedOperatorFailed bool
+		expectedUserFailed     bool
+	}{
+		// Query path errors
+		"storage error during query (operator)": {
+			queryError:             promql.ErrStorage{Err: errors.New("storage unavailable")},
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"500 server error during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusInternalServerError, "internal server error"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"503 service unavailable during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusServiceUnavailable, "service unavailable"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"429 rate limit during query (operator)": {
+			queryError:             httpgrpc.Errorf(http.StatusTooManyRequests, "rate limited"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"400 bad request during query (user)": {
+			queryError:             httpgrpc.Errorf(http.StatusBadRequest, "bad request"),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"unknown error during query (user)": {
+			queryError:             errors.New("test error"),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+
+		// Write path errors - matching TestPusherErrors patterns
+		"500 HTTPgRPC error during write (operator)": {
+			writeError:             httpgrpc.Errorf(http.StatusInternalServerError, "test error"),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"BAD_DATA push error during write (user)": {
+			writeError:             mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_BAD_DATA).Err(),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+		"METHOD_NOT_ALLOWED push error during write (operator)": {
+			writeError:             mustStatusWithDetails(codes.Unimplemented, mimirpb.ERROR_CAUSE_METHOD_NOT_ALLOWED).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"TSDB_UNAVAILABLE push error during write (operator)": {
+			writeError:             mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"unknown error during write (user)": {
+			writeError:             errors.New("test error"),
+			expectedOperatorFailed: false,
+			expectedUserFailed:     true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			// Create a simple recording rule
+			ruleGroup := rulespb.RuleGroupDesc{
+				Name:     "test",
+				Interval: interval100ms,
+				Rules: []*rulespb.RuleDesc{{
+					Record: "test_metric",
+					Expr:   "up",
+				}},
+			}
+
+			// Setup ruler
+			cfg := defaultRulerConfig(t)
+			cfg.EvaluationInterval = interval100ms
+
+			var (
+				options         = applyPrepareOptions(t, cfg.Ring.Common.InstanceID)
+				notifierManager = notifier.NewManager(&notifier.Options{
+					Do: func(_ context.Context, _ *http.Client, _ *http.Request) (*http.Response, error) { return nil, nil },
+				}, model.UTF8Validation, util_log.SlogFromGoKit(options.logger))
+				fs        = afero.NewMemMapFs()
+				ruleFiles = writeRuleGroupToFiles(t, fs, cfg.RulePath, options.logger, userID, ruleGroup)
+				tracker   = promql.NewActiveQueryTracker(t.TempDir(), 20, util_log.SlogFromGoKit(log.NewNopLogger()))
+				eng       = promql.NewEngine(promql.EngineOpts{
+					MaxSamples:         1e6,
+					ActiveQueryTracker: tracker,
+					Timeout:            2 * time.Minute,
+				})
+				prometheusReg = prometheus.NewRegistry()
+			)
+
+			// Mock querier to return the test error
+			querier := newQuerierMock()
+			querier.selectFunc = func(ctx context.Context, _ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				if tc.queryError != nil {
+					return storage.ErrSeriesSet(tc.queryError)
+				}
+				// Return empty series set on success
+				return storage.EmptySeriesSet()
+			}
+
+			// Use fakePusher for write path errors (consistent with TestPusherErrors)
+			pusher := &fakePusher{
+				err:      tc.writeError,
+				response: &mimirpb.WriteResponse{},
+			}
+
+			// Create manager from factory
+			queryable := &storage.MockQueryable{MockQuerier: querier}
+			queryFunc := rules.EngineQueryFunc(eng, queryable)
+
+			factory := DefaultTenantManagerFactory(cfg, pusher, queryable, queryFunc, fs, &NoopMultiTenantConcurrencyController{}, options.limits, nil)
+			manager := factory(context.Background(), userID, notifierManager, options.logger, prometheusReg)
+
+			// Load rules into manager and start
+			require.NoError(t, manager.Update(interval100ms, ruleFiles, labels.EmptyLabels(), "", nil))
+			go manager.Run()
+			t.Cleanup(manager.Stop)
+
+			// Wait for rule evaluation to complete and metrics to be recorded
+			if tc.expectedOperatorFailed {
+				require.Eventually(t, func() bool {
+					operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
+					userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
+					return operatorFailed > 0 && userFailed == 0
+				}, 5*time.Second, 100*time.Millisecond, "expected at least one operator failure and no user failures")
+			} else if tc.expectedUserFailed {
+				require.Eventually(t, func() bool {
+					operatorFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "operator")
+					userFailed := getMetricValue(t, prometheusReg, "prometheus_rule_evaluation_failures_total", "reason", "user")
+					return userFailed > 0 && operatorFailed == 0
+				}, 5*time.Second, 100*time.Millisecond, "expected at least one user failure and no operator failures")
+			}
+		})
+	}
+}
+
+func getMetricValue(t *testing.T, reg prometheus.Gatherer, metricName, labelName, labelValue string) float64 {
+	metricFamilies, err := reg.Gather()
+	require.NoError(t, err)
+
+	for _, mf := range metricFamilies {
+		if mf.GetName() == metricName {
+			for _, metric := range mf.GetMetric() {
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == labelName && label.GetValue() == labelValue {
+						return metric.GetCounter().GetValue()
+					}
+				}
+			}
+		}
+	}
+	return 0
 }

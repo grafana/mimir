@@ -546,7 +546,7 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"})",
+                        "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"} > 0)",
                         "format": "time_series",
                         "legendFormat": "limit",
                         "legendLink": null

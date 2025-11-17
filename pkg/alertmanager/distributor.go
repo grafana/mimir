@@ -7,6 +7,7 @@ package alertmanager
 
 import (
 	"context"
+	"fmt"
 	"hash/fnv"
 	"io"
 	"math/rand"
@@ -23,7 +24,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/alertmanager/merger"
@@ -365,7 +365,7 @@ func (d *Distributor) doRequest(ctx context.Context, am ring.InstanceDesc, req *
 	defer cancel()
 	amClient, err := d.alertmanagerClientsPool.GetClientFor(am.Addr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to get alertmanager client from pool (alertmanager address: %s)", am.Addr)
+		return nil, fmt.Errorf("failed to get alertmanager client from pool (alertmanager address: %s): %w", am.Addr, err)
 	}
 
 	return amClient.HandleRequest(ctx, req)

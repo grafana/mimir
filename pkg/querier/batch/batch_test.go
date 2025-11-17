@@ -103,7 +103,7 @@ func createChunks(b *testing.B, numChunks, numSamplesPerChunk, duplicationFactor
 }
 
 func TestNewChunkMergeIterator_ShouldGuaranteeDeterminismIteratingTwoSamplesWithSameTimestamp(t *testing.T) {
-	metric := labels.FromStrings(labels.MetricName, "test")
+	metric := labels.FromStrings(model.MetricNameLabel, "test")
 
 	first := NewChunkMergeIterator(nil, metric, []chunk.Chunk{
 		createEncodedChunk(t, metric,
