@@ -76,15 +76,24 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 	basePlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
 
 	// Initialize the priority queue with the base plan
-	prospectPlans := &partialPlans{partialPlan{
+	allScan := pools.indexPredicatesPool.Get(len(basePlan.predicates))
+	for i := range allScan {
+		allScan[i] = false
+	}
+
+	prospectPlansFromPool := pools.partialPlansPool.Get(maxPlansForPlanning)[:0]
+	prospectPlansFromPool = append(prospectPlansFromPool, partialPlan{
 		planWithCost:      planWithCost{plan: basePlan, totalCost: basePlan.TotalCost()},
-		decidedPredicates: make([]bool, len(basePlan.predicates)),
-	}}
+		decidedPredicates: allScan,
+	})
+
+	prospectPlans := (*partialPlans)(&prospectPlansFromPool)
 	heap.Init(prospectPlans)
 	// add one plan where each predicate uses the index and the rest use scan
 	for i := 0; i < len(basePlan.predicates); i++ {
 		indexOnlyPlan := basePlan.UseIndexFor(i)
-		decidedPredicates := make([]bool, len(basePlan.predicates))
+		decidedPredicates := pools.indexPredicatesPool.Get(len(basePlan.predicates))
+		copy(decidedPredicates, allScan)
 		decidedPredicates[i] = true
 		heap.Push(prospectPlans, partialPlan{
 			planWithCost:      planWithCost{plan: indexOnlyPlan, totalCost: indexOnlyPlan.TotalCost()},
@@ -92,8 +101,12 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 		})
 	}
 
-	decidedPlans := &partialPlans{}
-	allDecided := slices.Repeat([]bool{true}, len(basePlan.predicates))
+	decidedPlansFromPool := pools.partialPlansPool.Get(maxPlansForPlanning)[:0]
+	decidedPlans := (*partialPlans)(&decidedPlansFromPool)
+	allDecided := pools.indexPredicatesPool.Get(len(basePlan.predicates))
+	for i := range allDecided {
+		allDecided[i] = true
+	}
 
 	var candidates []partialPlan
 	for i := 0; i < maxPlansForPlanning && prospectPlans.Len() > 0; i++ {
@@ -112,7 +125,8 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 			if decided {
 				continue
 			}
-			decidedPredicates := slices.Clone(current.decidedPredicates)
+			decidedPredicates := pools.indexPredicatesPool.Get(len(current.decidedPredicates))
+			copy(decidedPredicates, current.decidedPredicates)
 			decidedPredicates[firstUndecidedPredicate] = true
 			for _, useIndex := range []bool{false, true} {
 				if !useIndex && alreadyDecidedOneFalse {

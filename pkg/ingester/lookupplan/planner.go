@@ -32,6 +32,7 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 
 var (
 	rawPlansWithCostPool   = &sync.Pool{}
+	rawPartialPlansPool    = &sync.Pool{}
 	rawPlansPool           = &sync.Pool{}
 	rawIndexPredicatesPool = &sync.Pool{}
 )
@@ -51,6 +52,7 @@ const (
 )
 
 type costBasedPlannerPools struct {
+	partialPlansPool    *pool.SlabPool[partialPlan]
 	plansWithCostPool   *pool.SlabPool[planWithCost]
 	plansPool           *pool.SlabPool[plan]
 	indexPredicatesPool *pool.SlabPool[bool]
@@ -58,6 +60,7 @@ type costBasedPlannerPools struct {
 
 func newCostBasedPlannerPools() *costBasedPlannerPools {
 	return &costBasedPlannerPools{
+		partialPlansPool:    pool.NewSlabPool[partialPlan](rawPartialPlansPool, maxPlansForPlanning),
 		plansWithCostPool:   pool.NewSlabPool[planWithCost](rawPlansWithCostPool, maxPlansForPlanning),
 		plansPool:           pool.NewSlabPool[plan](rawPlansPool, maxPlansForPlanning),
 		indexPredicatesPool: pool.NewSlabPool[bool](rawIndexPredicatesPool, predicateIndexSlicesTotalLen),
@@ -65,6 +68,7 @@ func newCostBasedPlannerPools() *costBasedPlannerPools {
 }
 
 func (p *costBasedPlannerPools) Release() {
+	p.partialPlansPool.Release()
 	p.plansWithCostPool.Release()
 	p.plansPool.Release()
 	p.indexPredicatesPool.Release()
@@ -131,9 +135,9 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	// Repartition the matchers. We don't trust other planners.
 	// Allocate a new slice so that we don't mess up the slice of the caller.
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	//allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+	allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
-	allPlans = p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+	//allPlans = p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
 	lookupPlan := p.chooseBestPlan(allPlans)
 	if lookupPlan == nil {
