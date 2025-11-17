@@ -135,18 +135,18 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 	// Repartition the matchers. We don't trust other planners.
 	// Allocate a new slice so that we don't mess up the slice of the caller.
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+	//allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
 
 	//allPlans = p.generatePlansProperBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+
+	allPlans = plansIteratorFromSlice(p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard))
+	//allPlansExhaustive = p.sortPlansByCost(memPools, allPlansExhaustive)
+	//bestPlanOverall := p.chooseBestPlan(plansIteratorFromSlice(allPlansExhaustive))
 
 	lookupPlan := p.chooseBestPlan(allPlans)
 	if lookupPlan == nil {
 		return nil, fmt.Errorf("no plan with index matchers found")
 	}
-
-	//allPlansExhaustive := p.generateExhaustivePlans(ctx, p.stats, matchers, memPools, shard)
-	//allPlansExhaustive = p.sortPlansByCost(memPools, allPlansExhaustive)
-	//bestPlanOverall := p.chooseBestPlan(plansIteratorFromSlice(allPlansExhaustive))
 
 	BnBTotalCosts.Add(lookupPlan.TotalCost())
 	//BnBProperTotalCosts.Add(bestPlanBnB.TotalCost())
