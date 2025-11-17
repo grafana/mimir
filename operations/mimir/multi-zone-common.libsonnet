@@ -1,13 +1,4 @@
 {
-  local container = $.core.v1.container,
-  local deployment = $.apps.v1.deployment,
-  local statefulSet = $.apps.v1.statefulSet,
-  local podDisruptionBudget = $.policy.v1.podDisruptionBudget,
-  local volume = $.core.v1.volume,
-  local service = $.core.v1.service,
-  local servicePort = $.core.v1.servicePort,
-  local podAntiAffinity = deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
-
   _config+: {
     // Use a zone aware pod disruption budget for ingester and/or store-gateways
     multi_zone_zpdb_enabled: $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled,
