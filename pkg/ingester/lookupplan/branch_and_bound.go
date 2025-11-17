@@ -177,6 +177,7 @@ func (p CostBasedPlanner) generatePlansProperBranchAndBound(ctx context.Context,
 	completePlans := &partialPlans{}
 	bestCompleteCost := float64(1<<63 - 1) // Start with max float64
 	allDecided := slices.Repeat([]bool{true}, len(basePlan.predicates))
+	allScan := slices.Repeat([]bool{false}, len(basePlan.predicates))
 
 	// Branch and bound exploration
 	iterationsLeft := maxPlansForPlanning
@@ -193,6 +194,11 @@ func (p CostBasedPlanner) generatePlansProperBranchAndBound(ctx context.Context,
 
 		// Check if this is a complete plan (all predicates decided)
 		if slices.Equal(current.decidedPredicates, allDecided) {
+			if slices.Equal(current.plan.indexPredicate, allScan) {
+				// Skip plans that use only scan predicates
+				iterationsLeft--
+				continue
+			}
 			actualCost := current.plan.TotalCost()
 			current.totalCost = actualCost
 			heap.Push(completePlans, current)
@@ -231,8 +237,25 @@ func (p CostBasedPlanner) generatePlansProperBranchAndBound(ctx context.Context,
 
 		iterationsLeft--
 	}
+	// TODO dimitarvdimitrov fall back to all index if that's cheaper
+	var (
+		fewerPlans *partialPlans
+		morePlans  *partialPlans
+	)
+	if completePlans.Len() > prospectPlans.Len() {
+		fewerPlans, morePlans = prospectPlans, completePlans
+	} else {
+		fewerPlans, morePlans = completePlans, prospectPlans
+	}
+	// Push all plans from the smaller heap into the larger one until we reach maxReturnedPlans
+	// We need this because we will need to find a plan with at least one index matcher later,
+	// and we might not find that in either of the heaps alone.
+	// We also don't just concatenate the two heaps because nothing guarantees that the decided plans are cheaper than the prospective ones.
+	for p := range fewerPlans.PartialIterator() {
+		heap.Push(morePlans, p)
+	}
 
-	return completePlans.Iterator()
+	return morePlans.Iterator()
 }
 
 func (p partialPlan) LowerBoundCost() float64 {
