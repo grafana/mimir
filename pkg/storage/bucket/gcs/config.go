@@ -7,6 +7,7 @@ package gcs
 
 import (
 	"flag"
+	"time"
 
 	"github.com/grafana/dskit/flagext"
 
@@ -29,6 +30,13 @@ type Config struct {
 	// Set to 1 to disable retries.
 	MaxRetries int `yaml:"max_retries" category:"advanced"`
 
+	// ChunkRetryDeadline is the maximum duration for retrying a single chunk upload in a resumable upload.
+	// This applies to the total time spent on all retry attempts for a single chunk, not per attempt.
+	// If a chunk upload (including retries) exceeds this deadline, the upload fails.
+	// This should be set higher than the HTTP client timeout to allow for retries.
+	// Default is 5 minutes. Set to 0 to use the Google API default (32 seconds).
+	ChunkRetryDeadline time.Duration `yaml:"chunk_retry_deadline" category:"advanced"`
+
 	HTTP common.HTTPConfig `yaml:"http"`
 }
 
@@ -44,6 +52,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&cfg.ServiceAccount, prefix+"gcs.service-account", cfg.GCSServiceAccountShortDescription())
 	f.BoolVar(&cfg.EnableUploadRetries, prefix+"gcs.enable-upload-retries", false, "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.")
 	f.IntVar(&cfg.MaxRetries, prefix+"gcs.max-retries", 20, "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.")
+	f.DurationVar(&cfg.ChunkRetryDeadline, prefix+"gcs.chunk-retry-deadline", 5*time.Minute, "Maximum duration for retrying a single chunk upload in resumable uploads. Should be set higher than gcs.http.idle-conn-timeout to allow for retries. Set to 0 to use the default (32 seconds).")
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix+"gcs.", f)
 }
 

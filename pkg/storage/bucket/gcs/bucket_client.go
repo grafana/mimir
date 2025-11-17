@@ -8,6 +8,7 @@ package gcs
 import (
 	"context"
 	"io"
+	"time"
 
 	"cloud.google.com/go/storage"
 	"github.com/go-kit/log"
@@ -21,10 +22,11 @@ import (
 // on transient errors using the GCS RetryAlways policy.
 func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Logger) (objstore.Bucket, error) {
 	bucketConfig := gcs.Config{
-		Bucket:         cfg.BucketName,
-		ServiceAccount: cfg.ServiceAccount.String(),
-		HTTPConfig:     cfg.HTTP.ToExtHTTP(),
-		MaxRetries:     cfg.MaxRetries,
+		Bucket:             cfg.BucketName,
+		ServiceAccount:     cfg.ServiceAccount.String(),
+		HTTPConfig:         cfg.HTTP.ToExtHTTP(),
+		MaxRetries:         cfg.MaxRetries,
+		ChunkRetryDeadline: cfg.ChunkRetryDeadline,
 	}
 	gcsBucket, err := gcs.NewBucketWithConfig(ctx, logger, bucketConfig, name, nil)
 	if err != nil {
@@ -40,9 +42,10 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 		retryOpts = append(retryOpts, storage.WithMaxAttempts(cfg.MaxRetries))
 	}
 	return &retryAlwaysBucket{
-		Bucket:    gcsBucket,
-		bkt:       gcsBucket.Handle().Retryer(retryOpts...),
-		chunkSize: bucketConfig.ChunkSizeBytes,
+		Bucket:             gcsBucket,
+		bkt:                gcsBucket.Handle().Retryer(retryOpts...),
+		chunkSize:          bucketConfig.ChunkSizeBytes,
+		chunkRetryDeadline: cfg.ChunkRetryDeadline,
 	}, nil
 }
 
@@ -51,8 +54,9 @@ func NewBucketClient(ctx context.Context, cfg Config, name string, logger log.Lo
 // guarantee idempotency - concurrent writes or retries may overwrite objects.
 type retryAlwaysBucket struct {
 	*gcs.Bucket
-	bkt       *storage.BucketHandle
-	chunkSize int
+	bkt                *storage.BucketHandle
+	chunkSize          int
+	chunkRetryDeadline time.Duration
 }
 
 // Upload performs an upload using a GCS handle wrapped with RetryAlways policy.
@@ -65,6 +69,11 @@ func (b *retryAlwaysBucket) Upload(ctx context.Context, name string, r io.Reader
 	if b.chunkSize > 0 {
 		w.ChunkSize = b.chunkSize
 		w.ContentType = uploadOpts.ContentType
+	}
+
+	// Set ChunkRetryDeadline if configured (non-zero value)
+	if b.chunkRetryDeadline > 0 {
+		w.ChunkRetryDeadline = b.chunkRetryDeadline
 	}
 
 	if _, err := io.Copy(w, r); err != nil {

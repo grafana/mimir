@@ -59,14 +59,20 @@ type Config struct {
 	// Overrides the default gcs storage client behavior if this value is greater than 0.
 	// Set this to 1 to disable retries.
 	MaxRetries int `yaml:"max_retries"`
+
+	// ChunkRetryDeadline is the maximum duration for retrying a single chunk upload
+	// in a resumable upload. This applies to the total time spent on all retry attempts
+	// for a single chunk. If set to 0, the Google API default (32 seconds) is used.
+	ChunkRetryDeadline time.Duration `yaml:"chunk_retry_deadline"`
 }
 
 // Bucket implements the store.Bucket and shipper.Bucket interfaces against GCS.
 type Bucket struct {
-	logger    log.Logger
-	bkt       *storage.BucketHandle
-	name      string
-	chunkSize int
+	logger             log.Logger
+	bkt                *storage.BucketHandle
+	name               string
+	chunkSize          int
+	chunkRetryDeadline time.Duration
 
 	closer io.Closer
 }
@@ -172,11 +178,12 @@ func newBucket(ctx context.Context, logger log.Logger, gc Config, opts []option.
 		return nil, err
 	}
 	bkt := &Bucket{
-		logger:    logger,
-		bkt:       gcsClient.Bucket(gc.Bucket),
-		closer:    gcsClient,
-		name:      gc.Bucket,
-		chunkSize: gc.ChunkSizeBytes,
+		logger:             logger,
+		bkt:                gcsClient.Bucket(gc.Bucket),
+		closer:             gcsClient,
+		name:               gc.Bucket,
+		chunkSize:          gc.ChunkSizeBytes,
+		chunkRetryDeadline: gc.ChunkRetryDeadline,
 	}
 
 	if gc.MaxRetries > 0 {
@@ -341,6 +348,11 @@ func (b *Bucket) Upload(ctx context.Context, name string, r io.Reader, opts ...o
 	if b.chunkSize > 0 {
 		w.ChunkSize = b.chunkSize
 		w.ContentType = uploadOpts.ContentType
+	}
+
+	// Set ChunkRetryDeadline if configured (non-zero value)
+	if b.chunkRetryDeadline > 0 {
+		w.ChunkRetryDeadline = b.chunkRetryDeadline
 	}
 
 	if _, err := io.Copy(w, r); err != nil {
