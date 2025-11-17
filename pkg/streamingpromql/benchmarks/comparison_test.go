@@ -7,6 +7,7 @@ package benchmarks
 
 import (
 	"context"
+	"github.com/prometheus/prometheus/promql/parser"
 	"math"
 	"os"
 	"testing"
@@ -38,6 +39,10 @@ import (
 
 // This is based on the benchmarks from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func BenchmarkQuery(b *testing.B) {
+	extendedRangeSelectors := parser.EnableExtendedRangeSelectors
+	parser.EnableExtendedRangeSelectors = true
+	defer func() { parser.EnableExtendedRangeSelectors = extendedRangeSelectors }()
+
 	// Important: the setup below must remain in sync with the setup done in tools/benchmark-query-engine.
 	q := createBenchmarkQueryable(b, MetricSizes)
 	cases := TestCases(MetricSizes)
@@ -92,6 +97,10 @@ func BenchmarkQuery(b *testing.B) {
 }
 
 func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
+	extendedRangeSelectors := parser.EnableExtendedRangeSelectors
+	parser.EnableExtendedRangeSelectors = true
+	defer func() { parser.EnableExtendedRangeSelectors = extendedRangeSelectors }()
+	
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)
