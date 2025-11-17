@@ -25,7 +25,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
-  ncSumHistogramCountRate(metric, selectors, extra_selector, rate_interval='$__rate_interval')::
+  // ncSumHistogramCountRateRatio builds native and classic queries for
+  // sum(rate(<metric>_count{<selectors + extra_selector>}[ri])) / sum(rate(<metric>_count{<selectors>}[ri])).
+  ncSumHistogramCountRateRatio(metric, selectors, extra_selector, rate_interval='$__rate_interval')::
     local selectorsStr = $.toPrometheusSelector(selectors);
     local extendedSelectorsStr = $.toPrometheusSelector(selectors + extra_selector);
     {
@@ -39,6 +41,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
         metric: metric,
         rateInterval: rate_interval,
         extendedSelectors: extendedSelectorsStr,
+        selectors: selectorsStr,
+      },
+    },
+
+  // ncSumHistogramCountRate builds native and classic queries for
+  // sum(rate(<metric>_count{<selectors>}[ri])).
+  ncSumHistogramCountRate(metric, selectors, rate_interval='$__rate_interval')::
+    local selectorsStr = $.toPrometheusSelector(selectors);
+    {
+      classic: 'sum(rate(%(metric)s_count%(selectors)s[%(rateInterval)s]))' % {
+        metric: metric,
+        rateInterval: rate_interval,
+        selectors: selectorsStr,
+      },
+      native: 'sum(histogram_count(rate(%(metric)s%(selectors)s[%(rateInterval)s])))' % {
+        metric: metric,
+        rateInterval: rate_interval,
         selectors: selectorsStr,
       },
     },
