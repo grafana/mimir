@@ -10,8 +10,10 @@ import (
 	stdjson "encoding/json"
 	"fmt"
 	"math"
+	slices "slices"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -469,14 +471,17 @@ func (s *Sample) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-func SampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+func unsafeSampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	sample := (*Sample)(ptr)
 
 	if isTesting && math.IsNaN(sample.Value) {
 		stream.Error = fmt.Errorf("test sample")
 		return
 	}
+	SampleJsoniterEncode(*sample, stream)
+}
 
+func SampleJsoniterEncode(sample Sample, stream *jsoniter.Stream) {
 	stream.WriteArrayStart()
 	jsonutil.MarshalTimestamp(sample.TimestampMs, stream)
 	stream.WriteMore()
@@ -590,9 +595,53 @@ func (vs SampleHistogramPair) MarshalJSON() ([]byte, error) {
 	return stdjson.Marshal(s)
 }
 
+func unsafeHistogramJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	HistogramJsoniterEncode(*(*FloatHistogramPair)(ptr), stream)
+}
+
+func HistogramJsoniterEncode(h FloatHistogramPair, stream *jsoniter.Stream) {
+	stream.WriteArrayStart()
+	jsonutil.MarshalTimestamp(h.TimestampMs, stream)
+	stream.WriteMore()
+	jsonutil.MarshalHistogram(h.Histogram.ToPrometheusModel(), stream)
+	stream.WriteArrayEnd()
+}
+
+func unsafeMarshalLabelAdapters(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	laPtr := (*[]LabelAdapter)(ptr)
+	LabelAdaptersEncode(*laPtr, stream)
+}
+
+func LabelAdaptersEncode(lbls []LabelAdapter, stream *jsoniter.Stream) {
+	stream.WriteObjectStart()
+	for i, v := range lbls {
+		if i != 0 {
+			stream.WriteMore()
+		}
+		i++
+		stream.WriteString(v.Name)
+		stream.WriteRaw(`:`)
+		stream.WriteString(v.Value)
+	}
+	stream.WriteObjectEnd()
+}
+
+func decodeLabelAdapters(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+	laPtr := (*[]LabelAdapter)(ptr)
+	iter.ReadMapCB(func(iter *jsoniter.Iterator, key string) bool {
+		value := iter.ReadString()
+		*laPtr = append(*laPtr, LabelAdapter{Name: key, Value: value})
+		return true
+	})
+	slices.SortFunc(*laPtr, func(a, b LabelAdapter) int { return strings.Compare(a.Name, b.Name) })
+}
+
 func init() {
-	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", SampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", unsafeSampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
 	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)
+	jsoniter.RegisterTypeEncoderFunc("mimirpb.FloatHistogramPair", unsafeHistogramJsoniterEncode, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeEncoderFunc("[]mimirpb.LabelAdapter", unsafeMarshalLabelAdapters, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeDecoderFunc("[]mimirpb.LabelAdapter", decodeLabelAdapters)
 }
 
 // PreallocatingMetric overrides the Unmarshal behaviour of Metric.
