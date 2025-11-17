@@ -59,6 +59,10 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	if opts.EnablePruneToggles {
 		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
+	// NOTE: This optimization pass MUST run before SortLabelsAndMatchers since it does not preserve the order of matchers.
+	if opts.EnableReduceMatchers {
+		planner.RegisterASTOptimizationPass(ast.NewReduceMatchers(opts.CommonOpts.Reg, opts.Logger))
+	}
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
 
@@ -66,20 +70,16 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
 	// which would make the elimination logic more complex.
 	if opts.EnableEliminateDeduplicateAndMerge {
-		if opts.CommonOpts.EnableDelayedNameRemoval {
-			return nil, errors.New("eliminating deduplicate and merge nodes is not supported with delayed name removal")
-		}
+		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts.CommonOpts.EnableDelayedNameRemoval))
+	}
 
-		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+	if opts.EnableSkippingHistogramDecoding {
+		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
-	}
-
-	if opts.EnableSkippingHistogramDecoding {
-		// This optimization pass must be registered after common subexpression elimination, if that is enabled.
-		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
 	if opts.EnableNarrowBinarySelectors {

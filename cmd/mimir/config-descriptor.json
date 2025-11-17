@@ -2528,6 +2528,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_reduce_matchers",
+              "required": false,
+              "desc": "Enable eliminating duplicate or redundant matchers that are part of selector expressions.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-reduce-matchers",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -4314,7 +4325,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.read-path-cpu-utilization-limit",
           "fieldType": "float",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -4325,7 +4336,7 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "ingester.read-path-memory-utilization-limit",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -5196,17 +5207,6 @@
         },
         {
           "kind": "field",
-          "name": "metric_relabeling_enabled",
-          "required": false,
-          "desc": "Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "distributor.metric-relabeling-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "max_global_series_per_user",
           "required": false,
           "desc": "The maximum number of in-memory series per tenant, across the cluster before replication. 0 to disable.",
@@ -5837,16 +5837,6 @@
           "fieldFlag": "querier.active-series-results-max-size-bytes",
           "fieldType": "int",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "cost_attribution_labels",
-          "required": false,
-          "desc": "",
-          "fieldValue": null,
-          "fieldDefaultValue": "",
-          "fieldType": "string",
-          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -6665,6 +6655,28 @@
         },
         {
           "kind": "field",
+          "name": "otel_label_name_underscore_sanitization",
+          "required": false,
+          "desc": "If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.otel-label-name-underscore-sanitization",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "otel_label_name_preserve_multiple_underscores",
+          "required": false,
+          "desc": "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.",
+          "fieldValue": null,
+          "fieldDefaultValue": true,
+          "fieldFlag": "distributor.otel-label-name-preserve-underscores",
+          "fieldType": "boolean",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "ingest_storage_read_consistency",
           "required": false,
           "desc": "The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual.",
@@ -7313,6 +7325,17 @@
           "fieldDefaultValue": false,
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "frontend_health_check_grace_period",
+          "required": false,
+          "desc": "The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.frontend-health-check-grace-period",
+          "fieldType": "duration",
           "fieldCategory": "experimental"
         }
       ],
@@ -9039,6 +9062,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "blocks-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -11110,12 +11155,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_ttl",
               "required": false,
-              "desc": "How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls.",
+              "desc": "How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls.",
               "fieldValue": null,
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11132,12 +11177,12 @@
               "kind": "field",
               "name": "head_postings_for_matchers_cache_max_bytes",
               "required": false,
-              "desc": "Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0.",
+              "desc": "Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0.",
               "fieldValue": null,
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11148,7 +11193,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.head-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11159,7 +11204,7 @@
               "fieldDefaultValue": 10000000000,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-ttl",
               "fieldType": "duration",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11181,7 +11226,7 @@
               "fieldDefaultValue": 104857600,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes",
               "fieldType": "int",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11192,7 +11237,7 @@
               "fieldDefaultValue": false,
               "fieldFlag": "blocks-storage.tsdb.block-postings-for-matchers-cache-force",
               "fieldType": "boolean",
-              "fieldCategory": "experimental"
+              "fieldCategory": "advanced"
             },
             {
               "kind": "field",
@@ -11250,7 +11295,7 @@
                   "required": false,
                   "desc": "Cost for retrieving series from the index and checking if a series belongs to the query's shard.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 10,
+                  "fieldDefaultValue": 15,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost",
                   "fieldType": "float",
                   "fieldCategory": "advanced"
@@ -11274,6 +11319,28 @@
                   "fieldValue": null,
                   "fieldDefaultValue": 10000,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "label_cardinality_for_larger_sketch",
+                  "required": false,
+                  "desc": "Number of series for a label name above which larger count-min sketches are used for that label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "label_cardinality_for_smaller_sketch",
+                  "required": false,
+                  "desc": "Number of series for a label name above which smaller count-min sketches are used for that label.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch",
                   "fieldType": "int",
                   "fieldCategory": "advanced"
                 },
@@ -12700,7 +12767,7 @@
       "required": false,
       "desc": "Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.",
       "fieldValue": null,
-      "fieldDefaultValue": false,
+      "fieldDefaultValue": true,
       "fieldFlag": "include-tenant-id-in-profile-labels",
       "fieldType": "boolean",
       "fieldCategory": "experimental"
@@ -14851,6 +14918,28 @@
               "fieldType": "string"
             },
             {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "ruler-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -16651,12 +16740,12 @@
           "kind": "field",
           "name": "utf8_strict_mode",
           "required": false,
-          "desc": "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/\u003cMIMIR_VERSION\u003e/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.",
+          "desc": "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/\u003cMIMIR_VERSION\u003e/references/architecture/components/alertmanager/#enable-utf-8).",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "alertmanager.utf8-strict-mode-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         },
         {
           "kind": "field",
@@ -17118,6 +17207,28 @@
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.gcs.service-account",
               "fieldType": "string"
+            },
+            {
+              "kind": "field",
+              "name": "enable_upload_retries",
+              "required": false,
+              "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.gcs.enable-upload-retries",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "max_retries",
+              "required": false,
+              "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+              "fieldValue": null,
+              "fieldDefaultValue": 20,
+              "fieldFlag": "alertmanager-storage.gcs.max-retries",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
             },
             {
               "kind": "block",
@@ -18258,6 +18369,49 @@
           "fieldFlag": "memberlist.tls-min-version",
           "fieldType": "string",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "block",
+          "name": "zone_aware_routing",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "enabled",
+              "required": false,
+              "desc": "Enable zone-aware routing for memberlist gossip.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "memberlist.zone-aware-routing.enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "instance_availability_zone",
+              "required": false,
+              "desc": "Availability zone where this node is running.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "memberlist.zone-aware-routing.instance-availability-zone",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "role",
+              "required": false,
+              "desc": "Role of this node in the cluster. Valid values: member, bridge.",
+              "fieldValue": null,
+              "fieldDefaultValue": "member",
+              "fieldFlag": "memberlist.zone-aware-routing.role",
+              "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
         }
       ],
       "fieldValue": null,
@@ -19945,6 +20099,28 @@
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.gcs.service-account",
                   "fieldType": "string"
+                },
+                {
+                  "kind": "field",
+                  "name": "enable_upload_retries",
+                  "required": false,
+                  "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.gcs.enable-upload-retries",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "max_retries",
+                  "required": false,
+                  "desc": "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 20,
+                  "fieldFlag": "common.storage.gcs.max-retries",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
                 },
                 {
                   "kind": "block",

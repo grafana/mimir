@@ -101,6 +101,10 @@
                                    title="State: 0 = Alive, 1 = Suspect, 2 = Dead, 3 = Left"></i>
                             </span>
                         </th>
+                        {{ if .ZoneAwareRouting.Enabled }}
+                            <th>Zone</th>
+                            <th>Role</th>
+                        {{ end }}
                     </tr>
                     </thead>
 
@@ -122,6 +126,10 @@
                                     <span class="badge bg-info">Unknown: {{ .State }}</span>
                                 {{ end }}
                             </td>
+                            {{ if $.ZoneAwareRouting.Enabled }}
+                                <td class="align-middle font-monospace small">{{ GetZoneFromMeta .Meta }}</td>
+                                <td class="align-middle font-monospace small">{{ GetRoleFromMeta .Meta }}</td>
+                            {{ end }}
                         </tr>
                     {{ end }}
                     </tbody>

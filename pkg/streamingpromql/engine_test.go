@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1290,17 +1291,17 @@ func TestSubqueries(t *testing.T) {
 					{
 						F:      -1,
 						T:      40000,
-						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
+						Metric: labels.FromStrings(model.MetricNameLabel, "other_metric", "type", "floats"),
 					},
 					{
 						H:      &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
 						T:      40000,
-						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
+						Metric: labels.FromStrings(model.MetricNameLabel, "other_metric", "type", "histograms"),
 					},
 					{
 						H:      &histogram.FloatHistogram{Count: 1, CounterResetHint: histogram.UnknownCounterReset},
 						T:      40000,
-						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "mixed"),
+						Metric: labels.FromStrings(model.MetricNameLabel, "other_metric", "type", "mixed"),
 					},
 				},
 			},
@@ -1313,17 +1314,17 @@ func TestSubqueries(t *testing.T) {
 					{
 						F:      6,
 						T:      30000,
-						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "floats"),
+						Metric: labels.FromStrings(model.MetricNameLabel, "other_metric", "type", "floats"),
 					},
 					{
 						H:      &histogram.FloatHistogram{Count: 6},
 						T:      30000,
-						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "histograms"),
+						Metric: labels.FromStrings(model.MetricNameLabel, "other_metric", "type", "histograms"),
 					},
 					{
 						F:      6,
 						T:      30000,
-						Metric: labels.FromStrings(labels.MetricName, "other_metric", "type", "mixed"),
+						Metric: labels.FromStrings(model.MetricNameLabel, "other_metric", "type", "mixed"),
 					},
 				},
 			},
@@ -1551,13 +1552,13 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples, which will be rounded up to eight (the nearest power of two) by the bucketed pool,
 			// and we have five series and each of the series has labels of the same size.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
 			rangeQueryLimit:        0,
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to eight (the nearest power of two).
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
 			instantQueryLimit:        0,
 		},
 		"limit enabled, but query does not exceed limit": {
@@ -1566,14 +1567,14 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 
 			// Each series has five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two) by the bucketed pool, and we have five series.
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
-			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryExpectedPeak: 5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryLimit:        5*8*types.FPointSize + 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
 
 			// At peak, we'll hold all the output samples plus one series, which has one sample.
 			// The output contains five samples with SeriesMetadata, which will be rounded up to 8 (the nearest power of two).
 			// Five out of SeriesMetadata has labels.Labels with each of them having the same ByteSize.
-			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryExpectedPeak: types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        types.FPointSize + 8*(types.VectorSampleSize+types.SeriesMetadataSize) + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, and query exceeds limit": {
 			expr:          "some_metric",
@@ -1597,7 +1598,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 				// A)
 				//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 				//   - 1 output series metadata (no labels)
-				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
 				// B)
 				//   - the running total for the sum() (two floats (due to kahan) and a bool at each step, with the number of steps rounded to the nearest power of 2),
 				//   - the next series from the selector
@@ -1606,15 +1607,15 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			),
 			rangeQueryLimit: max(
 				// A)
-				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
+				8*types.SeriesMetadataSize+5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())+types.SeriesMetadataSize,
 				// B)
 				8*(2*types.Float64Size+types.BoolSize)+8*types.FPointSize+types.SeriesMetadataSize,
 			),
 
 			// Each series has one sample, which is already a power of two.
 			// At peak we'll hold in memory 9 SeriesMetadata.
-			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
+			instantQueryExpectedPeak: 9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
 		},
 		"limit enabled, query selects more samples than limit but should not load all of them into memory at once, and peak consumption is over limit": {
 			expr:          "sum(some_metric)",
@@ -1623,11 +1624,11 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			// At peak we'll hold in memory
 			//   - 5 input series labels (8 series metadata because of bucketed pool rounding to a power of 2)
 			//   - 1 output series metadata (no labels). This will tip over the limit and we won't allocate it, so the peak calculations don't include it.
-			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
+			rangeQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			rangeQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) - 1,
 
-			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()),
-			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize()) - 1,
+			instantQueryExpectedPeak: 8*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()),
+			instantQueryLimit:        9*types.SeriesMetadataSize + 5*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize()) - 1,
 		},
 		"histogram: limit enabled, but query does not exceed limit": {
 			expr:          "sum(some_histogram)",
@@ -1681,52 +1682,6 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 	ctx := context.Background()
 
 	for name, testCase := range testCases {
-		assertEstimatedPeakMemoryConsumption := func(t *testing.T, reg *prometheus.Registry, span tracetest.SpanStub, memoryConsumptionLimit, expectedMemoryConsumptionEstimate uint64, queryType string, shouldSucceed bool) {
-			peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
-			require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
-
-			require.NotEmpty(t, span.Events, "There should be events in the span.")
-
-			logEvents := filter(span.Events, func(e tracesdk.Event) bool {
-				return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
-			})
-			require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
-			logEvent := logEvents[0]
-			expectedFields := []attribute.KeyValue{
-				attribute.String("level", "info"),
-				attribute.String("msg", "evaluation stats"),
-				attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
-				attribute.String("expr", testCase.expr),
-				attribute.String("queryType", queryType),
-			}
-
-			switch queryType {
-			case "instant":
-				expectedFields = append(expectedFields,
-					attribute.Int64("time", start.UnixMilli()),
-				)
-			case "range":
-				expectedFields = append(expectedFields,
-					attribute.Int64("start", start.UnixMilli()),
-					attribute.Int64("end", end.UnixMilli()),
-					attribute.Int64("step", step.Milliseconds()),
-				)
-			default:
-				panic(fmt.Sprintf("unknown query type: %s", queryType))
-			}
-
-			if shouldSucceed {
-				expectedFields = append(expectedFields, attribute.String("status", "success"))
-			} else {
-				expectedFields = append(expectedFields,
-					attribute.String("status", "failed"),
-					attribute.String("err", limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(memoryConsumptionLimit).Error()),
-				)
-			}
-
-			require.ElementsMatch(t, expectedFields, logEvent.Attributes)
-		}
-
 		t.Run(name, func(t *testing.T) {
 			queryTypes := map[string]func(t *testing.T) (promql.Query, *prometheus.Registry, uint64, uint64){
 				"range": func(t *testing.T) (promql.Query, *prometheus.Registry, uint64, uint64) {
@@ -1759,10 +1714,22 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 					}
 
 					spanStubs := filter(spanExporter.GetSpans(), func(stub tracetest.SpanStub) bool {
-						return stub.Name == "Query.Exec"
+						return stub.Name == "Evaluator.Evaluate"
 					})
 					require.Len(t, spanStubs, 1)
-					assertEstimatedPeakMemoryConsumption(t, reg, spanStubs[0], memoryConsumptionLimit, expectedPeakMemoryConsumption, queryType, testCase.shouldSucceed)
+					assertEstimatedPeakMemoryConsumption(
+						t,
+						reg,
+						spanStubs[0],
+						memoryConsumptionLimit,
+						expectedPeakMemoryConsumption,
+						queryType,
+						testCase.expr,
+						start,
+						end,
+						step,
+						testCase.shouldSucceed,
+					)
 				})
 			}
 		})
@@ -1777,6 +1744,63 @@ func filter[T any](slice []T, fn func(T) bool) []T {
 		}
 	}
 	return result
+}
+
+func assertEstimatedPeakMemoryConsumption(
+	t *testing.T,
+	reg *prometheus.Registry,
+	span tracetest.SpanStub,
+	memoryConsumptionLimit, expectedMemoryConsumptionEstimate uint64,
+	queryType string,
+	expr string,
+	start time.Time,
+	end time.Time,
+	step time.Duration,
+	shouldSucceed bool,
+) {
+	peakMemoryConsumptionHistogram := getHistogram(t, reg, "cortex_mimir_query_engine_estimated_query_peak_memory_consumption")
+	require.Equal(t, float64(expectedMemoryConsumptionEstimate), peakMemoryConsumptionHistogram.GetSampleSum())
+
+	require.NotEmpty(t, span.Events, "There should be events in the span.")
+
+	logEvents := filter(span.Events, func(e tracesdk.Event) bool {
+		return e.Name == "log" && slices.Contains(e.Attributes, attribute.String("msg", "evaluation stats"))
+	})
+	require.Len(t, logEvents, 1, "There should be exactly one log event in the span.")
+	logEvent := logEvents[0]
+	expectedFields := []attribute.KeyValue{
+		attribute.String("level", "info"),
+		attribute.String("msg", "evaluation stats"),
+		attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
+		attribute.String("originalExpression", expr),
+		attribute.String("timeRangeType", queryType),
+	}
+
+	switch queryType {
+	case "instant":
+		expectedFields = append(expectedFields,
+			attribute.Int64("time", start.UnixMilli()),
+		)
+	case "range":
+		expectedFields = append(expectedFields,
+			attribute.Int64("start", start.UnixMilli()),
+			attribute.Int64("end", end.UnixMilli()),
+			attribute.Int64("step", step.Milliseconds()),
+		)
+	default:
+		panic(fmt.Sprintf("unknown query type: %s", queryType))
+	}
+
+	if shouldSucceed {
+		expectedFields = append(expectedFields, attribute.String("status", "success"))
+	} else {
+		expectedFields = append(expectedFields,
+			attribute.String("status", "failed"),
+			attribute.String("err", limiter.NewMaxEstimatedMemoryConsumptionPerQueryLimitError(memoryConsumptionLimit).Error()),
+		)
+	}
+
+	require.ElementsMatch(t, expectedFields, logEvent.Attributes)
 }
 
 func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
@@ -1794,7 +1818,7 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 	opts := NewTestEngineOpts()
 	opts.CommonOpts.Reg = reg
 
-	limit := 32*types.FPointSize + 4*types.SeriesMetadataSize + 3*uint64(labels.FromStrings(labels.MetricName, "some_metric", "idx", "i").ByteSize())
+	limit := 32*types.FPointSize + 4*types.SeriesMetadataSize + 3*uint64(labels.FromStrings(model.MetricNameLabel, "some_metric", "idx", "i").ByteSize())
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(limit), stats.NewQueryMetrics(reg), planner)
@@ -1828,6 +1852,80 @@ func TestMemoryConsumptionLimit_MultipleQueries(t *testing.T) {
 
 	runQuery(`some_metric{idx=~"1|2|3"}`, true)
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(rejectedMetrics(2)), "cortex_querier_queries_rejected_total"))
+}
+
+func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
+	spanExporter.Reset()
+
+	storage := promqltest.LoadedStorage(t, `
+		load 1m
+			some_metric 0+1x5
+	`)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	reg := prometheus.NewPedanticRegistry()
+	opts := NewTestEngineOpts()
+	opts.CommonOpts.Reg = reg
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(reg), planner)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	expr := "some_metric"
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan, plan.Root, plan.TimeRange)
+	require.NoError(t, err)
+
+	err = evaluator.Evaluate(ctx, noopEvaluationObserver{})
+	require.NoError(t, err)
+
+	spanStubs := filter(spanExporter.GetSpans(), func(stub tracetest.SpanStub) bool {
+		return stub.Name == "Evaluator.Evaluate"
+	})
+	require.Len(t, spanStubs, 1)
+	assertEstimatedPeakMemoryConsumption(
+		t,
+		reg,
+		spanStubs[0],
+		0,
+		61,
+		"instant",
+		expr,
+		timestamp.Time(0),
+		timestamp.Time(0),
+		0,
+		true,
+	)
+}
+
+type noopEvaluationObserver struct{}
+
+func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error {
+	return nil
+}
+
+func (n noopEvaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+	return nil
 }
 
 func rejectedMetrics(rejectedDueToMemoryConsumption int) string {
@@ -2205,7 +2303,7 @@ func TestAnnotations(t *testing.T) {
 		metric{series="custom-buckets-1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x3
 		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
 	`
 
 	nativeHistogramsWithResetHintsMix := `
@@ -2319,11 +2417,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:5)`,
 			},
 		},
-		"sum() over native histograms with incompatible custom buckets": {
+		"sum() over native histograms with mismatched custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
 			expr: `sum(metric{series=~"custom-buckets-(1|2)"})`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:5)`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during aggregation (1:5)`,
 			},
 		},
 
@@ -2339,11 +2437,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
-		"sum_over_time() over native histograms with incompatible custom buckets": {
+		"sum_over_time() over native histograms with mismatched custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `sum_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
+			expr: `sum_over_time(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during aggregation (1:15)`,
 			},
 		},
 
@@ -2359,11 +2457,11 @@ func TestAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:15)`,
 			},
 		},
-		"avg_over_time() over native histograms with incompatible custom buckets": {
+		"avg_over_time() over native histograms with mismatched custom buckets": {
 			data: nativeHistogramsWithCustomBucketsData,
-			expr: `avg_over_time(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:15)`,
+			expr: `avg_over_time(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during aggregation (1:15)`,
 			},
 		},
 
@@ -2526,7 +2624,8 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 		metric{series="custom-buckets-1"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}x3
 		metric{series="custom-buckets-2"} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}+{{schema:-53 sum:5 count:4 custom_values:[2 3] buckets:[1 2 1]}}x3
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[2 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets-with-resets"} {{schema:-53 sum:10 count:1 custom_values:[5 10] buckets:[10]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}
     `
 
 	testCases := map[string]annotationTestCase{}
@@ -2608,13 +2707,22 @@ func TestRateIncreaseAnnotations(t *testing.T) {
 				fmt.Sprintf(`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:%d)`, position),
 			},
 		}
-		testCases[fmt.Sprintf("%s() over native histograms with incompatible custom buckets", function)] = annotationTestCase{
+
+		testCases[fmt.Sprintf("%s() over native histograms with mismatched custom buckets", function)] = annotationTestCase{
 			data:                       nativeHistogramsWithCustomBucketsData,
-			expr:                       fmt.Sprintf(`%s(metric{series="incompatible-custom-buckets"}[2m1s])`, function),
+			expr:                       fmt.Sprintf(`%s(metric{series="mismatched-custom-buckets"}[2m1s])`, function),
 			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
-			expectedWarningAnnotations: []string{
-				fmt.Sprintf(`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:%d)`, position),
+			expectedInfoAnnotations: []string{
+				fmt.Sprintf(`PromQL info: mismatched custom buckets were reconciled during subtraction (1:%d)`, position),
 			},
+			expectedWarningAnnotations: []string{},
+		}
+
+		testCases[fmt.Sprintf("%s() over native histograms with mismatched custom buckets with reset", function)] = annotationTestCase{
+			// No info annotation - as the mismatched buckets samples are also detected as a reset, no reconciled annotation is returned
+			data:                       nativeHistogramsWithCustomBucketsData,
+			expr:                       fmt.Sprintf(`%s(metric{series="mismatched-custom-buckets-with-resets"}[2m1s])`, function),
+			instantEvaluationTimestamp: &incompatibleSchemaEvaluationTimestamp,
 		}
 
 		testCases[fmt.Sprintf("%s() over metric without counter suffix with single float or histogram in range", function)] = annotationTestCase{
@@ -2669,7 +2777,8 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2]}}
 		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1]}}
 		metric{series="mixed-exponential-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1]}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}} {{schema:-53 sum:5 count:4 custom_values:[2 10] buckets:[1 2 1]}}
+		metric{series="mismatched-custom-buckets-with-resets"} {{schema:-53 sum:10 count:1 custom_values:[5 10] buckets:[10]}} {{schema:-53 sum:1 count:1 custom_values:[2 3] buckets:[1]}}
 		metric{series="nh-first-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
 		metric{series="nh-second-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
 	`
@@ -2679,7 +2788,7 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 		metric{series="nh"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
 		metric{series="mixed-float-nh"} 10 {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:5 count:4 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}}
 		metric{series="mixed-exponential-custom-buckets"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}}
-		metric{series="incompatible-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1] counter_reset_hint:gauge}}
+		metric{series="mismatched-custom-buckets"} {{schema:-53 sum:1 count:1 custom_values:[5 10] buckets:[1] counter_reset_hint:gauge}} {{schema:-53 sum:1 count:1 custom_values:[5 12] buckets:[1] counter_reset_hint:gauge}}
 		metric{series="nh-first-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:2 count:2 buckets:[2] counter_reset_hint:gauge}}
 		metric{series="nh-second-not-gauge"} {{schema:0 sum:1 count:1 buckets:[1] counter_reset_hint:gauge}} {{schema:0 sum:2 count:2 buckets:[2]}}
 	`
@@ -2709,11 +2818,17 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 			expr:                       `irate(metric{series="mixed-exponential-custom-buckets"}[1m1s])`,
 			expectedWarningAnnotations: []string{},
 		},
-		// Similar to the case above: change in bucket layout counts as a reset, so we won't return an annotation.
-		"irate() over metric with incompatible custom buckets": {
-			data:                       irateData,
-			expr:                       `irate(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{},
+		"irate() over metric with mismatched custom buckets": {
+			data: irateData,
+			expr: `irate(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during subtraction (1:7)`,
+			},
+		},
+		// If a reset is detected for mismatched buckets, no annotations are returned
+		"irate() over metric with mismatched custom buckets with reset": {
+			data: irateData,
+			expr: `irate(metric{series="mismatched-custom-buckets-with-resets"}[1m1s])`,
 		},
 		"irate() over metric with first point not being a counter native histogram": {
 			data: irateData,
@@ -2754,11 +2869,11 @@ func TestIrateIdeltaAnnotations(t *testing.T) {
 				`PromQL warning: vector contains a mix of histograms with exponential and custom buckets schemas for metric name "metric" (1:8)`,
 			},
 		},
-		"idelta() over metric with incompatible custom buckets": {
+		"idelta() over metric with mismatched custom buckets": {
 			data: ideltaData,
-			expr: `idelta(metric{series="incompatible-custom-buckets"}[1m1s])`,
-			expectedWarningAnnotations: []string{
-				`PromQL warning: vector contains histograms with incompatible custom buckets for metric name "metric" (1:8)`,
+			expr: `idelta(metric{series="mismatched-custom-buckets"}[1m1s])`,
+			expectedInfoAnnotations: []string{
+				`PromQL info: mismatched custom buckets were reconciled during subtraction (1:8)`,
 			},
 		},
 		"idelta() over metric with first point not being a gauge native histogram": {
@@ -2847,18 +2962,21 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		histogramHistogramSupported          bool
 		supportsBool                         bool
 		emitsWarningOnIncompatibleHistograms bool
+		emitsInfoOnMismatchedCustomBuckets   bool
 	}{
 		"+": {
 			floatHistogramSupported:              false,
 			histogramFloatSupported:              false,
 			histogramHistogramSupported:          true,
 			emitsWarningOnIncompatibleHistograms: true,
+			emitsInfoOnMismatchedCustomBuckets:   true,
 		},
 		"-": {
 			floatHistogramSupported:              false,
 			histogramFloatSupported:              false,
 			histogramHistogramSupported:          true,
 			emitsWarningOnIncompatibleHistograms: true,
+			emitsInfoOnMismatchedCustomBuckets:   true,
 		},
 		"*": {
 			floatHistogramSupported:     true,
@@ -2936,17 +3054,29 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 		testCases[name] = testCase
 	}
 
-	addIncompatibleLayoutTestCase := func(op string, name string, expr string, shouldEmitAnnotation bool) {
-		testCase := annotationTestCase{
-			data: mixedFloatHistogramData,
-			expr: expr,
+	addIncompatibleLayoutWarningTestCase := func(op string, name string, expr string) {
+		testCases[name] = annotationTestCase{
+			data:                       mixedFloatHistogramData,
+			expr:                       expr,
+			expectedWarningAnnotations: []string{fmt.Sprintf(`PromQL warning: incompatible bucket layout encountered for binary operator %v (1:1)`, op)},
+		}
+	}
+
+	addMismatchedCustomBucketsInfoTestCase := func(op string, name string, expr string) {
+		opName := op
+
+		switch op {
+		case "+":
+			opName = "addition"
+		case "-":
+			opName = "subtraction"
 		}
 
-		if shouldEmitAnnotation {
-			testCase.expectedWarningAnnotations = []string{fmt.Sprintf(`PromQL warning: incompatible bucket layout encountered for binary operator %v (1:1)`, op)}
+		testCases[name] = annotationTestCase{
+			data:                    mixedFloatHistogramData,
+			expr:                    expr,
+			expectedInfoAnnotations: []string{fmt.Sprintf(`PromQL info: mismatched custom buckets were reconciled during %v (1:1)`, opName)},
 		}
-
-		testCases[name] = testCase
 	}
 
 	cardinalities := map[string]string{
@@ -2973,8 +3103,12 @@ func TestBinaryOperationAnnotations(t *testing.T) {
 				addIncompatibleTypesTestCase(op, fmt.Sprintf("binary %v between two histograms with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram"}`, expr, cardinalityModifier), "histogram", "histogram", binop.histogramHistogramSupported)
 
 				if binop.histogramHistogramSupported {
-					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with exponential and custom buckets with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram-custom-buckets"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
-					addIncompatibleLayoutTestCase(op, fmt.Sprintf("binary %v between histograms with incompatible custom bucket schemas with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram-custom-buckets"} %v ignoring(type) %v metric{type="histogram-custom-buckets-other-layout"}`, expr, cardinalityModifier), binop.emitsWarningOnIncompatibleHistograms)
+					if binop.emitsWarningOnIncompatibleHistograms {
+						addIncompatibleLayoutWarningTestCase(op, fmt.Sprintf("binary %v between histograms with exponential and custom buckets with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram"} %v ignoring(type) %v metric{type="histogram-custom-buckets"}`, expr, cardinalityModifier))
+					}
+					if binop.emitsInfoOnMismatchedCustomBuckets {
+						addMismatchedCustomBucketsInfoTestCase(op, fmt.Sprintf("binary %v between histograms with incompatible custom bucket schemas with %v matching", expr, cardinalityName), fmt.Sprintf(`metric{type="histogram-custom-buckets"} %v ignoring(type) %v metric{type="histogram-custom-buckets-other-layout"}`, expr, cardinalityModifier))
+					}
 				}
 			}
 		}

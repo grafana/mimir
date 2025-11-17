@@ -68,7 +68,7 @@ func (o *OptimizationPass) wrapShardedExpressions(n planning.Node) (bool, error)
 
 	wrappedAnyChild := false
 
-	for _, child := range n.Children() {
+	for child := range planning.ChildrenIter(n) {
 		wrapped, err := o.wrapShardedExpressions(child)
 		if err != nil {
 			return false, err
@@ -81,15 +81,28 @@ func (o *OptimizationPass) wrapShardedExpressions(n planning.Node) (bool, error)
 }
 
 func (o *OptimizationPass) wrapShardedConcat(functionCall *core.FunctionCall) error {
-	children := functionCall.Children()
+	if len(functionCall.Args) == 0 {
+		// It shouldn't happen that there are no children, but the condition below will panic if there are no children,
+		// so check it just to be safe.
+		return nil
+	}
 
-	for idx, child := range children {
-		var err error
-		children[idx], err = o.wrapInRemoteExecutionNode(child, true)
+	if _, isRemoteExec := functionCall.Args[0].(*RemoteExecution); isRemoteExec {
+		// We've already wrapped the first child, which means we've wrapped all of the children as well.
+		// This can happen if the sharded expression is duplicated, in which case we can visit it multiple times.
+		return nil
+	}
+
+	for idx, child := range functionCall.Args {
+		child, err := o.wrapInRemoteExecutionNode(child, true)
 		if err != nil {
+			return err
+		}
+
+		if err := functionCall.ReplaceChild(idx, child); err != nil {
 			return err
 		}
 	}
 
-	return functionCall.SetChildren(children)
+	return nil
 }

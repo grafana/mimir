@@ -3,22 +3,69 @@
 package costattribution
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 )
 
+func TestNewActiveTracker(t *testing.T) {
+	testCases := map[string]struct {
+		costAttributionLabels []costattributionmodel.Label
+		expectedErr           error
+	}{
+		"happy case single label": {
+			costAttributionLabels: []costattributionmodel.Label{{Input: "good_label", Output: "good_label"}},
+			expectedErr:           nil,
+		},
+		"happy case multiple labels": {
+			costAttributionLabels: []costattributionmodel.Label{
+				{Input: "good_label", Output: "good_label"},
+				{Input: "another_good_label", Output: "another_good_label"},
+			},
+			expectedErr: nil,
+		},
+		"incorrect label name causes an error single label": {
+			costAttributionLabels: []costattributionmodel.Label{{Input: "__bad_label__", Output: "__bad_label__"}},
+			expectedErr:           fmt.Errorf(`failed to create an active series tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_ingester_attributed_active_series", help: "The total number of active series per user and attribution.", constLabels: {}, variableLabels: {__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
+		},
+		"incorrect label name causes an error multiple labels": {
+			costAttributionLabels: []costattributionmodel.Label{
+				{Input: "good_label", Output: "good_label"},
+				{Input: "__bad_label__", Output: "__bad_label__"},
+			},
+			expectedErr: fmt.Errorf(`failed to create an active series tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_ingester_attributed_active_series", help: "The total number of active series per user and attribution.", constLabels: {}, variableLabels: {good_label,__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			ast, astErr := NewActiveSeriesTracker("tenant-1", testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			if testCase.expectedErr == nil {
+				require.NoError(t, astErr)
+				require.NotNil(t, ast)
+			} else {
+				require.Error(t, astErr)
+				require.EqualError(t, astErr, testCase.expectedErr.Error())
+				require.Nil(t, ast)
+			}
+		})
+	}
+}
+
 func TestActiveTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	ast := manager.ActiveSeriesTracker("user1")
-	assert.True(t, ast.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, ast.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
 }
 
 func TestActiveTracker_IncrementDecrement(t *testing.T) {
@@ -83,13 +130,13 @@ func TestActiveTracker_Concurrency(t *testing.T) {
 	expectedMetrics := `
 	# HELP cortex_ingester_attributed_active_native_histogram_buckets The total number of active native histogram buckets per user and attribution.
     # TYPE cortex_ingester_attributed_active_native_histogram_buckets gauge
-    cortex_ingester_attributed_active_native_histogram_buckets{team="__overflow__",tenant="user1",tracker="cost-attribution"} 200
+    cortex_ingester_attributed_active_native_histogram_buckets{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 200
     # HELP cortex_ingester_attributed_active_native_histogram_series The total number of active native histogram series per user and attribution.
     # TYPE cortex_ingester_attributed_active_native_histogram_series gauge
-    cortex_ingester_attributed_active_native_histogram_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
+    cortex_ingester_attributed_active_native_histogram_series{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
     # HELP cortex_ingester_attributed_active_series The total number of active series per user and attribution.
     # TYPE cortex_ingester_attributed_active_series gauge
-	cortex_ingester_attributed_active_series{team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
+	cortex_ingester_attributed_active_series{my_team="__overflow__",tenant="user1",tracker="cost-attribution"} 100
 `
 	assert.NoError(t, testutil.GatherAndCompare(costAttributionReg,
 		strings.NewReader(expectedMetrics),

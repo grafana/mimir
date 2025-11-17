@@ -71,18 +71,9 @@ calculate_next_chart_version() {
 validate_version_update() {
   local new_chart_version=$1
   local current_chart_version=$2
-  local latest_gem_tag=$3
-  local latest_mimir_tag=$4
 
   if [[ "$new_chart_version" == "$current_chart_version" ]]; then
     echo "New chart version ($new_chart_version) is the same as current version ($current_chart_version); not submitting weekly PR"
-    exit 1
-  fi
-
-  local gem_weekly_version=$(extract_r_version $latest_gem_tag)
-  local mimir_weekly_version=$(extract_r_version $latest_mimir_tag)
-  if [[ "$gem_weekly_version" != "$mimir_weekly_version" ]]; then
-    echo "GEM weekly version ($gem_weekly_version) does not match Mimir weekly version ($mimir_weekly_version); not submitting PR"
     exit 1
   fi
 }
@@ -91,14 +82,12 @@ values_file=operations/helm/charts/mimir-distributed/values.yaml
 chart_file=operations/helm/charts/mimir-distributed/Chart.yaml
 
 latest_mimir_tag=$(find_latest_image_tag grafana/mimir)
-latest_gem_tag=$(find_latest_image_tag grafana/enterprise-metrics)
 current_chart_version=$(get_yaml_node $chart_file .version)
 new_chart_version=$(calculate_next_chart_version $current_chart_version $latest_mimir_tag)
 
-validate_version_update $new_chart_version $current_chart_version $latest_gem_tag $latest_mimir_tag
+validate_version_update $new_chart_version $current_chart_version
 
 update_yaml_node $values_file .image.tag $latest_mimir_tag
-update_yaml_node $values_file .enterprise.image.tag $latest_gem_tag
 update_yaml_node $chart_file .appVersion $(extract_r_version $latest_mimir_tag)
 update_yaml_node $chart_file .version $new_chart_version
 

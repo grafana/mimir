@@ -9,6 +9,7 @@ import (
 	"cmp"
 	"context"
 	"embed"
+	"errors"
 	"html/template"
 	"net/http"
 	"path"
@@ -21,7 +22,6 @@ import (
 	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/route"
@@ -220,6 +220,7 @@ func NewQuerierHandler(
 	const (
 		remoteWriteEnabled = false
 		otlpEnabled        = false
+		appendMetadata     = false
 	)
 
 	api := v1.NewAPI(
@@ -258,6 +259,7 @@ func NewQuerierHandler(
 		true,
 		querierCfg.EngineConfig.LookbackDelta,
 		false,
+		appendMetadata,
 		nil,
 	)
 
@@ -327,6 +329,12 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 	templ := template.New("memberlist_status")
 	templ.Funcs(map[string]interface{}{
 		"StringsJoin": strings.Join,
+		"GetZoneFromMeta": func(meta []byte) string {
+			return memberlist.EncodedNodeMetadata(meta).Zone()
+		},
+		"GetRoleFromMeta": func(meta []byte) string {
+			return memberlist.EncodedNodeMetadata(meta).Role().String()
+		},
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
 	return memberlist.NewHTTPStatusHandler(kvs, templ)

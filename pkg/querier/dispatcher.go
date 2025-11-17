@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -245,7 +246,12 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 	}
 
 	if err := w.write(ctx, resp); err != nil {
-		level.Warn(w.logger).Log("msg", "failed to write message to stream", "err", err)
+		if grpcutil.IsCanceled(err) {
+			level.Debug(w.logger).Log("msg", "failed to write message to query-frontend stream because the request was canceled", "err", err)
+		} else {
+			level.Warn(w.logger).Log("msg", "failed to write message to query-frontend stream", "err", err)
+		}
+
 		return err
 	}
 
@@ -255,13 +261,15 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apierror.Type, err error) {
 	typ := errorTypeForError(err, fallbackType)
 	msg := err.Error()
-	span := trace.SpanFromContext(ctx)
 
-	if typ != mimirpb.QUERY_ERROR_TYPE_CANCELED {
+	if typ == mimirpb.QUERY_ERROR_TYPE_CANCELED {
+		level.Debug(w.logger).Log("msg", "returning cancelled status", "type", typ.String(), "msg", msg)
+	} else {
+		span := trace.SpanFromContext(ctx)
 		span.SetStatus(codes.Error, msg)
-	}
 
-	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", typ.String()), attribute.String("msg", msg)))
+		level.Warn(w.logger).Log("msg", "returning error", "type", typ.String(), "msg", msg)
+	}
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
 
@@ -275,7 +283,11 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apier
 	}
 
 	if err := w.write(ctx, resp); err != nil {
-		level.Warn(w.logger).Log("msg", "failed to write error to stream", "writeErr", err, "originalErr", msg)
+		if grpcutil.IsCanceled(err) {
+			level.Debug(w.logger).Log("msg", "failed to write error to query-frontend stream because the request was canceled", "writeErr", err, "originalErr", msg)
+		} else {
+			level.Warn(w.logger).Log("msg", "failed to write error to query-frontend stream", "writeErr", err, "originalErr", msg)
+		}
 	}
 }
 

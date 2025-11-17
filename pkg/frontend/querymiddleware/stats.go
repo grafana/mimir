@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -71,7 +72,7 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
-	expr, err := parser.ParseExpr(req.GetQuery())
+	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
 	if err != nil {
 		return
 	}
@@ -118,7 +119,7 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 	details.Step = time.Duration(req.GetStep()) * time.Millisecond
 
-	minT, maxT, ok := s.findMinMaxTime(ctx, req)
+	minT, maxT, ok := ExtractMinMaxTime(ctx, req, s.lookbackDelta)
 	if !ok {
 		return
 	}
@@ -131,32 +132,6 @@ func (s queryStatsMiddleware) populateQueryDetails(ctx context.Context, req Metr
 	}
 	if maxT != 0 && (details.MaxT.IsZero() || details.MaxT.Before(time.UnixMilli(maxT))) {
 		details.MaxT = time.UnixMilli(maxT)
-	}
-}
-
-func (s queryStatsMiddleware) findMinMaxTime(ctx context.Context, req MetricsQueryRequest) (int64, int64, bool) {
-	switch r := req.(type) {
-	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
-		expr, err := parser.ParseExpr(r.GetQuery())
-		if err != nil {
-			return 0, 0, false
-		}
-
-		evalStmt := &parser.EvalStmt{
-			Expr:          expr,
-			Start:         util.TimeFromMillis(req.GetStart()),
-			End:           util.TimeFromMillis(req.GetEnd()),
-			Interval:      time.Duration(req.GetStep()) * time.Millisecond,
-			LookbackDelta: s.lookbackDelta,
-		}
-
-		minT, maxT := promql.FindMinMaxTime(evalStmt)
-		return minT, maxT, true
-	case *remoteReadQueryRequest:
-		minT := r.GetStart() + 1 // The query time range is left-open, but minT is expected to be inclusive.
-		return minT, r.GetEnd(), true
-	default:
-		return 0, 0, false
 	}
 }
 
@@ -211,4 +186,32 @@ func QueryDetailsFromContext(ctx context.Context) *QueryDetails {
 		return nil
 	}
 	return o.(*QueryDetails)
+}
+
+// ExtractMinMaxTime extracts the min and max timestamps that may be accessed by the query.
+// TODO: do we need the lookbackDelta as an argument? Can't we use req.GetLookbackDelta()?
+func ExtractMinMaxTime(ctx context.Context, req MetricsQueryRequest, lookbackDelta time.Duration) (int64, int64, bool) {
+	switch r := req.(type) {
+	case *PrometheusRangeQueryRequest, *PrometheusInstantQueryRequest:
+		expr, err := parser.ParseExpr(r.GetQuery())
+		if err != nil {
+			return 0, 0, false
+		}
+
+		evalStmt := &parser.EvalStmt{
+			Expr:          expr,
+			Start:         util.TimeFromMillis(req.GetStart()),
+			End:           util.TimeFromMillis(req.GetEnd()),
+			Interval:      time.Duration(req.GetStep()) * time.Millisecond,
+			LookbackDelta: lookbackDelta,
+		}
+
+		minT, maxT := promql.FindMinMaxTime(evalStmt)
+		return minT, maxT, true
+	case *remoteReadQueryRequest:
+		minT := r.GetStart() + 1 // The query time range is left-open, but minT is expected to be inclusive.
+		return minT, r.GetEnd(), true
+	default:
+		return 0, 0, false
+	}
 }

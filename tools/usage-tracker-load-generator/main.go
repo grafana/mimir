@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/mimir/pkg/usagetracker"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type Config struct {
@@ -116,7 +117,8 @@ func main() {
 	}()
 
 	// Create the usage-tracker client.
-	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, logger, prometheus.DefaultRegisterer)
+	stubLimits := validation.NewOverrides(validation.Limits{}, validation.NewMockTenantLimits(nil))
+	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, stubLimits, logger, prometheus.DefaultRegisterer)
 
 	// Compute the number of workers assuming each TrackSeries() request 100ms on average (we consider this a worst case scenario).
 	numRequestsPerScrapeInterval := cfg.SimulatedTotalSeries / cfg.SimulatedSeriesPerWriteRequest

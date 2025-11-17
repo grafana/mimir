@@ -371,6 +371,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_miss_bytes;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
 			},
 		},
 		{
@@ -406,6 +407,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_miss_bytes;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
 			},
 		},
 	} {
@@ -487,6 +489,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["split_queries"])
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
+				require.EqualValues(t, 0, msg["remote_execution_request_count"])
 
 				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
 					require.Equal(t, "success", msg["status"])
@@ -622,12 +625,12 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 func TestHandler_Stop(t *testing.T) {
 	const (
 		// We want to verify that the Stop method will wait on 10 in-flight requests.
-		requests = 10
+		inflightRequestCountBeforeStopping = 10
 	)
 	inProgress := make(chan int32)
-	var reqID atomic.Int32
+	var requestCount atomic.Int32
 	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
-		id := reqID.Inc()
+		id := requestCount.Inc()
 		t.Logf("request %d sending its ID", id)
 		inProgress <- id
 		return &http.Response{
@@ -641,32 +644,38 @@ func TestHandler_Stop(t *testing.T) {
 	logger := &testLogger{}
 	handler := NewHandler(cfg, roundTripper, logger, reg, nil)
 
+	makeRequest := func() (body []byte, statusCode int) {
+		form := url.Values{
+			"query": []string{"some_metric"},
+			"time":  []string{"42"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(form.Encode()))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("User-Agent", "test-user-agent")
+		req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
+		resp := httptest.NewRecorder()
+
+		handler.ServeHTTP(resp, req)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return body, resp.Code
+	}
+
 	var wg sync.WaitGroup
-	for i := 0; i < requests; i++ {
+	for i := 0; i < inflightRequestCountBeforeStopping; i++ {
 		wg.Add(1)
 
 		go func() {
 			defer wg.Done()
 
-			form := url.Values{
-				"query": []string{"some_metric"},
-				"time":  []string{"42"},
-			}
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(form.Encode()))
-			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-			req.Header.Add("User-Agent", "test-user-agent")
-			req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
-			resp := httptest.NewRecorder()
-
-			handler.ServeHTTP(resp, req)
-			_, _ = io.ReadAll(resp.Body)
-			require.Equal(t, http.StatusOK, resp.Code)
+			_, statusCode := makeRequest()
+			require.Equal(t, http.StatusOK, statusCode)
 		}()
 	}
 
 	// Wait for all requests to be in flight
-	test.Poll(t, 1*time.Second, requests, func() interface{} {
-		return int(reqID.Load())
+	test.Poll(t, 1*time.Second, inflightRequestCountBeforeStopping, func() interface{} {
+		return int(requestCount.Load())
 	})
 	t.Log("all requests in flight")
 
@@ -685,8 +694,15 @@ func TestHandler_Stop(t *testing.T) {
 		return handler.stopped
 	})
 
+	t.Log("handler has entered stopping mode, making another request")
+
+	// Make another request, make sure it immediately fails.
+	body, statusCode := makeRequest()
+	require.Equal(t, http.StatusServiceUnavailable, statusCode)
+	require.Contains(t, string(body), "frontend stopped")
+
 	// Complete the requests, by consuming their messages
-	for i := 0; i < requests; i++ {
+	for i := 0; i < inflightRequestCountBeforeStopping; i++ {
 		require.False(t, stopped.Load(), "handler stopped too early")
 
 		ri := <-inProgress

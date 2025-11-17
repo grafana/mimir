@@ -7,6 +7,7 @@ package validation
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/otlptranslator"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -26,6 +26,7 @@ import (
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
@@ -74,6 +75,8 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
 				assert.Equal(t, model.LegacyValidation, l.NameValidationScheme)
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 		{
@@ -95,6 +98,20 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 			input: `name_validation_scheme: "utf8"`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, model.UTF8Validation, l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "otel_label_name_underscore_sanitization: true",
+			input: `otel_label_name_underscore_sanitization: true`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+			},
+		},
+		{
+			name:  "otel_label_name_preserve_multiple_underscores: true",
+			input: `otel_label_name_preserve_multiple_underscores: true`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 	}
@@ -121,6 +138,8 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, 1024, l.MaxLabelNameLength)
 				assert.Equal(t, model.LegacyValidation, l.NameValidationScheme)
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 		{
@@ -135,6 +154,20 @@ func TestLimitsLoadingFromJson(t *testing.T) {
 			input: `{"name_validation_scheme": "utf8"}`,
 			testFunc: func(t *testing.T, l Limits) {
 				assert.Equal(t, model.UTF8Validation, l.NameValidationScheme)
+			},
+		},
+		{
+			name:  "otel_label_name_underscore_sanitization: true",
+			input: `{"otel_label_name_underscore_sanitization": true}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNameUnderscoreSanitization)
+			},
+		},
+		{
+			name:  "otel_label_name_preserve_multiple_underscores: true",
+			input: `{"otel_label_name_preserve_multiple_underscores": true}`,
+			testFunc: func(t *testing.T, l Limits) {
+				assert.True(t, l.OTelLabelNamePreserveMultipleUnderscores)
 			},
 		},
 	}
@@ -1877,6 +1910,42 @@ func TestLimits_Validate(t *testing.T) {
 			}(),
 			expectedErr: nil,
 		},
+		"should pass if cost_attribution_labels_struct is correct": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+					{Input: "team", Output: "my_team"},
+					{Input: "service", Output: "my_service"},
+				}
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should pass if the first cost attribution label is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+					{Input: "__team__", Output: "my_team"},
+					{Input: "service", Output: "my_service"},
+				}
+				return cfg
+			}(),
+			expectedErr: nil,
+		},
+		"should fail if the second cost attribution label is invalid": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+					{Input: "team", Output: "my_team"},
+					{Input: "service", Output: "__my_service__"},
+				}
+				return cfg
+			}(),
+			expectedErr: errors.New(`invalid cost attribution output label: "service:__my_service__"`),
+		},
 	}
 
 	for testName, testData := range tests {
@@ -2127,7 +2196,7 @@ func TestIsLimitError(t *testing.T) {
 			expectedOutcome: true,
 		},
 		"wrapped LimitErrors are LimitErrors": {
-			err:             errors.Wrap(NewLimitError(msg), "wrapped"),
+			err:             fmt.Errorf("wrapped: %w", NewLimitError(msg)),
 			expectedOutcome: true,
 		},
 	}

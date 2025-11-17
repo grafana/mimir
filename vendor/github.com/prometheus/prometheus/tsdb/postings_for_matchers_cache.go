@@ -299,7 +299,7 @@ func (c *PostingsForMatchersCache) sharedKeyForMatchers(ctx context.Context, blo
 			}
 		}
 	}
-	return
+	return metricVersion, cacheKey, ok
 }
 
 // InvalidateMetric invalidates cache entries for a key and metric name contained in the labels by incrementing its
@@ -614,7 +614,7 @@ func (c *PostingsForMatchersCache) evictHead(now time.Time) (reason int) {
 	c.metrics.entries.Dec()
 	c.metrics.bytes.Sub(float64(oldest.sizeBytes))
 
-	return
+	return reason
 }
 
 // onPromiseExecutionDone must be called once the execution of PostingsForMatchers promise has done.

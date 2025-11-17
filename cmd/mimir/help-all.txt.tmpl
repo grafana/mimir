@@ -47,6 +47,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "alertmanager")
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
+  -alertmanager-storage.gcs.enable-upload-retries
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
   -alertmanager-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -alertmanager-storage.gcs.http.idle-conn-timeout duration
@@ -69,6 +71,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -alertmanager-storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -alertmanager-storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -alertmanager-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -alertmanager-storage.gcs.tls-handshake-timeout duration
@@ -372,7 +376,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager.utf8-migration-logging-enabled
     	[experimental] Enable logging of tenant configurations that are incompatible with UTF-8 strict mode.
   -alertmanager.utf8-strict-mode-enabled
-    	[experimental] Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8). Enabling and then disabling UTF-8 strict mode can break existing Alertmanager configurations if tenants added UTF-8 characters to their Alertmanager configuration while it was enabled.
+    	Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts. It is recommended that all tenants run the `migrate-utf8` command in mimirtool before enabling this mode. Otherwise, some tenant configurations might fail to load. For more information, refer to [Enable UTF-8](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/components/alertmanager/#enable-utf-8).
   -alertmanager.web.external-url string
     	The URL under which Alertmanager is externally reachable (eg. could be different than -http.alertmanager-http-prefix in case Alertmanager is served via a reverse proxy). This setting is used both to configure the internal requests router and to generate links in alert templates. If the external URL has a path portion, it will be used to prefix all HTTP endpoints served by Alertmanager, both the UI and API. (default http://localhost:8080/alertmanager)
   -api.skip-label-count-validation-header-enabled
@@ -627,6 +631,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "blocks")
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
+  -blocks-storage.gcs.enable-upload-retries
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
   -blocks-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -blocks-storage.gcs.http.idle-conn-timeout duration
@@ -649,6 +655,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -blocks-storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -blocks-storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -blocks-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.gcs.tls-handshake-timeout duration
@@ -764,13 +772,13 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.bigger-out-of-order-blocks-for-old-samples
     	[experimental] When enabled, ingester produces 24h blocks for out-of-order data that is before the current day, instead of the usual 2h blocks.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in compacted blocks, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
+    	Maximum size in bytes of the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in each compacted block when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.block-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
   -blocks-storage.tsdb.dir string
@@ -794,21 +802,25 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.head-compaction-interval duration
     	How frequently the ingester checks whether the TSDB head should be compacted and, if so, triggers the compaction. Mimir applies a jitter to the first check, and subsequent checks will happen at the configured interval. A block is only created if data covers the smallest block range. The configured interval must be between 0 and 15 minutes. (default 1m0s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-force
-    	[experimental] Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
+    	Force the cache to be used for postings for matchers in the Head and OOOHead, even if it's not a concurrent (query-sharding) call.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-invalidation
     	[experimental] Whether head block postings should be tracked and invalidated when they change, allowing higher TTLs to be used. When not using invalidation, cache entries will be used until removed.
   -blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes int
-    	[experimental] Maximum size in bytes of the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 104857600)
+    	Maximum size, in bytes, of the cache for postings for matchers in each compacted block when the TTL is greater than 0. (default 104857600)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-size int
     	[deprecated] Maximum number of entries in the cache for postings for matchers in the Head and OOOHead when TTL is greater than 0. (default 100)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-ttl duration
-    	[experimental] How long to cache postings for matchers in the Head and OOOHead. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
+    	How long to cache postings for matchers in the Head and OOOHead. Set to 0 to disable the cache and only deduplicate in-flight calls. (default 10s)
   -blocks-storage.tsdb.head-postings-for-matchers-cache-versions int
     	[experimental] The size of the metric versions cache in each ingester when invalidation is enabled. (default 2097152)
   -blocks-storage.tsdb.index-lookup-planning.comparison-portion float
     	[experimental] Portion of queries where a mirrored chunk querier compares results with and without index lookup planning. Value between 0 (disabled) and 1 (all queries).
   -blocks-storage.tsdb.index-lookup-planning.enabled
     	[experimental] Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-larger-sketch uint
+    	Number of series for a label name above which larger count-min sketches are used for that label. (default 1000000)
+  -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch uint
+    	Number of series for a label name above which smaller count-min sketches are used for that label. (default 1000)
   -blocks-storage.tsdb.index-lookup-planning.min-series-per-block-for-query-planning uint
     	Minimum number of series a block must have for query planning to be used. (default 10000)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-cost float
@@ -816,7 +828,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost float
     	Cost for retrieving the posting list from disk or from memory. (default 10)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost float
-    	Cost for retrieving series from the index and checking if a series belongs to the query's shard. (default 10)
+    	Cost for retrieving series from the index and checking if a series belongs to the query's shard. (default 15)
   -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency duration
     	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
@@ -889,6 +901,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory.
   -common.storage.gcs.bucket-name string
     	GCS bucket name
+  -common.storage.gcs.enable-upload-retries
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
   -common.storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -common.storage.gcs.http.idle-conn-timeout duration
@@ -911,6 +925,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -common.storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -common.storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -common.storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.gcs.tls-handshake-timeout duration
@@ -1277,14 +1293,16 @@ Usage of ./cmd/mimir/mimir:
     	Max message size in bytes that the distributors will accept for incoming push requests to the remote write API. If exceeded, the request will be rejected. (default 104857600)
   -distributor.max-request-pool-buffer-size int
     	[experimental] Max size of the pooled buffers used for marshaling write requests. If 0, no max size is enforced.
-  -distributor.metric-relabeling-enabled
-    	[experimental] Enable metric relabeling for the tenant. This configuration option can be used to forcefully disable metric relabeling on a per-tenant basis. (default true)
   -distributor.otel-convert-histograms-to-nhcb
     	[experimental] Whether to convert OTel explicit histograms into native histograms with custom buckets.
   -distributor.otel-created-timestamp-zero-ingestion-enabled
     	[experimental] Whether to enable translation of OTel start timestamps to Prometheus zero samples in the OTLP endpoint.
   -distributor.otel-keep-identifying-resource-attributes
     	[experimental] Whether to keep identifying OTel resource attributes in the target_info metric on top of converting to job and instance labels.
+  -distributor.otel-label-name-preserve-underscores
+    	If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true. (default true)
+  -distributor.otel-label-name-underscore-sanitization
+    	If enabled, prefixes label names starting with a single underscore with `key_` when translating OTel attribute names. Defaults to true. (default true)
   -distributor.otel-metric-suffixes-enabled
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-native-delta-ingestion
@@ -1420,7 +1438,7 @@ Usage of ./cmd/mimir/mimir:
   -http.prometheus-http-prefix string
     	HTTP URL path under which the Prometheus api will be served. (default "/prometheus")
   -include-tenant-id-in-profile-labels
-    	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants.
+    	[experimental] Include tenant ID in pprof labels for profiling. Currently only supported by the ingester. This can help debug performance issues for specific tenants. (default true)
   -ingest-storage.enabled
     	True to enable the ingestion via object storage.
   -ingest-storage.ingestion-partition-tenant-shard-size int
@@ -1704,9 +1722,9 @@ Usage of ./cmd/mimir/mimir:
   -ingester.read-circuit-breaker.thresholding-period duration
     	[experimental] Moving window of time that the percentage of failed requests is computed over (default 1m0s)
   -ingester.read-path-cpu-utilization-limit float
-    	[experimental] CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	CPU utilization limit, as CPU cores, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-path-memory-utilization-limit uint
-    	[experimental] Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
+    	Memory limit, in bytes, for CPU/memory utilization based read request limiting. Use 0 to disable it.
   -ingester.read-reactive-limiter.baseline-window-age uint
     	[experimental] The average age of baseline samples aggregated recent samples are added to (default 10)
   -ingester.read-reactive-limiter.correlation-window uint
@@ -1933,6 +1951,12 @@ Usage of ./cmd/mimir/mimir:
     	Log debug transport messages. Note: global log.level must be at debug level as well.
   -memberlist.watch-prefix-buffer-size int
     	Size of the buffered channel for the WatchPrefix function. (default 128)
+  -memberlist.zone-aware-routing.enabled
+    	[experimental] Enable zone-aware routing for memberlist gossip.
+  -memberlist.zone-aware-routing.instance-availability-zone string
+    	[experimental] Availability zone where this node is running.
+  -memberlist.zone-aware-routing.role string
+    	[experimental] Role of this node in the cluster. Valid values: member, bridge. (default "member")
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
@@ -2075,6 +2099,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
+  -querier.frontend-health-check-grace-period duration
+    	[experimental] The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -2117,6 +2143,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
+  -querier.mimir-query-engine.enable-reduce-matchers
+    	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
   -querier.mimir-query-engine.enable-skipping-histogram-decoding
     	[experimental] Enable skipping decoding native histograms when evaluating queries that do not require full histograms. (default true)
   -querier.minimize-ingester-requests
@@ -2697,6 +2725,8 @@ Usage of ./cmd/mimir/mimir:
     	Local filesystem storage directory. (default "ruler")
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
+  -ruler-storage.gcs.enable-upload-retries
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
   -ruler-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -ruler-storage.gcs.http.idle-conn-timeout duration
@@ -2719,6 +2749,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections across all hosts. Set to 0 for no limit. (default 100)
   -ruler-storage.gcs.max-idle-connections-per-host int
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
+  -ruler-storage.gcs.max-retries int
+    	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
   -ruler-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -ruler-storage.gcs.tls-handshake-timeout duration

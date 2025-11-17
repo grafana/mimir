@@ -19,6 +19,10 @@
     {
       target: 'ruler',
 
+      // Set the memory ballast to help with extensive CPU usage due to GC at ruler's start. This prevents the autoscaler
+      // from adding more replicas around rollouts, and reduces the effect of GC on a restart overall.
+      'mem-ballast-size-bytes': 1 << 30,  // 1GiB
+
       // File path used to store temporary rule files loaded by the Prometheus rule managers.
       'ruler.rule-path': '/rules',
 

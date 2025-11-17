@@ -11,6 +11,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -19,6 +20,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"golang.org/x/sync/errgroup"
 
 	dstls "github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/dns"
@@ -150,12 +152,12 @@ func (c *MemcachedClientConfig) Validate() error {
 }
 
 type MemcachedClient struct {
-	*baseClient
-
 	logger   log.Logger
 	config   MemcachedClientConfig
 	client   memcachedClientBackend
 	selector updatableServerSelector
+	metrics  *clientMetrics
+	queue    *asyncQueue
 
 	// Name provides an identifier for the instantiated Client
 	name string
@@ -252,7 +254,8 @@ func newMemcachedClient(
 	metrics := newClientMetrics(reg)
 
 	c := &MemcachedClient{
-		baseClient:      newBaseClient(logger, uint64(config.MaxItemSize), config.MaxAsyncBufferSize, config.MaxAsyncConcurrency, metrics),
+		metrics:         metrics,
+		queue:           newAsyncQueue(config.MaxAsyncBufferSize, config.MaxAsyncConcurrency),
 		logger:          log.With(logger, "name", name),
 		config:          config,
 		client:          client,
@@ -289,7 +292,7 @@ func (c *MemcachedClient) Stop() {
 	close(c.stop)
 
 	// Stop running async operations.
-	c.asyncQueue.stop()
+	c.queue.stop()
 
 	// Stop the underlying client.
 	c.client.Close()
@@ -300,11 +303,30 @@ func (c *MemcachedClient) Name() string {
 }
 
 func (c *MemcachedClient) SetMultiAsync(data map[string][]byte, ttl time.Duration) {
-	c.setMultiAsync(data, ttl, c.setSingleItem)
+	for k, v := range data {
+		c.SetAsync(k, v, ttl)
+	}
 }
 
 func (c *MemcachedClient) SetAsync(key string, value []byte, ttl time.Duration) {
-	c.setAsync(key, value, ttl, c.setSingleItem)
+	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
+		c.metrics.skipped.WithLabelValues(opSet, reasonMaxItemSize).Inc()
+		return
+	}
+
+	err := c.queue.submit(func() {
+		// Because this operation is executed in a separate goroutine: We run the operation without
+		// a context (it is expected to keep running no matter what happens) and we don't return the
+		// error (it will be tracked via metrics instead of being returned to the caller).
+		_ = c.storeOperation(context.Background(), key, value, ttl, opSet, func(_ context.Context, key string, value []byte, ttl time.Duration) error {
+			return c.setSingleItem(key, value, ttl)
+		})
+	})
+
+	if err != nil {
+		c.metrics.skipped.WithLabelValues(opSet, reasonAsyncBufferFull).Inc()
+		level.Debug(c.logger).Log("msg", "failed to store item to cache because the async buffer is full", "err", err, "size", c.config.MaxAsyncBufferSize)
+	}
 }
 
 func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
@@ -314,32 +336,6 @@ func (c *MemcachedClient) Set(ctx context.Context, key string, value []byte, ttl
 			return ctx.Err()
 		default:
 			return c.setSingleItem(key, value, ttl)
-		}
-	})
-}
-
-func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	return c.storeOperation(ctx, key, value, ttl, opAdd, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-			ttlSeconds, ok := toSeconds(ttl)
-			if !ok {
-				return fmt.Errorf("%w: for set operation on %s %s", ErrInvalidTTL, key, ttl)
-			}
-
-			err := c.client.Add(&memcache.Item{
-				Key:        key,
-				Value:      value,
-				Expiration: ttlSeconds,
-			})
-
-			if errors.Is(err, memcache.ErrNotStored) {
-				return fmt.Errorf("%w: for add operation on %s", ErrNotStored, key)
-			}
-
-			return err
 		}
 	})
 }
@@ -354,6 +350,32 @@ func (c *MemcachedClient) setSingleItem(key string, value []byte, ttl time.Durat
 		Key:        key,
 		Value:      value,
 		Expiration: ttlSeconds,
+	})
+}
+
+func (c *MemcachedClient) Add(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+	return c.storeOperation(ctx, key, value, ttl, opAdd, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			ttlSeconds, ok := toSeconds(ttl)
+			if !ok {
+				return fmt.Errorf("%w: for add operation on %s %s", ErrInvalidTTL, key, ttl)
+			}
+
+			err := c.client.Add(&memcache.Item{
+				Key:        key,
+				Value:      value,
+				Expiration: ttlSeconds,
+			})
+
+			if errors.Is(err, memcache.ErrNotStored) {
+				return fmt.Errorf("%w: for add operation on %s", ErrNotStored, key)
+			}
+
+			return err
+		}
 	})
 }
 
@@ -428,16 +450,27 @@ func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 }
 
 func (c *MemcachedClient) Delete(ctx context.Context, key string) error {
-	return c.delete(ctx, key, func(ctx context.Context, key string) error {
-		var err error
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-		default:
-			err = c.client.Delete(key)
-		}
-		return err
-	})
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(opDelete).Inc()
+
+	var err error
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+	default:
+		err = c.client.Delete(key)
+	}
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to delete cache item",
+			"key", key,
+			"err", err,
+		)
+		c.trackError(opDelete, err)
+	} else {
+		c.metrics.duration.WithLabelValues(opDelete).Observe(time.Since(start).Seconds())
+	}
+	return err
 }
 
 func (c *MemcachedClient) Increment(ctx context.Context, key string, delta uint64) (uint64, error) {
@@ -506,35 +539,23 @@ func (c *MemcachedClient) Touch(ctx context.Context, key string, ttl time.Durati
 }
 
 func (c *MemcachedClient) CompareAndSwap(ctx context.Context, key string, value []byte, ttl time.Duration) error {
-	var err error
-	item := &memcache.Item{
-		Key:        key,
-		Value:      value,
-		Expiration: int32(ttl.Seconds()),
-	}
+	return c.storeOperation(ctx, key, value, ttl, opCompareAndSwap, func(ctx context.Context, key string, value []byte, ttl time.Duration) error {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			ttlSeconds, ok := toSeconds(ttl)
+			if !ok {
+				return fmt.Errorf("%w: for compare-and-swap operation on %s %s", ErrInvalidTTL, key, ttl)
+			}
 
-	start := time.Now()
-	c.metrics.operations.WithLabelValues(opCompareAndSwap).Inc()
-
-	select {
-	case <-ctx.Done():
-		err = ctx.Err()
-	default:
-		err = c.client.CompareAndSwap(item)
-	}
-	if err != nil {
-		level.Debug(c.logger).Log(
-			"msg", "failed to compareAndSwap cache item",
-			"key", key,
-			"err", err,
-		)
-		c.trackError(opCompareAndSwap, err)
-	} else {
-		c.metrics.dataSize.WithLabelValues(opCompareAndSwap).Observe(float64(len(value)))
-		c.metrics.duration.WithLabelValues(opCompareAndSwap).Observe(time.Since(start).Seconds())
-	}
-
-	return err
+			return c.client.CompareAndSwap(&memcache.Item{
+				Key:        key,
+				Value:      value,
+				Expiration: ttlSeconds,
+			})
+		}
+	})
 }
 
 func (c *MemcachedClient) FlushAll(ctx context.Context) error {
@@ -559,6 +580,74 @@ func (c *MemcachedClient) FlushAll(ctx context.Context) error {
 	}
 
 	return err
+}
+
+func (c *MemcachedClient) storeOperation(ctx context.Context, key string, value []byte, ttl time.Duration, operation string, f func(ctx context.Context, key string, value []byte, ttl time.Duration) error) error {
+	if c.config.MaxItemSize > 0 && len(value) > c.config.MaxItemSize {
+		c.metrics.skipped.WithLabelValues(operation, reasonMaxItemSize).Inc()
+		return nil
+	}
+
+	start := time.Now()
+	c.metrics.operations.WithLabelValues(operation).Inc()
+
+	err := f(ctx, key, value, ttl)
+	if err != nil {
+		level.Debug(c.logger).Log(
+			"msg", "failed to store item to cache",
+			"operation", operation,
+			"key", key,
+			"sizeBytes", len(value),
+			"err", err,
+		)
+		c.trackError(operation, err)
+	}
+
+	c.metrics.dataSize.WithLabelValues(operation).Observe(float64(len(value)))
+	c.metrics.duration.WithLabelValues(operation).Observe(time.Since(start).Seconds())
+	return err
+}
+
+// wait submits an async task and blocks until it completes. This can be used during
+// tests to ensure that async "sets" have completed before attempting to read them.
+func (c *MemcachedClient) wait() error {
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	err := c.queue.submit(func() {
+		wg.Done()
+	})
+	if err != nil {
+		return err
+	}
+
+	wg.Wait()
+	return nil
+}
+
+func (c *MemcachedClient) trackError(op string, err error) {
+	var connErr *memcache.ConnectTimeoutError
+	var netErr net.Error
+	switch {
+	case errors.As(err, &connErr):
+		c.metrics.failures.WithLabelValues(op, reasonConnectTimeout).Inc()
+	case errors.As(err, &netErr):
+		if netErr.Timeout() {
+			c.metrics.failures.WithLabelValues(op, reasonTimeout).Inc()
+		} else {
+			c.metrics.failures.WithLabelValues(op, reasonNetworkError).Inc()
+		}
+	case errors.Is(err, ErrNotStored):
+		c.metrics.failures.WithLabelValues(op, reasonNotStored).Inc()
+	case errors.Is(err, ErrInvalidTTL):
+		c.metrics.failures.WithLabelValues(op, reasonInvalidTTL).Inc()
+	case errors.Is(err, memcache.ErrMalformedKey):
+		c.metrics.failures.WithLabelValues(op, reasonMalformedKey).Inc()
+	case errors.Is(err, memcache.ErrServerError):
+		c.metrics.failures.WithLabelValues(op, reasonServerError).Inc()
+	default:
+		c.metrics.failures.WithLabelValues(op, reasonOther).Inc()
+	}
 }
 
 func (c *MemcachedClient) getMultiBatched(ctx context.Context, keys []string, opts ...memcache.Option) ([]map[string]*memcache.Item, error) {
@@ -659,6 +748,36 @@ func (c *MemcachedClient) getMultiSingle(ctx context.Context, keys []string, opt
 	}
 
 	return items, err
+}
+
+// doWithBatch do func with batch and gate. batchSize==0 means one batch. gate==nil means no gate.
+func doWithBatch(ctx context.Context, totalSize int, batchSize int, ga gate.Gate, f func(startIndex, endIndex int) error) error {
+	if totalSize == 0 {
+		return nil
+	}
+	if batchSize <= 0 {
+		return f(0, totalSize)
+	}
+	g, ctx := errgroup.WithContext(ctx)
+	for i := 0; i < totalSize; i += batchSize {
+		j := i + batchSize
+		if j > totalSize {
+			j = totalSize
+		}
+		if ga != nil {
+			if err := ga.Start(ctx); err != nil {
+				return nil
+			}
+		}
+		startIndex, endIndex := i, j
+		g.Go(func() error {
+			if ga != nil {
+				defer ga.Done()
+			}
+			return f(startIndex, endIndex)
+		})
+	}
+	return g.Wait()
 }
 
 // sortKeysByServer sorts cache keys within a slice based on which server they are

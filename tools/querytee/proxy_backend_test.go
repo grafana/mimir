@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,7 +85,7 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 				orig.Header.Set("X-Scope-OrgID", testData.clientTenant)
 			}
 
-			b := NewProxyBackend("test", u, time.Second, false, false, defaultBackendConfig())
+			b := NewProxyBackend("test", u, time.Second, false, false, "", defaultBackendConfig())
 			bp, ok := b.(*ProxyBackend)
 			if !ok {
 				t.Fatalf("Type assertion to *ProxyBackend failed")
@@ -95,6 +96,105 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 			actualUser, actualPass, _ := r.BasicAuth()
 			assert.Equal(t, testData.expectedUser, actualUser)
 			assert.Equal(t, testData.expectedPass, actualPass)
+		})
+	}
+}
+
+func Test_ProxyBackend_RequestProportion(t *testing.T) {
+	tests := []struct {
+		name               string
+		config             BackendConfig
+		expectedProportion float64
+		setProportion      *float64
+		finalProportion    float64
+	}{
+		{
+			name:               "default proportion when not configured",
+			config:             BackendConfig{},
+			expectedProportion: DefaultRequestProportion,
+		},
+		{
+			name: "configured proportion from config",
+			config: BackendConfig{
+				RequestProportion: pointerToFloat(0.7),
+			},
+			expectedProportion: 0.7,
+		},
+		{
+			name:               "set proportion via method",
+			config:             BackendConfig{},
+			expectedProportion: DefaultRequestProportion,
+			setProportion:      pointerToFloat(0.3),
+			finalProportion:    0.3,
+		},
+		{
+			name: "explicitly configured proportion of 1.0",
+			config: BackendConfig{
+				RequestProportion: pointerToFloat(DefaultRequestProportion),
+			},
+			expectedProportion: DefaultRequestProportion,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			u, err := url.Parse("http://localhost:9090")
+			require.NoError(t, err)
+
+			backend := NewProxyBackend("test", u, time.Second, false, false, "", tc.config)
+
+			assert.Equal(t, tc.expectedProportion, backend.RequestProportion())
+
+			// Check if proportion was configured
+			expectedConfigured := tc.config.RequestProportion != nil
+			assert.Equal(t, expectedConfigured, backend.HasConfiguredProportion())
+
+			if tc.setProportion != nil {
+				backend.SetRequestProportion(*tc.setProportion)
+				assert.Equal(t, tc.finalProportion, backend.RequestProportion())
+			}
+		})
+	}
+}
+
+func Test_ProxyBackend_ClusterValidationLabel(t *testing.T) {
+	tests := map[string]struct {
+		clusterLabel           string
+		expectedXClusterHeader string
+		shouldHaveXCluster     bool
+	}{
+		"no cluster label set": {
+			clusterLabel:       "",
+			shouldHaveXCluster: false,
+		},
+		"cluster label set": {
+			clusterLabel:           "test-cluster",
+			expectedXClusterHeader: "test-cluster",
+			shouldHaveXCluster:     true,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			backend := httptest.NewServer(nil)
+			defer backend.Close()
+
+			u, err := url.Parse(backend.URL)
+			require.NoError(t, err)
+
+			b := NewProxyBackend("test", u, time.Second, false, false, tc.clusterLabel, defaultBackendConfig())
+
+			req := httptest.NewRequest("GET", "http://test/api/v1/query", nil)
+
+			backendReq, err := b.(*ProxyBackend).createBackendRequest(context.Background(), req, nil)
+			require.NoError(t, err)
+
+			actualHeader := backendReq.Header.Get(clusterutil.ClusterValidationLabelHeader)
+			if tc.shouldHaveXCluster {
+				assert.Equal(t, tc.expectedXClusterHeader, actualHeader)
+			} else {
+				assert.Empty(t, actualHeader)
+			}
 		})
 	}
 }

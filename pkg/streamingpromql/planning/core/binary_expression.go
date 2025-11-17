@@ -3,6 +3,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -17,6 +18,8 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
+
+var errCannotMergeBinaryExpressionHints = errors.New("cannot merge hints for binary expressions with different included labels")
 
 type BinaryExpression struct {
 	*BinaryExpressionDetails
@@ -102,8 +105,19 @@ func (b *BinaryExpression) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_BINARY_EXPRESSION
 }
 
-func (b *BinaryExpression) Children() []planning.Node {
-	return []planning.Node{b.LHS, b.RHS}
+func (b *BinaryExpression) Child(idx int) planning.Node {
+	switch idx {
+	case 0:
+		return b.LHS
+	case 1:
+		return b.RHS
+	default:
+		panic(fmt.Sprintf("node of type BinaryExpression supports 2 children, but attempted to get child at index %d", idx))
+	}
+}
+
+func (b *BinaryExpression) ChildCount() int {
+	return 2
 }
 
 func (b *BinaryExpression) SetChildren(children []planning.Node) error {
@@ -116,15 +130,50 @@ func (b *BinaryExpression) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (b *BinaryExpression) EquivalentTo(other planning.Node) bool {
+func (b *BinaryExpression) ReplaceChild(idx int, node planning.Node) error {
+	switch idx {
+	case 0:
+		b.LHS = node
+		return nil
+	case 1:
+		b.RHS = node
+		return nil
+	default:
+		return fmt.Errorf("node of type BinaryExpression expects 1 or 2 children, but attempted to replace child at index %d", idx)
+	}
+}
+
+func (b *BinaryExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherBinaryExpression, ok := other.(*BinaryExpression)
 
 	return ok &&
 		b.Op == otherBinaryExpression.Op &&
-		b.LHS.EquivalentTo(otherBinaryExpression.LHS) &&
-		b.RHS.EquivalentTo(otherBinaryExpression.RHS) &&
 		b.VectorMatching.Equals(otherBinaryExpression.VectorMatching) &&
 		b.ReturnBool == otherBinaryExpression.ReturnBool
+}
+
+func (b *BinaryExpression) MergeHints(other planning.Node) error {
+	otherBinaryExpression, ok := other.(*BinaryExpression)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, b)
+	}
+
+	var thisLabels []string
+	var otherLabels []string
+
+	if b.Hints != nil {
+		thisLabels = b.Hints.Include
+	}
+
+	if otherBinaryExpression.Hints != nil {
+		otherLabels = otherBinaryExpression.Hints.Include
+	}
+
+	if slices.Equal(thisLabels, otherLabels) {
+		return nil
+	}
+
+	return errCannotMergeBinaryExpressionHints
 }
 
 func (b *BinaryExpression) ChildrenLabels() []string {
@@ -148,7 +197,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	}
 
 	if lhsScalar != nil && rhsScalar != nil {
-		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, b.ExpressionPosition())
+		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition())
 		if err != nil {
 			return nil, err
 		}

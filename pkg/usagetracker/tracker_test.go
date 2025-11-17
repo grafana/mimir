@@ -529,6 +529,47 @@ func TestUsageTracker_PartitionAssignment(t *testing.T) {
 	})
 }
 
+func TestUsageTracker_GetUsersCloseToLimit(t *testing.T) {
+	makeSeries := func(n int) []uint64 {
+		series := make([]uint64, n)
+		for i := range series {
+			series[i] = uint64(i)
+		}
+		return series
+	}
+
+	tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+		"a": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
+		"b": {MaxActiveSeriesPerUser: 2000 * testPartitionsCount},
+		"c": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
+		"d": {MaxActiveSeriesPerUser: 2000 * testPartitionsCount},
+		"e": {MaxActiveSeriesPerUser: 1000 * testPartitionsCount},
+	})
+
+	for _, tenant := range []string{"a", "b", "c", "d", "e"} {
+		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+			UserID:       tenant,
+			Partition:    0,
+			SeriesHashes: makeSeries(900),
+		})
+		require.NoError(t, err)
+		require.Empty(t, resp.RejectedSeriesHashes)
+	}
+
+	// Call updateLimits (on all partitions, although we only need partition 0.
+	withRLock(&tracker.partitionsMtx, func() {
+		for _, p := range tracker.partitions {
+			done := make(chan struct{})
+			p.forceUpdateLimitsForTests <- done
+			<-done
+		}
+	})
+
+	resp, err := tracker.GetUsersCloseToLimit(t.Context(), &usagetrackerpb.GetUsersCloseToLimitRequest{Partition: 0})
+	require.NoError(t, err)
+	require.Equal(t, []string{"a", "c", "e"}, resp.SortedUserIds, "List of users close to the limit should be sorted lexicographically")
+}
+
 func callPrepareDownscaleEndpoint(t *testing.T, ut *UsageTracker, method string) {
 	t.Helper()
 	req, err := http.NewRequest(method, "/usage-tracker/prepare-instance-ring-downscale", nil)

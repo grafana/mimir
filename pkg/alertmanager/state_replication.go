@@ -7,6 +7,7 @@ package alertmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -14,7 +15,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/client_golang/prometheus"
@@ -182,7 +182,7 @@ func (s *state) GetFullState() (*clusterpb.FullState, error) {
 	for key, s := range s.states {
 		b, err := s.MarshalBinary()
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to encode state for key: %v", key)
+			return nil, fmt.Errorf("failed to encode state for key: %v: %w", key, err)
 		}
 		all.Parts = append(all.Parts, clusterpb.Part{Key: key, Data: b})
 	}
@@ -297,7 +297,7 @@ func (s *state) MergeFullStates(fs []*clusterpb.FullState) error {
 			}
 
 			if err := st.Merge(p.Data); err != nil {
-				return errors.Wrapf(err, "failed to merge part of full state for key: %v", p.Key)
+				return fmt.Errorf("failed to merge part of full state for key: %v: %w", p.Key, err)
 			}
 		}
 	}

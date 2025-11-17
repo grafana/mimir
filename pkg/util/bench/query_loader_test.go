@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,44 +19,51 @@ func TestExtractLabelMatchers(t *testing.T) {
 	tests := []struct {
 		name                  string
 		query                 string
-		expectedSelectorCount int      // number of vector selectors
-		expectedMetrics       []string // expected metric names across all selectors
+		expectedSelectorCount int        // number of vector selectors
+		expectedMetrics       []string   // expected metric names across all selectors
+		expectedMatchers      [][]string // expected matchers for each selector (as strings)
 	}{
 		{
 			name:                  "simple metric",
 			query:                 "up",
 			expectedSelectorCount: 1,
 			expectedMetrics:       []string{"up"},
+			expectedMatchers:      [][]string{{`__name__="up"`}},
 		},
 		{
 			name:                  "metric with label",
 			query:                 `container_memory_working_set_bytes{namespace="default"}`,
 			expectedSelectorCount: 1,
 			expectedMetrics:       []string{"container_memory_working_set_bytes"},
+			expectedMatchers:      [][]string{{`__name__="container_memory_working_set_bytes"`, `namespace="default"`}},
 		},
 		{
 			name:                  "metric with multiple labels",
 			query:                 `node_cpu_seconds_total{mode="idle",cpu="0"}`,
 			expectedSelectorCount: 1,
 			expectedMetrics:       []string{"node_cpu_seconds_total"},
+			expectedMatchers:      [][]string{{`__name__="node_cpu_seconds_total"`, `mode="idle"`, `cpu="0"`}},
 		},
 		{
 			name:                  "aggregation query",
 			query:                 `sum by(pod) (container_memory_working_set_bytes{namespace="default"})`,
 			expectedSelectorCount: 1,
 			expectedMetrics:       []string{"container_memory_working_set_bytes"},
+			expectedMatchers:      [][]string{{`__name__="container_memory_working_set_bytes"`, `namespace="default"`}},
 		},
 		{
 			name:                  "binary operation",
 			query:                 `up + down`,
 			expectedSelectorCount: 2, // Two separate vector selectors
 			expectedMetrics:       []string{"up", "down"},
+			expectedMatchers:      [][]string{{`__name__="up"`}, {`__name__="down"`}},
 		},
 		{
 			name:                  "rate with label matchers",
 			query:                 `rate(container_cpu_usage_seconds_total{namespace=~"kube.*"}[5m])`,
 			expectedSelectorCount: 1,
 			expectedMetrics:       []string{"container_cpu_usage_seconds_total"},
+			expectedMatchers:      [][]string{{`__name__="container_cpu_usage_seconds_total"`, `namespace=~"kube.*"`}},
 		},
 		{
 			name:                  "scalar query",
@@ -75,7 +82,7 @@ func TestExtractLabelMatchers(t *testing.T) {
 			foundMetrics := make(map[string]bool)
 			for _, matchers := range matcherSets {
 				for _, m := range matchers {
-					if m.Name == labels.MetricName {
+					if m.Name == model.MetricNameLabel {
 						foundMetrics[m.Value] = true
 					}
 				}
@@ -83,6 +90,20 @@ func TestExtractLabelMatchers(t *testing.T) {
 
 			for _, expectedMetric := range tt.expectedMetrics {
 				assert.True(t, foundMetrics[expectedMetric], "expected to find metric %s", expectedMetric)
+			}
+
+			// Check that extracted matchers match expectations
+			if len(tt.expectedMatchers) > 0 {
+				require.Len(t, matcherSets, len(tt.expectedMatchers), "number of matcher sets should match")
+				for i, expectedMatcherStrings := range tt.expectedMatchers {
+					// Convert actual matchers to strings
+					actualMatcherStrings := make([]string, 0, len(matcherSets[i]))
+					for _, m := range matcherSets[i] {
+						actualMatcherStrings = append(actualMatcherStrings, m.String())
+					}
+					assert.ElementsMatch(t, expectedMatcherStrings, actualMatcherStrings,
+						"matchers for selector %d should match", i)
+				}
 			}
 		})
 	}

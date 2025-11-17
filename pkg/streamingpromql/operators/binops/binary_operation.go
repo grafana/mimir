@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -43,13 +44,13 @@ func vectorMatchingGroupKeyFunc(vectorMatching parser.VectorMatching) func(label
 	if len(vectorMatching.MatchingLabels) == 0 {
 		// Fast path for common case for expressions like "a + b" with no 'on' or 'without' labels.
 		return func(l labels.Labels) []byte {
-			buf = l.BytesWithoutLabels(buf, labels.MetricName)
+			buf = l.BytesWithoutLabels(buf, model.MetricNameLabel)
 			return buf
 		}
 	}
 
 	lbls := make([]string, 0, len(vectorMatching.MatchingLabels)+1)
-	lbls = append(lbls, labels.MetricName)
+	lbls = append(lbls, model.MetricNameLabel)
 	lbls = append(lbls, vectorMatching.MatchingLabels...)
 	slices.Sort(lbls)
 
@@ -68,7 +69,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 
 		// We never want to include __name__, even if it's explicitly mentioned in on(...).
 		// See https://github.com/prometheus/prometheus/issues/16631.
-		if i := slices.Index(vectorMatching.MatchingLabels, labels.MetricName); i != -1 {
+		if i := slices.Index(vectorMatching.MatchingLabels, model.MetricNameLabel); i != -1 {
 			lbls = make([]string, 0, len(vectorMatching.MatchingLabels)-1)
 			lbls = append(lbls, vectorMatching.MatchingLabels[:i]...)
 			lbls = append(lbls, vectorMatching.MatchingLabels[i+1:]...)
@@ -92,7 +93,7 @@ func groupLabelsFunc(vectorMatching parser.VectorMatching, op parser.ItemType, r
 
 	return func(l labels.Labels) labels.Labels {
 		lb.Reset(l)
-		lb.Del(labels.MetricName)
+		lb.Del(model.MetricNameLabel)
 		lb.Del(vectorMatching.MatchingLabels...)
 		return lb.Labels()
 	}
@@ -217,6 +218,7 @@ type vectorVectorBinaryOperationEvaluator struct {
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	annotations              *annotations.Annotations
 	expressionPosition       posrange.PositionRange
+	emitAnnotation           types.EmitAnnotationFunc
 }
 
 func newVectorVectorBinaryOperationEvaluator(
@@ -242,6 +244,10 @@ func newVectorVectorBinaryOperationEvaluator(
 
 	if e.opFunc == nil {
 		return vectorVectorBinaryOperationEvaluator{}, compat.NewNotSupportedError(fmt.Sprintf("binary expression with '%s'", op))
+	}
+
+	e.emitAnnotation = func(generator types.AnnotationGenerator) {
+		e.annotations.Add(generator("", e.expressionPosition))
 	}
 
 	return e, nil
@@ -377,10 +383,10 @@ func (e *vectorVectorBinaryOperationEvaluator) computeResult(left types.InstantV
 	}
 
 	appendNextSample := func() error {
-		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight)
+		resultFloat, resultHist, keep, valid, err := e.opFunc(lF, rF, lH, rH, takeOwnershipOfLeft, takeOwnershipOfRight, e.emitAnnotation)
 
 		if err != nil {
-			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) || errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				emitIncompatibleBucketLayoutAnnotation(e.annotations, e.op, e.expressionPosition)
 				err = nil
 			}
@@ -453,62 +459,77 @@ type binaryOperationFunc func(
 	lF, rF float64,
 	lH, rH *histogram.FloatHistogram,
 	canMutateLeft, canMutateRight bool,
+	emitAnnotation types.EmitAnnotationFunc,
 ) (f float64, h *histogram.FloatHistogram, keep bool, valid bool, err error)
 
 var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
-	parser.ADD: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.ADD: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool, emitAnnotation types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			return lF + rF, nil, true, true, nil
 		}
 
 		if lH != nil && rH != nil {
 			var res *histogram.FloatHistogram
+			var nhcbBoundsReconciled bool
 			var err error
-			var _ bool
 
 			if canMutateLeft {
-				res, _, err = lH.Add(rH)
+				res, _, nhcbBoundsReconciled, err = lH.Add(rH)
 			} else if canMutateRight {
-				res, _, err = rH.Add(lH)
+				res, _, nhcbBoundsReconciled, err = rH.Add(lH)
 			} else {
-				res, _, err = lH.Copy().Add(rH)
+				res, _, nhcbBoundsReconciled, err = lH.Copy().Add(rH)
 			}
 
 			if err != nil {
 				return 0, nil, false, true, err
 			}
+
+			if nhcbBoundsReconciled {
+				emitAnnotation(func(_ string, pos posrange.PositionRange) error {
+					return annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramAdd)
+				})
+			}
+
 			return 0, res.Compact(0), true, true, nil
 		}
 
 		return 0, nil, false, false, nil
 	},
-	parser.SUB: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.SUB: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool, emitAnnotation types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			return lF - rF, nil, true, true, nil
 		}
 
 		if lH != nil && rH != nil {
 			var res *histogram.FloatHistogram
+			var nhcbBoundsReconciled bool
 			var err error
-			var _ bool
 
 			if canMutateLeft {
-				res, _, err = lH.Sub(rH)
+				res, _, nhcbBoundsReconciled, err = lH.Sub(rH)
 			} else if canMutateRight {
-				res, _, err = rH.Mul(-1).Add(lH)
+				res, _, nhcbBoundsReconciled, err = rH.Mul(-1).Add(lH)
 			} else {
-				res, _, err = lH.Copy().Sub(rH)
+				res, _, nhcbBoundsReconciled, err = lH.Copy().Sub(rH)
 			}
 
 			if err != nil {
 				return 0, nil, false, true, err
 			}
+
+			if nhcbBoundsReconciled {
+				emitAnnotation(func(_ string, pos posrange.PositionRange) error {
+					return annotations.NewMismatchedCustomBucketsHistogramsInfo(pos, annotations.HistogramSub)
+				})
+			}
+
 			return 0, res.Compact(0), true, true, nil
 		}
 
 		return 0, nil, false, false, nil
 	},
-	parser.MUL: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.MUL: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			return lF * rF, nil, true, true, nil
 		}
@@ -531,7 +552,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, false, nil
 	},
-	parser.DIV: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.DIV: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			return lF / rF, nil, true, true, nil
 		}
@@ -546,28 +567,28 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, false, nil
 	},
-	parser.POW: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.POW: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			return math.Pow(lF, rF), nil, true, true, nil
 		}
 
 		return 0, nil, false, false, nil
 	},
-	parser.MOD: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.MOD: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			return math.Mod(lF, rF), nil, true, true, nil
 		}
 
 		return 0, nil, false, false, nil
 	},
-	parser.ATAN2: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.ATAN2: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			return math.Atan2(lF, rF), nil, true, true, nil
 		}
 
 		return 0, nil, false, false, nil
 	},
-	parser.EQLC: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.EQLC: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, canMutateRight bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			if lF == rF {
 				return lF, nil, true, true, nil
@@ -596,7 +617,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, false, nil
 	},
-	parser.NEQ: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.NEQ: func(lF, rF float64, lH, rH *histogram.FloatHistogram, canMutateLeft, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			if lF != rF {
 				return lF, nil, true, true, nil
@@ -619,7 +640,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return lF, lH, false, false, nil
 	},
-	parser.LTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.LTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}
@@ -630,7 +651,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, true, nil
 	},
-	parser.LSS: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.LSS: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}
@@ -641,7 +662,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, true, nil
 	},
-	parser.GTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.GTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}
@@ -652,7 +673,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 
 		return 0, nil, false, true, nil
 	},
-	parser.GTR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.GTR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}
@@ -666,7 +687,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 }
 
 var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
-	parser.EQLC: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.EQLC: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			if lF == rF {
 				return 1, nil, true, true, nil
@@ -685,7 +706,7 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, false, false, nil
 	},
-	parser.NEQ: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.NEQ: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH == nil && rH == nil {
 			if lF != rF {
 				return 1, nil, true, true, nil
@@ -704,7 +725,7 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, false, false, nil
 	},
-	parser.LTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.LTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}
@@ -715,7 +736,7 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, true, true, nil
 	},
-	parser.LSS: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.LSS: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}
@@ -726,7 +747,7 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, true, true, nil
 	},
-	parser.GTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.GTE: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}
@@ -737,7 +758,7 @@ var boolComparisonOperationFuncs = map[parser.ItemType]binaryOperationFunc{
 
 		return 0, nil, true, true, nil
 	},
-	parser.GTR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool) (float64, *histogram.FloatHistogram, bool, bool, error) {
+	parser.GTR: func(lF, rF float64, lH, rH *histogram.FloatHistogram, _, _ bool, _ types.EmitAnnotationFunc) (float64, *histogram.FloatHistogram, bool, bool, error) {
 		if lH != nil || rH != nil {
 			return 0, nil, false, false, nil
 		}

@@ -1496,7 +1496,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "count(sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
+                        "expr": "count(sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"}))",
                         "format": "time_series",
                         "legendFormat": "groups",
                         "legendLink": null
@@ -1551,7 +1551,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"})",
+                        "expr": "sum(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"})",
                         "format": "time_series",
                         "legendFormat": "rules",
                         "legendLink": null
@@ -1599,7 +1599,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "rate",
                         "legendLink": null
@@ -1647,7 +1647,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) > 0)",
+                        "expr": "topk(50, sum by (rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) > 0)",
                         "format": "time_series",
                         "legendFormat": "{{ rule_group }}",
                         "legendLink": null
@@ -1744,7 +1744,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -1864,7 +1864,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}))",
+                        "expr": "topk($limit, sum by (rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -1959,7 +1959,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "rate",
                         "legendLink": null
@@ -2023,7 +2023,7 @@
                   "span": 6,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|ruler-zone-.*|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "rate",
                         "legendLink": null

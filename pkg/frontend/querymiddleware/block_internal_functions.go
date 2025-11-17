@@ -29,7 +29,7 @@ func newBlockInternalFunctionsMiddleware(functionsToBlock FunctionNamesSet, logg
 }
 
 func (b *blockInternalFunctionsMiddleware) Do(ctx context.Context, request MetricsQueryRequest) (Response, error) {
-	expr, err := parser.ParseExpr(request.GetQuery())
+	expr, err := astmapper.CloneExpr(request.GetParsedQuery())
 	if err != nil {
 		return nil, err
 	}

@@ -103,6 +103,7 @@ const (
 type usageTrackerGenericClient interface {
 	services.Service
 	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
+	CanTrackAsync(userID string) bool
 }
 
 // Distributor forwards appends and queries to individual ingesters.
@@ -163,6 +164,10 @@ type Distributor struct {
 
 	// Metric for silently dropped native histogram samples
 	droppedNativeHistograms *prometheus.CounterVec
+
+	// Metrics for async usage tracking.
+	asyncUsageTrackerCalls                   *prometheus.CounterVec
+	asyncUsageTrackerCallsWithRejectedSeries *prometheus.CounterVec
 
 	// Metrics for data rejected for hitting per-tenant limits
 	discardedSamplesTooManyHaClusters  *prometheus.CounterVec
@@ -301,6 +306,34 @@ type Config struct {
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
 type PushWrapper func(next PushFunc) PushFunc
+
+// WithCleanup wraps the given pushWrapper function with automatic resource cleanup handling.
+// It ensures Request.CleanUp() is called via defer if the given next PushFunc isn't invoked.
+// See NextOrCleanup for the cleanup detection mechanism.
+func WithCleanup(next PushFunc, pushWrapper func(next PushFunc, ctx context.Context, pushReq *Request) error) PushFunc {
+	return func(ctx context.Context, pushReq *Request) error {
+		next, maybeCleanup := NextOrCleanup(next, pushReq)
+		defer maybeCleanup()
+		return pushWrapper(next, ctx, pushReq)
+	}
+}
+
+// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
+// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
+//
+// This function is used outside of this codebase.
+func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
+	cleanupInDefer := true
+	return func(ctx context.Context, req *Request) error {
+			cleanupInDefer = false
+			return next(ctx, req)
+		},
+		func() {
+			if cleanupInDefer {
+				pushReq.CleanUp()
+			}
+		}
+}
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -520,6 +553,15 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Help: "The total number of native histograms that were silently dropped because native histograms ingestion is disabled.",
 		}, []string{"user"}),
 
+		asyncUsageTrackerCalls: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_async_usage_tracker_calls_total",
+			Help: "The total number of asynchronous usage-tracker calls performed per user.",
+		}, []string{"user"}),
+		asyncUsageTrackerCallsWithRejectedSeries: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_async_usage_tracker_calls_with_rejected_series_total",
+			Help: "The total number of asynchronous usage-tracker calls that rejected series per user.",
+		}, []string{"user"}),
+
 		discardedSamplesTooManyHaClusters:  validation.DiscardedSamplesCounter(reg, reasonTooManyHAClusters),
 		discardedSamplesPerUserSeriesLimit: validation.DiscardedSamplesCounter(reg, reasonPerUserActiveSeriesLimit),
 		discardedSamplesRateLimited:        validation.DiscardedSamplesCounter(reg, reasonRateLimited),
@@ -673,7 +715,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			return nil, errors.New("usage-tracker instance ring is required")
 		}
 
-		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, log, reg)
+		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg)
 		subservices = append(subservices, d.usageTrackerClient)
 	}
 
@@ -802,6 +844,8 @@ func (d *Distributor) cleanupInactiveUser(userID string) {
 	d.PushMetrics.deleteUserMetrics(userID)
 
 	d.droppedNativeHistograms.DeleteLabelValues(userID)
+	d.asyncUsageTrackerCalls.DeleteLabelValues(userID)
+	d.asyncUsageTrackerCallsWithRejectedSeries.DeleteLabelValues(userID)
 
 	filter := prometheus.Labels{"user": userID}
 	d.incomingRequests.DeletePartialMatch(filter)
@@ -1008,9 +1052,10 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, d.log); err != nil {
+
+	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
 		return err
 	}
 
@@ -1062,10 +1107,7 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1145,24 +1187,17 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
-		userID, err := tenant.TenantID(ctx)
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
+		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
 		}
 
-		if !d.limits.MetricRelabelingEnabled(userID) {
-			return next(ctx, pushReq)
-		}
-
-		req, err := pushReq.WriteRequest()
+		userID, err := tenant.TenantID(ctx)
 		if err != nil {
 			return err
 		}
@@ -1205,16 +1240,13 @@ func (d *Distributor) prePushRelabelMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 // prePushSortAndFilterMiddleware is responsible for sorting labels and
 // filtering empty values. This is a protection mechanism for ingesters.
 func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1250,14 +1282,11 @@ func (d *Distributor) prePushSortAndFilterMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1320,6 +1349,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		totalSamples, totalExemplars := 0, 0
 		const maxMetricsWithDeduplicatedSamplesToTrace = 10
 		var dedupedPerUnsafeMetricName map[string]int
+		var valueTooLongSummaries labelValueTooLongSummaries
 
 		for tsIdx, ts := range req.Timeseries {
 			totalSamples += len(ts.Samples)
@@ -1337,7 +1367,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			rawSamples := len(ts.Samples)
 			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1396,6 +1426,8 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		if droppedNativeHistograms > 0 {
 			d.droppedNativeHistograms.WithLabelValues(userID).Add(float64(droppedNativeHistograms))
 		}
+
+		d.logLabelValueTooLongSummaries(userID, valueTooLongSummaries)
 
 		d.incomingSamplesPerRequest.WithLabelValues(userID).Observe(float64(totalSamples))
 		d.incomingExemplarsPerRequest.WithLabelValues(userID).Observe(float64(totalExemplars))
@@ -1461,20 +1493,53 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		return firstPartialErr
+	})
+}
+
+func (d *Distributor) logLabelValueTooLongSummaries(userID string, valueTooLongSummaries labelValueTooLongSummaries) {
+	if len(valueTooLongSummaries.summaries) == 0 {
+		return
 	}
+
+	var msg string
+	switch strategy := d.limits.LabelValueLengthOverLimitStrategy(userID); strategy {
+	case validation.LabelValueLengthOverLimitStrategyTruncate:
+		msg = truncatedLabelValueMsg
+	case validation.LabelValueLengthOverLimitStrategyDrop:
+		msg = droppedLabelValueMsg
+	default:
+		panic(fmt.Errorf("unexpected value: %v", strategy))
+	}
+
+	kvs := make([]any, 0, 10+len(valueTooLongSummaries.summaries)*10)
+	kvs = append(kvs,
+		"msg", msg,
+		"limit", d.limits.MaxLabelValueLength(userID),
+		"total_values_exceeding_limit", valueTooLongSummaries.globalCount,
+		"user", userID,
+		"insight", true)
+	for i, summary := range valueTooLongSummaries.summaries {
+		id := strconv.Itoa(i + 1)
+		kvs = append(kvs,
+			"sample_"+id+"_metric_name", summary.metric,
+			"sample_"+id+"_label_name", summary.label,
+			"sample_"+id+"_values_exceeding_limit", summary.count,
+			"sample_"+id+"_value_length", summary.sampleValueLength,
+			"sample_"+id+"_value", summary.sampleValue)
+	}
+
+	level.Warn(d.log).Log(kvs...)
+
 }
 
 // prePushMaxSeriesLimitMiddleware enforces the per-tenant max series limit when the usage-tracker service is enabled.
 func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		// If the usage-tracker client hasn't been created it means usage-tracker is disabled
 		// for this instance.
 		if d.usageTrackerClient == nil {
 			return next(ctx, pushReq)
 		}
-
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
 
 		req, err := pushReq.WriteRequest()
 		if err != nil {
@@ -1505,40 +1570,23 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// Track the series and check if anyone should be rejected because over the limit.
+		// For users that are far from their limits, we can do this asynchronously.
+		if d.usageTrackerClient.CanTrackAsync(userID) {
+			// User is far from limit.
+			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
+			cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
+			pushReq.AddCleanup(cleanup)
+			return next(ctx, pushReq)
+		}
+
+		// User is close to limit, track synchronously.
 		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
 
 		if len(rejectedHashes) > 0 {
-			// Build a map of rejected hashes so that it's easier to lookup.
-			rejectedHashesMap := make(map[uint64]struct{}, len(rejectedHashes))
-			for _, hash := range rejectedHashes {
-				rejectedHashesMap[hash] = struct{}{}
-			}
-
-			// Filter out rejected series.
-			discardedSamples := 0
-			o := 0
-			for i := 0; i < len(req.Timeseries); i++ {
-				seriesHash := seriesHashes[i]
-
-				if _, rejected := rejectedHashesMap[seriesHash]; !rejected {
-					// Keep this series.
-					req.Timeseries[o] = req.Timeseries[i]
-					o++
-					continue
-				}
-
-				// Keep track of the discarded samples and histograms.
-				discardedSamples += len(req.Timeseries[i].Samples) + len(req.Timeseries[i].Histograms)
-
-				// This series has been rejected and filtered out from the WriteRequest. We can reuse its memory.
-				mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
-			}
-
-			req.Timeseries = req.Timeseries[:o]
-
+			discardedSamples := filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
 			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
 		}
 
@@ -1557,16 +1605,86 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		return nil
+	})
+}
+
+func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID string, seriesHashes []uint64) func() {
+	d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+	done := make(chan struct{}, 1)
+	t0 := time.Now()
+	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
+	go func() {
+		defer close(done)
+		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
+		if err != nil {
+			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+		}
+		if len(rejected) > 0 {
+			level.Warn(d.log).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "user", userID, "rejected", len(rejected))
+			d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
+		}
+	}()
+
+	// Add a cleanup function that will wait for the async tracking to complete.
+	return func() {
+		defer cancelAsyncTracking(nil)
+
+		tCleanup := time.Now()
+		select {
+		case <-done:
+			// No need to wait.
+			return
+		default:
+		}
+
+		select {
+		case <-done:
+			level.Info(d.log).Log("msg", "async tracking call took longer than ingestion", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
+		case <-time.After(d.cfg.UsageTrackerClient.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion):
+			level.Warn(d.log).Log("msg", "async tracking call took too long, canceling", "user", userID, "series", len(seriesHashes), "tracking_time", time.Since(t0), "time_since_cleanup", time.Since(tCleanup))
+			cancelAsyncTracking(errors.New("async tracking call took too long"))
+		}
 	}
+}
+
+// filterOutRejectedSeries filters out time series from the WriteRequest based on rejected hashes and returns discarded samples count.
+// It updates the WriteRequest in place and optimizes memory by reusing preallocated time series.
+// seriesHashes should contain the hashes of req.Timeseries in the same order.
+func filterOutRejectedSeries(req *mimirpb.WriteRequest, seriesHashes []uint64, rejectedHashes []uint64) int {
+	// Build a map of rejected hashes so that it's easier to lookup.
+	rejectedHashesMap := make(map[uint64]struct{}, len(rejectedHashes))
+	for _, hash := range rejectedHashes {
+		rejectedHashesMap[hash] = struct{}{}
+	}
+
+	// Filter out rejected series.
+	discardedSamples := 0
+	o := 0
+	for i := 0; i < len(req.Timeseries); i++ {
+		seriesHash := seriesHashes[i]
+
+		if _, rejected := rejectedHashesMap[seriesHash]; !rejected {
+			// Keep this series.
+			req.Timeseries[o] = req.Timeseries[i]
+			o++
+			continue
+		}
+
+		// Keep track of the discarded samples and histograms.
+		discardedSamples += len(req.Timeseries[i].Samples) + len(req.Timeseries[i].Histograms)
+
+		// This series has been rejected and filtered out from the WriteRequest. We can reuse its memory.
+		mimirpb.ReusePreallocTimeseries(&req.Timeseries[i])
+	}
+
+	req.Timeseries = req.Timeseries[:o]
+	return discardedSamples
 }
 
 // metricsMiddleware updates metrics which are expected to account for all received data,
 // including data that later gets modified or dropped.
 func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) error {
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
 		req, err := pushReq.WriteRequest()
 		if err != nil {
 			return err
@@ -1603,7 +1721,7 @@ func (d *Distributor) metricsMiddleware(next PushFunc) PushFunc {
 		updateWriteResponseStatsCtx(ctx, numSamples, numHistograms, numExemplars)
 
 		return next(ctx, pushReq)
-	}
+	})
 }
 
 // outerMaybeDelayMiddleware is a middleware that may delay ingestion if configured.
@@ -1641,7 +1759,7 @@ const requestStateKey ctxKey = 1
 
 // requestState represents state of checks for given request. If this object is stored in context,
 // it means that request has been checked against inflight requests limit, and FinishPushRequest,
-// cleanupAfterPushFinished (or both) must be called for given context.
+// decreaseInflightPushRequestCounters (or both) must be called for given context.
 type requestState struct {
 	// If set to true, push request will perform cleanup of inflight metrics after request has actually finished
 	// (which can be after push handler returns).
@@ -1653,13 +1771,8 @@ type requestState struct {
 	// If positive, it means that size of mimirpb.WriteRequest has been checked and added to inflightPushRequestsBytes.
 	writeRequestSize int64
 
-	// If set, represents the error obtained by executing the respective push request.
-	pushErr error
-
 	// If set to true, it means that a reactive limiter permit has already been acquired for the respective push request.
 	reactiveLimiterPermitAcquired bool
-	// If set, represents the reactive limiter clean up function to be executed on cleaning up the respective push request.
-	reactiveLimiterCleanup func(error)
 }
 
 func (d *Distributor) StartPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, error) {
@@ -1674,31 +1787,30 @@ func (d *Distributor) PreparePushRequest(_ context.Context) (func(error), error)
 // acquireReactiveLimiterPermit acquires a reactive limiter permit to control inflight push requests.
 //
 // If a permit is successfully acquired, it is recorded in the requestState associated with the provided context
-// by setting its reactiveLimiterPermitAcquired field. Moreover, a cleanup function that must be called when the
-// request completes is stored in the reactiveLimiterCleanup field the requestState, allowing it to be invoked
-// automatically during request cleanup.
+// by setting its reactiveLimiterPermitAcquired field. The function returns a cleanup function that must be called
+// when the request completes, which will either record or drop the permit based on the request outcome.
 //
 // If no requestState is found in the provided context, acquireReactiveLimiterPermit returns errMissingRequestState.
 // If called more than once for the same request, it returns errReactiveLimiterPermitAlreadyAcquired.
-func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
+func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) (cleanup func(error), _ error) {
 	if d.reactiveLimiter == nil {
-		return nil
+		return nil, nil
 	}
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
 	if !alreadyInContext {
-		return errMissingRequestState
+		return nil, errMissingRequestState
 	}
 	if rs.reactiveLimiterPermitAcquired {
-		return errReactiveLimiterPermitAlreadyAcquired
+		return nil, errReactiveLimiterPermitAlreadyAcquired
 	}
 
 	// Acquire a permit, blocking if needed
 	permit, err := d.reactiveLimiter.AcquirePermit(ctx)
 	if err != nil {
 		d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
-		return errReactiveLimiterLimitExceeded
+		return nil, errReactiveLimiterLimitExceeded
 	}
-	cleanup := func(err error) {
+	cleanup = func(err error) {
 		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
 			permit.Drop()
 		} else {
@@ -1706,8 +1818,7 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 		}
 	}
 	rs.reactiveLimiterPermitAcquired = true
-	rs.reactiveLimiterCleanup = cleanup
-	return nil
+	return cleanup, nil
 }
 
 // startPushRequest does limits checks at the beginning of Push request in distributor.
@@ -1722,6 +1833,12 @@ func (d *Distributor) acquireReactiveLimiterPermit(ctx context.Context) error {
 // This object describes which checks were already performed on the request,
 // and which component is responsible for doing a cleanup.
 func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize int64) (context.Context, *requestState, error) {
+	// The distributor service and all its dependent services must be running
+	// before any push request can be started.
+	if s := d.State(); s != services.Running {
+		return ctx, nil, newUnavailableError(s)
+	}
+
 	// If requestState is already in context, it means that StartPushRequest already ran for this request.
 	// This check must be performed first, before any other logic in this function.
 	rs, alreadyInContext := ctx.Value(requestStateKey).(*requestState)
@@ -1742,7 +1859,7 @@ func (d *Distributor) startPushRequest(ctx context.Context, httpgrpcRequestSize 
 	inflight := d.inflightPushRequests.Inc()
 	defer func() {
 		if cleanupInDefer {
-			d.cleanupAfterPushFinished(rs)
+			d.decreaseInflightPushRequestCounters(rs)
 		}
 	}()
 
@@ -1815,10 +1932,10 @@ func (d *Distributor) FinishPushRequest(ctx context.Context) {
 		return
 	}
 
-	d.cleanupAfterPushFinished(rs)
+	d.decreaseInflightPushRequestCounters(rs)
 }
 
-func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
+func (d *Distributor) decreaseInflightPushRequestCounters(rs *requestState) {
 	d.inflightPushRequests.Dec()
 	if rs.httpgrpcRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.httpgrpcRequestSize)
@@ -1826,42 +1943,32 @@ func (d *Distributor) cleanupAfterPushFinished(rs *requestState) {
 	if rs.writeRequestSize > 0 {
 		d.inflightPushRequestsBytes.Sub(rs.writeRequestSize)
 	}
-	if rs.reactiveLimiterCleanup != nil {
-		rs.reactiveLimiterCleanup(rs.pushErr)
-	}
 }
 
 // limitsMiddleware checks for instance limits and rejects request if this instance cannot process it at the moment.
 func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
-	return func(ctx context.Context, pushReq *Request) (retErr error) {
-		// Make sure the distributor service and all its dependent services have been
-		// started. The following checks in this middleware depend on the runtime config
-		// service having been started.
-		if s := d.State(); s != services.Running {
-			return newUnavailableError(s)
-		}
-
+	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) (retErr error) {
 		ctx, rs, err := d.startPushRequest(ctx, pushReq.contentLength)
 		if err != nil {
 			return middleware.DoNotLogError{Err: err}
 		}
 
-		if reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx); reactiveLimiterErr != nil {
+		rs.pushHandlerPerformsCleanup = true
+		// Decrement in-flight request counters as soon as limitsMiddleware returns.
+		pushReq.AddCleanup(func() {
+			d.decreaseInflightPushRequestCounters(rs)
+		})
+
+		reactiveLimiterCleanup, reactiveLimiterErr := d.acquireReactiveLimiterPermit(ctx)
+		if reactiveLimiterErr != nil {
 			d.rejectedRequests.WithLabelValues(reasonDistributorMaxInflightPushRequests).Inc()
 			return reactiveLimiterErr
 		}
-		defer func() {
-			rs.pushErr = retErr
-		}()
-
-		rs.pushHandlerPerformsCleanup = true
-		// Decrement counter after all ingester calls have finished or been cancelled.
-		pushReq.AddCleanup(func() {
-			d.cleanupAfterPushFinished(rs)
-		})
-
-		next, maybeCleanup := NextOrCleanup(next, pushReq)
-		defer maybeCleanup()
+		if reactiveLimiterCleanup != nil {
+			defer func() {
+				reactiveLimiterCleanup(retErr)
+			}()
+		}
 
 		userID, err := tenant.TenantID(ctx)
 		if err != nil {
@@ -1888,24 +1995,7 @@ func (d *Distributor) limitsMiddleware(next PushFunc) PushFunc {
 		}
 
 		return next(ctx, pushReq)
-	}
-}
-
-// NextOrCleanup returns a new PushFunc and a cleanup function that should be deferred by the caller.
-// The cleanup function will only call Request.CleanUp() if next() wasn't called previously.
-//
-// This function is used outside of this codebase.
-func NextOrCleanup(next PushFunc, pushReq *Request) (_ PushFunc, maybeCleanup func()) {
-	cleanupInDefer := true
-	return func(ctx context.Context, req *Request) error {
-			cleanupInDefer = false
-			return next(ctx, req)
-		},
-		func() {
-			if cleanupInDefer {
-				pushReq.CleanUp()
-			}
-		}
+	})
 }
 
 // Push is gRPC method registered as client.IngesterServer and distributor.DistributorServer.
@@ -1965,7 +2055,7 @@ func (d *Distributor) push(ctx context.Context, pushReq *Request) error {
 	}
 
 	span := trace.SpanFromContext(ctx)
-	span.SetAttributes(attribute.String("organization", userID))
+	span.SetAttributes(attribute.String("user", userID))
 
 	if d.cfg.WriteRequestsBufferPoolingEnabled {
 		slabPool := pool.NewFastReleasingSlabPool[byte](&d.writeRequestBytePool, writeRequestSlabPoolSize)

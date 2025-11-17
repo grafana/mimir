@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -68,7 +69,7 @@ func NewAggregation(
 	}
 
 	if without {
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)
@@ -340,4 +341,8 @@ func (g groupSorter) Swap(i, j int) {
 
 func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
 	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
+}
+
+func newAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
 }

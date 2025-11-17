@@ -85,6 +85,8 @@ type Config struct {
 	SnapshotCleanupIntervalJitter float64       `yaml:"snapshot_cleanup_interval_jitter"`
 
 	MaxEventsFetchSize int `yaml:"max_events_fetch_size"`
+
+	UserCloseToLimitPercentageThreshold int `yaml:"user_close_to_limit_percentage_threshold"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
@@ -124,6 +126,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&c.SnapshotCleanupIntervalJitter, "usage-tracker.snapshot-cleanup-interval-jitter", 0.25, "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
 
 	f.IntVar(&c.MaxEventsFetchSize, "usage-tracker.max-events-fetch-size", 100, "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.")
+
+	f.IntVar(&c.UserCloseToLimitPercentageThreshold, "usage-tracker.user-close-to-limit-percentage-threshold", 90, "Percentage of the local series limit after which a user is considered close to the limit. A user is close to the limit if their series count is above this percentage of their local limit.")
 }
 
 func (c *Config) ValidateForClient() error {
@@ -672,6 +676,24 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 		return nil, err
 	}
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
+}
+
+// GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
+	partition := req.Partition
+
+	t.partitionsMtx.RLock()
+	p, ok := t.partitions[partition]
+	t.partitionsMtx.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("partition handler %d not found", partition)
+	}
+
+	userIDs := p.store.getSortedUsersCloseToLimit()
+	return &usagetrackerpb.GetUsersCloseToLimitResponse{
+		SortedUserIds: userIDs,
+		Partition:     partition,
+	}, nil
 }
 
 // CheckReady performs a readiness check.

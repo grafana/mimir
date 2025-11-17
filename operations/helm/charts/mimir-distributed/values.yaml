@@ -31,7 +31,7 @@ image:
   # -- Grafana Mimir container image repository
   repository: grafana/mimir
   # -- Grafana Mimir container image tag
-  tag: 3.0.0-rc.0
+  tag: r368-547a06a0
   # -- Container pull policy
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets
@@ -2467,6 +2467,10 @@ compactor:
   env: []
   extraEnvFrom: []
 
+gossip_ring:
+  service:
+    annotations: {}
+
 memcached:
   image:
     # -- Memcached Docker image repository
@@ -2526,6 +2530,9 @@ memcachedExporter:
 chunks-cache:
   # -- Specifies whether memcached based chunks-cache should be enabled
   enabled: false
+
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
 
   # -- Total number of chunks-cache replicas
   replicas: 1
@@ -2629,6 +2636,9 @@ index-cache:
   # -- Specifies whether memcached based index-cache should be enabled
   enabled: false
 
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
+
   # -- Total number of index-cache replicas
   replicas: 1
 
@@ -2731,6 +2741,9 @@ metadata-cache:
   # -- Specifies whether memcached based metadata-cache should be enabled
   enabled: false
 
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
+
   # -- Total number of metadata-cache replicas
   replicas: 1
 
@@ -2832,6 +2845,9 @@ metadata-cache:
 results-cache:
   # -- Specifies whether memcached based results-cache should be enabled
   enabled: false
+
+  # -- How long each pod must be ready for before the next one is started/restarted
+  minReadySeconds: 60
 
   # -- Total number of results-cache replicas
   replicas: 1
@@ -3895,6 +3911,3 @@ continuous_test:
 #   data: |
 #     extra.yml: "{{ include some-mimir-define }}"
 extraObjects: []
-enterprise:
-  image:
-    tag: r365-3fdf702d

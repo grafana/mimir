@@ -15,7 +15,7 @@ import (
 
 	io2 "github.com/influxdata/influxdb/v2/kit/io"
 	"github.com/influxdata/influxdb/v2/models"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -120,7 +120,7 @@ func influxPointToTimeseries(pt models.Point, returnTs []mimirpb.PreallocTimeser
 		tags := pt.Tags()
 		lbls := make([]mimirpb.LabelAdapter, 0, len(tags)+2) // An additional one for __name__, and one for internal label
 		lbls = append(lbls, mimirpb.LabelAdapter{
-			Name:  labels.MetricName,
+			Name:  model.MetricNameLabel,
 			Value: yoloString(name),
 		})
 		lbls = append(lbls, mimirpb.LabelAdapter{

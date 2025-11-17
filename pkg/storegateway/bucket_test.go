@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -1440,7 +1441,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	}
 
 	ibkt := objstore.WithNoopInstr(bkt)
-	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, nil, 0)
+	f, err := block.NewMetaFetcher(logger, 1, ibkt, "", nil, nil, 0)
 	assert.NoError(t, err)
 
 	runTestWithStore := func(t test.TB, st *BucketStore, reg prometheus.Gatherer) {
@@ -1616,7 +1617,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			TSDBDir:          filepath.Join(tmpDir, fmt.Sprintf("%d", b)),
 			SamplesPerSeries: numSamplesPerSeries,
 			Series:           numSeriesPerBlock,
-			PrependLabels:    labels.FromStrings(labels.MetricName, "test_metric", "zzz_block_id", strconv.Itoa(b)),
+			PrependLabels:    labels.FromStrings(model.MetricNameLabel, "test_metric", "zzz_block_id", strconv.Itoa(b)),
 			Random:           random,
 		})
 
@@ -1650,7 +1651,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 			MinTime: math.MinInt64,
 			MaxTime: math.MaxInt64,
 			Matchers: []storepb.LabelMatcher{
-				{Type: storepb.LabelMatcher_EQ, Name: labels.MetricName, Value: "test_metric"},
+				{Type: storepb.LabelMatcher_EQ, Name: model.MetricNameLabel, Value: "test_metric"},
 			},
 			Hints:                    marshalledHints,
 			StreamingChunksBatchSize: uint64(streamBatchSize),
@@ -1676,7 +1677,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					// Reset the memory pool tracker.
 					seriesChunkRefsSetPool.(*pool.TrackedPool).Reset()
 
-					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, nil, 0)
+					metaFetcher, err := block.NewMetaFetcher(logger, 1, instrumentedBucket, "", nil, nil, 0)
 					assert.NoError(t, err)
 
 					// Create the bucket store.
@@ -2006,7 +2007,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2066,7 +2067,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2136,7 +2137,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	_, blockMinT, blockMaxT := uploadTestBlock(t, tmpDir, instrBkt, []testBlockDataSetup{appendTestSeries(10000)})
@@ -2216,7 +2217,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 
 	logger := log.NewNopLogger()
 	instrBkt := objstore.WithNoopInstr(bkt)
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
@@ -2339,7 +2340,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	assert.NoError(t, err)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})
@@ -2449,16 +2450,16 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	// Samples for the overlapping series are equal between the two blocks
 	// (simulate the case of uncompacted blocks from ingesters).
 	_, err := block.CreateBlock(ctx, bktDir, []labels.Labels{
-		labels.FromStrings(labels.MetricName, "series_1"),
-		labels.FromStrings(labels.MetricName, "series_2"),
-		labels.FromStrings(labels.MetricName, "series_3"),
+		labels.FromStrings(model.MetricNameLabel, "series_1"),
+		labels.FromStrings(model.MetricNameLabel, "series_2"),
+		labels.FromStrings(model.MetricNameLabel, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
 	_, err = block.CreateBlock(ctx, bktDir, []labels.Labels{
-		labels.FromStrings(labels.MetricName, "series_1"),
-		labels.FromStrings(labels.MetricName, "series_2"),
-		labels.FromStrings(labels.MetricName, "series_3"),
+		labels.FromStrings(model.MetricNameLabel, "series_1"),
+		labels.FromStrings(model.MetricNameLabel, "series_2"),
+		labels.FromStrings(model.MetricNameLabel, "series_3"),
 	}, numSamplesPerSeries, minTime, maxTime, labels.EmptyLabels())
 	require.NoError(t, err)
 
@@ -2470,7 +2471,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 	instrBkt := objstore.WithNoopInstr(bkt)
 
 	// Instance a real bucket store we'll use to query the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(t, err)
 
 	tests := map[string]struct {
@@ -2481,22 +2482,22 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 		expectedSeries int
 	}{
 		"should fail if the number of unique series queried is greater than the configured series limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			seriesLimit: 1,
 			expectedErr: "the query exceeded the maximum number of series (limit: 1 series) (err-mimir-max-series-per-query)",
 		},
 		"should pass if the number of unique series queried is equal or less than the configured series limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			seriesLimit:    3,
 			expectedSeries: 3,
 		},
 		"should fail if the number of chunks queried is greater than the configured chunks limit": {
-			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers: []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			chunksLimit: 3,
 			expectedErr: "the query exceeded the maximum number of chunks (limit: 3 chunks) (err-mimir-max-chunks-per-query)",
 		},
 		"should pass if the number of chunks queried is equal or less than the configured chunks limit": {
-			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: "series_[123]"}},
+			reqMatchers:    []storepb.LabelMatcher{{Type: storepb.LabelMatcher_RE, Name: model.MetricNameLabel, Value: "series_[123]"}},
 			chunksLimit:    6,
 			expectedSeries: 3,
 		},
@@ -2618,7 +2619,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	}
 
 	// Instance a real bucket store we'll use to query back the series.
-	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, nil, 0)
+	fetcher, err := block.NewMetaFetcher(logger, 10, instrBkt, tmpDir, nil, nil, 0)
 	assert.NoError(tb, err)
 
 	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(logger, nil, indexcache.InMemoryIndexCacheConfig{})

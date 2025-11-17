@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/clusterutil"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/spanlogger"
@@ -28,16 +29,35 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/util/propagation"
 )
 
 var tracer = otel.Tracer("pkg/tools/querytee")
 
+const (
+	defaultReportGRPCCodesInInstrumentationLabel = true
+
+	defaultHTTPServerReadTimeOut  = 1 * time.Minute
+	defaultHTTPServerWriteTimeout = 2 * time.Minute
+
+	defaultGRPCMaxRecvMsgSize             = 100 * 1024 * 1024
+	defaultGRPCMaxSendMsgSize             = 100 * 1024 * 1024
+	defaultGRPCServerMaxConcurrentStreams = 10000
+	defaultGRPCServerMinTimeBetweenPings  = 10 * time.Second
+	defaultGRPCPingWithoutStreamAllowed   = true
+)
+
 type ProxyConfig struct {
-	ServerHTTPServiceAddress            string
-	ServerHTTPServicePort               int
-	ServerGracefulShutdownTimeout       time.Duration
-	ServerGRPCServiceAddress            string
-	ServerGRPCServicePort               int
+	DeprecatedServerHTTPServiceAddress      string        // Deprecated: Deprecated in favor of dskit server.Config built-in server.http-listen-address. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerHTTPServicePort         int           // Deprecated: Deprecated in favor of dskit server.Config built-in server.http-listen-port. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerGracefulShutdownTimeout time.Duration // Deprecated: Deprecated in favor of dskit server.Config built-in server.graceful-shutdown-timeout. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerGRPCServiceAddress      string        // Deprecated: Deprecated in favor of dskit server.Config built-in server.grpc-listen-address. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	DeprecatedServerGRPCServicePort         int           // Deprecated: Deprecated in favor of dskit server.Config built-in server.grpc-listen-port. Deprecated in Mimir 3.1, remove in Mimir 3.3.
+
+	Server server.Config
+
 	BackendEndpoints                    string
 	PreferredBackend                    string
 	BackendReadTimeout                  time.Duration
@@ -55,17 +75,56 @@ type ProxyConfig struct {
 	AddMissingTimeParamToInstantQueries bool
 	SecondaryBackendsRequestProportion  float64
 	SkipPreferredBackendFailures        bool
+	BackendsLookbackDelta               time.Duration
+	ClusterValidation                   clusterutil.ClusterValidationConfig
+}
+
+// registerServerFlagsWithChangedDefaultValues emulates the same method in pkg/mimir/mimir.go,
+// as query tee does not currently import and utilize mimir.Config.
+func (cfg *ProxyConfig) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
+	throwaway := flag.NewFlagSet("throwaway", flag.PanicOnError)
+
+	// Register to throwaway flags first. Default values are remembered during registration and cannot be changed,
+	// but we can take values from throwaway flag set and re-register into supplied flag set with new default values.
+	cfg.Server.RegisterFlags(throwaway)
+
+	defaultsOverrides := map[string]string{
+		"server.report-grpc-codes-in-instrumentation-label-enabled": strconv.FormatBool(defaultReportGRPCCodesInInstrumentationLabel),
+
+		"server.http-read-timeout":  defaultHTTPServerReadTimeOut.String(),
+		"server.http-write-timeout": defaultHTTPServerWriteTimeout.String(),
+
+		"server.grpc-max-recv-msg-size-bytes":               strconv.Itoa(defaultGRPCMaxRecvMsgSize),
+		"server.grpc-max-send-msg-size-bytes":               strconv.Itoa(defaultGRPCMaxSendMsgSize),
+		"server.grpc-max-concurrent-streams":                strconv.Itoa(defaultGRPCServerMaxConcurrentStreams),
+		"server.grpc.keepalive.min-time-between-pings":      defaultGRPCServerMinTimeBetweenPings.String(),
+		"server.grpc.keepalive.ping-without-stream-allowed": strconv.FormatBool(defaultGRPCPingWithoutStreamAllowed),
+	}
+
+	throwaway.VisitAll(func(f *flag.Flag) {
+		if defaultValue, overridden := defaultsOverrides[f.Name]; overridden {
+			// Ignore errors when setting new values. We have a test to verify that it works.
+			_ = f.Value.Set(defaultValue)
+		}
+
+		fs.Var(f.Value, f.Name, f.Usage)
+	})
 }
 
 type BackendConfig struct {
-	RequestHeaders http.Header `json:"request_headers" yaml:"request_headers"`
+	RequestHeaders    http.Header `json:"request_headers" yaml:"request_headers"`
+	RequestProportion *float64    `json:"request_proportion,omitempty" yaml:"request_proportion,omitempty"`
+	MinDataQueriedAge string      `json:"min_data_queried_age,omitempty" yaml:"min_data_queried_age,omitempty"`
 }
 
 func exampleJSONBackendConfig() string {
+	proportion := 0.5
 	cfg := BackendConfig{
 		RequestHeaders: http.Header{
 			"Cache-Control": {"no-store"},
 		},
+		RequestProportion: &proportion,
+		MinDataQueriedAge: "24h",
 	}
 	jsonBytes, err := json.Marshal(cfg)
 	if err != nil {
@@ -75,11 +134,18 @@ func exampleJSONBackendConfig() string {
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&cfg.ServerHTTPServiceAddress, "server.http-service-address", "", "Bind address for server where query-tee service listens for HTTP requests.")
-	f.IntVar(&cfg.ServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens for HTTP requests.")
-	f.DurationVar(&cfg.ServerGracefulShutdownTimeout, "server.graceful-shutdown-timeout", 30*time.Second, "Time to wait for inflight requests to complete when shutting down. Setting this to 0 will terminate all inflight requests immediately when a shutdown signal is received.")
-	f.StringVar(&cfg.ServerGRPCServiceAddress, "server.grpc-service-address", "", "Bind address for server where query-tee service listens for HTTP over gRPC requests.")
-	f.IntVar(&cfg.ServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens for HTTP over gRPC messages.")
+	cfg.Server.MetricsNamespace = queryTeeMetricsNamespace
+
+	// Deprecate in favor of built-in server.http-listen-address
+	f.StringVar(&cfg.DeprecatedServerHTTPServiceAddress, "server.http-service-address", "", "Bind address for server where query-tee service listens for HTTP requests.")
+	// Deprecate in favor of built-in server.http-listen-port
+	f.IntVar(&cfg.DeprecatedServerHTTPServicePort, "server.http-service-port", 80, "The HTTP port where the query-tee service listens for HTTP requests.")
+
+	// Deprecate in favor of built-in server.grpc-listen-address
+	f.StringVar(&cfg.DeprecatedServerGRPCServiceAddress, "server.grpc-service-address", "", "Bind address for server where query-tee service listens for HTTP over gRPC requests.")
+	// Deprecate in favor of built-in server.grpc-listen-port
+	f.IntVar(&cfg.DeprecatedServerGRPCServicePort, "server.grpc-service-port", 9095, "The GRPC port where the query-tee service listens for HTTP over gRPC messages.")
+
 	f.StringVar(&cfg.BackendEndpoints, "backend.endpoints", "",
 		"Comma-separated list of backend endpoints to query. If the client request contains basic auth, it will be forwarded to the backend. "+
 			"Basic auth is also accepted as part of the endpoint URL and takes precedence over the basic auth in the client request. "+
@@ -100,7 +166,10 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.SkipPreferredBackendFailures, "proxy.compare-skip-preferred-backend-failures", false, "If true, the proxy will 'skip' result comparisons where the preferred backend returned a 5xx status code. This is useful in the case where the secondary backend is more reliable.")
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 	f.BoolVar(&cfg.AddMissingTimeParamToInstantQueries, "proxy.add-missing-time-parameter-to-instant-queries", true, "Add a 'time' parameter to proxied instant query requests if they do not have one.")
-	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", 1.0, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set.")
+	f.Float64Var(&cfg.SecondaryBackendsRequestProportion, "proxy.secondary-backends-request-proportion", DefaultRequestProportion, "Proportion of requests to send to secondary backends. Must be between 0 and 1 (inclusive), and if not 1, then -backend.preferred must be set. Optionally this global setting can be overrided on a per-backend basis via the backend config file.")
+	f.DurationVar(&cfg.BackendsLookbackDelta, "proxy.backends-lookback-delta", 5*time.Minute, "The lookback configured in the backends query engines. Used to accurately extract min time from queries for backends that require it.")
+	cfg.ClusterValidation.RegisterFlagsWithPrefix("query-tee.client-cluster-validation.", f)
+	cfg.registerServerFlagsWithChangedDefaultValues(f)
 }
 
 type Route struct {
@@ -159,6 +228,26 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		}
 	}
 
+	// Query-tee-specific dskit server.Config flag names are deprecated in favor of the built-ins from dskit.
+	// Preserve usage of the deprecated flags for now;
+	// for all deprecated flags, if they are not set to their defaults, override the new flag's setting.
+	if cfg.DeprecatedServerHTTPServiceAddress != "" {
+		cfg.Server.HTTPListenAddress = cfg.DeprecatedServerHTTPServiceAddress
+	}
+	if cfg.DeprecatedServerHTTPServicePort != 80 {
+		cfg.Server.HTTPListenPort = cfg.DeprecatedServerHTTPServicePort
+	}
+	if cfg.DeprecatedServerGracefulShutdownTimeout != 30*time.Second {
+		cfg.Server.ServerGracefulShutdownTimeout = cfg.DeprecatedServerGracefulShutdownTimeout
+	}
+	if cfg.DeprecatedServerGRPCServiceAddress != "" {
+		cfg.Server.GRPCListenAddress = cfg.DeprecatedServerGRPCServiceAddress
+	}
+	if cfg.DeprecatedServerGRPCServicePort != 9095 {
+		cfg.Server.GRPCListenPort = cfg.DeprecatedServerGRPCServicePort
+	}
+
+	cfg.Server.Registerer = registerer
 	p := &Proxy{
 		cfg:        cfg,
 		logger:     logger,
@@ -204,7 +293,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 			}
 		}
 
-		p.backends = append(p.backends, NewProxyBackend(name, u, cfg.BackendReadTimeout, preferred, cfg.BackendSkipTLSVerify, *backendCfg))
+		p.backends = append(p.backends, NewProxyBackend(name, u, cfg.BackendReadTimeout, preferred, cfg.BackendSkipTLSVerify, cfg.ClusterValidation.Label, *backendCfg))
 	}
 
 	// At least 1 backend is required
@@ -248,7 +337,7 @@ func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*
 	// Tests need to pass the same hostname for all backends, so we also
 	// support a numeric preferred backend which is the index in the list of backend.
 	numericBackendNameRegex := regexp.MustCompile("^[0-9]+$")
-	for configuredBackend := range config {
+	for configuredBackend, backendCfg := range config {
 		backendExists := false
 		for _, actualBacked := range backends {
 			if actualBacked.Name() == configuredBackend {
@@ -259,40 +348,35 @@ func validateBackendConfig(backends []ProxyBackendInterface, config map[string]*
 		if !backendExists && !numericBackendNameRegex.MatchString(configuredBackend) {
 			return fmt.Errorf("configured backend %s does not exist in the list of actual backends", configuredBackend)
 		}
+
+		// Validate request proportion if specified
+		if backendCfg.RequestProportion != nil {
+			proportion := *backendCfg.RequestProportion
+			if proportion < 0 || proportion > 1 {
+				return fmt.Errorf("backend %s: request_proportion must be between 0.0 and 1.0, got %f", configuredBackend, proportion)
+			}
+		}
+
+		// Validate time threshold if specified
+		if backendCfg.MinDataQueriedAge != "" {
+			if _, err := time.ParseDuration(backendCfg.MinDataQueriedAge); err != nil {
+				return fmt.Errorf("backend %s: invalid min_data_queried_age format %q: %w", configuredBackend, backendCfg.MinDataQueriedAge, err)
+			}
+		}
 	}
 	return nil
 }
 
 func (p *Proxy) Start() error {
+	p.cfg.Server.MetricsNamespace = queryTeeMetricsNamespace
+	p.cfg.Server.RegisterInstrumentation = false
+	// Allow reporting HTTP 4xx codes in status_code label of request duration metrics
+	p.cfg.Server.ReportHTTP4XXCodesInInstrumentationLabel = true
+
+	p.cfg.Server.Log = p.logger
+
 	// Setup server first, so we can fail early if the ports are in use.
-	serv, err := server.New(server.Config{
-		// HTTP configs
-		HTTPListenAddress:             p.cfg.ServerHTTPServiceAddress,
-		HTTPListenPort:                p.cfg.ServerHTTPServicePort,
-		HTTPServerReadTimeout:         1 * time.Minute,
-		HTTPServerWriteTimeout:        2 * time.Minute,
-		ServerGracefulShutdownTimeout: p.cfg.ServerGracefulShutdownTimeout,
-
-		// gRPC configs
-		GRPCListenAddress: p.cfg.ServerGRPCServiceAddress,
-		GRPCListenPort:    p.cfg.ServerGRPCServicePort,
-		// Same size configurations as in Mimir default gRPC configuration values
-		GRPCServerMaxRecvMsgSize:           100 * 1024 * 1024,
-		GRPCServerMaxSendMsgSize:           100 * 1024 * 1024,
-		GRPCServerMaxConcurrentStreams:     10000,
-		GRPCServerMinTimeBetweenPings:      10 * time.Second,
-		GRPCServerPingWithoutStreamAllowed: true,
-
-		// Allow reporting HTTP 4xx codes in status_code label of request duration metrics
-		ReportHTTP4XXCodesInInstrumentationLabel: true,
-
-		// Use Proxy's prometheus registry
-		MetricsNamespace:        queryTeeMetricsNamespace,
-		Registerer:              p.registerer,
-		RegisterInstrumentation: false,
-
-		Log: p.logger,
-	})
+	serv, err := server.New(p.cfg.Server)
 	if err != nil {
 		return err
 	}
@@ -304,13 +388,17 @@ func (p *Proxy) Start() error {
 		w.WriteHeader(http.StatusOK)
 	}))
 
+	// Since we are only doing query requests decoding, we only care about the lookback delta for the Codec instance.
+	// The other config parameters are not relevant.
+	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{})
+
 	// register routes
 	for _, route := range p.routes {
 		var comparator ResponsesComparator
 		if p.cfg.CompareResponses {
 			comparator = route.ResponseComparator
 		}
-		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold, p.cfg.SecondaryBackendsRequestProportion, p.cfg.SkipPreferredBackendFailures))
+		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, comparator, p.cfg.LogSlowQueryResponseThreshold, p.cfg.SecondaryBackendsRequestProportion, p.cfg.SkipPreferredBackendFailures, codec))
 	}
 
 	if p.cfg.PassThroughNonRegisteredRoutes {
@@ -334,7 +422,7 @@ func (p *Proxy) Start() error {
 		}
 	}()
 
-	level.Info(p.logger).Log("msg", "The proxy is up and running.", "httpPort", p.cfg.ServerHTTPServicePort, "grpcPort", p.cfg.ServerGRPCServicePort)
+	level.Info(p.logger).Log("msg", "The proxy is up and running.", "httpPort", p.cfg.Server.HTTPListenPort, "grpcPort", p.cfg.Server.GRPCListenPort)
 	return nil
 }
 

@@ -7,12 +7,13 @@ package local
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -154,7 +155,7 @@ func (f *Store) reloadConfigs() (map[string]alertspb.AlertConfigDesc, error) {
 	configs := map[string]alertspb.AlertConfigDesc{}
 	err := filepath.Walk(f.cfg.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return errors.Wrapf(err, "unable to walk file path at %s", path)
+			return fmt.Errorf("unable to walk file path at %s: %w", path, err)
 		}
 
 		// Ignore files that are directories or not yaml files
@@ -166,13 +167,13 @@ func (f *Store) reloadConfigs() (map[string]alertspb.AlertConfigDesc, error) {
 		// Ensure the file is a valid Alertmanager Config.
 		_, err = config.LoadFile(path)
 		if err != nil {
-			return errors.Wrapf(err, "unable to load alertmanager config %s", path)
+			return fmt.Errorf("unable to load alertmanager config %s: %w", path, err)
 		}
 
 		// Load the file to be returned by the store.
 		content, err := os.ReadFile(path)
 		if err != nil {
-			return errors.Wrapf(err, "unable to read alertmanager config %s", path)
+			return fmt.Errorf("unable to read alertmanager config %s: %w", path, err)
 		}
 
 		// The file name must correspond to the user tenant ID

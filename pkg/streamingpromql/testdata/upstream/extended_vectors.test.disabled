@@ -174,7 +174,7 @@ eval instant at 110s increase(metric[1m] smoothed)
 eval instant at 125s increase(metric[1m] smoothed)
     {} 4.666666666
 
-# Test that inverval is left-open.
+# Test that interval is left-open.
 
 clear
 load 1m
@@ -324,7 +324,6 @@ eval instant at 2m changes(metric[1m] anchored)
     {id="2"} 1
 
 eval instant at 3m changes(metric[1m] anchored)
-    {id="1"} 1
     {id="2"} 1
 
 eval instant at 8m changes(metric[1m] anchored)
@@ -347,7 +346,6 @@ eval instant at 2m resets(metric[1m] anchored)
     {id="2"} 1
 
 eval instant at 3m resets(metric[1m] anchored)
-    {id="1"} 1
     {id="2"} 1
 
 eval instant at 8m resets(metric[1m] anchored)
@@ -360,8 +358,8 @@ eval instant at 8m resets(metric[1m1ms] anchored)
 
 clear
 load 1m
-    metric 9 8 5 4
-
+    metric 9 8 5 4 
+    
 eval instant at 2m15s increase(metric[2m] smoothed)
     {} 12
 

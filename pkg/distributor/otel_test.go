@@ -69,10 +69,14 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 		appendCustomMetric                func(pmetric.MetricSlice)
 		expectedLabels                    []mimirpb.LabelAdapter
 		expectedInfoLabels                []mimirpb.LabelAdapter
+		underscoreSanitization            bool
+		preserveMultipleUnderscores       bool
 	}{
 		{
-			name:                      "Successful conversion without resource attribute promotion",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion without resource attribute promotion",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -118,6 +122,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			name:                              "Successful conversion without resource attribute promotion, and keep identifying resource attributes",
 			promoteResourceAttributes:         nil,
 			keepIdentifyingResourceAttributes: true,
+			underscoreSanitization:            true,
+			preserveMultipleUnderscores:       true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -172,8 +178,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr"},
+			name:                        "Successful conversion with resource attribute promotion",
+			promoteResourceAttributes:   []string{"non-existent-attr", "existent-attr"},
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -220,8 +228,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
-			promoteResourceAttributes: []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
+			name:                        "Successful conversion with resource attribute promotion, conflicting resource attributes are ignored",
+			promoteResourceAttributes:   []string{"non-existent-attr", "existent-attr", "metric-attr", "job", "instance"},
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
@@ -268,8 +278,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion of cumulative non-monotonic sum",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion of cumulative non-monotonic sum",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
 				m := metricSlice.AppendEmpty()
 				m.SetName("test_metric")
@@ -323,8 +335,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Successful conversion of cumulative monotonic sum",
-			promoteResourceAttributes: nil,
+			name:                        "Successful conversion of cumulative monotonic sum",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
 				m := metricSlice.AppendEmpty()
 				m.SetName("test_metric")
@@ -378,8 +392,10 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			},
 		},
 		{
-			name:                      "Underscore sanitization",
-			promoteResourceAttributes: nil,
+			name:                        "Underscore sanitization",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      true,
+			preserveMultipleUnderscores: true,
 			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
 				m := metricSlice.AppendEmpty()
 				m.SetName("test_metric")
@@ -389,12 +405,26 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				dp := sum.DataPoints().AppendEmpty()
 				dp.SetIntValue(123)
 				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-				dp.Attributes().PutStr("_1", "metric value")
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
 			},
 			expectedLabels: []mimirpb.LabelAdapter{
 				{
 					Name:  "__name__",
 					Value: "test_metric",
+				},
+				{
+					Name:  "key_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "key_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some__thing",
+					Value: "bar",
 				},
 				{
 					Name:  "instance",
@@ -404,9 +434,139 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					Name:  "job",
 					Value: "service namespace/service name",
 				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
 				{
-					Name:  "key_1",
-					Value: "metric value",
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                        "Disable underscore sanitization",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      false,
+			preserveMultipleUnderscores: true,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some__thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+			},
+			expectedInfoLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "target_info",
+				},
+				{
+					Name:  "existent_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "metric_attr",
+					Value: "resource value",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+			},
+		},
+		{
+			name:                        "Disable multiple underscore preservation",
+			promoteResourceAttributes:   nil,
+			underscoreSanitization:      false,
+			preserveMultipleUnderscores: false,
+			appendCustomMetric: func(metricSlice pmetric.MetricSlice) {
+				m := metricSlice.AppendEmpty()
+				m.SetName("test_metric")
+				sum := m.SetEmptySum()
+				sum.SetIsMonotonic(false)
+				sum.SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
+				dp := sum.DataPoints().AppendEmpty()
+				dp.SetIntValue(123)
+				dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+				dp.Attributes().PutStr("_foo", "bar")
+				dp.Attributes().PutStr("_1", "bar")
+				dp.Attributes().PutStr("some__thing", "bar")
+			},
+			expectedLabels: []mimirpb.LabelAdapter{
+				{
+					Name:  "__name__",
+					Value: "test_metric",
+				},
+				{
+					Name:  "_foo",
+					Value: "bar",
+				},
+				{
+					Name:  "_1",
+					Value: "bar",
+				},
+				{
+					Name:  "some_thing",
+					Value: "bar",
+				},
+				{
+					Name:  "instance",
+					Value: "service ID",
+				},
+				{
+					Name:  "job",
+					Value: "service namespace/service name",
 				},
 			},
 			expectedInfoLabels: []mimirpb.LabelAdapter{
@@ -463,6 +623,8 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					addSuffixes:                       true,
 					keepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
 					promoteResourceAttributes:         tc.promoteResourceAttributes,
+					underscoreSanitization:            tc.underscoreSanitization,
+					preserveMultipleUnderscores:       tc.preserveMultipleUnderscores,
 				},
 				log.NewNopLogger(),
 			)
@@ -473,7 +635,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 			var targetInfo mimirpb.PreallocTimeseries
 			for i := range mimirTS {
 				for _, lbl := range mimirTS[i].Labels {
-					if lbl.Name != labels.MetricName {
+					if lbl.Name != model.MetricNameLabel {
 						continue
 					}
 
@@ -547,7 +709,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 			for i := range mimirTS {
 				var metricName string
 				for _, lbl := range mimirTS[i].Labels {
-					if lbl.Name == labels.MetricName {
+					if lbl.Name == model.MetricNameLabel {
 						metricName = lbl.Value
 						break
 					}

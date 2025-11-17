@@ -23,7 +23,7 @@ type blockingLimiter[R any] interface {
 
 // executor is a policy.Executor that handles failures according to an AdaptiveLimiter or PriorityLimiter.
 type executor[R any] struct {
-	*policy.BaseExecutor[R]
+	policy.BaseExecutor[R]
 	blockingLimiter[R]
 }
 

@@ -38,12 +38,14 @@ spec:
   template:
     metadata:
       labels:
+        foo: bar
         app.kubernetes.io/name: mimir
         app.kubernetes.io/instance: test-oss-topology-spread-constraints-values
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: compactor
         app.kubernetes.io/part-of: memberlist
       annotations:
+        baz: qux
       namespace: "citestns"
     spec:
       serviceAccountName: test-oss-topology-spread-constraints-values-mimir

@@ -362,6 +362,33 @@
                                  }
                               }
                            ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - ommkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
+                              }
+                           ]
                         }
                      ]
                   },
@@ -519,7 +546,7 @@
                         "legendLink": null
                      },
                      {
-                        "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"})",
+                        "expr": "min by(namespace) (cortex_ingester_instance_limits{namespace=\"$namespace\", limit=\"max_series\"} > 0)",
                         "format": "time_series",
                         "legendFormat": "limit",
                         "legendLink": null
@@ -809,6 +836,33 @@
                                  "value": {
                                     "fill": "dash"
                                  }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byRegexp",
+                              "options": "/.+ - ommkilled/"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              },
+                              {
+                                 "id": "custom.axisPlacement",
+                                 "value": "hidden"
+                              },
+                              {
+                                 "id": "custom.drawStyle",
+                                 "value": "points"
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "none"
                               }
                            ]
                         }
