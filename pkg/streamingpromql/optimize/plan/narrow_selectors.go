@@ -6,6 +6,8 @@ import (
 	"context"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -17,11 +19,21 @@ import (
 // labels that can be used to reduce the amount of data fetched on one side of binary
 // expression and propagates those labels as a Hint on the binary expression.
 type NarrowSelectorsOptimizationPass struct {
-	logger log.Logger
+	attempts prometheus.Counter
+	modified prometheus.Counter
+	logger   log.Logger
 }
 
-func NewNarrowSelectorsOptimizationPass(logger log.Logger) *NarrowSelectorsOptimizationPass {
+func NewNarrowSelectorsOptimizationPass(reg prometheus.Registerer, logger log.Logger) *NarrowSelectorsOptimizationPass {
 	return &NarrowSelectorsOptimizationPass{
+		attempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_narrow_selectors_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to add hints to narrow selectors for.",
+		}),
+		modified: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_narrow_selectors_modified_total",
+			Help: "Total number of queries where the optimization pass has been able to add hints to narrow selectors for.",
+		}),
 		logger: logger,
 	}
 }
@@ -39,14 +51,22 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 		return plan, nil
 	}
 
-	if err := n.applyToNode(ctx, plan.Root, res); err != nil {
+	n.attempts.Inc()
+	addedHint, err := n.applyToNode(ctx, plan.Root, res)
+	if err != nil {
 		return nil, err
+	}
+
+	if addedHint {
+		n.modified.Inc()
 	}
 
 	return plan, nil
 }
 
-func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node planning.Node, res optimize.InspectResult) error {
+func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node planning.Node, res optimize.InspectResult) (bool, error) {
+	addedHint := false
+
 	switch e := node.(type) {
 	case *core.BinaryExpression:
 		// Set hints for a binary expression based on the expression itself and any
@@ -57,17 +77,21 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 		if e.Hints != nil {
 			sl := spanlogger.FromContext(ctx, n.logger)
 			sl.DebugLog("msg", "setting query hint on binary expression", "labels", e.Hints.GetInclude())
+			addedHint = true
 		}
 	}
 
 	// Set hints for any child binary expressions of the current node.
 	for child := range planning.ChildrenIter(node) {
-		if err := n.applyToNode(ctx, child, res); err != nil {
-			return err
+		childHint, err := n.applyToNode(ctx, child, res)
+		if err != nil {
+			return false, err
 		}
+
+		addedHint = addedHint || childHint
 	}
 
-	return nil
+	return addedHint, nil
 }
 
 func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, node planning.Node, res optimize.InspectResult) *core.BinaryExpressionHints {
