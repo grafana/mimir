@@ -8,6 +8,7 @@ package benchmarks
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"strconv"
 	"strings"
 	"testing"
@@ -48,6 +49,11 @@ func (c BenchCase) Name() string {
 func (c BenchCase) Run(ctx context.Context, t testing.TB, start, end time.Time, interval time.Duration, engine promql.QueryEngine, q storage.Queryable) (*promql.Result, func()) {
 	var qry promql.Query
 	var err error
+
+	promqlEngine, ok := engine.(*promql.Engine)
+	if ok {
+		engine = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promqlEngine)
+	}
 
 	if c.Steps == 0 {
 		qry, err = engine.NewInstantQuery(ctx, q, nil, c.Expr, start)
