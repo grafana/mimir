@@ -306,9 +306,10 @@ func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer,
 
 func (v FPointRingBufferView) Iterator(existing *FPointRingBufferViewIterator) *FPointRingBufferViewIterator {
 	if existing == nil {
-		existing = &FPointRingBufferViewIterator{view: &v}
+		existing = &FPointRingBufferViewIterator{}
 	}
 	existing.idx = 0
+	existing.view = &v
 	return existing
 }
 
@@ -321,6 +322,10 @@ type FPointRingBufferViewIterator struct {
 //func NewFPointRingBufferViewIterator(view *FPointRingBufferView) *FPointRingBufferViewIterator {
 //	return &FPointRingBufferViewIterator{view: view}
 //}
+
+func (i *FPointRingBufferViewIterator) Count() int {
+	return i.view.Count()
+}
 
 func (i *FPointRingBufferViewIterator) HasNext() bool {
 	return i.idx < i.view.Count()

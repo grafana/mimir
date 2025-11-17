@@ -23,14 +23,15 @@ type RangeVectorSelector struct {
 	Selector *Selector
 	Stats    *types.QueryStats
 
-	rangeMilliseconds   int64
-	chunkIterator       chunkenc.Iterator
-	nextStepT           int64
-	floats              *types.FPointRingBuffer
-	extendedRangeFloats *types.FPointRingBuffer // A buffer we use to create views for smoothed/anchored extended ranges which have added/modified points from the original floats buffer
-	histograms          *types.HPointRingBuffer
-	stepData            *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
-	extendedRangeView   *types.FPointRingBufferView
+	rangeMilliseconds     int64
+	chunkIterator         chunkenc.Iterator
+	nextStepT             int64
+	floats                *types.FPointRingBuffer
+	extendedRangeFloats   *types.FPointRingBuffer // A buffer we use to create views for smoothed/anchored extended ranges which have added/modified points from the original floats buffer
+	histograms            *types.HPointRingBuffer
+	stepData              *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
+	extendedRangeView     *types.FPointRingBufferView
+	extendedRangeIterator *types.FPointRingBufferViewIterator
 
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	anchored                 bool // The anchored modifier has been used for this range query
@@ -136,12 +137,25 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 		// Note the extended range end is used since smoothed will have extended this
 		m.extendedRangeView = m.floats.ViewUntilSearchingForwards(rangeEnd, m.extendedRangeView)
+		m.extendedRangeIterator = nil // TODO re-assigning the view
 
-		// buff is a new slice of points which includes points for the range boundaries
-		// smoothedHead/Tail are special cases of the boundary points which will be used by any rate/increase function which consumes this vector.
-		buff, smoothedHead, smoothedTail, err := extendRangeVectorPoints(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.smoothed, m.memoryConsumptionTracker)
-		if err != nil {
-			return nil, err
+		var buff []promql.FPoint
+		var err error
+		var smoothedHead, smoothedTail *promql.FPoint
+
+		if m.extendedRangeView.Any() {
+			// ignore ok as we already tested that we have points
+			lastInView, _ := m.extendedRangeView.Last()
+
+			// No points were found within the original range.
+			// If we only find points prior to the start of the original range then no points are returned.
+			if lastInView.T > originalRangeStart {
+				m.extendedRangeIterator = m.extendedRangeView.Iterator(m.extendedRangeIterator)
+				buff, smoothedHead, smoothedTail, err = extendRangeVectorPoints(m.extendedRangeIterator, originalRangeStart, originalRangeEnd, m.smoothed, m.memoryConsumptionTracker)
+				if err != nil {
+					return nil, err
+				}
+			}
 		}
 
 		if buff != nil {

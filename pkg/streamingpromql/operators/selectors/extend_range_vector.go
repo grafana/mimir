@@ -15,31 +15,15 @@ import (
 // extendRangeVectorPoints will return a slice of points which has been adjusted to have anchored/smoothed points on the bounds of the given range.
 // This is used with the anchored/smoothed range query modifiers.
 // This implementation is based on extendFloats() found in promql/engine.go
-func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, smoothed bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, *promql.FPoint, *promql.FPoint, error) {
-
-	// no points to consider!
-	if !view.Any() {
-		return nil, nil, nil, nil
-	}
-
-	// ignore ok as we already tested that we have points
-	lastInView, _ := view.Last()
-
-	// No points were found within the original range.
-	// If we only find points prior to the start of the original range then no points are returned.
-	if lastInView.T <= rangeStart {
-		return nil, nil, nil, nil
-	}
+func extendRangeVectorPoints(it *types.FPointRingBufferViewIterator, rangeStart, rangeEnd int64, smoothed bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, *promql.FPoint, *promql.FPoint, error) {
 
 	// We need a new buffer to store the extended points
 	// The caller is responsible for releasing this slice back to the slices pool
-	buff, err := types.FPointSlicePool.Get(view.Count()+2, memoryConsumptionTracker)
+	buff, err := types.FPointSlicePool.Get(it.Count()+2, memoryConsumptionTracker)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	// TODO here
-	it := view.Iterator(nil)
-
+	
 	// Find the last point before the rangeStart, or the first point >= rangeStart
 	first := it.Seek(rangeStart)
 
