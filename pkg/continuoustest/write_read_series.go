@@ -4,14 +4,15 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
@@ -212,10 +213,10 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 	// If the write request failed because of a network or 5xx error, we'll retry to write series
 	// in the next test run.
 	if err != nil {
-		return errors.Wrap(err, "failed to remote write series")
+		return fmt.Errorf("failed to remote write series: %w", err)
 	}
 	if statusCode/100 != 2 {
-		return errors.Wrapf(err, "remote write series failed with status code %d", statusCode)
+		return fmt.Errorf("remote write series failed with status code %d: %w", statusCode, err)
 	}
 
 	// The write request succeeded.
@@ -306,7 +307,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
-		return errors.Wrap(err, "failed to execute range query")
+		return fmt.Errorf("failed to execute range query: %w", err)
 	}
 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
@@ -314,7 +315,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
-		return errors.Wrap(err, "range query result check failed")
+		return fmt.Errorf("range query result check failed: %w", err)
 	}
 
 	level.Info(logger).Log("msg", "Range query result check succeeded")
@@ -343,7 +344,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
-		return errors.Wrap(err, "failed to execute instant query")
+		return fmt.Errorf("failed to execute instant query: %w", err)
 	}
 
 	// Convert the vector to matrix to reuse the same results comparison utility.
@@ -371,7 +372,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
-		return errors.Wrap(err, "instant query result check failed")
+		return fmt.Errorf("instant query result check failed: %w", err)
 	}
 
 	level.Info(logger).Log("msg", "Instant query result check succeeded")

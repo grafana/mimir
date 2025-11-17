@@ -13,7 +13,6 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -53,7 +52,7 @@ func (pw *prometheusWriter) sendWriteRequest(ctx context.Context, req *prompb.Wr
 	if httpResp.StatusCode/100 != 2 {
 		truncatedBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
 		if err != nil {
-			return httpResp.StatusCode, errors.Wrapf(err, "server returned HTTP status %s and client failed to read response body", httpResp.Status)
+			return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and client failed to read response body: %w", httpResp.Status, err)
 		}
 
 		return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and body %q (truncated to %d bytes)", httpResp.Status, string(truncatedBody), maxErrMsgLen)
