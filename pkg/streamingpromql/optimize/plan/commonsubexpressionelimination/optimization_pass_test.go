@@ -638,16 +638,16 @@ func TestOptimizationPass(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			opts := streamingpromql.NewTestEngineOpts()
-			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			opts1 := streamingpromql.NewTestEngineOpts()
+			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
-			reg := prometheus.NewPedanticRegistry()
-			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			opts2 := streamingpromql.NewTestEngineOpts()
+			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg, opts.Logger))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts2.CommonOpts.Reg, opts2.Logger))
 
 			var timeRange types.QueryTimeRange
 
@@ -668,6 +668,8 @@ func TestOptimizationPass(t *testing.T) {
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 
+			// Type assertion since we need a Gatherer need to verify the metrics emitted by the optimization pass.
+			reg := opts2.CommonOpts.Reg.(*prometheus.Registry)
 			requireDuplicateNodeCount(t, reg, testCase.expectedDuplicateNodes)
 			requireSelectorCounts(t, reg, testCase.expectedSelectorsInspected, testCase.expectedSelectorsEliminated)
 		})
