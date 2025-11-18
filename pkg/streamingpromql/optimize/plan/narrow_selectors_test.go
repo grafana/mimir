@@ -202,6 +202,69 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 							- MatrixSelector: {__name__="some_metric"}[5m0s]
 			`,
 		},
+		// Make sure we don't modify query plans that modify labels
+		"binary expression with label_replace on one side": {
+			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_replace(not_ready, "statefulset", "$1", "job", ".+/(.+)"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: AggregateExpression: sum by (statefulset)
+						- VectorSelector: {__name__="kube_statefulset_replicas"}
+					- RHS: AggregateExpression: sum by (statefulset)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: VectorSelector: {__name__="not_ready"}
+								- param 1: StringLiteral: "statefulset"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "job"
+								- param 4: StringLiteral: ".+/(.+)"
+			`,
+		},
+		"binary expression with label_join on one side": {
+			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_join(not_ready, "statefulset", "job", "workload"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: AggregateExpression: sum by (statefulset)
+						- VectorSelector: {__name__="kube_statefulset_replicas"}
+					- RHS: AggregateExpression: sum by (statefulset)
+						- DeduplicateAndMerge
+							- FunctionCall: label_join(...)
+								- param 0: VectorSelector: {__name__="not_ready"}
+								- param 1: StringLiteral: "statefulset"
+								- param 2: StringLiteral: "job"
+								- param 3: StringLiteral: "workload"
+			`,
+		},
+		"binary expression with label_replace on one side for non-hint label": {
+			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_replace(second_metric, "region", "$1", "job", ".+/(.+)"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env, region)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, region)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: VectorSelector: {__name__="second_metric"}
+								- param 1: StringLiteral: "region"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "job"
+								- param 4: StringLiteral: ".+/(.+)"
+			`,
+		},
+		"binary expression with label_join on one side for non-hint label": {
+			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_join(second_metric, "region", "job", "workload"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env, region)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, region)
+						- DeduplicateAndMerge
+							- FunctionCall: label_join(...)
+								- param 0: VectorSelector: {__name__="second_metric"}
+								- param 1: StringLiteral: "region"
+								- param 2: StringLiteral: "job"
+								- param 3: StringLiteral: "workload"
+			`,
+		},
 	}
 
 	ctx := context.Background()

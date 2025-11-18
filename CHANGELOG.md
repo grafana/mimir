@@ -81,8 +81,9 @@
 * [BUGFIX] Query-frontend: Fix panic when evaluating a sharded `avg` expression when running sharding inside MQE. #13484
 * [BUGFIX] Query-frontend: Fix incorrect annotation position information when running sharding inside MQE. #13484
 * [BUGFIX] Query-frontend: Fix incorrect query results when evaluating some sharded aggregations with `without` when running sharding inside MQE. #13484
-* [BUGFIX]: Ingester: Panic when push and read reactive limiters are enabled with prioritization. #13482
-* [BUGFIX]: Usage-tracker: Prevent tracking requests to be handled by partition handlers that are not in Running state. #13532
+* [BUGFIX] Ingester: Panic when push and read reactive limiters are enabled with prioritization. #13482
+* [BUGFIX] Usage-tracker: Prevent tracking requests to be handled by partition handlers that are not in Running state. #13532
+* [BUGFIX] MQE: Fix an issue when applying extra matchers to one side of a binary operation to avoid adding matchers for labels that do not exist. #13499
 
 ### Mixin
 
