@@ -1057,8 +1057,8 @@ github.com/twmb/franz-go/plugin/kotel v1.6.0 h1:hmvLn/cVw/Hn56H3aJVJu/a/fh6m8J6A
 github.com/twmb/franz-go/plugin/kotel v1.6.0/go.mod h1:ADmLuCa/NzHdXdWfl22FsIlGCack+YrHjivirHCBJaY=
 github.com/twmb/franz-go/plugin/kprom v1.3.0 h1:hpPL0LxgDZ0WuT8U+PT9uYo0icY2/Pcodgdk4Ylgblo=
 github.com/twmb/franz-go/plugin/kprom v1.3.0/go.mod h1:7wlpDMa4Ls5GBIYb3xUUxK38g1N7qy2cLYO84zAtp/w=
-github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae h1:/QxawF0jKTcr2BjwxqdfxkZCCTiIUUd8pQk6ldX904k=
-github.com/tylertreat/BoomFilters v0.0.0-20251001182300-5b3723cc64ae/go.mod h1:OYRfF6eb5wY9VRFkXJH8FFBi3plw2v+giaIu7P054pM=
+github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b h1:p+bJ3v5uUdEVMCoeFUs+BNJPsqt+Y6BLbDaPfTcbcH8=
+github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b/go.mod h1:OYRfF6eb5wY9VRFkXJH8FFBi3plw2v+giaIu7P054pM=
 github.com/uber/jaeger-client-go v2.30.0+incompatible h1:D6wyKGCecFaSRUpo8lCVbaOOb6ThwMmTEbhRwtKR97o=
 github.com/uber/jaeger-client-go v2.30.0+incompatible/go.mod h1:WVhlPFC8FDjOFMMWRy2pZqQJSXxYSwNYOkTr/Z6d3Kk=
 github.com/uber/jaeger-lib v2.4.1+incompatible h1:td4jdvLcExb4cBISKIpHuGoVXh+dVKhn2Um6rjCsSsg=
