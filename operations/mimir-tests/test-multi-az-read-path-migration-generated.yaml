@@ -1846,7 +1846,7 @@ spec:
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
-        name: memberlist-bridge-zone-a
+        name: memberlist-bridge
         ports:
         - containerPort: 8080
           name: http-metrics
@@ -1931,7 +1931,7 @@ spec:
         - -usage-stats.installation-mode=jsonnet
         image: grafana/mimir:3.0.0
         imagePullPolicy: IfNotPresent
-        name: memberlist-bridge-zone-b
+        name: memberlist-bridge
         ports:
         - containerPort: 8080
           name: http-metrics
