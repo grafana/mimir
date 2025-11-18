@@ -33,6 +33,13 @@
 (import 'multi-zone-distributor.libsonnet') +
 (import 'multi-zone-ingester.libsonnet') +
 (import 'multi-zone-store-gateway.libsonnet') +
+(import 'multi-zone-memcached.libsonnet') +
+(import 'multi-zone-querier.libsonnet') +
+(import 'multi-zone-query-frontend.libsonnet') +
+(import 'multi-zone-query-scheduler.libsonnet') +
+(import 'multi-zone-ruler.libsonnet') +
+(import 'multi-zone-ruler-remote-evaluation.libsonnet') +
+(import 'multi-zone-memberlist-bridge.libsonnet') +
 
 // Import autoscaling after other features because it overrides deployments.
 (import 'autoscaling.libsonnet') +
