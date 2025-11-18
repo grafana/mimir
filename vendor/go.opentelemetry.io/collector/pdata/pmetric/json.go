@@ -7,7 +7,7 @@ import (
 	"slices"
 
 	"go.opentelemetry.io/collector/pdata/internal/json"
-	"go.opentelemetry.io/collector/pdata/internal/otlp"
+	// "go.opentelemetry.io/collector/pdata/internal/otlp"
 )
 
 var _ Marshaler = (*JSONMarshaler)(nil)
@@ -38,6 +38,6 @@ func (*JSONUnmarshaler) UnmarshalMetrics(buf []byte) (Metrics, error) {
 	if iter.Error() != nil {
 		return Metrics{}, iter.Error()
 	}
-	otlp.MigrateMetrics(md.getOrig().ResourceMetrics)
+	// otlp.MigrateMetrics(md.getOrig().ResourceMetrics)
 	return md, nil
 }

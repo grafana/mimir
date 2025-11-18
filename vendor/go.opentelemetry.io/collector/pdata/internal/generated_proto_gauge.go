@@ -16,7 +16,7 @@ import (
 
 // Gauge represents the type of a numeric metric that always exports the "current value" for every data point.
 type Gauge struct {
-	DataPoints []*NumberDataPoint
+	DataPoints []NumberDataPoint
 }
 
 var (
@@ -45,7 +45,7 @@ func DeleteGauge(orig *Gauge, nullable bool) {
 	}
 
 	for i := range orig.DataPoints {
-		DeleteNumberDataPoint(orig.DataPoints[i], true)
+		DeleteNumberDataPoint(&orig.DataPoints[i], false)
 	}
 
 	orig.Reset()
@@ -67,7 +67,7 @@ func CopyGauge(dest, src *Gauge) *Gauge {
 	if dest == nil {
 		dest = NewGauge()
 	}
-	dest.DataPoints = CopyNumberDataPointPtrSlice(dest.DataPoints, src.DataPoints)
+	dest.DataPoints = CopyNumberDataPointSlice(dest.DataPoints, src.DataPoints)
 
 	return dest
 }
@@ -146,7 +146,7 @@ func (orig *Gauge) UnmarshalJSON(iter *json.Iterator) {
 		switch f {
 		case "dataPoints", "data_points":
 			for iter.ReadArray() {
-				orig.DataPoints = append(orig.DataPoints, NewNumberDataPoint())
+				orig.DataPoints = append(orig.DataPoints, NumberDataPoint{})
 				orig.DataPoints[len(orig.DataPoints)-1].UnmarshalJSON(iter)
 			}
 
@@ -206,7 +206,7 @@ func (orig *Gauge) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.DataPoints = append(orig.DataPoints, NewNumberDataPoint())
+			orig.DataPoints = append(orig.DataPoints, NumberDataPoint{})
 			err = orig.DataPoints[len(orig.DataPoints)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -223,7 +223,7 @@ func (orig *Gauge) UnmarshalProto(buf []byte) error {
 
 func GenTestGauge() *Gauge {
 	orig := NewGauge()
-	orig.DataPoints = []*NumberDataPoint{{}, GenTestNumberDataPoint()}
+	orig.DataPoints = []NumberDataPoint{{}, *GenTestNumberDataPoint()}
 	return orig
 }
 

@@ -547,7 +547,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.TraceState = string(buf[startPos:pos])
+			orig.TraceState = proto.YoloString(buf[startPos:pos])
 
 		case 4:
 			if wireType != proto.WireTypeLen {
@@ -587,7 +587,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Name = string(buf[startPos:pos])
+			orig.Name = proto.YoloString(buf[startPos:pos])
 
 		case 6:
 			if wireType != proto.WireTypeVarint {

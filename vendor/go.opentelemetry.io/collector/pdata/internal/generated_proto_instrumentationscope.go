@@ -265,7 +265,7 @@ func (orig *InstrumentationScope) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Name = string(buf[startPos:pos])
+			orig.Name = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -277,7 +277,7 @@ func (orig *InstrumentationScope) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Version = string(buf[startPos:pos])
+			orig.Version = proto.YoloString(buf[startPos:pos])
 
 		case 3:
 			if wireType != proto.WireTypeLen {

@@ -8,7 +8,8 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/internal"
 	"go.opentelemetry.io/collector/pdata/internal/json"
-	"go.opentelemetry.io/collector/pdata/internal/otlp"
+
+	// "go.opentelemetry.io/collector/pdata/internal/otlp"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
@@ -51,7 +52,7 @@ func (ms ExportRequest) UnmarshalProto(data []byte) error {
 	if err != nil {
 		return err
 	}
-	otlp.MigrateMetrics(ms.orig.ResourceMetrics)
+	// otlp.MigrateMetrics(ms.orig.ResourceMetrics)
 	return nil
 }
 

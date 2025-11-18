@@ -272,7 +272,7 @@ func (orig *EntityRef) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SchemaUrl = string(buf[startPos:pos])
+			orig.SchemaUrl = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -284,7 +284,7 @@ func (orig *EntityRef) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Type = string(buf[startPos:pos])
+			orig.Type = proto.YoloString(buf[startPos:pos])
 
 		case 3:
 			if wireType != proto.WireTypeLen {
@@ -296,7 +296,7 @@ func (orig *EntityRef) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.IdKeys = append(orig.IdKeys, string(buf[startPos:pos]))
+			orig.IdKeys = append(orig.IdKeys, proto.YoloString(buf[startPos:pos]))
 
 		case 4:
 			if wireType != proto.WireTypeLen {
@@ -308,7 +308,7 @@ func (orig *EntityRef) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.DescriptionKeys = append(orig.DescriptionKeys, string(buf[startPos:pos]))
+			orig.DescriptionKeys = append(orig.DescriptionKeys, proto.YoloString(buf[startPos:pos]))
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

@@ -17,9 +17,9 @@ import (
 // ResourceMetrics is a collection of metrics from a Resource.
 type ResourceMetrics struct {
 	Resource               Resource
-	ScopeMetrics           []*ScopeMetrics
+	ScopeMetrics           []LazyScopeMetrics
 	SchemaUrl              string
-	DeprecatedScopeMetrics []*ScopeMetrics
+	DeprecatedScopeMetrics []LazyScopeMetrics
 }
 
 var (
@@ -49,10 +49,10 @@ func DeleteResourceMetrics(orig *ResourceMetrics, nullable bool) {
 
 	DeleteResource(&orig.Resource, false)
 	for i := range orig.ScopeMetrics {
-		DeleteScopeMetrics(orig.ScopeMetrics[i], true)
+		DeleteLazyScopeMetrics(&orig.ScopeMetrics[i], false)
 	}
 	for i := range orig.DeprecatedScopeMetrics {
-		DeleteScopeMetrics(orig.DeprecatedScopeMetrics[i], true)
+		DeleteLazyScopeMetrics(&orig.DeprecatedScopeMetrics[i], false)
 	}
 
 	orig.Reset()
@@ -76,11 +76,11 @@ func CopyResourceMetrics(dest, src *ResourceMetrics) *ResourceMetrics {
 	}
 	CopyResource(&dest.Resource, &src.Resource)
 
-	dest.ScopeMetrics = CopyScopeMetricsPtrSlice(dest.ScopeMetrics, src.ScopeMetrics)
+	dest.ScopeMetrics = CopyLazyScopeMetricsSlice(dest.ScopeMetrics, src.ScopeMetrics)
 
 	dest.SchemaUrl = src.SchemaUrl
 
-	dest.DeprecatedScopeMetrics = CopyScopeMetricsPtrSlice(dest.DeprecatedScopeMetrics, src.DeprecatedScopeMetrics)
+	dest.DeprecatedScopeMetrics = CopyLazyScopeMetricsSlice(dest.DeprecatedScopeMetrics, src.DeprecatedScopeMetrics)
 
 	return dest
 }
@@ -178,7 +178,7 @@ func (orig *ResourceMetrics) UnmarshalJSON(iter *json.Iterator) {
 			orig.Resource.UnmarshalJSON(iter)
 		case "scopeMetrics", "scope_metrics":
 			for iter.ReadArray() {
-				orig.ScopeMetrics = append(orig.ScopeMetrics, NewScopeMetrics())
+				orig.ScopeMetrics = append(orig.ScopeMetrics, LazyScopeMetrics{})
 				orig.ScopeMetrics[len(orig.ScopeMetrics)-1].UnmarshalJSON(iter)
 			}
 
@@ -186,7 +186,7 @@ func (orig *ResourceMetrics) UnmarshalJSON(iter *json.Iterator) {
 			orig.SchemaUrl = iter.ReadString()
 		case "deprecatedScopeMetrics", "deprecated_scope_metrics":
 			for iter.ReadArray() {
-				orig.DeprecatedScopeMetrics = append(orig.DeprecatedScopeMetrics, NewScopeMetrics())
+				orig.DeprecatedScopeMetrics = append(orig.DeprecatedScopeMetrics, LazyScopeMetrics{})
 				orig.DeprecatedScopeMetrics[len(orig.DeprecatedScopeMetrics)-1].UnmarshalJSON(iter)
 			}
 
@@ -295,7 +295,7 @@ func (orig *ResourceMetrics) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.ScopeMetrics = append(orig.ScopeMetrics, NewScopeMetrics())
+			orig.ScopeMetrics = append(orig.ScopeMetrics, LazyScopeMetrics{})
 			err = orig.ScopeMetrics[len(orig.ScopeMetrics)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -311,7 +311,7 @@ func (orig *ResourceMetrics) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SchemaUrl = string(buf[startPos:pos])
+			orig.SchemaUrl = proto.YoloString(buf[startPos:pos])
 
 		case 1000:
 			if wireType != proto.WireTypeLen {
@@ -323,7 +323,7 @@ func (orig *ResourceMetrics) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.DeprecatedScopeMetrics = append(orig.DeprecatedScopeMetrics, NewScopeMetrics())
+			orig.DeprecatedScopeMetrics = append(orig.DeprecatedScopeMetrics, LazyScopeMetrics{})
 			err = orig.DeprecatedScopeMetrics[len(orig.DeprecatedScopeMetrics)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -341,9 +341,9 @@ func (orig *ResourceMetrics) UnmarshalProto(buf []byte) error {
 func GenTestResourceMetrics() *ResourceMetrics {
 	orig := NewResourceMetrics()
 	orig.Resource = *GenTestResource()
-	orig.ScopeMetrics = []*ScopeMetrics{{}, GenTestScopeMetrics()}
+	orig.ScopeMetrics = []LazyScopeMetrics{{}, *GenTestLazyScopeMetrics()}
 	orig.SchemaUrl = "test_schemaurl"
-	orig.DeprecatedScopeMetrics = []*ScopeMetrics{{}, GenTestScopeMetrics()}
+	orig.DeprecatedScopeMetrics = []LazyScopeMetrics{{}, *GenTestLazyScopeMetrics()}
 	return orig
 }
 

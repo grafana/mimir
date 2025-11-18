@@ -316,7 +316,7 @@ func (orig *SpanContext) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.TraceState = string(buf[startPos:pos])
+			orig.TraceState = proto.YoloString(buf[startPos:pos])
 
 		case 5:
 			if wireType != proto.WireTypeVarint {

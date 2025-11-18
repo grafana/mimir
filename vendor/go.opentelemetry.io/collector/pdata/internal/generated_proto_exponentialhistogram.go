@@ -17,7 +17,7 @@ import (
 // ExponentialHistogram represents the type of a metric that is calculated by aggregating
 // as a ExponentialHistogram of all reported double measurements over a time interval.
 type ExponentialHistogram struct {
-	DataPoints             []*ExponentialHistogramDataPoint
+	DataPoints             []ExponentialHistogramDataPoint
 	AggregationTemporality AggregationTemporality
 }
 
@@ -47,7 +47,7 @@ func DeleteExponentialHistogram(orig *ExponentialHistogram, nullable bool) {
 	}
 
 	for i := range orig.DataPoints {
-		DeleteExponentialHistogramDataPoint(orig.DataPoints[i], true)
+		DeleteExponentialHistogramDataPoint(&orig.DataPoints[i], false)
 	}
 
 	orig.Reset()
@@ -69,7 +69,7 @@ func CopyExponentialHistogram(dest, src *ExponentialHistogram) *ExponentialHisto
 	if dest == nil {
 		dest = NewExponentialHistogram()
 	}
-	dest.DataPoints = CopyExponentialHistogramDataPointPtrSlice(dest.DataPoints, src.DataPoints)
+	dest.DataPoints = CopyExponentialHistogramDataPointSlice(dest.DataPoints, src.DataPoints)
 
 	dest.AggregationTemporality = src.AggregationTemporality
 
@@ -155,7 +155,7 @@ func (orig *ExponentialHistogram) UnmarshalJSON(iter *json.Iterator) {
 		switch f {
 		case "dataPoints", "data_points":
 			for iter.ReadArray() {
-				orig.DataPoints = append(orig.DataPoints, NewExponentialHistogramDataPoint())
+				orig.DataPoints = append(orig.DataPoints, ExponentialHistogramDataPoint{})
 				orig.DataPoints[len(orig.DataPoints)-1].UnmarshalJSON(iter)
 			}
 
@@ -225,7 +225,7 @@ func (orig *ExponentialHistogram) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.DataPoints = append(orig.DataPoints, NewExponentialHistogramDataPoint())
+			orig.DataPoints = append(orig.DataPoints, ExponentialHistogramDataPoint{})
 			err = orig.DataPoints[len(orig.DataPoints)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -254,7 +254,7 @@ func (orig *ExponentialHistogram) UnmarshalProto(buf []byte) error {
 
 func GenTestExponentialHistogram() *ExponentialHistogram {
 	orig := NewExponentialHistogram()
-	orig.DataPoints = []*ExponentialHistogramDataPoint{{}, GenTestExponentialHistogramDataPoint()}
+	orig.DataPoints = []ExponentialHistogramDataPoint{{}, *GenTestExponentialHistogramDataPoint()}
 	orig.AggregationTemporality = AggregationTemporality(13)
 	return orig
 }

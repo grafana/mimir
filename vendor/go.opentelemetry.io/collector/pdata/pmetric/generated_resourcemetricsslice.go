@@ -7,9 +7,6 @@
 package pmetric
 
 import (
-	"iter"
-	"sort"
-
 	"go.opentelemetry.io/collector/pdata/internal"
 )
 
@@ -21,18 +18,18 @@ import (
 // Must use NewResourceMetricsSlice function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type ResourceMetricsSlice struct {
-	orig  *[]*internal.ResourceMetrics
+	orig  *[]internal.LazyResourceMetrics
 	state *internal.State
 }
 
-func newResourceMetricsSlice(orig *[]*internal.ResourceMetrics, state *internal.State) ResourceMetricsSlice {
+func newResourceMetricsSlice(orig *[]internal.LazyResourceMetrics, state *internal.State) ResourceMetricsSlice {
 	return ResourceMetricsSlice{orig: orig, state: state}
 }
 
 // NewResourceMetricsSlice creates a ResourceMetricsSliceWrapper with 0 elements.
 // Can use "EnsureCapacity" to initialize with a given capacity.
 func NewResourceMetricsSlice() ResourceMetricsSlice {
-	orig := []*internal.ResourceMetrics(nil)
+	orig := []internal.LazyResourceMetrics(nil)
 	return newResourceMetricsSlice(&orig, internal.NewState())
 }
 
@@ -52,22 +49,12 @@ func (es ResourceMetricsSlice) Len() int {
 //	    ... // Do something with the element
 //	}
 func (es ResourceMetricsSlice) At(i int) ResourceMetrics {
-	return newResourceMetrics((*es.orig)[i], es.state)
-}
-
-// All returns an iterator over index-value pairs in the slice.
-//
-//	for i, v := range es.All() {
-//	    ... // Do something with index-value pair
-//	}
-func (es ResourceMetricsSlice) All() iter.Seq2[int, ResourceMetrics] {
-	return func(yield func(int, ResourceMetrics) bool) {
-		for i := 0; i < es.Len(); i++ {
-			if !yield(i, es.At(i)) {
-				return
-			}
-		}
+	var buf internal.LazyResourceMetrics
+	res, err := (*es.orig)[i].FinishUnmarshal(&buf.ResourceMetrics)
+	if err != nil {
+		panic(err)
 	}
+	return newResourceMetrics(res, es.state)
 }
 
 // EnsureCapacity is an operation that ensures the slice has at least the specified capacity.
@@ -89,7 +76,7 @@ func (es ResourceMetricsSlice) EnsureCapacity(newCap int) {
 		return
 	}
 
-	newOrig := make([]*internal.ResourceMetrics, len(*es.orig), newCap)
+	newOrig := make([]internal.LazyResourceMetrics, len(*es.orig), newCap)
 	copy(newOrig, *es.orig)
 	*es.orig = newOrig
 }
@@ -98,8 +85,8 @@ func (es ResourceMetricsSlice) EnsureCapacity(newCap int) {
 // It returns the newly added ResourceMetrics.
 func (es ResourceMetricsSlice) AppendEmpty() ResourceMetrics {
 	es.state.AssertMutable()
-	*es.orig = append(*es.orig, internal.NewResourceMetrics())
-	return es.At(es.Len() - 1)
+	*es.orig = append(*es.orig, internal.LazyResourceMetrics{})
+	return newResourceMetrics(&(*es.orig)[es.Len()-1].ResourceMetrics, es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.
@@ -127,9 +114,7 @@ func (es ResourceMetricsSlice) RemoveIf(f func(ResourceMetrics) bool) {
 	newLen := 0
 	for i := 0; i < len(*es.orig); i++ {
 		if f(es.At(i)) {
-			internal.DeleteResourceMetrics((*es.orig)[i], true)
-			(*es.orig)[i] = nil
-
+			internal.DeleteLazyResourceMetrics(&(*es.orig)[i], false)
 			continue
 		}
 		if newLen == i {
@@ -138,8 +123,7 @@ func (es ResourceMetricsSlice) RemoveIf(f func(ResourceMetrics) bool) {
 			continue
 		}
 		(*es.orig)[newLen] = (*es.orig)[i]
-		// Cannot delete here since we just move the data(or pointer to data) to a different position in the slice.
-		(*es.orig)[i] = nil
+		(*es.orig)[i].Reset()
 		newLen++
 	}
 	*es.orig = (*es.orig)[:newLen]
@@ -151,13 +135,5 @@ func (es ResourceMetricsSlice) CopyTo(dest ResourceMetricsSlice) {
 	if es.orig == dest.orig {
 		return
 	}
-	*dest.orig = internal.CopyResourceMetricsPtrSlice(*dest.orig, *es.orig)
-}
-
-// Sort sorts the ResourceMetrics elements within ResourceMetricsSlice given the
-// provided less function so that two instances of ResourceMetricsSlice
-// can be compared.
-func (es ResourceMetricsSlice) Sort(less func(a, b ResourceMetrics) bool) {
-	es.state.AssertMutable()
-	sort.SliceStable(*es.orig, func(i, j int) bool { return less(es.At(i), es.At(j)) })
+	*dest.orig = internal.CopyLazyResourceMetricsSlice(*dest.orig, *es.orig)
 }

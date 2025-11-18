@@ -16,7 +16,7 @@ import (
 
 // Histogram represents the type of a metric that is calculated by aggregating as a Histogram of all reported measurements over a time interval.
 type Histogram struct {
-	DataPoints             []*HistogramDataPoint
+	DataPoints             []HistogramDataPoint
 	AggregationTemporality AggregationTemporality
 }
 
@@ -46,7 +46,7 @@ func DeleteHistogram(orig *Histogram, nullable bool) {
 	}
 
 	for i := range orig.DataPoints {
-		DeleteHistogramDataPoint(orig.DataPoints[i], true)
+		DeleteHistogramDataPoint(&orig.DataPoints[i], false)
 	}
 
 	orig.Reset()
@@ -68,7 +68,7 @@ func CopyHistogram(dest, src *Histogram) *Histogram {
 	if dest == nil {
 		dest = NewHistogram()
 	}
-	dest.DataPoints = CopyHistogramDataPointPtrSlice(dest.DataPoints, src.DataPoints)
+	dest.DataPoints = CopyHistogramDataPointSlice(dest.DataPoints, src.DataPoints)
 
 	dest.AggregationTemporality = src.AggregationTemporality
 
@@ -154,7 +154,7 @@ func (orig *Histogram) UnmarshalJSON(iter *json.Iterator) {
 		switch f {
 		case "dataPoints", "data_points":
 			for iter.ReadArray() {
-				orig.DataPoints = append(orig.DataPoints, NewHistogramDataPoint())
+				orig.DataPoints = append(orig.DataPoints, HistogramDataPoint{})
 				orig.DataPoints[len(orig.DataPoints)-1].UnmarshalJSON(iter)
 			}
 
@@ -224,7 +224,7 @@ func (orig *Histogram) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.DataPoints = append(orig.DataPoints, NewHistogramDataPoint())
+			orig.DataPoints = append(orig.DataPoints, HistogramDataPoint{})
 			err = orig.DataPoints[len(orig.DataPoints)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -253,7 +253,7 @@ func (orig *Histogram) UnmarshalProto(buf []byte) error {
 
 func GenTestHistogram() *Histogram {
 	orig := NewHistogram()
-	orig.DataPoints = []*HistogramDataPoint{{}, GenTestHistogramDataPoint()}
+	orig.DataPoints = []HistogramDataPoint{{}, *GenTestHistogramDataPoint()}
 	orig.AggregationTemporality = AggregationTemporality(13)
 	return orig
 }

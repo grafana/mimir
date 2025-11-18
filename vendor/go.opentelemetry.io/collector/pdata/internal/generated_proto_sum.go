@@ -16,7 +16,7 @@ import (
 
 // Sum represents the type of a numeric metric that is calculated as a sum of all reported measurements over a time interval.
 type Sum struct {
-	DataPoints             []*NumberDataPoint
+	DataPoints             []NumberDataPoint
 	AggregationTemporality AggregationTemporality
 	IsMonotonic            bool
 }
@@ -47,7 +47,7 @@ func DeleteSum(orig *Sum, nullable bool) {
 	}
 
 	for i := range orig.DataPoints {
-		DeleteNumberDataPoint(orig.DataPoints[i], true)
+		DeleteNumberDataPoint(&orig.DataPoints[i], false)
 	}
 
 	orig.Reset()
@@ -69,7 +69,7 @@ func CopySum(dest, src *Sum) *Sum {
 	if dest == nil {
 		dest = NewSum()
 	}
-	dest.DataPoints = CopyNumberDataPointPtrSlice(dest.DataPoints, src.DataPoints)
+	dest.DataPoints = CopyNumberDataPointSlice(dest.DataPoints, src.DataPoints)
 
 	dest.AggregationTemporality = src.AggregationTemporality
 
@@ -161,7 +161,7 @@ func (orig *Sum) UnmarshalJSON(iter *json.Iterator) {
 		switch f {
 		case "dataPoints", "data_points":
 			for iter.ReadArray() {
-				orig.DataPoints = append(orig.DataPoints, NewNumberDataPoint())
+				orig.DataPoints = append(orig.DataPoints, NumberDataPoint{})
 				orig.DataPoints[len(orig.DataPoints)-1].UnmarshalJSON(iter)
 			}
 
@@ -246,7 +246,7 @@ func (orig *Sum) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.DataPoints = append(orig.DataPoints, NewNumberDataPoint())
+			orig.DataPoints = append(orig.DataPoints, NumberDataPoint{})
 			err = orig.DataPoints[len(orig.DataPoints)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -287,7 +287,7 @@ func (orig *Sum) UnmarshalProto(buf []byte) error {
 
 func GenTestSum() *Sum {
 	orig := NewSum()
-	orig.DataPoints = []*NumberDataPoint{{}, GenTestNumberDataPoint()}
+	orig.DataPoints = []NumberDataPoint{{}, *GenTestNumberDataPoint()}
 	orig.AggregationTemporality = AggregationTemporality(13)
 	orig.IsMonotonic = true
 	return orig

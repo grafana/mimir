@@ -464,7 +464,7 @@ func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.StringTable = append(orig.StringTable, string(buf[startPos:pos]))
+			orig.StringTable = append(orig.StringTable, proto.YoloString(buf[startPos:pos]))
 
 		case 6:
 			if wireType != proto.WireTypeLen {

@@ -430,7 +430,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SeverityText = string(buf[startPos:pos])
+			orig.SeverityText = proto.YoloString(buf[startPos:pos])
 
 		case 5:
 			if wireType != proto.WireTypeLen {
@@ -530,7 +530,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.EventName = string(buf[startPos:pos])
+			orig.EventName = proto.YoloString(buf[startPos:pos])
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

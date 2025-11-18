@@ -212,7 +212,7 @@ func (orig *Status) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Message = string(buf[startPos:pos])
+			orig.Message = proto.YoloString(buf[startPos:pos])
 
 		case 3:
 			if wireType != proto.WireTypeVarint {

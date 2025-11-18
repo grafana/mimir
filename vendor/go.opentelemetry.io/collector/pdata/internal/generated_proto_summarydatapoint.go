@@ -23,7 +23,7 @@ type SummaryDataPoint struct {
 	TimeUnixNano      uint64
 	Count             uint64
 	Sum               float64
-	QuantileValues    []*SummaryDataPointValueAtQuantile
+	QuantileValues    []SummaryDataPointValueAtQuantile
 	Flags             uint32
 }
 
@@ -56,7 +56,7 @@ func DeleteSummaryDataPoint(orig *SummaryDataPoint, nullable bool) {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
 	for i := range orig.QuantileValues {
-		DeleteSummaryDataPointValueAtQuantile(orig.QuantileValues[i], true)
+		DeleteSummaryDataPointValueAtQuantile(&orig.QuantileValues[i], false)
 	}
 
 	orig.Reset()
@@ -88,7 +88,7 @@ func CopySummaryDataPoint(dest, src *SummaryDataPoint) *SummaryDataPoint {
 
 	dest.Sum = src.Sum
 
-	dest.QuantileValues = CopySummaryDataPointValueAtQuantilePtrSlice(dest.QuantileValues, src.QuantileValues)
+	dest.QuantileValues = CopySummaryDataPointValueAtQuantileSlice(dest.QuantileValues, src.QuantileValues)
 
 	dest.Flags = src.Flags
 
@@ -213,7 +213,7 @@ func (orig *SummaryDataPoint) UnmarshalJSON(iter *json.Iterator) {
 			orig.Sum = iter.ReadFloat64()
 		case "quantileValues", "quantile_values":
 			for iter.ReadArray() {
-				orig.QuantileValues = append(orig.QuantileValues, NewSummaryDataPointValueAtQuantile())
+				orig.QuantileValues = append(orig.QuantileValues, SummaryDataPointValueAtQuantile{})
 				orig.QuantileValues[len(orig.QuantileValues)-1].UnmarshalJSON(iter)
 			}
 
@@ -394,7 +394,7 @@ func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.QuantileValues = append(orig.QuantileValues, NewSummaryDataPointValueAtQuantile())
+			orig.QuantileValues = append(orig.QuantileValues, SummaryDataPointValueAtQuantile{})
 			err = orig.QuantileValues[len(orig.QuantileValues)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -428,7 +428,7 @@ func GenTestSummaryDataPoint() *SummaryDataPoint {
 	orig.TimeUnixNano = uint64(13)
 	orig.Count = uint64(13)
 	orig.Sum = float64(3.1415926)
-	orig.QuantileValues = []*SummaryDataPointValueAtQuantile{{}, GenTestSummaryDataPointValueAtQuantile()}
+	orig.QuantileValues = []SummaryDataPointValueAtQuantile{{}, *GenTestSummaryDataPointValueAtQuantile()}
 	orig.Flags = uint32(13)
 	return orig
 }
