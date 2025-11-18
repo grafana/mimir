@@ -493,7 +493,7 @@
                             ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
                query: queryWithWeight(|||
                  # Return 1 if any pods OOM-ed within the last 15 minutes.
-                 max (
+                 group (
                    max by (pod) (
                      kube_pod_container_status_last_terminated_reason{
                        container="%(container)s",
