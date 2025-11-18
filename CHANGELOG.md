@@ -81,8 +81,9 @@
 * [BUGFIX] Query-frontend: Fix panic when evaluating a sharded `avg` expression when running sharding inside MQE. #13484
 * [BUGFIX] Query-frontend: Fix incorrect annotation position information when running sharding inside MQE. #13484
 * [BUGFIX] Query-frontend: Fix incorrect query results when evaluating some sharded aggregations with `without` when running sharding inside MQE. #13484
-* [BUGFIX]: Ingester: Panic when push and read reactive limiters are enabled with prioritization. #13482
-* [BUGFIX]: Usage-tracker: Prevent tracking requests to be handled by partition handlers that are not in Running state. #13532
+* [BUGFIX] Ingester: Panic when push and read reactive limiters are enabled with prioritization. #13482
+* [BUGFIX] Usage-tracker: Prevent tracking requests to be handled by partition handlers that are not in Running state. #13532
+* [BUGFIX] MQE: Fix an issue when applying extra matchers to one side of a binary operation to avoid adding matchers for labels that do not exist. #13499
 
 ### Mixin
 
@@ -127,7 +128,7 @@
 * [ENHANCEMENT] Ingester: Increase `$._config.ingester_tsdb_head_early_compaction_min_in_memory_series` default when Mimir is running with the ingest storage architecture. #13450
 * [ENHANCEMENT] Update the list of OTel resource attributes used for tracing. #13469
 * [ENHANCEMENT] Ingester: Set `-ingester.partition-ring.delete-inactive-partition-after` based on  `-querier.query-ingesters-within`. #13550
-* [ENHANCEMENT] Add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled and $._config.autoscaling_oom_protection_enabled is true. #13509
+* [ENHANCEMENT] Add extra, **experimental**, KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled and $._config.autoscaling_oom_protection_enabled is true. #13509
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
