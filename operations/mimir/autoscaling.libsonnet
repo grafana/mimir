@@ -495,20 +495,11 @@
                  # Return 1 if any pods OOM-ed within the last 15 minutes.
                  group (
                    max by (pod) (
-                     kube_pod_container_status_last_terminated_reason{
-                       container="%(container)s",
-                       namespace="%(namespace)s",
-                       reason="OOMKilled"
-                       %(extra_matchers)s
-                     }
+                     kube_pod_container_status_last_terminated_reason{container="%(container)s",namespace="%(namespace)s",reason="OOMKilled"%(extra_matchers)s}
                    )
                    and
                    max by (pod) (
-                     changes(kube_pod_container_status_restarts_total{
-                       container="%(container)s",
-                       namespace="%(namespace)s"
-                       %(extra_matchers)s
-                     }[15m]) > 0
+                     changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0
                    )
                  ) or vector(0)
                ||| % queryParameters, weight),
