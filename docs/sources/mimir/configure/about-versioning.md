@@ -257,6 +257,8 @@ The following features are currently experimental:
   - `-memberlist.zone-aware-routing.enabled`
   - `-memberlist.zone-aware-routing.instance-availability-zone`
   - `-memberlist.zone-aware-routing.role`
+- Jsonnet
+  - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 
 ## Deprecated features
 
