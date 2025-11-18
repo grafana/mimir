@@ -9,6 +9,9 @@
     multi_zone_store_gateway_max_unavailable: if $._config.store_gateway_lazy_loading_enabled then 50 else 1000,
 
     multi_zone_store_gateway_zpdb_max_unavailable: std.toString($._config.multi_zone_store_gateway_max_unavailable),
+
+    // Controls whether the multi (virtual) zone store-gateway should also be deployed multi-AZ.
+    multi_zone_store_gateway_multi_az_enabled: false,
   },
 
   local container = $.core.v1.container,
@@ -17,6 +20,14 @@
   local service = $.core.v1.service,
   local servicePort = $.core.v1.servicePort,
   local podAntiAffinity = $.apps.v1.deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
+
+  local isMultiAZEnabled = $._config.multi_zone_store_gateway_multi_az_enabled,
+  local isZoneAEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+
+  assert !isMultiAZEnabled || $._config.multi_zone_store_gateway_enabled : 'store-gateway multi-AZ deployment requires store-gateway multi-zone to be enabled',
+  assert !isMultiAZEnabled || $._config.multi_zone_memcached_enabled : 'store-gateway multi-AZ deployment requires memcached multi-zone to be enabled',
 
   //
   // Zone-aware replication.
@@ -42,17 +53,25 @@
   // Multi-zone store-gateways.
   //
 
-  store_gateway_zone_a_args:: {},
-  store_gateway_zone_b_args:: {},
-  store_gateway_zone_c_args:: {},
+  store_gateway_zone_a_args:: if !isZoneAEnabled then {} else $.blocks_chunks_zone_a_caching_config + $.blocks_metadata_zone_a_caching_config,
+  store_gateway_zone_b_args:: if !isZoneBEnabled then {} else $.blocks_chunks_zone_b_caching_config + $.blocks_metadata_zone_b_caching_config,
+  store_gateway_zone_c_args::
+    if isZoneCEnabled then
+      $.blocks_chunks_zone_c_caching_config + $.blocks_metadata_zone_c_caching_config
+    else if isZoneAEnabled then
+      // Edge case: when store-gateway is deployed multi-AZ but there are only 2 AZs, then store-gateway zone-c
+      // runs in the same AZ as zone-a, so we should run it with that config.
+      $.blocks_chunks_zone_a_caching_config + $.blocks_metadata_zone_a_caching_config
+    else
+      {},
 
   store_gateway_zone_a_env_map:: $.store_gateway_env_map,
   store_gateway_zone_b_env_map:: $.store_gateway_env_map,
   store_gateway_zone_c_env_map:: $.store_gateway_env_map,
 
-  store_gateway_zone_a_node_affinity_matchers:: $.store_gateway_node_affinity_matchers,
-  store_gateway_zone_b_node_affinity_matchers:: $.store_gateway_node_affinity_matchers,
-  store_gateway_zone_c_node_affinity_matchers:: $.store_gateway_node_affinity_matchers,
+  store_gateway_zone_a_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isZoneAEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])] else []),
+  store_gateway_zone_b_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isZoneBEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])] else []),
+  store_gateway_zone_c_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isZoneCEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])] else []),
 
   newStoreGatewayZoneContainer(zone, zone_args, envmap={})::
     $.store_gateway_container +
@@ -108,7 +127,8 @@
     $.newStoreGatewayZoneContainer('a', $.store_gateway_zone_a_args, $.store_gateway_zone_a_env_map),
 
   store_gateway_zone_a_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $.store_gateway_zone_a_node_affinity_matchers),
+    $.newStoreGatewayZoneStatefulSet('a', $.store_gateway_zone_a_container, $.store_gateway_zone_a_node_affinity_matchers) +
+    (if isZoneAEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   store_gateway_zone_a_service: if !$._config.multi_zone_store_gateway_enabled then null else
     $.newStoreGatewayZoneService($.store_gateway_zone_a_statefulset),
@@ -117,7 +137,8 @@
     $.newStoreGatewayZoneContainer('b', $.store_gateway_zone_b_args, $.store_gateway_zone_b_env_map),
 
   store_gateway_zone_b_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $.store_gateway_zone_b_node_affinity_matchers),
+    $.newStoreGatewayZoneStatefulSet('b', $.store_gateway_zone_b_container, $.store_gateway_zone_b_node_affinity_matchers) +
+    (if isZoneBEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   store_gateway_zone_b_service: if !$._config.multi_zone_store_gateway_enabled then null else
     $.newStoreGatewayZoneService($.store_gateway_zone_b_statefulset),
@@ -126,7 +147,8 @@
     $.newStoreGatewayZoneContainer('c', $.store_gateway_zone_c_args, $.store_gateway_zone_c_env_map),
 
   store_gateway_zone_c_statefulset: if !$._config.multi_zone_store_gateway_enabled then null else
-    $.newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $.store_gateway_zone_c_node_affinity_matchers),
+    $.newStoreGatewayZoneStatefulSet('c', $.store_gateway_zone_c_container, $.store_gateway_zone_c_node_affinity_matchers) +
+    (if isZoneCEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   store_gateway_zone_c_service: if !$._config.multi_zone_store_gateway_enabled then null else
     $.newStoreGatewayZoneService($.store_gateway_zone_c_statefulset),
@@ -155,6 +177,16 @@
       )
       + podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout' })
       + podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'store-gateway' }),
+
+  // Ensure all configured addressed are zonal ones.
+  local storeGatewayZoneAConfigError = if isZoneAEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_a_statefulset']) else null,
+  assert storeGatewayZoneAConfigError == null : storeGatewayZoneAConfigError,
+
+  local storeGatewayZoneBConfigError = if isZoneBEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_b_statefulset']) else null,
+  assert storeGatewayZoneBConfigError == null : storeGatewayZoneBConfigError,
+
+  local storeGatewayZoneCConfigError = if isZoneCEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_c_statefulset']) else null,
+  assert storeGatewayZoneCConfigError == null : storeGatewayZoneCConfigError,
 
   //
   // Single-zone store-gateways shouldn't be configured when multi-zone is enabled.
