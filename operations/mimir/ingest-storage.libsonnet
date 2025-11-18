@@ -135,7 +135,13 @@
     'ingester.partition-ring.prefix': '',
   },
 
-  ingest_storage_ingester_ring_client_args+:: $.ingest_storage_partition_ring_client_args + (
+  ingest_storage_ingester_ring_client_args+:: $.ingest_storage_partition_ring_client_args {
+    // How long to wait before deleting an inactive partition, that doesn't have an owner.
+    'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
+      $.querier_args['querier.query-ingesters-within']
+    else
+      '13h',  // The default -querier.query-ingesters-within in Mimir is 13 hours.
+  } + (
     if !$._config.ingest_storage_ingester_instance_ring_dedicated_prefix_enabled then {} else {
       // Run partition ingesters on a dedicated hash ring, so that they don't clash with classic ingesters.
       'ingester.ring.prefix': $._config.ingest_storage_ingester_instance_ring_dedicated_prefix,
