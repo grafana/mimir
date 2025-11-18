@@ -14,17 +14,21 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
-	trackerLabel       = "tracker"
-	tenantLabel        = "tenant"
-	defaultTrackerName = "cost-attribution"
-	missingValue       = "__missing__"
-	overflowValue      = "__overflow__"
+	trackerLabel        = "tracker"
+	tenantLabel         = "tenant"
+	reasonLabel         = "reason"
+	defaultTrackerName  = "cost-attribution"
+	missingValue        = "__missing__"
+	overflowValue       = "__overflow__"
+	activeSeriesTracker = "active-series"
+	samplesTracker      = "samples"
 )
 
 type Manager struct {
@@ -36,6 +40,7 @@ type Manager struct {
 	sampleTrackerOverflowDesc          *prometheus.Desc
 	activeSeriesTrackerCardinalityDesc *prometheus.Desc
 	activeSeriesTrackerOverflowDesc    *prometheus.Desc
+	trackerCreationErrors              *prometheus.CounterVec
 
 	inactiveTimeout time.Duration
 	cleanupInterval time.Duration
@@ -75,6 +80,10 @@ func NewManager(cleanupInterval, inactiveTimeout time.Duration, logger log.Logge
 			[]string{"user"},
 			prometheus.Labels{trackerLabel: defaultTrackerName},
 		),
+		trackerCreationErrors: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_cost_attribution_tracker_creation_errors_total",
+			Help: "The total number of errors creating cost attribution trackers for each user.",
+		}, []string{"user", trackerLabel}),
 
 		limits:          limits,
 		inactiveTimeout: inactiveTimeout,
@@ -142,7 +151,11 @@ func (m *Manager) SampleTracker(userID string) *SampleTracker {
 		return strings.Compare(a.Input, b.Input)
 	})
 
-	tracker = newSampleTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	tracker, err := newSampleTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	if err != nil {
+		m.trackerCreationErrors.WithLabelValues(userID, samplesTracker).Inc()
+		return nil
+	}
 	m.sampleTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -176,7 +189,11 @@ func (m *Manager) ActiveSeriesTracker(userID string) *ActiveSeriesTracker {
 		return strings.Compare(a.Input, b.Input)
 	})
 
-	tracker = NewActiveSeriesTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	tracker, err := NewActiveSeriesTracker(userID, labels, maxCardinality, cooldownDuration, m.logger)
+	if err != nil {
+		m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker).Inc()
+		return nil
+	}
 	m.activeTrackersByUserID[userID] = tracker
 	return tracker
 }
@@ -280,6 +297,11 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	st := m.SampleTracker(userID)
 	at := m.ActiveSeriesTracker(userID)
+
+	if at == nil || st == nil {
+		return nil, nil
+	}
+
 	labels := m.labels(userID)
 
 	// sort the labels to ensure the order is consistent
@@ -293,15 +315,27 @@ func (m *Manager) updateTracker(userID string) (*SampleTracker, *ActiveSeriesTra
 
 	if !st.hasSameLabels(labels) || st.maxCardinality != newMaxCardinality || st.cooldownDuration != newCooldownDuration {
 		m.stmtx.Lock()
-		st = newSampleTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
-		m.sampleTrackersByUserID[userID] = st
+		var err error
+		st, err = newSampleTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
+		if err != nil {
+			m.trackerCreationErrors.WithLabelValues(userID, samplesTracker).Inc()
+			delete(m.sampleTrackersByUserID, userID)
+		} else {
+			m.sampleTrackersByUserID[userID] = st
+		}
 		m.stmtx.Unlock()
 	}
 
 	if !at.hasSameLabels(labels) || at.maxCardinality != newMaxCardinality || at.cooldownDuration != newCooldownDuration {
 		m.atmtx.Lock()
-		at = NewActiveSeriesTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
-		m.activeTrackersByUserID[userID] = at
+		var err error
+		at, err = NewActiveSeriesTracker(userID, labels, newMaxCardinality, newCooldownDuration, m.logger)
+		if err != nil {
+			m.trackerCreationErrors.WithLabelValues(userID, activeSeriesTracker).Inc()
+			delete(m.activeTrackersByUserID, userID)
+		} else {
+			m.activeTrackersByUserID[userID] = at
+		}
 		m.atmtx.Unlock()
 	}
 
