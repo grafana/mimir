@@ -132,7 +132,11 @@ func (l *UtilizationBasedLimiter) LimitingReason() string {
 func (l *UtilizationBasedLimiter) starting(_ context.Context) error {
 	var err error
 	l.utilizationScanner, err = newCombinedScanner()
-	return fmt.Errorf("unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting: %w", err)
+	if err != nil {
+		return fmt.Errorf("unable to detect CPU/memory utilization, unsupported platform. Please disable utilization based limiting: %w", err)
+	}
+
+	return nil
 }
 
 func (l *UtilizationBasedLimiter) update(_ context.Context) error {
