@@ -985,6 +985,7 @@ spec:
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.producer-record-version=1
         - -ingest-storage.kafka.topic=ingest
+        - -ingester.partition-ring.delete-inactive-partition-after=13h
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=partition-ingesters/
@@ -1085,6 +1086,7 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest
+        - -ingester.partition-ring.delete-inactive-partition-after=13h
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=partition-ingesters/
@@ -1396,6 +1398,7 @@ spec:
         - -ingest-storage.kafka.producer-max-buffered-bytes=1073741824
         - -ingest-storage.kafka.producer-record-version=1
         - -ingest-storage.kafka.topic=ingest
+        - -ingester.partition-ring.delete-inactive-partition-after=13h
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=partition-ingesters/
@@ -1508,6 +1511,7 @@ spec:
         - -ingest-storage.kafka.address=kafka.default.svc.cluster.local.:9092
         - -ingest-storage.kafka.auto-create-topic-default-partitions=1000
         - -ingest-storage.kafka.topic=ingest
+        - -ingester.partition-ring.delete-inactive-partition-after=13h
         - -ingester.partition-ring.prefix=
         - -ingester.ring.heartbeat-timeout=10m
         - -ingester.ring.prefix=partition-ingesters/
@@ -1993,6 +1997,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.partition-ring.delete-inactive-partition-after=13h
         - -ingester.partition-ring.prefix=
         - -ingester.push-grpc-method-enabled=false
         - -ingester.ring.heartbeat-period=2m
@@ -2138,6 +2143,7 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -ingester.partition-ring.delete-inactive-partition-after=13h
         - -ingester.partition-ring.prefix=
         - -ingester.push-grpc-method-enabled=false
         - -ingester.ring.heartbeat-period=2m
