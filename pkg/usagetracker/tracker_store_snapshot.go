@@ -64,14 +64,16 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time, first bool) erro
 	if shard >= shards {
 		return fmt.Errorf("invalid snapshot format, shard %d out of bounds", shard)
 	}
+	/*
+		snapshotTime := time.Unix(int64(snapshot.Be64()), 0)
+		if err := snapshot.Err(); err != nil {
+			return fmt.Errorf("invalid snapshot format, time expected: %w", err)
+		}
 
-	snapshotTime := time.Unix(int64(snapshot.Be64()), 0)
-	if err := snapshot.Err(); err != nil {
-		return fmt.Errorf("invalid snapshot format, time expected: %w", err)
-	}
-	if !clock.AreInValidSpanToCompareMinutes(now, snapshotTime) {
-		return fmt.Errorf("snapshot is too old, snapshot time is %s, now is %s", snapshotTime, now)
-	}
+			if !clock.AreInValidSpanToCompareMinutes(now, snapshotTime) {
+				return fmt.Errorf("snapshot is too old, snapshot time is %s, now is %s", snapshotTime, now)
+			}
+	*/
 
 	tenantsLen := snapshot.Uvarint64()
 	if err := snapshot.Err(); err != nil {
@@ -80,7 +82,8 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time, first bool) erro
 
 	// Some series might have been right on the boundary of being evicted when we took the snapshot.
 	// Don't load them.
-	expirationWatermark := clock.ToMinutes(now.Add(-t.idleTimeout))
+	timeout := 12 * time.Hour
+	expirationWatermark := clock.ToMinutes(now.Add(-timeout))
 
 	for i := 0; i < int(tenantsLen); i++ {
 		// We don't check for userID string length here, because we don't require it to be non-empty when we track series.

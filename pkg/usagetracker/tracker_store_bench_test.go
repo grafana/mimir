@@ -4,14 +4,17 @@ package usagetracker
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math/rand"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 )
@@ -123,6 +126,53 @@ func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
 			wg := &sync.WaitGroup{}
 			wg.Add(len(snapshots))
 			for _, d := range snapshots {
+				go func() {
+					defer wg.Done()
+					require.NoError(b, t.loadSnapshot(d, now, true))
+				}()
+			}
+			wg.Wait()
+		}
+	})
+}
+
+var snapshotFileFlag = flag.String("snapshot-file", "", "Path to a snapshot file to use for BenchmarkTrackerStoreLoadSnapshotFromFile")
+
+func BenchmarkTrackerStoreLoadSnapshotFromFile(b *testing.B) {
+	if *snapshotFileFlag == "" {
+		b.Skip("Skipping benchmark: -snapshot-file flag not set")
+	}
+
+	fileData, err := os.ReadFile(*snapshotFileFlag)
+	require.NoError(b, err, "Failed to read snapshot file")
+
+	var file usagetrackerpb.SnapshotFile
+	require.NoError(b, file.Unmarshal(fileData), "Failed to unmarshal snapshot file")
+
+	if len(file.Data) == 0 {
+		b.Fatal("Snapshot file contains no shard data")
+	}
+
+	now := time.Now()
+	// Create a mock limiter - we don't know the actual limits from the file
+	lim := limiterMock{}
+
+	b.Run("concurrency=1", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
+			for _, d := range file.Data {
+				require.NoError(b, t.loadSnapshot(d, now, true))
+			}
+		}
+	})
+
+	b.Run("concurrency=shards", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
+			wg := &sync.WaitGroup{}
+			wg.Add(len(file.Data))
+			for _, d := range file.Data {
+				d := d // capture loop variable
 				go func() {
 					defer wg.Done()
 					require.NoError(b, t.loadSnapshot(d, now, true))

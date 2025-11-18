@@ -121,9 +121,9 @@ func main() {
 	client := usagetrackerclient.NewUsageTrackerClient("load-generator", cfg.Client, partitionRing, instanceRing, stubLimits, logger, prometheus.DefaultRegisterer)
 
 	// Compute the number of workers assuming each TrackSeries() request 100ms on average (we consider this a worst case scenario).
-	numRequestsPerScrapeInterval := cfg.SimulatedTotalSeries / cfg.SimulatedSeriesPerWriteRequest
-	numRequestsPerSecond := int(float64(numRequestsPerScrapeInterval) / cfg.SimulatedScrapeInterval.Seconds())
-	numWorkers := (numRequestsPerSecond / 10) + 1
+	numRequestsPerScrapeInterval := cfg.SimulatedTotalSeries / cfg.SimulatedSeriesPerWriteRequest              // (100M / 1000 = 100K)
+	numRequestsPerSecond := int(float64(numRequestsPerScrapeInterval) / cfg.SimulatedScrapeInterval.Seconds()) // (100K / 20s = 5K)
+	numWorkers := (numRequestsPerSecond / 10) + 1                                                              // (5K / 10) + 1 = 501
 	replicaSeed := xxhash.Sum64String(cfg.ReplicaName)
 
 	logger.Log("msg", "Starting load generator", "replica-name", cfg.ReplicaName, "replica-seed", replicaSeed, "num-workers", numWorkers)
