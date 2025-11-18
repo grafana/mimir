@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -52,7 +53,7 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	}
 
 	n.attempts.Inc()
-	addedHint, err := n.applyToNode(ctx, plan.Root, res)
+	addedHint, err := n.applyToNode(ctx, plan.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -64,16 +65,18 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	return plan, nil
 }
 
-func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node planning.Node, res optimize.InspectResult) (bool, error) {
+// applyToNode attempts to recursively add hints to a binary expression node based on
+// fields being joined on or aggregated by. Returns true if any node had a hint added
+// to it.
+func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node planning.Node) (bool, error) {
 	addedHint := false
 
-	switch e := node.(type) {
-	case *core.BinaryExpression:
-		// Set hints for a binary expression based on the expression itself and any
-		// children from the left hand side of the expression. Note that this stops
-		// after finding the first node that allows us to generate hints for the query
-		// (binary expressions or aggregations).
-		e.Hints = n.hintsFromNode(ctx, e, res)
+	if e, ok := node.(*core.BinaryExpression); ok {
+		// If this is a binary expression, try to find appropriate labels to use as hints
+		// based on joins or aggregations being performed by child nodes. We start with an
+		// empty "created" set of labels that we _cannot_ use as hints. This is populated
+		// and checked when generating hints.
+		e.Hints = n.hintsFromNode(ctx, e, nil)
 		if e.Hints != nil {
 			sl := spanlogger.FromContext(ctx, n.logger)
 			sl.DebugLog("msg", "setting query hint on binary expression", "labels", e.Hints.GetInclude())
@@ -83,7 +86,7 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 
 	// Set hints for any child binary expressions of the current node.
 	for child := range planning.ChildrenIter(node) {
-		childHint, err := n.applyToNode(ctx, child, res)
+		childHint, err := n.applyToNode(ctx, child)
 		if err != nil {
 			return false, err
 		}
@@ -94,39 +97,47 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 	return addedHint, nil
 }
 
-func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, node planning.Node, res optimize.InspectResult) *core.BinaryExpressionHints {
+func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, node planning.Node, created map[string]struct{}) *core.BinaryExpressionHints {
 	switch e := node.(type) {
 	case *core.BinaryExpression:
+		// The current node is a binary expression: we only want to exclude created labels
+		// (via label_replace or label_join) from hints if they are created by the left or
+		// right side of the current binary expression. Labels created by a function call in
+		// a parent expression shouldn't affect hints applied to this expression.
+		created = make(map[string]struct{})
+		createdLabels(e.RHS, created)
+		createdLabels(e.LHS, created)
+
 		if e.VectorMatching != nil && e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
-			// Only create a hint for matching labels that haven't been created by a function
-			// like label_replace or label_join.
-			if filtered := filterCreatedLabels(e.VectorMatching.MatchingLabels, res); len(filtered) > 0 {
-				return &core.BinaryExpressionHints{
-					Include: filtered,
-				}
+			if filtered := filterLabels(e.VectorMatching.MatchingLabels, created); len(filtered) > 0 {
+				return &core.BinaryExpressionHints{Include: filtered}
 			}
+
+			return nil
 		}
 
-		// If this is a binary expression with no matching, try to find a suitable query hint from
-		// the left side (such as an aggregation), don't bother checking the right side since we use
-		// the left side to generate extra matchers for the right side in the operator.
-		return n.hintsFromNode(ctx, e.LHS, res)
+		// If we aren't joining sides of this binary expression by particular labels, look for an
+		// aggregation on the left side of this binary expression to see if there's a label we could
+		// use as a hint. We pass along any labels created from label_replace or label_join on the
+		// left or right side of this binary expression when trying to find labels for hints to make
+		// sure we don't use them.
+		return n.hintsFromNode(ctx, e.LHS, created)
 	case *core.AggregateExpression:
 		if !e.Without && len(e.Grouping) > 0 {
-			// Only create a hint for matching labels that haven't been created by a function
-			// like label_replace or label_join.
-			if filtered := filterCreatedLabels(e.Grouping, res); len(filtered) > 0 {
-				return &core.BinaryExpressionHints{
-					Include: filtered,
-				}
+			// Make sure to remove labels from potential hints that have been created by a function
+			// call (via label_replace or label_join) in a parent expression.
+			if filtered := filterLabels(e.Grouping, created); len(filtered) > 0 {
+				return &core.BinaryExpressionHints{Include: filtered}
 			}
+
+			return nil
 		}
 	}
 
 	// If the current node isn't a binary expression or aggregation, keep looking at the
 	// children to see if there are any that we can use to find a suitable query hint.
 	for child := range planning.ChildrenIter(node) {
-		if h := n.hintsFromNode(ctx, child, res); h != nil {
+		if h := n.hintsFromNode(ctx, child, created); h != nil {
 			return h
 		}
 	}
@@ -134,15 +145,31 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, nod
 	return nil
 }
 
-// filterCreatedLabels returns the subset of lbls that is not a label created by a PromQL
-// function like label_replace or label_join.
-func filterCreatedLabels(lbls []string, res optimize.InspectResult) []string {
+// filterLabels returns a new slice of labels that does not include any label in the created set.
+func filterLabels(lbls []string, created map[string]struct{}) []string {
 	out := make([]string, 0, len(lbls))
-	for _, v := range lbls {
-		if _, ok := res.CreatedLabels[v]; !ok {
-			out = append(out, v)
+	for _, lbl := range lbls {
+		if _, ok := created[lbl]; !ok {
+			out = append(out, lbl)
 		}
 	}
 
 	return out
+}
+
+// createdLabels recursively adds any label names created by a call to label_replace or label_join
+// to the set of created labels passed to this method.
+func createdLabels(node planning.Node, created map[string]struct{}) {
+	if f, ok := node.(*core.FunctionCall); ok {
+		if (f.Function == functions.FUNCTION_LABEL_REPLACE || f.Function == functions.FUNCTION_LABEL_JOIN) && len(f.Args) > 1 {
+			// The second parameter for both label_replace and label_join is the destination label.
+			if lbl, ok := f.Args[1].(*core.StringLiteral); ok {
+				created[lbl.Value] = struct{}{}
+			}
+		}
+	}
+
+	for child := range planning.ChildrenIter(node) {
+		createdLabels(child, created)
+	}
 }
