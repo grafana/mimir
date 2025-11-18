@@ -188,10 +188,6 @@
   store_gateway_zone_b_args+:: if $._config.multi_zone_store_gateway_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
   store_gateway_zone_c_args+:: if $._config.multi_zone_store_gateway_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,
 
-  // The usage tracker is always deployed multi-zone.
-  usage_tracker_zone_a_args+:: $.memberlist_zone_a_args,
-  usage_tracker_zone_b_args+:: $.memberlist_zone_b_args,
-
   // Other components only deployed to zone-a.
   compactor_args+:: $.memberlist_zone_a_args,
 }
