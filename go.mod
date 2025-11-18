@@ -353,7 +353,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251201031200-e50e74795723
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251208150631-0fa2f9e2804f
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
@@ -386,3 +386,6 @@ replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptra
 // Use a fork of client_golang with changes from:
 // - https://github.com/prometheus/client_golang/pull/1925
 replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
+
+// Use a fork of pdata for the lazy deserializing
+replace go.opentelemetry.io/collector/pdata => github.com/grafana/opentelemetry-collector/pdata v0.0.0-20251208093824-150e46caae6f
