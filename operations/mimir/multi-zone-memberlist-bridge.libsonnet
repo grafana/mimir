@@ -193,7 +193,5 @@
   usage_tracker_zone_b_args+:: $.memberlist_zone_b_args,
 
   // Other components only deployed to zone-a.
-  block_builder_args+:: $.memberlist_zone_a_args,
-  block_builder_scheduler_args+:: $.memberlist_zone_a_args,
   compactor_args+:: $.memberlist_zone_a_args,
 }
