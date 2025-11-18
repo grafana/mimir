@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -51,7 +52,7 @@ func NewTestEngineOpts() EngineOpts {
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{
 			Logger:                   nil,
-			Reg:                      nil,
+			Reg:                      prometheus.NewPedanticRegistry(),
 			MaxSamples:               math.MaxInt,
 			Timeout:                  100 * time.Second,
 			EnableAtModifier:         true,
