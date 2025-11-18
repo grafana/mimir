@@ -132,13 +132,11 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 
 	for {
 		step, err := m.Inner.NextStepSamples(ctx)
-
 		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
 		if err == types.EOS {
 			if m.seriesValidationFunc != nil {
 				m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIndex), m.emitAnnotationFunc)
 			}
-
 			return data, nil
 		} else if err != nil {
 			return types.InstantVectorSeriesData{}, err
@@ -148,6 +146,7 @@ func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.Instant
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
+
 		if hasFloat {
 			if data.Floats == nil {
 				// Only get FPoint slice once we are sure we have float points.

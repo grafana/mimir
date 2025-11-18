@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/go-kit/log/level"
 	"math"
 	"time"
 
@@ -25,7 +26,9 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -42,6 +45,19 @@ var tracer = otel.Tracer("pkg/streamingpromql")
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
+	var intermediateCache cache.IntermediateResultsCache
+	if opts.InstantQuerySplitting.Enabled {
+		var err error
+		intermediateCache, err = cache.NewResultsCache(opts.InstantQuerySplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init query splitting cache, err: %w", err)
+		}
+		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.InstantQuerySplitting.IntermediateResultsCache.Backend)
+	}
+	return newEngineWithCache(opts, limitsProvider, metrics, planner, intermediateCache)
+}
+
+func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache cache.IntermediateResultsCache) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -78,6 +94,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 		planning.NODE_TYPE_DUPLICATE:                 planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION: planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
+	}
+
+	if intermediateCache != nil {
+		nodeMaterializers[planning.NODE_TYPE_SPLIT_RANGE_VECTOR] = querysplitting.NewMaterializer(intermediateCache)
 	}
 
 	return &Engine{

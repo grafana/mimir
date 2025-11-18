@@ -6,6 +6,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -155,6 +156,39 @@ type RangeVectorStepData struct {
 	// produced by the query.
 	// RangeEnd is inclusive (ie. points with timestamp <= RangeEnd are included in the range).
 	RangeEnd int64
+}
+
+// SubStep returns a new RangeVectorStepData with the same StepT but filtered samples for the specified time range.
+// This creates filtered views of the sample buffers without copying data.
+func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64) (*RangeVectorStepData, error) {
+	// Validate that the substep range is within the parent step's range
+	if rangeStart < s.RangeStart {
+		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
+	}
+	if rangeEnd > s.RangeEnd {
+		return nil, fmt.Errorf("substep start (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
+	}
+	if rangeStart >= rangeEnd {
+		return nil, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
+	}
+
+	newStep := &RangeVectorStepData{
+		StepT:      s.StepT,
+		RangeStart: rangeStart,
+		RangeEnd:   rangeEnd,
+	}
+
+	// Filter floats to only include points in the range (rangeStart, rangeEnd]
+	// s.Floats is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
+	floatSubview := s.Floats.SubView(rangeStart, rangeEnd)
+	newStep.Floats = &floatSubview
+
+	// Filter histograms to only include points in the range (rangeStart, rangeEnd]
+	// s.Histograms is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
+	histogramSubview := s.Histograms.SubView(rangeStart, rangeEnd)
+	newStep.Histograms = &histogramSubview
+
+	return newStep, nil
 }
 
 type ScalarData struct {

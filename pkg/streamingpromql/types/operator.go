@@ -81,6 +81,19 @@ type RangeVectorOperator interface {
 	NextStepSamples(ctx context.Context) (*RangeVectorStepData, error)
 }
 
+// StepCalculationParams contains the parameters needed to calculate step boundaries
+// for range vector operators without calling NextStepSamples.
+type StepCalculationParams struct {
+	// RangeMilliseconds is the lookback duration in milliseconds (e.g., 5m for metric[5m]).
+	RangeMilliseconds int64
+
+	// Offset is the offset in milliseconds from the offset modifier.
+	Offset int64
+
+	// Timestamp is the timestamp in milliseconds from the @ modifier, or nil if not present.
+	Timestamp *int64
+}
+
 // ScalarOperator represents all operators that produce scalars.
 type ScalarOperator interface {
 	Operator

@@ -213,6 +213,19 @@ type OperatorParameters struct {
 	Logger                   log.Logger
 }
 
+// CacheKey generates a unique cache key for a planning node for use with intermediate result caching.
+// Currently only supports MatrixSelector nodes (range vector selectors).
+// For other node types, this function panics.
+func CacheKey(node Node) string {
+	// Only support MatrixSelector for now
+	if node.NodeType() != NODE_TYPE_MATRIX_SELECTOR {
+		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))
+	}
+
+	// TODO: Use a better cache key - this encodes the range too which is not necessary (sum_over_time(metric[2h]) and sum_over_time(metric[6h]) could use the same cache blocks)
+	return node.Describe()
+}
+
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
 	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
 	rootNode, err := encoder.encodeNode(p.Root)
