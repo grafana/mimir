@@ -210,7 +210,7 @@ func (orig *KeyValue) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Key = string(buf[startPos:pos])
+			orig.Key = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {

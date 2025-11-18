@@ -213,7 +213,7 @@ func (orig *UnixAddr) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Name = string(buf[startPos:pos])
+			orig.Name = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -225,7 +225,7 @@ func (orig *UnixAddr) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Net = string(buf[startPos:pos])
+			orig.Net = proto.YoloString(buf[startPos:pos])
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

@@ -610,7 +610,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Name = string(buf[startPos:pos])
+			orig.Name = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -622,7 +622,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Description = string(buf[startPos:pos])
+			orig.Description = proto.YoloString(buf[startPos:pos])
 
 		case 3:
 			if wireType != proto.WireTypeLen {
@@ -634,7 +634,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Unit = string(buf[startPos:pos])
+			orig.Unit = proto.YoloString(buf[startPos:pos])
 
 		case 5:
 			if wireType != proto.WireTypeLen {

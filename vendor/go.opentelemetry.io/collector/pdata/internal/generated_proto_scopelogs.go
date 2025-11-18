@@ -276,7 +276,7 @@ func (orig *ScopeLogs) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SchemaUrl = string(buf[startPos:pos])
+			orig.SchemaUrl = proto.YoloString(buf[startPos:pos])
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

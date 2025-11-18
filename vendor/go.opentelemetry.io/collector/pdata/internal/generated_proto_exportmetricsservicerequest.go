@@ -17,7 +17,7 @@ import (
 // Metrics is the top-level struct that is propagated through the metrics pipeline.
 // Use NewMetrics to create new instance, zero-initialized instance is not valid for use.
 type ExportMetricsServiceRequest struct {
-	ResourceMetrics []*ResourceMetrics
+	ResourceMetrics []ResourceMetrics
 }
 
 var (
@@ -46,7 +46,7 @@ func DeleteExportMetricsServiceRequest(orig *ExportMetricsServiceRequest, nullab
 	}
 
 	for i := range orig.ResourceMetrics {
-		DeleteResourceMetrics(orig.ResourceMetrics[i], true)
+		DeleteResourceMetrics(&orig.ResourceMetrics[i], false)
 	}
 
 	orig.Reset()
@@ -68,7 +68,7 @@ func CopyExportMetricsServiceRequest(dest, src *ExportMetricsServiceRequest) *Ex
 	if dest == nil {
 		dest = NewExportMetricsServiceRequest()
 	}
-	dest.ResourceMetrics = CopyResourceMetricsPtrSlice(dest.ResourceMetrics, src.ResourceMetrics)
+	dest.ResourceMetrics = CopyResourceMetricsSlice(dest.ResourceMetrics, src.ResourceMetrics)
 
 	return dest
 }
@@ -147,7 +147,7 @@ func (orig *ExportMetricsServiceRequest) UnmarshalJSON(iter *json.Iterator) {
 		switch f {
 		case "resourceMetrics", "resource_metrics":
 			for iter.ReadArray() {
-				orig.ResourceMetrics = append(orig.ResourceMetrics, NewResourceMetrics())
+				orig.ResourceMetrics = append(orig.ResourceMetrics, ResourceMetrics{})
 				orig.ResourceMetrics[len(orig.ResourceMetrics)-1].UnmarshalJSON(iter)
 			}
 
@@ -207,7 +207,7 @@ func (orig *ExportMetricsServiceRequest) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.ResourceMetrics = append(orig.ResourceMetrics, NewResourceMetrics())
+			orig.ResourceMetrics = append(orig.ResourceMetrics, ResourceMetrics{})
 			err = orig.ResourceMetrics[len(orig.ResourceMetrics)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -224,7 +224,7 @@ func (orig *ExportMetricsServiceRequest) UnmarshalProto(buf []byte) error {
 
 func GenTestExportMetricsServiceRequest() *ExportMetricsServiceRequest {
 	orig := NewExportMetricsServiceRequest()
-	orig.ResourceMetrics = []*ResourceMetrics{{}, GenTestResourceMetrics()}
+	orig.ResourceMetrics = []ResourceMetrics{{}, *GenTestResourceMetrics()}
 	return orig
 }
 

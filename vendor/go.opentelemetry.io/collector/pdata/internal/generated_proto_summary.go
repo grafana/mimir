@@ -16,7 +16,7 @@ import (
 
 // Summary represents the type of a metric that is calculated by aggregating as a Summary of all reported double measurements over a time interval.
 type Summary struct {
-	DataPoints []*SummaryDataPoint
+	DataPoints []SummaryDataPoint
 }
 
 var (
@@ -45,7 +45,7 @@ func DeleteSummary(orig *Summary, nullable bool) {
 	}
 
 	for i := range orig.DataPoints {
-		DeleteSummaryDataPoint(orig.DataPoints[i], true)
+		DeleteSummaryDataPoint(&orig.DataPoints[i], false)
 	}
 
 	orig.Reset()
@@ -67,7 +67,7 @@ func CopySummary(dest, src *Summary) *Summary {
 	if dest == nil {
 		dest = NewSummary()
 	}
-	dest.DataPoints = CopySummaryDataPointPtrSlice(dest.DataPoints, src.DataPoints)
+	dest.DataPoints = CopySummaryDataPointSlice(dest.DataPoints, src.DataPoints)
 
 	return dest
 }
@@ -146,7 +146,7 @@ func (orig *Summary) UnmarshalJSON(iter *json.Iterator) {
 		switch f {
 		case "dataPoints", "data_points":
 			for iter.ReadArray() {
-				orig.DataPoints = append(orig.DataPoints, NewSummaryDataPoint())
+				orig.DataPoints = append(orig.DataPoints, SummaryDataPoint{})
 				orig.DataPoints[len(orig.DataPoints)-1].UnmarshalJSON(iter)
 			}
 
@@ -206,7 +206,7 @@ func (orig *Summary) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.DataPoints = append(orig.DataPoints, NewSummaryDataPoint())
+			orig.DataPoints = append(orig.DataPoints, SummaryDataPoint{})
 			err = orig.DataPoints[len(orig.DataPoints)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -223,7 +223,7 @@ func (orig *Summary) UnmarshalProto(buf []byte) error {
 
 func GenTestSummary() *Summary {
 	orig := NewSummary()
-	orig.DataPoints = []*SummaryDataPoint{{}, GenTestSummaryDataPoint()}
+	orig.DataPoints = []SummaryDataPoint{{}, *GenTestSummaryDataPoint()}
 	return orig
 }
 

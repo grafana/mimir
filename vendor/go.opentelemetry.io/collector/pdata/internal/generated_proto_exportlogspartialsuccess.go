@@ -222,7 +222,7 @@ func (orig *ExportLogsPartialSuccess) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.ErrorMessage = string(buf[startPos:pos])
+			orig.ErrorMessage = proto.YoloString(buf[startPos:pos])
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

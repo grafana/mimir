@@ -12,7 +12,7 @@ import (
 
 	"go.opentelemetry.io/collector/pdata/internal"
 	"go.opentelemetry.io/collector/pdata/internal/otelgrpc"
-	"go.opentelemetry.io/collector/pdata/internal/otlp"
+	// "go.opentelemetry.io/collector/pdata/internal/otlp"
 )
 
 // GRPCClient is the client API for OTLP-GRPC Metrics service.
@@ -82,7 +82,7 @@ type rawMetricsServer struct {
 }
 
 func (s rawMetricsServer) Export(ctx context.Context, request *internal.ExportMetricsServiceRequest) (*internal.ExportMetricsServiceResponse, error) {
-	otlp.MigrateMetrics(request.ResourceMetrics)
+	// otlp.MigrateMetrics(request.ResourceMetrics)
 	rsp, err := s.srv.Export(ctx, ExportRequest{orig: request, state: internal.NewState()})
 	return rsp.orig, err
 }

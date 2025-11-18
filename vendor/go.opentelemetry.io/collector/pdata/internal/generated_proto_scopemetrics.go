@@ -17,7 +17,7 @@ import (
 // ScopeMetrics is a collection of metrics from a LibraryInstrumentation.
 type ScopeMetrics struct {
 	Scope     InstrumentationScope
-	Metrics   []*Metric
+	Metrics   []Metric
 	SchemaUrl string
 }
 
@@ -48,7 +48,7 @@ func DeleteScopeMetrics(orig *ScopeMetrics, nullable bool) {
 
 	DeleteInstrumentationScope(&orig.Scope, false)
 	for i := range orig.Metrics {
-		DeleteMetric(orig.Metrics[i], true)
+		DeleteMetric(&orig.Metrics[i], false)
 	}
 
 	orig.Reset()
@@ -72,7 +72,7 @@ func CopyScopeMetrics(dest, src *ScopeMetrics) *ScopeMetrics {
 	}
 	CopyInstrumentationScope(&dest.Scope, &src.Scope)
 
-	dest.Metrics = CopyMetricPtrSlice(dest.Metrics, src.Metrics)
+	dest.Metrics = CopyMetricSlice(dest.Metrics, src.Metrics)
 
 	dest.SchemaUrl = src.SchemaUrl
 
@@ -162,7 +162,7 @@ func (orig *ScopeMetrics) UnmarshalJSON(iter *json.Iterator) {
 			orig.Scope.UnmarshalJSON(iter)
 		case "metrics":
 			for iter.ReadArray() {
-				orig.Metrics = append(orig.Metrics, NewMetric())
+				orig.Metrics = append(orig.Metrics, Metric{})
 				orig.Metrics[len(orig.Metrics)-1].UnmarshalJSON(iter)
 			}
 
@@ -260,7 +260,7 @@ func (orig *ScopeMetrics) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Metrics = append(orig.Metrics, NewMetric())
+			orig.Metrics = append(orig.Metrics, Metric{})
 			err = orig.Metrics[len(orig.Metrics)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -276,7 +276,7 @@ func (orig *ScopeMetrics) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SchemaUrl = string(buf[startPos:pos])
+			orig.SchemaUrl = proto.YoloString(buf[startPos:pos])
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {
@@ -290,7 +290,7 @@ func (orig *ScopeMetrics) UnmarshalProto(buf []byte) error {
 func GenTestScopeMetrics() *ScopeMetrics {
 	orig := NewScopeMetrics()
 	orig.Scope = *GenTestInstrumentationScope()
-	orig.Metrics = []*Metric{{}, GenTestMetric()}
+	orig.Metrics = []Metric{{}, *GenTestMetric()}
 	orig.SchemaUrl = "test_schemaurl"
 	return orig
 }

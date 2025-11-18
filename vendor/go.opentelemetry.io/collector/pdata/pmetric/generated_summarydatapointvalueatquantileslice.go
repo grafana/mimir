@@ -8,7 +8,6 @@ package pmetric
 
 import (
 	"iter"
-	"sort"
 
 	"go.opentelemetry.io/collector/pdata/internal"
 )
@@ -21,18 +20,18 @@ import (
 // Must use NewSummaryDataPointValueAtQuantileSlice function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type SummaryDataPointValueAtQuantileSlice struct {
-	orig  *[]*internal.SummaryDataPointValueAtQuantile
+	orig  *[]internal.SummaryDataPointValueAtQuantile
 	state *internal.State
 }
 
-func newSummaryDataPointValueAtQuantileSlice(orig *[]*internal.SummaryDataPointValueAtQuantile, state *internal.State) SummaryDataPointValueAtQuantileSlice {
+func newSummaryDataPointValueAtQuantileSlice(orig *[]internal.SummaryDataPointValueAtQuantile, state *internal.State) SummaryDataPointValueAtQuantileSlice {
 	return SummaryDataPointValueAtQuantileSlice{orig: orig, state: state}
 }
 
 // NewSummaryDataPointValueAtQuantileSlice creates a SummaryDataPointValueAtQuantileSliceWrapper with 0 elements.
 // Can use "EnsureCapacity" to initialize with a given capacity.
 func NewSummaryDataPointValueAtQuantileSlice() SummaryDataPointValueAtQuantileSlice {
-	orig := []*internal.SummaryDataPointValueAtQuantile(nil)
+	orig := []internal.SummaryDataPointValueAtQuantile(nil)
 	return newSummaryDataPointValueAtQuantileSlice(&orig, internal.NewState())
 }
 
@@ -52,7 +51,7 @@ func (es SummaryDataPointValueAtQuantileSlice) Len() int {
 //	    ... // Do something with the element
 //	}
 func (es SummaryDataPointValueAtQuantileSlice) At(i int) SummaryDataPointValueAtQuantile {
-	return newSummaryDataPointValueAtQuantile((*es.orig)[i], es.state)
+	return newSummaryDataPointValueAtQuantile(&(*es.orig)[i], es.state)
 }
 
 // All returns an iterator over index-value pairs in the slice.
@@ -89,7 +88,7 @@ func (es SummaryDataPointValueAtQuantileSlice) EnsureCapacity(newCap int) {
 		return
 	}
 
-	newOrig := make([]*internal.SummaryDataPointValueAtQuantile, len(*es.orig), newCap)
+	newOrig := make([]internal.SummaryDataPointValueAtQuantile, len(*es.orig), newCap)
 	copy(newOrig, *es.orig)
 	*es.orig = newOrig
 }
@@ -98,7 +97,7 @@ func (es SummaryDataPointValueAtQuantileSlice) EnsureCapacity(newCap int) {
 // It returns the newly added SummaryDataPointValueAtQuantile.
 func (es SummaryDataPointValueAtQuantileSlice) AppendEmpty() SummaryDataPointValueAtQuantile {
 	es.state.AssertMutable()
-	*es.orig = append(*es.orig, internal.NewSummaryDataPointValueAtQuantile())
+	*es.orig = append(*es.orig, internal.SummaryDataPointValueAtQuantile{})
 	return es.At(es.Len() - 1)
 }
 
@@ -127,9 +126,7 @@ func (es SummaryDataPointValueAtQuantileSlice) RemoveIf(f func(SummaryDataPointV
 	newLen := 0
 	for i := 0; i < len(*es.orig); i++ {
 		if f(es.At(i)) {
-			internal.DeleteSummaryDataPointValueAtQuantile((*es.orig)[i], true)
-			(*es.orig)[i] = nil
-
+			internal.DeleteSummaryDataPointValueAtQuantile(&(*es.orig)[i], false)
 			continue
 		}
 		if newLen == i {
@@ -138,8 +135,7 @@ func (es SummaryDataPointValueAtQuantileSlice) RemoveIf(f func(SummaryDataPointV
 			continue
 		}
 		(*es.orig)[newLen] = (*es.orig)[i]
-		// Cannot delete here since we just move the data(or pointer to data) to a different position in the slice.
-		(*es.orig)[i] = nil
+		(*es.orig)[i].Reset()
 		newLen++
 	}
 	*es.orig = (*es.orig)[:newLen]
@@ -151,13 +147,5 @@ func (es SummaryDataPointValueAtQuantileSlice) CopyTo(dest SummaryDataPointValue
 	if es.orig == dest.orig {
 		return
 	}
-	*dest.orig = internal.CopySummaryDataPointValueAtQuantilePtrSlice(*dest.orig, *es.orig)
-}
-
-// Sort sorts the SummaryDataPointValueAtQuantile elements within SummaryDataPointValueAtQuantileSlice given the
-// provided less function so that two instances of SummaryDataPointValueAtQuantileSlice
-// can be compared.
-func (es SummaryDataPointValueAtQuantileSlice) Sort(less func(a, b SummaryDataPointValueAtQuantile) bool) {
-	es.state.AssertMutable()
-	sort.SliceStable(*es.orig, func(i, j int) bool { return less(es.At(i), es.At(j)) })
+	*dest.orig = internal.CopySummaryDataPointValueAtQuantileSlice(*dest.orig, *es.orig)
 }

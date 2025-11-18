@@ -612,7 +612,7 @@ func (orig *AnyValue) UnmarshalProto(buf []byte) error {
 			} else {
 				ov = ProtoPoolAnyValue_StringValue.Get().(*AnyValue_StringValue)
 			}
-			ov.StringValue = string(buf[startPos:pos])
+			ov.StringValue = proto.YoloString(buf[startPos:pos])
 			orig.Value = ov
 
 		case 2:

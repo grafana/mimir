@@ -8,7 +8,6 @@ package pmetric
 
 import (
 	"iter"
-	"sort"
 
 	"go.opentelemetry.io/collector/pdata/internal"
 )
@@ -21,18 +20,18 @@ import (
 // Must use NewNumberDataPointSlice function to create new instances.
 // Important: zero-initialized instance is not valid for use.
 type NumberDataPointSlice struct {
-	orig  *[]*internal.NumberDataPoint
+	orig  *[]internal.NumberDataPoint
 	state *internal.State
 }
 
-func newNumberDataPointSlice(orig *[]*internal.NumberDataPoint, state *internal.State) NumberDataPointSlice {
+func newNumberDataPointSlice(orig *[]internal.NumberDataPoint, state *internal.State) NumberDataPointSlice {
 	return NumberDataPointSlice{orig: orig, state: state}
 }
 
 // NewNumberDataPointSlice creates a NumberDataPointSliceWrapper with 0 elements.
 // Can use "EnsureCapacity" to initialize with a given capacity.
 func NewNumberDataPointSlice() NumberDataPointSlice {
-	orig := []*internal.NumberDataPoint(nil)
+	orig := []internal.NumberDataPoint(nil)
 	return newNumberDataPointSlice(&orig, internal.NewState())
 }
 
@@ -52,7 +51,7 @@ func (es NumberDataPointSlice) Len() int {
 //	    ... // Do something with the element
 //	}
 func (es NumberDataPointSlice) At(i int) NumberDataPoint {
-	return newNumberDataPoint((*es.orig)[i], es.state)
+	return newNumberDataPoint(&(*es.orig)[i], es.state)
 }
 
 // All returns an iterator over index-value pairs in the slice.
@@ -89,7 +88,7 @@ func (es NumberDataPointSlice) EnsureCapacity(newCap int) {
 		return
 	}
 
-	newOrig := make([]*internal.NumberDataPoint, len(*es.orig), newCap)
+	newOrig := make([]internal.NumberDataPoint, len(*es.orig), newCap)
 	copy(newOrig, *es.orig)
 	*es.orig = newOrig
 }
@@ -98,7 +97,7 @@ func (es NumberDataPointSlice) EnsureCapacity(newCap int) {
 // It returns the newly added NumberDataPoint.
 func (es NumberDataPointSlice) AppendEmpty() NumberDataPoint {
 	es.state.AssertMutable()
-	*es.orig = append(*es.orig, internal.NewNumberDataPoint())
+	*es.orig = append(*es.orig, internal.NumberDataPoint{})
 	return es.At(es.Len() - 1)
 }
 
@@ -127,9 +126,7 @@ func (es NumberDataPointSlice) RemoveIf(f func(NumberDataPoint) bool) {
 	newLen := 0
 	for i := 0; i < len(*es.orig); i++ {
 		if f(es.At(i)) {
-			internal.DeleteNumberDataPoint((*es.orig)[i], true)
-			(*es.orig)[i] = nil
-
+			internal.DeleteNumberDataPoint(&(*es.orig)[i], false)
 			continue
 		}
 		if newLen == i {
@@ -138,8 +135,7 @@ func (es NumberDataPointSlice) RemoveIf(f func(NumberDataPoint) bool) {
 			continue
 		}
 		(*es.orig)[newLen] = (*es.orig)[i]
-		// Cannot delete here since we just move the data(or pointer to data) to a different position in the slice.
-		(*es.orig)[i] = nil
+		(*es.orig)[i].Reset()
 		newLen++
 	}
 	*es.orig = (*es.orig)[:newLen]
@@ -151,13 +147,5 @@ func (es NumberDataPointSlice) CopyTo(dest NumberDataPointSlice) {
 	if es.orig == dest.orig {
 		return
 	}
-	*dest.orig = internal.CopyNumberDataPointPtrSlice(*dest.orig, *es.orig)
-}
-
-// Sort sorts the NumberDataPoint elements within NumberDataPointSlice given the
-// provided less function so that two instances of NumberDataPointSlice
-// can be compared.
-func (es NumberDataPointSlice) Sort(less func(a, b NumberDataPoint) bool) {
-	es.state.AssertMutable()
-	sort.SliceStable(*es.orig, func(i, j int) bool { return less(es.At(i), es.At(j)) })
+	*dest.orig = internal.CopyNumberDataPointSlice(*dest.orig, *es.orig)
 }

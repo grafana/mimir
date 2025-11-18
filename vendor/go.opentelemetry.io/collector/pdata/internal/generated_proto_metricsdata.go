@@ -18,7 +18,7 @@ import (
 // OR can be embedded by other protocols that transfer OTLP metrics data but do not
 // implement the OTLP protocol..
 type MetricsData struct {
-	ResourceMetrics []*ResourceMetrics
+	ResourceMetrics []ResourceMetrics
 }
 
 var (
@@ -47,7 +47,7 @@ func DeleteMetricsData(orig *MetricsData, nullable bool) {
 	}
 
 	for i := range orig.ResourceMetrics {
-		DeleteResourceMetrics(orig.ResourceMetrics[i], true)
+		DeleteResourceMetrics(&orig.ResourceMetrics[i], false)
 	}
 
 	orig.Reset()
@@ -69,7 +69,7 @@ func CopyMetricsData(dest, src *MetricsData) *MetricsData {
 	if dest == nil {
 		dest = NewMetricsData()
 	}
-	dest.ResourceMetrics = CopyResourceMetricsPtrSlice(dest.ResourceMetrics, src.ResourceMetrics)
+	dest.ResourceMetrics = CopyResourceMetricsSlice(dest.ResourceMetrics, src.ResourceMetrics)
 
 	return dest
 }
@@ -148,7 +148,7 @@ func (orig *MetricsData) UnmarshalJSON(iter *json.Iterator) {
 		switch f {
 		case "resourceMetrics", "resource_metrics":
 			for iter.ReadArray() {
-				orig.ResourceMetrics = append(orig.ResourceMetrics, NewResourceMetrics())
+				orig.ResourceMetrics = append(orig.ResourceMetrics, ResourceMetrics{})
 				orig.ResourceMetrics[len(orig.ResourceMetrics)-1].UnmarshalJSON(iter)
 			}
 
@@ -208,7 +208,7 @@ func (orig *MetricsData) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.ResourceMetrics = append(orig.ResourceMetrics, NewResourceMetrics())
+			orig.ResourceMetrics = append(orig.ResourceMetrics, ResourceMetrics{})
 			err = orig.ResourceMetrics[len(orig.ResourceMetrics)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
@@ -225,7 +225,7 @@ func (orig *MetricsData) UnmarshalProto(buf []byte) error {
 
 func GenTestMetricsData() *MetricsData {
 	orig := NewMetricsData()
-	orig.ResourceMetrics = []*ResourceMetrics{{}, GenTestResourceMetrics()}
+	orig.ResourceMetrics = []ResourceMetrics{{}, *GenTestResourceMetrics()}
 	return orig
 }
 

@@ -311,7 +311,7 @@ func (orig *ResourceLogs) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SchemaUrl = string(buf[startPos:pos])
+			orig.SchemaUrl = proto.YoloString(buf[startPos:pos])
 
 		case 1000:
 			if wireType != proto.WireTypeLen {
