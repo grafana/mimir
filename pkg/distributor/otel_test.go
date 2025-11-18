@@ -1129,6 +1129,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		}
 	})
 
+	/*
 	b.Run("JSON", func(b *testing.B) {
 		req := createOTLPJSONRequest(b, exportReq, "")
 		b.ResetTimer()
@@ -1140,6 +1141,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 			req.Body.(*reusableReader).Reset()
 		}
 	})
+	*/
 }
 
 func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
