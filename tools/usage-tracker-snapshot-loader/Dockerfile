@@ -3,7 +3,7 @@
 ARG        BASEIMG=gcr.io/distroless/static-debian12@sha256:87bce11be0af225e4ca761c40babb06d6d559f5767fbf7dc3c47f0f1a466b92c
 # TODO(rwwiv): Remove once CA bundle is updated upstream.
 FROM debian:testing AS updated-ca-bundle
-RUN apt update && apt install -y ca-certificates && update-ca-certificates && apt clean
+RUN apt update && apt install -y ca-certificates tar && update-ca-certificates && apt clean
 
 FROM       ${BASEIMG}
 # Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
