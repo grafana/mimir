@@ -355,7 +355,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251117025727-316b091efffc
+// replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251117025727-316b091efffc
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
@@ -384,3 +384,7 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
+
+replace go.opentelemetry.io/collector/pdata => github.com/ldufr/opentelemetry-collector/pdata v0.0.0-20251118082455-fb2f378440bc
+
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251118124229-e7843dc894d6
