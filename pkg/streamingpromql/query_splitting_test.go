@@ -16,9 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/user"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -513,4 +515,67 @@ func TestQuerySplitting_CountOverTime_UsesCache(t *testing.T) {
 	require.Equal(t, expected, result)
 
 	verifyCacheStats(t, testCache, 4, 2, 2)
+}
+
+// TestQuerySplitting_WithCSE_PlanStructure verifies that CSE correctly wraps
+// shared MatrixSelectors in Duplicate nodes within SplittableFunctionCall.
+func TestQuerySplitting_WithCSE_PlanStructure(t *testing.T) {
+	ctx := context.Background()
+
+	opts := NewTestEngineOpts()
+	opts.InstantQuerySplitting.Enabled = true
+	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+	require.True(t, opts.EnableCommonSubexpressionElimination, "CSE should be enabled")
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	query := `sum_over_time(test_metric[5h]) / count_over_time(test_metric[5h])`
+	timeRange := types.NewInstantQueryTimeRange(time.Unix(21600, 0))
+
+	plan, err := planner.NewQueryPlan(ctx, query, timeRange, &NoopPlanningObserver{})
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+
+	expectedPlan := `
+		- BinaryExpression: LHS / RHS
+			- LHS: DeduplicateAndMerge
+				- SplittableFunctionCall: split=2h0m0s
+					- FunctionCall: sum_over_time(...)
+						- ref#1 Duplicate
+							- MatrixSelector: {__name__="test_metric"}[5h0m0s]
+			- RHS: DeduplicateAndMerge
+				- SplittableFunctionCall: split=2h0m0s
+					- FunctionCall: count_over_time(...)
+						- ref#1 Duplicate ...
+	`
+	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
+}
+
+// TestQuerySplitting_WithCSE_EndToEnd verifies query execution with CSE and Query Splitting.
+// Currently fails: materializer doesn't handle Duplicate-wrapped MatrixSelectors.
+func TestQuerySplitting_WithCSE_EndToEnd(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	expr := "sum_over_time(test_metric[5h]) / count_over_time(test_metric[5h])"
+	ts := baseT.Add(6 * time.Hour)
+
+	ctx := context.Background()
+	q, err := mimirEngine.NewInstantQuery(ctx, promStorage, nil, expr, ts)
+	require.NoError(t, err, "Query creation should succeed")
+	defer q.Close()
+
+	result := q.Exec(ctx)
+	require.NoError(t, result.Err)
+
+	//TODO: better expectations once CSE is properly supported
+	require.NotNil(t, result.Value, "Query should return a value")
+	require.Greater(t, testCache.sets, 0, "Cache should have been populated")
 }

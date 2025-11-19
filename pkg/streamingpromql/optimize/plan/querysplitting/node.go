@@ -5,13 +5,13 @@ package querysplitting
 import (
 	"errors"
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -79,7 +79,7 @@ func (s *SplittableFunctionCall) EquivalentToIgnoringHintsAndChildren(other plan
 }
 
 func (s *SplittableFunctionCall) Describe() string {
-	return "split into cacheable blocks"
+	return fmt.Sprintf("split=%v", s.SplitDuration)
 }
 
 func (s *SplittableFunctionCall) ChildrenLabels() []string {
