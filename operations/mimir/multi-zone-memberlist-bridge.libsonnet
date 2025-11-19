@@ -97,7 +97,7 @@
     $.newMimirPdb('memberlist-bridge-zone-c'),
 
   newMemberlistBridgeZoneContainer(zone, args, extraEnvVarMap={})::
-    container.new('memberlist-bridge', $._images.mimir)
+    container.new('memberlist-bridge', $._images.memberlist_bridge)
     + container.withPorts($.memberlist_bridge_ports)
     + container.withArgs($.util.mapToFlags(args))
     + $.tracing_env_mixin
