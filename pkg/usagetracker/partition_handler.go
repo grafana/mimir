@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -305,6 +306,9 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 	downloaded := make(chan downloadedSnapshot, 1)
 	errs := make(chan error, 1)
 	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+
 		for snapshot := range downloaded {
 			snapshotT0 := time.Now()
 			for j, data := range snapshot.data {
