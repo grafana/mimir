@@ -44,7 +44,7 @@ Use the default options with Confluent Kafka. No additional configuration is nee
 
 ### Redpanda
 
-[Redpanda](https://redpanda.com/) is a Kafka-compatible streaming platform that implements the Kafka wire protocol and can be used as a drop-in replacement for Apache Kafka. Redpanda offers simplified operations (no JVM, no Zookeeper dependency) and often delivers better performance than Apache Kafka.
+[Redpanda](https://redpanda.com/) is a Kafka-compatible streaming platform that implements the Kafka wire protocol. You can use Redpanda as a drop-in replacement for Apache Kafka. It offers simplified operations, for example, no dependency on JVM or Zookeeper, and often delivers better performance than Apache Kafka.
 
 Use the default options with Redpanda. No additional configuration is needed beyond the standard Kafka settings.
 
