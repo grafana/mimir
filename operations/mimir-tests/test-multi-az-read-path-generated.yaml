@@ -1573,6 +1573,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: querier-zone-a
     spec:
       affinity:
@@ -1689,6 +1690,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: querier-zone-b
     spec:
       affinity:
@@ -1805,6 +1807,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: query-frontend-zone-a
     spec:
       affinity:
@@ -1903,6 +1906,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: query-frontend-zone-b
     spec:
       affinity:
@@ -2002,6 +2006,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: query-scheduler-zone-a
     spec:
       affinity:
@@ -2090,6 +2095,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: query-scheduler-zone-b
     spec:
       affinity:
@@ -2226,6 +2232,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-querier-zone-a
     spec:
       affinity:
@@ -2341,6 +2348,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-querier-zone-b
     spec:
       affinity:
@@ -2456,6 +2464,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-query-frontend-zone-a
     spec:
       affinity:
@@ -2560,6 +2569,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-query-frontend-zone-b
     spec:
       affinity:
@@ -2665,6 +2675,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-query-scheduler-zone-a
     spec:
       affinity:
@@ -2753,6 +2764,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-query-scheduler-zone-b
     spec:
       affinity:
@@ -2840,6 +2852,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-zone-a
     spec:
       affinity:
@@ -2959,6 +2972,7 @@ spec:
   template:
     metadata:
       labels:
+        gossip_ring_member: "true"
         name: ruler-zone-b
     spec:
       affinity:
