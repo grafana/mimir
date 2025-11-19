@@ -3581,6 +3581,14 @@ func TestShouldRetry(t *testing.T) {
 			err:      errors.Wrap(context.DeadlineExceeded, "test"),
 			expected: false,
 		},
+		"should not retry on limit error": {
+			err:      limiter.NewMaxSeriesHitLimitError(1),
+			expected: false,
+		},
+		"should not retry on wrapped limit error": {
+			err:      errors.Wrap(limiter.NewMaxSeriesHitLimitError(1), "test"),
+			expected: false,
+		},
 		"should not retry on gRPC error with status code = 422": {
 			err:      status.Error(http.StatusUnprocessableEntity, "test"),
 			expected: false,
@@ -3617,7 +3625,7 @@ func TestShouldRetry(t *testing.T) {
 			err:      errors.New("test"),
 			expected: true,
 		},
-		"should retry stop query on store-gateway instance limit": {
+		"should retry aborted query on store-gateway instance limit": {
 			err:      globalerror.WrapErrorWithGRPCStatus(errors.New("instance limit"), codes.Aborted, &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_INSTANCE_LIMIT}).Err(),
 			expected: true,
 		},
