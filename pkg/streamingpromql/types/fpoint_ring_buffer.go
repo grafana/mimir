@@ -385,7 +385,7 @@ func (i *FPointRingBufferViewIterator) Seek(time int64) promql.FPoint {
 	var first promql.FPoint
 	ok := false
 
-	for i.HasNext() {
+	for i.idx < i.view.Count() {
 		next := i.Peek()
 
 		if next.T < time {
