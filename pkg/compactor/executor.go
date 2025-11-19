@@ -438,61 +438,20 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	// At this point the compaction has failed. Track the failure.
 	compactor.metrics.groupCompactionRunsFailed.Inc()
 
-	if ok, issue347Err := isIssue347Error(err); ok {
-		level.Warn(userLogger).Log("msg", "detected issue347 error during compaction", "block", issue347Err.id, "err", err)
-		repairErr := repairIssue347(ctx, userLogger, userBucket, syncer.metrics.blocksMarkedForDeletion, issue347Err)
-		if repairErr == nil {
-			level.Info(userLogger).Log("msg", "successfully repaired issue347 block, job can be re-planned", "block", issue347Err.id)
-			return compactorschedulerpb.COMPLETE, nil
-		}
-		level.Error(userLogger).Log("msg", "failed to repair issue347 block, abandoning job", "block", issue347Err.id, "err", repairErr)
-		return compactorschedulerpb.ABANDON, errors.Wrap(repairErr, "failed to repair issue347 block")
+	// Handle known compaction errors using shared helper
+	shouldRetry, handledErr := handleCompactionError(ctx, userLogger, userBucket, syncer.metrics.blocksMarkedForDeletion, compactor.metrics.blocksMarkedForNoCompact, compactor.skipUnhealthyBlocks, err)
+	if shouldRetry {
+		level.Info(userLogger).Log("msg", "compaction error was handled, job can be re-planned")
+		return compactorschedulerpb.COMPLETE, nil
 	}
-
-	if ok, outOfOrderChunksErr := IsOutOfOrderChunkError(err); ok && compactor.skipUnhealthyBlocks {
-		level.Warn(userLogger).Log("msg", "detected out-of-order chunks error during compaction", "block", outOfOrderChunksErr.id, "err", err)
-		markErr := e.retryable.WithContext(ctx).Run(func() error {
-			return block.MarkForNoCompact(
-				ctx,
-				userLogger,
-				userBucket,
-				outOfOrderChunksErr.id,
-				block.OutOfOrderChunksNoCompactReason,
-				"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
-				compactor.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
-			)
-		})
-
-		if markErr == nil {
-			level.Info(userLogger).Log("msg", "marked block for no-compact due to out-of-order chunks, job can be re-planned", "block", outOfOrderChunksErr.id)
-			return compactorschedulerpb.COMPLETE, nil
-		}
-		level.Warn(userLogger).Log("msg", "failed to mark block for no-compact after retries", "block", outOfOrderChunksErr.id, "err", markErr)
+	// Check if it's an issue347 error that failed repair - if so, abandon
+	if ok, _ := isIssue347Error(handledErr); ok {
+		level.Error(userLogger).Log("msg", "compaction error could not be handled, abandoning job", "err", handledErr)
+		return compactorschedulerpb.ABANDON, handledErr
 	}
-
-	if ok, criticalErr := IsCriticalError(err); ok && compactor.skipUnhealthyBlocks {
-		level.Warn(userLogger).Log("msg", "detected critical error during compaction", "block", criticalErr.id, "err", err)
-		markErr := e.retryable.WithContext(ctx).Run(func() error {
-			return block.MarkForNoCompact(
-				ctx,
-				userLogger,
-				userBucket,
-				criticalErr.id,
-				block.CriticalNoCompactReason,
-				"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
-				compactor.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
-			)
-		})
-
-		if markErr == nil {
-			level.Info(userLogger).Log("msg", "marked block for no-compact due to critical error, job can be re-planned", "block", criticalErr.id)
-			return compactorschedulerpb.COMPLETE, nil
-		}
-		level.Warn(userLogger).Log("msg", "failed to mark block for no-compact after retries", "block", criticalErr.id, "err", markErr)
-	}
-
-	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", err)
-	return compactorschedulerpb.REASSIGN, err
+	// All other unhandled errors should be reassigned
+	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", handledErr)
+	return compactorschedulerpb.REASSIGN, handledErr
 }
 
 func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {
