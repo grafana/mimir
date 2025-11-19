@@ -137,7 +137,6 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 		// Note the extended range end is used since smoothed will have extended this
 		m.extendedRangeView = m.floats.ViewUntilSearchingForwards(rangeEnd, m.extendedRangeView)
-		m.extendedRangeIterator = nil // TODO re-assigning the view
 
 		var buff []promql.FPoint
 		var err error
