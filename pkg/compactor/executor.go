@@ -435,22 +435,13 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	// At this point the compaction has failed. Track the failure.
 	compactor.metrics.groupCompactionRunsFailed.Inc()
 
-	// Handle known compaction errors
-	shouldRetry, handledErr := handleCompactionError(ctx, userLogger, userBucket, syncer.metrics.blocksMarkedForDeletion, compactor.metrics.blocksMarkedForNoCompact, compactor.skipUnhealthyBlocks, err)
-	if shouldRetry {
-		level.Info(userLogger).Log("msg", "compaction error was handled, job can be re-planned")
-		return compactorschedulerpb.COMPLETE, nil
-	}
-
-	// Abandon job failing with issue347 error that failed repair
-	if ok, _ := isIssue347Error(handledErr); ok {
-		level.Error(userLogger).Log("msg", "compaction error could not be handled, abandoning job", "err", handledErr)
-		return compactorschedulerpb.ABANDON, handledErr
+	if handleErr := compactor.handleKnownCompactionErrors(ctx, err); handleErr == nil {
+		return compactorschedulerpb.ABANDON, err
 	}
 
 	// All other errors should be reassigned
-	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", handledErr)
-	return compactorschedulerpb.REASSIGN, handledErr
+	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", err)
+	return compactorschedulerpb.REASSIGN, err
 }
 
 func (e *schedulerExecutor) executePlanningJob(ctx context.Context, c *MultitenantCompactor, tenant string) ([]*compactorschedulerpb.PlannedCompactionJob, error) {

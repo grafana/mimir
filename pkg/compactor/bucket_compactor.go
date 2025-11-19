@@ -551,6 +551,44 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
+func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, err error) error {
+	if ok, issue347Err := isIssue347Error(err); ok {
+		return repairIssue347(ctx, c.logger, c.bkt, c.sy.metrics.blocksMarkedForDeletion, issue347Err)
+	}
+
+	// If the block has an out of order chunk and we have been configured to skip it,
+	// then we can mark the block for no compaction so that the next compaction run
+	// will skip it.
+	if ok, outOfOrderChunksErr := IsOutOfOrderChunkError(err); ok && c.skipUnhealthyBlocks {
+		return block.MarkForNoCompact(
+			ctx,
+			c.logger,
+			c.bkt,
+			outOfOrderChunksErr.id,
+			block.OutOfOrderChunksNoCompactReason,
+			"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
+			c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
+		)
+	}
+
+	// In case an unhealthy block is found, we mark it for no compaction
+	// to unblock future compaction run.
+	if ok, criticalErr := IsCriticalError(err); ok && c.skipUnhealthyBlocks {
+		return block.MarkForNoCompact(
+			ctx,
+			c.logger,
+			c.bkt,
+			criticalErr.id,
+			block.CriticalNoCompactReason,
+			"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
+			c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
+		)
+	}
+
+	// Unhandled, returning original err
+	return err
+}
+
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
@@ -669,72 +707,6 @@ func IsOutOfOrderChunkError(err error) (bool, OutOfOrderChunksError) {
 	var outOfOrderChunksErr OutOfOrderChunksError
 	ok := errors.As(err, &outOfOrderChunksErr)
 	return ok, outOfOrderChunksErr
-}
-
-// handleCompactionError attempts to handle known compaction errors (issue347, out-of-order chunks, critical errors).
-// When the compactor is running in scheduler mode, the caller should check the error type to decide whether to
-// abandon or reassign the job.
-func handleCompactionError(
-	ctx context.Context,
-	logger log.Logger,
-	bkt objstore.Bucket,
-	blocksMarkedForDeletion prometheus.Counter,
-	blocksMarkedForNoCompact *prometheus.CounterVec,
-	skipUnhealthyBlocks bool,
-	err error,
-) (shouldRetry bool, resultErr error) {
-	// Handle issue347 errors
-	if ok, issue347Err := isIssue347Error(err); ok {
-		level.Warn(logger).Log("msg", "detected issue347 error during compaction", "block", issue347Err.id, "err", err)
-		repairErr := repairIssue347(ctx, logger, bkt, blocksMarkedForDeletion, issue347Err)
-		if repairErr == nil {
-			level.Info(logger).Log("msg", "successfully repaired issue347 block", "block", issue347Err.id)
-			return true, nil
-		}
-		level.Error(logger).Log("msg", "failed to repair issue347 block", "block", issue347Err.id, "err", repairErr)
-		return false, errors.Wrap(repairErr, "failed to repair issue347 block")
-	}
-
-	// Handle out-of-order chunks errors
-	if ok, outOfOrderChunksErr := IsOutOfOrderChunkError(err); ok && skipUnhealthyBlocks {
-		level.Warn(logger).Log("msg", "detected out-of-order chunks error during compaction", "block", outOfOrderChunksErr.id, "err", err)
-		markErr := block.MarkForNoCompact(
-			ctx,
-			logger,
-			bkt,
-			outOfOrderChunksErr.id,
-			block.OutOfOrderChunksNoCompactReason,
-			"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
-			blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
-		)
-		if markErr == nil {
-			level.Info(logger).Log("msg", "marked block for no-compact due to out-of-order chunks", "block", outOfOrderChunksErr.id)
-			return true, nil
-		}
-		level.Warn(logger).Log("msg", "failed to mark block for no-compact after retries", "block", outOfOrderChunksErr.id, "err", markErr)
-	}
-
-	// Handle critical errors
-	if ok, criticalErr := IsCriticalError(err); ok && skipUnhealthyBlocks {
-		level.Warn(logger).Log("msg", "detected critical error during compaction", "block", criticalErr.id, "err", err)
-		markErr := block.MarkForNoCompact(
-			ctx,
-			logger,
-			bkt,
-			criticalErr.id,
-			block.CriticalNoCompactReason,
-			"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
-			blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
-		)
-		if markErr == nil {
-			level.Info(logger).Log("msg", "marked block for no-compact due to critical error", "block", criticalErr.id)
-			return true, nil
-		}
-		level.Warn(logger).Log("msg", "failed to mark block for no-compact after retries", "block", criticalErr.id, "err", markErr)
-	}
-
-	// Unhandled error - return it for the caller to handle
-	return false, err
 }
 
 // CriticalError is a type wrapper for block health critical errors.
@@ -1083,17 +1055,14 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// At this point the compaction has failed.
 					c.metrics.groupCompactionRunsFailed.Inc()
 
-					// Handle known compaction errors using shared helper
-					shouldRetry, handledErr := handleCompactionError(workCtx, c.logger, c.bkt, c.sy.metrics.blocksMarkedForDeletion, c.metrics.blocksMarkedForNoCompact, c.skipUnhealthyBlocks, err)
-					if shouldRetry {
-						// Error was handled successfully, retry the job
+					if handleErr := c.handleKnownCompactionErrors(workCtx, err); handleErr == nil {
 						mtx.Lock()
 						finishedAllJobs = false
 						mtx.Unlock()
 						continue
 					}
-					// Error was not handled, report and stop
-					errChan <- errors.Wrapf(handledErr, "group %s", g.Key())
+
+					errChan <- errors.Wrapf(err, "group %s", g.Key())
 					return
 				}
 			}()
