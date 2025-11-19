@@ -846,8 +846,9 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 				var err error
 				var isEOS bool
 				var shouldRetry bool
+				var retryErr error
 
-				myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
+				myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, retryErr, err = q.receiveMessage(
 					c, stream, queryLimiter, memoryTracker, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
@@ -858,7 +859,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					return err
 				}
 				if shouldRetry {
-					level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
+					level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", retryErr)
 					return nil
 				}
 
@@ -972,18 +973,19 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil, err
 		}
 
 		if shouldRetry(err) {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, true, nil
+
+			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, true, err, nil
 		}
 
-		return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+		return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil, err
 	}
 	defer resp.FreeBuffer()
 
@@ -995,12 +997,12 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 	if h := resp.GetHints(); h != nil {
 		hints := hintspb.SeriesResponseHints{}
 		if err := types.UnmarshalAny(h, &hints); err != nil {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
+			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil, errors.Wrapf(err, "failed to unmarshal series hints from %s", c.RemoteAddress())
 		}
 
 		ids, err := convertBlockHintsToULIDs(hints.QueriedBlocks)
 		if err != nil {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, errors.Wrapf(err, "failed to parse queried block IDs from received hints")
+			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil, errors.Wrapf(err, "failed to parse queried block IDs from received hints")
 		}
 
 		myQueriedBlocks = append(myQueriedBlocks, ids...)
@@ -1017,23 +1019,23 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
 			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(ls); err != nil {
-				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
+				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil, err
 			}
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
 			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
-				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
+				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil, limitErr
 			}
 
 			myStreamingSeriesLabels = append(myStreamingSeriesLabels, ls)
 		}
 
 		if ss.IsEndOfSeriesStream {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, true, false, nil
+			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, true, false, nil, nil
 		}
 	}
 
-	return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil
+	return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, nil, nil
 }
 
 func shouldRetry(err error) bool {
