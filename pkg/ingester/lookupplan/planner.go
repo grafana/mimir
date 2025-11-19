@@ -28,7 +28,7 @@ func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _
 }
 
 var (
-	rawPartialPlansPool    = &sync.Pool{}
+	rawPlansWithCostPool   = &sync.Pool{}
 	rawIndexPredicatesPool = &sync.Pool{}
 )
 
@@ -47,24 +47,24 @@ const (
 )
 
 type costBasedPlannerPools struct {
-	partialPlansPool    *pool.SlabPool[partialPlan]
+	plansWithCostPool   *pool.SlabPool[planWithCost]
 	indexPredicatesPool *pool.SlabPool[bool]
 }
 
 func newCostBasedPlannerPools() *costBasedPlannerPools {
 	return &costBasedPlannerPools{
-		partialPlansPool:    pool.NewSlabPool[partialPlan](rawPartialPlansPool, maxPlansForPlanning),
+		plansWithCostPool:   pool.NewSlabPool[planWithCost](rawPlansWithCostPool, maxPlansForPlanning),
 		indexPredicatesPool: pool.NewSlabPool[bool](rawIndexPredicatesPool, predicateIndexSlicesTotalLen),
 	}
 }
 
-func (p *costBasedPlannerPools) GetPartialPlans(num int) *partialPlans {
-	plans := p.partialPlansPool.Get(num)[:0]
-	return (*partialPlans)(&plans)
+func (p *costBasedPlannerPools) GetPlans(num int) *plans {
+	pls := p.plansWithCostPool.Get(num)[:0]
+	return (*plans)(&pls)
 }
 
 func (p *costBasedPlannerPools) Release() {
-	p.partialPlansPool.Release()
+	p.plansWithCostPool.Release()
 	p.indexPredicatesPool.Release()
 }
 
