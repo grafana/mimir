@@ -393,6 +393,9 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		blockIDs = append(blockIDs, blockID)
 	}
 
+	// TODO: When requested blocks aren't found in object storage, the job should ideally
+	// be abandoned rather than reassigned. Consider checking userBucket.IsObjNotFoundErr(err)
+	// when fetching metadata to detect this condition and return ABANDON instead of REASSIGN.
 	if err := syncer.SyncRequestedMetas(ctx, blockIDs); err != nil {
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to sync metas")
 	}

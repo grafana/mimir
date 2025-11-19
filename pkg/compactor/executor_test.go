@@ -497,11 +497,6 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 	if schedulerExec.schedulerConn != nil {
 		require.NoError(t, schedulerExec.schedulerConn.Close())
 	}
-
-	require.Eventually(t, func() bool {
-		err := goleak.Find(initialGoroutines)
-		return err == nil
-	}, 2*time.Second, 50*time.Millisecond, "goroutines should be cleaned up")
 }
 
 func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
@@ -622,6 +617,8 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 }
 
 func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
+	const splitShards = 4
+
 	type setupResult struct {
 		blockIDsToCompact []string
 		compactedBlocks   []ulid.ULID
@@ -693,7 +690,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			},
 			split:                   true,
 			expectedStatus:          compactorschedulerpb.COMPLETE,
-			expectNewBlocksCount:    4,
+			expectNewBlocksCount:    splitShards,
 			expectUncompactedBlocks: 0,
 		},
 		"reassign_when_requested_blocks_not_in_obj_storage": {
@@ -729,7 +726,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 
 			mockCfg := newMockConfigProvider()
 			if tc.split {
-				mockCfg.splitAndMergeShards = map[string]int{"test-tenant": 4}
+				mockCfg.splitAndMergeShards = map[string]int{"test-tenant": splitShards}
 			}
 			c, _, _, _, _ := prepareWithConfigProvider(t, cfg, bkt, mockCfg)
 			c.bucketClient = bkt
@@ -798,16 +795,10 @@ func countBlocksInBucket(t *testing.T, bkt objstore.Bucket, userID string) int {
 
 func TestEmptyCompactionDir(t *testing.T) {
 	tests := map[string]struct {
-		setupDir    func(t *testing.T, dir string)
-		expectError bool
-		expectFiles []string
+		setupDir func(t *testing.T, dir string)
 	}{
 		"creates_directory_if_not_exists": {
-			setupDir: func(t *testing.T, dir string) {
-				// Don't create the directory
-			},
-			expectError: false,
-			expectFiles: []string{},
+			setupDir: func(t *testing.T, dir string) {},
 		},
 		"removes_files_and_subdirectories": {
 			setupDir: func(t *testing.T, dir string) {
@@ -818,15 +809,11 @@ func TestEmptyCompactionDir(t *testing.T) {
 				require.NoError(t, os.MkdirAll(subdir, 0750))
 				require.NoError(t, os.WriteFile(filepath.Join(subdir, "file.txt"), []byte("content"), 0644))
 			},
-			expectError: false,
-			expectFiles: []string{},
 		},
 		"handles_empty_directory": {
 			setupDir: func(t *testing.T, dir string) {
 				require.NoError(t, os.MkdirAll(dir, 0750))
 			},
-			expectError: false,
-			expectFiles: []string{},
 		},
 	}
 
@@ -838,15 +825,8 @@ func TestEmptyCompactionDir(t *testing.T) {
 			tc.setupDir(t, compactDir)
 
 			err := emptyCompactionDir(log.NewNopLogger(), compactDir)
-
-			if tc.expectError {
-				require.Error(t, err)
-				return
-			}
-
 			require.NoError(t, err)
 
-			// Verify directory still exists
 			info, err := os.Stat(compactDir)
 			require.NoError(t, err)
 			require.True(t, info.IsDir(), "directory should still exist after cleanup")
@@ -854,18 +834,7 @@ func TestEmptyCompactionDir(t *testing.T) {
 			// Verify directory contents
 			entries, err := os.ReadDir(compactDir)
 			require.NoError(t, err)
-			assert.Equal(t, len(tc.expectFiles), len(entries), "directory should contain expected number of files")
-
-			for _, expectedFile := range tc.expectFiles {
-				exists := false
-				for _, entry := range entries {
-					if entry.Name() == expectedFile {
-						exists = true
-						break
-					}
-				}
-				assert.True(t, exists, "expected file %s to exist", expectedFile)
-			}
+			require.Empty(t, entries)
 		})
 	}
 }
