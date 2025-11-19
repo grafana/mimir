@@ -444,12 +444,14 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		level.Info(userLogger).Log("msg", "compaction error was handled, job can be re-planned")
 		return compactorschedulerpb.COMPLETE, nil
 	}
-	// Check if it's an issue347 error that failed repair - if so, abandon
+
+	// Abandon job failing with issue347 error that failed repair
 	if ok, _ := isIssue347Error(handledErr); ok {
 		level.Error(userLogger).Log("msg", "compaction error could not be handled, abandoning job", "err", handledErr)
 		return compactorschedulerpb.ABANDON, handledErr
 	}
-	// All other unhandled errors should be reassigned
+
+	// All other errors should be reassigned
 	level.Warn(userLogger).Log("msg", "compaction job failed with unhandled error, reassigning", "err", handledErr)
 	return compactorschedulerpb.REASSIGN, handledErr
 }
