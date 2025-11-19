@@ -79,15 +79,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
-	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
-	}
-
-	if opts.EnableNarrowBinarySelectors {
-		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
-	}
-
-	// TODO: figure out how query splitting iteracts with other optimisation passes
+	// Run query splitting pass before CSE.
 	if opts.InstantQuerySplitting.Enabled {
 		splitInterval := opts.InstantQuerySplitting.SplitInterval
 		if splitInterval <= 0 {
@@ -97,6 +89,14 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		opts.Logger.Log("msg", "query splitting optimization pass enabled", "split_interval", splitInterval)
 	} else {
 		opts.Logger.Log("msg", "query splitting optimization pass disabled")
+	}
+
+	if opts.EnableCommonSubexpressionElimination {
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	if opts.EnableNarrowBinarySelectors {
+		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
 	}
 
 	return planner, nil
