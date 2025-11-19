@@ -67,12 +67,18 @@ func (pq plans) Iterator() iter.Seq[plan] {
 func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) iter.Seq[plan] {
 	// Initialize priority queue with the root plan (all predicates undecided)
 	prospectPlans := pools.GetPlans(maxPlansForPlanning)
+
 	scanOnlyPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
 	heap.Push(prospectPlans, newPlanWithCost(scanOnlyPlan, 0))
+	numPredicates := len(scanOnlyPlan.predicates)
+
+	// Fall back to index-only plan to ensure that our code doesn't choose a more expensive plan than the naive plan.
+	// Also include this in the initial prospect plans to pick a better upper bound on the first iteration.
+	indexOnlyPlan := newIndexOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
+	heap.Push(prospectPlans, newPlanWithCost(indexOnlyPlan, numPredicates))
 
 	completePlans := pools.GetPlans(maxPlansForPlanning)
 	bestCompleteCost := math.MaxFloat64
-	numPredicates := len(scanOnlyPlan.predicates)
 
 	for i := maxPlansForPlanning; prospectPlans.Len() > 0 && i > 0; i-- {
 		current := heap.Pop(prospectPlans).(planWithCost)
@@ -104,10 +110,6 @@ func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, stati
 		heap.Push(prospectPlans, newPlanWithCost(indexChild, current.numDecidedPredicates+1))
 		heap.Push(prospectPlans, newPlanWithCost(current.plan, current.numDecidedPredicates+1))
 	}
-
-	// Fall back to index-only plan to ensure that our code doesn't choose a more expensive plan than the naive plan.
-	indexOnlyPlan := newIndexOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, shard)
-	heap.Push(completePlans, newPlanWithCost(indexOnlyPlan, numPredicates))
 
 	// Push all plans from the smaller heap into the larger one
 	// We need this because we will need to find a plan with at least one index matcher later,
