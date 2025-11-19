@@ -132,8 +132,8 @@ func (p plan) TotalCost() float64 {
 func (p plan) indexLookupCost() float64 {
 	cost := 0.0
 	for i := range p.predicates {
-		pr, ok := p.virtualPredicate(i)
-		if !ok {
+		pr, isIndex := p.virtualPredicate(i)
+		if !isIndex {
 			continue
 		}
 
@@ -147,8 +147,8 @@ func (p plan) indexLookupCost() float64 {
 func (p plan) intersectionCost() float64 {
 	iteratedPostings := uint64(0)
 	for i := range p.predicates {
-		pred, ok := p.virtualPredicate(i)
-		if !ok {
+		pred, isIndex := p.virtualPredicate(i)
+		if !isIndex {
 			continue
 		}
 
@@ -173,8 +173,8 @@ func (p plan) filterCost() float64 {
 	for i := range p.predicates {
 		// In reality, we will apply all the predicates for each series and stop once one predicate doesn't match.
 		// But we calculate for the worst case where we have to run all predicates for all series.
-		pred, ok := p.virtualPredicate(i)
-		if ok {
+		pred, isIndex := p.virtualPredicate(i)
+		if isIndex {
 			continue
 		}
 
@@ -190,8 +190,8 @@ func (p plan) numSelectedPostingsInOurShard() uint64 {
 func (p plan) NumSelectedPostings() uint64 {
 	finalSelectivity := 1.0
 	for i := range p.predicates {
-		pred, ok := p.virtualPredicate(i)
-		if !ok {
+		pred, isIndex := p.virtualPredicate(i)
+		if !isIndex {
 			continue
 		}
 
