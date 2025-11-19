@@ -26,7 +26,10 @@ func metaMatchH2(m *index, p prefix) bitset {
 	return hasZeroByte(castUint64(m) ^ (loBits * uint64(p)))
 }
 
+var TotalMetaMatchEmptyCalls int
+
 func metaMatchEmpty(m *index) bitset {
+	TotalMetaMatchEmptyCalls++
 	return hasZeroByte(castUint64(m))
 }
 

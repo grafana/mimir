@@ -129,9 +129,13 @@ func (m *Map) insert(key uint64, pfx prefix, value clock.Minutes, i uint32, matc
 	m.resident++
 }
 
+var TotalLoadCalls int
+
 // Load inserts |key| and |value| into the map without checking if it already exists.
 // No limits are checked, and series count should be incremented by the caller.
 func (m *Map) Load(key uint64, value clock.Minutes) {
+	TotalLoadCalls++
+
 	if m.resident >= m.limit {
 		m.rehash(m.nextSize())
 	}
@@ -204,7 +208,11 @@ func (m *Map) nextSize() (n uint32) {
 	return
 }
 
+var TotalRehashes int
+
 func (m *Map) rehash(n uint32) {
+	TotalRehashes++
+
 	indices, ks, datas := m.index, m.keys, m.data
 	m.index = make([]index, n)
 	m.keys = make([]keys, n)
@@ -240,7 +248,7 @@ func splitHash(h uint64) (prefix, suffix) {
 func probeStart(s suffix, groups int) uint32 {
 	// ignore the lower bits for probing as they're always the same in this shard.
 	// We're going to convert it to uint32 anyway, so we don't really care.
-	return fastModN(uint32(s>>8), uint32(groups))
+	return uint32(int(s>>8) % groups)
 }
 
 // lemire.me/blog/2016/06/27/a-fast-alternative-to-the-modulo-reduction/

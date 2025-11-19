@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 )
 
@@ -134,39 +135,22 @@ func BenchmarkTrackerStoreLoadFileSnapshot(b *testing.B) {
 	b.Run("concurrency=1", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
-			for _, d := range file.Data {
-				require.NoError(b, t.loadSnapshot(d, now))
-			}
-		}
-	})
-
-	b.Run("concurrency=shards", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
-			wg := &sync.WaitGroup{}
-			wg.Add(len(file.Data))
-			for _, d := range file.Data {
-				go func() {
-					defer wg.Done()
-					require.NoError(b, t.loadSnapshot(d, now))
-				}()
-			}
-			wg.Wait()
+			require.NoError(b, t.loadSnapshot(file.Data[0], now))
+			b.Logf("TotalLoadCalls=%d, TotalRehahes=%d, TotalMetaMatchEmptyCalls=%d", tenantshard.TotalLoadCalls, tenantshard.TotalRehashes, tenantshard.TotalMetaMatchEmptyCalls)
 		}
 	})
 }
 
 func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
 	now := time.Now()
-	snapshots, lim := generateSnapshot(b, 1, 10e6, now)
+	snapshots, lim := generateSnapshot(b, 1, 10e6*shards*2, now)
 	b.Logf("Snapshots generation took %s", time.Since(now))
 
 	b.Run("concurrency=1", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
-			for _, d := range snapshots {
-				require.NoError(b, t.loadSnapshot(d, now))
-			}
+			require.NoError(b, t.loadSnapshot(snapshots[0], now))
+			b.Logf("TotalLoadCalls=%d, TotalRehahes=%d, TotalMetaMatchEmptyCalls=%d", tenantshard.TotalLoadCalls, tenantshard.TotalRehashes, tenantshard.TotalMetaMatchEmptyCalls)
 		}
 	})
 
