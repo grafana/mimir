@@ -83,7 +83,7 @@ func (o *OptimizationPass) shouldSplitFunction(functionCall *core.FunctionCall, 
 
 	// TODO: add more functions
 	switch functionCall.GetFunction() {
-	case functions.FUNCTION_SUM_OVER_TIME:
+	case functions.FUNCTION_SUM_OVER_TIME, functions.FUNCTION_COUNT_OVER_TIME:
 	default:
 		return false, "function not supported for splitting"
 	}

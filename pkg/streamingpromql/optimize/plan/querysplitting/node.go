@@ -132,6 +132,8 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 	switch innerFunctionCall.Function {
 	case functions.FUNCTION_SUM_OVER_TIME:
 		funcDef = functions.SumOverTime
+	case functions.FUNCTION_COUNT_OVER_TIME:
+		funcDef = functions.CountOverTime
 	default:
 		return nil, fmt.Errorf("function %v is not yet supported for split range vector optimization", innerFunctionCall.Function)
 	}

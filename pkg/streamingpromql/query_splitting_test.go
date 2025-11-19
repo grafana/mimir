@@ -476,3 +476,41 @@ func (e *testCacheWriteEntry) Finalize() error {
 	e.finalized = true
 	return nil
 }
+
+func TestQuerySplitting_CountOverTime_UsesCache(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	expr := "count_over_time(test_metric[5h])"
+
+	// Run query at 6h
+	ts := baseT.Add(6 * time.Hour)
+
+	expected := &promql.Result{
+		Value: promql.Vector{
+			{
+				Metric: labels.FromStrings("env", "prod"),
+				T:      timestamp.FromTime(ts),
+				F:      30, // 30 samples in 5h range
+			},
+		},
+	}
+
+	// Run query first time (should populate cache)
+	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expected, result)
+
+	verifyCacheStats(t, testCache, 2, 0, 2)
+
+	// Run same query again (should hit cache)
+	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expected, result)
+
+	verifyCacheStats(t, testCache, 4, 2, 2)
+}

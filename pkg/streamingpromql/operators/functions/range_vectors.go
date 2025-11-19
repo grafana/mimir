@@ -23,6 +23,8 @@ import (
 var CountOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               countOverTime,
+	GenerateFunc:           countOverTimeGenerate,
+	CombineFunc:            countOverTimeCombine,
 }
 
 func countOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -34,6 +36,31 @@ func countOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ type
 	}
 
 	return float64(fPointCount + hPointCount), true, nil, nil
+}
+
+func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (cache.IntermediateResult, error) {
+	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
+	if err != nil {
+		return cache.IntermediateResult{}, err
+	}
+	// Store count in SumF field (reusing sum_over_time structure for simplicity)
+	// TODO: improve polymorphism so we don't reuse the same struct for different functions
+	return cache.IntermediateResult{SumOverTime: cache.SumOverTimeIntermediate{SumF: count, HasFloat: hasValue}}, nil
+}
+
+func countOverTimeCombine(pieces []cache.IntermediateResult, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	totalCount := 0.0
+	hasValue := false
+
+	for _, ir := range pieces {
+		p := ir.SumOverTime
+		if p.HasFloat {
+			hasValue = true
+			totalCount += p.SumF
+		}
+	}
+
+	return totalCount, hasValue, nil, nil
 }
 
 var LastOverTime = FunctionOverRangeVectorDefinition{
