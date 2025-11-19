@@ -575,11 +575,15 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 
 // shouldAbortReading checks if the request has been cancelled or if this stream has been closed, and returns an error if so.
 func (s *ProtobufResponseStream) shouldAbortReading(ctx context.Context) error {
-	select {
-	case <-s.requestContext.Done():
+	if s.requestContext.Err() != nil {
 		return context.Cause(s.requestContext)
-	case <-ctx.Done():
+	}
+
+	if ctx.Err() != nil {
 		return context.Cause(ctx)
+	}
+
+	select {
 	case <-s.closed:
 		return errStreamClosed
 	default:
