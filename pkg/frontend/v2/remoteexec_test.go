@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestScalarExecutionResponse(t *testing.T) {
@@ -1207,10 +1208,15 @@ func TestEagerLoadingResponseStream_AbortsNextCallOnContextCancellation(t *testi
 }
 
 type mockResponseStreamThatNeverReturns struct {
-	release chan struct{}
+	release    chan struct{}
+	nextCalled chan struct{}
 }
 
 func (m *mockResponseStreamThatNeverReturns) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	if m.nextCalled != nil {
+		close(m.nextCalled)
+	}
+
 	<-m.release
 	return nil, errors.New("mock response stream closed")
 }
@@ -1224,6 +1230,29 @@ func TestEagerLoadingResponseStream_ClosesInnerStreamWhenClosed(t *testing.T) {
 	stream := newEagerLoadingResponseStream(context.Background(), inner)
 	stream.Close()
 	require.True(t, inner.closed)
+}
+
+func TestEagerLoadingResponseStream_ClosedWhileBuffering(t *testing.T) {
+	inner := &mockResponseStreamThatNeverReturns{
+		release:    make(chan struct{}),
+		nextCalled: make(chan struct{}),
+	}
+
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+
+	// Wait for the stream to start buffering.
+	<-inner.nextCalled
+
+	// Close the stream to trigger the inner Next() call returning.
+	stream.Close()
+
+	// Make sure the buffering goroutine has exited.
+	test.VerifyNoLeak(t)
+
+	// Make sure calling Next() fails with a sensible error.
+	msg, err := stream.Next(context.Background())
+	require.Nil(t, msg)
+	require.ErrorContains(t, err, "stream closed")
 }
 
 func TestResponseStreamBuffer(t *testing.T) {
