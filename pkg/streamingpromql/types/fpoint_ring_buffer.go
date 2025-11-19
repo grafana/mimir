@@ -417,8 +417,9 @@ func (i *FPointRingBufferViewIterator) Seek(time int64) promql.FPoint {
 // The iterator will be positioned at the first point which is >= time.
 // If there is no point >= time, then the iterator is positioned at the last point < time.
 func (i *FPointRingBufferViewIterator) CopyRemainingPointsTo(time int64, buff []promql.FPoint) []promql.FPoint {
-	for i.HasNext() {
-		next := i.Next()
+	for i.idx < i.view.Count() {
+		next := i.view.PointAt(i.idx)
+		i.idx++
 
 		if next.T <= time {
 			buff = append(buff, next)
