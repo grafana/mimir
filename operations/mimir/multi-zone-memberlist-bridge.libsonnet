@@ -13,10 +13,6 @@
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
-  local gossipRingPort = 7946,
-  local containerPort = $.core.v1.containerPort,
-  local gossipPort = containerPort.newNamed(name='gossip-ring', containerPort=gossipRingPort),
-  local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
   local isMultiZoneEnabled = $._config.multi_zone_memberlist_bridge_enabled,
   local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
@@ -25,6 +21,7 @@
 
   assert !$._config.memberlist_zone_aware_routing_enabled || $._config.multi_zone_memberlist_bridge_enabled : 'memberlist zone-aware routing requires memberlist-bridge multi-zone deployment',
 
+  memberlist_bridge_ports:: $.util.defaultPorts,
   memberlist_bridge_node_affinity_matchers:: [],
 
   memberlist_bridge_args::
@@ -101,7 +98,7 @@
 
   newMemberlistBridgeZoneContainer(zone, args, extraEnvVarMap={})::
     container.new('memberlist-bridge', $._images.mimir)
-    + container.withPorts($.util.defaultPorts + [gossipPort])
+    + container.withPorts($.memberlist_bridge_ports)
     + container.withArgs($.util.mapToFlags(args))
     + $.tracing_env_mixin
     + $.util.readinessProbe
@@ -117,7 +114,6 @@
     + $.newMimirNodeAffinityMatchers(nodeAffinityMatchers)
     + (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector))
     + deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0)
-    + gossipLabel
     + deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration())
     // When memberlist cross-zone routing is enabled, memberlist-bridge pods act as bridges between AZs
     // so they're critical to avoid network partitioning. We want to guarantee that 2 bridges don't run

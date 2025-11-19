@@ -99,6 +99,7 @@
   store_gateway_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   query_scheduler_ports+:: if !querySchedulerMemberlistEnabled then [] else [gossipPort],
   query_frontend_ports+:: if !queryFrontendMemberlistEnabled then [] else [gossipPort],
+  memberlist_bridge_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
 
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
