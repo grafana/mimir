@@ -334,9 +334,6 @@ func (i *FPointRingBufferViewIterator) HasNext() bool {
 // Next moves the iterator forward, returning the next point.
 // This function will panic if moving the iterator would result in an index out of bounds.
 func (i *FPointRingBufferViewIterator) Next() promql.FPoint {
-	if i.idx >= i.view.Count() {
-		panic(fmt.Sprintf("next(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
-	}
 	p := i.view.PointAt(i.idx)
 	i.idx++
 	return p
@@ -349,9 +346,6 @@ func (i *FPointRingBufferViewIterator) At() promql.FPoint {
 // Prev moves the iterator backwards, returning the previous point.
 // This function will panic if moving the iterator would result in an index out of bounds.
 func (i *FPointRingBufferViewIterator) Prev() promql.FPoint {
-	if i.idx <= 0 {
-		panic(fmt.Sprintf("prev(): out of range, requested index %v", i.idx-1))
-	}
 	i.idx--
 	return i.view.PointAt(i.idx)
 }
