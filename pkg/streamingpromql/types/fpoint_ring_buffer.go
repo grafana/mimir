@@ -373,9 +373,6 @@ func (i *FPointRingBufferViewIterator) reverse() {
 // Peek returns the next point, but does not move the iterator forward.
 // This function will panic if this look ahead would result in an index out of bounds.
 func (i *FPointRingBufferViewIterator) Peek() promql.FPoint {
-	if i.idx >= i.view.Count() {
-		panic(fmt.Sprintf("peek(): out of range, requested index %v but have length %v", i.idx, i.view.Count()))
-	}
 	return i.view.PointAt(i.idx)
 }
 
