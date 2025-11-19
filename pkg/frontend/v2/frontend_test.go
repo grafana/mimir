@@ -2101,7 +2101,8 @@ func BenchmarkProtobufResponseStreamShouldAbortReading(b *testing.B) {
 	defer cancelRequest()
 
 	stream := &ProtobufResponseStream{
-		closed:         make(chan struct{}),
+		notifyClosed:   make(chan struct{}),
+		isClosed:       atomic.NewBool(false),
 		requestContext: requestContext,
 	}
 
