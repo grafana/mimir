@@ -140,7 +140,7 @@ func TestLabels_Validate(t *testing.T) {
 				{Input: "team", Output: "my_team"},
 				{Input: "team", Output: "other_team"},
 			},
-			expectedErr: fmt.Errorf(`duplicate input label: "team:other_team"`),
+			expectedErr: nil,
 		},
 		"duplicate output labels": {
 			input: Labels{

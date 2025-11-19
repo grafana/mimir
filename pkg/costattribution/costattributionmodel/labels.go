@@ -65,16 +65,11 @@ func (l Labels) Validate() error {
 		return nil
 	}
 
-	inputLabels := make(map[string]struct{}, len(l))
 	outputLabels := make(map[string]struct{}, len(l))
 	for _, labelWithOverride := range l {
 		if err := labelWithOverride.Validate(); err != nil {
 			return err
 		}
-		if _, ok := inputLabels[labelWithOverride.Input]; ok {
-			return fmt.Errorf("duplicate input label: %q", labelWithOverride.String())
-		}
-		inputLabels[labelWithOverride.Input] = struct{}{}
 		if _, ok := outputLabels[labelWithOverride.OutputLabel()]; ok {
 			return fmt.Errorf("duplicate output label: %q", labelWithOverride.String())
 		}
