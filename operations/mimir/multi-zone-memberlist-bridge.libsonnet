@@ -4,6 +4,10 @@
 
     // Whether the zone-aware routing should be enabled.
     memberlist_zone_aware_routing_enabled: false,
+
+    // Priority class for memberlist-bridge pods. Memberlist-bridge pods act as bridges between AZs
+    // so they're critical to avoid network partitioning.
+    memberlist_bridge_priority_class: 'high-nonpreempting',
   },
 
   local container = $.core.v1.container,
@@ -118,7 +122,7 @@
     // When memberlist cross-zone routing is enabled, memberlist-bridge pods act as bridges between AZs
     // so they're critical to avoid network partitioning. We want to guarantee that 2 bridges don't run
     // on the same node, and we also want to run them with higher-than-default priority.
-    + deployment.spec.template.spec.withPriorityClassName('high-nonpreempting')
+    + deployment.spec.template.spec.withPriorityClassName($._config.memberlist_bridge_priority_class)
     + $.util.antiAffinity,
 
   // Ensure all configured addressed are zonal ones.
