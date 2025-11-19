@@ -3,9 +3,12 @@
 package usagetracker
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -14,6 +17,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 )
 
 const testIdleTimeout = 20 * time.Minute
@@ -101,6 +106,54 @@ func benckmarkTrackerStoreTrackSeries(b *testing.B, seriesRefs []uint64, seriesP
 	})
 	close(cleanup)
 	wg.Wait()
+}
+
+func BenchmarkTrackerStoreLoadFileSnapshot(b *testing.B) {
+	filename := os.Getenv("TEST_SNAPSHOT_FILE")
+	if filename == "" {
+		b.Skip("TEST_SNAPSHOT_FILE not set")
+	}
+	timestamp, err := strconv.ParseInt(os.Getenv("TEST_SNAPSHOT_TIMESTAMP"), 10, 64)
+	require.NoError(b, err, "TEST_SNAPSHOT_TIMESTAMP must be set to a valid unix timestamp")
+	now := time.Unix(timestamp, 0)
+
+	lim := limiterMock{}
+	require.NoError(b, json.Unmarshal([]byte(os.Getenv("TEST_SNAPSHOT_LIMITS")), &lim), "TEST_SNAPSHOT_LIMITS must be set to a valid limits map in JSON format")
+
+	f, err := os.Open(filename)
+	require.NoError(b, err, "failed to open snapshot file")
+	defer f.Close()
+
+	buf := bytes.NewBuffer(nil)
+	_, err = buf.ReadFrom(f)
+	require.NoError(b, err, "failed to read snapshot file")
+
+	var file usagetrackerpb.SnapshotFile
+	require.NoError(b, file.Unmarshal(buf.Bytes()))
+
+	b.Run("concurrency=1", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
+			for _, d := range file.Data {
+				require.NoError(b, t.loadSnapshot(d, now))
+			}
+		}
+	})
+
+	b.Run("concurrency=shards", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
+			wg := &sync.WaitGroup{}
+			wg.Add(len(file.Data))
+			for _, d := range file.Data {
+				go func() {
+					defer wg.Done()
+					require.NoError(b, t.loadSnapshot(d, now))
+				}()
+			}
+			wg.Wait()
+		}
+	})
 }
 
 func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
