@@ -350,11 +350,10 @@ func (m *FunctionOverRangeVectorSplit) createSplits(ctx context.Context) ([]Spli
 
 func (m *FunctionOverRangeVectorSplit) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
 	subRange := time.Duration(end-start) * time.Millisecond
-	subNode := m.innerNode.CreateNodeForSubRange(subRange)
 	// Set the time range for the split rather than adding to the offset so right timestamps get returned
 	splitTimeRange := types.NewInstantQueryTimeRange(promts.Time(end))
 
-	op, err := m.materializer.ConvertNodeToOperator(subNode, splitTimeRange)
+	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(m.innerNode, splitTimeRange, subRange)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +441,6 @@ func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, 
 type RangeVectorNode interface {
 	planning.Node
 	GetRange() time.Duration
-	CreateNodeForSubRange(updatedRange time.Duration) planning.Node
 }
 
 // SplitRange represents a time range within a split.

@@ -213,7 +213,11 @@ type OperatorParameters struct {
 // CacheKey generates a unique cache key for a planning node for use with intermediate result caching.
 // Currently only supports MatrixSelector nodes (range vector selectors).
 // For other node types, this function panics.
+// TODO: make a method on Node instead
 func CacheKey(node Node) string {
+	if node.NodeType() == NODE_TYPE_DUPLICATE {
+		node = node.Child(0)
+	}
 	// Only support MatrixSelector for now
 	if node.NodeType() != NODE_TYPE_MATRIX_SELECTOR {
 		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))

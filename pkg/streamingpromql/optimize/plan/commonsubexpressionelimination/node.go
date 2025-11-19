@@ -4,6 +4,7 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -103,8 +104,17 @@ func (d *Duplicate) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }
 
-func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperator(d.Inner, timeRange)
+func (d *Duplicate) GetRange() time.Duration {
+	//TODO: refine, shouldn't panic
+	rangeVectorNode, ok := d.Inner.(functions.RangeVectorNode)
+	if !ok {
+		panic("GetRange() should only be called for Duplicate over RangeVectorNode")
+	}
+	return rangeVectorNode.GetRange()
+}
+
+func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, subRange time.Duration) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, subRange)
 	if err != nil {
 		return nil, err
 	}

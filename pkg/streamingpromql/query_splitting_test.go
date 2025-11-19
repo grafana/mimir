@@ -340,6 +340,192 @@ type testIntermediateResultsCache struct {
 	t    *testing.T
 }
 
+func TestQuerySplitting_CountOverTime_UsesCache(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	expr := "count_over_time(test_metric[5h])"
+
+	// Run query at 6h
+	ts := baseT.Add(6 * time.Hour)
+
+	expected := &promql.Result{
+		Value: promql.Vector{
+			{
+				Metric: labels.FromStrings("env", "prod"),
+				T:      timestamp.FromTime(ts),
+				F:      30, // 30 samples in 5h range
+			},
+		},
+	}
+
+	// Run query first time (should populate cache)
+	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expected, result)
+
+	verifyCacheStats(t, testCache, 2, 0, 2)
+
+	// Run same query again (should hit cache)
+	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.Equal(t, expected, result)
+
+	verifyCacheStats(t, testCache, 4, 2, 2)
+}
+
+func TestQuerySplitting_VerifyStorageQueries(t *testing.T) {
+	_, mimirEngine := setupEngineAndCache(t)
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	trackRanges := func() (*wrappedQueryable, *[]struct{ mint, maxt int64 }) {
+		ranges := &[]struct{ mint, maxt int64 }{}
+		return &wrappedQueryable{
+			inner: promStorage,
+			onSelect: func(mint, maxt int64) {
+				*ranges = append(*ranges, struct{ mint, maxt int64 }{mint, maxt})
+			},
+		}, ranges
+	}
+
+	baseT := timestamp.Time(0)
+	expr := "sum_over_time(test_metric[5h])"
+	ctx := context.Background()
+
+	// Query 1 at 6h: all uncached, merged into single storage query [1h+1ms, 6h]
+	wrapped1, ranges1 := trackRanges()
+	q1, err := mimirEngine.NewInstantQuery(ctx, wrapped1, nil, expr, baseT.Add(6*time.Hour))
+	require.NoError(t, err)
+	q1.Exec(ctx)
+	q1.Close()
+	require.Equal(t, []struct{ mint, maxt int64 }{
+		{int64(1*time.Hour/time.Millisecond) + 1, int64(6 * time.Hour / time.Millisecond)},
+	}, *ranges1)
+
+	// Query 2 at 8h: middle (4h-6h) cached from query 1, head (3h-4h) and tail (6h-8h) uncached
+	wrapped2, ranges2 := trackRanges()
+	q2, err := mimirEngine.NewInstantQuery(ctx, wrapped2, nil, expr, baseT.Add(8*time.Hour))
+	require.NoError(t, err)
+	q2.Exec(ctx)
+	q2.Close()
+	require.Equal(t, []struct{ mint, maxt int64 }{
+		{int64(3*time.Hour/time.Millisecond) + 1, int64(4 * time.Hour / time.Millisecond)},
+		{int64(6*time.Hour/time.Millisecond) + 1, int64(8 * time.Hour / time.Millisecond)},
+	}, *ranges2)
+}
+
+func TestQuerySplitting_WithCSE(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x100
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	expr := "sum_over_time(test_metric[5h]) / count_over_time(test_metric[5h])"
+	ts := baseT.Add(6 * time.Hour)
+	ctx := context.Background()
+
+	// Create planner to capture plan structure
+	opts := NewTestEngineOpts()
+	opts.InstantQuerySplitting.Enabled = true
+	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+	require.True(t, opts.EnableCommonSubexpressionElimination, "CSE should be enabled")
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), &NoopPlanningObserver{})
+	require.NoError(t, err)
+	require.NotNil(t, plan)
+
+	// Verify plan structure includes CSE Duplicate nodes inside SplittableFunctionCall
+	expectedPlan := `
+		- BinaryExpression: LHS / RHS
+			- LHS: DeduplicateAndMerge
+				- SplittableFunctionCall: split=2h0m0s
+					- FunctionCall: sum_over_time(...)
+						- ref#1 Duplicate
+							- MatrixSelector: {__name__="test_metric"}[5h0m0s]
+			- RHS: DeduplicateAndMerge
+				- SplittableFunctionCall: split=2h0m0s
+					- FunctionCall: count_over_time(...)
+						- ref#1 Duplicate ...
+	`
+	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
+
+	// Execute the query end-to-end with storage query tracking
+	ranges := &[]struct{ mint, maxt int64 }{}
+	wrappedStorage := &wrappedQueryable{
+		inner: promStorage,
+		onSelect: func(mint, maxt int64) {
+			*ranges = append(*ranges, struct{ mint, maxt int64 }{mint, maxt})
+		},
+	}
+
+	q, err := mimirEngine.NewInstantQuery(ctx, wrappedStorage, nil, expr, ts)
+	require.NoError(t, err)
+	defer q.Close()
+
+	result := q.Exec(ctx)
+	require.NoError(t, result.Err)
+
+	// At 6h, looking back 5h: range (1h, 6h]
+	// Points at: 70m, 80m, 90m, ..., 360m (values 7, 8, 9, ..., 36)
+	// Sum: 7+8+...+36 = 645, Count: 30, Average: 645/30 = 21.5
+	expected := &promql.Result{
+		Value: promql.Vector{
+			{
+				Metric: labels.FromStrings("env", "prod"),
+				T:      timestamp.FromTime(ts),
+				F:      21.5,
+			},
+		},
+	}
+
+	require.Equal(t, expected, result)
+	require.Greater(t, testCache.sets, 0, "Cache should have been populated")
+
+	// Verify CSE is working: with CSE, the MatrixSelector is shared between sum_over_time
+	// and count_over_time via Duplicate, so we should only query storage once, not twice
+	require.Equal(t, []struct{ mint, maxt int64 }{
+		{int64(1*time.Hour/time.Millisecond) + 1, int64(6 * time.Hour / time.Millisecond)},
+	}, *ranges, "CSE should result in only one storage query (not two)")
+
+	// Query 2 at 8h: middle (4h-6h) cached from query 1, head (3h-4h) and tail (6h-8h) uncached
+	// With CSE, both sum_over_time and count_over_time share the same MatrixSelector data
+	*ranges = nil
+	ts2 := baseT.Add(8 * time.Hour)
+	q2, err := mimirEngine.NewInstantQuery(ctx, wrappedStorage, nil, expr, ts2)
+	require.NoError(t, err)
+	defer q2.Close()
+
+	result2 := q2.Exec(ctx)
+	require.NoError(t, result2.Err)
+
+	// At 8h, looking back 5h: range (3h, 8h]
+	// With 2h splits covering the range, some will be cached from query 1
+	require.NoError(t, result2.Err)
+	require.Len(t, result2.Value.(promql.Vector), 1)
+	require.Equal(t, labels.FromStrings("env", "prod"), result2.Value.(promql.Vector)[0].Metric)
+
+	// Verify CSE with partial cache: only 2 storage queries (not 4), one for each uncached range
+	require.Equal(t, []struct{ mint, maxt int64 }{
+		{int64(3*time.Hour/time.Millisecond) + 1, int64(4 * time.Hour / time.Millisecond)},
+		{int64(6*time.Hour/time.Millisecond) + 1, int64(8 * time.Hour / time.Millisecond)},
+	}, *ranges, "CSE should result in 2 storage queries (not 4) for head and tail uncached ranges")
+}
+
 // newTestIntermediateResultsCache creates a new test cache instance.
 func newTestIntermediateResultsCache(t *testing.T) *testIntermediateResultsCache {
 	return &testIntermediateResultsCache{
@@ -479,103 +665,14 @@ func (e *testCacheWriteEntry) Finalize() error {
 	return nil
 }
 
-func TestQuerySplitting_CountOverTime_UsesCache(t *testing.T) {
-	testCache, mimirEngine := setupEngineAndCache(t)
+type wrappedQueryable struct {
+	inner    storage.Queryable
+	onSelect func(mint, maxt int64)
+}
 
-	promStorage := promqltest.LoadedStorage(t, `
-		load 10m
-			test_metric{env="prod"} 0+1x60
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-
-	baseT := timestamp.Time(0)
-	expr := "count_over_time(test_metric[5h])"
-
-	// Run query at 6h
-	ts := baseT.Add(6 * time.Hour)
-
-	expected := &promql.Result{
-		Value: promql.Vector{
-			{
-				Metric: labels.FromStrings("env", "prod"),
-				T:      timestamp.FromTime(ts),
-				F:      30, // 30 samples in 5h range
-			},
-		},
+func (w *wrappedQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	if w.onSelect != nil {
+		w.onSelect(mint, maxt)
 	}
-
-	// Run query first time (should populate cache)
-	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
-	require.Equal(t, expected, result)
-
-	verifyCacheStats(t, testCache, 2, 0, 2)
-
-	// Run same query again (should hit cache)
-	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
-	require.Equal(t, expected, result)
-
-	verifyCacheStats(t, testCache, 4, 2, 2)
-}
-
-// TestQuerySplitting_WithCSE_PlanStructure verifies that CSE correctly wraps
-// shared MatrixSelectors in Duplicate nodes within SplittableFunctionCall.
-func TestQuerySplitting_WithCSE_PlanStructure(t *testing.T) {
-	ctx := context.Background()
-
-	opts := NewTestEngineOpts()
-	opts.InstantQuerySplitting.Enabled = true
-	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
-	require.True(t, opts.EnableCommonSubexpressionElimination, "CSE should be enabled")
-
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-
-	query := `sum_over_time(test_metric[5h]) / count_over_time(test_metric[5h])`
-	timeRange := types.NewInstantQueryTimeRange(time.Unix(21600, 0))
-
-	plan, err := planner.NewQueryPlan(ctx, query, timeRange, &NoopPlanningObserver{})
-	require.NoError(t, err)
-	require.NotNil(t, plan)
-
-	expectedPlan := `
-		- BinaryExpression: LHS / RHS
-			- LHS: DeduplicateAndMerge
-				- SplittableFunctionCall: split=2h0m0s
-					- FunctionCall: sum_over_time(...)
-						- ref#1 Duplicate
-							- MatrixSelector: {__name__="test_metric"}[5h0m0s]
-			- RHS: DeduplicateAndMerge
-				- SplittableFunctionCall: split=2h0m0s
-					- FunctionCall: count_over_time(...)
-						- ref#1 Duplicate ...
-	`
-	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
-}
-
-// TestQuerySplitting_WithCSE_EndToEnd verifies query execution with CSE and Query Splitting.
-// Currently fails: materializer doesn't handle Duplicate-wrapped MatrixSelectors.
-func TestQuerySplitting_WithCSE_EndToEnd(t *testing.T) {
-	testCache, mimirEngine := setupEngineAndCache(t)
-
-	promStorage := promqltest.LoadedStorage(t, `
-		load 10m
-			test_metric{env="prod"} 0+1x60
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-
-	baseT := timestamp.Time(0)
-	expr := "sum_over_time(test_metric[5h]) / count_over_time(test_metric[5h])"
-	ts := baseT.Add(6 * time.Hour)
-
-	ctx := context.Background()
-	q, err := mimirEngine.NewInstantQuery(ctx, promStorage, nil, expr, ts)
-	require.NoError(t, err, "Query creation should succeed")
-	defer q.Close()
-
-	result := q.Exec(ctx)
-	require.NoError(t, result.Err)
-
-	//TODO: better expectations once CSE is properly supported
-	require.NotNil(t, result.Value, "Query should return a value")
-	require.Greater(t, testCache.sets, 0, "Cache should have been populated")
+	return w.inner.Querier(mint, maxt)
 }

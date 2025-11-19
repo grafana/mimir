@@ -118,7 +118,7 @@ func NewMaterializer(cache cache.IntermediateResultsCache) *Materializer {
 	}
 }
 
-func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ time.Duration) (planning.OperatorFactory, error) {
 	s, ok := n.(*SplittableFunctionCall)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplittableFunctionCall, got %T", n)
@@ -140,13 +140,13 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 
 	splitDuration := s.SplittableFunctionCallDetails.SplitDuration
 
-	matrixSelector, ok := s.Inner.Child(0).(*core.MatrixSelector)
+	rangeVectorNode, ok := s.Inner.Child(0).(functions.RangeVectorNode)
 	if !ok {
-		return nil, errors.New("inner.children[0] is expected to be a matrix selector")
+		return nil, errors.New("inner.children[0] is expected to of type RangeVectorNode")
 	}
 
 	splitOp, err := functions.NewFunctionOverRangeVectorSplit(
-		matrixSelector,
+		rangeVectorNode,
 		materializer,
 		timeRange,
 		splitDuration,

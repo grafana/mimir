@@ -81,13 +81,17 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, subRange time.Duration) (planning.OperatorFactory, error) {
+	selectorRange := m.Range
+	if subRange != 0 {
+		selectorRange = subRange
+	}
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
 		Timestamp:                TimestampFromTime(m.Timestamp),
 		Offset:                   m.Offset.Milliseconds(),
-		Range:                    m.Range,
+		Range:                    selectorRange,
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
@@ -121,17 +125,4 @@ func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion 
 
 func (m *MatrixSelector) GetRange() time.Duration {
 	return m.Range
-}
-
-func (m *MatrixSelector) CreateNodeForSubRange(updatedRange time.Duration) planning.Node {
-	return &MatrixSelector{
-		MatrixSelectorDetails: &MatrixSelectorDetails{
-			Matchers:             m.Matchers,
-			Timestamp:            m.Timestamp,
-			Offset:               m.Offset,
-			Range:                updatedRange,
-			ExpressionPosition:   m.MatrixSelectorDetails.ExpressionPosition,
-			SkipHistogramBuckets: m.SkipHistogramBuckets,
-		},
-	}
 }
