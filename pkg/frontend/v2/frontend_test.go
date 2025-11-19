@@ -2093,3 +2093,26 @@ func TestQueryDecoding(t *testing.T) {
 func newTestCodec() querymiddleware.Codec {
 	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyInjector{})
 }
+
+func BenchmarkProtobufResponseStreamShouldAbortReading(b *testing.B) {
+	// It's important to use a context from WithCancel here as other kinds of contexts (eg. context.Background())
+	// have different performance characteristics for Err() and Done().
+	requestContext, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
+
+	stream := &ProtobufResponseStream{
+		closed:         make(chan struct{}),
+		requestContext: requestContext,
+	}
+
+	callContext, cancelCall := context.WithCancel(context.Background())
+	defer cancelCall()
+
+	for b.Loop() {
+		err := stream.shouldAbortReading(callContext)
+
+		if err != nil {
+			require.NoError(b, err, "shouldNotAbortReading should not return an error")
+		}
+	}
+}
