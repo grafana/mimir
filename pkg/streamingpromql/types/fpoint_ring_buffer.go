@@ -382,13 +382,15 @@ func (i *FPointRingBufferViewIterator) Peek() promql.FPoint {
 // Seek will return the point which is closest to being <= time, or the first point after this time.
 // The iterator will be positioned to the first point > time.
 func (i *FPointRingBufferViewIterator) Seek(time int64) promql.FPoint {
-	var first *promql.FPoint
+	var first promql.FPoint
+	ok := false
 
 	for i.HasNext() {
 		next := i.Peek()
 
 		if next.T < time {
-			first = &next
+			first = next
+			ok = true
 			i.advance()
 			continue
 		}
@@ -398,14 +400,17 @@ func (i *FPointRingBufferViewIterator) Seek(time int64) promql.FPoint {
 			return next
 		}
 
-		if first != nil {
-			return *first
+		if ok {
+			return first
 		}
 
 		return next
 	}
 
-	return *first
+	if !ok {
+		panic(fmt.Sprintf("seek(): out of range - no record found"))
+	}
+	return first
 }
 
 // CopyRemainingPointsTo will accumulate all points <= time into the given buff.
