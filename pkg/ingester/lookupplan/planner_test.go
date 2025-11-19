@@ -58,7 +58,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
-	const writeOutNewResults = true
+	const writeOutNewResults = false
 	if writeOutNewResults {
 		t.Cleanup(func() { data.WriteTestCases(t, testCases) })
 	}
