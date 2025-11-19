@@ -526,6 +526,165 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	}, *ranges, "CSE should result in 2 storage queries (not 4) for head and tail uncached ranges")
 }
 
+// TestQuerySplitting_WithOffset_CacheAlignment demonstrates that cache ranges are not
+// properly aligned with actual storage queries when using offset modifier.
+//
+// The problem: Splits are currently based on evaluation time, causing:
+// 1. Duplicate block loads within a single query (same block loaded multiple times)
+// 2. Cache misses across queries accessing overlapping data ranges
+//
+// The fix: Base splits on actual data time (from QueriedTimeRange), only cache aligned blocks.
+func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
+	_, mimirEngine := setupEngineAndCache(t)
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x100
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	trackRanges := func() (*wrappedQueryable, *[]struct{ mint, maxt int64 }) {
+		ranges := &[]struct{ mint, maxt int64 }{}
+		return &wrappedQueryable{
+			inner: promStorage,
+			onSelect: func(mint, maxt int64) {
+				*ranges = append(*ranges, struct{ mint, maxt int64 }{mint, maxt})
+			},
+		}, ranges
+	}
+
+	baseT := timestamp.Time(0)
+	// Query with offset: at 8h, look back 5h with 1h offset
+	// This queries data range: (8h - 1h offset - 5h, 8h - 1h offset] = (2h, 7h]
+	// With 2h split interval: splits are (2h, 4h], (4h, 6h], (6h, 7h]
+	// Only (2h:4h] and (4h:6h] should be cached (aligned), not partial (6h:7h]
+	expr := "sum_over_time(test_metric[5h] offset 1h)"
+	ctx := context.Background()
+
+	// Query 1 at 8h: data range (2h, 7h], all uncached
+	wrapped1, ranges1 := trackRanges()
+	q1, err := mimirEngine.NewInstantQuery(ctx, wrapped1, nil, expr, baseT.Add(8*time.Hour))
+	require.NoError(t, err)
+	q1.Exec(ctx)
+	q1.Close()
+
+	t.Logf("Query 1 at 8h with offset 1h, lookback 5h")
+	t.Logf("  Data range: (2h, 7h]")
+	t.Logf("  Expected: single merged query [2h+1ms, 7h]")
+	t.Logf("  Should cache: (2h:4h], (4h:6h] (aligned blocks only)")
+	t.Logf("  Should NOT cache: (6h:7h] (partial tail)")
+	t.Logf("  Actual storage queries:")
+	for _, r := range *ranges1 {
+		t.Logf("    [%s, %s]", time.Duration(r.mint)*time.Millisecond, time.Duration(r.maxt)*time.Millisecond)
+	}
+
+	// Query 2 at 10h: data range (4h, 9h]
+	// Splits: (4h, 6h], (6h, 8h], (8h, 9h]
+	// Expected: cache hit on (4h:6h] from Q1, miss on (6h:8h] and (8h:9h]
+	// Should query [6h+1ms, 9h] merged, and cache (6h:8h] only (not partial 8h:9h)
+	wrapped2, ranges2 := trackRanges()
+	q2, err := mimirEngine.NewInstantQuery(ctx, wrapped2, nil, expr, baseT.Add(10*time.Hour))
+	require.NoError(t, err)
+	q2.Exec(ctx)
+	q2.Close()
+
+	t.Logf("")
+	t.Logf("Query 2 at 10h with offset 1h, lookback 5h")
+	t.Logf("  Data range: (4h, 9h]")
+	t.Logf("  Splits: (4h, 6h], (6h, 8h], (8h, 9h]")
+	t.Logf("  Expected cache hit: (4h:6h] from Q1")
+	t.Logf("  Expected cache miss: (6h:8h], (8h:9]")
+	t.Logf("  Expected query: [6h+1ms, 9h] merged")
+	t.Logf("  Should cache: (6h:8h] (aligned block only)")
+	t.Logf("  Should NOT cache: (8h:9h] (partial tail)")
+	t.Logf("  Actual storage queries:")
+	for _, r := range *ranges2 {
+		t.Logf("    [%s, %s]", time.Duration(r.mint)*time.Millisecond, time.Duration(r.maxt)*time.Millisecond)
+	}
+
+	// TODO: Once fixed, verify:
+	// - Query 1: single query [2h+1ms, 7h]
+	// - Query 2: single query [6h+1ms, 9h] (saved 2h by reusing cached 4h:6h block)
+}
+
+// TestQuerySplitting_WithAtModifier_CacheAlignment demonstrates that cache ranges are not
+// properly aligned with actual storage queries when using @ modifier.
+//
+// The problem: Splits are currently based on evaluation time, not the fixed @ time, causing:
+// 1. Cache misses even when queries access identical data ranges
+// 2. Duplicate storage queries for the same data
+//
+// The fix: Base splits on actual data time (from QueriedTimeRange), only cache aligned blocks.
+func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
+	_, mimirEngine := setupEngineAndCache(t)
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			test_metric{env="prod"} 0+1x100
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	trackRanges := func() (*wrappedQueryable, *[]struct{ mint, maxt int64 }) {
+		ranges := &[]struct{ mint, maxt int64 }{}
+		return &wrappedQueryable{
+			inner: promStorage,
+			onSelect: func(mint, maxt int64) {
+				*ranges = append(*ranges, struct{ mint, maxt int64 }{mint, maxt})
+			},
+		}, ranges
+	}
+
+	baseT := timestamp.Time(0)
+	// Query with @ modifier: evaluate at fixed time 7h, look back 5h
+	// This queries data range: (7h - 5h, 7h] = (2h, 7h]
+	// Both queries at different evaluation times access the SAME data range
+	// With 2h split interval: splits are (2h, 4h], (4h, 6h], (6h, 7h]
+	// Only (2h:4h] and (4h:6h] should be cached (aligned), not partial (6h:7h]
+	expr := "sum_over_time(test_metric[5h] @ 25200.000)" // 7h in seconds
+	ctx := context.Background()
+
+	// Query 1 at 8h: data range (2h, 7h] due to @ 7h
+	wrapped1, ranges1 := trackRanges()
+	q1, err := mimirEngine.NewInstantQuery(ctx, wrapped1, nil, expr, baseT.Add(8*time.Hour))
+	require.NoError(t, err)
+	q1.Exec(ctx)
+	q1.Close()
+
+	t.Logf("Query 1 at 8h with @ 7h, lookback 5h")
+	t.Logf("  Data range: (2h, 7h]")
+	t.Logf("  Expected: single merged query [2h+1ms, 7h]")
+	t.Logf("  Should cache: (2h:4h], (4h:6h] (aligned blocks only)")
+	t.Logf("  Should NOT cache: (6h:7h] (partial tail)")
+	t.Logf("  Actual storage queries:")
+	for _, r := range *ranges1 {
+		t.Logf("    [%s, %s]", time.Duration(r.mint)*time.Millisecond, time.Duration(r.maxt)*time.Millisecond)
+	}
+
+	// Query 2 at 10h: also queries (2h, 7h] due to @ 7h - IDENTICAL to Query 1!
+	// Splits: (2h, 4h], (4h, 6h], (6h, 7h] - same as Q1
+	// Expected: cache hit on (2h:4h] and (4h:6h] from Q1, miss on (6h:7h]
+	// Should only query [6h+1ms, 7h] (1h instead of 5h = 80% cache hit!)
+	wrapped2, ranges2 := trackRanges()
+	q2, err := mimirEngine.NewInstantQuery(ctx, wrapped2, nil, expr, baseT.Add(10*time.Hour))
+	require.NoError(t, err)
+	q2.Exec(ctx)
+	q2.Close()
+
+	t.Logf("")
+	t.Logf("Query 2 at 10h with @ 7h, lookback 5h")
+	t.Logf("  Data range: (2h, 7h] (IDENTICAL to Q1!)")
+	t.Logf("  Splits: (2h, 4h], (4h, 6h], (6h, 7h] (same as Q1)")
+	t.Logf("  Expected cache hits: (2h:4h], (4h:6h] from Q1")
+	t.Logf("  Expected cache miss: (6h:7h] (wasn't cached in Q1)")
+	t.Logf("  Expected query: [6h+1ms, 7h] only (1h instead of 5h!)")
+	t.Logf("  Actual storage queries:")
+	for _, r := range *ranges2 {
+		t.Logf("    [%s, %s]", time.Duration(r.mint)*time.Millisecond, time.Duration(r.maxt)*time.Millisecond)
+	}
+
+	// TODO: Once fixed, verify:
+	// - Query 1: single query [2h+1ms, 7h]
+	// - Query 2: single query [6h+1ms, 7h] (saved 4h = 80% reduction!)
+}
+
 // newTestIntermediateResultsCache creates a new test cache instance.
 func newTestIntermediateResultsCache(t *testing.T) *testIntermediateResultsCache {
 	return &testIntermediateResultsCache{
