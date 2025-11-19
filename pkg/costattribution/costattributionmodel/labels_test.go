@@ -79,21 +79,21 @@ func TestLabel_Validate(t *testing.T) {
 	}
 }
 
-func TestFromCostAttributionLabelsToOutputLabels(t *testing.T) {
+func TestLabels_OutputLabels(t *testing.T) {
 	tc := map[string]struct {
-		input    []Label
+		input    Labels
 		expected []string
 	}{
 		"no labels": {
-			input:    []Label{},
+			input:    Labels{},
 			expected: []string{},
 		},
 		"single": {
-			input:    []Label{{Input: "team", Output: "my_team"}},
+			input:    Labels{{Input: "team", Output: "my_team"}},
 			expected: []string{"my_team"},
 		},
 		"regular list": {
-			input: []Label{
+			input: Labels{
 				{Input: "team", Output: "my_team"},
 				{Input: "service", Output: "my_service"},
 			},
@@ -102,8 +102,70 @@ func TestFromCostAttributionLabelsToOutputLabels(t *testing.T) {
 	}
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
-			result := FromCostAttributionLabelsToOutputLabels(tt.input)
+			result := tt.input.OutputLabels()
 			require.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestLabels_Validate(t *testing.T) {
+	tc := map[string]struct {
+		input       Labels
+		expectedErr error
+	}{
+		"empty labels": {
+			input:       Labels{},
+			expectedErr: nil,
+		},
+		"single valid label": {
+			input:       Labels{{Input: "team", Output: "my_team"}},
+			expectedErr: nil,
+		},
+		"multiple valid labels with different inputs and outputs": {
+			input: Labels{
+				{Input: "team", Output: "my_team"},
+				{Input: "service", Output: "my_service"},
+			},
+			expectedErr: nil,
+		},
+		"multiple valid labels with empty outputs": {
+			input: Labels{
+				{Input: "team", Output: ""},
+				{Input: "service", Output: ""},
+			},
+			expectedErr: nil,
+		},
+		"duplicate input labels": {
+			input: Labels{
+				{Input: "team", Output: "my_team"},
+				{Input: "team", Output: "other_team"},
+			},
+			expectedErr: fmt.Errorf(`duplicate input label: "team:other_team"`),
+		},
+		"duplicate output labels": {
+			input: Labels{
+				{Input: "team", Output: "my_team"},
+				{Input: "service", Output: "my_team"},
+			},
+			expectedErr: fmt.Errorf(`duplicate output label: "service:my_team"`),
+		},
+		"duplicate output when first label has empty output": {
+			input: Labels{
+				{Input: "team", Output: ""},
+				{Input: "service", Output: "team"},
+			},
+			expectedErr: fmt.Errorf(`duplicate output label: "service:team"`),
+		},
+	}
+
+	for name, tt := range tc {
+		t.Run(name, func(t *testing.T) {
+			err := tt.input.Validate()
+			if tt.expectedErr != nil {
+				require.EqualError(t, err, tt.expectedErr.Error())
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }

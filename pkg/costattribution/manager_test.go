@@ -44,14 +44,14 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		user1SampleTracker := manager.SampleTracker("user1")
 		assert.NotNil(t, user1SampleTracker)
-		assert.True(t, user1SampleTracker.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: "my_team"}}))
+		assert.True(t, user1SampleTracker.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
 		assert.Equal(t, 5, user1SampleTracker.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
 		user3ActiveTracker := manager.ActiveSeriesTracker("user3")
 		assert.NotNil(t, user3ActiveTracker)
-		assert.True(t, user3ActiveTracker.hasSameLabels([]costattributionmodel.Label{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assert.True(t, user3ActiveTracker.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
 		assert.Equal(t, 2, user3ActiveTracker.maxCardinality)
 	})
 
@@ -193,8 +193,8 @@ func TestManager_CreateDeleteTracker(t *testing.T) {
 		manager.limits = testutils.NewMockCostAttributionLimits(2)
 		manager.purgeInactiveAttributionsUntil(time.Unix(12, 0).Add(manager.inactiveTimeout))
 		assert.Equal(t, 1, len(manager.sampleTrackersByUserID))
-		assert.True(t, manager.SampleTracker("user3").hasSameLabels([]costattributionmodel.Label{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
-		assert.True(t, manager.ActiveSeriesTracker("user3").hasSameLabels([]costattributionmodel.Label{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		assert.True(t, manager.SampleTracker("user3").hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
+		assert.True(t, manager.ActiveSeriesTracker("user3").hasSameLabels(costattributionmodel.Labels{{Input: "feature", Output: "my_feature"}, {Input: "team", Output: "my_team"}}))
 
 		manager.SampleTracker("user3").IncrementDiscardedSamples([]mimirpb.LabelAdapter{{Name: "team", Value: "foo"}}, 1, "invalid-metrics-name", time.Unix(13, 0))
 		expectedMetrics := `
@@ -434,14 +434,14 @@ func TestManager_InvalidTrackers(t *testing.T) {
 	t.Run("Tracker existence and attributes", func(t *testing.T) {
 		user1SampleTracker := manager.SampleTracker("user1")
 		assert.NotNil(t, user1SampleTracker)
-		assert.True(t, user1SampleTracker.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: "my_team"}}))
+		assert.True(t, user1SampleTracker.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}))
 		assert.Equal(t, 5, user1SampleTracker.maxCardinality)
 
 		assert.Nil(t, manager.SampleTracker("user2"))
 
 		user3ActiveTracker := manager.ActiveSeriesTracker("user3")
 		assert.NotNil(t, user3ActiveTracker)
-		assert.True(t, user3ActiveTracker.hasSameLabels([]costattributionmodel.Label{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
+		assert.True(t, user3ActiveTracker.hasSameLabels(costattributionmodel.Labels{{Input: "department", Output: "my_department"}, {Input: "service", Output: "my_service"}}))
 		assert.Equal(t, 2, user3ActiveTracker.maxCardinality)
 	})
 
