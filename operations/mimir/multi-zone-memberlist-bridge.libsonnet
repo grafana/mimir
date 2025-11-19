@@ -10,6 +10,10 @@
     memberlist_bridge_priority_class: 'high-nonpreempting',
   },
 
+  _images+:: if $._config.multi_zone_memberlist_bridge_enabled then {
+    memberlist_bridge: $._images.mimir,
+  } else {},
+
   local container = $.core.v1.container,
   local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,

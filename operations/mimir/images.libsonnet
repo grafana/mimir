@@ -18,7 +18,6 @@
     store_gateway: self.mimir,
     query_scheduler: self.mimir,
     overrides_exporter: self.mimir,
-    memberlist_bridge: self.mimir,
 
     query_tee: 'grafana/query-tee:3.0.0',
     continuous_test: self.mimir,

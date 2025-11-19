@@ -5,6 +5,10 @@
     local availabilityZones = ['us-east-2a', 'us-east-2b'],
     multi_zone_availability_zones: availabilityZones,
 
+    // Enable multi-AZ for write path components.
+    multi_zone_ingester_multi_az_enabled: true,
+    multi_zone_store_gateway_multi_az_enabled: true,
+
     // Enable multi-zone for read path components.
     multi_zone_memcached_enabled: true,
     multi_zone_querier_enabled: true,
