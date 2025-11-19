@@ -438,7 +438,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 	// At this point the compaction has failed. Track the failure.
 	compactor.metrics.groupCompactionRunsFailed.Inc()
 
-	// Handle known compaction errors using shared helper
+	// Handle known compaction errors
 	shouldRetry, handledErr := handleCompactionError(ctx, userLogger, userBucket, syncer.metrics.blocksMarkedForDeletion, compactor.metrics.blocksMarkedForNoCompact, compactor.skipUnhealthyBlocks, err)
 	if shouldRetry {
 		level.Info(userLogger).Log("msg", "compaction error was handled, job can be re-planned")
