@@ -69,7 +69,7 @@ ingest_storage:
 
 For production deployments, run Redpanda in a multi-node cluster with replication. [Redpanda Console](https://docs.redpanda.com/current/reference/console/) provides a web UI for monitoring topics, messages, and consumer groups.
 
-For a complete working example with Docker Compose, automated tests, and Redpanda Console integration, see the community-maintained [mimir-redpanda-demo](https://github.com/meticulo3366/redpanda-mimir-integration) repository.
+For a complete working example with Docker Compose, automated tests, and Redpanda Console integration, refer to the community-maintained [mimir-redpanda-demo](https://github.com/meticulo3366/redpanda-mimir-integration) repository.
 
 ### Warpstream
 
