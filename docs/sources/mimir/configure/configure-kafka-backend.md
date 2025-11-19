@@ -1,3 +1,11 @@
+---
+aliases:
+  - ../operators-guide/configure/configure-kafka-backend/
+description: Learn how to configure Grafana Mimir to use Kafka for ingest storage.
+menuTitle: Kafka
+title: Configure the Grafana Mimir Kafka backend
+weight: 130
+---
 # Configure the Grafana Mimir Kafka backend
 
 Grafana Mimir supports using Kafka as the first layer of ingestion in the ingest storage architecture. This configuration allows for scalable, decoupled ingestion that separates write and read paths to improve performance and resilience.
@@ -42,9 +50,18 @@ Use the default options with Apache Kafka. No additional configuration is needed
 
 Use the default options with Confluent Kafka. No additional configuration is needed.
 
+
+### Warpstream
+
+Configure the following CLI flags or their YAML equivalent.
+
+```
+-ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes=false
+```
+
 ### Redpanda
 
-[Redpanda](https://redpanda.com/) is a Kafka-compatible streaming platform that implements the Kafka wire protocol. You can use Redpanda as a drop-in replacement for Apache Kafka. It offers simplified operations, for example, no dependency on JVM or Zookeeper, and often delivers better performance than Apache Kafka.
+[Redpanda](https://redpanda.com/) is a Kafka-compatible streaming platform that implements the Kafka wire protocol. You can use Redpanda as a drop-in replacement for Apache Kafka. It offers simplified operations, for example, no dependency on JVM or Zookeeper, and often [delivers better performance than Apache Kafka](https://cdn.prod.website-files.com/6659da8aecd70e0898c0d7ed/679282563f7414da9371634b_McKnight%20Streaming%20Benchmark%20Redpanda_%20Confluent%202025.pdf).
 
 Use the default options with Redpanda. No additional configuration is required.
 
@@ -71,10 +88,3 @@ For production deployments, run Redpanda in a multi-node cluster with replicatio
 
 For a complete working example with Docker Compose, automated tests, and Redpanda Console integration, refer to the community-maintained [mimir-redpanda-demo](https://github.com/meticulo3366/redpanda-mimir-integration) repository.
 
-### Warpstream
-
-Configure the following CLI flags or their YAML equivalent.
-
-```
--ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes=false
-```
