@@ -61,7 +61,7 @@ require (
 	github.com/go-openapi/swag/jsonutils v0.25.1
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.7.0
-	github.com/google/go-github/v78 v78.0.0
+	github.com/google/go-github/v79 v79.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 	github.com/grafana/alerting v0.0.0-20251002141545-d513d62d3210
