@@ -48,7 +48,7 @@ Use the default options with Confluent Kafka. No additional configuration is nee
 
 Use the default options with Redpanda. No additional configuration is required.
 
-Redpanda has been verified to work correctly with Mimir's ingest storage architecture, supporting all required Kafka features including:
+Redpanda works correctly with Mimir's ingest storage architecture, and supports all required Kafka features, including:
 
 - Automatic topic creation
 - Consumer groups with partition assignment
