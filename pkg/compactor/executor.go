@@ -78,7 +78,6 @@ type schedulerExecutor struct {
 	invalidClusterValidation *prometheus.CounterVec
 	retryable                failsafe.Executor[any]
 	lastCleanupTime          time.Time
-	cleanupMu                sync.Mutex
 }
 
 func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidation *prometheus.CounterVec) (*schedulerExecutor, error) {
@@ -187,8 +186,6 @@ func emptyCompactionDir(logger log.Logger, compactDir string) error {
 // cleanupCompactionDir cleans up the compaction directory if the configured
 // cleanup interval has elapsed since the last cleanup.
 func (e *schedulerExecutor) cleanupCompactionDir(logger log.Logger, compactDir string) error {
-	e.cleanupMu.Lock()
-	defer e.cleanupMu.Unlock()
 	elapsed := time.Since(e.lastCleanupTime)
 	shouldCleanup := elapsed >= e.cfg.CompactionDirCleanupInterval
 
