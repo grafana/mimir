@@ -140,6 +140,22 @@ groups:
           for: 5m
           labels:
             severity: critical
+        - alert: MimirKVStoreFailureNativeHistogram
+          annotations:
+            message: |
+                Mimir {{ $labels.instance }} in  {{ $labels.cluster }}/{{ $labels.namespace }} is failing to talk to the KV store {{ $labels.kv_name }}.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkvstorefailurenativehistogram
+          expr: |
+            (
+              sum by(cluster, namespace, instance, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{status_code!~"2.+"}[1m])))
+              /
+              sum by(cluster, namespace, instance, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds[1m])))
+            )
+            # We want to get alerted only in case there's a constant failure.
+            == 1
+          for: 5m
+          labels:
+            severity: critical
         - alert: MimirMemoryMapAreasTooHigh
           annotations:
             message: '{{ $labels.job }}/{{ $labels.instance }} has a number of mmap-ed areas close to the limit.'

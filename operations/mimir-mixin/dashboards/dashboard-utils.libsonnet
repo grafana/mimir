@@ -666,11 +666,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.timeseriesPanel('Requests / sec') +
-      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.qpsPanelNativeHistogram('cortex_kv_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names[jobName]) + [utils.selector.re('kv_name', kvName)]))
     )
     .addPanel(
       $.timeseriesPanel('Latency') +
-      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.latencyPanelNativeHistogram('cortex_kv_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector($._config.job_names[jobName]) + [utils.selector.re('kv_name', kvName)]))
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
@@ -1269,16 +1269,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency (getmulti)') +
-      $.latencyPanel(
+      $.latencyPanelNativeHistogram(
         'thanos_cache_operation_duration_seconds',
-        |||
-          {
-            %(jobMatcher)s,
-            operation="getmulti",
-            component="%(component)s",
-            name="%(cacheName)s"
-          }
-        ||| % config
+        utils.toPrometheusSelectorNaked($.jobSelector(jobName) + [
+          utils.selector.re('operation', "getmulti"),
+          utils.selector.re('component', config.component),
+          utils.selector.re('name', config.cacheName),
+        ]),
       )
     )
     .addPanel(
@@ -1636,7 +1633,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+        $.latencyPanelNativeHistogram('cortex_query_scheduler_queue_duration_seconds', $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Queue length';
@@ -1779,21 +1776,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
         .addPanel(
           $.timeseriesPanel('Latency') +
-          $.latencyPanel(
+          $.latencyPanelNativeHistogram(
             'thanos_cache_operation_duration_seconds',
-            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+            utils.toPrometheusSelectorNaked($.jobSelector(queryFrontendJobName) + [utils.selector.re('name', "frontend-cache")])),
           )
-        ),
       ]
     ) + [
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.querier_read_routes_regex])
+        $.qpsPanelNativeHistogram('cortex_querier_request_duration_seconds', utils.toPrometheusSelectorNaked($.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)]))
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
@@ -1875,7 +1871,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.timeseriesPanel('Latency') +
       $.panelDescription('Latency', description) +
-      $.latencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelector(selectors))
+      $.latencyPanelNativeHistogram(querierRequestsPerSecondMetric, utils.toPrometheusSelectorNaked(selectors))
     )
     .addPanel(
       $.timeseriesPanel('Per querier %s p99 latency' % $._config.per_instance_label) +
