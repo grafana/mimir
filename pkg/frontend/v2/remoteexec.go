@@ -118,10 +118,8 @@ func (r *RemoteExecutor) startExecution(
 
 type responseStream interface {
 	// Next returns the next message in the stream, or an error if the stream has ended or failed.
-	// Next must not be called concurrently with Close.
 	Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error)
 	// Close closes the stream.
-	// Close must not be called concurrently with Next.
 	Close()
 }
 
