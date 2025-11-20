@@ -12574,6 +12574,17 @@
           "fieldFlag": "compactor.executor-max-retry-backoff",
           "fieldType": "duration",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "compaction_dir_cleanup_interval",
+          "required": false,
+          "desc": "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1800000000000,
+          "fieldFlag": "compactor.compaction-dir-cleanup-interval",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

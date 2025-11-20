@@ -657,3 +657,78 @@ func TestMetaFetcher_CacheMetrics(t *testing.T) {
 		})
 	}
 }
+
+func TestMetaFetcher_FetchRequestedBlocks(t *testing.T) {
+	var (
+		ctx    = context.Background()
+		logger = log.NewNopLogger()
+	)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: t.TempDir()})
+	require.NoError(t, err)
+	bkt = BucketWithGlobalMarkers(bkt)
+
+	var blockIDs []ulid.ULID
+	for i := 0; i < 4; i++ {
+		blockID, blockDir := createTestBlock(t)
+		_, err = Upload(ctx, logger, bkt, blockDir, nil)
+		require.NoError(t, err)
+		blockIDs = append(blockIDs, blockID)
+	}
+
+	nonExistentBlock := ulid.MustNew(1, nil)
+
+	tests := map[string]struct {
+		requestedBlocks  []ulid.ULID
+		expectError      bool
+		expectedCount    int
+		shouldContain    []ulid.ULID
+		shouldNotContain []ulid.ULID
+	}{
+		"should fetch only requested blocks": {
+			requestedBlocks:  blockIDs[:2],
+			expectError:      false,
+			expectedCount:    2,
+			shouldContain:    blockIDs[:2],
+			shouldNotContain: blockIDs[2:],
+		},
+		"should error on empty block IDs list": {
+			requestedBlocks: []ulid.ULID{},
+			expectError:     true,
+		},
+		"should error when requested block does not exist": {
+			requestedBlocks: []ulid.ULID{nonExistentBlock},
+			expectError:     true,
+		},
+		"should error when some requested blocks are missing": {
+			requestedBlocks: []ulid.ULID{blockIDs[0], nonExistentBlock},
+			expectError:     true,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			f, err := NewMetaFetcher(logger, 10, objstore.WrapWithMetrics(bkt, reg, "test"), t.TempDir(), reg, nil, 0)
+			require.NoError(t, err)
+
+			metas, err := f.FetchRequestedMetas(ctx, tc.requestedBlocks)
+
+			if tc.expectError {
+				require.Error(t, err)
+				return
+			}
+
+			require.NoError(t, err)
+			require.Len(t, metas, tc.expectedCount)
+
+			for _, id := range tc.shouldContain {
+				require.Contains(t, metas, id)
+			}
+
+			for _, id := range tc.shouldNotContain {
+				require.NotContains(t, metas, id)
+			}
+		})
+	}
+}

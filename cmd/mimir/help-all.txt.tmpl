@@ -1065,6 +1065,8 @@ Usage of ./cmd/mimir/mimir:
     	How frequently the compactor should run blocks cleanup and maintenance, as well as update the bucket index. (default 15m0s)
   -compactor.compaction-concurrency int
     	Max number of concurrent compactions running. (default 1)
+  -compactor.compaction-dir-cleanup-interval duration
+    	[experimental] Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup. (default 30m0s)
   -compactor.compaction-interval duration
     	The frequency at which the compaction runs (default 1h0m0s)
   -compactor.compaction-jobs-order string

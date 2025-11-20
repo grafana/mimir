@@ -120,6 +120,19 @@ func (s *metaSyncer) SyncMetas(ctx context.Context) error {
 	return nil
 }
 
+// SyncRequestedMetas fetches and synchronizes metadata for a given set of blocks.
+func (s *metaSyncer) SyncRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) error {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	metas, err := s.fetcher.FetchRequestedMetas(ctx, blockIDs)
+	if err != nil {
+		return err
+	}
+
+	s.blocks = metas
+	return nil
+}
+
 // Metas returns loaded metadata blocks since last sync.
 func (s *metaSyncer) Metas() map[ulid.ULID]*block.Meta {
 	s.mtx.Lock()
@@ -317,7 +330,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
-		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
+		// Download the block directory, using the metadata we already have to avoid re-downloading meta.json
+		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir, meta); err != nil {
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
 		}
 
@@ -534,6 +548,44 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
+func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, err error) error {
+	if ok, issue347Err := isIssue347Error(err); ok {
+		return repairIssue347(ctx, c.logger, c.bkt, c.sy.metrics.blocksMarkedForDeletion, issue347Err)
+	}
+
+	// If the block has an out of order chunk and we have been configured to skip it,
+	// then we can mark the block for no compaction so that the next compaction run
+	// will skip it.
+	if ok, outOfOrderChunksErr := IsOutOfOrderChunkError(err); ok && c.skipUnhealthyBlocks {
+		return block.MarkForNoCompact(
+			ctx,
+			c.logger,
+			c.bkt,
+			outOfOrderChunksErr.id,
+			block.OutOfOrderChunksNoCompactReason,
+			"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
+			c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
+		)
+	}
+
+	// In case an unhealthy block is found, we mark it for no compaction
+	// to unblock future compaction run.
+	if ok, criticalErr := IsCriticalError(err); ok && c.skipUnhealthyBlocks {
+		return block.MarkForNoCompact(
+			ctx,
+			c.logger,
+			c.bkt,
+			criticalErr.id,
+			block.CriticalNoCompactReason,
+			"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
+			c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
+		)
+	}
+
+	// Unhandled, returning original err
+	return err
+}
+
 func prepareSparseIndexHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, sampling int, cfg indexheader.Config) error {
 	// Calling NewStreamBinaryReader reads a block's index and writes a sparse-index-header to disk.
 	mets := indexheader.NewStreamBinaryReaderMetrics(nil)
@@ -691,7 +743,7 @@ func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}()
 
 	bdir := filepath.Join(tmpdir, ie.id.String())
-	if err := block.Download(ctx, logger, bkt, ie.id, bdir); err != nil {
+	if err := block.Download(ctx, logger, bkt, ie.id, bdir, nil); err != nil {
 		return fmt.Errorf("download block %s: %w", ie.id, err)
 	}
 
@@ -998,53 +1050,11 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// At this point the compaction has failed.
 					c.metrics.groupCompactionRunsFailed.Inc()
 
-					if ok, issue347Err := isIssue347Error(err); ok {
-						if err := repairIssue347(workCtx, c.logger, c.bkt, c.sy.metrics.blocksMarkedForDeletion, issue347Err); err == nil {
-							mtx.Lock()
-							finishedAllJobs = false
-							mtx.Unlock()
-							continue
-						}
-					}
-					// If the block has an out of order chunk and we have been configured to skip it,
-					// then we can mark the block for no compaction so that the next compaction run
-					// will skip it.
-					if ok, outOfOrderChunksErr := IsOutOfOrderChunkError(err); ok && c.skipUnhealthyBlocks {
-						err := block.MarkForNoCompact(
-							ctx,
-							c.logger,
-							c.bkt,
-							outOfOrderChunksErr.id,
-							block.OutOfOrderChunksNoCompactReason,
-							"OutofOrderChunk: marking block with out-of-order series/chunks as no compact to unblock compaction",
-							c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason),
-						)
-						if err == nil {
-							mtx.Lock()
-							finishedAllJobs = false
-							mtx.Unlock()
-							continue
-						}
-					}
-
-					// In case an unhealthy block is found, we mark it for no compaction
-					// to unblock future compaction run.
-					if ok, criticalErr := IsCriticalError(err); ok && c.skipUnhealthyBlocks {
-						err := block.MarkForNoCompact(
-							ctx,
-							c.logger,
-							c.bkt,
-							criticalErr.id,
-							block.CriticalNoCompactReason,
-							"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
-							c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
-						)
-						if err == nil {
-							mtx.Lock()
-							finishedAllJobs = false
-							mtx.Unlock()
-							continue
-						}
+					if handleErr := c.handleKnownCompactionErrors(workCtx, err); handleErr == nil {
+						mtx.Lock()
+						finishedAllJobs = false
+						mtx.Unlock()
+						continue
 					}
 
 					// Handle postings offset table size errors by marking all input blocks as no-compact.
