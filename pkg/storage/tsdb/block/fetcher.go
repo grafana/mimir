@@ -193,6 +193,7 @@ func NewMetaFetcher(logger log.Logger, concurrency int, bkt objstore.Instrumente
 var (
 	ErrorSyncMetaNotFound  = errors.New("meta.json not found")
 	ErrorSyncMetaCorrupted = errors.New("meta.json corrupted")
+	errNoBlocksProvided    = errors.New("no block metadata provided")
 )
 
 // loadMeta returns metadata from object storage or error.
@@ -303,7 +304,7 @@ type response struct {
 	exceededLookbackCount  float64
 }
 
-func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool) (interface{}, error) {
+func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletion bool, blockIDs []ulid.ULID) (interface{}, error) {
 	var (
 		resp = response{
 			metas:   make(map[ulid.ULID]*Meta),
@@ -377,6 +378,20 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 	// Workers scheduled, distribute blocks.
 	eg.Go(func() error {
 		defer close(ch)
+
+		// If specific block IDs are provided, download directly without iterating over the bucket,
+		// otherwise, discover blocks via f.bkt.Iter
+		if len(blockIDs) > 0 {
+			for _, id := range blockIDs {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case ch <- id:
+				}
+			}
+			return nil
+		}
+
 		return f.bkt.Iter(ctx, "", func(name string) error {
 			id, ok := IsBlockDir(name)
 			if !ok {
@@ -460,7 +475,7 @@ func (f *MetaFetcher) fetchMetadata(ctx context.Context, excludeMarkedForDeletio
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, false)
+	metas, partials, err = f.fetch(ctx, false, nil)
 	return
 }
 
@@ -470,11 +485,11 @@ func (f *MetaFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*Meta, par
 //
 // Returned error indicates a failure in fetching metadata. Returned meta can be assumed as correct, with some blocks missing.
 func (f *MetaFetcher) FetchWithoutMarkedForDeletion(ctx context.Context) (metas map[ulid.ULID]*Meta, partials map[ulid.ULID]error, err error) {
-	metas, partials, err = f.fetch(ctx, true)
+	metas, partials, err = f.fetch(ctx, true, nil)
 	return
 }
 
-func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
+func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool, blockIDs []ulid.ULID) (_ map[ulid.ULID]*Meta, _ map[ulid.ULID]error, err error) {
 	start := time.Now()
 	defer func() {
 		f.metrics.SyncDuration.Observe(time.Since(start).Seconds())
@@ -488,7 +503,7 @@ func (f *MetaFetcher) fetch(ctx context.Context, excludeMarkedForDeletion bool) 
 	// Run this in thread safe run group.
 	v, err := f.g.Do("", func() (i interface{}, err error) {
 		// NOTE: First go routine context will go through.
-		return f.fetchMetadata(ctx, excludeMarkedForDeletion)
+		return f.fetchMetadata(ctx, excludeMarkedForDeletion, blockIDs)
 	})
 	if err != nil {
 		return nil, nil, err
@@ -532,6 +547,25 @@ func (f *MetaFetcher) countCached() int {
 	defer f.mtx.Unlock()
 
 	return len(f.cached)
+}
+
+// FetchRequestedMetas fetches metadata for specific block IDs without iterating through the bucket.
+// Returns an error if any of the requested block metadata fail to load.
+func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
+	if len(blockIDs) == 0 {
+		return nil, errNoBlocksProvided
+	}
+
+	metas, partial, err := f.fetch(ctx, false, blockIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(partial) > 0 {
+		return nil, errors.Errorf("failed to sync %d requested blocks' metas", len(partial))
+	}
+
+	return metas, nil
 }
 
 // BlockIDLabel is a special label that will have an ULID of the meta.json being referenced to.
