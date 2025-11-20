@@ -131,6 +131,7 @@ func (p CostBasedPlanner) chooseBestPlan(allPlans iter.Seq[plan]) *plan {
 	// Select the first plan that has at least one index matcher.
 	// PostingsForMatchers will return incorrect results if there are no matchers.
 	for p := range allPlans {
+		p := p // make a copy of the plan because the iterator might be reusing the same memory
 		if len(p.IndexMatchers()) > 0 {
 			return &p
 		}
