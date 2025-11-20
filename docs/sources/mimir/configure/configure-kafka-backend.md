@@ -56,7 +56,7 @@ Use the default options with Apache Kafka. No additional configuration is needed
 
 ### Redpanda
 
-Use the default options with [Redpanda](https://github.com/redpanda-data/redpanda). No additional configuration is required. [working exmaple](https://github.com/meticulo3366/redpanda-mimir-integration)
+Use the default options with [Redpanda](https://github.com/redpanda-data/redpanda). No additional configuration is required. [working example](https://github.com/meticulo3366/redpanda-mimir-integration)
 
 ### Confluent Kafka
 
