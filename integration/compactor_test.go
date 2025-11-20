@@ -123,7 +123,7 @@ func TestCompactBlocksContainingNativeHistograms(t *testing.T) {
 	var compactedSeries []test.Series
 
 	for _, blockID := range blocks {
-		require.NoError(t, block.Download(context.Background(), log.NewNopLogger(), bktClient, ulid.MustParseStrict(blockID), filepath.Join(outDir, blockID)))
+		require.NoError(t, block.Download(context.Background(), log.NewNopLogger(), bktClient, ulid.MustParseStrict(blockID), filepath.Join(outDir, blockID), nil))
 
 		if isMarkedForDeletionDueToCompaction(t, path.Join(outDir, blockID)) {
 			// The source blocks are marked for deletion but not deleted yet; skip them.
