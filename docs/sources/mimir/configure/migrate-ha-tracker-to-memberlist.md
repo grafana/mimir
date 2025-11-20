@@ -7,7 +7,7 @@ weight: 55
 
 # Migrate HA tracker from Consul or etcd to memberlist without downtime
 
-Since Grafana Mimir 2.17, the HA tracker supports memberlist as a key-value (KV) store backend. Memberlist is the recommended KV store for the HA tracker. The `consul` and `etcd` backends are deprecated.
+Since Grafana Mimir 2.17, the HA tracker supports memberlist as a key-value (KV) store backend. Memberlist is the recommended KV store for the HA tracker.
 
 Follow this guidance to migrate your HA tracker configuration from Consul or etcd to memberlist without any downtime.
 
