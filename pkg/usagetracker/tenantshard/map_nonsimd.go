@@ -26,9 +26,9 @@ func metaMatchH2(m *index, p prefix) bitset {
 	// See: https://graphics.stanford.edu/~seander/bithacks.html##ValueInWord
 	// e.g.,
 	// if m = 0x123456c9c9777777 and p = 0xc9, then:
-	// (loBits * p) == 0xc9c9c9c9c9c9c9c9
+	//               loBits * p == 0xc9c9c9c9c9c9c9c9
 	// and B = m ^ (loBits * p) == 0x1234560000777777
-	// then findZeroBytes(B) ==    0x0000008080000000
+	// then    findZeroBytes(B) == 0x0000008080000000
 	return findZeroBytes(castUint64(m) ^ (loBits * uint64(p)))
 }
 
