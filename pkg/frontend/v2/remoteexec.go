@@ -656,7 +656,7 @@ type bufferedMessage struct {
 
 func (b *responseStreamBuffer) Push(msg bufferedMessage) {
 	if b.length == cap(b.msgs) {
-		newCap := max(len(b.msgs)*2, 1)
+		newCap := max(cap(b.msgs)*2, 1)
 		newMsgs := responseMessageSlicePool.Get(newCap)
 		newMsgs = newMsgs[:newCap]
 		headSize := cap(b.msgs) - b.startIndex
