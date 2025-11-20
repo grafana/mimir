@@ -120,6 +120,19 @@ func (s *metaSyncer) SyncMetas(ctx context.Context) error {
 	return nil
 }
 
+// SyncRequestedMetas fetches and synchronizes metadata for a given set of blocks.
+func (s *metaSyncer) SyncRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) error {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	metas, err := s.fetcher.FetchRequestedMetas(ctx, blockIDs)
+	if err != nil {
+		return err
+	}
+
+	s.blocks = metas
+	return nil
+}
+
 // Metas returns loaded metadata blocks since last sync.
 func (s *metaSyncer) Metas() map[ulid.ULID]*block.Meta {
 	s.mtx.Lock()
@@ -317,7 +330,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
-		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
+		// Download the block directory, using the metadata we already have to avoid re-downloading meta.json
+		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir, meta); err != nil {
 			return fmt.Errorf("download block %s: %w", meta.ULID, err)
 		}
 
@@ -705,7 +719,7 @@ func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	}()
 
 	bdir := filepath.Join(tmpdir, ie.id.String())
-	if err := block.Download(ctx, logger, bkt, ie.id, bdir); err != nil {
+	if err := block.Download(ctx, logger, bkt, ie.id, bdir, nil); err != nil {
 		return fmt.Errorf("download block %s: %w", ie.id, err)
 	}
 

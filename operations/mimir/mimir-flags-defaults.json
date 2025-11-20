@@ -913,6 +913,7 @@
   "compactor.scheduler.cluster-validation.label": "",
   "compactor.executor-min-retry-backoff": 1000000000,
   "compactor.executor-max-retry-backoff": 32000000000,
+  "compactor.compaction-dir-cleanup-interval": 1800000000000,
   "store-gateway.sharding-ring.store": "memberlist",
   "store-gateway.sharding-ring.prefix": "collectors/",
   "store-gateway.sharding-ring.consul.hostname": "localhost:8500",
