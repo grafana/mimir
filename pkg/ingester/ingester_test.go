@@ -12197,7 +12197,6 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 	cfg.BlocksStorageConfig.TSDB.Dir = tempDir
 	cfg.BlocksStorageConfig.Bucket.Backend = "s3"
 	cfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
-	cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit = true
 
 	reg := prometheus.NewRegistry()
 	ingester, err := New(cfg, overrides, createAndStartRing(t, cfg.IngesterRing.ToRingConfig()), nil, nil, nil, reg, log.NewNopLogger())

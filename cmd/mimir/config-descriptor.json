@@ -8616,25 +8616,14 @@
         },
         {
           "kind": "field",
-          "name": "write_logs_fsync_before_kafka_commit_enabled",
-          "required": false,
-          "desc": "Enable fsyncing of WAL and WBL before Kafka offsets are committed.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "write_logs_fsync_before_kafka_commit_concurrency",
           "required": false,
-          "desc": "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false",
+          "desc": "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.",
           "fieldValue": null,
-          "fieldDefaultValue": 1,
+          "fieldDefaultValue": 4,
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
