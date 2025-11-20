@@ -21,26 +21,26 @@ import (
 
 func TestNewSampleTracker(t *testing.T) {
 	testCases := map[string]struct {
-		costAttributionLabels []costattributionmodel.Label
+		costAttributionLabels costattributionmodel.Labels
 		expectedErr           error
 	}{
 		"happy case single label": {
-			costAttributionLabels: []costattributionmodel.Label{{Input: "good_label", Output: "good_label"}},
+			costAttributionLabels: costattributionmodel.Labels{{Input: "good_label", Output: "good_label"}},
 			expectedErr:           nil,
 		},
 		"happy case multiple labels": {
-			costAttributionLabels: []costattributionmodel.Label{
+			costAttributionLabels: costattributionmodel.Labels{
 				{Input: "good_label", Output: "good_label"},
 				{Input: "another_good_label", Output: "another_good_label"},
 			},
 			expectedErr: nil,
 		},
 		"incorrect label name causes an error single label": {
-			costAttributionLabels: []costattributionmodel.Label{{Input: "__bad_label__", Output: "__bad_label__"}},
+			costAttributionLabels: costattributionmodel.Labels{{Input: "__bad_label__", Output: "__bad_label__"}},
 			expectedErr:           fmt.Errorf(`failed to create a sample tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_distributor_received_attributed_samples_total", help: "The total number of samples that were received per attribution.", constLabels: {}, variableLabels: {__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
 		},
 		"incorrect label name causes an error multiple labels": {
-			costAttributionLabels: []costattributionmodel.Label{
+			costAttributionLabels: costattributionmodel.Labels{
 				{Input: "good_label", Output: "good_label"},
 				{Input: "__bad_label__", Output: "__bad_label__"},
 			},
@@ -66,7 +66,7 @@ func TestNewSampleTracker(t *testing.T) {
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	st := manager.SampleTracker("user1")
-	assert.True(t, st.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
+	assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
 }
 
 func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {

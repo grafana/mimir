@@ -335,6 +335,10 @@ lint: check-makefiles check-merge-conflicts
 	faillint -paths "github.com/pkg/errors=errors" \
 		./pkg/alertmanager/... \
 		./pkg/api/... \
+		./pkg/blockbuilder... \
+		./pkg/cardinality... \
+		./pkg/compactor... \
+		./pkg/continuoustest... \
 		./pkg/util/... \
 		./cmd/... \
 		./integration/...

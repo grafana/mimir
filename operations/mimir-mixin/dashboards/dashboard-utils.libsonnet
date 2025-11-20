@@ -239,20 +239,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
+  local qpsPanelColors = {
+    '1xx': $._colors.warning,
+    '2xx': $._colors.success,
+    '3xx': '#6ED0E0',
+    '4xx': '#EF843C',
+    '5xx': $._colors.failed,
+    OK: $._colors.success,
+    success: $._colors.success,
+    'error': $._colors.failed,
+    cancel: '#A9A9A9',
+    Canceled: '#A9A9A9',
+  },
+
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+    $.aliasColors(qpsPanelColors) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
       },
@@ -260,18 +262,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanelNativeHistogram(selector, statusLabelName='status_code')::
     super.qpsPanelNativeHistogram(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      Success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+    $.aliasColors(qpsPanelColors) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
       },

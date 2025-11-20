@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -200,7 +199,7 @@ func extractSelector(values url.Values) (matchers []*labels.Matcher, err error) 
 	}
 	matchers, err = parser.ParseMetricSelector(selectorParams[0])
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to parse selector")
+		return nil, fmt.Errorf("failed to parse selector: %w", err)
 	}
 
 	// Ensure stable sorting (improves query results cache hit ratio).

@@ -125,7 +125,7 @@ func (m *Manager) enabledForUser(userID string) bool {
 	return len(m.limits.CostAttributionLabelsStructured(userID)) > 0
 }
 
-func (m *Manager) labels(userID string) []costattributionmodel.Label {
+func (m *Manager) labels(userID string) costattributionmodel.Labels {
 	return m.limits.CostAttributionLabelsStructured(userID)
 }
 

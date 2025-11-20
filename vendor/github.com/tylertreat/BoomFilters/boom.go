@@ -75,9 +75,7 @@ func OptimalK(fpRate float64) uint {
 // hashKernel returns the upper and lower base hash values from which the k
 // hashes are derived.
 func hashKernel(data []byte, hash hash.Hash64) (uint32, uint32) {
-	hash.Write(data)
-	sum := hash.Sum64()
-	hash.Reset()
+	sum := hash64DefaultFnv(data, hash)
 	lower := uint32(sum & 0xffffffff)
 	upper := uint32((sum >> 32) & 0xffffffff)
 	return lower, upper

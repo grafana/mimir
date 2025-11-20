@@ -34,7 +34,7 @@ func TestMap(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, events*seriesPerEvent, m.count())
+	require.Equal(t, events*seriesPerEvent, m.Count())
 	require.Equal(t, uint64(events*seriesPerEvent), series.Load())
 
 	{
@@ -78,7 +78,7 @@ func TestMapValues(t *testing.T) {
 		stored[key] = val
 		m.Put(key, val, total, nil, false)
 	}
-	require.Equal(t, len(stored), m.count())
+	require.Equal(t, len(stored), m.Count())
 	require.Equal(t, len(stored), int(total.Load()))
 
 	got := map[uint64]clock.Minutes{}

@@ -61,6 +61,8 @@ groups:
           record: cluster_job:cortex_querier_request_duration_seconds_sum:sum_rate
         - expr: sum(rate(cortex_querier_request_duration_seconds_count[1m])) by (cluster, job)
           record: cluster_job:cortex_querier_request_duration_seconds_count:sum_rate
+        - expr: sum(rate(cortex_querier_request_duration_seconds[1m])) by (cluster, job)
+          record: cluster_job:cortex_querier_request_duration_seconds:sum_rate
         - expr: histogram_quantile(0.99, sum(rate(cortex_querier_request_duration_seconds_bucket[1m])) by (le, cluster, job, route))
           record: cluster_job_route:cortex_querier_request_duration_seconds:99quantile
         - expr: histogram_quantile(0.50, sum(rate(cortex_querier_request_duration_seconds_bucket[1m])) by (le, cluster, job, route))
@@ -73,6 +75,8 @@ groups:
           record: cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate
         - expr: sum(rate(cortex_querier_request_duration_seconds_count[1m])) by (cluster, job, route)
           record: cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate
+        - expr: sum(rate(cortex_querier_request_duration_seconds[1m])) by (cluster, job, route)
+          record: cluster_job_route:cortex_querier_request_duration_seconds:sum_rate
         - expr: histogram_quantile(0.99, sum(rate(cortex_querier_request_duration_seconds_bucket[1m])) by (le, cluster, namespace, job, route))
           record: cluster_namespace_job_route:cortex_querier_request_duration_seconds:99quantile
         - expr: histogram_quantile(0.50, sum(rate(cortex_querier_request_duration_seconds_bucket[1m])) by (le, cluster, namespace, job, route))
@@ -85,6 +89,8 @@ groups:
           record: cluster_namespace_job_route:cortex_querier_request_duration_seconds_sum:sum_rate
         - expr: sum(rate(cortex_querier_request_duration_seconds_count[1m])) by (cluster, namespace, job, route)
           record: cluster_namespace_job_route:cortex_querier_request_duration_seconds_count:sum_rate
+        - expr: sum(rate(cortex_querier_request_duration_seconds[1m])) by (cluster, namespace, job, route)
+          record: cluster_namespace_job_route:cortex_querier_request_duration_seconds:sum_rate
     - name: mimir_storage
       rules:
         - expr: histogram_quantile(0.99, sum(rate(cortex_kv_request_duration_seconds_bucket[1m])) by (le, cluster, job))
@@ -99,6 +105,8 @@ groups:
           record: cluster_job:cortex_kv_request_duration_seconds_sum:sum_rate
         - expr: sum(rate(cortex_kv_request_duration_seconds_count[1m])) by (cluster, job)
           record: cluster_job:cortex_kv_request_duration_seconds_count:sum_rate
+        - expr: sum(rate(cortex_kv_request_duration_seconds[1m])) by (cluster, job)
+          record: cluster_job:cortex_kv_request_duration_seconds:sum_rate
     - name: mimir_queries
       rules:
         - expr: histogram_quantile(0.99, sum(rate(cortex_query_frontend_retries_bucket[1m])) by (le, cluster, job))
@@ -113,6 +121,8 @@ groups:
           record: cluster_job:cortex_query_frontend_retries_sum:sum_rate
         - expr: sum(rate(cortex_query_frontend_retries_count[1m])) by (cluster, job)
           record: cluster_job:cortex_query_frontend_retries_count:sum_rate
+        - expr: sum(rate(cortex_query_frontend_retries[1m])) by (cluster, job)
+          record: cluster_job:cortex_query_frontend_retries:sum_rate
         - expr: histogram_quantile(0.99, sum(rate(cortex_query_frontend_queue_duration_seconds_bucket[1m])) by (le, cluster, job))
           record: cluster_job:cortex_query_frontend_queue_duration_seconds:99quantile
         - expr: histogram_quantile(0.50, sum(rate(cortex_query_frontend_queue_duration_seconds_bucket[1m])) by (le, cluster, job))
@@ -125,6 +135,8 @@ groups:
           record: cluster_job:cortex_query_frontend_queue_duration_seconds_sum:sum_rate
         - expr: sum(rate(cortex_query_frontend_queue_duration_seconds_count[1m])) by (cluster, job)
           record: cluster_job:cortex_query_frontend_queue_duration_seconds_count:sum_rate
+        - expr: sum(rate(cortex_query_frontend_queue_duration_seconds[1m])) by (cluster, job)
+          record: cluster_job:cortex_query_frontend_queue_duration_seconds:sum_rate
     - name: mimir_ingester_queries
       rules:
         - expr: histogram_quantile(0.99, sum(rate(cortex_ingester_queried_series_bucket[1m])) by (le, cluster, job))
@@ -139,6 +151,8 @@ groups:
           record: cluster_job:cortex_ingester_queried_series_sum:sum_rate
         - expr: sum(rate(cortex_ingester_queried_series_count[1m])) by (cluster, job)
           record: cluster_job:cortex_ingester_queried_series_count:sum_rate
+        - expr: sum(rate(cortex_ingester_queried_series[1m])) by (cluster, job)
+          record: cluster_job:cortex_ingester_queried_series:sum_rate
         - expr: histogram_quantile(0.99, sum(rate(cortex_ingester_queried_samples_bucket[1m])) by (le, cluster, job))
           record: cluster_job:cortex_ingester_queried_samples:99quantile
         - expr: histogram_quantile(0.50, sum(rate(cortex_ingester_queried_samples_bucket[1m])) by (le, cluster, job))
@@ -151,6 +165,8 @@ groups:
           record: cluster_job:cortex_ingester_queried_samples_sum:sum_rate
         - expr: sum(rate(cortex_ingester_queried_samples_count[1m])) by (cluster, job)
           record: cluster_job:cortex_ingester_queried_samples_count:sum_rate
+        - expr: sum(rate(cortex_ingester_queried_samples[1m])) by (cluster, job)
+          record: cluster_job:cortex_ingester_queried_samples:sum_rate
         - expr: histogram_quantile(0.99, sum(rate(cortex_ingester_queried_exemplars_bucket[1m])) by (le, cluster, job))
           record: cluster_job:cortex_ingester_queried_exemplars:99quantile
         - expr: histogram_quantile(0.50, sum(rate(cortex_ingester_queried_exemplars_bucket[1m])) by (le, cluster, job))
@@ -163,6 +179,8 @@ groups:
           record: cluster_job:cortex_ingester_queried_exemplars_sum:sum_rate
         - expr: sum(rate(cortex_ingester_queried_exemplars_count[1m])) by (cluster, job)
           record: cluster_job:cortex_ingester_queried_exemplars_count:sum_rate
+        - expr: sum(rate(cortex_ingester_queried_exemplars[1m])) by (cluster, job)
+          record: cluster_job:cortex_ingester_queried_exemplars:sum_rate
     - name: mimir_received_samples
       rules:
         - expr: |

@@ -5,28 +5,44 @@ package plan_test
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
+const expectedMetricsTemplate = `
+	# HELP cortex_mimir_query_engine_narrow_selectors_attempted_total Total number of queries that the optimization pass has attempted to add hints to narrow selectors for.
+    # TYPE cortex_mimir_query_engine_narrow_selectors_attempted_total counter
+    cortex_mimir_query_engine_narrow_selectors_attempted_total %d
+    # HELP cortex_mimir_query_engine_narrow_selectors_modified_total Total number of queries where the optimization pass has been able to add hints to narrow selectors for.
+    # TYPE cortex_mimir_query_engine_narrow_selectors_modified_total counter
+    cortex_mimir_query_engine_narrow_selectors_modified_total %d
+`
+
 func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 	testCases := map[string]struct {
-		expr         string
-		expectedPlan string
+		expr             string
+		expectedPlan     string
+		expectedAttempts int
+		expectedModified int
 	}{
 		"raw vector selector": {
 			expr: `some_metric`,
 			expectedPlan: `
 				- VectorSelector: {__name__="some_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
 		},
 		"binary expression raw vector selectors": {
 			expr: `some_metric + some_other_metric`,
@@ -35,6 +51,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
 		},
 		"binary expression on raw vector selectors": {
 			expr: `some_metric + on (cluster) some_other_metric`,
@@ -43,6 +61,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- LHS: VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"nested binary expression on raw vector selectors": {
 			expr: `some_metric + (some_other_metric / on (cluster) some_third_metric)`,
@@ -53,6 +73,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- LHS: VectorSelector: {__name__="some_other_metric"}
 						- RHS: VectorSelector: {__name__="some_third_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression aggregation LHS raw vector selector RHS": {
 			expr: `sum by (region) (some_metric) / some_other_metric`,
@@ -62,6 +84,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- VectorSelector: {__name__="some_metric"}
 					- RHS: VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression aggregation LHS aggregation RHS": {
 			expr: `sum by (region) (some_metric) / sum(some_other_metric)`,
@@ -72,6 +96,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region) (some_metric) / sum by (region) (some_other_metric)`,
@@ -82,6 +108,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum by (region)
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression multiple aggregation LHS aggregation RHS": {
 			expr: `sum by (region, env) (some_metric) / sum(some_other_metric)`,
@@ -92,6 +120,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression multiple aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region, env) (some_metric) / sum by (region, env) (some_other_metric)`,
@@ -102,6 +132,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum by (region, env)
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression multiple aggregation LHS aggregation RHS aggregation different labels": {
 			expr: `sum by (region, env) (some_metric) / sum by (region, cluster) (some_other_metric)`,
@@ -112,6 +144,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum by (region, cluster)
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression on multiple aggregation LHS aggregation RHS aggregation": {
 			expr: `sum by (region, env) (some_metric) / on(region) sum(some_other_metric)`,
@@ -122,6 +156,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression aggregation LHS aggregation and nested binary expression RHS": {
 			expr: `sum by (region) (some_metric) / (sum(some_other_metric) + sum(some_third_metric))`,
@@ -135,6 +171,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- RHS: AggregateExpression: sum
 							- VectorSelector: {__name__="some_third_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression aggregation LHS aggregation and nested binary expression RHS aggregation": {
 			expr: `sum by (region) (some_metric) / (sum by (cluster) (some_other_metric) + sum(some_third_metric))`,
@@ -148,6 +186,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- RHS: AggregateExpression: sum
 							- VectorSelector: {__name__="some_third_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 		"binary expression LHS aggregation RHS aggregation": {
 			expr: `sum(some_metric) / sum by (cluster) (some_other_metric)`,
@@ -158,6 +198,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum by (cluster)
 						- VectorSelector: {__name__="some_other_metric"}
 			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
 		},
 		"binary expression with no selectors": {
 			expr: `vector(1) + vector(0)`,
@@ -169,6 +211,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- RHS: FunctionCall: vector(...)
 							- NumberLiteral: 0
 			`,
+			expectedAttempts: 0,
+			expectedModified: 0,
 		},
 		"binary expression on with no selectors": {
 			expr: `vector(1) + on (region) vector(0)`,
@@ -180,6 +224,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- RHS: FunctionCall: vector(...)
 							- NumberLiteral: 0
 			`,
+			expectedAttempts: 0,
+			expectedModified: 0,
 		},
 		// Make sure we don't modify query plans that have been rewritten to be sharded
 		"binary expression that has been sharded": {
@@ -191,6 +237,8 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum by (container)
 						- VectorSelector: {__queries__="something else", __name__="__embedded_queries__"}
 			`,
+			expectedAttempts: 0,
+			expectedModified: 0,
 		},
 		// Make sure we don't modify query plans that don't have a binary expression
 		"aggregation and function call": {
@@ -201,25 +249,101 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 						- FunctionCall: rate(...)
 							- MatrixSelector: {__name__="some_metric"}[5m0s]
 			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		// Make sure we don't modify query plans that modify labels
+		"binary expression with label_replace on one side": {
+			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_replace(not_ready, "statefulset", "$1", "job", ".+/(.+)"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: AggregateExpression: sum by (statefulset)
+						- VectorSelector: {__name__="kube_statefulset_replicas"}
+					- RHS: AggregateExpression: sum by (statefulset)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: VectorSelector: {__name__="not_ready"}
+								- param 1: StringLiteral: "statefulset"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "job"
+								- param 4: StringLiteral: ".+/(.+)"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression with label_join on one side": {
+			expr: `sum by (statefulset) (kube_statefulset_replicas) - sum by (statefulset) (label_join(not_ready, "statefulset", "job", "workload"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: AggregateExpression: sum by (statefulset)
+						- VectorSelector: {__name__="kube_statefulset_replicas"}
+					- RHS: AggregateExpression: sum by (statefulset)
+						- DeduplicateAndMerge
+							- FunctionCall: label_join(...)
+								- param 0: VectorSelector: {__name__="not_ready"}
+								- param 1: StringLiteral: "statefulset"
+								- param 2: StringLiteral: "job"
+								- param 3: StringLiteral: "workload"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"binary expression with label_replace on one side for non-hint label": {
+			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_replace(second_metric, "region", "$1", "job", ".+/(.+)"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env, region)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, region)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: VectorSelector: {__name__="second_metric"}
+								- param 1: StringLiteral: "region"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "job"
+								- param 4: StringLiteral: ".+/(.+)"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"binary expression with label_join on one side for non-hint label": {
+			expr: `sum by (env, region) (first_metric) - sum by (env, region) (label_join(second_metric, "region", "job", "workload"))`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS, hints (env)
+					- LHS: AggregateExpression: sum by (env, region)
+						- VectorSelector: {__name__="first_metric"}
+					- RHS: AggregateExpression: sum by (env, region)
+						- DeduplicateAndMerge
+							- FunctionCall: label_join(...)
+								- param 0: VectorSelector: {__name__="second_metric"}
+								- param 1: StringLiteral: "region"
+								- param 2: StringLiteral: "job"
+								- param 3: StringLiteral: "workload"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
 		},
 	}
 
-	ctx := context.Background()
-	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	observer := streamingpromql.NoopPlanningObserver{}
-
-	opts := streamingpromql.NewTestEngineOpts()
-	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
-	planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.Logger))
-
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			timeRange := types.NewInstantQueryTimeRange(time.Now())
+			observer := streamingpromql.NoopPlanningObserver{}
+
+			opts := streamingpromql.NewTestEngineOpts()
+			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
+
+			expectedMetrics := fmt.Sprintf(expectedMetricsTemplate, testCase.expectedAttempts, testCase.expectedModified)
+			reg := opts.CommonOpts.Reg.(*prometheus.Registry)
+			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_narrow_selectors_attempted_total", "cortex_mimir_query_engine_narrow_selectors_modified_total"))
 		})
 	}
 }

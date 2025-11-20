@@ -23,20 +23,20 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 		overrides = map[string]*validation.Limits{}
 	}
 	baseLimits := map[string]*validation.Limits{
-		"user1": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "team", Output: "my_team"}}},
-		"user2": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: []costattributionmodel.Label{}},
-		"user3": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: []costattributionmodel.Label{
+		"user1": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}},
+		"user2": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: costattributionmodel.Labels{}},
+		"user3": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: costattributionmodel.Labels{
 			{Input: "department", Output: "my_department"},
 			{Input: "service", Output: "my_service"},
 		}},
-		"user4": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "platform", Output: "my_platform"}}},
-		"user5": {MaxCostAttributionCardinality: 10, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "a", Output: "a"}}},
+		"user4": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "platform", Output: "my_platform"}}},
+		"user5": {MaxCostAttributionCardinality: 10, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "a", Output: "a"}}},
 		// user6 has opted to rename team to eng_team.
-		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "team", Output: "eng_team"}}},
-		"user7": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: []costattributionmodel.Label{{Input: "team", Output: "my_team"}}, CostAttributionCooldown: model.Duration(TestAttributionCooldown)},
+		"user6": {MaxCostAttributionCardinality: 5, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "eng_team"}}},
+		"user7": {MaxCostAttributionCardinality: 2, CostAttributionLabelsStructured: costattributionmodel.Labels{{Input: "team", Output: "my_team"}}, CostAttributionCooldown: model.Duration(TestAttributionCooldown)},
 	}
 	for _, uls := range userLabels {
-		costAttributionLabels := make([]costattributionmodel.Label, 0, len(uls)-1)
+		costAttributionLabels := make(costattributionmodel.Labels, 0, len(uls)-1)
 		for i := 1; i < len(uls); i++ {
 			costAttributionLabels = append(costAttributionLabels, costattributionmodel.Label{Input: uls[i]})
 		}
@@ -55,9 +55,9 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 	}
 	switch idx {
 	case 1:
-		overrides["user1"].CostAttributionLabelsStructured = []costattributionmodel.Label{}
+		overrides["user1"].CostAttributionLabelsStructured = costattributionmodel.Labels{}
 	case 2:
-		overrides["user3"].CostAttributionLabelsStructured = []costattributionmodel.Label{
+		overrides["user3"].CostAttributionLabelsStructured = costattributionmodel.Labels{
 			{Input: "team", Output: "my_team"},
 			{Input: "feature", Output: "my_feature"},
 		}
@@ -66,7 +66,7 @@ func NewMockCostAttributionOverrides(limits validation.Limits, overrides map[str
 	case 4:
 		overrides["user1"].MaxCostAttributionCardinality = 2
 	case 5:
-		overrides["user1"].CostAttributionLabelsStructured = []costattributionmodel.Label{{Input: "department", Output: "my_department"}}
+		overrides["user1"].CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "department", Output: "my_department"}}
 	}
 
 	return validation.NewOverrides(limits, validation.NewMockTenantLimits(overrides))

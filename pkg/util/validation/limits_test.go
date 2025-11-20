@@ -1914,7 +1914,7 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
 					{Input: "team", Output: "my_team"},
 					{Input: "service", Output: "my_service"},
 				}
@@ -1926,7 +1926,7 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
 					{Input: "__team__", Output: "my_team"},
 					{Input: "service", Output: "my_service"},
 				}
@@ -1938,7 +1938,7 @@ func TestLimits_Validate(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.CostAttributionLabelsStructured = []costattributionmodel.Label{
+				cfg.CostAttributionLabelsStructured = costattributionmodel.Labels{
 					{Input: "team", Output: "my_team"},
 					{Input: "service", Output: "__my_service__"},
 				}

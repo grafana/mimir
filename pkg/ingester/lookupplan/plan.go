@@ -28,6 +28,11 @@ type plan struct {
 	// shard contains query sharding information. nil means no sharding.
 	shard *sharding.ShardSelector
 
+	// numDecidedPredicates tracks how many predicates have been decided (0 to len(predicates)).
+	// Predicates [0, numDecidedPredicates) have been decided.
+	// Used for computing lower bound costs by treating undecided predicates as virtual predicates.
+	numDecidedPredicates int
+
 	config              CostConfig
 	indexPredicatesPool *pool.SlabPool[bool]
 }
@@ -48,7 +53,34 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
 
+	// All predicates are decided for this plan
+	p.numDecidedPredicates = len(p.predicates)
 	return p
+}
+
+// virtualPredicate returns the predicate at idx and whether it's an index predicate.
+// For undecided predicates:
+// - The first undecided predicate is treated as an index predicate for lower bound calculation
+// - All other undecided predicates are treated as scan predicates with minimal cost
+// This goal of virtual undecided predicates is to minimize the cost of the whole plan.
+func (p plan) virtualPredicate(idx int) (planPredicate, bool) {
+	if idx < p.numDecidedPredicates {
+		return p.predicates[idx], p.indexPredicate[idx]
+	}
+
+	virtualPred := p.predicates[idx]
+	// Very cheap single match cost, but still non-zero so that there is a difference between using index and not using index for a predicate.
+	virtualPred.singleMatchCost = 1
+	// Don't assume 0 cardinality because that might make the whole plan have 0 cardinality which is unrealistic.
+	virtualPred.cardinality = 1
+	// Don't assume 0 unique label values because that might make the whole plan have 0 cardinality which is unrealistic.
+	virtualPred.labelNameUniqueVals = 1
+	// We don't want selectivity of 0 because then the cost of the rest of the predicates might not matter.
+	virtualPred.selectivity = 1
+	// Assume extremely cheap index scan cost.
+	virtualPred.indexScanCost = 1
+
+	return virtualPred, idx == p.numDecidedPredicates
 }
 
 func (p plan) IndexMatchers() []*labels.Matcher {
@@ -99,10 +131,13 @@ func (p plan) TotalCost() float64 {
 // indexLookupCost returns the cost of performing index lookups for all predicates that use the index
 func (p plan) indexLookupCost() float64 {
 	cost := 0.0
-	for i, pr := range p.predicates {
-		if p.indexPredicate[i] {
-			cost += pr.indexLookupCost()
+	for i := range p.predicates {
+		pr, isIndex := p.virtualPredicate(i)
+		if !isIndex {
+			continue
 		}
+
+		cost += pr.indexLookupCost()
 	}
 	return cost
 }
@@ -111,8 +146,9 @@ func (p plan) indexLookupCost() float64 {
 // This includes retrieving the series' labels from the index.
 func (p plan) intersectionCost() float64 {
 	iteratedPostings := uint64(0)
-	for i, pred := range p.predicates {
-		if !p.indexPredicate[i] {
+	for i := range p.predicates {
+		pred, isIndex := p.virtualPredicate(i)
+		if !isIndex {
 			continue
 		}
 
@@ -134,12 +170,15 @@ func (p plan) seriesRetrievalCost() float64 {
 func (p plan) filterCost() float64 {
 	cost := 0.0
 	seriesToFilter := p.numSelectedPostingsInOurShard()
-	for i, pred := range p.predicates {
+	for i := range p.predicates {
 		// In reality, we will apply all the predicates for each series and stop once one predicate doesn't match.
 		// But we calculate for the worst case where we have to run all predicates for all series.
-		if !p.indexPredicate[i] {
-			cost += pred.filterCost(seriesToFilter)
+		pred, isIndex := p.virtualPredicate(i)
+		if isIndex {
+			continue
 		}
+
+		cost += pred.filterCost(seriesToFilter)
 	}
 	return cost
 }
@@ -150,8 +189,9 @@ func (p plan) numSelectedPostingsInOurShard() uint64 {
 
 func (p plan) NumSelectedPostings() uint64 {
 	finalSelectivity := 1.0
-	for i, pred := range p.predicates {
-		if !p.indexPredicate[i] {
+	for i := range p.predicates {
+		pred, isIndex := p.virtualPredicate(i)
+		if !isIndex {
 			continue
 		}
 

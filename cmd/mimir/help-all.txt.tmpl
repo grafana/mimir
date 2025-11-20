@@ -1514,9 +1514,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency int
-    	[experimental] Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false (default 1)
-  -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
-    	[experimental] Enable fsyncing of WAL and WBL before Kafka offsets are committed. (default true)
+    	Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1. (default 4)
   -ingester.active-series-custom-trackers value
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled

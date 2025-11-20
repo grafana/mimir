@@ -300,7 +300,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	}
 
 	cfg := ring.DoUntilQuorumConfig{
-		Logger: spanlogger.FromContext(ctx, c.logger),
+		Logger: spanlogger.FromContext(ctx, log.With(c.logger, "component", "usage-tracker-client", "op", "track-series-per-partition", "partition", partitionID)),
 
 		MinimizeRequests: true,
 		HedgingDelay:     c.cfg.RequestsHedgingDelay,
@@ -377,7 +377,7 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 	}
 
 	cfg := ring.DoUntilQuorumConfig{
-		Logger: spanlogger.FromContext(ctx, c.logger),
+		Logger: spanlogger.FromContext(ctx, log.With(c.logger, "component", "usage-tracker-client", "op", "get-users-close-to-limit")),
 
 		MinimizeRequests: true,
 		HedgingDelay:     c.cfg.RequestsHedgingDelay,
@@ -416,13 +416,22 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 		if first {
 			lvl = level.Info
 		}
-		lvl(c.logger).Log("msg", "updated users close to limit cache", "partition", resp.Partition, "user_count", len(resp.SortedUserIds))
+		lvl(c.logger).Log(
+			"component", "usage-tracker-client",
+			"msg", "updated users close to limit cache",
+			"partition", resp.Partition,
+			"user_count", len(resp.SortedUserIds),
+		)
 		return nil, nil
 	}, func([]string) {})
 
 	if err != nil {
 		c.usersCloseToLimitUpdateFailures.Inc()
-		level.Error(c.logger).Log("msg", "failed to get users close to limit from usage-tracker", "err", err)
+		level.Error(c.logger).Log(
+			"component", "usage-tracker-client",
+			"msg", "failed to get users close to limit from usage-tracker",
+			"err", err,
+		)
 		return false
 	}
 
@@ -432,13 +441,23 @@ func (c *UsageTrackerClient) updateUsersCloseToLimitCache(ctx context.Context) (
 func (c *UsageTrackerClient) selectRandomPartition() (int32, ring.ReplicationSet, bool) {
 	partitions := c.partitionRing.PartitionRing().ActivePartitionIDs()
 	if len(partitions) == 0 {
-		level.Error(c.logger).Log("msg", "no partitions available in ring for users close to limit poll")
+		level.Error(c.logger).Log(
+			"component", "usage-tracker-client",
+			"op", "select-random-partition",
+			"msg", "no partitions available in ring for users close to limit poll",
+		)
 		return 0, ring.ReplicationSet{}, false
 	}
 	partitionID := partitions[rand.IntN(len(partitions))]
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
-		level.Error(c.logger).Log("msg", "failed to get replication set for partition", "partition", partitionID, "err", err)
+		level.Error(c.logger).Log(
+			"component", "usage-tracker-client",
+			"op", "select-random-partition",
+			"msg", "failed to get replication set for partition",
+			"partition", partitionID,
+			"err", err,
+		)
 		return 0, ring.ReplicationSet{}, false
 	}
 

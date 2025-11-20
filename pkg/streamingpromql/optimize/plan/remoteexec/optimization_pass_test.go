@@ -182,18 +182,17 @@ func TestOptimizationPass(t *testing.T) {
 	observer := streamingpromql.NoopPlanningObserver{}
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
-	opts := streamingpromql.NewTestEngineOpts()
-	logger := log.NewNopLogger()
-
-	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	opts1 := streamingpromql.NewTestEngineOpts()
+	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, logger))
-	plannerForMQESharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, logger))
+	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts1.Logger))
+	plannerForMQESharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts1.CommonOpts.Reg, opts1.Logger))
 	plannerForMQESharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
-	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	opts2 := streamingpromql.NewTestEngineOpts()
+	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, logger))
+	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts2.CommonOpts.Reg, opts2.Logger))
 	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, planner *streamingpromql.QueryPlanner) {

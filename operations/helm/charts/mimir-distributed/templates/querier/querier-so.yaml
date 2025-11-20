@@ -21,6 +21,7 @@ spec:
   maxReplicaCount: {{ .Values.querier.kedaAutoscaling.maxReplicaCount }}
   minReplicaCount: {{ .Values.querier.kedaAutoscaling.minReplicaCount }}
   pollingInterval: {{ .Values.kedaAutoscaling.pollingInterval }}
+  {{- include "mimir.kedaFallback" (dict "ctx" . "componentFallback" .Values.querier.kedaAutoscaling.fallback) | nindent 2 -}}
   scaleTargetRef:
     name: {{ include "mimir.resourceName" (dict "ctx" . "component" "querier") }}
     apiVersion: apps/v1

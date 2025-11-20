@@ -8,6 +8,7 @@ package astmapper
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
@@ -481,6 +482,7 @@ func (summer *shardSummer) shardGroup(ctx context.Context, expr *parser.Aggregat
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -521,6 +523,7 @@ func (summer *shardSummer) shardSum(ctx context.Context, expr *parser.AggregateE
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -541,6 +544,7 @@ func (summer *shardSummer) shardCount(ctx context.Context, expr *parser.Aggregat
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -566,6 +570,7 @@ func (summer *shardSummer) shardMinMax(ctx context.Context, expr *parser.Aggrega
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
+		PosRange: expr.PosRange,
 	}, nil
 }
 
@@ -584,9 +589,10 @@ func (summer *shardSummer) shardAvg(ctx context.Context, expr *parser.AggregateE
 
 	return &parser.ParenExpr{
 		Expr: &parser.BinaryExpr{
-			Op:  parser.DIV,
-			LHS: sumExpr,
-			RHS: countExpr,
+			Op:             parser.DIV,
+			LHS:            sumExpr,
+			RHS:            countExpr,
+			VectorMatching: &parser.VectorMatching{},
 		},
 	}, nil
 }
@@ -610,8 +616,13 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(ctx context.Context, expr
 		aggExpr := &parser.AggregateExpr{
 			Op:       op,
 			Expr:     sharded,
-			Grouping: expr.Grouping,
 			Without:  expr.Without,
+			PosRange: expr.PosRange,
+
+			// Clone the grouping slice, as MQE's aggregation operator mutates it to sort it and add __name__ if needed.
+			// We don't need to clone this slice for the aggregate expression that wraps this one (created by the caller of shardAndSquashAggregateExpr),
+			// as no other expression nodes will reference that slice, so it's safe for that one to be mutated.
+			Grouping: slices.Clone(expr.Grouping),
 		}
 		children = append(children, NewEmbeddedQuery(aggExpr, summer.shardLabeller.GetParams(i)))
 	}
@@ -672,6 +683,8 @@ func (summer *shardSummer) shardAndSquashBinOp(ctx context.Context, expr *parser
 			Op:         expr.Op,
 			RHS:        shardedRHS,
 			ReturnBool: expr.ReturnBool,
+			// We don't need to set VectorMatching here: we expect that this method is only called for binary expressions
+			// that are not vector/vector expressions.
 		}
 		children = append(children, NewEmbeddedQuery(binExpr, summer.shardLabeller.GetParams(i)))
 	}
@@ -687,18 +700,23 @@ func (summer *shardSummer) shardVectorSelector(selector *parser.VectorSelector) 
 	if shardMatcher == nil {
 		return selector, nil
 	}
-	return &parser.VectorSelector{
-		Name:                 selector.Name,
-		Offset:               selector.Offset,
-		OriginalOffset:       selector.OriginalOffset,
-		Timestamp:            copyTimestamp(selector.Timestamp),
-		SkipHistogramBuckets: selector.SkipHistogramBuckets,
-		StartOrEnd:           selector.StartOrEnd,
-		LabelMatchers: append(
-			[]*labels.Matcher{shardMatcher},
-			selector.LabelMatchers...,
-		),
-	}, nil
+
+	shardedExpr, err := CloneExpr(selector)
+	if err != nil {
+		return nil, err
+	}
+
+	shardedSelector, ok := shardedExpr.(*parser.VectorSelector)
+	if !ok {
+		return nil, fmt.Errorf("expected cloneExpr to return a VectorSelector, got %T, this is a bug", shardedExpr)
+	}
+
+	shardedSelector.LabelMatchers = append(
+		[]*labels.Matcher{shardMatcher},
+		selector.LabelMatchers...,
+	)
+
+	return shardedSelector, nil
 }
 
 // isSubqueryCall returns true if the given function call expression is a subquery,
@@ -722,12 +740,4 @@ func isSubqueryCallVisitFn(expr parser.Expr) bool {
 	default:
 		return false
 	}
-}
-
-func copyTimestamp(original *int64) *int64 {
-	if original == nil {
-		return nil
-	}
-	ts := *original
-	return &ts
 }

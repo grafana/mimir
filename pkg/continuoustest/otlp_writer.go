@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/pkg/distributor"
@@ -59,7 +58,7 @@ func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.Writ
 	if httpResp.StatusCode/100 != 2 {
 		truncatedBody, err := io.ReadAll(io.LimitReader(httpResp.Body, maxErrMsgLen))
 		if err != nil {
-			return httpResp.StatusCode, errors.Wrapf(err, "server returned HTTP status %s and client failed to read response body", httpResp.Status)
+			return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and client failed to read response body: %w", httpResp.Status, err)
 		}
 
 		return httpResp.StatusCode, fmt.Errorf("server returned HTTP status %s and body %q (truncated to %d bytes)", httpResp.Status, string(truncatedBody), maxErrMsgLen)
@@ -73,7 +72,7 @@ func compress(input []byte) ([]byte, error) {
 	gz := gzip.NewWriter(&b)
 	_, err := gz.Write(input)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to compress data")
+		return nil, fmt.Errorf("unable to compress data: %w", err)
 	}
 
 	gz.Close()

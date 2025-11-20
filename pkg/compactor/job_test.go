@@ -4,12 +4,12 @@ package compactor
 
 import (
 	"context"
+	"errors"
 	"path"
 	"testing"
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"

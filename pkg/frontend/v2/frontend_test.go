@@ -302,7 +302,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 
 	// Response stream exhausted.
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 }
 
@@ -352,7 +352,7 @@ func TestFrontend_Protobuf_ShouldNotCancelRequestAfterSuccess(t *testing.T) {
 				if exhaustStream {
 					// Response stream exhausted.
 					msg, err = resp.Next(ctx)
-					require.NoError(t, err)
+					require.EqualError(t, err, "end of stream reached")
 					require.Nil(t, msg)
 				}
 
@@ -407,7 +407,7 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 
 	// Response stream exhausted.
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 
 	close(responseRead)
@@ -751,7 +751,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 	require.Equal(t, expectedMessages[2], msg, "should still be able to read last message after stream has been completely read")
 
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 }
 
@@ -1312,7 +1312,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 
 	// Response stream exhausted.
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 
 	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
@@ -2092,4 +2092,28 @@ func TestQueryDecoding(t *testing.T) {
 
 func newTestCodec() querymiddleware.Codec {
 	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyInjector{})
+}
+
+func BenchmarkProtobufResponseStreamShouldAbortReading(b *testing.B) {
+	// It's important to use a context from WithCancel here as other kinds of contexts (eg. context.Background())
+	// have different performance characteristics for Err() and Done().
+	requestContext, cancelRequest := context.WithCancel(context.Background())
+	defer cancelRequest()
+
+	stream := &ProtobufResponseStream{
+		notifyClosed:   make(chan struct{}),
+		isClosed:       atomic.NewBool(false),
+		requestContext: requestContext,
+	}
+
+	callContext, cancelCall := context.WithCancel(context.Background())
+	defer cancelCall()
+
+	for b.Loop() {
+		err := stream.shouldAbortReading(callContext)
+
+		if err != nil {
+			require.NoError(b, err, "shouldNotAbortReading should not return an error")
+		}
+	}
 }

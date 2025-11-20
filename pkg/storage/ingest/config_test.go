@@ -247,6 +247,14 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expectedErr: ErrInvalidFetchMaxWait,
 		},
+		"should fail if fsync concurrency is not at least 1": {
+			setup: func(cfg *Config) {
+				cfg.Enabled = true
+				cfg.WriteLogsFsyncBeforeKafkaCommitConcurrency = 0
+			},
+
+			expectedErr: ErrInvalidWriteLogsFsyncConcurrency,
+		},
 	}
 
 	for testName, testData := range tests {

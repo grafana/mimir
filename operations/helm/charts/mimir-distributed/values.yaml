@@ -445,6 +445,19 @@ kedaAutoscaling:
   #  - cluster!="eu-west"
   #  - app="foobar"
 
+  # -- KEDA fallback configuration. This section specifies fallback options when the scaler fails to get metrics from the source.
+  # For more information, refer to the [KEDA ScaledObject specification](https://keda.sh/docs/2.18/reference/scaledobject-spec/).
+  fallback:
+    # -- Enable fallback behavior when the scaler fails to get metrics.
+    enabled: false
+    # failureThreshold: 3  # Number of consecutive failures before activating fallback behavior
+    # replicas: 6          # Number of replicas to scale to when fallback is triggered
+    # behavior: "static"   # Fallback behavior type. Options: "static", "currentReplicas", "currentReplicasIfHigher", "currentReplicasIfLower"
+    #                      # static: Use the fallback.replicas value
+    #                      # currentReplicas: Use the current replica count
+    #                      # currentReplicasIfHigher: Use current replicas if higher than fallback.replicas, otherwise use fallback.replicas
+    #                      # currentReplicasIfLower: Use current replicas if lower than fallback.replicas, otherwise use fallback.replicas
+
   # --KEDA trigger authentication settings.
   # ref: https://keda.sh/docs/2.16/scalers/pulsar/#authentication-parameters
   authentication:
@@ -797,6 +810,8 @@ distributor:
           - periodSeconds: 600
             type: Percent
             value: 10
+    # -- Fallback configuration for this component. If not set (null), the global kedaAutoscaling.fallback configuration is used.
+    # fallback: {}
 
   service:
     annotations: {}
@@ -1281,6 +1296,8 @@ ruler:
           - periodSeconds: 600
             type: Percent
             value: 10
+    # -- Fallback configuration for this component. If not set (null), the global kedaAutoscaling.fallback configuration is used.
+    # fallback: {}
 
   service:
     annotations: {}
@@ -1417,6 +1434,8 @@ ruler_querier:
             type: Pods
             value: 15
         stabilizationWindowSeconds: 60
+    # -- Fallback configuration for this component. If not set (null), the global kedaAutoscaling.fallback configuration is used.
+    # fallback: {}
 
   service:
     annotations: {}
@@ -1536,6 +1555,8 @@ ruler_query_frontend:
           - periodSeconds: 60
             type: Percent
             value: 10
+    # -- Fallback configuration for this component. If not set (null), the global kedaAutoscaling.fallback configuration is used.
+    # fallback: {}
 
   service:
     annotations: {}
@@ -1764,6 +1785,8 @@ querier:
             type: Pods
             value: 15
         stabilizationWindowSeconds: 60
+    # -- Fallback configuration for this component. If not set (null), the global kedaAutoscaling.fallback configuration is used.
+    # fallback: {}
 
   service:
     annotations: {}
@@ -1887,6 +1910,8 @@ query_frontend:
           - periodSeconds: 60
             type: Percent
             value: 10
+    # -- Fallback configuration for this component. If not set (null), the global kedaAutoscaling.fallback configuration is used.
+    # fallback: {}
 
   service:
     annotations: {}

@@ -46,9 +46,9 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 
 // loadSnapshot loads the snapshot data into the tracker.
 // It returns an error if the snapshot is invalid.
-// When first is true, it assumes that the tracker is empty and not being concurrently loaded with other data,
-// this allows skipping the lookups when loading items into the tenant shards.
-func (t *trackerStore) loadSnapshot(data []byte, now time.Time, first bool) error {
+// The method checks if each tenant shard is empty and uses Load() for empty shards (faster)
+// or Put() for non-empty shards (handles concurrent loads and deduplication).
+func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 	snapshot := encoding.Decbuf{B: data}
 	version := snapshot.Byte()
 	if err := snapshot.Err(); err != nil {
@@ -120,7 +120,10 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time, first bool) erro
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
 		m.Lock()
-		if first {
+		// Check if the shard is empty. If it is, we can use the faster Load() method
+		// which doesn't check for duplicates. Otherwise, use Put() which handles
+		// concurrent loads and deduplication.
+		if m.Count() == 0 {
 			for _, ref := range refs {
 				m.Load(ref.Ref, ref.Timestamp)
 			}
