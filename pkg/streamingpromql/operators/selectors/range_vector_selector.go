@@ -94,7 +94,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	m.stepData.RangeStart = rangeStart
 	m.stepData.RangeEnd = rangeEnd
 
-	m.Stats.IncrementSamplesAtTimestamp(m.stepData.StepT, int64(m.stepData.Floats.Count())+m.stepData.Histograms.EquivalentFloatSampleCount())
+	m.Stats.IncrementSamples(int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount())
 
 	return m.stepData, nil
 }

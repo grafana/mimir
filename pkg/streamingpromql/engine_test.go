@@ -871,7 +871,6 @@ func TestSubqueries(t *testing.T) {
 	`
 
 	opts := NewTestEngineOpts()
-	opts.CommonOpts.EnablePerStepStats = true
 	prometheusEngine := promql.NewEngine(opts.CommonOpts)
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -3503,7 +3502,6 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 
 func TestQueryStats(t *testing.T) {
 	opts := NewTestEngineOpts()
-	opts.CommonOpts.EnablePerStepStats = true
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
@@ -3534,7 +3532,7 @@ func TestQueryStats(t *testing.T) {
 	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, isInstantQuery bool) *promstats.QuerySamples {
 		var q promql.Query
 		var err error
-		opts := promql.NewPrometheusQueryOpts(true, 0)
+		opts := promql.NewPrometheusQueryOpts(false, 0)
 		if isInstantQuery {
 			q, err = engine.NewInstantQuery(context.Background(), storage, opts, expr, end)
 		} else {
@@ -3552,239 +3550,198 @@ func TestQueryStats(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		expr                        string
-		isInstantQuery              bool
-		expectedTotalSamples        int64
-		expectedTotalSamplesPerStep []int64
-		skipCompareWithPrometheus   string
-		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats (eg. due to optimisations like common subexpression elimination)
-		expectedTotalSamplesWithMQE        int64
-		expectedTotalSamplesPerStepWithMQE []int64
+		expr                      string
+		isInstantQuery            bool
+		expectedTotalSamples      int64
+		skipCompareWithPrometheus string
+		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats
+		// (eg. due to optimisations like common subexpression elimination, or due to the different way we count samples in subqueries)
+		expectedTotalSamplesWithMQE int64
 	}{
 		"instant vector selector with point at every time step": {
-			expr:                        `dense_series{}`,
-			expectedTotalSamples:        11,
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			expr:                 `dense_series{}`,
+			expectedTotalSamples: 11,
 		},
 		"instant vector selector with points only in start of time range": {
-			expr:                        `start_series{}`,
-			expectedTotalSamples:        2 + 4, // 2 for original points, plus 4 for lookback to last point.
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0},
+			expr:                 `start_series{}`,
+			expectedTotalSamples: 2 + 4, // 2 for original points, plus 4 for lookback to last point.
 		},
 		"instant vector selector with points only at end of time range": {
-			expr:                        `end_series{}`,
-			expectedTotalSamples:        6,
-			expectedTotalSamplesPerStep: []int64{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1},
+			expr:                 `end_series{}`,
+			expectedTotalSamples: 6,
 		},
 		"instant vector selector with sparse points": {
-			expr:                        `sparse_series{}`,
-			expectedTotalSamples:        5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1},
+			expr:                 `sparse_series{}`,
+			expectedTotalSamples: 5 + 4, // 5 for first point at T=0, and 4 for second point at T=7
 		},
 		"instant vector selector with stale marker": {
-			expr:                        `stale_series{}`,
-			expectedTotalSamples:        10, // Instant vector selectors ignore stale markers.
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1},
+			expr:                 `stale_series{}`,
+			expectedTotalSamples: 10, // Instant vector selectors ignore stale markers.
 		},
 		"instant vector selector with @ modifier": {
-			expr:                        `dense_series{} @ 0`,
-			expectedTotalSamples:        1,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{1},
+			expr:                 `dense_series{} @ 0`,
+			expectedTotalSamples: 1,
+			isInstantQuery:       true,
 		},
 		"instant vector with offset modifier": {
-			expr:                        `dense_series{} offset 2m`,
-			expectedTotalSamples:        9,
-			expectedTotalSamplesPerStep: []int64{0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			expr:                 `dense_series{} offset 2m`,
+			expectedTotalSamples: 9,
 		},
 		"instant vector with offset modifier before start of the series": {
-			expr:                        `dense_series{} offset 1w`,
-			expectedTotalSamples:        0,
-			expectedTotalSamplesPerStep: []int64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			expr:                 `dense_series{} offset 1w`,
+			expectedTotalSamples: 0,
 		},
 
 		"raw range vector selector with single point": {
-			expr:                        `dense_series[45s]`,
-			isInstantQuery:              true,
-			expectedTotalSamples:        1,
-			expectedTotalSamplesPerStep: []int64{1},
+			expr:                 `dense_series[45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 1,
 		},
 		"raw range vector selector with multiple points": {
-			expr:                        `dense_series[3m45s]`,
-			isInstantQuery:              true,
-			expectedTotalSamples:        4,
-			expectedTotalSamplesPerStep: []int64{4},
+			expr:                 `dense_series[3m45s]`,
+			isInstantQuery:       true,
+			expectedTotalSamples: 4,
 		},
 		"range vector selector with point at every time step": {
-			expr:                        `sum_over_time(dense_series{}[30s])`,
-			expectedTotalSamples:        11,
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			expr:                 `sum_over_time(dense_series{}[30s])`,
+			expectedTotalSamples: 11,
 		},
 		"range vector selector with 2 points at every time step": {
-			expr:                        `sum_over_time(dense_series{}[1m30s])`,
-			expectedTotalSamples:        21,
-			expectedTotalSamplesPerStep: []int64{1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+			expr:                 `sum_over_time(dense_series{}[1m30s])`,
+			expectedTotalSamples: 21,
 		},
 		"range vector selector with points only in start of time range": {
-			expr:                        `sum_over_time(start_series{}[30s])`,
-			expectedTotalSamples:        2,
-			expectedTotalSamplesPerStep: []int64{1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			expr:                 `sum_over_time(start_series{}[30s])`,
+			expectedTotalSamples: 2,
 		},
 		"range vector selector with points only at end of time range": {
-			expr:                        `sum_over_time(end_series{}[30s])`,
-			expectedTotalSamples:        6,
-			expectedTotalSamplesPerStep: []int64{0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1},
+			expr:                 `sum_over_time(end_series{}[30s])`,
+			expectedTotalSamples: 6,
 		},
 		"range vector selector with sparse points": {
-			expr:                        `sum_over_time(sparse_series{}[30s])`,
-			expectedTotalSamples:        2,
-			expectedTotalSamplesPerStep: []int64{1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0},
+			expr:                 `sum_over_time(sparse_series{}[30s])`,
+			expectedTotalSamples: 2,
 		},
 		"range vector selector where range overlaps previous step's range": {
-			expr:                        `sum_over_time(dense_series{}[1m30s])`,
-			expectedTotalSamples:        21, // Each step except the first selects two points.
-			expectedTotalSamplesPerStep: []int64{1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
+			expr:                 `sum_over_time(dense_series{}[1m30s])`,
+			expectedTotalSamples: 21, // Each step except the first selects two points.
 		},
 		"range vector selector with stale marker": {
-			expr:                        `count_over_time(stale_series{}[1m30s])`,
-			expectedTotalSamples:        19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
-			expectedTotalSamplesPerStep: []int64{1, 2, 2, 2, 2, 2, 1, 1, 2, 2, 2},
+			expr:                 `count_over_time(stale_series{}[1m30s])`,
+			expectedTotalSamples: 19, // Each step except the first selects two points. Range vector selectors ignore stale markers.
 		},
 		"expression with multiple selectors": {
-			expr:                        `dense_series{} + end_series{}`,
-			expectedTotalSamples:        11 + 6,
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2},
+			expr:                 `dense_series{} + end_series{}`,
+			expectedTotalSamples: 11 + 6,
 		},
 		"instant vector selector with NaNs": {
-			expr:                        `nan_series{}`,
-			expectedTotalSamples:        11,
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			expr:                 `nan_series{}`,
+			expectedTotalSamples: 11,
 		},
 		"range vector selector with NaNs": {
-			expr:                        `sum_over_time(nan_series{}[1m])`,
-			expectedTotalSamples:        11,
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			expr:                 `sum_over_time(nan_series{}[1m])`,
+			expectedTotalSamples: 11,
 		},
 		"instant vector selector with native histograms": {
-			expr:                        `native_histogram_series{}`,
-			expectedTotalSamples:        78,
-			expectedTotalSamplesPerStep: []int64{13, 13, 13, 13, 13, 13, 0, 0, 0, 0, 0},
+			expr:                 `native_histogram_series{}`,
+			expectedTotalSamples: 78,
 		},
 		"range vector selector with native histograms": {
-			expr:                        `sum_over_time(native_histogram_series{}[1m])`,
-			expectedTotalSamples:        26,
-			expectedTotalSamplesPerStep: []int64{13, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			expr:                 `sum_over_time(native_histogram_series{}[1m])`,
+			expectedTotalSamples: 26,
 		},
 		"range vector selector with @ modifier": {
-			expr:                               `sum_over_time(dense_series{}[2m] @ 300)`,
-			expectedTotalSamples:               22, // each step selects 2 points at T=300 over query range
-			expectedTotalSamplesWithMQE:        2,  // the range vector with @ is step invariant so these 2 samples are re-used for each step
-			expectedTotalSamplesPerStep:        []int64{2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2},
-			expectedTotalSamplesPerStepWithMQE: []int64{2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+			expr:                        `sum_over_time(dense_series{}[2m] @ 300)`,
+			expectedTotalSamples:        22, // each step selects 2 points at T=300 over query range
+			expectedTotalSamplesWithMQE: 2,  // the range vector with @ is step invariant so these 2 samples are re-used for each step
 		},
 		"subquery": {
-			expr:                        `dense_series{}[5m:1m]`,
-			expectedTotalSamples:        5,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{5},
+			expr:                 `dense_series{}[5m:1m]`,
+			expectedTotalSamples: 5,
+			isInstantQuery:       true,
 		},
 		"aggregation over subquery": {
-			expr:                        `max_over_time(dense_series{}[5m:1m])`,
-			expectedTotalSamples:        5,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{5},
+			expr:                 `max_over_time(dense_series{}[5m:1m])`,
+			expectedTotalSamples: 5,
+			isInstantQuery:       true,
 		},
 		"aggregation over subquery - range query": {
 			expr:                        `max_over_time(dense_series[5m:1m])`,
 			expectedTotalSamples:        45,
-			expectedTotalSamplesPerStep: []int64{1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5},
+			expectedTotalSamplesWithMQE: 11,
 		},
 		"subquery range equals subquery interval": {
-			expr:                        `dense_series[1m:1m]`,
-			expectedTotalSamples:        1,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{1},
+			expr:                 `dense_series[1m:1m]`,
+			expectedTotalSamples: 1,
+			isInstantQuery:       true,
 		},
 		"subquery range equals subquery interval -  range query": {
-			expr:                        `max_over_time(dense_series{}[1m:1m])`,
-			expectedTotalSamples:        11,
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+			expr:                 `max_over_time(dense_series{}[1m:1m])`,
+			expectedTotalSamples: 11,
 		},
 		"subquery resolution greater than subquery interval": {
-			expr:                        `dense_series{}[1m:5m]`,
-			expectedTotalSamples:        1,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{1},
+			expr:                 `dense_series{}[1m:5m]`,
+			expectedTotalSamples: 1,
+			isInstantQuery:       true,
 		},
 		"subquery resolution greater than subquery interval - range query": {
-			expr:                        `max_over_time(dense_series{}[1m:5m])`,
-			expectedTotalSamples:        3,
-			isInstantQuery:              false,
-			expectedTotalSamplesPerStep: []int64{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+			expr:                 `max_over_time(dense_series{}[1m:5m])`,
+			expectedTotalSamples: 3,
+			isInstantQuery:       false,
 		},
 		"subquery not aligned with parent query": {
-			expr:                        `dense_series{}[5m:44s]`,
-			expectedTotalSamples:        7,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{7},
+			expr:                 `dense_series{}[5m:44s]`,
+			expectedTotalSamples: 7,
+			isInstantQuery:       true,
 		},
 		"subquery not aligned with parent query - range query": {
 			expr:                        `max_over_time(dense_series{}[5m:44s])`,
 			expectedTotalSamples:        57,
-			expectedTotalSamplesPerStep: []int64{1, 2, 3, 5, 6, 6, 7, 7, 6, 7, 7},
+			expectedTotalSamplesWithMQE: 14,
 		},
 		"classic histogram quantile": {
-			expr:                        `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
-			expectedTotalSamples:        30,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{30},
+			expr:                 `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples: 30,
+			isInstantQuery:       true,
 		},
 		"classic histogram quantile – range query": {
-			expr:                        `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
-			expectedTotalSamples:        270,
-			expectedTotalSamplesPerStep: []int64{6, 12, 18, 24, 30, 30, 30, 30, 30, 30, 30},
+			expr:                 `histogram_quantile(0.9, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples: 270,
 		},
 		"classic histogram fraction": {
-			expr:                        `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
-			expectedTotalSamples:        30,
-			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{30},
+			expr:                 `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples: 30,
+			isInstantQuery:       true,
 		},
 		"classic histogram fraction – range query": {
-			expr:                        `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
-			expectedTotalSamples:        270,
-			expectedTotalSamplesPerStep: []int64{6, 12, 18, 24, 30, 30, 30, 30, 30, 30, 30},
+			expr:                 `histogram_fraction(10, 100, rate(classic_histogram_series[5m]))`,
+			expectedTotalSamples: 270,
 		},
 		"common subexpression elimination": {
-			expr:                               `sum(dense_series) + sum(dense_series)`,
-			isInstantQuery:                     true,
-			expectedTotalSamples:               2,
-			expectedTotalSamplesPerStep:        []int64{2},
-			expectedTotalSamplesWithMQE:        1,
-			expectedTotalSamplesPerStepWithMQE: []int64{1},
+			expr:                        `sum(dense_series) + sum(dense_series)`,
+			isInstantQuery:              true,
+			expectedTotalSamples:        2,
+			expectedTotalSamplesWithMQE: 1,
 		},
 		// Three tests below cover PQE bug: sample counting is incorrect when subqueries with range vector selectors are wrapped in functions.
 		// In MQE it's fixed, so that's why cases have a skipCompareWithPrometheus set.
 		// See this for details: https://github.com/prometheus/prometheus/issues/16638
-		"subquery with ranged vector selector": {
+		"subquery with range vector selector": {
 			expr:                        `rate(dense_series[1m30s])[5m:1m]`,
 			expectedTotalSamples:        10,
+			expectedTotalSamplesWithMQE: 10,
 			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{10},
-			skipCompareWithPrometheus:   "Prometheus undercounts samples when range vector selector wrapped in function inside subquery",
 		},
-		"aggregation over subquery with ranged vector selector": {
+		"aggregation over subquery with range vector selector": {
 			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
-			expectedTotalSamples:        10,
+			expectedTotalSamples:        5,
+			expectedTotalSamplesWithMQE: 10,
 			isInstantQuery:              true,
-			expectedTotalSamplesPerStep: []int64{10},
-			skipCompareWithPrometheus:   "Prometheus undercounts samples when range vector selector wrapped in function inside subquery",
 		},
-		"aggregation over subquery with ranged vector selector, range query": {
+		"aggregation over subquery with range vector selector, range query": {
 			expr:                        `max_over_time(rate(dense_series[1m30s])[5m:1m])`,
-			expectedTotalSamples:        85,
-			expectedTotalSamplesPerStep: []int64{1, 3, 5, 7, 9, 10, 10, 10, 10, 10, 10},
-			skipCompareWithPrometheus:   "Prometheus undercounts samples when range vector selector wrapped in function inside subquery",
+			expectedTotalSamples:        40,
+			expectedTotalSamplesWithMQE: 21,
 		},
 	}
 
@@ -3793,16 +3750,13 @@ func TestQueryStats(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, testCase.expr, testCase.isInstantQuery)
 			if testCase.skipCompareWithPrometheus == "" {
 				require.Equal(t, testCase.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
-				require.Equal(t, testCase.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per stepsamples does not match value from Prometheus' engine")
 			}
 
 			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, testCase.expr, testCase.isInstantQuery)
 			if testCase.expectedTotalSamplesWithMQE != 0 {
 				require.Equal(t, testCase.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
-				require.Equal(t, testCase.expectedTotalSamplesPerStepWithMQE, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
 			} else {
 				require.Equal(t, testCase.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
-				require.Equal(t, testCase.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
 			}
 		})
 	}
@@ -3811,7 +3765,6 @@ func TestQueryStats(t *testing.T) {
 func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	// TestCases are taken from Prometheus' TestQueryStatistics.
 	opts := NewTestEngineOpts()
-	opts.CommonOpts.EnablePerStepStats = true
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
@@ -3832,7 +3785,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	runQueryAndGetSamplesStats := func(t *testing.T, engine promql.QueryEngine, expr string, start, end time.Time, interval time.Duration) *promstats.QuerySamples {
 		var q promql.Query
 		var err error
-		opts := promql.NewPrometheusQueryOpts(true, 0)
+		opts := promql.NewPrometheusQueryOpts(false, 0)
 
 		if interval == 0 {
 			// Instant query
@@ -3852,288 +3805,244 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 	}
 
 	cases := []struct {
-		query                       string
-		start                       time.Time
-		end                         time.Time
-		interval                    time.Duration
-		expectedTotalSamples        int64
-		expectedTotalSamplesPerStep []int64
-		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats (eg. due to optimisations like common subexpression elimination)
-		expectedTotalSamplesWithMQE        int64
-		expectedTotalSamplesPerStepWithMQE []int64
+		query                string
+		start                time.Time
+		end                  time.Time
+		interval             time.Duration
+		expectedTotalSamples int64
+		// ...WithMQE expectations are optional and should be set only if a query with MQE reports different stats
+		// (eg. due to optimisations like common subexpression elimination, or due to the different way we count samples in subqueries)
+		expectedTotalSamplesWithMQE int64
 	}{
 		{
-			query:                       `"literal string"`,
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        0,
-			expectedTotalSamplesPerStep: []int64{0},
+			query:                `"literal string"`,
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 0,
 		},
 		{
-			query:                       "1",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        0,
-			expectedTotalSamplesPerStep: []int64{0},
+			query:                "1",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 0,
 		},
 		{
-			query:                       "metricWith1SampleEvery10Seconds",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        1, // 1 sample / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                "metricWith1SampleEvery10Seconds",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 1, // 1 sample / 10 seconds
 		},
 		{
-			query:                       "metricWith1HistogramEvery10Seconds",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        13, // 1 histogram HPoint of size 13 / 10 seconds
-			expectedTotalSamplesPerStep: []int64{13},
+			query:                "metricWith1HistogramEvery10Seconds",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 13, // 1 histogram HPoint of size 13 / 10 seconds
 		},
 		{
 			// timestamp function has a special handling.
-			query:                       "timestamp(metricWith1SampleEvery10Seconds)",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        1, // 1 sample / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                "timestamp(metricWith1SampleEvery10Seconds)",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 1, // 1 sample / 10 seconds
 		},
 		{
-			query:                       "timestamp(metricWith1HistogramEvery10Seconds)",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        1, // 1 float sample (because of timestamp) / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                "timestamp(metricWith1HistogramEvery10Seconds)",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 1, // 1 float sample (because of timestamp) / 10 seconds
 		},
 		{
-			query:                       "metricWith1SampleEvery10Seconds",
-			start:                       time.Unix(22, 0),
-			expectedTotalSamples:        1, // 1 sample / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                "metricWith1SampleEvery10Seconds",
+			start:                time.Unix(22, 0),
+			expectedTotalSamples: 1, // 1 sample / 10 seconds
 		},
 		{
-			query:                       "metricWith1SampleEvery10Seconds offset 10s",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        1, // 1 sample / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                "metricWith1SampleEvery10Seconds offset 10s",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 1, // 1 sample / 10 seconds
 		},
 		{
-			query:                       "metricWith1SampleEvery10Seconds @ 15",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        1, // 1 sample / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                "metricWith1SampleEvery10Seconds @ 15",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 1, // 1 sample / 10 seconds
 		},
 		{
-			query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        1, // 1 sample / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                `metricWith3SampleEvery10Seconds{a="1"}`,
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 1, // 1 sample / 10 seconds
 		},
 		{
-			query:                       `metricWith3SampleEvery10Seconds{a="1"} @ 19`,
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        1, // 1 sample / 10 seconds
-			expectedTotalSamplesPerStep: []int64{1},
+			query:                `metricWith3SampleEvery10Seconds{a="1"} @ 19`,
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 1, // 1 sample / 10 seconds
 		},
 		{
-			query:                       `metricWith3SampleEvery10Seconds{a="1"}[20s] @ 19`,
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        2, // (1 sample / 10 seconds) * 20s
-			expectedTotalSamplesPerStep: []int64{2},
+			query:                `metricWith3SampleEvery10Seconds{a="1"}[20s] @ 19`,
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 2, // (1 sample / 10 seconds) * 20s
 		},
 		{
-			query:                       "metricWith3SampleEvery10Seconds",
-			start:                       time.Unix(21, 0),
-			expectedTotalSamples:        3, // 3 samples / 10 seconds
-			expectedTotalSamplesPerStep: []int64{3},
+			query:                "metricWith3SampleEvery10Seconds",
+			start:                time.Unix(21, 0),
+			expectedTotalSamples: 3, // 3 samples / 10 seconds
 		},
 		{
-			query:                       "metricWith1SampleEvery10Seconds[60s]",
+			query:                "metricWith1SampleEvery10Seconds[60s]",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+		},
+		{
+			query:                "metricWith1HistogramEvery10Seconds[60s]",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 78, // 1 histogram (size 13 HPoint) / 10 seconds * 60 seconds
+		},
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 24, // (1 sample / 10 seconds * 60 seconds) * 4
+		},
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[61s])[20s:5s]",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 26, // (1 sample / 10 seconds * 60 seconds) * 4 + 2 as
+		},
+		{
+			query:                "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 312, // (1 histogram (size 13) / 10 seconds * 60 seconds) * 4
+		},
+		{
+			query:                "metricWith1SampleEvery10Seconds[60s] @ 30",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 4, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+		},
+		{
+			query:                "metricWith1HistogramEvery10Seconds[60s] @ 30",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 52, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
+		},
+		{
+			query:                "sum(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
+		},
+		{
+			query:                "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
+		},
+		{
+			query:                "metricWith1SampleEvery10Seconds[60s] offset 10s",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+		},
+		{
+			query:                "metricWith3SampleEvery10Seconds[60s]",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 18, // 3 sample / 10 seconds * 60 seconds
+		},
+		{
+			query:                "max_over_time(metricWith1SampleEvery10Seconds[60s])",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+		},
+		{
+			query:                "absent_over_time(metricWith1SampleEvery10Seconds[60s])",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+		},
+		{
+			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s])",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 18, // 3 sample / 10 seconds * 60 seconds
+		},
+		{
+			query:                "metricWith1SampleEvery10Seconds[60s:5s]",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+		},
+		{
+			query:                "metricWith1SampleEvery10Seconds[60s:5s] offset 10s",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 12, // 1 sample per query * 12 queries (60/5)
+		},
+		{
+			query:                "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
+			start:                time.Unix(201, 0),
+			expectedTotalSamples: 36, // 3 sample per query * 12 queries (60/5)
+		},
+		{
+			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
 			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
-			expectedTotalSamplesPerStep: []int64{6},
+			expectedTotalSamples:        72, // 2 * (3 sample per query * 12 queries (60/5))
+			expectedTotalSamplesWithMQE: 36, // 72/2 due to common subexpression elimination
 		},
 		{
-			query:                       "metricWith1HistogramEvery10Seconds[60s]",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        78, // 1 histogram (size 13 HPoint) / 10 seconds * 60 seconds
-			expectedTotalSamplesPerStep: []int64{78},
+			query:                `metricWith3SampleEvery10Seconds{a="1"}`,
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 4, // 1 sample per query * 4 steps
 		},
 		{
-			query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s])[20s:5s]",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        24, // (1 sample / 10 seconds * 60 seconds) * 4
-			expectedTotalSamplesPerStep: []int64{24},
+			query:                `metricWith3SampleEvery10Seconds{a="1"}`,
+			start:                time.Unix(204, 0),
+			end:                  time.Unix(223, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 4, // 1 sample per query * 4 steps
 		},
 		{
-			query:                       "max_over_time(metricWith1SampleEvery10Seconds[61s])[20s:5s]",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        26, // (1 sample / 10 seconds * 60 seconds) * 4 + 2 as
-			expectedTotalSamplesPerStep: []int64{26},
-		},
-		{
-			query:                       "max_over_time(metricWith1HistogramEvery10Seconds[60s])[20s:5s]",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        312, // (1 histogram (size 13) / 10 seconds * 60 seconds) * 4
-			expectedTotalSamplesPerStep: []int64{312},
-		},
-		{
-			query:                       "metricWith1SampleEvery10Seconds[60s] @ 30",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        4, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
-			expectedTotalSamplesPerStep: []int64{4},
-		},
-		{
-			query:                       "metricWith1HistogramEvery10Seconds[60s] @ 30",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        52, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 1 series
-			expectedTotalSamplesPerStep: []int64{52},
-		},
-		{
-			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
-			expectedTotalSamplesPerStep: []int64{12},
-		},
-		{
-			query:                       "sum by (b) (max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30))",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        12, // @ modifier force the evaluation to at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series
-			expectedTotalSamplesPerStep: []int64{12},
-		},
-		{
-			query:                       "metricWith1SampleEvery10Seconds[60s] offset 10s",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
-			expectedTotalSamplesPerStep: []int64{6},
-		},
-		{
-			query:                       "metricWith3SampleEvery10Seconds[60s]",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        18, // 3 sample / 10 seconds * 60 seconds
-			expectedTotalSamplesPerStep: []int64{18},
-		},
-		{
-			query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s])",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
-			expectedTotalSamplesPerStep: []int64{6},
-		},
-		{
-			query:                       "absent_over_time(metricWith1SampleEvery10Seconds[60s])",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        6, // 1 sample / 10 seconds * 60 seconds
-			expectedTotalSamplesPerStep: []int64{6},
-		},
-		{
-			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s])",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        18, // 3 sample / 10 seconds * 60 seconds
-			expectedTotalSamplesPerStep: []int64{18},
-		},
-		{
-			query:                       "metricWith1SampleEvery10Seconds[60s:5s]",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        12, // 1 sample per query * 12 queries (60/5)
-			expectedTotalSamplesPerStep: []int64{12},
-		},
-		{
-			query:                       "metricWith1SampleEvery10Seconds[60s:5s] offset 10s",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        12, // 1 sample per query * 12 queries (60/5)
-			expectedTotalSamplesPerStep: []int64{12},
-		},
-		{
-			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
-			start:                       time.Unix(201, 0),
-			expectedTotalSamples:        36, // 3 sample per query * 12 queries (60/5)
-			expectedTotalSamplesPerStep: []int64{36},
-		},
-		{
-			query:                              "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			start:                              time.Unix(201, 0),
-			expectedTotalSamples:               72, // 2 * (3 sample per query * 12 queries (60/5))
-			expectedTotalSamplesPerStep:        []int64{72},
-			expectedTotalSamplesWithMQE:        36, // 72/2 due to common subexpression elimination
-			expectedTotalSamplesPerStepWithMQE: []int64{36},
-		},
-		{
-			query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
-			start:                       time.Unix(201, 0),
-			end:                         time.Unix(220, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        4, // 1 sample per query * 4 steps
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
-		},
-		{
-			query:                       `metricWith3SampleEvery10Seconds{a="1"}`,
-			start:                       time.Unix(204, 0),
-			end:                         time.Unix(223, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        4, // 1 sample per query * 4 steps
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
-		},
-		{
-			query:                       `metricWith1HistogramEvery10Seconds`,
-			start:                       time.Unix(204, 0),
-			end:                         time.Unix(223, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        52, // 1 histogram (size 13 HPoint) per query * 4 steps
-			expectedTotalSamplesPerStep: []int64{13, 13, 13, 13},
+			query:                `metricWith1HistogramEvery10Seconds`,
+			start:                time.Unix(204, 0),
+			end:                  time.Unix(223, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 52, // 1 histogram (size 13 HPoint) per query * 4 steps
 		},
 		{
 			// timestamp function has a special handling
-			query:                       "timestamp(metricWith1SampleEvery10Seconds)",
-			start:                       time.Unix(201, 0),
-			end:                         time.Unix(220, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        4, // 1 sample per query * 4 steps
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
+			query:                "timestamp(metricWith1SampleEvery10Seconds)",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 4, // 1 sample per query * 4 steps
 		},
 		{
 			// timestamp function has a special handling
-			query:                       "timestamp(metricWith1HistogramEvery10Seconds)",
+			query:                "timestamp(metricWith1HistogramEvery10Seconds)",
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 4, // 1 sample per query * 4 steps
+		},
+		{
+			query:                `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
+			start:                time.Unix(991, 0),
+			end:                  time.Unix(1021, 0),
+			interval:             10 * time.Second,
+			expectedTotalSamples: 2, // 1 sample per query * 2 steps with data
+		},
+		{
+			query:                `metricWith3SampleEvery10Seconds{a="1"} offset 10s`,
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 4, // 1 sample per query * 4 steps
+		},
+		{
+			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
 			start:                       time.Unix(201, 0),
 			end:                         time.Unix(220, 0),
 			interval:                    5 * time.Second,
-			expectedTotalSamples:        4, // 1 sample per query * 4 steps
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
+			expectedTotalSamples:        48, // @ modifier force the evaluation timestamp at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series * 4 steps
+			expectedTotalSamplesWithMQE: 12, // the @ modifier allows for this range vector to be considered a step invariant
 		},
 		{
-			query:                       `max_over_time(metricWith3SampleEvery10Seconds{a="1"}[10s])`,
-			start:                       time.Unix(991, 0),
-			end:                         time.Unix(1021, 0),
-			interval:                    10 * time.Second,
-			expectedTotalSamples:        2, // 1 sample per query * 2 steps with data
-			expectedTotalSamplesPerStep: []int64{1, 1, 0, 0},
+			query:                `metricWith3SampleEvery10Seconds`,
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 12, // 3 sample per query * 4 steps
 		},
 		{
-			query:                       `metricWith3SampleEvery10Seconds{a="1"} offset 10s`,
-			start:                       time.Unix(201, 0),
-			end:                         time.Unix(220, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        4, // 1 sample per query * 4 steps
-			expectedTotalSamplesPerStep: []int64{1, 1, 1, 1},
-		},
-		{
-			query:                              "max_over_time(metricWith3SampleEvery10Seconds[60s] @ 30)",
-			start:                              time.Unix(201, 0),
-			end:                                time.Unix(220, 0),
-			interval:                           5 * time.Second,
-			expectedTotalSamples:               48, // @ modifier force the evaluation timestamp at 30 seconds - So it brings 4 datapoints (0, 10, 20, 30 seconds) * 3 series * 4 steps
-			expectedTotalSamplesPerStep:        []int64{12, 12, 12, 12},
-			expectedTotalSamplesWithMQE:        12, // the @ modifier allows for this range vector to be considered a step invariant
-			expectedTotalSamplesPerStepWithMQE: []int64{12, 0, 0, 0},
-		},
-		{
-			query:                       `metricWith3SampleEvery10Seconds`,
-			start:                       time.Unix(201, 0),
-			end:                         time.Unix(220, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        12, // 3 sample per query * 4 steps
-			expectedTotalSamplesPerStep: []int64{3, 3, 3, 3},
-		},
-		{
-			query:                       `max_over_time(metricWith3SampleEvery10Seconds[60s])`,
-			start:                       time.Unix(201, 0),
-			end:                         time.Unix(220, 0),
-			interval:                    5 * time.Second,
-			expectedTotalSamples:        72, // (3 sample / 10 seconds * 60 seconds) * 4 steps = 72
-			expectedTotalSamplesPerStep: []int64{18, 18, 18, 18},
+			query:                `max_over_time(metricWith3SampleEvery10Seconds[60s])`,
+			start:                time.Unix(201, 0),
+			end:                  time.Unix(220, 0),
+			interval:             5 * time.Second,
+			expectedTotalSamples: 72, // (3 sample / 10 seconds * 60 seconds) * 4 steps = 72
 		},
 		{
 			query:                       "max_over_time(metricWith3SampleEvery10Seconds[60s:5s])",
@@ -4141,7 +4050,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                         time.Unix(220, 0),
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        144, // 3 sample per query * 12 queries (60/5) * 4 steps
-			expectedTotalSamplesPerStep: []int64{36, 36, 36, 36},
+			expectedTotalSamplesWithMQE: 48,
 		},
 		{
 			query:                       "max_over_time(metricWith1SampleEvery10Seconds[60s:5s])",
@@ -4149,7 +4058,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                         time.Unix(220, 0),
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // 1 sample per query * 12 queries (60/5) * 4 steps
-			expectedTotalSamplesPerStep: []int64{12, 12, 12, 12},
+			expectedTotalSamplesWithMQE: 16,
 		},
 		{
 			query:                       "sum by (b) (max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
@@ -4157,17 +4066,15 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                         time.Unix(220, 0),
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        48, // 1 sample per query * 12 queries (60/5) * 4 steps
-			expectedTotalSamplesPerStep: []int64{12, 12, 12, 12},
+			expectedTotalSamplesWithMQE: 16,
 		},
 		{
-			query:                              "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
-			start:                              time.Unix(201, 0),
-			end:                                time.Unix(220, 0),
-			interval:                           5 * time.Second,
-			expectedTotalSamples:               288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
-			expectedTotalSamplesPerStep:        []int64{72, 72, 72, 72},
-			expectedTotalSamplesWithMQE:        144, //  288/2 due to common sub-expression elimination
-			expectedTotalSamplesPerStepWithMQE: []int64{36, 36, 36, 36},
+			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s]))",
+			start:                       time.Unix(201, 0),
+			end:                         time.Unix(220, 0),
+			interval:                    5 * time.Second,
+			expectedTotalSamples:        288, // 2 * (3 sample per query * 12 queries (60/5) * 4 steps)
+			expectedTotalSamplesWithMQE: 48,
 		},
 		{
 			query:                       "sum(max_over_time(metricWith3SampleEvery10Seconds[60s:5s])) + sum(max_over_time(metricWith1SampleEvery10Seconds[60s:5s]))",
@@ -4175,7 +4082,7 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 			end:                         time.Unix(220, 0),
 			interval:                    5 * time.Second,
 			expectedTotalSamples:        192, // (1 sample per query * 12 queries (60/5) + 3 sample per query * 12 queries (60/5)) * 4 steps
-			expectedTotalSamplesPerStep: []int64{48, 48, 48, 48},
+			expectedTotalSamplesWithMQE: 64,
 		},
 	}
 
@@ -4183,15 +4090,12 @@ func TestQueryStatsUpstreamTestCases(t *testing.T) {
 		t.Run(tc.query, func(t *testing.T) {
 			prometheusSamplesStats := runQueryAndGetSamplesStats(t, prometheusEngine, tc.query, tc.start, tc.end, tc.interval)
 			require.Equal(t, tc.expectedTotalSamples, prometheusSamplesStats.TotalSamples, "invalid test case: expected total samples does not match value from Prometheus' engine")
-			require.Equal(t, tc.expectedTotalSamplesPerStep, prometheusSamplesStats.TotalSamplesPerStep, "invalid test case: expected per step samples does not match value from Prometheus' engine")
 
 			mimirSamplesStatsWithPlanning := runQueryAndGetSamplesStats(t, mimirEngine, tc.query, tc.start, tc.end, tc.interval)
 			if tc.expectedTotalSamplesWithMQE != 0 {
 				require.Equal(t, tc.expectedTotalSamplesWithMQE, mimirSamplesStatsWithPlanning.TotalSamples)
-				require.Equal(t, tc.expectedTotalSamplesPerStepWithMQE, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
 			} else {
 				require.Equal(t, tc.expectedTotalSamples, mimirSamplesStatsWithPlanning.TotalSamples)
-				require.Equal(t, tc.expectedTotalSamplesPerStep, mimirSamplesStatsWithPlanning.TotalSamplesPerStep)
 			}
 		})
 	}

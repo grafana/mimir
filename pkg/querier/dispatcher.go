@@ -493,34 +493,19 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations: annos,
-				Stats:       o.populateStats(ctx, evaluator, evaluationStats),
+				Stats:       o.populateStats(ctx, evaluationStats),
 			},
 		},
 	})
 }
 
-func (o *evaluationObserver) populateStats(ctx context.Context, evaluator *streamingpromql.Evaluator, evaluationStats *types.QueryStats) querier_stats.Stats {
+func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats *types.QueryStats) querier_stats.Stats {
 	querierStats := querier_stats.FromContext(ctx)
 	if querierStats == nil {
 		return querier_stats.Stats{}
 	}
 
 	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
-
-	if evaluationStats.EnablePerStepStats {
-		stepStats := make([]querier_stats.StepStat, 0, len(evaluationStats.TotalSamplesPerStep))
-		timeRange := evaluator.GetQueryTimeRange()
-
-		for i, count := range evaluationStats.TotalSamplesPerStep {
-			stepStats = append(stepStats, querier_stats.StepStat{
-				Timestamp: timeRange.IndexTime(int64(i)),
-				Value:     count,
-			})
-		}
-
-		querierStats.AddSamplesProcessedPerStep(stepStats)
-	}
-
 	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the

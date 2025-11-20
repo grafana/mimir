@@ -629,7 +629,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 									Stats: stats.Stats{
-										SamplesProcessed:   10,
+										SamplesProcessed:   6,
 										QueueTime:          3 * time.Second,
 										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,

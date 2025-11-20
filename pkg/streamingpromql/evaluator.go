@@ -9,7 +9,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -35,12 +34,7 @@ type Evaluator struct {
 	cancel      context.CancelCauseFunc
 }
 
-func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, opts promql.QueryOpts, originalExpression string) (*Evaluator, error) {
-	stats, err := types.NewQueryStats(timeRange, engine.enablePerStepStats && opts.EnablePerStepStats(), params.MemoryConsumptionTracker)
-	if err != nil {
-		return nil, err
-	}
-
+func NewEvaluator(root types.Operator, params *planning.OperatorParameters, timeRange types.QueryTimeRange, engine *Engine, originalExpression string) (*Evaluator, error) {
 	return &Evaluator{
 		root:               root,
 		engine:             engine,
@@ -49,7 +43,7 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		annotations:              params.Annotations,
-		stats:                    stats,
+		stats:                    types.NewQueryStats(),
 	}, nil
 }
 
@@ -284,10 +278,6 @@ func (e *Evaluator) Cancel() {
 func (e *Evaluator) Close() {
 	if e.cancel != nil {
 		e.cancel(errQueryClosed)
-	}
-
-	if e.stats != nil {
-		e.stats.Close()
 	}
 }
 

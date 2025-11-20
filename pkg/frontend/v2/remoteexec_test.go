@@ -1046,7 +1046,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *t
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false, 1)
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
@@ -1082,7 +1082,7 @@ func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
 
 	fullPlan := &planning.QueryPlan{Version: 66}
 
-	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, false, 1)
+	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.NotNil(t, frontendMock.request)

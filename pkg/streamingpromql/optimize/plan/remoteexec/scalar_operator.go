@@ -33,7 +33,7 @@ func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PreparePar
 	s.QueryStats = params.QueryStats
 
 	var err error
-	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.QueryStats.EnablePerStepStats, s.EagerLoad)
+	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.EagerLoad)
 	return err
 }
 

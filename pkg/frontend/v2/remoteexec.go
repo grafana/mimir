@@ -42,8 +42,8 @@ func NewRemoteExecutor(frontend ProtobufFrontend, cfg Config) *RemoteExecutor {
 	return &RemoteExecutor{frontend: frontend, cfg: cfg}
 }
 
-func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, 0)
+func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +51,8 @@ func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *pla
 	return &scalarExecutionResponse{stream, memoryConsumptionTracker}, nil
 }
 
-func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, r.cfg.RemoteExecutionBatchSize)
+func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, eagerLoad, r.cfg.RemoteExecutionBatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +60,8 @@ func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPl
 	return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, 0)
+func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,6 @@ func (r *RemoteExecutor) startExecution(
 	fullPlan *planning.QueryPlan,
 	node planning.Node,
 	timeRange types.QueryTimeRange,
-	enablePerStepStats bool,
 	eagerLoad bool,
 	batchSize uint64,
 ) (responseStream, error) {
@@ -95,8 +94,7 @@ func (r *RemoteExecutor) startExecution(
 		Nodes: []querierpb.EvaluationNode{
 			{NodeIndex: encodedPlan.RootNode, TimeRange: encodedPlan.TimeRange},
 		},
-		EnablePerStepStats: enablePerStepStats,
-		BatchSize:          batchSize,
+		BatchSize: batchSize,
 	}
 
 	stats := stats.FromContext(ctx)
