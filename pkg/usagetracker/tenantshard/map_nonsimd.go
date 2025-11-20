@@ -37,7 +37,7 @@ func metaMatchEmpty(m *index) bitset {
 }
 
 // nextMatch clears and returns the index corresponding to the next set bit in
-// the given bitset.
+// the given bitset. It is assumed that the given bitset is nonzero.
 func nextMatch(b *bitset) uint32 {
 	s := uint32(bits.TrailingZeros64(uint64(*b)))
 	*b &= ^(1 << s) // clear bit s+1 from the right.
