@@ -93,12 +93,12 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
-func (a *PusherAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *PusherAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
-func (a *PusherAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *PusherAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *PusherAppender) Commit() error {
@@ -182,12 +182,12 @@ func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ i
 	return 0, nil
 }
 
-func (a *NoopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *NoopAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
-func (a *NoopAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *NoopAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *NoopAppender) Commit() error {

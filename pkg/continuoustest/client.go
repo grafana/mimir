@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -150,7 +150,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 
 	readClient, err := api.NewClient(apiCfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create read client")
+		return nil, fmt.Errorf("failed to create read client: %w", err)
 	}
 
 	var writeClient clientWriter

@@ -196,7 +196,9 @@ The following features are currently experimental:
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
   - Querier ring (all flags beginning with `-querier.ring`)
+  - Query-frontend health check grace period (`querier.frontend-health-check-grace-period`)
 - Query-frontend
+
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
@@ -210,6 +212,8 @@ The following features are currently experimental:
   - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk` and `limit_ratio` (`-query-frontend.enabled-promql-experimental-functions=...`)
+
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -253,6 +257,8 @@ The following features are currently experimental:
   - `-memberlist.zone-aware-routing.enabled`
   - `-memberlist.zone-aware-routing.instance-availability-zone`
   - `-memberlist.zone-aware-routing.role`
+- Jsonnet
+  - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 
 ## Deprecated features
 

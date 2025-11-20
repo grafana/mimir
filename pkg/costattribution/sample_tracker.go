@@ -34,7 +34,7 @@ type SampleTracker struct {
 	discardedSampleAttribution *descriptor
 	logger                     log.Logger
 
-	labels         []costattributionmodel.Label
+	labels         costattributionmodel.Labels
 	overflowLabels []string
 
 	maxCardinality   int
@@ -47,7 +47,7 @@ type SampleTracker struct {
 	overflowCounter observation
 }
 
-func newSampleTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldown time.Duration, logger log.Logger) (*SampleTracker, error) {
+func newSampleTracker(userID string, trackedLabels costattributionmodel.Labels, limit int, cooldown time.Duration, logger log.Logger) (*SampleTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+2)
 	for i := range trackedLabels {
@@ -75,7 +75,7 @@ func newSampleTracker(userID string, trackedLabels []costattributionmodel.Label,
 	return tracker, nil
 }
 
-func (st *SampleTracker) createAndValidateDescriptors(trackedLabels []costattributionmodel.Label) error {
+func (st *SampleTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
 	variableLabels := make([]string, 0, len(trackedLabels)+2)
 	for _, label := range trackedLabels {
 		variableLabels = append(variableLabels, label.OutputLabel())
@@ -99,7 +99,7 @@ func (st *SampleTracker) createAndValidateDescriptors(trackedLabels []costattrib
 	return nil
 }
 
-func (st *SampleTracker) hasSameLabels(labels []costattributionmodel.Label) bool {
+func (st *SampleTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
 	return slices.Equal(st.labels, labels)
 }
 

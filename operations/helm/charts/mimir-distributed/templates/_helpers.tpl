@@ -715,3 +715,21 @@ kubectl image reference
 {{- define "mimir.kubectlImage" -}}
 {{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag }}
 {{- end -}}
+
+{{/*
+Render KEDA ScaledObject fallback configuration block.
+Params:
+  ctx: root context
+  componentFallback: component-specific fallback config (e.g. .Values.distributor.kedaAutoscaling.fallback)
+*/}}
+{{- define "mimir.kedaFallback" -}}
+{{- $fallback := .componentFallback | default .ctx.Values.kedaAutoscaling.fallback -}}
+{{- if and $fallback $fallback.enabled }}
+fallback:
+  failureThreshold: {{ required "kedaAutoscaling.fallback.failureThreshold is required when fallback is enabled" $fallback.failureThreshold }}
+  replicas: {{ required "kedaAutoscaling.fallback.replicas is required when fallback is enabled" $fallback.replicas }}
+  {{- with $fallback.behavior }}
+  behavior: {{ . | quote }}
+  {{- end -}}
+{{- end -}}
+{{- end -}}

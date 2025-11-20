@@ -4,13 +4,13 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/modules"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
