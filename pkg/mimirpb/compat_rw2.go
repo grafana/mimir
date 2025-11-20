@@ -57,6 +57,19 @@ func (ps *rw2PagedSymbols) releasePages() {
 	ps.count = 0
 }
 
+// releasePagesFixed is the fixed version that clears string references
+func (ps *rw2PagedSymbols) releasePagesFixed() {
+	for _, page := range ps.pages {
+		for i := range *page {
+			(*page)[i] = ""
+		}
+		*page = (*page)[:0]
+		rw2PagedSymbolsPool.Put(page)
+	}
+	ps.pages = nil
+	ps.count = 0
+}
+
 func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
 	// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
 	if ref == 0 {
