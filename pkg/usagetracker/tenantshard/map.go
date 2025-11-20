@@ -9,9 +9,11 @@ import (
 	"iter"
 	"sync"
 
+	"github.com/go-kit/log/level"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -205,6 +207,8 @@ func (m *Map) nextSize() (n uint32) {
 }
 
 func (m *Map) rehash(n uint32) {
+	level.Info(util_log.Logger).Log("msg", "rehashing map", "old_size", len(m.index), "new_size", n)
+
 	indices, ks, datas := m.index, m.keys, m.data
 	m.index = make([]index, n)
 	m.keys = make([]keys, n)

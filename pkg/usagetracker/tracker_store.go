@@ -199,6 +199,7 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	} else if capacity > math.MaxUint32 {
 		capacity = math.MaxUint32
 	}
+	level.Info(t.logger).Log("msg", "creating a new tenant", "tenant", tenantID, "capacity", capacity)
 	for i := range tenant.shards {
 		tenant.shards[i] = tenantshard.New(uint32(capacity))
 	}

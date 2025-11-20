@@ -7,6 +7,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
@@ -116,6 +117,7 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 			}
 			refs = append(refs, refTimestamp{Ref: s, Timestamp: snapshotTs})
 		}
+		level.Info(t.logger).Log("msg", "loading tenant from snapshot", "tenant_id", tenantID, "shard", shard, "series_len", len(refs))
 
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
@@ -135,6 +137,8 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		}
 		m.Unlock()
 		tenant.RUnlock()
+
+		level.Info(t.logger).Log("msg", "loaded tenant from snapshot", "tenant_id", tenantID, "shard", shard, "series_len", len(refs))
 	}
 	return nil
 }
