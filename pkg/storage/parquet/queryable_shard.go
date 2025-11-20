@@ -40,7 +40,7 @@ func newQueryableShard(
 		return nil, err
 	}
 	materializer, err := search.NewMaterializer(
-		shardSchema, chunksDecoder, shard, opts.concurrency, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback, false)
+		shardSchema, chunksDecoder, shard, (opts.concurrency+1)/2, rowCountQuota, chunkBytesQuota, dataBytesQuota, opts.materializedSeriesCallback, opts.materializedLabelsFilterCallback, false)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ func newQueryableShard(
 
 func (b queryableShard) Query(ctx context.Context, sorted bool, sp *prom_storage.SelectHints, mint, maxt int64, skipChunks bool, matchers []*labels.Matcher) (prom_storage.ChunkSeriesSet, error) {
 	errGroup, ctx := errgroup.WithContext(ctx)
-	errGroup.SetLimit(b.concurrency)
+	errGroup.SetLimit((b.concurrency + 1) / 2)
 
 	rowGroupCount := len(b.shard.LabelsFile().RowGroups())
 	results := make([][]prom_storage.ChunkSeries, rowGroupCount)
@@ -128,7 +128,7 @@ func (b queryableShard) QueryIter(ctx context.Context, sorted bool, sp *prom_sto
 	err error,
 ) {
 	errGroup, groupCtx := errgroup.WithContext(ctx)
-	errGroup.SetLimit(b.concurrency)
+	errGroup.SetLimit((b.concurrency + 1) / 2)
 
 	rowGroupCount := len(b.shard.LabelsFile().RowGroups())
 	labelsSets := make([]prom_storage.ChunkSeriesSet, rowGroupCount)
@@ -222,7 +222,7 @@ func (b queryableShard) LabelNames(ctx context.Context, limit int64, matchers []
 	}
 
 	errGroup, ctx := errgroup.WithContext(ctx)
-	errGroup.SetLimit(b.concurrency)
+	errGroup.SetLimit((b.concurrency + 1) / 2)
 
 	results := make([][]string, len(b.shard.LabelsFile().RowGroups()))
 
@@ -262,7 +262,7 @@ func (b queryableShard) LabelValues(ctx context.Context, name string, limit int6
 	}
 
 	errGroup, ctx := errgroup.WithContext(ctx)
-	errGroup.SetLimit(b.concurrency)
+	errGroup.SetLimit((b.concurrency + 1) / 2)
 
 	results := make([][]string, len(b.shard.LabelsFile().RowGroups()))
 
@@ -298,7 +298,7 @@ func (b queryableShard) LabelValues(ctx context.Context, name string, limit int6
 
 func (b queryableShard) allLabelValues(ctx context.Context, name string, limit int64) ([]string, error) {
 	errGroup, ctx := errgroup.WithContext(ctx)
-	errGroup.SetLimit(b.concurrency)
+	errGroup.SetLimit((b.concurrency + 1) / 2)
 
 	results := make([][]string, len(b.shard.LabelsFile().RowGroups()))
 

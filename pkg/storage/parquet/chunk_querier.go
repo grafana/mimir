@@ -31,7 +31,7 @@ type querierOpts struct {
 }
 
 var DefaultQuerierOpts = querierOpts{
-	concurrency:                      runtime.GOMAXPROCS(0),
+	concurrency:                      (runtime.GOMAXPROCS(0) + 1) / 2,
 	rowCountLimitFunc:                search.NoopQuotaLimitFunc,
 	chunkBytesLimitFunc:              search.NoopQuotaLimitFunc,
 	dataBytesLimitFunc:               search.NoopQuotaLimitFunc,
