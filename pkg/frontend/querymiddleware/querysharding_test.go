@@ -1184,7 +1184,6 @@ func TestQuerySharding_Annotations(t *testing.T) {
 				splitware := newSplitAndCacheMiddleware(
 					true,
 					false, // Cache disabled.
-					false, // Since cache is disabled, we don't need to cache queryable samples stats.
 					splitInterval,
 					mockLimits{},
 					newTestCodec(),
