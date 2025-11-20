@@ -33,9 +33,10 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, returnSampleTimestamps bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
 		Selector:                 selector,
+		Stats:                    stats,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		ReturnSampleTimestamps:   returnSampleTimestamps,
 	}
@@ -188,7 +189,6 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 }
 
 func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	v.Stats = params.QueryStats
 	return v.Selector.Prepare(ctx, params)
 }
 

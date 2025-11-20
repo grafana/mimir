@@ -31,8 +31,6 @@ type RangeVectorRemoteExec struct {
 var _ types.RangeVectorOperator = &RangeVectorRemoteExec{}
 
 func (r *RangeVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	r.QueryStats = params.QueryStats
-
 	var err error
 	r.resp, err = r.RemoteExecutor.StartRangeVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
 	return err

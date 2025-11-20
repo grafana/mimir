@@ -43,7 +43,7 @@ func NewEvaluator(root types.Operator, params *planning.OperatorParameters, time
 
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		annotations:              params.Annotations,
-		stats:                    types.NewQueryStats(),
+		stats:                    params.QueryStats,
 	}, nil
 }
 
@@ -126,7 +126,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 
 	defer e.engine.activeQueryTracker.Delete(queryID)
 
-	if err := e.root.Prepare(ctx, &types.PrepareParams{QueryStats: e.stats}); err != nil {
+	if err := e.root.Prepare(ctx, &types.PrepareParams{}); err != nil {
 		return fmt.Errorf("failed to prepare query: %w", err)
 	}
 

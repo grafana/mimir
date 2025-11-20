@@ -146,6 +146,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			QueryStats:               params.QueryStats,
 			EagerLoad:                r.EagerLoad,
 		}), nil
 
@@ -157,6 +158,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			QueryStats:               params.QueryStats,
 			EagerLoad:                r.EagerLoad,
 		}), nil
 
@@ -168,6 +170,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			QueryStats:               params.QueryStats,
 			EagerLoad:                r.EagerLoad,
 		}), nil
 

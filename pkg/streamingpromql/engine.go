@@ -91,7 +91,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
-		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
 		logger: opts.Logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -129,7 +128,6 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker QueryTracker
-	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -256,6 +254,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		Queryable:                queryable,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations.New(),
+		QueryStats:               types.NewQueryStats(),
 		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 		Plan:                     plan,
