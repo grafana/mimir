@@ -42,15 +42,6 @@ Some Kafka-compatible implementations have different behavior for the Kafka API.
 To set up Mimir to work with different Kafka backends, you need to configure some parameters.
 Here are the Kafka flavors and additional configurations needed to set them up in Mimir.
 
-### Apache Kafka
-
-Use the default options with Apache Kafka. No additional configuration is needed.
-
-### Confluent Kafka
-
-Use the default options with Confluent Kafka. No additional configuration is needed.
-
-
 ### Warpstream
 
 Configure the following CLI flags or their YAML equivalent.
@@ -59,32 +50,16 @@ Configure the following CLI flags or their YAML equivalent.
 -ingest-storage.kafka.use-compressed-bytes-as-fetch-max-bytes=false
 ```
 
+### Apache Kafka
+
+Use the default options with Apache Kafka. No additional configuration is needed.
+
 ### Redpanda
 
-[Redpanda](https://redpanda.com/) is a Kafka-compatible streaming platform that implements the Kafka wire protocol. You can use Redpanda as a drop-in replacement for Apache Kafka. It offers simplified operations, for example, no dependency on JVM or Zookeeper, and often [delivers better performance than Apache Kafka](https://cdn.prod.website-files.com/6659da8aecd70e0898c0d7ed/679282563f7414da9371634b_McKnight%20Streaming%20Benchmark%20Redpanda_%20Confluent%202025.pdf).
+Use the default options with [Redpanda](https://github.com/redpanda-data/redpanda). No additional configuration is required. [working exmaple](https://github.com/meticulo3366/redpanda-mimir-integration)
 
-Use the default options with Redpanda. No additional configuration is required.
+### Confluent Kafka
 
-Redpanda works correctly with Mimir's ingest storage architecture, and supports all required Kafka features, including:
+Use the default options with Confluent Kafka. No additional configuration is needed.
 
-- Automatic topic creation
-- Consumer groups with partition assignment
-- Message batching and compression
-- Offset management
-
-**Example configuration:**
-
-```yaml
-ingest_storage:
-  enabled: true
-  kafka:
-    address: "redpanda:9092"
-    topic: "mimir-ingest"
-    auto_create_topic_enabled: true
-    auto_create_topic_default_partitions: 3
-```
-
-For production deployments, run Redpanda in a multi-node cluster with replication. [Redpanda Console](https://docs.redpanda.com/current/reference/console/) provides a web UI for monitoring topics, messages, and consumer groups.
-
-For a complete working example with Docker Compose, automated tests, and Redpanda Console integration, refer to the community-maintained [mimir-redpanda-demo](https://github.com/meticulo3366/redpanda-mimir-integration) repository.
 
