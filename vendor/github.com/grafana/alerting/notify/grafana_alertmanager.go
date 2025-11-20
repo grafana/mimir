@@ -399,7 +399,7 @@ func GetReceivers(receivers []*nfstatus.Receiver) []models.ReceiverStatus {
 type job struct {
 	Config       *models.IntegrationConfig
 	ReceiverName string
-	Notifier     notify.Notifier
+	Notifier     *nfstatus.Integration
 }
 
 // result contains the receiver that was tested and a non-nil error if the test failed
@@ -490,7 +490,7 @@ func TestReceivers(
 	tmplProvider TemplatesProvider,
 ) (*TestReceiversResult, int, error) {
 	now := time.Now() // The start time of the test
-	testAlert := newTestAlert(c, now, now)
+	testAlert := newTestAlert(c.Alert, now, now)
 
 	// All invalid receiver configurations
 	invalid := make([]result, 0, len(c.Receivers))
@@ -502,6 +502,9 @@ func TestReceivers(
 			// Create an APIReceiver with a single integration so we
 			// can identify invalid receiver integration configs
 			singleIntReceiver := &APIReceiver{
+				ConfigReceiver: config.Receiver{
+					Name: receiver.Name,
+				},
 				ReceiverConfig: models.ReceiverConfig{
 					Integrations: []*models.IntegrationConfig{intg},
 				},
@@ -548,15 +551,10 @@ func TestReceivers(
 	for i := 0; i < numWorkers; i++ {
 		g.Go(func() error {
 			for next := range workCh {
-				ctx = notify.WithGroupKey(ctx, fmt.Sprintf("%s-%s-%d", next.ReceiverName, testAlert.Labels.Fingerprint(), now.Unix()))
-				ctx = notify.WithGroupLabels(ctx, testAlert.Labels)
-				ctx = notify.WithReceiverName(ctx, next.ReceiverName)
 				v := result{
 					Config:       next.Config,
 					ReceiverName: next.ReceiverName,
-				}
-				if _, err := next.Notifier.Notify(ctx, &testAlert); err != nil {
-					v.Error = err
+					Error:        TestNotifier(ctx, next.Notifier, testAlert, now),
 				}
 				resultCh <- v
 			}

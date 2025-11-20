@@ -96,6 +96,8 @@ func NewFactory(t []TemplateDefinition, logger log.Logger, externalURL string, o
 		byType[def.Kind] = append(byType[def.Kind], def)
 		seen[seenKey{Name: def.Name, Type: def.Kind}] = struct{}{}
 	}
+	level.Info(logger).Log("msg", "template definitions loaded", "mimir", len(byType[MimirKind]), "grafana", len(byType[GrafanaKind]), "total", len(t))
+
 	provider := &Factory{
 		templates:   byType,
 		externalURL: extURL,
