@@ -4327,11 +4327,7 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 }
 
 func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
-	if !i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit {
-		return nil
-	}
-
-	level.Debug(i.logger).Log("msg", "fsyncing tsdbs")
+	level.Debug(i.logger).Log("msg", "fsyncing TSDBs", "concurrency", i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency)
 
 	return concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
 		db := i.getTSDB(userID)
