@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -498,10 +499,16 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
 			}
 		}
+		return true
 	}
 
 	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
+	}
+
+	// Check for rule evaluation failures (errors that occur after query succeeds)
+	if isUserRuleEvalFailure(err) {
+		return false // User error
 	}
 
 	// If internal Ruler is used, then we classify only promql.ErrStorage errors as operator-controllable.
@@ -515,4 +522,8 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 
 	// Unknown errors
 	return true
+}
+
+func isUserRuleEvalFailure(err error) bool {
+	return strings.Contains(err.Error(), "vector contains metrics with the same labelset")
 }
