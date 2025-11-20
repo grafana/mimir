@@ -2385,7 +2385,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			state:          "enabled",
 			customRegistry: prometheus.NewRegistry(),
 			cfg: func(limits *validation.Limits) {
-				limits.CostAttributionLabelsStructured = []costattributionmodel.Label{{Input: "team"}}
+				limits.CostAttributionLabelsStructured = costattributionmodel.Labels{{Input: "team"}}
 				limits.MaxCostAttributionCardinality = 100
 			},
 		},

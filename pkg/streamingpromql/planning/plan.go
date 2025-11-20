@@ -38,6 +38,9 @@ const QueryPlanVersionZero = QueryPlanVersion(0)
 // 2. Step invariant expression node
 const QueryPlanV1 = QueryPlanVersion(1)
 
+// This version introduces support for limitk and limit_ratio PromQL aggregates
+const QueryPlanV2 = QueryPlanVersion(2)
+
 // This version introduces the anchored & smoothed range selector modifiers
 const QueryPlanV3 = QueryPlanVersion(3)
 

@@ -117,7 +117,9 @@ func (r *RemoteExecutor) startExecution(
 }
 
 type responseStream interface {
+	// Next returns the next message in the stream, or an error if the stream has ended or failed.
 	Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error)
+	// Close closes the stream.
 	Close()
 }
 
@@ -551,6 +553,11 @@ func (e *eagerLoadingResponseStream) bufferOne(ctx context.Context) bool {
 	defer e.mtx.Unlock()
 	defer e.notifyNewDataAvailable()
 
+	if e.buffer == nil {
+		// The stream has been closed, don't buffer any more data.
+		return false
+	}
+
 	e.buffer.Push(bufferedMessage{msg, err})
 
 	return err == nil
@@ -579,6 +586,11 @@ func (e *eagerLoadingResponseStream) Next(ctx context.Context) (*frontendv2pb.Qu
 		return nil, errMultipleEagerLoadingNextCalls
 	}
 
+	if e.buffer == nil {
+		e.mtx.Unlock()
+		return nil, errStreamClosed
+	}
+
 	if e.buffer.Any() {
 		msg := e.buffer.Pop()
 		defer e.mtx.Unlock()
@@ -600,6 +612,12 @@ func (e *eagerLoadingResponseStream) Next(ctx context.Context) (*frontendv2pb.Qu
 	case <-newDataAvailable:
 		e.mtx.Lock()
 		defer e.mtx.Unlock()
+
+		// Check the buffer wasn't closed in the meantime.
+		if e.buffer == nil {
+			return nil, errStreamClosed
+		}
+
 		msg := e.buffer.Pop()
 
 		if msg.err != nil {
@@ -612,6 +630,17 @@ func (e *eagerLoadingResponseStream) Next(ctx context.Context) (*frontendv2pb.Qu
 
 func (e *eagerLoadingResponseStream) Close() {
 	e.inner.Close() // This is expected to release any pending Next() call in startBuffering(), so we don't need to do anything to terminate it here.
+
+	e.mtx.Lock()
+	defer e.mtx.Unlock()
+
+	if e.buffer == nil {
+		// Already closed, nothing more to do.
+		return
+	}
+
+	e.buffer.Close()
+	e.buffer = nil
 }
 
 type responseStreamBuffer struct {
@@ -627,7 +656,7 @@ type bufferedMessage struct {
 
 func (b *responseStreamBuffer) Push(msg bufferedMessage) {
 	if b.length == cap(b.msgs) {
-		newCap := max(len(b.msgs)*2, 1)
+		newCap := max(cap(b.msgs)*2, 1)
 		newMsgs := responseMessageSlicePool.Get(newCap)
 		newMsgs = newMsgs[:newCap]
 		headSize := cap(b.msgs) - b.startIndex
@@ -660,6 +689,11 @@ func (b *responseStreamBuffer) Pop() bufferedMessage {
 
 func (b *responseStreamBuffer) Any() bool {
 	return b.length > 0
+}
+
+func (b *responseStreamBuffer) Close() {
+	clear(b.msgs)
+	responseMessageSlicePool.Put(b.msgs)
 }
 
 // Why types.MaxExpectedSeriesPerResult as the slice size limit?

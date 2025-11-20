@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -1818,7 +1817,7 @@ func TestMultitenantCompactor_PeriodicValidationUpdater(t *testing.T) {
 			errorInjector: bucket.InjectErrorOn(bucket.OpUpload, validationPath, injectedError),
 			assertions: func(t *testing.T, ctx context.Context, bkt objstore.Bucket) {
 				<-ctx.Done()
-				require.True(t, errors.Is(context.Canceled, ctx.Err()))
+				require.ErrorIs(t, ctx.Err(), context.Canceled)
 				require.False(t, validationExists(t, bkt))
 			},
 		},

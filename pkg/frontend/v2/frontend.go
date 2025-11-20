@@ -57,6 +57,7 @@ var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query
 var errFinishedReceivingResponse = cancellation.NewErrorf("finished receiving response from querier")
 var errStreamClosed = cancellation.NewErrorf("stream closed")
 var errUnexpectedHTTPResponse = errors.New("unexpected HTTP response to non-HTTP request")
+var errEndOfStream = errors.New("end of stream reached")
 
 // Config for a Frontend.
 type Config struct {
@@ -394,7 +395,8 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		enqueueError: make(chan error, 1), // Note that we never close this channel, otherwise ProtobufResponseStream.Next() will not reliably return any buffered messages in the stream channel.
 
 		responseStarted: make(chan struct{}),
-		closed:          make(chan struct{}),
+		notifyClosed:    make(chan struct{}),
+		isClosed:        atomic.NewBool(false),
 	}
 
 	f.requests.put(freq)
@@ -476,7 +478,8 @@ type ProtobufResponseStream struct {
 	spanLogger     *spanlogger.SpanLogger
 
 	responseStarted chan struct{}
-	closed          chan struct{}
+	notifyClosed    chan struct{}
+	isClosed        *atomic.Bool
 	closeStream     func()
 }
 
@@ -501,7 +504,7 @@ func (s *ProtobufResponseStream) write(msg *frontendv2pb.QueryResultStreamReques
 	select {
 	case s.messages <- protobufResponseMessage{msg: msg, err: err}:
 		return nil
-	case <-s.closed:
+	case <-s.notifyClosed:
 		return errStreamClosed
 	case <-s.streamContext.Done():
 		return context.Cause(s.streamContext)
@@ -549,6 +552,8 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 			if err := s.shouldAbortReading(ctx); err != nil {
 				return nil, err
 			}
+
+			return nil, errEndOfStream
 		}
 
 		if resp.err != nil {
@@ -565,7 +570,7 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 		// as the response has been completely received, but we want to continue reading any outstanding messages
 		// from the stream unless s.requestContext (which presumably represents the query as a whole) is cancelled.
 		return nil, context.Cause(s.requestContext)
-	case <-s.closed:
+	case <-s.notifyClosed:
 		// If the stream was closed, then we should stop now as well.
 		return nil, errStreamClosed
 	case <-ctx.Done():
@@ -575,16 +580,21 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 
 // shouldAbortReading checks if the request has been cancelled or if this stream has been closed, and returns an error if so.
 func (s *ProtobufResponseStream) shouldAbortReading(ctx context.Context) error {
-	select {
-	case <-s.requestContext.Done():
+	if s.requestContext.Err() != nil {
 		return context.Cause(s.requestContext)
-	case <-ctx.Done():
-		return context.Cause(ctx)
-	case <-s.closed:
-		return errStreamClosed
-	default:
-		return nil
 	}
+
+	if ctx.Err() != nil {
+		return context.Cause(ctx)
+	}
+
+	// We deliberately don't use s.notifyClosed here because reading from an atomic like this is ~50% faster, and
+	// this method is called for every single message received from the querier.
+	if s.isClosed.Load() {
+		return errStreamClosed
+	}
+
+	return nil
 }
 
 func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultStreamRequest) error {
@@ -606,10 +616,11 @@ func (s *ProtobufResponseStream) Close() {
 		// Unblock any pending write() calls, if we haven't already.
 
 		select {
-		case <-s.closed:
+		case <-s.notifyClosed:
 			// Already closed, nothing to do.
 		default:
-			close(s.closed)
+			s.isClosed.Store(true)
+			close(s.notifyClosed)
 		}
 	}()
 

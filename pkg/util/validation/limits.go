@@ -237,9 +237,9 @@ type Limits struct {
 	ActiveSeriesResultsMaxSizeBytes               int  `yaml:"active_series_results_max_size_bytes" json:"active_series_results_max_size_bytes" category:"advanced"`
 
 	// Cost attribution.
-	CostAttributionLabelsStructured []costattributionmodel.Label `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
-	MaxCostAttributionCardinality   int                          `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
-	CostAttributionCooldown         model.Duration               `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
+	CostAttributionLabelsStructured costattributionmodel.Labels `yaml:"cost_attribution_labels_structured,omitempty" json:"cost_attribution_labels_structured,omitempty" category:"experimental"`
+	MaxCostAttributionCardinality   int                         `yaml:"max_cost_attribution_cardinality" json:"max_cost_attribution_cardinality" category:"experimental"`
+	CostAttributionCooldown         model.Duration              `yaml:"cost_attribution_cooldown" json:"cost_attribution_cooldown" category:"experimental"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay                                  model.Duration                    `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -677,10 +677,8 @@ func (l *Limits) Validate() error {
 		}
 	}
 
-	for _, label := range l.CostAttributionLabelsStructured {
-		if err := label.Validate(); err != nil {
-			return err
-		}
+	if err := l.CostAttributionLabelsStructured.Validate(); err != nil {
+		return err
 	}
 
 	return nil
@@ -1065,7 +1063,7 @@ func (o *Overrides) SeparateMetricsGroupLabel(userID string) string {
 	return o.getOverridesForUser(userID).SeparateMetricsGroupLabel
 }
 
-func (o *Overrides) CostAttributionLabelsStructured(userID string) []costattributionmodel.Label {
+func (o *Overrides) CostAttributionLabelsStructured(userID string) costattributionmodel.Labels {
 	return o.getOverridesForUser(userID).CostAttributionLabelsStructured
 }
 
