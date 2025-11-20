@@ -50,6 +50,9 @@ func (ps *rw2PagedSymbols) append(symbol string) {
 
 func (ps *rw2PagedSymbols) releasePages() {
 	for _, page := range ps.pages {
+		for i := range *page {
+			(*page)[i] = ""
+		}
 		*page = (*page)[:0]
 		rw2PagedSymbolsPool.Put(page)
 	}
