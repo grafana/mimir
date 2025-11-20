@@ -94,13 +94,13 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds                       *prometheus.CounterVec
-	querySeries                        *prometheus.CounterVec
-	queryChunkBytes                    *prometheus.CounterVec
-	queryChunks                        *prometheus.CounterVec
-	queryIndexBytes                    *prometheus.CounterVec
-	querySamplesProcessed              *prometheus.CounterVec
-	activeUsers                        *util.ActiveUsersCleanupService
+	querySeconds          *prometheus.CounterVec
+	querySeries           *prometheus.CounterVec
+	queryChunkBytes       *prometheus.CounterVec
+	queryChunks           *prometheus.CounterVec
+	queryIndexBytes       *prometheus.CounterVec
+	querySamplesProcessed *prometheus.CounterVec
+	activeUsers           *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
