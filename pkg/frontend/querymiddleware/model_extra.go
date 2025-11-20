@@ -952,7 +952,7 @@ func validateScalarSampleStream(sss []SampleStream) error {
 	return nil
 }
 
-// A scalar sample is written like `[12345678, 42]`
+// A scalar sample is written like `[12345678, "42"]`
 func scalarSampleEncode(sss []SampleStream, stream *jsoniter.Stream) {
 	s := sss[0].Samples[0]
 	stream.WriteArrayStart()
