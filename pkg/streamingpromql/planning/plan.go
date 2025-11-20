@@ -210,21 +210,18 @@ type OperatorParameters struct {
 	Logger                   log.Logger
 }
 
-// CacheKey generates a unique cache key for a planning node for use with intermediate result caching.
-// Currently only supports MatrixSelector nodes (range vector selectors).
-// For other node types, this function panics.
-// TODO: make a method on Node instead
-func CacheKey(node Node) string {
-	if node.NodeType() == NODE_TYPE_DUPLICATE {
-		node = node.Child(0)
-	}
-	// Only support MatrixSelector for now
-	if node.NodeType() != NODE_TYPE_MATRIX_SELECTOR {
-		panic(fmt.Sprintf("CacheKey only supports MatrixSelector nodes, got node type %v", node.NodeType()))
-	}
+// SplittableNode represents a planning node that supports query splitting with intermediate result caching.
+// Nodes implementing this interface can be split into sub-ranges for parallel execution and caching.
+type SplittableNode interface {
+	Node
 
-	// TODO: Use a better cache key - this encodes the range too which is not necessary (sum_over_time(metric[2h]) and sum_over_time(metric[6h]) could use the same cache blocks)
-	return node.Describe()
+	// QuerySplittingCacheKey returns a cache key for this node's intermediate results.
+	// The key should include all semantic properties that affect the computation but exclude
+	// implementation details like RFC3339 timestamps or expression positions.
+	QuerySplittingCacheKey() string
+
+	// GetRange returns the time range duration for this range vector operation.
+	GetRange() time.Duration
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {

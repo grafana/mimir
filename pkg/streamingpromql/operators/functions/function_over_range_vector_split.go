@@ -37,7 +37,7 @@ type FunctionOverRangeVectorSplit struct {
 
 	irCache cache.IntermediateResultsCache
 
-	innerNode      RangeVectorNode
+	innerNode      planning.Node
 	materializer   *planning.Materializer
 	queryTimeRange types.QueryTimeRange
 	splitDuration  time.Duration
@@ -52,7 +52,7 @@ type FunctionOverRangeVectorSplit struct {
 var _ types.InstantVectorOperator = &FunctionOverRangeVectorSplit{}
 
 func NewFunctionOverRangeVectorSplit(
-	innerNode RangeVectorNode,
+	innerNode planning.Node,
 	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
 	splitDuration time.Duration,
@@ -67,7 +67,14 @@ func NewFunctionOverRangeVectorSplit(
 		return nil, fmt.Errorf("FunctionOverRangeVectorSplit only supports instant queries")
 	}
 
-	innerCacheKey := planning.CacheKey(innerNode)
+	if _, err := splittableInnerNode(innerNode); err != nil {
+		return nil, err
+	}
+
+	innerCacheKey, err := cacheKey(innerNode)
+	if err != nil {
+		return nil, err
+	}
 
 	o := &FunctionOverRangeVectorSplit{
 		innerNode:                innerNode,
@@ -95,6 +102,32 @@ func NewFunctionOverRangeVectorSplit(
 	o.emitAnnotationFunc = o.emitAnnotation
 
 	return o, nil
+}
+
+func splittableInnerNode(node planning.Node) (planning.SplittableNode, error) {
+	if node.NodeType() == planning.NODE_TYPE_DUPLICATE {
+		node = node.Child(0)
+	}
+
+	splittable, ok := node.(planning.SplittableNode)
+	if !ok {
+		return nil, fmt.Errorf("node type %v does not support query splitting (must implement SplittableNode)", node.NodeType())
+	}
+
+	return splittable, nil
+}
+
+func cacheKey(node planning.Node) (string, error) {
+	splittable, err := splittableInnerNode(node)
+	if err != nil {
+		return "", err
+	}
+
+	cacheKeyStr := splittable.QuerySplittingCacheKey()
+
+	// Prepend node min version to ensure cache invalidation when schema changes
+	version := splittable.MinimumRequiredPlanVersion()
+	return fmt.Sprintf("v%s:%s", version, cacheKeyStr), nil
 }
 
 func (m *FunctionOverRangeVectorSplit) ExpressionPosition() posrange.PositionRange {
@@ -221,7 +254,11 @@ func (m *FunctionOverRangeVectorSplit) createSplits(ctx context.Context) ([]Spli
 	var splits []Split
 	splitDurationMs := m.splitDuration.Milliseconds()
 
-	innerRange := m.innerNode.GetRange().Milliseconds()
+	splittable, err := splittableInnerNode(m.innerNode)
+	if err != nil {
+		return nil, err
+	}
+	innerRange := splittable.GetRange().Milliseconds()
 	startTs := m.timeRange.StartT - innerRange
 	endTs := m.timeRange.StartT
 
@@ -436,11 +473,6 @@ func (m *FunctionOverRangeVectorSplit) mergeSplitsMetadata(ctx context.Context, 
 	}
 
 	return mergedMetadata, seriesToSplits, nil
-}
-
-type RangeVectorNode interface {
-	planning.Node
-	GetRange() time.Duration
 }
 
 // SplitRange represents a time range within a split.

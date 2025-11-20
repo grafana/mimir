@@ -21,8 +21,14 @@ type MatrixSelector struct {
 	*MatrixSelectorDetails
 }
 
+var _ planning.SplittableNode = &MatrixSelector{}
+
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, false)
+}
+
+func (m *MatrixSelector) QuerySplittingCacheKey() string {
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, true)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {

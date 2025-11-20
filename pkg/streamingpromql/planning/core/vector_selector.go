@@ -22,13 +22,18 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false)
 
 	if v.ReturnSampleTimestamps {
 		return d + ", return sample timestamps"
 	}
 
 	return d
+}
+
+func (v *VectorSelector) QuerySplittingCacheKey() (string, bool) {
+	// VectorSelector doesn't support query splitting cache keys yet
+	return "", false
 }
 
 func (v *VectorSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {

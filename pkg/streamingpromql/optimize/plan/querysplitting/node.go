@@ -3,7 +3,6 @@
 package querysplitting
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -140,13 +139,10 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 
 	splitDuration := s.SplittableFunctionCallDetails.SplitDuration
 
-	rangeVectorNode, ok := s.Inner.Child(0).(functions.RangeVectorNode)
-	if !ok {
-		return nil, errors.New("inner.children[0] is expected to of type RangeVectorNode")
-	}
+	innerNode := s.Inner.Child(0)
 
 	splitOp, err := functions.NewFunctionOverRangeVectorSplit(
-		rangeVectorNode,
+		innerNode,
 		materializer,
 		timeRange,
 		splitDuration,

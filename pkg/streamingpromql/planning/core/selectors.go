@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
-func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets bool) string {
+func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets bool, forCacheKey bool) string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range matchers {
@@ -34,9 +34,12 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 	if ts != nil {
 		builder.WriteString(" @ ")
 		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
-		builder.WriteString(" (")
-		builder.WriteString(ts.Format(time.RFC3339Nano))
-		builder.WriteRune(')')
+		if !forCacheKey {
+			// Only include human-readable timestamp for display purposes (redundant with unix timestamp)
+			builder.WriteString(" (")
+			builder.WriteString(ts.Format(time.RFC3339Nano))
+			builder.WriteRune(')')
+		}
 	}
 
 	if offset != 0 {
@@ -45,6 +48,7 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 	}
 
 	if skipHistogramBuckets {
+		// This needs to be kept in the cache key, as the returned results will differ depending on if buckets are skipped or not
 		builder.WriteString(", skip histogram buckets")
 	}
 
