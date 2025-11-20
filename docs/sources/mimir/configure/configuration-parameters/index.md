@@ -2001,7 +2001,8 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
-# Cache statistics of processed samples on results cache.
+# (deprecated) Cache statistics of processed samples on results cache.
+# Deprecated: has no effect.
 # CLI flag: -query-frontend.cache-samples-processed-stats
 [cache_samples_processed_stats: <boolean> | default = false]
 

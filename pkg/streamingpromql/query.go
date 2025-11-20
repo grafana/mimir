@@ -300,11 +300,10 @@ func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
 		Samples: &promstats.QuerySamples{
-			TotalSamples:        q.stats.TotalSamples,
-			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
-			EnablePerStepStats:  q.stats.EnablePerStepStats,
-			Interval:            q.topLevelQueryTimeRange.IntervalMilliseconds,
-			StartTimestamp:      q.topLevelQueryTimeRange.StartT,
+			TotalSamples:       q.stats.TotalSamples,
+			EnablePerStepStats: false,
+			Interval:           q.topLevelQueryTimeRange.IntervalMilliseconds,
+			StartTimestamp:     q.topLevelQueryTimeRange.StartT,
 		},
 	}
 }

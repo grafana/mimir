@@ -206,6 +206,7 @@ type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
+	QueryStats               *types.QueryStats
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
 	Plan                     *QueryPlan

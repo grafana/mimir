@@ -276,3 +276,7 @@ The following features or configuration parameters are currently deprecated and 
 - Postings for matchers cache size (number of entries) configuration:
   - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
   - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+
+The following features or configuration parameters were deprecated in Mimir 3.1 and will be removed in Mimir 3.3:
+
+- Considering cached results when calculating the number of processed samples reported in query stats (`-query-frontend.cache-samples-processed-stats=true`).

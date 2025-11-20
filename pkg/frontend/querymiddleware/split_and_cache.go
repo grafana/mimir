@@ -93,12 +93,11 @@ type splitAndCacheMiddleware struct {
 	splitInterval time.Duration
 
 	// Results caching.
-	cacheEnabled               bool
-	cache                      cache.Cache
-	splitter                   CacheKeyGenerator
-	extractor                  Extractor
-	shouldCacheReq             shouldCacheFn
-	cacheSamplesProcessedStats bool
+	cacheEnabled   bool
+	cache          cache.Cache
+	splitter       CacheKeyGenerator
+	extractor      Extractor
+	shouldCacheReq shouldCacheFn
 
 	// Can be set from tests
 	currentTime func() time.Time
@@ -108,7 +107,6 @@ type splitAndCacheMiddleware struct {
 func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
-	cacheSamplesProcessedStats bool,
 	splitInterval time.Duration,
 	limits Limits,
 	merger Merger,
@@ -122,20 +120,19 @@ func newSplitAndCacheMiddleware(
 
 	return MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:               splitEnabled,
-			cacheEnabled:               cacheEnabled,
-			cacheSamplesProcessedStats: cacheSamplesProcessedStats,
-			next:                       next,
-			limits:                     limits,
-			merger:                     merger,
-			splitInterval:              splitInterval,
-			metrics:                    metrics,
-			cache:                      cache,
-			splitter:                   splitter,
-			extractor:                  extractor,
-			shouldCacheReq:             shouldCacheReq,
-			logger:                     logger,
-			currentTime:                time.Now,
+			splitEnabled:   splitEnabled,
+			cacheEnabled:   cacheEnabled,
+			next:           next,
+			limits:         limits,
+			merger:         merger,
+			splitInterval:  splitInterval,
+			metrics:        metrics,
+			cache:          cache,
+			splitter:       splitter,
+			extractor:      extractor,
+			shouldCacheReq: shouldCacheReq,
+			logger:         logger,
+			currentTime:    time.Now,
 		}
 	})
 }
@@ -152,21 +149,12 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
 	cacheUnalignedRequests := validation.AllTrueBooleansPerTenant(tenantIDs, s.limits.ResultsCacheForUnalignedQueryEnabled)
 
-	// Force queier to track PerStepStats, so they could be cached.
-	if s.cacheSamplesProcessedStats {
-		req, err = req.WithStats("all")
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// Split the input requests by the configured interval (eg. day).
 	// Returns the input request if splitting is disabled.
 	splitReqs, err := s.splitRequestByInterval(req)
 	if err != nil {
 		return nil, err
 	}
-	perStepStats := make([][]stats.StepStat, 0, splitReqs.countDownstreamRequests()+splitReqs.countCachedResponses())
 	// Lookup the results cache.
 	if isCacheEnabled {
 		s.metrics.queryResultCacheAttemptedCount.Add(float64(len(splitReqs)))
@@ -201,10 +189,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			// We have some extents. This means some parts of the response has been cached and we need
 			// to generate the queries for the missing parts.
-			requests, responses, extentStepStats, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
-			if len(extentStepStats) > 0 {
-				perStepStats = append(perStepStats, extentStepStats)
-			}
+			requests, responses, err := partitionCacheExtents(lookupReqs[lookupIdx].orig, extents, defaultMinCacheExtent, s.extractor)
 			if err != nil {
 				return nil, err
 			}
@@ -279,12 +264,11 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
-				downstreamStats := splitReq.downstreamStatistics[downstreamIdx]
 				if !isResponseCachable(downstreamRes) {
 					continue
 				}
 
-				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime, downstreamStats.LoadSamplesProcessedPerStep())
+				extent, err := toExtent(ctx, downstreamReq, s.extractor.ResponseWithoutHeaders(downstreamRes), queryTime)
 				if err != nil {
 					return nil, err
 				}
@@ -313,7 +297,6 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req MetricsQueryReques
 			s.storeCacheExtents(splitReq.cacheKey, tenantIDs, filteredExtents)
 		}
 	}
-	reportSamplesProcessed(ctx, append(perStepStats, queryStats.LoadSamplesProcessedPerStep()))
 
 	// We can finally build the response, which is the merge of all downstream responses and the responses
 	// we've got from the cache (if any).
@@ -505,8 +488,6 @@ type splitRequest struct {
 	// response is stored at the same index.
 	downstreamRequests  []MetricsQueryRequest
 	downstreamResponses []Response
-	// Query statistics for each downstream request, stored at the same index too.
-	downstreamStatistics []*stats.SafeStats
 }
 
 // splitRequests holds a list of splitRequest.
@@ -573,7 +554,6 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 
 		execReqs = append(execReqs, splitReq.downstreamRequests...)
 		splitReq.downstreamResponses = make([]Response, len(splitReq.downstreamRequests))
-		splitReq.downstreamStatistics = make([]*stats.SafeStats, len(splitReq.downstreamRequests))
 	}
 
 	return execReqs, nil
@@ -584,7 +564,6 @@ func (s *splitRequests) prepareDownstreamRequests() ([]MetricsQueryRequest, erro
 // that any downstream request got its response associated.
 func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) error {
 	execRespsByID := make(map[int64]Response, len(responses))
-	execStatsByID := make(map[int64]*stats.SafeStats, len(responses))
 
 	// Map responses by (unique) request IDs.
 	for _, resp := range responses {
@@ -595,7 +574,6 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 		}
 
 		execRespsByID[resp.Request.GetID()] = resp.Response
-		execStatsByID[resp.Request.GetID()] = resp.Stats
 	}
 
 	mappedDownstreamRequests := 0
@@ -607,14 +585,8 @@ func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) er
 				// Should never happen unless a bug.
 				return errors.New("consistency check failed: missing downstream response")
 			}
-			downstreamStats, ok := execStatsByID[downstreamReq.GetID()]
-			if !ok {
-				// Should never happen unless a bug.
-				return errors.New("consistency check failed: missing downstream stats")
-			}
 
 			splitReq.downstreamResponses[downstreamIdx] = downstreamRes
-			splitReq.downstreamStatistics[downstreamIdx] = downstreamStats
 			mappedDownstreamRequests++
 		}
 	}
@@ -741,11 +713,4 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
-}
-
-func reportSamplesProcessed(ctx context.Context, s [][]stats.StepStat) {
-	if details := QueryDetailsFromContext(ctx); details != nil {
-		totalSamplesProcessed := sumSamplesProcessedPerStep(s...)
-		details.SamplesProcessedCacheAdjusted += uint64(totalSamplesProcessed)
-	}
 }
