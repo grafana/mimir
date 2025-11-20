@@ -1,0 +1,65 @@
+logging {
+  level  = "info"
+  format = "logfmt"
+}
+
+prometheus.scrape "mimir" {
+  targets    = [
+    {"__address__" = "mimir-1:8001", "instance" = "mimir-1:8001"},
+    {"__address__" = "mimir-2:8002", "instance" = "mimir-2:8001"},
+  ]
+  forward_to = [prometheus.relabel.mimir.receiver]
+
+  honor_metadata = true
+  scrape_interval = "5s"
+  scrape_timeout = "4s"
+  scrape_native_histograms = true
+  scrape_classic_histograms = true
+  scrape_protocols = ["PrometheusProto", "OpenMetricsText1.0.0", "OpenMetricsText0.0.1", "PrometheusText0.0.4"]
+}
+
+prometheus.relabel "mimir" {
+  forward_to = [otelcol.receiver.prometheus.default.receiver]
+
+  rule {
+    action       = "replace"
+    replacement  = "grafana-alloy-otlp"
+    target_label = "scraped_by"
+  }
+  rule {
+    action        = "replace"
+    source_labels = ["instance"]
+    regex         = "([^:]+).*"
+    target_label  = "container"
+  }
+}
+
+otelcol.exporter.otlphttp "default" {
+  // Send metrics to a locally running Mimir.
+  client {
+    endpoint = "http://mimir-1:8001/otlp"
+  }
+}
+
+otelcol.processor.batch "default" {
+  output {
+    metrics = [otelcol.exporter.otlphttp.default.input]
+  }
+  send_batch_max_size = 8192
+  send_batch_size = 8192
+}
+
+otelcol.processor.memory_limiter "default" {
+  output {
+    metrics = [otelcol.processor.batch.default.input]
+  }
+  check_interval = "5s"
+  limit_percentage = "80"
+  spike_limit_percentage = "25"
+}
+
+otelcol.receiver.prometheus "default" {
+  output {
+    metrics = [otelcol.processor.memory_limiter.default.input]
+  }
+}
