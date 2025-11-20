@@ -135,7 +135,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.cachedPostingsCompressionErrors.WithLabelValues(labelDecode)
 
 	m.cachedPostingsCompressionTimeSeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_bucket_store_cached_postings_compression_time_seconds",
+		Name: "cortex_bucket_store_cached_postings_compression_time_seconds_total",
 		Help: "Time spent compressing and decompressing postings when storing to / reading from postings cache.",
 	}, []string{"op"})
 	m.cachedPostingsCompressionTimeSeconds.WithLabelValues(labelEncode)

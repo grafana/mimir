@@ -31,11 +31,11 @@ type queryStatsMiddleware struct {
 
 func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.EngineOpts) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_regexp_matcher_count",
+		Name: "cortex_query_frontend_regexp_matchers_total",
 		Help: "Total number of regexp matchers",
 	})
 	regexpMatcherOptimizedCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_regexp_matcher_optimized_count",
+		Name: "cortex_query_frontend_regexp_matchers_optimized_total",
 		Help: "Total number of optimized regexp matchers",
 	})
 	consistencyCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{

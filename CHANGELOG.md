@@ -88,6 +88,7 @@
 * [BUGFIX] Usage-tracker: Prevent tracking requests to be handled by partition handlers that are not in Running state. #13532
 * [BUGFIX] MQE: Fix an issue when applying extra matchers to one side of a binary operation to avoid adding matchers for labels that do not exist. #13499
 * [BUGFIX] Query-frontend: Fix excessive CPU and memory consumption when running sharding inside MQE. #13580
+* [BUGFIX] Rename `cortex_bucket_store_cached_postings_compression_time_seconds`, `cortex_query_frontend_regexp_matcher_count`, and `cortex_query_frontend_regexp_matcher_optimized_count` to follow naming conventions. #13599
 
 ### Mixin
 

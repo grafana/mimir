@@ -48,12 +48,12 @@ func Test_queryStatsMiddleware_Do(t *testing.T) {
 			cortex_query_frontend_queries_expression_bytes_bucket{user="test",le="+Inf"} 1
 			cortex_query_frontend_queries_expression_bytes_sum{user="test"} 61
 			cortex_query_frontend_queries_expression_bytes_count{user="test"} 1
-			# HELP cortex_query_frontend_regexp_matcher_count Total number of regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_count counter
-			cortex_query_frontend_regexp_matcher_count 1
-			# HELP cortex_query_frontend_regexp_matcher_optimized_count Total number of optimized regexp matchers
-			# TYPE cortex_query_frontend_regexp_matcher_optimized_count counter
-			cortex_query_frontend_regexp_matcher_optimized_count 1
+			# HELP cortex_query_frontend_regexp_matchers_total Total number of regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_total counter
+			cortex_query_frontend_regexp_matchers_total 1
+			# HELP cortex_query_frontend_regexp_matchers_optimized_total Total number of optimized regexp matchers
+			# TYPE cortex_query_frontend_regexp_matchers_optimized_total counter
+			cortex_query_frontend_regexp_matchers_optimized_total 1
 			`,
 			expectedQueryDetails: QueryDetails{
 				QuerierStats: &querier_stats.SafeStats{},
