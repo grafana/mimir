@@ -57,6 +57,7 @@ var errExecutingQueryRoundTripFinished = cancellation.NewErrorf("executing query
 var errFinishedReceivingResponse = cancellation.NewErrorf("finished receiving response from querier")
 var errStreamClosed = cancellation.NewErrorf("stream closed")
 var errUnexpectedHTTPResponse = errors.New("unexpected HTTP response to non-HTTP request")
+var errEndOfStream = errors.New("end of stream reached")
 
 // Config for a Frontend.
 type Config struct {
@@ -551,6 +552,8 @@ func (s *ProtobufResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryR
 			if err := s.shouldAbortReading(ctx); err != nil {
 				return nil, err
 			}
+
+			return nil, errEndOfStream
 		}
 
 		if resp.err != nil {

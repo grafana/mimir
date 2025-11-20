@@ -302,7 +302,7 @@ func TestFrontend_Protobuf_HappyPath(t *testing.T) {
 
 	// Response stream exhausted.
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 }
 
@@ -352,7 +352,7 @@ func TestFrontend_Protobuf_ShouldNotCancelRequestAfterSuccess(t *testing.T) {
 				if exhaustStream {
 					// Response stream exhausted.
 					msg, err = resp.Next(ctx)
-					require.NoError(t, err)
+					require.EqualError(t, err, "end of stream reached")
 					require.Nil(t, msg)
 				}
 
@@ -407,7 +407,7 @@ func TestFrontend_Protobuf_QuerierResponseReceivedBeforeSchedulerResponse(t *tes
 
 	// Response stream exhausted.
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 
 	close(responseRead)
@@ -751,7 +751,7 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 	require.Equal(t, expectedMessages[2], msg, "should still be able to read last message after stream has been completely read")
 
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 }
 
@@ -1312,7 +1312,7 @@ func TestFrontend_Protobuf_ResponseSentTwice(t *testing.T) {
 
 	// Response stream exhausted.
 	msg, err = resp.Next(ctx)
-	require.NoError(t, err)
+	require.EqualError(t, err, "end of stream reached")
 	require.Nil(t, msg)
 
 	// Wait for both responses to be sent off, then confirm one failed in the way we expect.
