@@ -149,14 +149,15 @@ type Config struct {
 	SparseIndexHeadersConfig       indexheader.Config `yaml:"-"`
 
 	// Scheduler mode options
-	PlanningMode               string            `yaml:"planning_mode" category:"experimental"`
-	SchedulerAddress           string            `yaml:"scheduler_address" category:"experimental"`
-	SchedulerUpdateInterval    time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
-	SchedulerMinLeasingBackoff time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
-	SchedulerMaxLeasingBackoff time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
-	GRPCClientConfig           grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
-	ExecutorRetryMinBackoff    time.Duration     `yaml:"executor_retry_min_backoff" category:"experimental"`
-	ExecutorRetryMaxBackoff    time.Duration     `yaml:"executor_retry_max_backoff" category:"experimental"`
+	PlanningMode                 string            `yaml:"planning_mode" category:"experimental"`
+	SchedulerAddress             string            `yaml:"scheduler_address" category:"experimental"`
+	SchedulerUpdateInterval      time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
+	SchedulerMinLeasingBackoff   time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
+	SchedulerMaxLeasingBackoff   time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
+	GRPCClientConfig             grpcclient.Config `yaml:"grpc_client_config" category:"experimental"`
+	ExecutorRetryMinBackoff      time.Duration     `yaml:"executor_retry_min_backoff" category:"experimental"`
+	ExecutorRetryMaxBackoff      time.Duration     `yaml:"executor_retry_max_backoff" category:"experimental"`
+	CompactionDirCleanupInterval time.Duration     `yaml:"compaction_dir_cleanup_interval" category:"experimental"`
 }
 
 // RegisterFlags registers the MultitenantCompactor flags.
@@ -187,6 +188,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.SchedulerMaxLeasingBackoff, "compactor.scheduler-max-leasing-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
 	f.DurationVar(&cfg.ExecutorRetryMinBackoff, "compactor.executor-min-retry-backoff", 1*time.Second, "Minimum backoff time for compaction executor retries when sending scheduler status updates.")
 	f.DurationVar(&cfg.ExecutorRetryMaxBackoff, "compactor.executor-max-retry-backoff", 32*time.Second, "Maximum backoff time for compaction executor retries when sending scheduler status updates.")
+	f.DurationVar(&cfg.CompactionDirCleanupInterval, "compactor.compaction-dir-cleanup-interval", 30*time.Minute, "Defines how frequently to clean up the compaction working directory. The directory is cleaned on startup and then only when this interval has elapsed since the last cleanup. Set to 0 to disable periodic cleanup.")
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("compactor.scheduler", f)
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and the compactor component will permanently delete blocks marked for deletion from the bucket. "+

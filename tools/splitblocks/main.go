@@ -143,7 +143,7 @@ func splitBlocks(ctx context.Context, cfg config, bkt objstore.Bucket, logger lo
 					return nil
 				}
 				blockDir := filepath.Join(cfg.outputDir, blockID.String())
-				if err := block.Download(ctx, logger, bkt, blockID, blockDir); err != nil {
+				if err := block.Download(ctx, logger, bkt, blockID, blockDir, nil); err != nil {
 					return errors.Wrapf(err, "failed to download block")
 				}
 				if cfg.verifyBlocks {
@@ -206,7 +206,7 @@ func listBlocks(ctx context.Context, bkt objstore.Bucket) ([]ulid.ULID, error) {
 // After all the splits succeed the original source block is removed from the output directory.
 func splitBlock(ctx context.Context, cfg config, bkt objstore.Bucket, meta block.Meta, logger log.Logger) error {
 	originalBlockDir := filepath.Join(cfg.outputDir, meta.ULID.String())
-	if err := block.Download(ctx, logger, bkt, meta.ULID, originalBlockDir); err != nil {
+	if err := block.Download(ctx, logger, bkt, meta.ULID, originalBlockDir, nil); err != nil {
 		return err
 	}
 
