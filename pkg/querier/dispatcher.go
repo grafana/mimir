@@ -138,7 +138,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		return
 	}
 
-	opts := promql.NewPrometheusQueryOpts(req.EnablePerStepStats, 0)
+	opts := promql.NewPrometheusQueryOpts(false, 0)
 	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
