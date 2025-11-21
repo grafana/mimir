@@ -20856,6 +20856,17 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "instrument_ref_leaks_pct",
+          "required": false,
+          "desc": "Percentage of buffers from pools to instrument for reference leaks. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "common.instrument-reference-leaks-pct",
+          "fieldType": "float",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
