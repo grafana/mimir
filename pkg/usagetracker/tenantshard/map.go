@@ -196,6 +196,15 @@ func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
 	}
 }
 
+// EnsureCapacity ensure that the map has enough capacity to store |n| elements.
+// This does not mean that the map will have n empty slots, there might be already n elements in the map and 0 spare capacity.
+// If there's no enough capacity, the map is rehashed to accommodate at least |n| elements.
+func (m *Map) EnsureCapacity(n uint32) {
+	if groups := numGroups(n); len(m.index) < int(groups) {
+		m.rehash(groups)
+	}
+}
+
 func (m *Map) nextSize() (n uint32) {
 	n = uint32(len(m.index)) * 2
 	if m.dead >= (m.resident / 2) {

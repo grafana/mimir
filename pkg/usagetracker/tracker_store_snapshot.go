@@ -120,6 +120,9 @@ func (t *trackerStore) loadSnapshot(data []byte, now time.Time) error {
 		tenant := t.getOrCreateTenant(tenantID)
 		m := tenant.shards[shard]
 		m.Lock()
+		// Ensure the shard has enough capacity for this snapshot to minimize the number of rehashes.
+		m.EnsureCapacity(uint32(len(refs)))
+
 		// Check if the shard is empty. If it is, we can use the faster Load() method
 		// which doesn't check for duplicates. Otherwise, use Put() which handles
 		// concurrent loads and deduplication.
