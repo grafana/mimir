@@ -816,6 +816,7 @@ type configWithCustomCommonUnmarshaler struct {
 type commonConfigUnmarshaler struct {
 	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
 	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
+	InstrumentRefLeaksPct   *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks_pct"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
