@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add support for commonLabels and labels: Add commonLabels that will be added to all K8S (including pods) and labels that will be added to all K8S (excluding pods). #13479
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
