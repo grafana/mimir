@@ -68,6 +68,10 @@ func (qb *queueBroker) isEmpty() bool {
 	return qb.tree.IsEmpty()
 }
 
+func (qb *queueBroker) itemCount() int {
+	return qb.tree.ItemCount()
+}
+
 // enqueueRequestBack is the standard interface to enqueue requests for dispatch to queriers.
 //
 // Tenants and tenant-querier shuffle sharding relationships are managed internally as needed.
