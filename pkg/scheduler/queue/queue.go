@@ -117,9 +117,10 @@ type RequestQueue struct {
 	discardedRequests *prometheus.CounterVec // per user
 	enqueueDuration   prometheus.Histogram
 
-	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
-	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
-	isStopping    *atomic.Bool
+	stopRequested   chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted   chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
+	isStopping      *atomic.Bool
+	stopRequestedAt time.Time
 
 	requestsToEnqueue                     chan requestToEnqueue
 	requestsSent                          chan *SchedulerRequest
@@ -305,6 +306,7 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			q.isStopping.Store(true)
+			q.stopRequestedAt = time.Now()
 		case querierWorkerOp := <-q.querierWorkerOperations:
 			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
 			needToDispatchQueries = q.processQuerierWorkerOperation(querierWorkerOp)
@@ -340,23 +342,18 @@ func (q *RequestQueue) dispatcherLoop() {
 		}
 
 		if q.isStopping.Load() && q.connectedQuerierWorkers.Load() == 0 {
-			if q.queueBroker.isEmpty() && len(*q.schedulerInflightRequests) == 0 {
-				level.Info(q.log).Log("msg", "shutting down dispatcher loop: there are no connected workers and the queue is empty")
-
+			if q.queueBroker.itemCount() == 0 && len(*q.schedulerInflightRequests) == 0 {
 				// We are done.
+				level.Info(q.log).Log("msg", "queue stop completed: query queue is empty and all workers have been disconnected")
 				close(q.stopCompleted)
 				return
 			}
 
-			level.Warn(q.log).Log("msg", "shutting down dispatcher loop: there are no connected workers but the queue is not empty, these requests will be abandoned", "queueBroker_count", q.queueBroker.itemCount(), "scheduler_inflight", len(*q.schedulerInflightRequests))
-
-			// We are done.
-			close(q.stopCompleted)
-			return
+			level.Warn(q.log).Log("msg", "queue stop requested but query queue is not empty, waiting for query workers to complete remaining requests", "queueBroker_count", q.queueBroker.itemCount(), "scheduler_inflight", len(*q.schedulerInflightRequests))
 		}
 
-		if q.isStopping.Load() && (len(*q.schedulerInflightRequests) == 0 && q.queueBroker.isEmpty()) {
-			level.Debug(q.log).Log("msg", "shutting down dispatcher loop: there are no requests pending")
+		if q.isStopping.Load() && (len(*q.schedulerInflightRequests) == 0 && q.queueBroker.itemCount() == 0) {
+			level.Info(q.log).Log("msg", "queue stop requested and all pending requests have been processed, disconnecting queriers")
 
 			currentElement := q.waitingDequeueRequestsToDispatch.Front()
 
@@ -364,7 +361,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				waitingDequeueReq := currentElement.Value.(*QuerierWorkerDequeueRequest)
 				waitingDequeueReq.sendError(ErrStopped)
 
-				level.Debug(q.log).Log("msg", "shutting down dispatcher loop: cancelled dequeue request", "querier_id", waitingDequeueReq.QuerierID, "worker_id", waitingDequeueReq.WorkerID)
+				level.Debug(q.log).Log("msg", "cancelled dequeue request", "querier_id", waitingDequeueReq.QuerierID, "worker_id", waitingDequeueReq.WorkerID)
 
 				nextElement := currentElement.Next()
 				q.waitingDequeueRequestsToDispatchCount.Dec()
@@ -372,9 +369,8 @@ func (q *RequestQueue) dispatcherLoop() {
 				currentElement = nextElement
 			}
 
-			level.Info(q.log).Log("msg", "shutting down dispatcher loop: all query dequeue requests closed")
-
 			// We are done.
+			level.Info(q.log).Log("msg", "queue stop completed: all query dequeue requests closed")
 			close(q.stopCompleted)
 			return
 		}
@@ -619,7 +615,6 @@ func (q *RequestQueue) processRegisterQuerierWorkerConn(conn *QuerierWorkerConn)
 }
 
 func (q *RequestQueue) processUnregisterQuerierWorkerConn(conn *QuerierWorkerConn) (resharded bool) {
-	level.Info(q.log).Log("msg", "unregistering querier worker", "querier_id", conn.QuerierID, "worker_id", conn.WorkerID)
 	q.connectedQuerierWorkers.Dec()
 	return q.queueBroker.removeQuerierWorkerConn(conn, time.Now())
 }

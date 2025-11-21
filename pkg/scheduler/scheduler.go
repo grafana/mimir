@@ -463,6 +463,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			// (see note in transformRequestQueueError).
 			// ErrQuerierWorkerDisconnected is caused by connection/goroutine crash;
 			// we expect this loop is no longer alive to receive the error anyway.
+			level.Info(s.log).Log("msg", "AwaitRequestForQuerier returned an error", "err", err)
 			return s.transformRequestQueueError(err)
 		}
 
@@ -499,6 +500,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			return err
 		}
 	}
+
+	level.Info(s.log).Log("msg", "query loop closed because scheduler is not running", "querier_id", querierID)
 
 	return schedulerpb.ErrSchedulerIsNotRunning
 }
@@ -683,13 +686,27 @@ func (s *Scheduler) running(ctx context.Context) error {
 
 // Close the Scheduler.
 func (s *Scheduler) stopping(_ error) error {
-	// This will also stop the requests queue, which stop accepting new requests and errors out any pending requests.
-	err := services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
-	if err != nil {
-		return err
-	}
+	errChan := make(chan error)
 
-	return nil
+	go func() {
+		// This will also stop the requests queue, which stop accepting new requests and errors out any pending requests.
+		err := services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
+		errChan <- err
+	}()
+
+	c, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+
+	for {
+		select {
+		case <-c.Done():
+			cancel()
+			level.Error(s.log).Log("msg", "timeout reached while stopping subservices")
+			return fmt.Errorf("timeout reached while stopping subservices")
+		case err := <-errChan:
+			cancel()
+			return err
+		}
+	}
 }
 
 func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {
