@@ -518,6 +518,11 @@ client_cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
+
+# (experimental) Percentage of buffers from pools to instrument for reference
+# leaks. 0 to disable.
+# CLI flag: -common.instrument-reference-leaks-pct
+[instrument_ref_leaks_pct: <float> | default = 0]
 ```
 
 ### server
