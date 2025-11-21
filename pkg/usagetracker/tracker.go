@@ -337,6 +337,7 @@ func (t *UsageTracker) start(ctx context.Context) error {
 	return nil
 }
 
+// run implements services.RunningFn.
 func (t *UsageTracker) run(ctx context.Context) error {
 	// TODO: check here if all partitions already have owners, in which case we should reconcilePartitions immediately (no need to wait).
 	// If there are no owners yet, this is a cold start, so wait until all instances have joined the ring to avoid re-shuffling.
@@ -352,10 +353,13 @@ func (t *UsageTracker) run(ctx context.Context) error {
 		select {
 		case <-time.After(t.cfg.PartitionReconcileInterval):
 			if err := t.reconcilePartitions(ctx); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
 				return err
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case err := <-t.subservicesWatcher.Chan():
 			return errors.Wrap(err, "usage-tracker dependency failed")
 		case <-snapshotsCleanupTickerChan:
