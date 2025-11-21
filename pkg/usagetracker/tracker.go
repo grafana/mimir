@@ -736,11 +736,14 @@ func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
 		globalLimit = t.overrides.MaxActiveSeriesPerUser(userID)
 	}
 	if globalLimit <= 0 {
+		level.Info(t.logger).Log("msg", "no limit set for user", "user_id", userID)
 		return 0
 	}
 
 	// Global limit is equally distributed among all active partitions.
-	return uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
+	limit := uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
+	level.Info(t.logger).Log("msg", "user limit set", "user_id", userID, "limit", limit)
+	return limit
 }
 
 func (t *UsageTracker) zonesCount() uint64 {
