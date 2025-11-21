@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"sync/atomic"
 	"testing"
 	"unsafe"
 	"weak"
+
+	"go.uber.org/atomic"
 
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
