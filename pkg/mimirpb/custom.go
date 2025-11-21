@@ -6,6 +6,11 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"runtime"
+	"sync/atomic"
+	"testing"
+	"unsafe"
+	"weak"
 
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -16,9 +21,31 @@ import (
 	"google.golang.org/protobuf/protoadapt"
 )
 
+type CustomCodecConfig struct {
+	InstrumentRefLeaksPct float64
+	OnRefLeakDetected     func(uintptr)
+}
+
+func (cfg CustomCodecConfig) Codec() encoding.CodecV2 {
+	c := &codecV2{codec: encoding.GetCodecV2(proto.Name), onRefLeakDetected: cfg.OnRefLeakDetected}
+	if cfg.InstrumentRefLeaksPct > 0 {
+		c.instrumentRefLeaksOneIn = uint64(math.Trunc(100 / cfg.InstrumentRefLeaksPct))
+	}
+	return c
+}
+
+var GlobalCodec encoding.CodecV2
+
+func (cfg CustomCodecConfig) RegisterGlobally() {
+	GlobalCodec = cfg.Codec()
+	encoding.RegisterCodecV2(GlobalCodec)
+}
+
 func init() {
-	c := encoding.GetCodecV2(proto.Name)
-	encoding.RegisterCodecV2(&codecV2{codec: c})
+	// Instrument all buffers when testing.
+	if testing.Testing() {
+		CustomCodecConfig{InstrumentRefLeaksPct: 100}.RegisterGlobally()
+	}
 }
 
 // codecV2 customizes gRPC marshalling and unmarshalling.
@@ -27,6 +54,10 @@ func init() {
 // and to retain the unmarshalling buffer when necessary.
 type codecV2 struct {
 	codec encoding.CodecV2
+
+	instrumentRefLeaksOneIn       uint64
+	unmarshaledWithBufferRefCount atomic.Uint64
+	onRefLeakDetected             func(uintptr)
 }
 
 var _ encoding.CodecV2 = &codecV2{}
@@ -113,14 +144,38 @@ func unmarshalSlicePoolSizes() []int {
 	return sizes
 }
 
+// Unmarshal unmarshals an object using the global codec. Prefer this over calling
+// the Unmarshal method directly, as it will take advantage of pools and leak
+// detection.
+func Unmarshal(data []byte, v gogoproto.Unmarshaler) error {
+	if GlobalCodec == nil {
+		return v.Unmarshal(data)
+	}
+	return GlobalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
+}
+
 // Unmarshal customizes gRPC unmarshalling.
 // If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	buf := data.MaterializeToBuffer(unmarshalSlicePool)
+	holder, isBufferHolder := v.(MessageWithBufferRef)
+	instrumentLeaks := isBufferHolder && c.instrumentRefLeaksOneIn > 0 && c.unmarshaledWithBufferRefCount.Add(1)%c.instrumentRefLeaksOneIn == 0
+
+	var buf mem.Buffer
+	if instrumentLeaks {
+		// Always allocate; we'll detect leaks by checking if it's garbage-collected.
+		b := make([]byte, data.Len())
+		data.CopyTo(b)
+		buf = mem.NewBuffer(&b, nil)
+	} else {
+		buf = data.MaterializeToBuffer(unmarshalSlicePool)
+	}
 	// Decrement buf's reference count. Note though that if v implements MessageWithBufferRef,
 	// we increase buf's reference count first so it doesn't go to zero.
-	defer buf.Free()
+	//
+	// We're possibly replacing buf below, so it's important to keep this a closure
+	// rather than a direct call to buf.Free.
+	defer func() { buf.Free() }()
 
 	if unmarshaler, ok := v.(gogoproto.Unmarshaler); ok {
 		if err := unmarshaler.Unmarshal(buf.ReadOnlyData()); err != nil {
@@ -133,7 +188,10 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		}
 	}
 
-	if holder, ok := v.(MessageWithBufferRef); ok {
+	if isBufferHolder {
+		if instrumentLeaks {
+			buf = &instrumentLeaksBuf{Buffer: buf, refCount: 1, onRefLeakDetected: c.onRefLeakDetected}
+		}
 		buf.Ref()
 		holder.SetBuffer(buf)
 	}
@@ -173,6 +231,50 @@ func (m *BufferHolder) FreeBuffer() {
 }
 
 var _ MessageWithBufferRef = &BufferHolder{}
+
+type instrumentLeaksBuf struct {
+	mem.Buffer
+	refCount          int
+	onRefLeakDetected func(uintptr)
+}
+
+func (b *instrumentLeaksBuf) Ref() {
+	b.Buffer.Ref()
+	b.refCount++
+}
+
+func (b *instrumentLeaksBuf) Free() {
+	b.Buffer.Free()
+	b.refCount--
+
+	if b.refCount == 0 {
+		buf := b.ReadOnlyData()
+		// Taint data, in case the buffer is accessed before the panic below,
+		// or after the panic if it's recovered.
+		for i := range buf {
+			const taint = "KAEL"
+			buf[i] = taint[i%len(taint)]
+		}
+		// Remove our ref; no (strong) refs should remain (except in the stack).
+		b.Buffer = nil
+		weakRef := weak.Make(unsafe.SliceData(buf))
+
+		// Check in a separate goroutine, because this stack still has locals
+		// pointing to the buffer.
+		go func() {
+			runtime.GC()
+			runtime.GC()
+
+			if v := weakRef.Value(); v != nil {
+				if f := b.onRefLeakDetected; f != nil {
+					f(uintptr(unsafe.Pointer(v)))
+					return
+				}
+				panic(fmt.Sprintf("reference leak for object %p", v))
+			}
+		}()
+	}
+}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.

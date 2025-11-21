@@ -7,6 +7,8 @@ package mimirpb
 
 import (
 	"testing"
+	"time"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
@@ -246,4 +248,59 @@ func TestHistogram_BucketsCount(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.histogram.BucketCount())
 		})
 	}
+}
+
+func TestInstrumentRefLeaks(t *testing.T) {
+	leaks := make(chan uintptr, 1)
+
+	codec := CustomCodecConfig{
+		InstrumentRefLeaksPct: 100,
+		OnRefLeakDetected: func(addr uintptr) {
+			leaks <- addr
+		},
+	}.Codec()
+
+	src := WriteRequest{Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+		Labels:  []UnsafeMutableLabel{{Name: "labelName", Value: "labelValue"}},
+		Samples: []Sample{{TimestampMs: 1234, Value: 1337}},
+	}}}}
+	buf, err := src.Marshal()
+	require.NoError(t, err)
+
+	var req WriteRequest
+	err = codec.Unmarshal(mem.BufferSlice{mem.NewBuffer(&buf, nil)}, &req)
+	require.NoError(t, err)
+
+	bufAddr := uintptr(unsafe.Pointer(unsafe.SliceData(req.buffer.ReadOnlyData())))
+	// Label names are UnsafeMutableStrings pointing to buf. They shouldn't outlive
+	// the call to req.FreeBuffer.
+	leakingLabelName := req.Timeseries[0].Labels[0].Name
+
+	req.FreeBuffer() // leakingLabelName becomes a leak here
+
+	var detectedAddr uintptr
+	recvLeak := func() bool {
+		select {
+		case detectedAddr = <-leaks:
+			return true
+		default:
+			return false
+		}
+	}
+
+	// Expect to receive a leak detection.
+	require.Eventually(t, recvLeak, 10*time.Millisecond, 1*time.Millisecond)
+	require.Equal(t, bufAddr, detectedAddr)
+	// Expect the label name contents to have been replaced with a taint word.
+	// Keep this check last, because we need to extend the lifespan of leakingLabelName
+	// to avoid Go optimizing the leak away.
+	require.Contains(t, leakingLabelName, "KAEL")
+
+	// Now let's check a non-leak doesn't get falsely detected.
+	dataNoLeak, err := src.Marshal()
+	require.NoError(t, err)
+	var reqNoLeak WriteRequest
+	err = codec.Unmarshal(mem.BufferSlice{mem.NewBuffer(&dataNoLeak, nil)}, &reqNoLeak)
+	require.NoError(t, err)
+	require.Never(t, recvLeak, 10*time.Millisecond, 1*time.Millisecond)
 }
