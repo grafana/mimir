@@ -182,7 +182,7 @@ func DeserializeRecordContent(content []byte, wr *mimirpb.PreallocWriteRequest, 
 }
 
 func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest) error {
-	return wr.Unmarshal(content)
+	return mimirpb.Unmarshal(content, wr)
 }
 
 func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
@@ -191,7 +191,7 @@ func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest
 	wr.RW2CommonSymbols = V2CommonSymbols.GetSlice()
 	wr.SkipNormalizeMetadataMetricName = true
 	wr.SkipDeduplicateMetadata = true
-	return wr.Unmarshal(content)
+	return mimirpb.Unmarshal(content, wr)
 }
 
 // splitRequestVersionTwo adapts mimirpb.SplitWriteRequestByMaxMarshalSizeRW2 to requestSplitter

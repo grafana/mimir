@@ -9165,6 +9165,39 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 
 }
 
+func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.MetadataRetainPeriod = 20 * time.Second
+
+	ing, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, "", reg)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ing, r)
+
+	syms := util_test.NewSymbolTableBuilder(nil)
+	buf, err := makeTestRW2WriteRequest(syms).Marshal()
+	require.NoError(t, err)
+
+	var wr mimirpb.PreallocWriteRequest
+	wr.UnmarshalFromRW2 = true
+	wr.SkipNormalizeMetadataMetricName = true
+	wr.SkipDeduplicateMetadata = true
+	err = mimirpb.Unmarshal(buf, &wr)
+	require.NoError(t, err)
+
+	nextLeak := mimirpb.NextRefLeakChannel(t.Context())
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err = ing.Push(ctx, &wr.WriteRequest)
+	require.NoError(t, err)
+
+	select {
+	case addr := <-nextLeak:
+		require.Fail(t, "reference leak detected", "addr: %x", addr)
+	case <-time.After(10 * time.Millisecond):
+	}
+}
+
 func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
 	ing, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), nil, "", nil)
 	require.NoError(t, err)
@@ -12283,4 +12316,35 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 
 	// As there are three users, fsync should have been called at least three times
 	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
+}
+
+func makeTestRW2WriteRequest(syms *util_test.SymbolTableBuilder) *mimirpb.WriteRequest {
+	req := &mimirpb.WriteRequest{
+		TimeseriesRW2: []mimirpb.TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
+				Samples: []mimirpb.Sample{
+					{
+						Value:       123.456,
+						TimestampMs: 1234567890,
+					},
+				},
+				Exemplars: []mimirpb.ExemplarRW2{
+					{
+						Value:      123.456,
+						Timestamp:  1234567890,
+						LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("traceID"), syms.GetSymbol("1234567890abcdef")},
+					},
+				},
+				Metadata: mimirpb.MetadataRW2{
+					Type:    mimirpb.METRIC_TYPE_COUNTER,
+					HelpRef: syms.GetSymbol("test_metric_help"),
+					UnitRef: syms.GetSymbol("test_metric_unit"),
+				},
+			},
+		},
+	}
+	req.SymbolsRW2 = syms.GetSymbols()
+
+	return req
 }
