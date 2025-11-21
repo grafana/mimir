@@ -787,6 +787,7 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	InstrumentRefLeaksPct   float64                             `yaml:"instrument_ref_leaks_pct" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
@@ -798,6 +799,7 @@ type CommonConfigInheritance struct {
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
+	f.Float64Var(&c.InstrumentRefLeaksPct, "common.instrument-reference-leaks-pct", 0, `Percentage of buffers from pools to instrument for reference leaks. 0 to disable.`)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -908,6 +910,8 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	setUpGoRuntimeMetrics(cfg, reg)
+
+	mimirpb.CustomCodecConfig{InstrumentRefLeaksPct: cfg.Common.InstrumentRefLeaksPct}.RegisterGlobally()
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")
