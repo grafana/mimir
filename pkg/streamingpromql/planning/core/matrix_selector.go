@@ -4,7 +4,9 @@ package core
 
 import (
 	"fmt"
+	"github.com/prometheus/prometheus/model/labels"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -15,6 +17,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type MatrixSelector struct {
@@ -27,8 +30,33 @@ func (m *MatrixSelector) Describe() string {
 	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, false)
 }
 
+// QuerySplittingCacheKey returns the cache key for the matrix selector.
+// The range is not part of the cache key as the query splitting means that matrix selector which only different by
+// the range can share cache entries.
+// The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
+// TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
+//  inner node, the range plus the offset and @ modifiers will have to be retained.
+// TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
 func (m *MatrixSelector) QuerySplittingCacheKey() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, true)
+	builder := &strings.Builder{}
+	builder.WriteRune('{')
+	for i, m := range m.Matchers {
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+
+		// Convert to the Prometheus type so we can use its String().
+		promMatcher := labels.Matcher{Type: m.Type, Name: m.Name, Value: m.Value}
+		builder.WriteString(promMatcher.String())
+	}
+	builder.WriteRune('}')
+
+	if m.SkipHistogramBuckets {
+		// This needs to be kept in the cache key, as the returned results will differ depending on if buckets are skipped or not
+		builder.WriteString(", skip histogram buckets")
+	}
+
+	return builder.String()
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -87,16 +115,22 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, subRange time.Duration) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams util.Optional[types.TimeRangeParams]) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
-	if subRange != 0 {
-		selectorRange = subRange
+	selectorTs := m.Timestamp
+	selectorOffset := m.Offset.Milliseconds()
+	if overrideTimeParams.IsPresent() {
+		params := overrideTimeParams.Value()
+		selectorOffset = params.Offset.Milliseconds()
+		selectorTs = params.Timestamp
+		selectorRange = params.Range
 	}
+
 	selector := &selectors.Selector{
 		Queryable:                params.Queryable,
 		TimeRange:                timeRange,
-		Timestamp:                TimestampFromTime(m.Timestamp),
-		Offset:                   m.Offset.Milliseconds(),
+		Timestamp:                TimestampFromTime(selectorTs),
+		Offset:                   selectorOffset,
 		Range:                    selectorRange,
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
@@ -131,4 +165,12 @@ func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion 
 
 func (m *MatrixSelector) GetRange() time.Duration {
 	return m.Range
+}
+
+func (m *MatrixSelector) GetTimeRangeParams() types.TimeRangeParams {
+	return types.TimeRangeParams{
+		Range:     m.Range,
+		Offset:    m.Offset,
+		Timestamp: m.Timestamp,
+	}
 }

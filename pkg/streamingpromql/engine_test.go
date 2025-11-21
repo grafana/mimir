@@ -46,6 +46,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	syncutil "github.com/grafana/mimir/pkg/util/sync"
@@ -4470,6 +4471,6 @@ func TestEngine_RegisterNodeMaterializer(t *testing.T) {
 
 type dummyMaterializer struct{}
 
-func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, subRange time.Duration) (planning.OperatorFactory, error) {
+func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams util.Optional[types.TimeRangeParams]) (planning.OperatorFactory, error) {
 	panic("not implemented")
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // Materializer is responsible for converting query plan nodes to operators for a single query plan.
@@ -19,9 +20,10 @@ type Materializer struct {
 }
 
 type OperatorFactoryKey struct {
-	node      Node
-	timeRange types.QueryTimeRange
-	subRange  time.Duration
+	node               Node
+	timeRange          types.QueryTimeRange
+	subRange           time.Duration
+	overrideTimeParams util.Optional[types.TimeRangeParams]
 }
 
 func NewMaterializer(params *OperatorParameters, nodeMaterializers map[NodeType]NodeMaterializer) *Materializer {
@@ -33,15 +35,16 @@ func NewMaterializer(params *OperatorParameters, nodeMaterializers map[NodeType]
 }
 
 func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTimeRange) (types.Operator, error) {
-	return m.ConvertNodeToOperatorWithSubRange(node, timeRange, 0)
+	return m.ConvertNodeToOperatorWithSubRange(node, timeRange, util.None[types.TimeRangeParams]())
 }
 
-// ConvertNodeToOperatorWithSubRange will call materialize with the selected subrange. If subrange is zero, it should be ignored.
-func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange types.QueryTimeRange, subRange time.Duration) (types.Operator, error) {
+// ConvertNodeToOperatorWithSubRange will call materialize with the selected subrange.
+// Use util.None() to indicate no override, or util.Some() to override with specific values.
+func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange types.QueryTimeRange, overrideTimeParams util.Optional[types.TimeRangeParams]) (types.Operator, error) {
 	key := OperatorFactoryKey{
-		node:      node,
-		timeRange: timeRange,
-		subRange:  subRange,
+		node:               node,
+		timeRange:          timeRange,
+		overrideTimeParams: overrideTimeParams,
 	}
 	if f, ok := m.operatorFactories[key]; ok {
 		return f.Produce()
@@ -52,7 +55,7 @@ func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange ty
 		return nil, fmt.Errorf("no registered node materializer for node of type %s", node.NodeType())
 	}
 
-	f, err := nm.Materialize(node, m, timeRange, m.operatorParams, subRange)
+	f, err := nm.Materialize(node, m, timeRange, m.operatorParams, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}
@@ -109,12 +112,12 @@ type NodeMaterializer interface {
 	// Materialize returns a factory that produces operators for the given node.
 	//
 	// Implementations may retain the provided Materializer for later use.
-	Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, subRange time.Duration) (OperatorFactory, error)
+	Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams util.Optional[types.TimeRangeParams]) (OperatorFactory, error)
 }
 
 type NodeMaterializerFunc[T Node] func(n T, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
 
-func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, _ time.Duration) (OperatorFactory, error) {
+func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, _ util.Optional[types.TimeRangeParams]) (OperatorFactory, error) {
 	node, ok := n.(T)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to node materializer: expected %T, got %T", new(T), n)
@@ -123,13 +126,13 @@ func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer,
 	return f(node, materializer, timeRange, params)
 }
 
-type RangeAwareNodeMaterializerFunc[T Node] func(n T, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, subRange time.Duration) (OperatorFactory, error)
+type RangeAwareNodeMaterializerFunc[T Node] func(n T, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams util.Optional[types.TimeRangeParams]) (OperatorFactory, error)
 
-func (f RangeAwareNodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, subRange time.Duration) (OperatorFactory, error) {
+func (f RangeAwareNodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams util.Optional[types.TimeRangeParams]) (OperatorFactory, error) {
 	node, ok := n.(T)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to range aware node materializer: expected %T, got %T", new(T), n)
 	}
 
-	return f(node, materializer, timeRange, params, subRange)
+	return f(node, materializer, timeRange, params, overrideTimeRangeParams)
 }

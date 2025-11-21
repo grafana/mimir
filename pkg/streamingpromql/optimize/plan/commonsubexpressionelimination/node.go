@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func init() {
@@ -103,8 +104,8 @@ func (d *Duplicate) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanVersionZero
 }
 
-func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, subRange time.Duration) (planning.OperatorFactory, error) {
-	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, subRange)
+func MaterializeDuplicate(d *Duplicate, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams util.Optional[types.TimeRangeParams]) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToOperatorWithSubRange(d.Inner, timeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}

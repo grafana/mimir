@@ -31,7 +31,7 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 		builder.WriteRune(']')
 	}
 
-	if ts != nil {
+	if ts != nil && !forCacheKey { // @ modifiers are adjusted for when doing query splitting/caching
 		builder.WriteString(" @ ")
 		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
 		if !forCacheKey {
@@ -42,7 +42,7 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 		}
 	}
 
-	if offset != 0 {
+	if offset != 0 && !forCacheKey { // @ modifiers are adjusted for when doing query splitting/caching
 		builder.WriteString(" offset ")
 		builder.WriteString(offset.String())
 	}

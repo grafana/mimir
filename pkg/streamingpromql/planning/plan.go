@@ -222,6 +222,8 @@ type SplittableNode interface {
 
 	// GetRange returns the time range duration for this range vector operation.
 	GetRange() time.Duration
+
+	GetTimeRangeParams() types.TimeRangeParams
 }
 
 func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {

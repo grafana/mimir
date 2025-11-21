@@ -13,8 +13,15 @@ option (gogoproto.messagename_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message SplittableFunctionCallDetails {
-  google.protobuf.Duration splitDuration = 1 [
-    (gogoproto.stdduration) = true,
-    (gogoproto.nullable) = false
-  ];
+  repeated SplitRange splitRanges = 1 [(gogoproto.nullable) = false];
+  string innerNodeCacheKey = 2;
+}
+
+// SplitRange represents a time range within a split.
+// Start is exclusive (points with timestamp > Start are included).
+// End is inclusive (points with timestamp <= End are included).
+message SplitRange {
+  int64 start = 1;      // Start time in milliseconds since Unix epoch (exclusive)
+  int64 end = 2;        // End time in milliseconds since Unix epoch (inclusive)
+  bool cacheable = 3;   // Whether this range is cacheable (aligned to split interval)
 }

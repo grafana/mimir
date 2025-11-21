@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func init() {
@@ -78,7 +79,30 @@ func (s *SplittableFunctionCall) EquivalentToIgnoringHintsAndChildren(other plan
 }
 
 func (s *SplittableFunctionCall) Describe() string {
-	return fmt.Sprintf("split=%v", s.SplitDuration)
+	if len(s.SplitRanges) == 0 {
+		return "splits=0"
+	}
+
+	// Format: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+	// where * indicates cacheable ranges
+	// Timestamps are in milliseconds since epoch
+	var result string
+	result = fmt.Sprintf("splits=%d [", len(s.SplitRanges))
+
+	for i, sr := range s.SplitRanges {
+		if i > 0 {
+			result += ", "
+		}
+
+		result += fmt.Sprintf("(%d,%d]", sr.Start, sr.End)
+
+		if sr.Cacheable {
+			result += "*"
+		}
+	}
+
+	result += "]"
+	return result
 }
 
 func (s *SplittableFunctionCall) ChildrenLabels() []string {
@@ -117,7 +141,7 @@ func NewMaterializer(cache cache.IntermediateResultsCache) *Materializer {
 	}
 }
 
-func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ time.Duration) (planning.OperatorFactory, error) {
+func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ util.Optional[types.TimeRangeParams]) (planning.OperatorFactory, error) {
 	s, ok := n.(*SplittableFunctionCall)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplittableFunctionCall, got %T", n)
@@ -137,15 +161,12 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("function %v is not yet supported for split range vector optimization", innerFunctionCall.Function)
 	}
 
-	splitDuration := s.SplittableFunctionCallDetails.SplitDuration
-
-	innerNode := s.Inner.Child(0)
-
-	splitOp, err := functions.NewFunctionOverRangeVectorSplit(
-		innerNode,
+	splitOp, err := NewFunctionOverRangeVector(
+		s.Inner.Child(0),
 		materializer,
 		timeRange,
-		splitDuration,
+		s.SplittableFunctionCallDetails.SplitRanges,
+		s.SplittableFunctionCallDetails.InnerNodeCacheKey,
 		m.cache,
 		funcDef,
 		innerFunctionCall.ExpressionPosition(),

@@ -454,7 +454,7 @@ func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
 					Range:    time.Minute,
 				},
 			},
-			expected: `{__name__="foo"}[1m0s]`,
+			expected: `{__name__="foo"}`,
 		},
 		"one matcher, no timestamp, has offset": {
 			node: &MatrixSelector{
@@ -464,7 +464,7 @@ func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
 					Offset:   time.Hour,
 				},
 			},
-			expected: `{__name__="foo"}[1m0s] offset 1h0m0s`,
+			expected: `{__name__="foo"}`,
 		},
 		"one matcher, has timestamp (unix only, no RFC3339), no offset": {
 			node: &MatrixSelector{
@@ -474,7 +474,7 @@ func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
 					Timestamp: timestampOf(123456),
 				},
 			},
-			expected: `{__name__="foo"}[1m0s] @ 123456`,
+			expected: `{__name__="foo"}`,
 		},
 		"one matcher, has timestamp and offset": {
 			node: &MatrixSelector{
@@ -485,7 +485,7 @@ func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
 					Timestamp: timestampOf(123456),
 				},
 			},
-			expected: `{__name__="foo"}[1m0s] @ 123456 offset 1h0m0s`,
+			expected: `{__name__="foo"}`,
 		},
 		"one matcher, skip histogram buckets enabled": {
 			node: &MatrixSelector{
@@ -495,7 +495,7 @@ func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
 					SkipHistogramBuckets: true,
 				},
 			},
-			expected: `{__name__="foo"}[1m0s], skip histogram buckets`,
+			expected: `{__name__="foo"}, skip histogram buckets`,
 		},
 		"complex selector with all fields": {
 			node: &MatrixSelector{
@@ -511,7 +511,7 @@ func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
 					SkipHistogramBuckets: true,
 				},
 			},
-			expected: `{__name__="foo", env!="test", region=~"au-.*"}[5m0s] @ 789012 offset 2h0m0s, skip histogram buckets`,
+			expected: `{__name__="foo", env!="test", region=~"au-.*"}, skip histogram buckets`,
 		},
 	}
 

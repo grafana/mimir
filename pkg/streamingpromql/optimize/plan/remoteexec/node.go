@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func init() {
@@ -126,7 +127,7 @@ func NewRemoteExecutionMaterializer(executor RemoteExecutor) *RemoteExecutionMat
 
 var _ planning.NodeMaterializer = &RemoteExecutionMaterializer{}
 
-func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, subRange time.Duration) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ util.Optional[types.TimeRangeParams]) (planning.OperatorFactory, error) {
 	r, ok := n.(*RemoteExecution)
 	if !ok {
 		return nil, fmt.Errorf("expected node of type RemoteExecution, got %T", n)
