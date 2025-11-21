@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index 986c4e1867..dda8609298 100644
+index cd4b74fd23..dda8609298 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -14,7 +14,6 @@ import (
@@ -531,9 +531,9 @@ index 986c4e1867..dda8609298 100644
 -	}
 -	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
 -		metadata.add(normalizedMetricName, MetricMetadata{
--			MetricFamilyName: strings.Clone(normalizedMetricName),
--			Help:             strings.Clone(help),
--			Unit:             strings.Clone(unit),
+-			MetricFamilyName: normalizedMetricName,
+-			Help:             help,
+-			Unit:             unit,
 -			Type:             MetricMetadata_MetricType(metricType),
 -		})
 -	}
