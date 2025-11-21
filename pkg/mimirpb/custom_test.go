@@ -267,9 +267,11 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	// the call to req.FreeBuffer.
 	leakingLabelName := req.Timeseries[0].Labels[0].Name
 
+	leaks := NextRefLeakChannel(t.Context())
+
 	recvLeak := func() (uintptr, bool) {
 		select {
-		case detectedAddr := <-NextRefLeakChannel(t.Context()):
+		case detectedAddr := <-leaks:
 			return detectedAddr, true
 		case <-time.After(10 * time.Millisecond):
 			return 0, false
@@ -293,6 +295,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	var reqNoLeak WriteRequest
 	err = Unmarshal(dataNoLeak, &reqNoLeak)
 	require.NoError(t, err)
+	leaks = NextRefLeakChannel(t.Context())
 	detectedAddr, ok = recvLeak()
 	require.False(t, ok, "unexpected a reference leak %x", detectedAddr)
 }
