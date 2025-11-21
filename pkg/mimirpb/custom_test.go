@@ -251,15 +251,6 @@ func TestHistogram_BucketsCount(t *testing.T) {
 }
 
 func TestInstrumentRefLeaks(t *testing.T) {
-	leaks := make(chan uintptr, 1)
-
-	codec := CustomCodecConfig{
-		InstrumentRefLeaksPct: 100,
-		OnRefLeakDetected: func(addr uintptr) {
-			leaks <- addr
-		},
-	}.Codec()
-
 	src := WriteRequest{Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
 		Labels:  []UnsafeMutableLabel{{Name: "labelName", Value: "labelValue"}},
 		Samples: []Sample{{TimestampMs: 1234, Value: 1337}},
@@ -268,7 +259,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	require.NoError(t, err)
 
 	var req WriteRequest
-	err = codec.Unmarshal(mem.BufferSlice{mem.NewBuffer(&buf, nil)}, &req)
+	err = Unmarshal(buf, &req)
 	require.NoError(t, err)
 
 	bufAddr := uintptr(unsafe.Pointer(unsafe.SliceData(req.buffer.ReadOnlyData())))
@@ -276,20 +267,20 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	// the call to req.FreeBuffer.
 	leakingLabelName := req.Timeseries[0].Labels[0].Name
 
-	req.FreeBuffer() // leakingLabelName becomes a leak here
-
-	var detectedAddr uintptr
-	recvLeak := func() bool {
+	recvLeak := func() (uintptr, bool) {
 		select {
-		case detectedAddr = <-leaks:
-			return true
-		default:
-			return false
+		case detectedAddr := <-NextRefLeakChannel(t.Context()):
+			return detectedAddr, true
+		case <-time.After(10 * time.Millisecond):
+			return 0, false
 		}
 	}
 
+	req.FreeBuffer() // leakingLabelName becomes a leak here
+
 	// Expect to receive a leak detection.
-	require.Eventually(t, recvLeak, 10*time.Millisecond, 1*time.Millisecond)
+	detectedAddr, ok := recvLeak()
+	require.True(t, ok, "expected a reference leak")
 	require.Equal(t, bufAddr, detectedAddr)
 	// Expect the label name contents to have been replaced with a taint word.
 	// Keep this check last, because we need to extend the lifespan of leakingLabelName
@@ -300,7 +291,8 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	dataNoLeak, err := src.Marshal()
 	require.NoError(t, err)
 	var reqNoLeak WriteRequest
-	err = codec.Unmarshal(mem.BufferSlice{mem.NewBuffer(&dataNoLeak, nil)}, &reqNoLeak)
+	err = Unmarshal(dataNoLeak, &reqNoLeak)
 	require.NoError(t, err)
-	require.Never(t, recvLeak, 10*time.Millisecond, 1*time.Millisecond)
+	detectedAddr, ok = recvLeak()
+	require.False(t, ok, "unexpected a reference leak %x", detectedAddr)
 }
