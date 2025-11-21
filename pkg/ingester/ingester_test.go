@@ -9165,7 +9165,7 @@ func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
 	select {
 	case addr := <-nextLeak:
 		require.Fail(t, "reference leak detected", "addr: %x", addr)
-	case <-time.After(10 * time.Millisecond):
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
