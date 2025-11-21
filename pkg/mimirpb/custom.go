@@ -4,6 +4,7 @@ package mimirpb
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"runtime"
@@ -23,11 +24,10 @@ import (
 
 type CustomCodecConfig struct {
 	InstrumentRefLeaksPct float64
-	OnRefLeakDetected     func(uintptr)
 }
 
 func (cfg CustomCodecConfig) Codec() encoding.CodecV2 {
-	c := &codecV2{codec: encoding.GetCodecV2(proto.Name), onRefLeakDetected: cfg.OnRefLeakDetected}
+	c := &codecV2{codec: encoding.GetCodecV2(proto.Name)}
 	if cfg.InstrumentRefLeaksPct > 0 {
 		c.instrumentRefLeaksOneIn = uint64(math.Trunc(100 / cfg.InstrumentRefLeaksPct))
 	}
@@ -57,7 +57,6 @@ type codecV2 struct {
 
 	instrumentRefLeaksOneIn       uint64
 	unmarshaledWithBufferRefCount atomic.Uint64
-	onRefLeakDetected             func(uintptr)
 }
 
 var _ encoding.CodecV2 = &codecV2{}
@@ -190,7 +189,7 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 	if isBufferHolder {
 		if instrumentLeaks {
-			buf = &instrumentLeaksBuf{Buffer: buf, refCount: 1, onRefLeakDetected: c.onRefLeakDetected}
+			buf = &instrumentLeaksBuf{Buffer: buf, refCount: 1}
 		}
 		buf.Ref()
 		holder.SetBuffer(buf)
@@ -234,8 +233,7 @@ var _ MessageWithBufferRef = &BufferHolder{}
 
 type instrumentLeaksBuf struct {
 	mem.Buffer
-	refCount          int
-	onRefLeakDetected func(uintptr)
+	refCount int
 }
 
 func (b *instrumentLeaksBuf) Ref() {
@@ -266,14 +264,35 @@ func (b *instrumentLeaksBuf) Free() {
 			runtime.GC()
 
 			if v := weakRef.Value(); v != nil {
-				if f := b.onRefLeakDetected; f != nil {
-					f(uintptr(unsafe.Pointer(v)))
-					return
+				select {
+				case leaks <- v:
+				default:
+					panic(fmt.Sprintf("reference leak for object %p", v))
 				}
-				panic(fmt.Sprintf("reference leak for object %p", v))
 			}
 		}()
 	}
+}
+
+var leaks = make(chan *byte)
+
+// NextRefLeakChannel returns a channel where the next detected reference leak's
+// address will be sent, instead of the default behavior of panicking.
+//
+// Canceling the context immediately closes the channel and restores the default
+// behavior.
+//
+// Intended for use in tests.
+func NextRefLeakChannel(ctx context.Context) <-chan uintptr {
+	ch := make(chan uintptr, 1)
+	go func() {
+		defer close(ch)
+		select {
+		case ch <- uintptr(unsafe.Pointer(<-leaks)):
+		case <-ctx.Done():
+		}
+	}()
+	return ch
 }
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
