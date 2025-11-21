@@ -12,10 +12,9 @@ import (
 	"unsafe"
 	"weak"
 
-	"go.uber.org/atomic"
-
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
