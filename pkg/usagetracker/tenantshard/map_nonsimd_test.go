@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMetaMatchH2(t *testing.T) {
+func TestIndex_Match(t *testing.T) {
 	m := &index{0x12, 0x34, 0x56, 0xc9, 0xc9, 0x77, 0x77, 0x77}
 	p := prefix(0xc9)
-	require.Equal(t, bitset(0x0000008080000000), metaMatchH2(m, p))
+	require.Equal(t, bitset(0x0000008080000000), m.match(p))
 }
 
 func TestFindZeroBytes(t *testing.T) {

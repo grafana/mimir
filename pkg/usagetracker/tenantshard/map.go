@@ -88,7 +88,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.index[i], pfx)
+		matches := m.index[i].match(pfx)
 		for matches != 0 {
 			j := nextMatch(&matches)
 			if key == m.keys[i][j] { // found
@@ -101,7 +101,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 		}
 		// |key| is not in group |i|,
 		// stop probing if we see an empty slot
-		matches = metaMatchEmpty(&m.index[i])
+		matches = m.index[i].matchEmpty()
 		if matches != 0 { // insert
 			// Only check limit if we're tracking series.
 			// We don't check limit for Load events.
@@ -154,7 +154,7 @@ func (m *Map) load(key uint64, value clock.Minutes) {
 	looped := false
 	for {
 		// Find an empty slot and insert without checking if it already exists.
-		matches := metaMatchEmpty(&m.index[i])
+		matches := m.index[i].matchEmpty()
 		if matches != 0 { // insert
 			m.insert(key, pfx, value, i, matches)
 			return

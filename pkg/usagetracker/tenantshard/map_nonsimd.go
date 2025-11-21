@@ -21,8 +21,8 @@ const (
 
 type bitset uint64
 
-// metaMatchH2 searches the given index for whole bytes that match the given prefix.
-func metaMatchH2(m *index, p prefix) bitset {
+// match searches the given index for whole bytes that match the given prefix.
+func (m *index) match(p prefix) bitset {
 	// See: https://graphics.stanford.edu/~seander/bithacks.html##ValueInWord
 	// e.g.,
 	// if m = 0x123456c9c9777777 and p = 0xc9, then:
@@ -32,7 +32,7 @@ func metaMatchH2(m *index, p prefix) bitset {
 	return findZeroBytes(castUint64(m) ^ (loBits * uint64(p)))
 }
 
-func metaMatchEmpty(m *index) bitset {
+func (m *index) matchEmpty() bitset {
 	return findZeroBytes(castUint64(m))
 }
 
