@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -122,7 +123,7 @@ func TestIngester_LabelValuesCardinality_SentInBatches(t *testing.T) {
 	seriesForLabel := func(label string) mimirpb.PreallocTimeseries {
 		return mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
 			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
-				labels.MetricName, "metric",
+				model.MetricNameLabel, "metric",
 				label, nextLabelValue())),
 			Samples: samples,
 		}}
@@ -240,7 +241,7 @@ func TestIngester_LabelValuesCardinality_AllValuesToBeReturnedInSingleMessage(t 
 					count := idx + 1
 					for c := 0; c < count; c++ {
 						_, err := in.Push(ctx, writeRequestSingleSeries(
-							labels.FromStrings(labels.MetricName, "foo", lblName, lblValue, "counter", strconv.Itoa(c)),
+							labels.FromStrings(model.MetricNameLabel, "foo", lblName, lblValue, "counter", strconv.Itoa(c)),
 							samples))
 						require.NoError(t, err)
 					}
@@ -348,7 +349,7 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		writeReq.Timeseries = append(writeReq.Timeseries, mimirpb.PreallocTimeseries{
 			TimeSeries: &mimirpb.TimeSeries{
 				Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(
-					labels.MetricName, metricName,
+					model.MetricNameLabel, metricName,
 					// Take prime modulus on the labels, to ensure that each one is a new series.
 					"mod_10", strconv.Itoa(s%(2*5)),
 					"mod_77", strconv.Itoa(s%(7*11)),
@@ -367,7 +368,7 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	}{
 		{
 			name:       "no matchers, __name__ label with 1 value all series",
-			labelNames: []string{labels.MetricName},
+			labelNames: []string{model.MetricNameLabel},
 			matchers:   nil,
 		},
 		{
@@ -388,23 +389,23 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		{
 			name:       "__name__ matcher, mod_10 label, 1M series each",
 			labelNames: []string{"mod_10"},
-			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
 		},
 		{
 			name:       "__name__ matcher, mod_77 label, 130K series each",
 			labelNames: []string{"mod_77"},
-			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
 		},
 		{
 			name:       "__name__ matcher, mod_4199 label, 2400 series each",
 			labelNames: []string{"mod_77"},
-			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: labels.MetricName, Value: metricName}},
+			matchers:   []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName}},
 		},
 		{
 			name:       "__name__ and mod_10 matchers, mod_4199 label, 240 series each",
-			labelNames: []string{labels.MetricName, "mod_100"},
+			labelNames: []string{model.MetricNameLabel, "mod_100"},
 			matchers: []*client.LabelMatcher{
-				{Type: client.EQUAL, Name: labels.MetricName, Value: metricName},
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: metricName},
 				{Type: client.EQUAL, Name: "mod_10", Value: "0"},
 			},
 		},

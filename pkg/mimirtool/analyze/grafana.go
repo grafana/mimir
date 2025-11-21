@@ -13,7 +13,6 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 
@@ -36,6 +35,10 @@ var (
 		"$__range", "1d",
 		"${__range_s:glob}", "30",
 		"${__range_s}", "30",
+		// $latency_metrics is commonly used by Grafana dashboards to switch
+		// between classic and native histograms. See:
+		// https://grafana.com/docs/mimir/latest/send/native-histograms/_exponential_buckets/#migrate-from-classic-histograms
+		"$latency_metrics", "0",
 	)
 )
 
@@ -203,7 +206,7 @@ func parseQuery(query string, metrics map[string]struct{}) error {
 				return nil
 			}
 			for _, m := range n.LabelMatchers {
-				if m.Name == labels.MetricName && validMetricName.MatchString(m.Value) {
+				if m.Name == model.MetricNameLabel && validMetricName.MatchString(m.Value) {
 					metrics[m.Value] = struct{}{}
 					return nil
 				}

@@ -30,10 +30,8 @@ type InstantVectorRemoteExec struct {
 var _ types.InstantVectorOperator = &InstantVectorRemoteExec{}
 
 func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	r.QueryStats = params.QueryStats
-
 	var err error
-	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.QueryStats.EnablePerStepStats, r.EagerLoad)
+	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
 	return err
 }
 

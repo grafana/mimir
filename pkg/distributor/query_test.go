@@ -37,10 +37,10 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 	fixtures := []mimirpb.PreallocTimeseries{
 		// Note: it's important to write at least a sample, otherwise the exemplar timestamp validation doesn't pass.
-		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), nil, makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), nil, makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), nil, makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
-		makeTimeseries([]string{labels.MetricName, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), nil, makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_1", "namespace", "a"}, makeSamples(int64(now), 1), nil, makeExemplars([]string{"trace_id", "A"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_1", "namespace", "b"}, makeSamples(int64(now), 2), nil, makeExemplars([]string{"trace_id", "B"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_2", "namespace", "a"}, makeSamples(int64(now), 3), nil, makeExemplars([]string{"trace_id", "C"}, int64(now), 0)),
+		makeTimeseries([]string{model.MetricNameLabel, "series_2", "namespace", "b"}, makeSamples(int64(now), 4), nil, makeExemplars([]string{"trace_id", "D"}, int64(now), 0)),
 	}
 
 	tests := map[string]struct {
@@ -455,7 +455,7 @@ func TestDistributor_QueryStream_ShouldSuccessfullyRunOnSlowIngesterWithStreamin
 			}
 
 			// Query back multiple times and ensure each response is consistent.
-			matchers := labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, "series_.*")
+			matchers := labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "series_.*")
 			queryMetrics := stats.NewQueryMetrics(reg[0])
 
 			for i := 1; i <= numQueries; i++ {

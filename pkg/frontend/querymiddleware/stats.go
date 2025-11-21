@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -30,11 +31,11 @@ type queryStatsMiddleware struct {
 
 func newQueryStatsMiddleware(reg prometheus.Registerer, engineOpts promql.EngineOpts) MetricsQueryMiddleware {
 	regexpMatcherCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_regexp_matcher_count",
+		Name: "cortex_query_frontend_regexp_matchers_total",
 		Help: "Total number of regexp matchers",
 	})
 	regexpMatcherOptimizedCount := promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_regexp_matcher_optimized_count",
+		Name: "cortex_query_frontend_regexp_matchers_optimized_total",
 		Help: "Total number of optimized regexp matchers",
 	})
 	consistencyCounter := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -71,7 +72,7 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
-	expr, err := parser.ParseExpr(req.GetQuery())
+	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
 	if err != nil {
 		return
 	}
@@ -158,9 +159,6 @@ type QueryDetails struct {
 
 	ResultsCacheMissBytes int
 	ResultsCacheHitBytes  int
-	// SamplesProcessedCacheAdjusted represents the total number of samples processed by queriers to produce the query result.
-	// It includes samples has been stored in the query-frontend cache and then fetched to produce the current full query result.
-	SamplesProcessedCacheAdjusted uint64
 }
 
 type contextKey int

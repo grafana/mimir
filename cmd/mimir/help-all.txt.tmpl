@@ -828,7 +828,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost float
     	Cost for retrieving the posting list from disk or from memory. (default 10)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost float
-    	Cost for retrieving series from the index and checking if a series belongs to the query's shard. (default 10)
+    	Cost for retrieving series from the index and checking if a series belongs to the query's shard. (default 15)
   -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency duration
     	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown
@@ -1514,9 +1514,7 @@ Usage of ./cmd/mimir/mimir:
   -ingest-storage.read-consistency string
     	[experimental] The default consistency level to enforce for queries when using the ingest storage. Supports values: strong, eventual. (default "eventual")
   -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency int
-    	[experimental] Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false (default 1)
-  -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
-    	[experimental] Enable fsyncing of WAL and WBL before Kafka offsets are committed. (default true)
+    	Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1. (default 4)
   -ingester.active-series-custom-trackers value
     	Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.
   -ingester.active-series-metrics-enabled
@@ -2099,6 +2097,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
+  -querier.frontend-health-check-grace-period duration
+    	[experimental] The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -2338,7 +2338,7 @@ Usage of ./cmd/mimir/mimir:
   -query-frontend.cache-results
     	Cache query results.
   -query-frontend.cache-samples-processed-stats
-    	Cache statistics of processed samples on results cache.
+    	[deprecated] Cache statistics of processed samples on results cache. Deprecated: has no effect.
   -query-frontend.cache-unaligned-requests
     	Cache requests that are not step-aligned.
   -query-frontend.client-cluster-validation.label string

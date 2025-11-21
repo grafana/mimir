@@ -453,7 +453,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 		p.addParseErrf(ret.PositionRange(), "no arguments for aggregate expression provided")
 
 		// Prevents invalid array accesses.
-		return
+		return ret
 	}
 
 	desiredArgs := 1
@@ -462,7 +462,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 			// In mimir we return a custom message which doesn't mention the CLI flag that should be used to enable
 			// experimental functions, given it's different (and in SaaS customers don't even have access to it).
 			p.addParseErrf(ret.PositionRange(), "limitk() and limit_ratio() functions are not enabled")
-			return
+			return ret
 		}
 		desiredArgs = 2
 
@@ -471,7 +471,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 
 	if len(arguments) != desiredArgs {
 		p.addParseErrf(ret.PositionRange(), "wrong number of arguments for aggregate expression provided, expected %d, got %d", desiredArgs, len(arguments))
-		return
+		return ret
 	}
 
 	ret.Expr = arguments[desiredArgs-1]
@@ -654,7 +654,7 @@ func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]any, bucketsKey,
 	if bucketCount > 0 {
 		spans = []histogram.Span{{Offset: offset, Length: uint32(bucketCount)}}
 	}
-	return
+	return buckets, spans
 }
 
 // number parses a number.
@@ -732,7 +732,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			}
 			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- {
 			}
-			return
+			return r
 		}
 
 		if n.ReturnBool && !n.Op.IsComparisonOperator() {
@@ -884,7 +884,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 	default:
 		p.addParseErrf(n.PositionRange(), "unknown node type: %T", node)
 	}
-	return
+	return typ
 }
 
 func (p *parser) unquoteString(s string) string {

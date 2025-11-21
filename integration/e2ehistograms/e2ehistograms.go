@@ -8,7 +8,6 @@ import (
 
 	"github.com/grafana/e2e"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/pkg/util/test"
@@ -56,7 +55,7 @@ func generateHistogramSeriesWrapper(generateHistogram generateHistogramFunc, nam
 
 	lbls := append(
 		[]prompb.Label{
-			{Name: labels.MetricName, Value: name},
+			{Name: model.MetricNameLabel, Value: name},
 		},
 		additionalLabels...,
 	)
@@ -74,7 +73,7 @@ func generateHistogramSeriesWrapper(generateHistogram generateHistogramFunc, nam
 
 	// Generate the expected vector and matrix when querying it
 	metric := model.Metric{}
-	metric[labels.MetricName] = model.LabelValue(name)
+	metric[model.MetricNameLabel] = model.LabelValue(name)
 	for _, lbl := range additionalLabels {
 		metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
 	}
@@ -104,7 +103,7 @@ func GenerateNHistogramSeries(nSeries, nExemplars int, name func() string, ts ti
 	// Generate the series
 	for i := 0; i < nSeries; i++ {
 		lbls := []prompb.Label{
-			{Name: labels.MetricName, Value: name()},
+			{Name: model.MetricNameLabel, Value: name()},
 		}
 		if additionalLabels != nil {
 			lbls = append(lbls, additionalLabels()...)

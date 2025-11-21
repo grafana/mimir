@@ -35,6 +35,7 @@ func (n *DropName) SeriesMetadata(ctx context.Context, matchers types.Matchers) 
 			continue
 		}
 		n.MemoryConsumptionTracker.DecreaseMemoryConsumptionForLabels(innerMetadata[i].Labels)
+		//nolint:staticcheck // SA1019: DropMetricName is deprecated.
 		innerMetadata[i].Labels = innerMetadata[i].Labels.DropMetricName()
 		err := n.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerMetadata[i].Labels)
 		if err != nil {

@@ -21,6 +21,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -150,7 +151,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 			fetchLabels: func() []labels.Label {
 				fetchLabels := make([]labels.Label, 0, numKeys)
 				for i := 0; i < numKeys; i++ {
-					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", i)})
+					fetchLabels = append(fetchLabels, labels.Label{Name: model.MetricNameLabel, Value: fmt.Sprintf("series_%d", i)})
 				}
 				return fetchLabels
 			}(),
@@ -159,7 +160,7 @@ func BenchmarkRemoteIndexCache_FetchMultiPostings(b *testing.B) {
 			fetchLabels: func() []labels.Label {
 				fetchLabels := make([]labels.Label, 0, numKeys)
 				for i := 0; i < numKeys; i++ {
-					fetchLabels = append(fetchLabels, labels.Label{Name: labels.MetricName, Value: "series_" + strings.Repeat(strconv.Itoa(i), 100)})
+					fetchLabels = append(fetchLabels, labels.Label{Name: model.MetricNameLabel, Value: "series_" + strings.Repeat(strconv.Itoa(i), 100)})
 				}
 				return fetchLabels
 			}(),
@@ -825,7 +826,7 @@ func TestPostingsCacheKeyLabelHash_ShouldBeConcurrencySafe(t *testing.T) {
 	expectedPerWorker := make([][]byte, 0, numWorkers)
 
 	for w := 0; w < numWorkers; w++ {
-		inputPerWorker = append(inputPerWorker, labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", w)})
+		inputPerWorker = append(inputPerWorker, labels.Label{Name: model.MetricNameLabel, Value: fmt.Sprintf("series_%d", w)})
 
 		hash, hashLen := postingsCacheKeyLabelID(inputPerWorker[w])
 		expectedPerWorker = append(expectedPerWorker, hash[0:hashLen])

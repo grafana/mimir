@@ -220,6 +220,7 @@ func NewQuerierHandler(
 	const (
 		remoteWriteEnabled = false
 		otlpEnabled        = false
+		appendMetadata     = false
 	)
 
 	api := v1.NewAPI(
@@ -258,6 +259,7 @@ func NewQuerierHandler(
 		true,
 		querierCfg.EngineConfig.LookbackDelta,
 		false,
+		appendMetadata,
 		nil,
 	)
 

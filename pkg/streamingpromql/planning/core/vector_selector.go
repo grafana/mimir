@@ -101,7 +101,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {

@@ -73,8 +73,9 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	}
 
 	// Find the first timestamp inside the subquery range that is aligned to the step.
-	alignedStart := stepMilliseconds * ((start - s.Offset.Milliseconds() - s.Range.Milliseconds()) / stepMilliseconds)
-	if alignedStart < start-s.Offset.Milliseconds()-s.Range.Milliseconds() {
+	// +1 because the query time range is inclusive of the start timestamp, but the subquery range is exclusive of the start.
+	alignedStart := stepMilliseconds * ((start - s.Offset.Milliseconds() - s.Range.Milliseconds() + 1) / stepMilliseconds)
+	if alignedStart < start-s.Offset.Milliseconds()-s.Range.Milliseconds()+1 {
 		alignedStart += stepMilliseconds
 	}
 

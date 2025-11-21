@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -51,7 +52,6 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	opts := streamingpromql.NewTestEngineOpts()
-	opts.CommonOpts.EnablePerStepStats = true
 	opts.Pedantic = true
 	ctx := context.Background()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -59,7 +59,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
-	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64, enablePerStepStats bool, batchSize uint64) *prototypes.Any {
+	createQueryRequestForSpecificNode := func(expr string, timeRange types.QueryTimeRange, nodeIndex int64, batchSize uint64) *prototypes.Any {
 		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
 		require.NoError(t, err)
 
@@ -78,8 +78,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					NodeIndex: nodeIndex,
 				},
 			},
-			EnablePerStepStats: enablePerStepStats,
-			BatchSize:          batchSize,
+			BatchSize: batchSize,
 		}
 
 		req, err := prototypes.MarshalAny(body)
@@ -88,15 +87,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 
 	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
-		return createQueryRequestForSpecificNode(expr, timeRange, -1, false, 1)
+		return createQueryRequestForSpecificNode(expr, timeRange, -1, 1)
 	}
 
 	createQueryRequestWithBatchSize := func(expr string, timeRange types.QueryTimeRange, batchSize uint64) *prototypes.Any {
-		return createQueryRequestForSpecificNode(expr, timeRange, -1, false, batchSize)
-	}
-
-	createQueryRequestWithPerStepStats := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
-		return createQueryRequestForSpecificNode(expr, timeRange, -1, true, 1)
+		return createQueryRequestForSpecificNode(expr, timeRange, -1, batchSize)
 	}
 
 	startT := timestamp.Time(0)
@@ -491,7 +486,6 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				`max_over_time(my_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				1, // Evaluate the subquery expression (my_series[11s:10s])
-				false,
 				1,
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
@@ -502,8 +496,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 									NodeIndex: 1,
 									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "my_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "my_series", "idx", "1"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 									},
 								},
 							},
@@ -628,7 +622,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 									Stats: stats.Stats{
-										SamplesProcessed:   10,
+										SamplesProcessed:   6,
 										QueueTime:          3 * time.Second,
 										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
@@ -767,92 +761,6 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 									},
 									Stats: stats.Stats{
 										SamplesProcessed:   3,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedStatusCode:                           "OK",
-			expectStorageToBeCalledWithPropagatedHeaders: true,
-		},
-
-		"query with per-step stats enabled": {
-			req: createQueryRequestWithPerStepStats(`my_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
-			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 0.123},
-												{TimestampMs: 10_000, Value: 1.123},
-												{TimestampMs: 20_000, Value: 2.123},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 1.123},
-												{TimestampMs: 10_000, Value: 3.123},
-												{TimestampMs: 20_000, Value: 5.123},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed: 6,
-										SamplesProcessedPerStep: []stats.StepStat{
-											{Timestamp: 0, Value: 2},
-											{Timestamp: 10000, Value: 2},
-											{Timestamp: 20000, Value: 2},
-										},
 										QueueTime:          3 * time.Second,
 										WallTime:           expectedQueryWallTime,
 										FetchedSeriesCount: 123,
@@ -1076,7 +984,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 									NodeIndex: 1,
 									Series: []querierpb.SeriesMetadata{
-										{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "some_total", "idx", "0"))},
+										{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "some_total", "idx", "0"))},
 									},
 								},
 							},

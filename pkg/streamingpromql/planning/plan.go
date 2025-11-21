@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV1
+var MaximumSupportedQueryPlanVersion = QueryPlanV2
 
 const QueryPlanVersionZero = QueryPlanVersion(0)
 
@@ -37,6 +37,9 @@ const QueryPlanVersionZero = QueryPlanVersion(0)
 // 1. DropName node
 // 2. Step invariant expression node
 const QueryPlanV1 = QueryPlanVersion(1)
+
+// This version introduces support for limitk and limit_ratio PromQL aggregates
+const QueryPlanV2 = QueryPlanVersion(2)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
@@ -203,6 +206,7 @@ type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
+	QueryStats               *types.QueryStats
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
 	Plan                     *QueryPlan

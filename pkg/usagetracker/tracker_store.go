@@ -4,6 +4,7 @@ package usagetracker
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"math"
 	"slices"
@@ -28,15 +29,22 @@ const noLimit = math.MaxUint64
 // trackerStore should not depend on wall clock: time.Now() should be always injected as a parameter,
 // and timer calls should be made from the outside.
 type trackerStore struct {
-	mtx     sync.RWMutex
-	tenants map[string]*trackedTenant
+	mtx           sync.RWMutex
+	sortedTenants []string
+	tenants       map[string]*trackedTenant
+
+	// sortedUsersCloseToLimit is an immutable list of user IDs that are close to their limits.
+	// This field is replaced atomically in updateLimits() and read without the lock.
+	// This list is sorted.
+	sortedUsersCloseToLimit []string
 
 	// dependencies
 	limiter limiter
 	events  events
 
 	// config
-	idleTimeout time.Duration
+	idleTimeout                         time.Duration
+	userCloseToLimitPercentageThreshold int
 
 	// misc
 	logger log.Logger
@@ -53,13 +61,15 @@ type events interface {
 	publishCreatedSeries(ctx context.Context, tenantID string, series []uint64, timestamp time.Time) error
 }
 
-func newTrackerStore(idleTimeout time.Duration, logger log.Logger, l limiter, ev events) *trackerStore {
+func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThreshold int, logger log.Logger, l limiter, ev events) *trackerStore {
 	t := &trackerStore{
-		tenants:     make(map[string]*trackedTenant),
-		limiter:     l,
-		events:      ev,
-		logger:      logger,
-		idleTimeout: idleTimeout,
+		tenants:                             make(map[string]*trackedTenant),
+		limiter:                             l,
+		events:                              ev,
+		logger:                              logger,
+		idleTimeout:                         idleTimeout,
+		userCloseToLimitPercentageThreshold: userCloseToLimitPercentageThreshold,
+		sortedUsersCloseToLimit:             nil, // will be populated by updateLimits
 	}
 	return t
 }
@@ -192,7 +202,15 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	for i := range tenant.shards {
 		tenant.shards[i] = tenantshard.New(uint32(capacity))
 	}
+
 	t.tenants[tenantID] = tenant
+	i, found := slices.BinarySearch(t.sortedTenants, tenantID)
+	if found {
+		// This should never happen, let's panic instead of having an inconsistent list.
+		panic(fmt.Errorf("tenant %s already exists in the sorted list: %v", tenantID, t.sortedTenants))
+	}
+	t.sortedTenants = slices.Insert(t.sortedTenants, i, tenantID)
+
 	tenant.RLock()
 	t.mtx.Unlock()
 	return tenant
@@ -234,6 +252,11 @@ func (t *trackerStore) cleanup(now time.Time) {
 		tenant.Lock()
 		if tenant.series.Load() == 0 {
 			delete(t.tenants, tenantID)
+			index, found := slices.BinarySearch(t.sortedTenants, tenantID)
+			if !found {
+				panic(fmt.Errorf("tenant %s not found in the sorted list: %v", tenantID, t.sortedTenants))
+			}
+			t.sortedTenants = slices.Delete(t.sortedTenants, index, index+1)
 		}
 		tenant.Unlock()
 	}
@@ -243,13 +266,41 @@ func (t *trackerStore) cleanup(now time.Time) {
 func (t *trackerStore) updateLimits() {
 	t.mtx.RLock()
 	tenantsClone := maps.Clone(t.tenants)
+	sortedTenants := slices.Clone(t.sortedTenants)
 	t.mtx.RUnlock()
 
 	zonesCount := t.limiter.zonesCount()
-	for tenantID, tenant := range tenantsClone {
+	var sortedCloseToLimit []string
+
+	for _, tenantID := range sortedTenants {
+		tenant := tenantsClone[tenantID]
 		limit := zeroAsNoLimit(t.limiter.localSeriesLimit(tenantID))
-		tenant.currentLimit.Store(currentSeriesLimit(tenant.series.Load(), limit, zonesCount))
+		series := tenant.series.Load()
+		tenant.currentLimit.Store(currentSeriesLimit(series, limit, zonesCount))
+
+		// Determine if this user is close to their limit.
+		// A user is close if: series >= (limit * percentageThreshold / 100)
+		if limit != noLimit {
+			percentageThreshold := limit * uint64(t.userCloseToLimitPercentageThreshold) / 100
+
+			if series >= percentageThreshold {
+				sortedCloseToLimit = append(sortedCloseToLimit, tenantID)
+			}
+		}
 	}
+
+	t.mtx.Lock()
+	t.sortedUsersCloseToLimit = sortedCloseToLimit
+	t.mtx.Unlock()
+}
+
+// getSortedUsersCloseToLimit returns the list of user IDs that are close to their series limit.
+// The returned slice is safe to read concurrently as it's immutable and replaced atomically in updateLimits().
+// The returned slice is sorted.
+func (t *trackerStore) getSortedUsersCloseToLimit() []string {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+	return t.sortedUsersCloseToLimit
 }
 
 // seriesCountsForTests should only be used in tests because it holds the mutex while loading all atomic values.

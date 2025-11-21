@@ -11,7 +11,8 @@ import (
 )
 
 type PrepareParams struct {
-	QueryStats *QueryStats
+	// This struct used to contain values, but they are now passed by other means.
+	// We kept it here to avoid making a big disruptive change.
 }
 
 // Operator represents all operators.

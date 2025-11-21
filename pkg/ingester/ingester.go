@@ -1368,61 +1368,22 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 					return newPerMetricSeriesLimitReachedError(i.limiter.limits.MaxGlobalSeriesPerMetric(userID), labels)
 				})
 			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
+			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) bool {
+				nativeHistogramErr, ok := newNativeHistogramValidationError(err, model.Time(timestamp), labels)
+
+				if !ok {
+					level.Warn(i.logger).Log("msg", "unknown histogram error", "err", err)
+					return false
+				}
+
 				stats.invalidNativeHistogramCount++
 				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
+
 				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCountMismatch, err, model.Time(timestamp), labels)
+					return nativeHistogramErr
 				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCountNotBigEnough, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramNegativeBucketCount, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramSpanNegativeOffset, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramSpansBucketsMismatch, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsMismatch, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInvalid, err, model.Time(timestamp), labels)
-				})
-			},
-			func(err error, timestamp int64, labels []mimirpb.LabelAdapter) {
-				stats.invalidNativeHistogramCount++
-				cast.IncrementDiscardedSamples(labels, 1, reasonInvalidNativeHistogram, startAppend)
-				updateFirstPartial(i.errorSamplers.nativeHistogramValidationError, func() softError {
-					return newNativeHistogramValidationError(globalerror.NativeHistogramCustomBucketsInfinite, err, model.Time(timestamp), labels)
-				})
+
+				return true
 			},
 		)
 	)
@@ -1647,15 +1608,15 @@ func (i *Ingester) pushSamplesToAppender(
 
 			if ingestCreatedTimestamp && ts.CreatedTimestamp < s.TimestampMs && (!nativeHistogramsIngestionEnabled || len(ts.Histograms) == 0 || ts.Histograms[0].Timestamp >= s.TimestampMs) {
 				if ref != 0 {
-					_, err = app.AppendCTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
 					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-					ref, err = app.AppendCTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
+					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				}
 				if err == nil {
 					stats.succeededSamplesCount++
-				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+				} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 					// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 					// if the start time is unknown, then it should equal to the timestamp of the first sample,
 					// which will mean a created timestamp equal to the timestamp of the first sample for later
@@ -1718,15 +1679,15 @@ func (i *Ingester) pushSamplesToAppender(
 
 				if ingestCreatedTimestamp && ts.CreatedTimestamp < h.Timestamp {
 					if ref != 0 {
-						_, err = app.AppendHistogramCTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 					} else {
 						// Copy the label set because both TSDB and the active series tracker may retain it.
 						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
-						ref, err = app.AppendHistogramCTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
+						ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 					}
 					if err == nil {
 						stats.succeededSamplesCount++
-					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderCT) && !errors.Is(err, storage.ErrOutOfOrderSample) {
+					} else if !errors.Is(err, storage.ErrDuplicateSampleForTimestamp) && !errors.Is(err, storage.ErrOutOfOrderST) && !errors.Is(err, storage.ErrOutOfOrderSample) {
 						// According to OTEL spec: https://opentelemetry.io/docs/specs/otel/metrics/data-model/#cumulative-streams-handling-unknown-start-time
 						// if the start time is unknown, then it should equal to the timestamp of the first sample,
 						// which will mean a created timestamp equal to the timestamp of the first sample for later
@@ -4366,11 +4327,7 @@ func timeUntilCompaction(now time.Time, compactionInterval, zoneOffset time.Dura
 }
 
 func (i *Ingester) NotifyPreCommit(ctx context.Context) error {
-	if !i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommit {
-		return nil
-	}
-
-	level.Debug(i.logger).Log("msg", "fsyncing tsdbs")
+	level.Debug(i.logger).Log("msg", "fsyncing TSDBs", "concurrency", i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency)
 
 	return concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.IngestStorageConfig.WriteLogsFsyncBeforeKafkaCommitConcurrency, func(ctx context.Context, userID string) error {
 		db := i.getTSDB(userID)

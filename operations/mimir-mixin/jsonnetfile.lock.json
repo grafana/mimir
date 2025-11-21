@@ -8,8 +8,8 @@
           "subdir": "grafana-builder"
         }
       },
-      "version": "5627ad051482ea64281b21d5d83eda0bec5187de",
-      "sum": "dr3ok/KQ0aNc/U+CxO5hlHFuP66z1IlsnthKeE+m/ss="
+      "version": "dc018f7871a01c2a4de741aa63cb88ec784ac3cb",
+      "sum": "d8iL8gbyQxspZJ8mDGsqHRR/JF3cu+YOaV50vao93Nw="
     },
     {
       "source": {
@@ -18,8 +18,8 @@
           "subdir": "mixin-utils"
         }
       },
-      "version": "767befa8fb46a07be516dec2777d7d89909a529d",
-      "sum": "SRElwa/XrKAN8aZA9zvdRUx8iebl2It7KNQ7VFvMcBA="
+      "version": "dc018f7871a01c2a4de741aa63cb88ec784ac3cb",
+      "sum": "VAik6Sh5MD5H1Km1gSIXG4rwQ4m4zyw7odP5TKu3bGo="
     },
     {
       "source": {
@@ -28,7 +28,7 @@
           "subdir": "operations/rollout-operator-mixin"
         }
       },
-      "version": "654460baf91052613fb5cabb2d8b8c626b44aef1",
+      "version": "cba21e53975ebf1f4a16334717bee882fc2643da",
       "sum": "9OrqagRZTX2KXoOIlMQnAPHWnX/y+S8EiR/vCl3ch5E="
     }
   ],

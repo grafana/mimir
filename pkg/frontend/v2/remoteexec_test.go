@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -38,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestScalarExecutionResponse(t *testing.T) {
@@ -1044,7 +1046,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *t
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false, 1)
+	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
@@ -1080,7 +1082,7 @@ func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
 
 	fullPlan := &planning.QueryPlan{Version: 66}
 
-	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, false, 1)
+	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.NotNil(t, frontendMock.request)
@@ -1206,10 +1208,15 @@ func TestEagerLoadingResponseStream_AbortsNextCallOnContextCancellation(t *testi
 }
 
 type mockResponseStreamThatNeverReturns struct {
-	release chan struct{}
+	release    chan struct{}
+	nextCalled chan struct{}
 }
 
 func (m *mockResponseStreamThatNeverReturns) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	if m.nextCalled != nil {
+		close(m.nextCalled)
+	}
+
 	<-m.release
 	return nil, errors.New("mock response stream closed")
 }
@@ -1223,6 +1230,29 @@ func TestEagerLoadingResponseStream_ClosesInnerStreamWhenClosed(t *testing.T) {
 	stream := newEagerLoadingResponseStream(context.Background(), inner)
 	stream.Close()
 	require.True(t, inner.closed)
+}
+
+func TestEagerLoadingResponseStream_ClosedWhileBuffering(t *testing.T) {
+	inner := &mockResponseStreamThatNeverReturns{
+		release:    make(chan struct{}),
+		nextCalled: make(chan struct{}),
+	}
+
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+
+	// Wait for the stream to start buffering.
+	<-inner.nextCalled
+
+	// Close the stream to trigger the inner Next() call returning.
+	stream.Close()
+
+	// Make sure the buffering goroutine has exited.
+	test.VerifyNoLeak(t)
+
+	// Make sure calling Next() fails with a sensible error.
+	msg, err := stream.Next(context.Background())
+	require.Nil(t, msg)
+	require.ErrorContains(t, err, "stream closed")
 }
 
 func TestResponseStreamBuffer(t *testing.T) {
@@ -1454,7 +1484,7 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 
 	series := make([]labels.Labels, 0, seriesCount)
 	for i := range seriesCount {
-		series = append(series, labels.FromStrings(labels.MetricName, "my_metric", "idx", strconv.Itoa(i)))
+		series = append(series, labels.FromStrings(model.MetricNameLabel, "my_metric", "idx", strconv.Itoa(i)))
 	}
 
 	msgs = append(msgs, newSeriesMetadata(false, series...))

@@ -2001,7 +2001,8 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
-# Cache statistics of processed samples on results cache.
+# (deprecated) Cache statistics of processed samples on results cache.
+# Deprecated: has no effect.
 # CLI flag: -query-frontend.cache-samples-processed-stats
 [cache_samples_processed_stats: <boolean> | default = false]
 
@@ -3110,6 +3111,15 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # do).
 # CLI flag: -querier.response-streaming-enabled
 [response_streaming_enabled: <boolean> | default = false]
+
+# (experimental) The grace period for query-frontend health checks. If a
+# query-frontend connection consistently fails health checks for this period,
+# any open connections are closed. The querier will attempt to reconnect to the
+# query-frontend if a subsequent request is received from it. Set to 0 to
+# immediately remove query-frontend connections on the first health check
+# failure.
+# CLI flag: -querier.frontend-health-check-grace-period
+[frontend_health_check_grace_period: <duration> | default = 0s]
 ```
 
 ### etcd
@@ -4695,16 +4705,10 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
-# (experimental) Enable fsyncing of WAL and WBL before Kafka offsets are
-# committed.
-# CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
-[write_logs_fsync_before_kafka_commit_enabled: <boolean> | default = true]
-
-# (experimental) Number of tenants to concurrently fsync WAL and WBL before
-# Kafka offsets are committed. Ignored if
-# -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false
+# (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
+# offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
-[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 1]
+[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
 ```
 
 ### blocks_storage
@@ -5217,7 +5221,7 @@ tsdb:
     # (advanced) Cost for retrieving series from the index and checking if a
     # series belongs to the query's shard.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost
-    [retrieved_series_cost: <float> | default = 10]
+    [retrieved_series_cost: <float> | default = 15]
 
     # (advanced) Cost for retrieving the posting list from disk or from memory.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost

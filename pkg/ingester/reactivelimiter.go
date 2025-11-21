@@ -61,7 +61,7 @@ func newReactiveLimiter(cfg *reactivelimiter.Config, requestType string, logger 
 
 	var limiter reactivelimiter.ReactiveLimiter
 	if prioritizer != nil {
-		limiter = reactivelimiter.NewWithPriority(cfg, logger, requestPriority, prioritizer)
+		limiter = reactivelimiter.NewWithPriority(cfg, logger, requestPriority, prioritizer.Prioritizer)
 	} else {
 		limiter = reactivelimiter.New(cfg, logger)
 	}

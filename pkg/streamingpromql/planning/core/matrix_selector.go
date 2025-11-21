@@ -95,7 +95,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

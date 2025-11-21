@@ -8,6 +8,9 @@
     // If true, compute the scaling metric as non-null only when container_memory_working_set_bytes is available
     autoscaling_memory_hpa_require_metrics: false,
 
+    // If true and there is no memory trigger, add OOM protection trigger to prevent premature scale-down when pods are being OOM-killed.
+    autoscaling_oom_protection_enabled: false,
+
     autoscaling_querier_enabled: false,
     autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
     autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
@@ -478,6 +481,31 @@
                threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
                // Disable ignoring null values. This allows HPAs to effectively pause when metrics are unavailable rather than scaling
                // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
+               ignore_null_values: false,
+             },
+           ] else if $._config.autoscaling_oom_protection_enabled then [
+             {
+               // This trigger prevents premature scale-down when pods are being OOM-killed. If any pod has been
+               // OOM-killed in the last 15 minutes, the query returns 1, which with metric_type "Value" gets
+               // multiplied by the current pod count, ensuring HPA maintains at least the current replica count.
+               // When no OOM kills occur, it returns 0, making this trigger inactive (other triggers determine scaling).
+               metric_name: '%s%s_oom_protection_hpa_%s' %
+                            ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
+               query: queryWithWeight(|||
+                 # Return 1 if any pods OOM-ed within the last 15 minutes.
+                 group (
+                   max by (pod) (
+                     kube_pod_container_status_last_terminated_reason{container="%(container)s",namespace="%(namespace)s",reason="OOMKilled"%(extra_matchers)s}
+                   )
+                   and
+                   max by (pod) (
+                     changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0
+                   )
+                 ) or vector(0)
+               ||| % queryParameters, weight),
+               threshold: '1',
+               metric_type: 'Value',
+               // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
                ignore_null_values: false,
              },
            ] else []) + extra_triggers,
