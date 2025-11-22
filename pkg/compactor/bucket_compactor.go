@@ -947,7 +947,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 	}()
 
 	// Keep this channel outside the compaction loop, because we want the "max compaction time"
-	// to apply on compactions across multiple consecutive loops. This channel is initialised
+	// to apply on compactions across multiple consecutive loops. This channel is initialized
 	// after the first planning.
 	var maxCompactionTimeChan <-chan time.Time
 
