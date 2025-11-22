@@ -592,6 +592,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
+	var projectionLabels []string
 	if req.Hints != nil {
 		reqHints := &hintspb.SeriesRequestHints{}
 		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
@@ -602,6 +603,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		if err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
+
+		// Extract projection labels (not used yet, just received for future use)
+		projectionLabels = reqHints.ProjectionLabels
 	}
 
 	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
@@ -646,7 +650,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		return err
 	}
 
-	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet)
+	streamingSeriesCount, err = s.sendStreamingSeriesLabelsAndStats(req, srv, stats, seriesSet, projectionLabels)
 	if err != nil {
 		return err
 	}
@@ -749,6 +753,7 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 	srv storegatewaypb.StoreGateway_SeriesServer,
 	stats *safeQueryStats,
 	seriesSet storepb.SeriesSet,
+	projectionLabels []string,
 ) (numSeries int, err error) {
 	var (
 		encodeDuration = time.Duration(0)
@@ -776,7 +781,8 @@ func (s *BucketStore) sendStreamingSeriesLabelsAndStats(
 
 		// We are re-using the slice for every batch this way.
 		seriesBatch.Series = seriesBatch.Series[:len(seriesBatch.Series)+1]
-		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(lset)
+		projectedLabels := mimirpb.FilterLabelsForProjection(lset, projectionLabels)
+		seriesBatch.Series[len(seriesBatch.Series)-1].Labels = mimirpb.FromLabelsToLabelAdapters(projectedLabels)
 
 		if len(seriesBatch.Series) == int(req.StreamingChunksBatchSize) {
 			err := s.sendMessage("streaming series", srv, storepb.NewStreamingSeriesResponse(seriesBatch), &encodeDuration, &sendDuration)

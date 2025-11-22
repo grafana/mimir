@@ -43,12 +43,14 @@ func TestQueryRequest(t *testing.T) {
 	}
 	matchers = append(matchers, matcher4)
 
-	req, err := ToQueryRequest(from, to, matchers)
+	projectionLabels := []string{"__name__", "job", "instance"}
+
+	req, err := ToQueryRequest(from, to, projectionLabels, matchers)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	haveFrom, haveTo, haveMatchers, err := FromQueryRequest(req)
+	haveFrom, haveTo, haveProjectionLabels, haveMatchers, err := FromQueryRequest(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,6 +61,8 @@ func TestQueryRequest(t *testing.T) {
 	if !reflect.DeepEqual(haveTo, to) {
 		t.Fatalf("Bad to FromQueryRequest(ToQueryRequest) round trip")
 	}
+
+	assert.Equal(t, projectionLabels, haveProjectionLabels, "projection labels should round trip correctly")
 
 	// Assert same matchers. We do some optimizations in mimir-prometheus which make
 	// the label matchers not comparable with reflect.DeepEqual() so we're going to

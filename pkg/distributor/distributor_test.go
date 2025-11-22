@@ -1128,7 +1128,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Nil(t, err)
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, tc.matchers...)
+			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nil, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -2502,7 +2502,7 @@ func TestSlowQueries(t *testing.T) {
 			})
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nameMatcher)
+			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nil, nameMatcher)
 			assert.Equal(t, expectedErr, err)
 		})
 	}
@@ -6552,7 +6552,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 		return nil, errFail
 	}
 
-	_, _, matchers, err := client.FromQueryRequest(req)
+	_, _, _, matchers, err := client.FromQueryRequest(req)
 	if err != nil {
 		return nil, err
 	}
