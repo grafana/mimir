@@ -5894,7 +5894,7 @@ func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
 	i := createIngesterWithSeries(b, userID, numSeries, numSamplesPerSeries, startTimestamp, step)
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	// Flush the ingester to ensure blocks have been compacted, so we'll test
+	// Finalize the ingester to ensure blocks have been compacted, so we'll test
 	// fetching labels from blocks.
 	i.Flush()
 
@@ -8432,7 +8432,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 	lockState, err := db.acquireAppendLock(0)
 	require.NoError(t, err)
 
-	// Flush handler only triggers compactions, but doesn't wait for them to finish. We cannot use ?wait=true here,
+	// Finalize handler only triggers compactions, but doesn't wait for them to finish. We cannot use ?wait=true here,
 	// because it would deadlock -- flush will wait for appendLock to be released.
 	i.FlushHandler(httptest.NewRecorder(), httptest.NewRequest("POST", "/ingester/flush", nil))
 

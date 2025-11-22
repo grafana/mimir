@@ -580,7 +580,7 @@ func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
 }
 
 // NewForFlusher is a special version of ingester used by Flusher. This
-// ingester is not ingesting anything, its only purpose is to react on Flush
+// ingester is not ingesting anything, its only purpose is to react on Finalize
 // method and flush all openened TSDBs when called.
 func NewForFlusher(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	i, err := newIngester(cfg, limits, registerer, logger)
@@ -593,7 +593,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	i.limiter = NewLimiter(limits, flusherLimiterStrategy{})
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
-	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
+	// and will only open TSDBs, wait for Finalize to be called, and then close TSDBs again.
 	i.BasicService = services.NewIdleService(i.startingForFlusher, i.stoppingForFlusher)
 	return i, nil
 }

@@ -3,11 +3,12 @@ package cache
 import (
 	"flag"
 	"fmt"
-	"github.com/grafana/dskit/cache"
-	"github.com/pkg/errors"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/grafana/dskit/cache"
+	"github.com/pkg/errors"
 )
 
 const (

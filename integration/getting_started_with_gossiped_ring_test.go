@@ -126,7 +126,7 @@ func runTestGettingStartedWithGossipedRing(t *testing.T, mimir1 *e2emimir.MimirS
 	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(0+blocksLoadedOffset), "cortex_bucket_store_blocks_loaded"))
 	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(0+blocksLoadedOffset), "cortex_bucket_store_blocks_loaded"))
 
-	// Flush blocks from ingesters to the store.
+	// Finalize blocks from ingesters to the store.
 	for _, instance := range []*e2emimir.MimirService{mimir1, mimir2} {
 		res, err := e2e.DoGet("http://" + instance.HTTPEndpoint() + "/ingester/flush")
 		require.NoError(t, err)

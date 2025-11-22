@@ -3,8 +3,6 @@
 package functions
 
 import (
-	"io"
-
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -25,37 +23,20 @@ type Range struct {
 	Cacheable bool
 }
 
-// SplittableGenerateFunc generates an intermediate result for a single time range split.
-type SplittableGenerateFunc[T any] func(
+// SplitGenerateFunc generates an intermediate result for a single time range split.
+type SplitGenerateFunc[T any] func(
 	step *types.RangeVectorStepData,
 	scalarArgsData []types.ScalarData,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (T, error)
 
-// SplittableCombineFunc combines intermediate results from multiple time range splits.
-type SplittableCombineFunc[T any] func(
+// SplitCombineFunc combines intermediate results from multiple time range splits.
+type SplitCombineFunc[T any] func(
 	pieces []T,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
-
-type SplittableWriterFactory[T any] func(writer io.Writer) (SplittableWriter[T], error)
-
-type SplittableWriter[T any] interface {
-	WriteNextResult(T) error
-	// Flush writes all buffered results to the underlying writer.
-	// Must be called before the underlying writer is closed/finalized.
-	Flush() error
-}
-
-type SplittableReaderFactory[T any] func(reader io.Reader) (SplittableReader[T], error)
-
-type SplittableReader[T any] interface {
-	ReadNextResult() (T, error)
-	// TODO: Push result buffering etc lower if possible? Otherwise in non-streaming case we might be buffering once in splits and once in reader
-	//ReadResultAt(idx int64) (T, error)
-}
 
 type SplittableOperatorFactory func(
 	innerNode planning.Node,
@@ -63,19 +44,19 @@ type SplittableOperatorFactory func(
 	timeRange types.QueryTimeRange,
 	ranges []Range,
 	cacheKey string,
-	irCache cache.IntermediateResultsCache,
-	funcDef *FunctionOverRangeVectorDefinition,
+	irCache *cache.Cache,
 	expressionPosition posrange.PositionRange,
 	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
 ) (types.Operator, error)
 
-func NewSplitOperatorDefinition[T any](
-	generate SplittableGenerateFunc[T],
-	combine SplittableCombineFunc[T],
-	write SplittableWriterFactory[T],
-	read SplittableReaderFactory[T],
+func NewSplitOperatorFactory[T any](
+	generate SplitGenerateFunc[T],
+	combine SplitCombineFunc[T],
+	codec cache.SplitCodec[T],
+	funcDef FunctionOverRangeVectorDefinition,
+	funcId Function,
 ) SplittableOperatorFactory {
 	return func(
 		innerNode planning.Node,
@@ -83,14 +64,12 @@ func NewSplitOperatorDefinition[T any](
 		timeRange types.QueryTimeRange,
 		ranges []Range,
 		cacheKey string,
-		irCache cache.IntermediateResultsCache,
-		funcDef *FunctionOverRangeVectorDefinition,
+		irCache *cache.Cache,
 		expressionPosition posrange.PositionRange,
 		annotations *annotations.Annotations,
 		memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 		enableDelayedNameRemoval bool,
 	) (types.Operator, error) {
-		// Create the fully-typed operator with all type information preserved via closure
 		return NewSplittingFunctionOverRangeVector[T](
 			innerNode,
 			materializer,
@@ -98,11 +77,11 @@ func NewSplitOperatorDefinition[T any](
 			ranges,
 			cacheKey,
 			irCache,
-			*funcDef,
+			funcId,
+			funcDef,
 			generate,
 			combine,
-			write,
-			read,
+			codec,
 			expressionPosition,
 			annotations,
 			memoryConsumptionTracker,

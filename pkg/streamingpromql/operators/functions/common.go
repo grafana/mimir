@@ -110,8 +110,6 @@ type FunctionOverInstantVectorDefinition struct {
 }
 
 type FunctionOverRangeVectorDefinition struct {
-	Name string
-
 	// StepFunc is the function that computes an output sample for a single step.
 	StepFunc RangeVectorStepFunction
 

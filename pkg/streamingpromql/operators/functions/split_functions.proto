@@ -33,13 +33,14 @@ message SumOverTimeIntermediateListProto {
   repeated SumOverTimeIntermediateProto results = 1;
 }
 
-// CountOverTimeIntermediateProto is the protobuf representation of a single CountOverTimeIntermediate.
-message CountOverTimeIntermediateProto {
-  double count = 1;
-  bool hasValue = 2;
+// SingleSampleIntermediateProto is a generic protobuf representation for functions that track a single sample.
+message SingleSampleIntermediateProto {
+  double f = 1;
+  cortexpb.Histogram h = 2;
+  bool hasFloat = 3;
 }
 
-// CountOverTimeIntermediateListProto contains a list of CountOverTimeIntermediate results.
-message CountOverTimeIntermediateListProto {
-  repeated CountOverTimeIntermediateProto results = 1;
+// SingleSampleIntermediateListProto contains a list of single sample intermediate results.
+message SingleSampleIntermediateListProto {
+  repeated SingleSampleIntermediateProto results = 1;
 }

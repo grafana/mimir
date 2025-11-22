@@ -10,8 +10,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -24,11 +24,8 @@ func init() {
 	})
 }
 
-// SplittableFunctionCall wraps a range vector function call to split its computation into
-// fixed-interval blocks for intermediate result caching.
 type SplittableFunctionCall struct {
 	*SplittableFunctionCallDetails
-	// TODO: should splittable function call replace function call instead of wrapping it?
 	Inner planning.Node
 }
 
@@ -130,12 +127,12 @@ func (s *SplittableFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlan
 }
 
 type Materializer struct {
-	cache cache.IntermediateResultsCache
+	cache *cache.Cache
 }
 
 var _ planning.NodeMaterializer = &Materializer{}
 
-func NewMaterializer(cache cache.IntermediateResultsCache) *Materializer {
+func NewMaterializer(cache *cache.Cache) *Materializer {
 	return &Materializer{
 		cache: cache,
 	}
@@ -151,21 +148,15 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("SplittableFunctionCall node should only wrap FunctionCall nodes, got %T", s.Inner)
 	}
 
-	var funcDef functions.FunctionOverRangeVectorDefinition
-	switch innerFunctionCall.Function {
-	case functions.FUNCTION_SUM_OVER_TIME:
-		funcDef = functions.SumOverTime
-	case functions.FUNCTION_COUNT_OVER_TIME:
-		funcDef = functions.CountOverTime
-	default:
-		return nil, fmt.Errorf("function %v is not yet supported for split range vector optimization", innerFunctionCall.Function)
+	f, exists := functions.RegisteredFunctions[innerFunctionCall.Function]
+	if !exists {
+		// TODO: log function string
+		return nil, fmt.Errorf("function '%v' not found in functions list", innerFunctionCall.Function)
 	}
-
-	if funcDef.SplitOperatorFactory == nil {
+	if f.SplittableOperatorFactory == nil {
 		return nil, fmt.Errorf("function %v does not support query splitting", innerFunctionCall.Function)
 	}
 
-	// Convert protobuf SplitRange to functions.Range
 	ranges := make([]functions.Range, len(s.SplittableFunctionCallDetails.SplitRanges))
 	for i, sr := range s.SplittableFunctionCallDetails.SplitRanges {
 		ranges[i] = functions.Range{
@@ -175,14 +166,13 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		}
 	}
 
-	splitOp, err := funcDef.SplitOperatorFactory(
+	splitOp, err := f.SplittableOperatorFactory(
 		s.Inner.Child(0),
 		materializer,
 		timeRange,
 		ranges,
 		s.SplittableFunctionCallDetails.InnerNodeCacheKey,
 		m.cache,
-		&funcDef,
 		innerFunctionCall.ExpressionPosition(),
 		params.Annotations,
 		params.MemoryConsumptionTracker,

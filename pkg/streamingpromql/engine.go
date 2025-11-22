@@ -45,7 +45,7 @@ var tracer = otel.Tracer("pkg/streamingpromql")
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
-	var intermediateCache cache.IntermediateResultsCache
+	var intermediateCache *cache.Cache
 	if opts.InstantQuerySplitting.Enabled {
 		var err error
 		intermediateCache, err = cache.NewResultsCache(opts.InstantQuerySplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
@@ -57,7 +57,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 	return newEngineWithCache(opts, limitsProvider, metrics, planner, intermediateCache)
 }
 
-func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache cache.IntermediateResultsCache) (*Engine, error) {
+func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.Cache) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}

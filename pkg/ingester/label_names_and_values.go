@@ -162,7 +162,7 @@ func labelValuesCardinality(
 			if respSize < msgSizeThreshold {
 				continue
 			}
-			// Flush the response when reached message threshold.
+			// Finalize the response when reached message threshold.
 			if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
 				return err
 			}

@@ -112,11 +112,12 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, &errNotApplied{reason: "not an instant query"}
 	}
 
-	// TODO: add more functions
-	switch functionCall.GetFunction() {
-	case functions.FUNCTION_SUM_OVER_TIME, functions.FUNCTION_COUNT_OVER_TIME:
-	default:
-		return nil, &errNotApplied{reason: "function not supported for splitting"}
+	f, ok := functions.RegisteredFunctions[functionCall.GetFunction()]
+	if !ok {
+		return nil, &errNotApplied{reason: "function not found"}
+	}
+	if f.SplittableOperatorFactory == nil {
+		return nil, &errNotApplied{reason: "function not supported for query splitting"}
 	}
 
 	// TODO: not all splittable functions will have the first child as the range vector operator

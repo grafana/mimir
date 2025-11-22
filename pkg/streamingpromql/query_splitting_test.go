@@ -337,49 +337,6 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	verifyCacheStats(t, testCache, 7, 4, 3) // Total: 7 gets, 4 hits, 3 sets
 }
 
-func TestQuerySplitting_CountOverTime_UsesCache(t *testing.T) {
-	testCache, mimirEngine := setupEngineAndCache(t)
-
-	promStorage := promqltest.LoadedStorage(t, `
-		load 10m
-			test_metric{env="prod"} 0+1x60
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-
-	baseT := timestamp.Time(0)
-	expr := "count_over_time(test_metric[5h])"
-
-	// Run query at 6h
-	ts := baseT.Add(6 * time.Hour)
-
-	expected := &promql.Result{
-		Value: promql.Vector{
-			{
-				Metric: labels.FromStrings("env", "prod"),
-				T:      timestamp.FromTime(ts),
-				F:      30, // 30 samples in 5h range
-			},
-		},
-	}
-
-	// Run query first time (should populate cache)
-	result, ranges1 := executeQuery(t, mimirEngine, promStorage, expr, ts)
-	require.Equal(t, expected, result)
-	require.Equal(t, []storageQueryRange{
-		{mint: 1*hourInMs + 1, maxt: 6 * hourInMs},
-	}, ranges1)
-	verifyCacheStats(t, testCache, 2, 0, 2)
-
-	// Run same query again (should hit cache for aligned blocks)
-	result, ranges2 := executeQuery(t, mimirEngine, promStorage, expr, ts)
-	require.Equal(t, expected, result)
-	require.Equal(t, []storageQueryRange{
-		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
-		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
-	}, ranges2)
-	verifyCacheStats(t, testCache, 4, 2, 2) // 2 aligned blocks, both hit on second query
-}
-
 func TestQuerySplitting_VerifyStorageQueries(t *testing.T) {
 	_, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
@@ -444,9 +401,6 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 
-	// Verify plan structure includes CSE Duplicate nodes inside SplittableFunctionCall
-	// Query at 6h with 5h range produces 4 splits: head + 2 blocks + tail
-	// Format: (start_ms,end_ms]* where * indicates cacheable ranges (timestamps in ms since epoch)
 	expectedPlan := `
 		- BinaryExpression: LHS / RHS
 			- LHS: DeduplicateAndMerge
@@ -609,7 +563,7 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	verifyCacheStats(t, testCache, 3, 2, 1)                                                           // Q1: 1 get/1 set, Q2: 1 get/1 hit, Q3: 1 get/1 hit
 }
 
-func TestQuerySplitting_With3hRange_NoCompleteCacheable(t *testing.T) {
+func TestQuerySplitting_With3hRange_NoCacheableRanges(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -640,7 +594,7 @@ func TestQuerySplitting_With3hRange_NoCompleteCacheable(t *testing.T) {
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
-func TestQuerySplitting_With3hRangeAndOffset_NoCompleteCacheable(t *testing.T) {
+func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 	promStorage := promqltest.LoadedStorage(t, `
 		load 10m
@@ -677,7 +631,7 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCompleteCacheable(t *testing.T) {
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewIntermediateResultsCacheWithBackend(backend, log.NewNopLogger())
+	irCache := cache.NewResultsCacheWithBackend(backend, log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.InstantQuerySplitting.Enabled = true
@@ -770,7 +724,6 @@ func (c *testCacheBackend) SetMultiAsync(data map[string][]byte, _ time.Duration
 		c.items[key] = value
 	}
 }
-
 
 type wrappedQueryable struct {
 	inner    storage.Queryable
