@@ -28,14 +28,24 @@
 (import 'ruler-remote-evaluation.libsonnet') +
 (import 'continuous-test.libsonnet') +
 
+// Multi-zone write path support.
+(import 'multi-zone-distributor.libsonnet') +
+
+// Import autoscaling after other features because it overrides deployments,
+// but before multi-zone deployments because they build on this.
+(import 'autoscaling.libsonnet') +
+
 // Multi-zone support.
 (import 'multi-zone-common.libsonnet') +
-(import 'multi-zone-distributor.libsonnet') +
 (import 'multi-zone-ingester.libsonnet') +
 (import 'multi-zone-store-gateway.libsonnet') +
-
-// Import autoscaling after other features because it overrides deployments.
-(import 'autoscaling.libsonnet') +
+(import 'multi-zone-memcached.libsonnet') +
+(import 'multi-zone-querier.libsonnet') +
+(import 'multi-zone-query-frontend.libsonnet') +
+(import 'multi-zone-query-scheduler.libsonnet') +
+(import 'multi-zone-ruler.libsonnet') +
+(import 'multi-zone-ruler-remote-evaluation.libsonnet') +
+(import 'multi-zone-memberlist-bridge.libsonnet') +
 
 // Automated downscale of ingesters and store-gateways
 (import 'ingester-automated-downscale.libsonnet') +

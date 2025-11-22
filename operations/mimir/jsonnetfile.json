@@ -36,6 +36,15 @@
         }
       },
       "version": "e6aa01b8577b3cc4101f3d620f85e12511cee346"
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/jsonnet-libs/xtd.git",
+          "subdir": ""
+        }
+      },
+      "version": "master"
     }
   ],
   "legacyImports": true
