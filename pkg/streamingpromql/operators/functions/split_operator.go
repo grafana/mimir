@@ -4,38 +4,38 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Prometheus Authors
 
-package querysplitting
+package functions
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	promts "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
-	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// FunctionOverRangeVector performs range vector function calculation with intermediate result caching.
-type FunctionOverRangeVector struct {
+// SplittingFunctionOverRangeVector performs range vector function calculation with intermediate result caching.
+// T is the type of intermediate result produced by the function's generate step.
+type SplittingFunctionOverRangeVector[T any] struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Func                     functions.FunctionOverRangeVectorDefinition
+	Func                     FunctionOverRangeVectorDefinition
 	Annotations              *annotations.Annotations
 	metricNames              *operators.MetricNames
 	timeRange                types.QueryTimeRange
 	enableDelayedNameRemoval bool
 	expressionPosition       posrange.PositionRange
 	emitAnnotationFunc       types.EmitAnnotationFunc
-	seriesValidationFunc     functions.RangeVectorSeriesValidationFunction
+	seriesValidationFunc     RangeVectorSeriesValidationFunction
 
 	irCache cache.IntermediateResultsCache
 
@@ -43,34 +43,44 @@ type FunctionOverRangeVector struct {
 	materializer   *planning.Materializer
 	queryTimeRange types.QueryTimeRange
 	innerCacheKey  string
-	splitRanges    []SplitRange
+	splitRanges    []Range
 
-	splits []Split
+	generateFunc SplittableGenerateFunc[T]
+	combineFunc  SplittableCombineFunc[T]
+	writeFunc    SplittableWriterFactory[T]
+	readFunc     SplittableReaderFactory[T]
+
+	splits []Split[T]
 	// seriesToSplits is ordered the same way as SeriesMetadata
-	seriesToSplits   [][]SplitSeries
-	currentSeriesIdx int
+	seriesToSplits     [][]SplitSeries
+	currentSeriesIdx   int
+	splitResultGetters []*ResultGetter[T]
 }
 
-var _ types.InstantVectorOperator = &FunctionOverRangeVector{}
+var _ types.InstantVectorOperator = (*SplittingFunctionOverRangeVector[any])(nil)
 
-func NewFunctionOverRangeVector(
+func NewSplittingFunctionOverRangeVector[T any](
 	innerNode planning.Node,
 	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
-	ranges []SplitRange,
+	ranges []Range,
 	cacheKey string,
 	irCache cache.IntermediateResultsCache,
-	funcDef functions.FunctionOverRangeVectorDefinition,
+	funcDef FunctionOverRangeVectorDefinition,
+	generateFunc SplittableGenerateFunc[T],
+	combineFunc SplittableCombineFunc[T],
+	writeFunc SplittableWriterFactory[T],
+	readFunc SplittableReaderFactory[T],
 	expressionPosition posrange.PositionRange,
 	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
-) (*FunctionOverRangeVector, error) {
+) (*SplittingFunctionOverRangeVector[T], error) {
 	if !timeRange.IsInstant {
-		return nil, fmt.Errorf("FunctionOverRangeVector only supports instant queries")
+		return nil, fmt.Errorf("SplittingFunctionOverRangeVector only supports instant queries")
 	}
 
-	o := &FunctionOverRangeVector{
+	o := &SplittingFunctionOverRangeVector[T]{
 		innerNode:                innerNode,
 		materializer:             materializer,
 		queryTimeRange:           timeRange,
@@ -78,6 +88,10 @@ func NewFunctionOverRangeVector(
 		innerCacheKey:            cacheKey,
 		irCache:                  irCache,
 		Func:                     funcDef,
+		generateFunc:             generateFunc,
+		combineFunc:              combineFunc,
+		writeFunc:                writeFunc,
+		readFunc:                 readFunc,
 		Annotations:              annotations,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		expressionPosition:       expressionPosition,
@@ -98,133 +112,41 @@ func NewFunctionOverRangeVector(
 	return o, nil
 }
 
-func (m *FunctionOverRangeVector) ExpressionPosition() posrange.PositionRange {
+func (m *SplittingFunctionOverRangeVector[T]) ExpressionPosition() posrange.PositionRange {
 	return m.expressionPosition
 }
 
-func (m *FunctionOverRangeVector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	var err error
-	var metadata []types.SeriesMetadata
-	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
-	if err != nil {
-		return nil, err
-	}
-
-	if m.metricNames != nil {
-		m.metricNames.CaptureMetricNames(metadata)
-	}
-
-	if m.Func.SeriesMetadataFunction.Func != nil {
-		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
-	}
-
-	return metadata, nil
-}
-
-func (m *FunctionOverRangeVector) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	if m.currentSeriesIdx >= len(m.seriesToSplits) {
-		return types.InstantVectorSeriesData{}, types.EOS
-	}
-
-	defer func() {
-		m.currentSeriesIdx++
-	}()
-
-	splitSeriesList := m.seriesToSplits[m.currentSeriesIdx]
-
-	var pieces []cache.IntermediateResult
-	for _, splitSeries := range splitSeriesList {
-		split := m.splits[splitSeries.SplitIdx]
-		results, err := split.GetResultsAtIdx(ctx, splitSeries.SplitLocalIdx)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-		pieces = append(pieces, results...)
-	}
-
-	f, hasFloat, h, err := m.Func.CombineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
-	if err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
-
-	data := types.InstantVectorSeriesData{}
-
-	stepT := m.queryTimeRange.StartT
-
-	if hasFloat {
-		data.Floats, err = types.FPointSlicePool.Get(1, m.MemoryConsumptionTracker)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-		data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
-	}
-	if h != nil {
-		data.Histograms, err = types.HPointSlicePool.Get(1, m.MemoryConsumptionTracker)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-		data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
-	}
-
-	// Validation after single step, won't work for range queries if we supported them for splitting.
-	if m.seriesValidationFunc != nil {
-		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotationFunc)
-	}
-
-	return data, nil
-}
-
-func (m *FunctionOverRangeVector) emitAnnotation(generator types.AnnotationGenerator) {
-	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
-	pos := m.innerNode.ExpressionPosition()
-
-	m.Annotations.Add(generator(metricName, pos))
-}
-
-func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (m *SplittingFunctionOverRangeVector[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
 	m.splits, err = m.createSplits(ctx)
 	if err != nil {
 		return err
 	}
-	for _, split := range m.splits {
+	m.splitResultGetters = make([]*ResultGetter[T], len(m.splits))
+	for i, split := range m.splits {
 		err = split.Prepare(ctx, params)
 		if err != nil {
 			return err
 		}
+
+		m.splitResultGetters[i] = NewResultGetter[T](split.NextSeries)
 	}
 	return nil
-}
-
-func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
-	for _, split := range m.splits {
-		if err := split.Finalize(ctx); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (m *FunctionOverRangeVector) Close() {
-	for _, split := range m.splits {
-		split.Close()
-	}
 }
 
 // createSplits creates splits for the given time range, checking for cache entries and merging contiguous uncached
 // split ranges to create uncached splits.
 // Uses pre-computed split ranges from the optimization pass.
-func (m *FunctionOverRangeVector) createSplits(ctx context.Context) ([]Split, error) {
-	var splits []Split
+func (m *SplittingFunctionOverRangeVector[T]) createSplits(ctx context.Context) ([]Split[T], error) {
+	var splits []Split[T]
 	var currentUncachedStart int64
-	var currentUncachedRanges []SplitRange
+	var currentUncachedRanges []Range
 
 	// Iterate through the pre-computed ranges
 	for _, splitRange := range m.splitRanges {
 		// For cacheable (aligned) ranges, check the cache
 		if splitRange.Cacheable {
-			cacheEntry, found, err := m.irCache.Get(ctx, m.Func.Name, m.innerCacheKey, splitRange.Start, splitRange.End)
+			cacheEntry, found, err := m.irCache.NewReadEntry(ctx, m.Func.Name, m.innerCacheKey, splitRange.Start, splitRange.End)
 			if err != nil {
 				return nil, err
 			}
@@ -255,7 +177,7 @@ func (m *FunctionOverRangeVector) createSplits(ctx context.Context) ([]Split, er
 		// Not found in cache or not cacheable - add to current uncached ranges
 		if currentUncachedRanges == nil {
 			currentUncachedStart = splitRange.Start
-			currentUncachedRanges = []SplitRange{splitRange}
+			currentUncachedRanges = []Range{splitRange}
 		} else {
 			currentUncachedRanges = append(currentUncachedRanges, splitRange)
 		}
@@ -280,7 +202,7 @@ func (m *FunctionOverRangeVector) createSplits(ctx context.Context) ([]Split, er
 	return splits, nil
 }
 
-func (m *FunctionOverRangeVector) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
+func (m *SplittingFunctionOverRangeVector[T]) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
 	subRange := time.Duration(end-start) * time.Millisecond
 
 	overrideTimeParams := types.TimeRangeParams{
@@ -306,7 +228,26 @@ func (m *FunctionOverRangeVector) materializeOperatorForTimeRange(start int64, e
 	return innerOperator, nil
 }
 
-func (m *FunctionOverRangeVector) mergeSplitsMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]SplitSeries, error) {
+func (m *SplittingFunctionOverRangeVector[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	var err error
+	var metadata []types.SeriesMetadata
+	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	if m.metricNames != nil {
+		m.metricNames.CaptureMetricNames(metadata)
+	}
+
+	if m.Func.SeriesMetadataFunction.Func != nil {
+		return m.Func.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
+	}
+
+	return metadata, nil
+}
+
+func (m *SplittingFunctionOverRangeVector[T]) mergeSplitsMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]SplitSeries, error) {
 	if len(m.splits) == 0 {
 		return nil, nil, nil
 	}
@@ -378,11 +319,85 @@ func (m *FunctionOverRangeVector) mergeSplitsMetadata(ctx context.Context, match
 	return mergedMetadata, seriesToSplits, nil
 }
 
-type Split interface {
+func (m *SplittingFunctionOverRangeVector[T]) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	if m.currentSeriesIdx >= len(m.seriesToSplits) {
+		return types.InstantVectorSeriesData{}, types.EOS
+	}
+
+	defer func() {
+		m.currentSeriesIdx++
+	}()
+
+	splitSeriesList := m.seriesToSplits[m.currentSeriesIdx]
+
+	var pieces []T
+	for _, splitSeries := range splitSeriesList {
+		results, err := m.splitResultGetters[splitSeries.SplitIdx].GetResultsAtIdx(ctx, splitSeries.SplitLocalIdx)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+		pieces = append(pieces, results...)
+	}
+
+	f, hasFloat, h, err := m.combineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	data := types.InstantVectorSeriesData{}
+
+	stepT := m.queryTimeRange.StartT
+
+	if hasFloat {
+		data.Floats, err = types.FPointSlicePool.Get(1, m.MemoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+		data.Floats = append(data.Floats, promql.FPoint{T: stepT, F: f})
+	}
+	if h != nil {
+		data.Histograms, err = types.HPointSlicePool.Get(1, m.MemoryConsumptionTracker)
+		if err != nil {
+			return types.InstantVectorSeriesData{}, err
+		}
+		data.Histograms = append(data.Histograms, promql.HPoint{T: stepT, H: h})
+	}
+
+	// Validation after single step, won't work for range queries if we supported them for splitting.
+	if m.seriesValidationFunc != nil {
+		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotationFunc)
+	}
+
+	return data, nil
+}
+
+func (m *SplittingFunctionOverRangeVector[T]) emitAnnotation(generator types.AnnotationGenerator) {
+	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
+	pos := m.innerNode.ExpressionPosition()
+
+	m.Annotations.Add(generator(metricName, pos))
+}
+
+func (m *SplittingFunctionOverRangeVector[T]) Finalize(ctx context.Context) error {
+	for _, split := range m.splits {
+		if err := split.Finalize(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *SplittingFunctionOverRangeVector[T]) Close() {
+	for _, split := range m.splits {
+		split.Close()
+	}
+}
+
+type Split[T any] interface {
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
-	// TODO: just return merged result instead of slices of results?
-	GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error)
+	NextSeries(ctx context.Context) ([]T, error)
 	Finalize(ctx context.Context) error
 	Close()
 }
@@ -392,63 +407,75 @@ type SplitSeries struct {
 	SplitLocalIdx int
 }
 
-type CachedSplit struct {
-	cachedResults cache.CacheReadEntry
-	parent        *FunctionOverRangeVector
+type CachedSplit[T any] struct {
+	cachedResults cache.ReadEntry
+	parent        *SplittingFunctionOverRangeVector[T]
+
+	resultReader SplittableReader[T]
 }
 
-func NewCachedSplit(cachedResults cache.CacheReadEntry, parent *FunctionOverRangeVector) *CachedSplit {
-	return &CachedSplit{
+func NewCachedSplit[T any](cachedResults cache.ReadEntry, parent *SplittingFunctionOverRangeVector[T]) *CachedSplit[T] {
+	return &CachedSplit[T]{
 		cachedResults: cachedResults,
 		parent:        parent,
 	}
 }
 
-func (p *CachedSplit) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (p *CachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return nil
 }
 
-func (c *CachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	return c.cachedResults.ReadSeriesMetadata(c.parent.MemoryConsumptionTracker)
-}
-
-func (c *CachedSplit) GetResultsAtIdx(ctx context.Context, splitLocalIdx int) ([]cache.IntermediateResult, error) {
-	result, err := c.cachedResults.ReadResultAtIdx(splitLocalIdx)
+func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	// TODO: is matchers important here?
+	metadata, err := c.cachedResults.ReadSeriesMetadata(c.parent.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
-	return []cache.IntermediateResult{result}, nil
+
+	c.resultReader, err = c.parent.readFunc(c.cachedResults.ResultsReader())
+	if err != nil {
+		return nil, err
+	}
+
+	return metadata, nil
 }
 
-func (c *CachedSplit) Finalize(ctx context.Context) error {
+func (c *CachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
+	result, err := c.resultReader.ReadNextResult()
+	if err != nil {
+		return nil, err
+	}
+
+	return []T{result}, nil
+}
+
+func (c *CachedSplit[T]) Finalize(ctx context.Context) error {
 	return nil
 }
 
-func (c *CachedSplit) Close() {
+func (c *CachedSplit[T]) Close() {
 }
 
-type UncachedSplit struct {
-	ranges           []SplitRange
-	operator         types.RangeVectorOperator
-	offsetFromStartT int64
+type UncachedSplit[T any] struct {
+	ranges   []Range
+	operator types.RangeVectorOperator
 
-	parent *FunctionOverRangeVector
+	parent *SplittingFunctionOverRangeVector[T]
 
-	cacheWriteEntries []cache.CacheWriteEntry
-	writtenToCache    bool
+	cacheWriteEntries []cache.WriteEntry
+	finalized         bool
 
-	seriesCount   int
-	resultBuffer  map[int][]cache.IntermediateResult
-	nextSeriesIdx int
+	resultWriters []SplittableWriter[T]
+	resultGetter  *ResultGetter[T]
 }
 
-func NewUncachedSplit(
+func NewUncachedSplit[T any](
 	ctx context.Context,
-	ranges []SplitRange,
+	ranges []Range,
 	operator types.RangeVectorOperator,
-	parent *FunctionOverRangeVector,
-) (*UncachedSplit, error) {
-	cacheEntries := make([]cache.CacheWriteEntry, len(ranges))
+	parent *SplittingFunctionOverRangeVector[T],
+) (*UncachedSplit[T], error) {
+	cacheEntries := make([]cache.WriteEntry, len(ranges))
 	var err error
 
 	for i, splitRange := range ranges {
@@ -461,49 +488,127 @@ func NewUncachedSplit(
 			return nil, err
 		}
 	}
-	return &UncachedSplit{
+
+	return &UncachedSplit[T]{
 		ranges:   ranges,
 		operator: operator,
 		parent:   parent,
 
 		cacheWriteEntries: cacheEntries,
-		writtenToCache:    false,
+		finalized:         false,
 	}, nil
 }
 
-func (p *UncachedSplit) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (p *UncachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return p.operator.Prepare(ctx, params)
 }
 
-func (p *UncachedSplit) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+// TODO: is it good to release series metadata when this returns in the caller (split operator)? if we flush multiple ranges, each would have dupe protos in memory at the same time if we cannot stream to cache
+// TODO: not all ranges will have the same metadata, if we use a single shared metadata for all ranges in the split then it could inflate cache entry size unnecessarily
+func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	seriesMetadata, err := p.operator.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO: is it good to release series metadata when this returns in the caller (split operator)? if we flush multiple ranges, each would have dupe protos in memory at the same time if we cannot stream to cache
-	// TODO: not all ranges will have the same metadata, if we use a single shared metadata for all ranges in the split then it could inflate cache entry size unnecessarily
+	p.resultWriters = make([]SplittableWriter[T], len(p.ranges))
+
 	for rangeIdx, splitRange := range p.ranges {
+		cacheEntry := p.cacheWriteEntries[rangeIdx]
 		if !splitRange.Cacheable {
 			continue
 		}
 
-		err = p.cacheWriteEntries[rangeIdx].WriteSeriesMetadata(seriesMetadata)
+		err = cacheEntry.WriteSeriesMetadata(seriesMetadata)
+		if err != nil {
+			return nil, err
+		}
+
+		// Init results writer (setting up for calculating results)
+		p.resultWriters[rangeIdx], err = p.parent.writeFunc(cacheEntry.ResultsWriter())
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	p.seriesCount = len(seriesMetadata)
-
 	return seriesMetadata, nil
 }
 
-func (p *UncachedSplit) GetResultsAtIdx(ctx context.Context, splitSeriesIdx int) ([]cache.IntermediateResult, error) {
-	if splitSeriesIdx >= p.seriesCount {
-		return nil, fmt.Errorf("series index %d out of range (have %d series)", splitSeriesIdx, p.seriesCount)
+func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
+	if err := p.operator.NextSeries(ctx); err != nil {
+		return nil, err
+	}
+	step, err := p.operator.NextStepSamples(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]T, len(p.ranges))
+	for rangeIdx, splitRange := range p.ranges {
+		rangeStep, err := step.SubStep(splitRange.Start, splitRange.End)
+		if err != nil {
+			return nil, err
+		}
+
+		result, err := p.parent.generateFunc(rangeStep, []types.ScalarData{}, p.parent.emitAnnotationFunc, p.parent.MemoryConsumptionTracker)
+		if err != nil {
+			return nil, err
+		}
+		results[rangeIdx] = result
+
+		if splitRange.Cacheable {
+			if err := p.resultWriters[rangeIdx].WriteNextResult(result); err != nil {
+				return nil, fmt.Errorf("error writing results to cache: %w", err)
+			}
+		}
+	}
+	return results, nil
+}
+
+func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
+	if p.finalized {
+		return nil
 	}
 
+	for rangeIdx, splitRange := range p.ranges {
+		if !splitRange.Cacheable {
+			continue
+		}
+
+		// Flush the writer to ensure all results are written to the cache entry
+		if err := p.resultWriters[rangeIdx].Flush(); err != nil {
+			return err
+		}
+
+		if err := p.cacheWriteEntries[rangeIdx].Finalize(); err != nil {
+			return err
+		}
+	}
+
+	p.finalized = true
+	return nil
+}
+
+func (p *UncachedSplit[T]) Close() {
+	if p.operator != nil {
+		p.operator.Close()
+	}
+}
+
+type ResultGetter[T any] struct {
+	resultBuffer   map[int][]T
+	nextSeriesIdx  int
+	nextSeriesFunc func(ctx context.Context) ([]T, error)
+}
+
+func NewResultGetter[T any](nextSeriesFunc func(ctx context.Context) ([]T, error)) *ResultGetter[T] {
+	return &ResultGetter[T]{
+		resultBuffer:   make(map[int][]T),
+		nextSeriesIdx:  0,
+		nextSeriesFunc: nextSeriesFunc,
+	}
+}
+
+func (p *ResultGetter[T]) GetResultsAtIdx(ctx context.Context, splitSeriesIdx int) ([]T, error) {
 	// if series is buffered
 	if splitSeriesIdx < p.nextSeriesIdx {
 		result, ok := p.resultBuffer[splitSeriesIdx]
@@ -516,79 +621,18 @@ func (p *UncachedSplit) GetResultsAtIdx(ctx context.Context, splitSeriesIdx int)
 	}
 
 	// buffer series results before the requested series
-	for ; splitSeriesIdx < p.seriesCount && p.nextSeriesIdx < splitSeriesIdx; {
-		results, err := p.resultsForNextSeries(ctx)
+	for ; p.nextSeriesIdx < splitSeriesIdx; {
+		results, err := p.nextSeriesFunc(ctx)
 		if err != nil {
 			return nil, err
 		}
 		p.resultBuffer[p.nextSeriesIdx-1] = results
 	}
 
-	if splitSeriesIdx >= p.seriesCount {
-		// this shouldn't happen
-		return nil, fmt.Errorf("could not get results for requested series at index %d, unexpectedly out of range (have %d series)", splitSeriesIdx, p.seriesCount)
-	}
-
-	return p.resultsForNextSeries(ctx)
-}
-
-// resultsForNextSeries will calculate and cache the result for the next series
-func (p *UncachedSplit) resultsForNextSeries(ctx context.Context) ([]cache.IntermediateResult, error) {
-	if err := p.operator.NextSeries(ctx); err != nil {
-		return nil, err
-	}
-	step, err := p.operator.NextStepSamples(ctx)
+	result, err := p.nextSeriesFunc(ctx)
 	if err != nil {
 		return nil, err
 	}
-	results := make([]cache.IntermediateResult, len(p.ranges))
-	for rangeIdx, splitRange := range p.ranges {
-		rangeStep, err := step.SubStep(splitRange.Start, splitRange.End)
-		if err != nil {
-			return nil, err
-		}
-
-		result, err := p.parent.Func.GenerateFunc(rangeStep, []types.ScalarData{}, p.parent.emitAnnotationFunc, p.parent.MemoryConsumptionTracker)
-		if err != nil {
-			return nil, err
-		}
-		results[rangeIdx] = result
-
-		if splitRange.Cacheable {
-			// TODO: should we return error here or silently fail?
-			err = p.cacheWriteEntries[rangeIdx].WriteNextResult(result)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
 	p.nextSeriesIdx++
-	return results, nil
-}
-
-func (p *UncachedSplit) Finalize(ctx context.Context) error {
-	if p.writtenToCache {
-		return nil
-	}
-
-	for rangeIdx, splitRange := range p.ranges {
-		if !splitRange.Cacheable {
-			continue
-		}
-
-		// TODO: should we return error here or silently fail?
-		err := p.cacheWriteEntries[rangeIdx].Finalize()
-		if err != nil {
-			return err
-		}
-	}
-
-	p.writtenToCache = true
-	return nil
-}
-
-func (p *UncachedSplit) Close() {
-	if p.operator != nil {
-		p.operator.Close()
-	}
+	return result, nil
 }

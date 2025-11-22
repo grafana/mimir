@@ -7,7 +7,6 @@ package functions
 
 import (
 	"fmt"
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -23,8 +22,6 @@ import (
 var CountOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction: DropSeriesName,
 	StepFunc:               countOverTime,
-	GenerateFunc:           countOverTimeGenerate,
-	CombineFunc:            countOverTimeCombine,
 }
 
 func countOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryTimeRange, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -36,31 +33,6 @@ func countOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ type
 	}
 
 	return float64(fPointCount + hPointCount), true, nil, nil
-}
-
-func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (cache.IntermediateResult, error) {
-	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
-	if err != nil {
-		return cache.IntermediateResult{}, err
-	}
-	// Store count in SumF field (reusing sum_over_time structure for simplicity)
-	// TODO: improve polymorphism so we don't reuse the same struct for different functions
-	return cache.IntermediateResult{SumOverTime: cache.SumOverTimeIntermediate{SumF: count, HasFloat: hasValue}}, nil
-}
-
-func countOverTimeCombine(pieces []cache.IntermediateResult, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
-	totalCount := 0.0
-	hasValue := false
-
-	for _, ir := range pieces {
-		p := ir.SumOverTime
-		if p.HasFloat {
-			hasValue = true
-			totalCount += p.SumF
-		}
-	}
-
-	return totalCount, hasValue, nil, nil
 }
 
 var LastOverTime = FunctionOverRangeVectorDefinition{
@@ -315,8 +287,6 @@ func minOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 var SumOverTime = FunctionOverRangeVectorDefinition{
 	SeriesMetadataFunction:         DropSeriesName,
 	StepFunc:                       sumOverTime,
-	GenerateFunc:                   sumOverTimeGenerate,
-	CombineFunc:                    sumOverTimeCombine,
 	NeedsSeriesNamesForAnnotations: true,
 }
 
@@ -342,47 +312,6 @@ func sumOverTime(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.
 
 	h, err := sumHistograms(hHead, hTail, emitAnnotation)
 	return 0, false, h, err
-}
-
-func sumOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (cache.IntermediateResult, error) {
-	// Query time range isn't used for sum over time
-	f, hasFloat, h, err := sumOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
-	if err != nil {
-		return cache.IntermediateResult{}, err
-	}
-	return cache.IntermediateResult{SumOverTime: cache.SumOverTimeIntermediate{SumF: f, HasFloat: hasFloat, SumH: h}}, nil
-}
-
-func sumOverTimeCombine(pieces []cache.IntermediateResult, emitAnnotation types.EmitAnnotationFunc, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
-	haveFloats := false
-	sumF, c := 0.0, 0.0
-	var sumH *histogram.FloatHistogram
-
-	for _, ir := range pieces {
-		p := ir.SumOverTime
-		if p.HasFloat {
-			haveFloats = true
-			sumF, c = floats.KahanSumInc(p.SumF, sumF, c)
-		}
-		if p.SumH != nil {
-			if sumH == nil {
-				sumH = p.SumH.Copy()
-			} else {
-				if _, _, _, err := sumH.Add(p.SumH); err != nil {
-					// TODO: handle annotations
-					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
-					return 0, false, nil, err
-				}
-			}
-		}
-	}
-
-	if haveFloats && sumH != nil {
-		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
-		return 0, false, nil, nil
-	}
-
-	return sumF, haveFloats, sumH, nil
 }
 
 func sumFloats(head, tail []promql.FPoint) float64 {

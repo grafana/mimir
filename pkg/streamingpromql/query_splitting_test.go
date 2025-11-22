@@ -4,10 +4,12 @@ package streamingpromql
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	dskitcache "github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -15,14 +17,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/dskit/user"
-
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
@@ -108,7 +106,7 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
-		{mint: 6 * hourInMs, maxt: 6 * hourInMs},      // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
+		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
 	}, ranges2)
 	verifyCacheStats(t, testCache, 4, 2, 2) // 2 aligned blocks, both hit on second query
 
@@ -133,7 +131,7 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 10*minuteInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h10m, 2h-1ms] -> storage [1h10m+1ms, 2h-1ms]
-		{mint: 6 * hourInMs, maxt: 6*hourInMs + 10*minuteInMs},        // Tail: (6h-1ms, 6h10m] -> storage [6h, 6h10m]
+		{mint: 6 * hourInMs, maxt: 6*hourInMs + 10*minuteInMs},       // Tail: (6h-1ms, 6h10m] -> storage [6h, 6h10m]
 	}, ranges3)
 	verifyCacheStats(t, testCache, 6, 4, 2) // Both aligned blocks are cache hits
 
@@ -157,8 +155,8 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	result, ranges4 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
-		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1},  // Head: (2h, 4h-1ms] -> storage [2h+1ms, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 7 * hourInMs},       // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
+		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1ms, 4h-1ms]
+		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges4)
 	verifyCacheStats(t, testCache, 7, 5, 2) // 1 aligned block checked, 1 hit (4h-1ms, 6h-1ms]
 
@@ -184,8 +182,8 @@ func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	result, ranges5 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
-		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1},     // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},            // Merged uncached: (6h-1ms, 8h20m] -> storage [6h, 8h20m]
+		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
+		{mint: 6 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},       // Merged uncached: (6h-1ms, 8h20m] -> storage [6h, 8h20m]
 	}, ranges5)
 	// Cache stats: Q1: 2 gets (miss), 2 sets | Q2: 2 gets/hits | Q3: 2 gets/hits | Q4: 1 get/hit | Q5: 2 gets, 1 hit, 1 set
 	verifyCacheStats(t, testCache, 9, 6, 3) // Total: 9 gets, 6 hits, 3 sets
@@ -252,7 +250,7 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
-		{mint: 6 * hourInMs, maxt: 6 * hourInMs},      // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
+		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
 	}, ranges2)
 	verifyCacheStats(t, testCache, 4, 2, 2) // 2 aligned blocks, both hit on second query
 
@@ -290,8 +288,8 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	result, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
-		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1},  // Head: (2h, 4h-1ms] -> storage [2h+1ms, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 7 * hourInMs},       // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
+		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1ms, 4h-1ms]
+		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges3)
 	verifyCacheStats(t, testCache, 5, 3, 2) // 1 aligned block checked, 1 hit (4h-1ms, 6h-1ms]
 
@@ -332,8 +330,8 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	result, ranges4 := executeQuery(t, mimirEngine, promStorage, expr, ts)
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
-		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1},  // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},         // Merged uncached: (6h-1ms, 8h20m] -> storage [6h, 8h20m]
+		{mint: 3*hourInMs + 20*minuteInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h20m, 4h-1ms] -> storage [3h20m+1ms, 4h-1ms]
+		{mint: 6 * hourInMs, maxt: 8*hourInMs + 20*minuteInMs},       // Merged uncached: (6h-1ms, 8h20m] -> storage [6h, 8h20m]
 	}, ranges4)
 	// Cache stats: Q1: 2 gets (miss), 2 sets | Q2: 2 gets/hits | Q3: 1 get/hit | Q4: 2 gets, 1 hit, 1 set
 	verifyCacheStats(t, testCache, 7, 4, 3) // Total: 7 gets, 4 hits, 3 sets
@@ -377,7 +375,7 @@ func TestQuerySplitting_CountOverTime_UsesCache(t *testing.T) {
 	require.Equal(t, expected, result)
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 2*hourInMs - 1}, // Head: (1h, 2h-1ms] -> storage [1h+1ms, 2h-1ms]
-		{mint: 6 * hourInMs, maxt: 6 * hourInMs},      // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
+		{mint: 6 * hourInMs, maxt: 6 * hourInMs},     // Tail: (6h-1ms, 6h] -> storage [6h, 6h]
 	}, ranges2)
 	verifyCacheStats(t, testCache, 4, 2, 2) // 2 aligned blocks, both hit on second query
 }
@@ -392,13 +390,14 @@ func TestQuerySplitting_VerifyStorageQueries(t *testing.T) {
 
 	baseT := timestamp.Time(0)
 	expr := "sum_over_time(test_metric[5h])"
-	ctx := context.Background()
+	ctx := user.InjectOrgID(context.Background(), "test-user")
 
 	//  Query 1 at 6h: all uncached, merges into single storage query
 	wrapped1, ranges1 := trackRanges(promStorage)
 	q1, err := mimirEngine.NewInstantQuery(ctx, wrapped1, nil, expr, baseT.Add(6*time.Hour))
 	require.NoError(t, err)
-	q1.Exec(ctx)
+	result1 := q1.Exec(ctx)
+	require.NoError(t, result1.Err)
 	q1.Close()
 	require.Equal(t, []storageQueryRange{
 		{mint: 1*hourInMs + 1, maxt: 6 * hourInMs},
@@ -409,11 +408,12 @@ func TestQuerySplitting_VerifyStorageQueries(t *testing.T) {
 	wrapped2, ranges2 := trackRanges(promStorage)
 	q2, err := mimirEngine.NewInstantQuery(ctx, wrapped2, nil, expr, baseT.Add(8*time.Hour))
 	require.NoError(t, err)
-	q2.Exec(ctx)
+	result2 := q2.Exec(ctx)
+	require.NoError(t, result2.Err)
 	q2.Close()
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h, 4h-1ms] -> storage [3h+1, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8 * hourInMs},      // Tail: (6h-1ms, 8h] -> storage [6h, 8h]
+		{mint: 6 * hourInMs, maxt: 8 * hourInMs},     // Tail: (6h-1ms, 8h] -> storage [6h, 8h]
 	}, *ranges2)
 }
 
@@ -429,7 +429,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	baseT := timestamp.Time(0)
 	expr := "sum_over_time(test_metric[5h]) / count_over_time(test_metric[5h])"
 	ts := baseT.Add(6 * time.Hour)
-	ctx := context.Background()
+	ctx := user.InjectOrgID(context.Background(), "test-user")
 
 	// Create planner to capture plan structure
 	opts := NewTestEngineOpts()
@@ -513,7 +513,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	// Verify CSE with partial cache: only 2 storage queries (not 4), one for each uncached range
 	require.Equal(t, []storageQueryRange{
 		{mint: 3*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h, 4h-1ms] -> storage [3h+1, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8 * hourInMs},      // Tail: (6h-1ms, 8h] -> storage [6h, 8h]
+		{mint: 6 * hourInMs, maxt: 8 * hourInMs},     // Tail: (6h-1ms, 8h] -> storage [6h, 8h]
 	}, *ranges)
 }
 
@@ -546,7 +546,7 @@ func TestQuerySplitting_WithOffset_CacheAlignment(t *testing.T) {
 	result1b, ranges1b := executeQuery(t, mimirEngine, promStorage, exprNoOffset, baseT.Add(7*time.Hour))
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 7 * hourInMs},      // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
+		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges1b)
 	require.Equal(t, result1b.Value, result1.Value)
 	verifyCacheStats(t, testCache, 2, 1, 1) // 1 cache hit on the block
@@ -591,7 +591,7 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	result2, ranges2 := executeQuery(t, mimirEngine, promStorage, exprNoModifier, baseT.Add(7*time.Hour))
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 7 * hourInMs},      // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
+		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges2)
 	require.Equal(t, 825.0, result2.Value.(promql.Vector)[0].F)
 	require.Equal(t, result1.Value.(promql.Vector)[0].F, result2.Value.(promql.Vector)[0].F)
@@ -602,11 +602,11 @@ func TestQuerySplitting_WithAtModifier_CacheAlignment(t *testing.T) {
 	result3, ranges3 := executeQuery(t, mimirEngine, promStorage, expr, baseT.Add(10*time.Hour))
 	require.Equal(t, []storageQueryRange{
 		{mint: 2*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (2h, 4h-1ms] -> storage [2h+1, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 7 * hourInMs},      // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
+		{mint: 6 * hourInMs, maxt: 7 * hourInMs},     // Tail: (6h-1ms, 7h] -> storage [6h, 7h]
 	}, ranges3)
 	require.Equal(t, 825.0, result3.Value.(promql.Vector)[0].F)
 	require.Equal(t, timestamp.FromTime(baseT.Add(10*time.Hour)), result3.Value.(promql.Vector)[0].T) // @ modifier fixes result timestamp
-	verifyCacheStats(t, testCache, 3, 2, 1) // Q1: 1 get/1 set, Q2: 1 get/1 hit, Q3: 1 get/1 hit
+	verifyCacheStats(t, testCache, 3, 2, 1)                                                           // Q1: 1 get/1 set, Q2: 1 get/1 hit, Q3: 1 get/1 hit
 }
 
 func TestQuerySplitting_With3hRange_NoCompleteCacheable(t *testing.T) {
@@ -675,8 +675,9 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCompleteCacheable(t *testing.T) {
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
-func setupEngineAndCache(t *testing.T) (*testIntermediateResultsCache, promql.QueryEngine) {
-	testCache := newTestIntermediateResultsCache(t)
+func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
+	backend := newTestCacheBackend()
+	irCache := cache.NewIntermediateResultsCacheWithBackend(backend, log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.InstantQuerySplitting.Enabled = true
@@ -685,14 +686,10 @@ func setupEngineAndCache(t *testing.T) (*testIntermediateResultsCache, promql.Qu
 	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner, testCache)
+	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 
-	t.Cleanup(func() {
-		testCache.Close()
-	})
-
-	return testCache, mimirEngine
+	return backend, mimirEngine
 }
 
 func runInstantQuery(t *testing.T, eng promql.QueryEngine, storage storage.Storage, expr string, ts time.Time) *promql.Result {
@@ -714,10 +711,10 @@ func executeQuery(t *testing.T, engine promql.QueryEngine, storage storage.Stora
 	return result, *ranges
 }
 
-func verifyCacheStats(t *testing.T, cache *testIntermediateResultsCache, expectedGets, expectedHits, expectedSets int) {
-	require.Equal(t, expectedGets, cache.gets, "Expected %d cache gets, got %d", expectedGets, cache.gets)
-	require.Equal(t, expectedHits, cache.hits, "Expected %d cache hits, got %d", expectedHits, cache.hits)
-	require.Equal(t, expectedSets, cache.sets, "Expected %d cache sets, got %d", expectedSets, cache.sets)
+func verifyCacheStats(t *testing.T, backend *testCacheBackend, expectedGets, expectedHits, expectedSets int) {
+	require.Equal(t, expectedGets, backend.gets, "Expected %d cache gets, got %d", expectedGets, backend.gets)
+	require.Equal(t, expectedHits, backend.hits, "Expected %d cache hits, got %d", expectedHits, backend.hits)
+	require.Equal(t, expectedSets, backend.sets, "Expected %d cache sets, got %d", expectedSets, backend.sets)
 }
 
 type storageQueryRange struct {
@@ -739,152 +736,41 @@ func trackRanges(promStorage storage.Storage) (*wrappedQueryable, *[]storageQuer
 	}, ranges
 }
 
-type testIntermediateResultsCache struct {
-	data map[string]cache.CachedSeries // Store proto like real cache
+type testCacheBackend struct {
+	items map[string][]byte
+
 	gets int
 	hits int
 	sets int
-	t    *testing.T
 }
 
-// newTestIntermediateResultsCache creates a new test cache instance.
-func newTestIntermediateResultsCache(t *testing.T) *testIntermediateResultsCache {
-	return &testIntermediateResultsCache{
-		data: make(map[string]cache.CachedSeries),
-		t:    t,
+func newTestCacheBackend() *testCacheBackend {
+	return &testCacheBackend{
+		items: make(map[string][]byte),
 	}
 }
 
-// ResetStats resets all cache statistics counters.
-func (c *testIntermediateResultsCache) ResetStats() {
-	c.gets = 0
-	c.hits = 0
-	c.sets = 0
-}
-
-// Stats returns the current cache statistics.
-func (c *testIntermediateResultsCache) Stats() (gets, hits, sets int) {
-	return c.gets, c.hits, c.sets
-}
-
-func (c *testIntermediateResultsCache) Get(ctx context.Context, function, selector string, start int64, end int64) (cache.CacheReadEntry, bool, error) {
-	key := fmt.Sprintf("%s:%s:%d:%d", function, selector, start, end)
+func (c *testCacheBackend) GetMulti(_ context.Context, keys []string, _ ...dskitcache.Option) map[string][]byte {
 	c.gets++
-	cached, ok := c.data[key]
-	if !ok {
-		return nil, false, nil
-	}
 
-	c.hits++
-	return &testCacheReadEntry{cached: cached}, true, nil
-}
-
-func (c *testIntermediateResultsCache) NewWriteEntry(ctx context.Context, function, selector string, start int64, end int64) (cache.CacheWriteEntry, error) {
-	key := fmt.Sprintf("%s:%s:%d:%d", function, selector, start, end)
-	return &testCacheWriteEntry{
-		cache: c,
-		key:   key,
-	}, nil
-}
-
-func (c *testIntermediateResultsCache) Close() {
-	c.data = nil
-}
-
-// testCacheReadEntry implements cache.CacheReadEntry for testing.
-type testCacheReadEntry struct {
-	cached       cache.CachedSeries
-	metadataRead bool
-}
-
-func (e *testCacheReadEntry) ReadSeriesMetadata(memoryTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	if e.metadataRead {
-		return nil, fmt.Errorf("metadata already read")
-	}
-	e.metadataRead = true
-
-	series, err := types.SeriesMetadataSlicePool.Get(len(e.cached.Series), memoryTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, m := range e.cached.Series {
-		lbls := mimirpb.FromLabelAdaptersToLabels(m.Labels)
-		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(lbls); err != nil {
-			return nil, err
-		}
-		series = append(series, types.SeriesMetadata{Labels: lbls})
-	}
-
-	return series, nil
-}
-
-func (e *testCacheReadEntry) ReadResultAtIdx(idx int) (cache.IntermediateResult, error) {
-	if idx >= len(e.cached.Results) {
-		return cache.IntermediateResult{}, fmt.Errorf("series index %d out of range (have %d series)", idx, len(e.cached.Results))
-	}
-
-	proto := e.cached.Results[idx]
-	result := cache.IntermediateResult{
-		SumOverTime: cache.SumOverTimeIntermediate{
-			SumF:     proto.SumF,
-			HasFloat: proto.HasFloat,
-			SumC:     proto.SumC,
-		},
-	}
-
-	if proto.SumH != nil {
-		result.SumOverTime.SumH = mimirpb.FromHistogramProtoToFloatHistogram(proto.SumH)
-	}
-
-	return result, nil
-}
-
-func (e *testCacheReadEntry) Close() error {
-	return nil
-}
-
-// testCacheWriteEntry implements cache.CacheWriteEntry for testing.
-type testCacheWriteEntry struct {
-	cache     *testIntermediateResultsCache
-	key       string
-	cached    cache.CachedSeries
-	finalized bool
-}
-
-func (e *testCacheWriteEntry) WriteSeriesMetadata(metadata []types.SeriesMetadata) error {
-	e.cached.Series = make([]mimirpb.Metric, len(metadata))
-	for i, sm := range metadata {
-		e.cached.Series[i] = mimirpb.Metric{
-			Labels: mimirpb.FromLabelsToLabelAdapters(sm.Labels),
+	result := make(map[string][]byte)
+	for _, key := range keys {
+		if data, ok := c.items[key]; ok && len(data) > 0 {
+			result[key] = data
+			c.hits++
 		}
 	}
-	return nil
+
+	return result
 }
 
-func (e *testCacheWriteEntry) WriteNextResult(result cache.IntermediateResult) error {
-	proto := cache.IntermediateResultProto{
-		SumF:     result.SumOverTime.SumF,
-		HasFloat: result.SumOverTime.HasFloat,
-		SumC:     result.SumOverTime.SumC,
+func (c *testCacheBackend) SetMultiAsync(data map[string][]byte, _ time.Duration) {
+	c.sets++
+	for key, value := range data {
+		c.items[key] = value
 	}
-	if result.SumOverTime.SumH != nil {
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, result.SumOverTime.SumH)
-		proto.SumH = &histProto
-	}
-	e.cached.Results = append(e.cached.Results, proto)
-	return nil
 }
 
-func (e *testCacheWriteEntry) Finalize() error {
-	if e.finalized {
-		return nil
-	}
-	e.cache.sets++
-	e.cache.data[e.key] = e.cached
-	e.finalized = true
-	return nil
-}
 
 type wrappedQueryable struct {
 	inner    storage.Queryable

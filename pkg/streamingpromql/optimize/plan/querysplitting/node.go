@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -161,14 +161,28 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("function %v is not yet supported for split range vector optimization", innerFunctionCall.Function)
 	}
 
-	splitOp, err := NewFunctionOverRangeVector(
+	if funcDef.SplitOperatorFactory == nil {
+		return nil, fmt.Errorf("function %v does not support query splitting", innerFunctionCall.Function)
+	}
+
+	// Convert protobuf SplitRange to functions.Range
+	ranges := make([]functions.Range, len(s.SplittableFunctionCallDetails.SplitRanges))
+	for i, sr := range s.SplittableFunctionCallDetails.SplitRanges {
+		ranges[i] = functions.Range{
+			Start:     sr.Start,
+			End:       sr.End,
+			Cacheable: sr.Cacheable,
+		}
+	}
+
+	splitOp, err := funcDef.SplitOperatorFactory(
 		s.Inner.Child(0),
 		materializer,
 		timeRange,
-		s.SplittableFunctionCallDetails.SplitRanges,
+		ranges,
 		s.SplittableFunctionCallDetails.InnerNodeCacheKey,
 		m.cache,
-		funcDef,
+		&funcDef,
 		innerFunctionCall.ExpressionPosition(),
 		params.Annotations,
 		params.MemoryConsumptionTracker,

@@ -24,14 +24,6 @@ message CachedSeries {
   int64 start = 3;
   int64 end = 4;
   repeated cortexpb.Metric series = 5 [(gogoproto.nullable) = false];
-  repeated IntermediateResultProto results = 6 [(gogoproto.nullable) = false];
-}
-
-// IntermediateResultProto is dualed with IntermediateResult, which decodes the histogram into Prometheus format.
-// This is really just for sum_over_time; will work out polymorphism later.
-message IntermediateResultProto {
-  double sumF = 1;
-  bool hasFloat = 2; // couldn't figure out how to make sumF nullable.
-  double sumC = 3;
-  cortexpb.Histogram sumH = 4;
+  // results stores all marshaled intermediate results as a single byte blob.
+  bytes results = 6;
 }

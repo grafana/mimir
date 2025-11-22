@@ -3,7 +3,6 @@
 package functions
 
 import (
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
 	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -110,28 +109,11 @@ type FunctionOverInstantVectorDefinition struct {
 	SeriesMetadataFunction SeriesMetadataFunctionDefinition
 }
 
-// TODO: do we need querytimerange as a parameter? what uses it?
-type RangeVectorPiecewiseGenerateFunction func(
-	step *types.RangeVectorStepData,
-	scalarArgsData []types.ScalarData,
-	emitAnnotation types.EmitAnnotationFunc,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) (intermediateResult cache.IntermediateResult, err error)
-
-type RangeVectorPiecewiseCombineFunction func(
-	pieces []cache.IntermediateResult,
-	emitAnnotation types.EmitAnnotationFunc,
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
-) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
-
 type FunctionOverRangeVectorDefinition struct {
 	Name string
 
 	// StepFunc is the function that computes an output sample for a single step.
 	StepFunc RangeVectorStepFunction
-
-	GenerateFunc RangeVectorPiecewiseGenerateFunction
-	CombineFunc  RangeVectorPiecewiseCombineFunction
 
 	// SeriesValidationFuncFactory is the function that creates a validator for a complete series, emitting any annotations
 	// for that series.
@@ -156,6 +138,10 @@ type FunctionOverRangeVectorDefinition struct {
 	// first argument, not the position of the inner expression.
 	// FIXME: we might need something more flexible in the future (eg. to accommodate other argument positions), but this is good enough for now.
 	UseFirstArgumentPositionForAnnotations bool
+
+	// SplitOperatorFactory defines how to create a splittable operator for intermediate result caching.
+	// If nil, the function does not support query splitting.
+	SplitOperatorFactory SplittableOperatorFactory
 }
 
 type SeriesMetadataFunctionDefinition struct {

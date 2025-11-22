@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 )
 
 type EngineOpts struct {
@@ -58,7 +58,7 @@ type QuerySplittingConfig struct {
 	// TODO: consider making the cache an optional part of query splitting. We might want to just do query splitting
 	//  without caching (e.g. possibly if splitting is extended to range queries in the future, or if we add
 	//  parallelisation and just want to use query splitting for that and not cache).
-	IntermediateResultsCache cache.ResultsCacheConfig `yaml:"intermediate_results_cache" category:"experimental"`
+	IntermediateResultsCache cache.Config `yaml:"intermediate_results_cache" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {

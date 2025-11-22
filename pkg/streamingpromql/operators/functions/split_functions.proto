@@ -1,0 +1,45 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package thanos;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "functions";
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+// Do not generate XXX fields to reduce memory footprint.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+// Protobuf messages for splittable range vector functions.
+// These messages are used to serialize intermediate results for caching during query splitting.
+
+// SumOverTimeIntermediateProto is the protobuf representation of a single SumOverTimeIntermediate.
+message SumOverTimeIntermediateProto {
+  double sumF = 1;
+  bool hasFloat = 2;
+  double sumC = 3;
+  cortexpb.Histogram sumH = 4;
+}
+
+// SumOverTimeIntermediateListProto contains a list of SumOverTimeIntermediate results.
+message SumOverTimeIntermediateListProto {
+  repeated SumOverTimeIntermediateProto results = 1;
+}
+
+// CountOverTimeIntermediateProto is the protobuf representation of a single CountOverTimeIntermediate.
+message CountOverTimeIntermediateProto {
+  double count = 1;
+  bool hasValue = 2;
+}
+
+// CountOverTimeIntermediateListProto contains a list of CountOverTimeIntermediate results.
+message CountOverTimeIntermediateListProto {
+  repeated CountOverTimeIntermediateProto results = 1;
+}
