@@ -1046,12 +1046,45 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 			expectedOperatorFailed: true,
 			remoteQuerier:          true,
 		},
+
+		// gRPC errors with no details
+		{
+			name:                   "gRPC Internal error (operator, remote querier)",
+			err:                    status.New(codes.Internal, "codes.Internal").Err(),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          true,
+		},
+		{
+			name:                   "gRPC Internal error (operator, local querier)",
+			err:                    status.New(codes.Internal, "codes.Internal").Err(),
+			expectedUserFailed:     false,
+			expectedOperatorFailed: true,
+			remoteQuerier:          false,
+		},
+
+		// Rule evaluation failures - duplicate labelsets
+		{
+			name:                   "duplicate labelset after applying alert labels (user, remote querier)",
+			err:                    errors.New("vector contains metrics with the same labelset after applying alert labels"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
+		},
+		{
+			name:                   "duplicate labelset after applying alert labels (user, local querier)",
+			err:                    errors.New("vector contains metrics with the same labelset after applying alert labels"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			classifier := NewRulerErrorClassifier(tt.remoteQuerier)
 			result := classifier.IsOperatorControllable(tt.err)
+
 			require.Equal(t, tt.expectedOperatorFailed, result)
 			require.Equal(t, tt.expectedUserFailed, !result)
 		})
@@ -1118,6 +1151,11 @@ func TestRulerErrorClassifier_ErrorClassificationDuringRuleEvaluation(t *testing
 		},
 		"TSDB_UNAVAILABLE push error during write (operator)": {
 			writeError:             mustStatusWithDetails(codes.FailedPrecondition, mimirpb.ERROR_CAUSE_TSDB_UNAVAILABLE).Err(),
+			expectedOperatorFailed: true,
+			expectedUserFailed:     false,
+		},
+		"GRPC Internal error without details(operator)": {
+			writeError:             status.New(codes.Internal, "codes.Internal").Err(),
 			expectedOperatorFailed: true,
 			expectedUserFailed:     false,
 		},
