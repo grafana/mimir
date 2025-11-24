@@ -72,7 +72,7 @@
       store_gateway: 'store-gateway',
       overrides_exporter: 'overrides-exporter',
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
-
+      usage_tracker: 'usage-tracker',
       federation_frontend: 'federation-frontend',
     },
 
@@ -109,6 +109,7 @@
       compactor: ['compactor.*', 'cortex', 'mimir'],  // Match also custom compactor deployments.
       alertmanager: ['alertmanager', 'cortex', 'mimir'],
       overrides_exporter: ['overrides-exporter'],
+      usage_tracker: ['usage-tracker.*'],
 
       // The following are job matchers used to select all components in the read path.
       main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
@@ -148,6 +149,7 @@
       store_gateway: instanceMatcher(componentNameRegexp.store_gateway),
       overrides_exporter: instanceMatcher(componentNameRegexp.overrides_exporter),
       gateway: instanceMatcher(componentNameRegexp.gateway),
+      usage_tracker: instanceMatcher(componentNameRegexp.usage_tracker),
 
       // The following are instance matchers used to select all components in a given "path".
       local componentsGroupMatcher = function(components)
@@ -180,6 +182,7 @@
       alertmanager: componentNameRegexp.alertmanager,
       alertmanager_im: componentNameRegexp.alertmanager_im,
       compactor: componentNameRegexp.compactor,
+      usage_tracker: componentNameRegexp.usage_tracker,
 
       // The following are container matchers used to select all components in a given "path".
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
