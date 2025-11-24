@@ -348,7 +348,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Refetches of missing blocks per query') +
-        $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_querier_storegateway_refetches_per_query', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
