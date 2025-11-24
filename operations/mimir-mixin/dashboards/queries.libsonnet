@@ -102,8 +102,17 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('Query-frontend – query splitting and results cache')
       .addPanel(
+        local query = utils.ncHistogramApplyTemplate(
+          template='sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / %s',
+          query=utils.ncHistogramSumBy(
+            query=utils.ncHistogramCountRate('cortex_frontend_query_range_duration_seconds', '$read_path_matcher, method="split_by_interval_and_results_cache"'),
+          )
+        );
         $.timeseriesPanel('Intervals per query') +
-        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{$read_path_matcher}[$__rate_interval])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{$read_path_matcher, method="split_by_interval_and_results_cache"}[$__rate_interval]))', 'splitting rate') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['splitting rate', 'splitting rate'],
+        ) +
         $.panelDescription(
           'Intervals per query',
           |||
