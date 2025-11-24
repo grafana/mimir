@@ -36,7 +36,7 @@ const (
 type MimirClient interface {
 	// WriteSeries writes input series to Mimir. Returns the response status code and optionally
 	// an error. The error is always returned if request was not successful (eg. received a 4xx or 5xx error).
-	WriteSeries(ctx context.Context, series []prompb.TimeSeries) (statusCode int, err error)
+	WriteSeries(ctx context.Context, series []prompb.TimeSeries, metadata []prompb.MetricMetadata) (statusCode int, err error)
 
 	// QueryRange performs a range query.
 	QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration, options ...RequestOption) (model.Matrix, error)
@@ -245,7 +245,7 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 }
 
 // WriteSeries implements MimirClient.
-func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (int, error) {
+func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries, metadata []prompb.MetricMetadata) (int, error) {
 	lastStatusCode := 0
 
 	// Honor the batch size.
@@ -255,7 +255,10 @@ func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (i
 		series = series[end:]
 
 		var err error
-		lastStatusCode, err = c.writeClient.sendWriteRequest(ctx, &prompb.WriteRequest{Timeseries: batch})
+		lastStatusCode, err = c.writeClient.sendWriteRequest(ctx, &prompb.WriteRequest{
+			Timeseries: batch,
+			Metadata:   metadata,
+		})
 		if err != nil {
 			return lastStatusCode, err
 		}

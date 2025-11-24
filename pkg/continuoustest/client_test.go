@@ -77,7 +77,13 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusOK
 
 		series := generateSineWaveSeries("test", now, 10)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_GAUGE,
+			MetricFamilyName: "test",
+			Help:             "Test metric",
+			Unit:             "seconds",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
 
@@ -90,7 +96,13 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusOK
 
 		series := generateSineWaveSeries("test", now, 22)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_COUNTER,
+			MetricFamilyName: "test",
+			Help:             "Test counter",
+			Unit:             "bytes",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
 
@@ -105,7 +117,7 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusBadRequest
 
 		series := generateSineWaveSeries("test", now, 1)
-		statusCode, err := c.WriteSeries(ctx, series)
+		statusCode, err := c.WriteSeries(ctx, series, nil)
 		require.Error(t, err)
 		assert.Equal(t, 400, statusCode)
 	})
@@ -115,10 +127,11 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusInternalServerError
 
 		series := generateSineWaveSeries("test", now, 1)
-		statusCode, err := c.WriteSeries(ctx, series)
+		statusCode, err := c.WriteSeries(ctx, series, nil)
 		require.Error(t, err)
 		assert.Equal(t, 500, statusCode)
 	})
+
 }
 
 func TestPromWriterClient_WriteSeries(t *testing.T) {
@@ -162,12 +175,18 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusOK
 
 		series := generateSineWaveSeries("test", now, 10)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_GAUGE,
+			MetricFamilyName: "test",
+			Help:             "Test metric",
+			Unit:             "seconds",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
 
 		require.Len(t, receivedRequests, 1)
-		assert.Equal(t, series, receivedRequests[0].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[0].Metadata)
 	})
 
 	t.Run("write series in multiple batches", func(t *testing.T) {
@@ -175,14 +194,23 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusOK
 
 		series := generateSineWaveSeries("test", now, 22)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_COUNTER,
+			MetricFamilyName: "test",
+			Help:             "Test counter",
+			Unit:             "bytes",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
 
 		require.Len(t, receivedRequests, 3)
 		assert.Equal(t, series[0:10], receivedRequests[0].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[0].Metadata)
 		assert.Equal(t, series[10:20], receivedRequests[1].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[1].Metadata)
 		assert.Equal(t, series[20:22], receivedRequests[2].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[2].Metadata)
 	})
 
 	t.Run("request failed with 4xx error", func(t *testing.T) {
@@ -190,7 +218,13 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusBadRequest
 
 		series := generateSineWaveSeries("test", now, 1)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_GAUGE,
+			MetricFamilyName: "test",
+			Help:             "Test metric",
+			Unit:             "seconds",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.Error(t, err)
 		assert.Equal(t, 400, statusCode)
 	})
@@ -200,10 +234,17 @@ func TestPromWriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusInternalServerError
 
 		series := generateSineWaveSeries("test", now, 1)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_GAUGE,
+			MetricFamilyName: "test",
+			Help:             "Test metric",
+			Unit:             "seconds",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.Error(t, err)
 		assert.Equal(t, 500, statusCode)
 	})
+
 }
 
 func TestProm2WriterClient_WriteSeries(t *testing.T) {
@@ -264,7 +305,13 @@ func TestProm2WriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusOK
 
 		series := generateSineWaveSeries("test", now, 10)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_GAUGE,
+			MetricFamilyName: "test",
+			Help:             "Test metric",
+			Unit:             "seconds",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
 
@@ -275,6 +322,7 @@ func TestProm2WriterClient_WriteSeries(t *testing.T) {
 			})
 		}
 		assert.Equal(t, series, receivedRequests[0].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[0].Metadata)
 	})
 
 	t.Run("write series in multiple batches", func(t *testing.T) {
@@ -282,7 +330,13 @@ func TestProm2WriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusOK
 
 		series := generateSineWaveSeries("test", now, 22)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_COUNTER,
+			MetricFamilyName: "test",
+			Help:             "Test counter",
+			Unit:             "bytes",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.NoError(t, err)
 		assert.Equal(t, 200, statusCode)
 
@@ -293,8 +347,11 @@ func TestProm2WriterClient_WriteSeries(t *testing.T) {
 			})
 		}
 		assert.Equal(t, series[0:10], receivedRequests[0].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[0].Metadata)
 		assert.Equal(t, series[10:20], receivedRequests[1].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[1].Metadata)
 		assert.Equal(t, series[20:22], receivedRequests[2].Timeseries)
+		assert.Equal(t, metadata, receivedRequests[2].Metadata)
 	})
 
 	t.Run("request failed with 4xx error", func(t *testing.T) {
@@ -302,7 +359,13 @@ func TestProm2WriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusBadRequest
 
 		series := generateSineWaveSeries("test", now, 1)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_GAUGE,
+			MetricFamilyName: "test",
+			Help:             "Test metric",
+			Unit:             "seconds",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.Error(t, err)
 		assert.Equal(t, 400, statusCode)
 	})
@@ -312,7 +375,13 @@ func TestProm2WriterClient_WriteSeries(t *testing.T) {
 		nextStatusCode = http.StatusInternalServerError
 
 		series := generateSineWaveSeries("test", now, 1)
-		statusCode, err := c.WriteSeries(ctx, series)
+		metadata := []prompb.MetricMetadata{{
+			Type:             prompb.MetricMetadata_COUNTER,
+			MetricFamilyName: "test",
+			Help:             "Test counter",
+			Unit:             "bytes",
+		}}
+		statusCode, err := c.WriteSeries(ctx, series, metadata)
 		require.Error(t, err)
 		assert.Equal(t, 500, statusCode)
 	})
@@ -548,8 +617,8 @@ type ClientMock struct {
 	mock.Mock
 }
 
-func (m *ClientMock) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (int, error) {
-	args := m.Called(ctx, series)
+func (m *ClientMock) WriteSeries(ctx context.Context, series []prompb.TimeSeries, metadata []prompb.MetricMetadata) (int, error) {
+	args := m.Called(ctx, series, metadata)
 	return args.Int(0), args.Error(1)
 }
 
