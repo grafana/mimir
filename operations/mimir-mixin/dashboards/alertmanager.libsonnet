@@ -105,7 +105,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager))
+        $.ncLatencyPanel('cortex_alertmanager_notification_latency_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager))
       )
     )
     .addRowIf(
