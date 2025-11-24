@@ -11832,9 +11832,9 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 	}
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
 		metadata.add(normalizedMetricName, MetricMetadata{
-			MetricFamilyName: normalizedMetricName,
-			Help:             help,
-			Unit:             unit,
+			MetricFamilyName: strings.Clone(normalizedMetricName),
+			Help:             strings.Clone(help),
+			Unit:             strings.Clone(unit),
 			Type:             MetricMetadata_MetricType(metricType),
 		})
 	}
