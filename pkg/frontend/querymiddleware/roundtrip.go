@@ -93,7 +93,8 @@ type Config struct {
 
 	QueryResultResponseFormat string `yaml:"query_result_response_format"`
 
-	CacheSamplesProcessedStats bool `yaml:"cache_samples_processed_stats"`
+	// Deprecated in Mimir 3.1, remove in Mimir 3.3.
+	CacheSamplesProcessedStats bool `yaml:"cache_samples_processed_stats" category:"deprecated"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -113,7 +114,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.QueryResultResponseFormat, "query-frontend.query-result-response-format", formatProtobuf, fmt.Sprintf("Format to use when retrieving query results from queriers. Supported values: %s", strings.Join(allFormats, ", ")))
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
-	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache.")
+	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
 	cfg.ResultsCache.RegisterFlags(f)
 
 	// This field isn't user-configurable, but we still need to set a default value so that subsequent Add() calls don't panic due to a nil map.
@@ -519,7 +520,6 @@ func newQueryMiddlewares(
 		splitAndCacheMiddleware = newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
-			cfg.CacheSamplesProcessedStats,
 			cfg.SplitQueriesByInterval,
 			limits,
 			codec,

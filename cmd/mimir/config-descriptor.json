@@ -8193,11 +8193,12 @@
           "kind": "field",
           "name": "cache_samples_processed_stats",
           "required": false,
-          "desc": "Cache statistics of processed samples on results cache.",
+          "desc": "Cache statistics of processed samples on results cache. Deprecated: has no effect.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-samples-processed-stats",
-          "fieldType": "boolean"
+          "fieldType": "boolean",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "block",
@@ -8625,25 +8626,14 @@
         },
         {
           "kind": "field",
-          "name": "write_logs_fsync_before_kafka_commit_enabled",
-          "required": false,
-          "desc": "Enable fsyncing of WAL and WBL before Kafka offsets are committed.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "write_logs_fsync_before_kafka_commit_concurrency",
           "required": false,
-          "desc": "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false",
+          "desc": "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.",
           "fieldValue": null,
-          "fieldDefaultValue": 1,
+          "fieldDefaultValue": 4,
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,

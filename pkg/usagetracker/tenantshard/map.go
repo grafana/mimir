@@ -88,7 +88,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.index[i], pfx)
+		matches := m.index[i].match(pfx)
 		for matches != 0 {
 			j := nextMatch(&matches)
 			if key == m.keys[i][j] { // found
@@ -101,7 +101,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 		}
 		// |key| is not in group |i|,
 		// stop probing if we see an empty slot
-		matches = metaMatchEmpty(&m.index[i])
+		matches = m.index[i].matchEmpty()
 		if matches != 0 { // insert
 			// Only check limit if we're tracking series.
 			// We don't check limit for Load events.
@@ -154,7 +154,7 @@ func (m *Map) load(key uint64, value clock.Minutes) {
 	looped := false
 	for {
 		// Find an empty slot and insert without checking if it already exists.
-		matches := metaMatchEmpty(&m.index[i])
+		matches := m.index[i].matchEmpty()
 		if matches != 0 { // insert
 			m.insert(key, pfx, value, i, matches)
 			return
@@ -175,7 +175,8 @@ func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
-func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
+func (m *Map) Cleanup(watermark clock.Minutes) int {
+	removed := 0
 	for i := range m.data {
 		for j, xor := range m.data[i] {
 			if xor == 0 {
@@ -187,12 +188,22 @@ func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
 				m.keys[i][j] = 0
 				m.data[i][j] = 0
 				m.dead++
-				series.Dec()
+				removed++
 			}
 		}
 	}
 	if m.dead > m.limit/2 {
 		m.rehash(m.nextSize())
+	}
+	return removed
+}
+
+// EnsureCapacity ensure that the map has enough capacity to store |n| elements.
+// This does not mean that the map will have n empty slots, there might be already n elements in the map and 0 spare capacity.
+// If there's no enough capacity, the map is rehashed to accommodate at least |n| elements.
+func (m *Map) EnsureCapacity(n uint32) {
+	if groups := numGroups(n); len(m.index) < int(groups) {
+		m.rehash(groups)
 	}
 }
 

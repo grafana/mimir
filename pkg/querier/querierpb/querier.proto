@@ -16,7 +16,7 @@ option (gogoproto.unmarshaler_all) = true;
 message EvaluateQueryRequest {
   planning.EncodedQueryPlan plan = 1 [(gogoproto.nullable) = false];
   repeated EvaluationNode nodes = 2 [(gogoproto.nullable) = false];
-  bool enablePerStepStats = 3;
+  reserved 3; // Formerly: enablePerStepStats
   uint64 batchSize = 4;
 }
 

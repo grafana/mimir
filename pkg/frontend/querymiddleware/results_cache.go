@@ -31,7 +31,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/stats"
 )
 
 const (
@@ -402,9 +401,6 @@ func mergeCacheExtentsForRequest(ctx context.Context, r MetricsQueryRequest, mer
 			continue
 		}
 		accumulator.TraceId = otelTraceID(ctx)
-		// Calculate the samples processed per step in the subrange of the extent that is being merged with the accumulator.
-		samples := extractSamplesProcessedPerStep(extents[i], max(accumulator.End, extents[i].Start), extents[i].End)
-		accumulator.SamplesProcessedPerStep = mergeSamplesProcessedPerStep(accumulator.SamplesProcessedPerStep, samples)
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
@@ -445,12 +441,11 @@ func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Ext
 		return nil, err
 	}
 	return append(extents, Extent{
-		Start:                   acc.Start,
-		End:                     acc.End,
-		Response:                marshalled,
-		TraceId:                 acc.TraceId,
-		QueryTimestampMs:        acc.QueryTimestampMs,
-		SamplesProcessedPerStep: acc.SamplesProcessedPerStep,
+		Start:            acc.Start,
+		End:              acc.End,
+		Response:         marshalled,
+		TraceId:          acc.TraceId,
+		QueryTimestampMs: acc.QueryTimestampMs,
 	}), nil
 }
 
@@ -465,29 +460,27 @@ func newAccumulator(base Extent) (*accumulator, error) {
 	}, nil
 }
 
-func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time, perStepStats []stats.StepStat) (Extent, error) {
+func toExtent(ctx context.Context, req MetricsQueryRequest, res Response, queryTime time.Time) (Extent, error) {
 	marshalled, err := types.MarshalAny(res)
 	if err != nil {
 		return Extent{}, err
 	}
 
 	return Extent{
-		Start:                   req.GetStart(),
-		End:                     req.GetEnd(),
-		Response:                marshalled,
-		TraceId:                 otelTraceID(ctx),
-		QueryTimestampMs:        queryTime.UnixMilli(),
-		SamplesProcessedPerStep: perStepStats,
+		Start:            req.GetStart(),
+		End:              req.GetEnd(),
+		Response:         marshalled,
+		TraceId:          otelTraceID(ctx),
+		QueryTimestampMs: queryTime.UnixMilli(),
 	}, nil
 }
 
 // partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, []stats.StepStat, error) {
+func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheExtent int64, extractor Extractor) ([]MetricsQueryRequest, []Response, error) {
 	var requests []MetricsQueryRequest
 	var cachedResponses []Response
 	start := req.GetStart()
-	var cachedPerStepStat []stats.StepStat
 
 	for _, extent := range extents {
 		// If there is no overlap, ignore this extent.
@@ -509,19 +502,17 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		if start < extent.Start {
 			r, err := req.WithStartEnd(start, extent.Start)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, err
 			}
 
 			requests = append(requests, r)
 		}
 		res, err := extent.toResponse()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
-		// Extract the per step stats for the overlap.
-		cachedPerStepStat = mergeSamplesProcessedPerStep(cachedPerStepStat, extractSamplesProcessedPerStep(extent, max(start, extent.Start), min(req.GetEnd(), extent.End)))
 
 		// We want next request to start where extent ends, but we must make sure that
 		// next start also has the same offset into the step as original request had, ie.
@@ -543,7 +534,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 	if start < req.GetEnd() {
 		r, err := req.WithStartEnd(start, req.GetEnd())
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 
 		requests = append(requests, r)
@@ -555,7 +546,7 @@ func partitionCacheExtents(req MetricsQueryRequest, extents []Extent, minCacheEx
 		requests = append(requests, req)
 	}
 
-	return requests, cachedResponses, cachedPerStepStat, nil
+	return requests, cachedResponses, nil
 }
 
 func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
@@ -563,8 +554,6 @@ func filterRecentCacheExtents(req MetricsQueryRequest, maxCacheFreshness time.Du
 	for i := range extents {
 		// Never cache data for the latest freshness period.
 		if extents[i].End > maxCacheTime {
-			perStepStats := extractSamplesProcessedPerStep(extents[i], extents[i].Start, maxCacheTime)
-			extents[i].SamplesProcessedPerStep = perStepStats
 			extents[i].End = maxCacheTime
 			res, err := extents[i].toResponse()
 			if err != nil {
@@ -670,90 +659,4 @@ func cacheHashKey(key string) string {
 
 	// Hex because memcache keys must be non-whitespace non-control ASCII
 	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-// extractSamplesProcessedPerStep extracts the per step samples count for the subrange within the extent.
-func extractSamplesProcessedPerStep(extent Extent, start int64, end int64) []stats.StepStat {
-	// Validate the subrange is valid and within the extent.
-	if end < start || start < extent.Start || end > extent.End {
-		return nil
-	}
-
-	var result []stats.StepStat
-	for _, step := range extent.SamplesProcessedPerStep {
-		if start <= step.Timestamp && step.Timestamp <= end {
-			result = append(result, step)
-		}
-	}
-
-	return result
-}
-
-func mergeSamplesProcessedPerStep(a, b []stats.StepStat) []stats.StepStat {
-	if len(a) == 0 {
-		return b
-	}
-	if len(b) == 0 {
-		return a
-	}
-
-	merged := make([]stats.StepStat, 0, len(a)+len(b))
-	i, j := 0, 0
-
-	for i < len(a) && j < len(b) {
-		if a[i].Timestamp < b[j].Timestamp {
-			merged = append(merged, a[i])
-			i++
-		} else if b[j].Timestamp < a[i].Timestamp {
-			merged = append(merged, b[j])
-			j++
-		} else {
-			// Same timestamp, take the latter value
-			merged = append(merged, b[j])
-			i++
-			j++
-		}
-	}
-
-	// Append any remaining elements
-	for ; i < len(a); i++ {
-		merged = append(merged, a[i])
-	}
-	for ; j < len(b); j++ {
-		merged = append(merged, b[j])
-	}
-
-	return merged
-}
-
-// sumSamplesProcessedPerStep sums values from multiple arrays of StepStat.
-// For duplicate timestamps, later arrays win.
-func sumSamplesProcessedPerStep(stats ...[]stats.StepStat) int64 {
-	if len(stats) == 0 {
-		return 0
-	}
-
-	// Fast path: single array - no duplicates possible, just sum directly
-	if len(stats) == 1 {
-		var total int64
-		for _, step := range stats[0] {
-			total += step.Value
-		}
-		return total
-	}
-
-	// Multiple arrays: handle duplicates with map (last array wins)
-	m := make(map[int64]int64)
-	for _, arr := range stats {
-		for _, step := range arr {
-			m[step.Timestamp] = step.Value
-		}
-	}
-
-	var total int64
-	for _, value := range m {
-		total += value
-	}
-
-	return total
 }

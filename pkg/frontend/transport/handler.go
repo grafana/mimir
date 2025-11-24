@@ -94,14 +94,13 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds                       *prometheus.CounterVec
-	querySeries                        *prometheus.CounterVec
-	queryChunkBytes                    *prometheus.CounterVec
-	queryChunks                        *prometheus.CounterVec
-	queryIndexBytes                    *prometheus.CounterVec
-	querySamplesProcessed              *prometheus.CounterVec
-	querySamplesProcessedCacheAdjusted *prometheus.CounterVec
-	activeUsers                        *util.ActiveUsersCleanupService
+	querySeconds          *prometheus.CounterVec
+	querySeries           *prometheus.CounterVec
+	queryChunkBytes       *prometheus.CounterVec
+	queryChunks           *prometheus.CounterVec
+	queryIndexBytes       *prometheus.CounterVec
+	querySamplesProcessed *prometheus.CounterVec
+	activeUsers           *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -150,11 +149,6 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Name: "cortex_query_samples_processed_total",
 			Help: "Number of samples processed to execute a query.",
 		}, []string{"user"})
-		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_query_samples_processed_cache_adjusted_total",
-			Help: "Number of samples processed to execute a query taking into account the original number of samples processed for parts of the query results looked up from the cache. " +
-				"Note, that it is reported only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it is 0.",
-		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
@@ -164,7 +158,6 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
 			h.querySamplesProcessed.DeleteLabelValues(user)
-			h.querySamplesProcessedCacheAdjusted.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -332,10 +325,8 @@ func (f *Handler) reportQueryStats(
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 	var stats *querier_stats.SafeStats
-	var samplesProcessedCacheAdjusted uint64
 	if details != nil {
 		stats = details.QuerierStats
-		samplesProcessedCacheAdjusted = details.SamplesProcessedCacheAdjusted
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
@@ -353,7 +344,6 @@ func (f *Handler) reportQueryStats(
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
-		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log stats.
@@ -380,7 +370,6 @@ func (f *Handler) reportQueryStats(
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
 		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
 		"samples_processed", samplesProcessed,
-		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {

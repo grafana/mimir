@@ -2001,7 +2001,8 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
-# Cache statistics of processed samples on results cache.
+# (deprecated) Cache statistics of processed samples on results cache.
+# Deprecated: has no effect.
 # CLI flag: -query-frontend.cache-samples-processed-stats
 [cache_samples_processed_stats: <boolean> | default = false]
 
@@ -4711,16 +4712,10 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
-# (experimental) Enable fsyncing of WAL and WBL before Kafka offsets are
-# committed.
-# CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
-[write_logs_fsync_before_kafka_commit_enabled: <boolean> | default = true]
-
-# (experimental) Number of tenants to concurrently fsync WAL and WBL before
-# Kafka offsets are committed. Ignored if
-# -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false
+# (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
+# offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
-[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 1]
+[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
 ```
 
 ### blocks_storage

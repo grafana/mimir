@@ -29,7 +29,7 @@ fullnameOverride: null
 
 image:
   # -- Grafana Mimir container image repository
-  repository: grafana/mimir
+  repository: docker.io/grafana/mimir
   # -- Grafana Mimir container image tag
   tag: r368-547a06a0
   # -- Container pull policy

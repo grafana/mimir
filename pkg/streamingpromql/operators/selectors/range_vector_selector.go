@@ -40,10 +40,11 @@ type RangeVectorSelector struct {
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, anchored bool, smoothed bool) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, anchored bool, smoothed bool) *RangeVectorSelector {
 
 	rangeVectorSelector := RangeVectorSelector{
 		Selector:                 selector,
+		Stats:                    stats,
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms:               types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:                 &types.RangeVectorStepData{Anchored: anchored, Smoothed: smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
@@ -177,7 +178,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	m.stepData.RangeStart = originalRangeStart // important to return the original range start so that functions like rate() can determine the range duration regardless of smoothed / anchored
 	m.stepData.RangeEnd = originalRangeEnd
 
-	m.Stats.IncrementSamplesAtTimestamp(m.stepData.StepT, int64(m.stepData.Floats.Count())+m.stepData.Histograms.EquivalentFloatSampleCount())
+	m.Stats.IncrementSamples(int64(m.stepData.Floats.Count()) + m.stepData.Histograms.EquivalentFloatSampleCount())
 
 	return m.stepData, nil
 }
@@ -237,7 +238,6 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 }
 
 func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	m.Stats = params.QueryStats
 	return m.Selector.Prepare(ctx, params)
 }
 

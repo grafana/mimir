@@ -1,5 +1,12 @@
 ## Upcoming Release
 
+## 0.9.2
+
+### Bug Fixes
+
+- Fixed #122 - better preserving context information when using a gRPC client interceptor.
+- Fixed `AdaptiveLimiter` not dropping permits when an execution is canceled and the `failsafe.With` API is used.
+
 ## 0.9.1
 
 ### Improvements

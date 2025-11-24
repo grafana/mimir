@@ -103,7 +103,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		selector.LookbackDelta = params.LookbackDelta
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, m.Anchored, m.Smoothed)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, m.Anchored, m.Smoothed)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

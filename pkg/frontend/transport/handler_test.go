@@ -565,7 +565,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				return nil, context.Canceled
 			},
 			expectedStatusCode:  StatusClientClosedRequest,
-			expectedMetrics:     7,
+			expectedMetrics:     6,
 			expectedStatusLog:   "canceled",
 			expectQueryParamLog: false,
 		},
@@ -580,7 +580,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				}, nil
 			},
 			expectedStatusCode:  http.StatusInternalServerError,
-			expectedMetrics:     7,
+			expectedMetrics:     6,
 			expectedStatusLog:   "failed",
 			expectQueryParamLog: false,
 		},
@@ -607,7 +607,6 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				"cortex_query_fetched_chunks_total",
 				"cortex_query_fetched_index_bytes_total",
 				"cortex_query_samples_processed_total",
-				"cortex_query_samples_processed_cache_adjusted_total",
 			)
 			require.NoError(t, err)
 

@@ -284,21 +284,6 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
                               "options": "cancel"
                            },
                            "properties": [
@@ -321,6 +306,21 @@
                                  "id": "color",
                                  "value": {
                                     "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
                                     "mode": "fixed"
                                  }
                               }
@@ -1381,21 +1381,6 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
                               "options": "cancel"
                            },
                            "properties": [
@@ -1418,6 +1403,21 @@
                                  "id": "color",
                                  "value": {
                                     "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
                                     "mode": "fixed"
                                  }
                               }
@@ -1737,21 +1737,6 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
                               "options": "cancel"
                            },
                            "properties": [
@@ -1774,6 +1759,21 @@
                                  "id": "color",
                                  "value": {
                                     "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
                                     "mode": "fixed"
                                  }
                               }
@@ -2093,21 +2093,6 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
                               "options": "cancel"
                            },
                            "properties": [
@@ -2130,6 +2115,21 @@
                                  "id": "color",
                                  "value": {
                                     "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
                                     "mode": "fixed"
                                  }
                               }
@@ -2449,21 +2449,6 @@
                         {
                            "matcher": {
                               "id": "byName",
-                              "options": "Success"
-                           },
-                           "properties": [
-                              {
-                                 "id": "color",
-                                 "value": {
-                                    "fixedColor": "#7EB26D",
-                                    "mode": "fixed"
-                                 }
-                              }
-                           ]
-                        },
-                        {
-                           "matcher": {
-                              "id": "byName",
                               "options": "cancel"
                            },
                            "properties": [
@@ -2486,6 +2471,21 @@
                                  "id": "color",
                                  "value": {
                                     "fixedColor": "#E24D42",
+                                    "mode": "fixed"
+                                 }
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "success"
+                           },
+                           "properties": [
+                              {
+                                 "id": "color",
+                                 "value": {
+                                    "fixedColor": "#7EB26D",
                                     "mode": "fixed"
                                  }
                               }

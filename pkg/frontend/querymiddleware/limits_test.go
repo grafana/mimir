@@ -1138,7 +1138,6 @@ func (v *findVectorSelectorsVisitor) Visit(node parser.Node, _ []parser.Node) (p
 
 func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
-	opts.CommonOpts.EnablePerStepStats = true
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	logger := log.NewNopLogger()
@@ -1195,11 +1194,10 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		req                             MetricsQueryRequest
-		expectedResponse                Response
-		expectedErr                     error
-		expectedSamplesProcessed        uint64
-		expectedSamplesProcessedPerStep []stats.StepStat
+		req                      MetricsQueryRequest
+		expectedResponse         Response
+		expectedErr              error
+		expectedSamplesProcessed uint64
 	}{
 		"range query": {
 			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, ""),
@@ -1314,38 +1312,6 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 				},
 			},
 		},
-
-		"query with per-step stats enabled": {
-			req:                      NewPrometheusRangeQueryRequest("/", requestHeaders, 1000, 7000, 2000, lookbackDelta, mustParseExpr(`5*some_metric`), requestOptions, requestHints, "all"),
-			expectedSamplesProcessed: 4,
-			expectedSamplesProcessedPerStep: []stats.StepStat{
-				{Timestamp: 1000, Value: 1},
-				{Timestamp: 3000, Value: 1},
-				{Timestamp: 5000, Value: 1},
-				{Timestamp: 7000, Value: 1},
-			},
-			expectedResponse: &PrometheusResponse{
-				Status: statusSuccess,
-				Data: &PrometheusData{
-					ResultType: model.ValMatrix.String(),
-					Result: []SampleStream{
-						{
-							Labels: []mimirpb.LabelAdapter{
-								{Name: "foo", Value: "bar"},
-							},
-							Samples: []mimirpb.Sample{
-								{TimestampMs: 1000, Value: 5},
-								{TimestampMs: 3000, Value: 15},
-								{TimestampMs: 5000, Value: 25},
-								{TimestampMs: 7000, Value: 35},
-							},
-						},
-					},
-				},
-				Warnings: []string{},
-				Infos:    []string{},
-			},
-		},
 	}
 
 	for name, testCase := range testCases {
@@ -1374,7 +1340,6 @@ func TestEngineQueryRequestRoundTripperHandler(t *testing.T) {
 			responseWithFinalizer.Close()
 
 			require.Equal(t, testCase.expectedSamplesProcessed, stats.SamplesProcessed)
-			require.Equal(t, testCase.expectedSamplesProcessedPerStep, stats.SamplesProcessedPerStep)
 
 			if responseWithFinalizer.Data.ResultType == model.ValString.String() {
 				// We can't perform the assertions below for string results because it doesn't select any data,

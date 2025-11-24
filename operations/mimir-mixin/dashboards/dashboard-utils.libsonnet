@@ -239,20 +239,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
+  local qpsPanelColors = {
+    '1xx': $._colors.warning,
+    '2xx': $._colors.success,
+    '3xx': '#6ED0E0',
+    '4xx': '#EF843C',
+    '5xx': $._colors.failed,
+    OK: $._colors.success,
+    success: $._colors.success,
+    'error': $._colors.failed,
+    cancel: '#A9A9A9',
+    Canceled: '#A9A9A9',
+  },
+
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+    $.aliasColors(qpsPanelColors) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
       },
@@ -260,20 +262,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanelNativeHistogram(selector, statusLabelName='status_code')::
     super.qpsPanelNativeHistogram(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      Success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+    $.aliasColors(qpsPanelColors) + {
       fieldConfig+: {
-        defaults+: { unit: 'reqps' },
+        defaults+: {
+          unit: 'reqps',
+          custom+: {
+            fillOpacity: 100,
+          },
+        },
       },
     },
 
@@ -666,11 +662,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.timeseriesPanel('Requests / sec') +
-      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.qpsPanelNativeHistogram('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     )
     .addPanel(
       $.timeseriesPanel('Latency') +
-      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.ncLatencyPanel('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
@@ -903,8 +899,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.autoScalingFailuresPanel(componentName)
     ),
 
-  ncSumCountRateStatPanel(metric, selectors, extra_selector, thresholds=[])::
-    local ncQuery = $.ncSumHistogramCountRate(metric, selectors, extra_selector);
+  // ncSumCountRateStatPanel builds a stat panel that shows the summed rate of a histogram counter.
+  ncSumCountRateStatPanel(metric, selectors, thresholds=[], unit='reqps', instant=true)::
+    local query = $.ncSumHistogramCountRate(metric, selectors);
+    local queries = [
+      utils.showClassicHistogramQuery(query),
+      utils.showNativeHistogramQuery(query),
+    ];
+    $.newStatPanel(
+      queries=queries,
+      legends=['', ''],
+      unit=unit,
+      thresholds=thresholds,
+      instant=instant,
+    ) + { options: { colorMode: 'none' } },
+
+  // ncSumCountRateRatioStatPanel builds a stat panel that shows ratios of histogram counter rates
+  // between two selector sets. Formatted as a percentage.
+  ncSumCountRateRatioStatPanel(metric, selectors, extra_selector, thresholds=[])::
+    local ncQuery = $.ncSumHistogramCountRateRatio(metric, selectors, extra_selector);
     local queries = [
       utils.showClassicHistogramQuery(ncQuery),
       utils.showNativeHistogramQuery(ncQuery),
@@ -1583,13 +1596,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
   aliasColors(colors):: {
     // aliasColors was the configuration in (deprecated) graph panel; we hide it from JSON model.
     aliasColors:: super.aliasColors,
+    local newOverrides = [
+      $.overrideFieldByName(name, [
+        $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
+      ])
+      for name in std.objectFields(colors)
+    ],
+    local byName(o) =
+      assert o.matcher.id == 'byName' : 'invalid matcher with id %s' % o.matcher.id;
+      o.matcher.options,
     fieldConfig+: {
-      overrides+: [
-        $.overrideFieldByName(name, [
-          $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
-        ])
-        for name in std.objectFields(colors)
-      ],
+      // Take existing field overrides and extend them with the new ones. Let new ones take
+      // precedence over already existing ones.
+      overrides: std.sort(std.setDiff(if 'overrides' in super then super.overrides else [], newOverrides, byName) + newOverrides, byName),
     },
   },
 
