@@ -177,11 +177,12 @@ func (m *Map) Count() int {
 
 func (m *Map) Cleanup(watermark clock.Minutes) int {
 	removed := 0
+outer:
 	for i := range m.data {
 		for j, xor := range m.data[i] {
 			if xor == 0 {
-				// There's nothing here.
-				continue
+				// There's nothing here, hence nothing in the next slots.
+				continue outer
 			}
 			if value := ^xor; watermark.GreaterOrEqualThan(value) {
 				m.index[i][j] = tombstone
