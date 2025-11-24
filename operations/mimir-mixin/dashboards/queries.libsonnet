@@ -79,7 +79,7 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Queue duration') +
         $.onlyRelevantIfQuerySchedulerEnabled('Queue duration') +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{$read_path_matcher}'),
+        $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', '$read_path_matcher'),
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per %s)' % $._config.per_instance_label) +
