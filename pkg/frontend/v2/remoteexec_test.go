@@ -1355,13 +1355,19 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 			maxMtx.Lock()
 			maxConcurrent = max(current, maxConcurrent)
 			maxMtx.Unlock()
-			afterLastMessageSent := func() {
+
+			beforeLastMessageSent := func() {
+				// Ideally we'd decrement the count the moment the last message is received by the frontend, but that's not possible.
+				// If we decrement it later than that, the test might incorrectly fail because the frontend might have already received the last message,
+				// so the frontend sending another request is OK.
+				// If we decrement it slightly early like this, there's a small risk we won't catch a case where the frontend sends too many requests
+				// in parallel.
 				count.Dec()
 			}
 
 			// Simulate doing some work, then send an empty response.
 			time.Sleep(20 * time.Millisecond)
-			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, afterLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
 			require.NoError(t, err)
 		}()
 
