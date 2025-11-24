@@ -9,6 +9,9 @@ package querymiddleware
 import (
 	"context"
 	"fmt"
+	"github.com/grafana/mimir/pkg/storage/series"
+	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"math"
 	"runtime"
 	"sort"
@@ -1864,4 +1867,150 @@ func TestMapEngineError(t *testing.T) {
 			require.Equal(t, res, tc.expected)
 		})
 	}
+}
+
+func TestConflictingCounterResets(t *testing.T) {
+
+	queries := []string{
+		`histogram_count(sum(rate(metric[1m1s])) by (foo))`,
+	}
+
+	queryable := promqltest.LoadedStorage(t, `
+		load 1m
+			metric{sample="3", foo="x"} {{sum:0 count:0 buckets:[5 5 2]}} {{sum:5 count:5 buckets:[10 10 4]}} {{sum:10 count:10 buckets:[12 12 6]}} {{sum:15 count:15 buckets:[1 1 1]}} {{sum:20 count:20 buckets:[3 3 1]}}
+			metric{sample="2", foo="x"} {{sum:0 count:0 buckets:[5 5 2]}} {{sum:10 count:10 buckets:[10 10 4]}} {{sum:0 count:0 buckets:[12 12 6]}} {{sum:5 count:5 buckets:[1 1 1]}} {{sum:3 count:3 buckets:[3 3 1]}}
+	`)
+
+	series, err := QueryableToSeries(context.Background(), queryable, 0, math.MaxInt64)
+	require.Nil(t, err)
+
+	shardingAwareQueryable := testdatagen.StorageSeriesQueryable(series)
+
+	for _, query := range queries {
+		t.Run(query, func(t *testing.T) {
+			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+
+				downstream := &downstreamHandler{
+					engine:    eng,
+					queryable: shardingAwareQueryable,
+				}
+
+				req := &PrometheusRangeQueryRequest{
+					path:      "/query_range",
+					start:     0,
+					end:       60 * 6 * 1000,
+					step:      1000,
+					queryExpr: parseQuery(t, query),
+				}
+
+				// Run the query without sharding.
+				expectedRes, err := downstream.Do(context.Background(), req)
+				require.Nil(t, err)
+
+				expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+				require.True(t, ok)
+				sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+
+				// Ensure the query produces some results.
+				require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+				requireValidSamples(t, expectedPrometheusRes.Data.Result)
+
+				require.Len(t, expectedPrometheusRes.GetWarnings(), 0)
+
+				for _, numShards := range []int{8} {
+					t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+						reg := prometheus.NewPedanticRegistry()
+						shardingware := newQueryShardingMiddleware(
+							log.NewNopLogger(),
+							eng,
+							mockLimits{totalShards: numShards},
+							0,
+							reg,
+						)
+
+						// Run the query with sharding.
+						shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "anonymous"), req)
+						require.Nil(t, err)
+
+						shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+						require.True(t, ok)
+						sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+						approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
+
+						// Ensure the warning about bucket monotonicity from PromQL engine is hidden.
+						require.Len(t, shardedPrometheusRes.GetWarnings(), 0)
+					})
+				}
+			})
+		})
+	}
+}
+
+// QueryableToSeries copies all series selected by matchers in [mint, maxt] into
+// concrete storage.Series. If no matchers are provided, it selects all metrics.
+func QueryableToSeries(ctx context.Context, q storage.Queryable, mint, maxt int64, matchers ...*labels.Matcher) ([]storage.Series, error) {
+	if len(matchers) == 0 {
+		// Select every metric name.
+		m, _ := labels.NewMatcher(labels.MatchRegexp, labels.MetricName, ".*")
+		matchers = []*labels.Matcher{m}
+	}
+
+	querier, err := q.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	defer querier.Close()
+
+	set := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, matchers...)
+
+	out := make([]storage.Series, 0, 1024)
+	var it chunkenc.Iterator
+
+	for set.Next() {
+		ser := set.At()
+
+		lset := ser.Labels()
+
+		// Copy points out of the iterator.
+		samples := make([]mimirpb.Sample, 0, 1024)
+		histos := make([]mimirpb.Histogram, 0)
+
+		it = ser.Iterator(it)
+		for v := it.Next(); v != chunkenc.ValNone; v = it.Next() {
+			switch v {
+			case chunkenc.ValFloat:
+				t, f := it.At()
+				if !value.IsStaleNaN(f) {
+					samples = append(samples, mimirpb.Sample{
+						TimestampMs: t,
+						Value:       f,
+					})
+				}
+			case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+				// Convert FloatHistogram to wire proto.
+				t := it.AtT()
+				_, fh := it.AtFloatHistogram(nil)
+				if fh != nil && !value.IsStaleNaN(fh.Sum) {
+					histos = append(histos, mimirpb.FromFloatHistogramToHistogramProto(t, fh.Copy()))
+				}
+			}
+		}
+
+		out = append(out, series.NewConcreteSeries(lset, toSamplePairs(samples), histos))
+	}
+	if err := set.Err(); err != nil {
+		return nil, err
+	}
+
+	return out, nil
+}
+
+// toSamplePairs adapts []mimirpb.Sample to []model.SamplePair expected by NewConcreteSeries.
+func toSamplePairs(in []mimirpb.Sample) []model.SamplePair {
+	out := make([]model.SamplePair, len(in))
+	for i := range in {
+		out[i].Timestamp = model.Time(in[i].TimestampMs)
+		out[i].Value = model.SampleValue(in[i].Value)
+	}
+	return out
 }
