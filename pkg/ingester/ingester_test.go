@@ -64,6 +64,7 @@ import (
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimirpbtest "github.com/grafana/mimir/pkg/mimirpb/testutil"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -9185,16 +9186,19 @@ func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
 	err = mimirpb.Unmarshal(buf, &wr)
 	require.NoError(t, err)
 
-	nextLeak := mimirpb.NextRefLeakChannel(t.Context())
+	nextLeak := mimirpbtest.NextRefLeakCheck(t.Context(), wr.Buffer().ReadOnlyData())
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, &wr.WriteRequest)
 	require.NoError(t, err)
 
 	select {
-	case addr := <-nextLeak:
-		require.Fail(t, "reference leak detected", "addr: %x", addr)
-	case <-time.After(10 * time.Millisecond):
+	case leaked := <-nextLeak:
+		if leaked {
+			require.Fail(t, "reference leak detected", "addr: %p", buf)
+		}
+	case <-time.After(1 * time.Second):
+		require.Fail(t, "expected reference leak check", "addr: %p", buf)
 	}
 }
 

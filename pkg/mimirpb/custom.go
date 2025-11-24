@@ -4,7 +4,6 @@ package mimirpb
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"math"
 	"runtime"
@@ -13,6 +12,7 @@ import (
 	"weak"
 
 	gogoproto "github.com/gogo/protobuf/proto"
+	"github.com/grafana/mimir/pkg/mimirpb/internal"
 	"github.com/prometheus/prometheus/model/histogram"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/encoding"
@@ -255,7 +255,9 @@ func (b *instrumentLeaksBuf) Free() {
 		}
 		// Remove our ref; no (strong) refs should remain (except in the stack).
 		b.Buffer = nil
-		weakRef := weak.Make(unsafe.SliceData(buf))
+		ptr := unsafe.SliceData(buf)
+		addr := uintptr(unsafe.Pointer(ptr))
+		weakRef := weak.Make(ptr)
 
 		// Check in a separate goroutine, because this stack still has locals
 		// pointing to the buffer.
@@ -263,36 +265,17 @@ func (b *instrumentLeaksBuf) Free() {
 			runtime.GC()
 			runtime.GC()
 
-			if v := weakRef.Value(); v != nil {
-				select {
-				case leaks <- v:
-				default:
-					panic(fmt.Sprintf("reference leak for object %p", v))
+			leaked := weakRef.Value() != nil
+
+			select {
+			case internal.RefLeakChecks <- internal.RefLeakCheck{Addr: addr, Leaked: leaked}:
+			default:
+				if leaked {
+					panic(fmt.Sprintf("reference leak for object 0x%x", addr))
 				}
 			}
 		}()
 	}
-}
-
-var leaks = make(chan *byte)
-
-// NextRefLeakChannel returns a channel where the next detected reference leak's
-// address will be sent, instead of the default behavior of panicking.
-//
-// Canceling the context immediately closes the channel and restores the default
-// behavior.
-//
-// Intended for use in tests.
-func NextRefLeakChannel(ctx context.Context) <-chan uintptr {
-	ch := make(chan uintptr, 1)
-	go func() {
-		defer close(ch)
-		select {
-		case ch <- uintptr(unsafe.Pointer(<-leaks)):
-		case <-ctx.Done():
-		}
-	}()
-	return ch
 }
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
