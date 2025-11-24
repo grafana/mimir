@@ -29,9 +29,17 @@ local filename = 'mimir-queries.json';
             Queries coming from Grafana Managed Alerting to the gateway will be routed to the remote ruler query path.
           |||
         ) +
+        local selector = $.jobMatcher($._config.job_names.gateway);
+        local query = utils.ncHistogramApplyTemplate(
+          template='label_replace(label_replace(%s, "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")',
+          query=utils.ncHistogramSumBy(
+            query=utils.ncHistogramCountRate('cortex_conditional_handler_request_duration_seconds', selector),
+            sum_by=['proxy'],
+          )
+        );
         $.queryPanel(
-          'label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{%s}[$__rate_interval]))), "proxy", "Remote ruler read path", "proxy", "^alternate_query_proxy$"),"proxy", "Main read path", "proxy", "^query_proxy$")' % $.jobMatcher($._config.job_names.gateway),
-          '{{proxy}}'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{proxy}}', '{{proxy}}'],
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } }
       )

@@ -75,7 +75,13 @@
                   "span": 12,
                   "targets": [
                      {
-                        "expr": "label_replace(label_replace(sum by (proxy)(histogram_count(rate(cortex_conditional_handler_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))), \"proxy\", \"Remote ruler read path\", \"proxy\", \"^alternate_query_proxy$\"),\"proxy\", \"Main read path\", \"proxy\", \"^query_proxy$\")",
+                        "expr": "(label_replace(label_replace(sum by (proxy) (rate(cortex_conditional_handler_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval])), \"proxy\", \"Remote ruler read path\", \"proxy\", \"^alternate_query_proxy$\"),\"proxy\", \"Main read path\", \"proxy\", \"^query_proxy$\")) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "{{proxy}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(label_replace(label_replace(sum by (proxy) (histogram_count(rate(cortex_conditional_handler_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw.*))\"}[$__rate_interval]))), \"proxy\", \"Remote ruler read path\", \"proxy\", \"^alternate_query_proxy$\"),\"proxy\", \"Main read path\", \"proxy\", \"^query_proxy$\")) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{proxy}}",
                         "legendLink": null
