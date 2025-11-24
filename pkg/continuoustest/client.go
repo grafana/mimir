@@ -132,9 +132,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 	if cfg.ReadBaseEndpoint.URL == nil {
 		return nil, errors.New("the read endpoint has not been set")
 	}
-	if cfg.WriteProtocol != "prometheus" && cfg.WriteProtocol != "otlp-http" {
-		return nil, fmt.Errorf("the only supported write protocols are \"prometheus\" or \"otlp-http\"")
-	}
+
 	// Ensure not multiple auth methods set at the same time
 	// Allow tenantID and auth to be defined at the same time for tenant testing
 	// anonymous is the default value for TenantID.
@@ -143,22 +141,19 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 		return nil, errors.New("either set tests.tenant-id or tests.basic-auth-user/tests.basic-auth-password or tests.bearer-token")
 	}
 
-	apiCfg := api.Config{
-		Address:      cfg.ReadBaseEndpoint.String(),
-		RoundTripper: rt,
-	}
-
-	readClient, err := api.NewClient(apiCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create read client: %w", err)
-	}
-
 	var writeClient clientWriter
 
 	switch cfg.WriteProtocol {
-
 	case "prometheus":
 		writeClient = &prometheusWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}
+
+	case "prometheus2":
+		writeClient = &prometheus2Writer{
 			httpClient:        &http.Client{Transport: rt},
 			writeBaseEndpoint: cfg.WriteBaseEndpoint,
 			writeBatchSize:    cfg.WriteBatchSize,
@@ -172,6 +167,19 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 			writeBatchSize:    cfg.WriteBatchSize,
 			writeTimeout:      cfg.WriteTimeout,
 		}
+
+	default:
+		return nil, fmt.Errorf("the only supported write protocols are: \"prometheus\", \"prometheus2\", \"otlp-http\"")
+	}
+
+	apiCfg := api.Config{
+		Address:      cfg.ReadBaseEndpoint.String(),
+		RoundTripper: rt,
+	}
+
+	readClient, err := api.NewClient(apiCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create read client: %w", err)
 	}
 
 	return &Client{
