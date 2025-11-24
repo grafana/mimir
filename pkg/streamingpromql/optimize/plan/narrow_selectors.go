@@ -76,10 +76,14 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 		// based on joins or aggregations being performed by child nodes. We start with an
 		// empty "created" set of labels that we _cannot_ use as hints. This is populated
 		// and checked when generating hints.
-		e.Hints = n.hintsFromNode(ctx, e, nil)
-		if e.Hints != nil {
+		if include := n.includeFromNode(ctx, e, nil); len(include) > 0 {
+			if e.Hints == nil {
+				e.Hints = &core.BinaryExpressionHints{}
+			}
+
+			e.Hints.Include = include
 			sl := spanlogger.FromContext(ctx, n.logger)
-			sl.DebugLog("msg", "setting query hint on binary expression", "labels", e.Hints.GetInclude())
+			sl.DebugLog("msg", "setting query hint on binary expression", "labels", include)
 			addedHint = true
 		}
 	}
@@ -97,7 +101,7 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 	return addedHint, nil
 }
 
-func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, node planning.Node, created map[string]struct{}) *core.BinaryExpressionHints {
+func (n *NarrowSelectorsOptimizationPass) includeFromNode(ctx context.Context, node planning.Node, created map[string]struct{}) []string {
 	switch e := node.(type) {
 	case *core.BinaryExpression:
 		// The current node is a binary expression: we only want to exclude created labels
@@ -110,7 +114,7 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, nod
 
 		if e.VectorMatching != nil && e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
 			if filtered := filterLabels(e.VectorMatching.MatchingLabels, created); len(filtered) > 0 {
-				return &core.BinaryExpressionHints{Include: filtered}
+				return filtered
 			}
 
 			return nil
@@ -121,13 +125,13 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, nod
 		// use as a hint. We pass along any labels created from label_replace or label_join on the
 		// left or right side of this binary expression when trying to find labels for hints to make
 		// sure we don't use them.
-		return n.hintsFromNode(ctx, e.LHS, created)
+		return n.includeFromNode(ctx, e.LHS, created)
 	case *core.AggregateExpression:
 		if !e.Without && len(e.Grouping) > 0 {
 			// Make sure to remove labels from potential hints that have been created by a function
 			// call (via label_replace or label_join) in a parent expression.
 			if filtered := filterLabels(e.Grouping, created); len(filtered) > 0 {
-				return &core.BinaryExpressionHints{Include: filtered}
+				return filtered
 			}
 
 			return nil
@@ -137,8 +141,8 @@ func (n *NarrowSelectorsOptimizationPass) hintsFromNode(ctx context.Context, nod
 	// If the current node isn't a binary expression or aggregation, keep looking at the
 	// children to see if there are any that we can use to find a suitable query hint.
 	for child := range planning.ChildrenIter(node) {
-		if h := n.hintsFromNode(ctx, child, created); h != nil {
-			return h
+		if i := n.includeFromNode(ctx, child, created); len(i) > 0 {
+			return i
 		}
 	}
 
