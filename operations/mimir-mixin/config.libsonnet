@@ -235,6 +235,9 @@
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
 
+    // Whether the experimental usage tracker is enabled.
+    usage_tracker_enabled: false,
+
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).

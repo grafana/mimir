@@ -118,5 +118,17 @@ local filename = 'mimir-writes-resources.json';
           for l in super.list
         ],
       },
-    },
+    }
+    .addRow(
+      $.row('Usage-tracker')
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('usage-tracker'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('usage-tracker'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('usage-tracker'),
+      )
+    )
 }
