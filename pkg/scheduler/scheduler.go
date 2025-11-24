@@ -701,7 +701,7 @@ func (s *Scheduler) stopping(_ error) error {
 		case <-c.Done():
 			cancel()
 			level.Error(s.log).Log("msg", "timeout reached while stopping subservices")
-			return fmt.Errorf("timeout reached while stopping subservices")
+			return nil
 		case err := <-errChan:
 			cancel()
 			return err

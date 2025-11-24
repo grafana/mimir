@@ -387,7 +387,8 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 
 	msg, err := frontendLoop.Recv()
 	require.NoError(t, err)
-	require.Equal(t, schedulerpb.SHUTTING_DOWN, msg.Status)
+	require.Equal(t, schedulerpb.ERROR, msg.Status)
+	require.Equal(t, queue.ErrStopped.Error(), msg.Error)
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
