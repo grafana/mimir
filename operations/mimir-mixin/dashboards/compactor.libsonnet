@@ -281,7 +281,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('TSDB compaction duration') +
-        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.ncLatencyPanel('prometheus_tsdb_compaction_duration_seconds', '%s' % $.jobMatcher($._config.job_names.compactor)) +
         $.panelDescription(
           'TSDB compaction duration',
           |||
