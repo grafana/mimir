@@ -74,6 +74,7 @@
 * [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13525
 * [ENHANCEMENT] Ruler: gRPC errors without details are classified as `operator` errors, and rule evaluation failures (such as duplicate labelsets) are classified as `user` errors. #13586
 * [ENHANCEMENT] Server: The `/metrics` endpoint now supports metrics filtering by providing one or more `name[]` query parameters. #13746
+* [ENHANCEMENT] Bucket storage: Add support for GCS rate limiting with exponential ramping following Google Cloud Storage best practices. Enable upload rate limiting with `-gcs.upload-rate-limit-enabled` and configure with `-gcs.upload-initial-qps`, `-gcs.upload-max-qps` and `-gcs.upload-ramp-period`. Enable read rate limiting with `-gcs.read-rate-limit-enabled` and configure with `-gcs.read-initial-qps`, `-gcs.read-max-qps` and `-gcs.read-ramp-period`. #13703
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084

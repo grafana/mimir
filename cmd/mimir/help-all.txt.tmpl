@@ -73,10 +73,26 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -alertmanager-storage.gcs.max-retries int
     	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
+  -alertmanager-storage.gcs.read-initial-qps int
+    	Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum. (default 5000)
+  -alertmanager-storage.gcs.read-max-qps int
+    	Maximum queries per second limit for GCS reads. (default 16000)
+  -alertmanager-storage.gcs.read-ramp-period duration
+    	Time period over which the read rate doubles, following Google's recommendation. (default 20m0s)
+  -alertmanager-storage.gcs.read-rate-limit-enabled
+    	Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.
   -alertmanager-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -alertmanager-storage.gcs.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
+  -alertmanager-storage.gcs.upload-initial-qps int
+    	Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum. (default 1000)
+  -alertmanager-storage.gcs.upload-max-qps int
+    	Maximum queries per second limit for GCS uploads. (default 3200)
+  -alertmanager-storage.gcs.upload-ramp-period duration
+    	Time period over which the upload rate doubles, following Google's recommendation. (default 20m0s)
+  -alertmanager-storage.gcs.upload-rate-limit-enabled
+    	Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.
   -alertmanager-storage.local.path string
     	Path at which alertmanager configurations are stored.
   -alertmanager-storage.s3.access-key-id string
@@ -657,10 +673,26 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -blocks-storage.gcs.max-retries int
     	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
+  -blocks-storage.gcs.read-initial-qps int
+    	Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum. (default 5000)
+  -blocks-storage.gcs.read-max-qps int
+    	Maximum queries per second limit for GCS reads. (default 16000)
+  -blocks-storage.gcs.read-ramp-period duration
+    	Time period over which the read rate doubles, following Google's recommendation. (default 20m0s)
+  -blocks-storage.gcs.read-rate-limit-enabled
+    	Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.
   -blocks-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -blocks-storage.gcs.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
+  -blocks-storage.gcs.upload-initial-qps int
+    	Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum. (default 1000)
+  -blocks-storage.gcs.upload-max-qps int
+    	Maximum queries per second limit for GCS uploads. (default 3200)
+  -blocks-storage.gcs.upload-ramp-period duration
+    	Time period over which the upload rate doubles, following Google's recommendation. (default 20m0s)
+  -blocks-storage.gcs.upload-rate-limit-enabled
+    	Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.
   -blocks-storage.s3.access-key-id string
     	S3 access key ID
   -blocks-storage.s3.bucket-lookup-type value
@@ -927,10 +959,26 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -common.storage.gcs.max-retries int
     	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
+  -common.storage.gcs.read-initial-qps int
+    	Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum. (default 5000)
+  -common.storage.gcs.read-max-qps int
+    	Maximum queries per second limit for GCS reads. (default 16000)
+  -common.storage.gcs.read-ramp-period duration
+    	Time period over which the read rate doubles, following Google's recommendation. (default 20m0s)
+  -common.storage.gcs.read-rate-limit-enabled
+    	Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.
   -common.storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -common.storage.gcs.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
+  -common.storage.gcs.upload-initial-qps int
+    	Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum. (default 1000)
+  -common.storage.gcs.upload-max-qps int
+    	Maximum queries per second limit for GCS uploads. (default 3200)
+  -common.storage.gcs.upload-ramp-period duration
+    	Time period over which the upload rate doubles, following Google's recommendation. (default 20m0s)
+  -common.storage.gcs.upload-rate-limit-enabled
+    	Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.
   -common.storage.s3.access-key-id string
     	S3 access key ID
   -common.storage.s3.bucket-lookup-type value
@@ -2753,10 +2801,26 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of idle (keep-alive) connections to keep per-host. Set to 0 to use a built-in default value of 2. (default 100)
   -ruler-storage.gcs.max-retries int
     	Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes. (default 20)
+  -ruler-storage.gcs.read-initial-qps int
+    	Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum. (default 5000)
+  -ruler-storage.gcs.read-max-qps int
+    	Maximum queries per second limit for GCS reads. (default 16000)
+  -ruler-storage.gcs.read-ramp-period duration
+    	Time period over which the read rate doubles, following Google's recommendation. (default 20m0s)
+  -ruler-storage.gcs.read-rate-limit-enabled
+    	Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.
   -ruler-storage.gcs.service-account string
     	JSON either from a Google Developers Console client_credentials.json file, or a Google Developers service account key. Needs to be valid JSON, not a filesystem path.
   -ruler-storage.gcs.tls-handshake-timeout duration
     	Maximum time to wait for a TLS handshake. Set to 0 for no limit. (default 10s)
+  -ruler-storage.gcs.upload-initial-qps int
+    	Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum. (default 1000)
+  -ruler-storage.gcs.upload-max-qps int
+    	Maximum queries per second limit for GCS uploads. (default 3200)
+  -ruler-storage.gcs.upload-ramp-period duration
+    	Time period over which the upload rate doubles, following Google's recommendation. (default 20m0s)
+  -ruler-storage.gcs.upload-rate-limit-enabled
+    	Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.
   -ruler-storage.local.directory string
     	Directory to scan for rules
   -ruler-storage.s3.access-key-id string

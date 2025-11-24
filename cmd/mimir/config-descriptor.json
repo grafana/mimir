@@ -9096,6 +9096,94 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "upload_rate_limit_enabled",
+              "required": false,
+              "desc": "Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.gcs.upload-rate-limit-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_initial_qps",
+              "required": false,
+              "desc": "Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000,
+              "fieldFlag": "blocks-storage.gcs.upload-initial-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_max_qps",
+              "required": false,
+              "desc": "Maximum queries per second limit for GCS uploads.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3200,
+              "fieldFlag": "blocks-storage.gcs.upload-max-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_ramp_period",
+              "required": false,
+              "desc": "Time period over which the upload rate doubles, following Google's recommendation.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1200000000000,
+              "fieldFlag": "blocks-storage.gcs.upload-ramp-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_rate_limit_enabled",
+              "required": false,
+              "desc": "Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.gcs.read-rate-limit-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_initial_qps",
+              "required": false,
+              "desc": "Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000,
+              "fieldFlag": "blocks-storage.gcs.read-initial-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_max_qps",
+              "required": false,
+              "desc": "Maximum queries per second limit for GCS reads.",
+              "fieldValue": null,
+              "fieldDefaultValue": 16000,
+              "fieldFlag": "blocks-storage.gcs.read-max-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_ramp_period",
+              "required": false,
+              "desc": "Time period over which the read rate doubles, following Google's recommendation.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1200000000000,
+              "fieldFlag": "blocks-storage.gcs.read-ramp-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -14950,6 +15038,94 @@
               "fieldCategory": "advanced"
             },
             {
+              "kind": "field",
+              "name": "upload_rate_limit_enabled",
+              "required": false,
+              "desc": "Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.gcs.upload-rate-limit-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_initial_qps",
+              "required": false,
+              "desc": "Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000,
+              "fieldFlag": "ruler-storage.gcs.upload-initial-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_max_qps",
+              "required": false,
+              "desc": "Maximum queries per second limit for GCS uploads.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3200,
+              "fieldFlag": "ruler-storage.gcs.upload-max-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_ramp_period",
+              "required": false,
+              "desc": "Time period over which the upload rate doubles, following Google's recommendation.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1200000000000,
+              "fieldFlag": "ruler-storage.gcs.upload-ramp-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_rate_limit_enabled",
+              "required": false,
+              "desc": "Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ruler-storage.gcs.read-rate-limit-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_initial_qps",
+              "required": false,
+              "desc": "Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000,
+              "fieldFlag": "ruler-storage.gcs.read-initial-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_max_qps",
+              "required": false,
+              "desc": "Maximum queries per second limit for GCS reads.",
+              "fieldValue": null,
+              "fieldDefaultValue": 16000,
+              "fieldFlag": "ruler-storage.gcs.read-max-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_ramp_period",
+              "required": false,
+              "desc": "Time period over which the read rate doubles, following Google's recommendation.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1200000000000,
+              "fieldFlag": "ruler-storage.gcs.read-ramp-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
               "kind": "block",
               "name": "http",
               "required": false,
@@ -17238,6 +17414,94 @@
               "fieldDefaultValue": 20,
               "fieldFlag": "alertmanager-storage.gcs.max-retries",
               "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_rate_limit_enabled",
+              "required": false,
+              "desc": "Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.gcs.upload-rate-limit-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_initial_qps",
+              "required": false,
+              "desc": "Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1000,
+              "fieldFlag": "alertmanager-storage.gcs.upload-initial-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_max_qps",
+              "required": false,
+              "desc": "Maximum queries per second limit for GCS uploads.",
+              "fieldValue": null,
+              "fieldDefaultValue": 3200,
+              "fieldFlag": "alertmanager-storage.gcs.upload-max-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "upload_ramp_period",
+              "required": false,
+              "desc": "Time period over which the upload rate doubles, following Google's recommendation.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1200000000000,
+              "fieldFlag": "alertmanager-storage.gcs.upload-ramp-period",
+              "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_rate_limit_enabled",
+              "required": false,
+              "desc": "Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "alertmanager-storage.gcs.read-rate-limit-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_initial_qps",
+              "required": false,
+              "desc": "Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum.",
+              "fieldValue": null,
+              "fieldDefaultValue": 5000,
+              "fieldFlag": "alertmanager-storage.gcs.read-initial-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_max_qps",
+              "required": false,
+              "desc": "Maximum queries per second limit for GCS reads.",
+              "fieldValue": null,
+              "fieldDefaultValue": 16000,
+              "fieldFlag": "alertmanager-storage.gcs.read-max-qps",
+              "fieldType": "int",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "read_ramp_period",
+              "required": false,
+              "desc": "Time period over which the read rate doubles, following Google's recommendation.",
+              "fieldValue": null,
+              "fieldDefaultValue": 1200000000000,
+              "fieldFlag": "alertmanager-storage.gcs.read-ramp-period",
+              "fieldType": "duration",
               "fieldCategory": "advanced"
             },
             {
@@ -20130,6 +20394,94 @@
                   "fieldDefaultValue": 20,
                   "fieldFlag": "common.storage.gcs.max-retries",
                   "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "upload_rate_limit_enabled",
+                  "required": false,
+                  "desc": "Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.gcs.upload-rate-limit-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "upload_initial_qps",
+                  "required": false,
+                  "desc": "Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1000,
+                  "fieldFlag": "common.storage.gcs.upload-initial-qps",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "upload_max_qps",
+                  "required": false,
+                  "desc": "Maximum queries per second limit for GCS uploads.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 3200,
+                  "fieldFlag": "common.storage.gcs.upload-max-qps",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "upload_ramp_period",
+                  "required": false,
+                  "desc": "Time period over which the upload rate doubles, following Google's recommendation.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1200000000000,
+                  "fieldFlag": "common.storage.gcs.upload-ramp-period",
+                  "fieldType": "duration",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_rate_limit_enabled",
+                  "required": false,
+                  "desc": "Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": false,
+                  "fieldFlag": "common.storage.gcs.read-rate-limit-enabled",
+                  "fieldType": "boolean",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_initial_qps",
+                  "required": false,
+                  "desc": "Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 5000,
+                  "fieldFlag": "common.storage.gcs.read-initial-qps",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_max_qps",
+                  "required": false,
+                  "desc": "Maximum queries per second limit for GCS reads.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 16000,
+                  "fieldFlag": "common.storage.gcs.read-max-qps",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "read_ramp_period",
+                  "required": false,
+                  "desc": "Time period over which the read rate doubles, following Google's recommendation.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1200000000000,
+                  "fieldFlag": "common.storage.gcs.read-ramp-period",
+                  "fieldType": "duration",
                   "fieldCategory": "advanced"
                 },
                 {
