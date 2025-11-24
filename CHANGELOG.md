@@ -131,6 +131,17 @@
 
 ### Jsonnet
 
+* [CHANGE] Renamed the following configuration parameters to add the `_per_zone` suffix, to better reflect that these values apply per zone in multi-zone deployments: #13632
+  * `autoscaling_querier_min_replicas` → `autoscaling_querier_min_replicas_per_zone`
+  * `autoscaling_querier_max_replicas` → `autoscaling_querier_max_replicas_per_zone`
+  * `autoscaling_query_frontend_min_replicas` → `autoscaling_query_frontend_min_replicas_per_zone`
+  * `autoscaling_query_frontend_max_replicas` → `autoscaling_query_frontend_max_replicas_per_zone`
+  * `autoscaling_ruler_min_replicas` → `autoscaling_ruler_min_replicas_per_zone`
+  * `autoscaling_ruler_max_replicas` → `autoscaling_ruler_max_replicas_per_zone`
+  * `autoscaling_ruler_querier_min_replicas` → `autoscaling_ruler_querier_min_replicas_per_zone`
+  * `autoscaling_ruler_querier_max_replicas` → `autoscaling_ruler_querier_max_replicas_per_zone`
+  * `autoscaling_ruler_query_frontend_min_replicas` → `autoscaling_ruler_query_frontend_min_replicas_per_zone`
+  * `autoscaling_ruler_query_frontend_max_replicas` → `autoscaling_ruler_query_frontend_max_replicas_per_zone`
 * [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376

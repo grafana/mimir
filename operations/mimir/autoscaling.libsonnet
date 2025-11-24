@@ -12,8 +12,8 @@
     autoscaling_oom_protection_enabled: false,
 
     autoscaling_querier_enabled: false,
-    autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
-    autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
+    autoscaling_querier_min_replicas_per_zone: error 'you must set autoscaling_querier_min_replicas_per_zone in the _config',
+    autoscaling_querier_max_replicas_per_zone: error 'you must set autoscaling_querier_max_replicas_per_zone in the _config',
     autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
     autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of queriers needed.
     autoscaling_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
@@ -22,8 +22,8 @@
     autoscaling_querier_scaledown_percent_cap: 10,  // The maximum percent a querier deployment may scale down every 2m.
 
     autoscaling_ruler_querier_enabled: false,
-    autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
-    autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
+    autoscaling_ruler_querier_min_replicas_per_zone: error 'you must set autoscaling_ruler_querier_min_replicas_per_zone in the _config',
+    autoscaling_ruler_querier_max_replicas_per_zone: error 'you must set autoscaling_ruler_querier_max_replicas_per_zone in the _config',
     autoscaling_ruler_querier_cpu_target_utilization: 1,
     autoscaling_ruler_querier_memory_target_utilization: 1,
     autoscaling_ruler_querier_workers_target_utilization: 0.75,  // Target to utilize 75% ruler-querier workers on peak traffic, so we have 25% room for higher peaks.
@@ -35,20 +35,20 @@
     autoscaling_distributor_memory_target_utilization: 1,
 
     autoscaling_ruler_enabled: false,
-    autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
-    autoscaling_ruler_max_replicas: error 'you must set autoscaling_ruler_max_replicas in the _config',
+    autoscaling_ruler_min_replicas_per_zone: error 'you must set autoscaling_ruler_min_replicas_per_zone in the _config',
+    autoscaling_ruler_max_replicas_per_zone: error 'you must set autoscaling_ruler_max_replicas_per_zone in the _config',
     autoscaling_ruler_cpu_target_utilization: 1,
     autoscaling_ruler_memory_target_utilization: 1,
 
     autoscaling_query_frontend_enabled: false,
-    autoscaling_query_frontend_min_replicas: error 'you must set autoscaling_query_frontend_min_replicas in the _config',
-    autoscaling_query_frontend_max_replicas: error 'you must set autoscaling_query_frontend_max_replicas in the _config',
+    autoscaling_query_frontend_min_replicas_per_zone: error 'you must set autoscaling_query_frontend_min_replicas_per_zone in the _config',
+    autoscaling_query_frontend_max_replicas_per_zone: error 'you must set autoscaling_query_frontend_max_replicas_per_zone in the _config',
     autoscaling_query_frontend_cpu_target_utilization: 0.75,  // Query-frontend CPU utilization can be very spiky based on actual queries.
     autoscaling_query_frontend_memory_target_utilization: 1,
 
     autoscaling_ruler_query_frontend_enabled: false,
-    autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
-    autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
+    autoscaling_ruler_query_frontend_min_replicas_per_zone: error 'you must set autoscaling_ruler_query_frontend_min_replicas_per_zone in the _config',
+    autoscaling_ruler_query_frontend_max_replicas_per_zone: error 'you must set autoscaling_ruler_query_frontend_max_replicas_per_zone in the _config',
     autoscaling_ruler_query_frontend_cpu_target_utilization: 1,
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
 
@@ -557,8 +557,8 @@
       query_scheduler_container_name='query-scheduler',
       querier_container_name='querier',
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
-      min_replicas=$._config.autoscaling_querier_min_replicas,
-      max_replicas=$._config.autoscaling_querier_max_replicas,
+      min_replicas=$._config.autoscaling_querier_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_querier_max_replicas_per_zone,
       target_utilization=$._config.autoscaling_querier_target_utilization,
     ),
 
@@ -577,8 +577,8 @@
       container_name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_query_frontend_min_replicas,
-      max_replicas=$._config.autoscaling_query_frontend_max_replicas,
+      min_replicas=$._config.autoscaling_query_frontend_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_query_frontend_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
       extra_matchers=extra_matchers,
@@ -591,7 +591,7 @@
     'query_frontend_deployment',
     if $._config.autoscaling_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_querier_enabled) then
-        queryFrontendReplicas($._config.autoscaling_querier_max_replicas) else
+        queryFrontendReplicas($._config.autoscaling_querier_max_replicas_per_zone) else
         {}
   ),
 
@@ -605,8 +605,8 @@
       container_name='ruler-querier',
       cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       memory_requests=$.ruler_querier_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
-      max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
+      min_replicas=$._config.autoscaling_ruler_querier_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_ruler_querier_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
       extra_matchers=extra_matchers,
@@ -657,8 +657,8 @@
       container_name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
-      max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
+      min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
       extra_matchers=extra_matchers,
@@ -671,7 +671,7 @@
     'ruler_query_frontend_deployment',
     if $._config.autoscaling_ruler_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_ruler_querier_enabled) then
-        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
+        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas_per_zone) else
         {}
   ),
 
@@ -795,8 +795,8 @@
       container_name='ruler',
       cpu_requests=$.ruler_container.resources.requests.cpu,
       memory_requests=$.ruler_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_ruler_min_replicas,
-      max_replicas=$._config.autoscaling_ruler_max_replicas,
+      min_replicas=$._config.autoscaling_ruler_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_ruler_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
       // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and
