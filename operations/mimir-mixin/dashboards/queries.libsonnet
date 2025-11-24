@@ -184,7 +184,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Number of sharded queries per query') +
-        $.latencyPanel('cortex_frontend_sharded_queries_per_query', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_frontend_sharded_queries_per_query', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } } +
         $.panelDescription(
           'Number of sharded queries per query',
