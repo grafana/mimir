@@ -109,6 +109,18 @@ local filename = 'mimir-writes-resources.json';
         $.containerDiskSpaceUtilizationPanelByComponent('ingester'),
       )
     )
+    .addRow(
+      $.row('Usage Tracker')
+      .addPanel(
+        $.containerCPUUsagePanelByComponent('usage_tracker'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanelByComponent('usage_tracker'),
+      )
+      .addPanel(
+        $.containerGoHeapInUsePanelByComponent('usage_tracker'),
+      )
+    )
     + {
       templating+: {
         list: [
@@ -119,16 +131,4 @@ local filename = 'mimir-writes-resources.json';
         ],
       },
     }
-    .addRow(
-      $.row('Usage-tracker')
-      .addPanel(
-        $.containerCPUUsagePanelByComponent('usage-tracker'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanelByComponent('usage-tracker'),
-      )
-      .addPanel(
-        $.containerGoHeapInUsePanelByComponent('usage-tracker'),
-      )
-    )
 }
