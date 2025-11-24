@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 )
 
 func TestOptimizationPass(t *testing.T) {
@@ -63,6 +64,11 @@ func TestOptimizationPass(t *testing.T) {
 			},
 			expectedOutput: `sum(__sharded_concat__(sum(foo{__query_shard__="1_of_2"}), sum(foo{__query_shard__="2_of_2"})))`,
 		},
+		"shardable expression eligible for subquery spin-off": {
+			input: `sum(sum_over_time(sum(foo)[5h:30s]))`,
+			// We should not rewrite the expression, because it's not valid to try to shard the __subquery_spinoff__ selector.
+			expectedOutput: `sum(sum_over_time(__subquery_spinoff__{__query__="sum(foo)",__range__="5h0m0s",__step__="30s"}[5h]))`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -76,10 +82,12 @@ func TestOptimizationPass(t *testing.T) {
 			}
 			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
 
-			expr, err := parser.ParseExpr(testCase.input)
+			ctx := user.InjectOrgID(context.Background(), "tenant-1")
+			afterRewrite, err := rewriteForSubquerySpinoff(ctx, testCase.input)
+			require.NoError(t, err)
+			expr, err := parser.ParseExpr(afterRewrite)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 			ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, testCase.hints, testCase.options)
 			output, err := pass.Apply(ctx, expr)
 			require.NoError(t, err)
@@ -109,4 +117,25 @@ func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int {
 
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.splitAndMergeShards
+}
+
+func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error) {
+	stats := astmapper.NewSubquerySpinOffMapperStats()
+	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
+	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
+	ast, err := parser.ParseExpr(expr)
+	if err != nil {
+		return "", err
+	}
+
+	rewrittenQuery, err := mapper.Map(ctx, ast)
+	if err != nil {
+		return "", err
+	}
+
+	if stats.SpunOffSubqueries() == 0 {
+		return expr, nil
+	}
+
+	return rewrittenQuery.String(), nil
 }
