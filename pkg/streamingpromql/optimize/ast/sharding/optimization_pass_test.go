@@ -85,11 +85,9 @@ func TestOptimizationPass(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
 			afterRewrite, err := rewriteForSubquerySpinoff(ctx, testCase.input)
 			require.NoError(t, err)
-			expr, err := parser.ParseExpr(afterRewrite)
-			require.NoError(t, err)
 
 			ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, testCase.hints, testCase.options)
-			output, err := pass.Apply(ctx, expr)
+			output, err := pass.Apply(ctx, afterRewrite)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedOutput, output.String())
 		})
@@ -119,23 +117,23 @@ func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.splitAndMergeShards
 }
 
-func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error) {
+func rewriteForSubquerySpinoff(ctx context.Context, expr string) (parser.Expr, error) {
 	stats := astmapper.NewSubquerySpinOffMapperStats()
 	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
 	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
 	ast, err := parser.ParseExpr(expr)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	rewrittenQuery, err := mapper.Map(ctx, ast)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if stats.SpunOffSubqueries() == 0 {
-		return expr, nil
+		return ast, nil
 	}
 
-	return rewrittenQuery.String(), nil
+	return rewrittenQuery, nil
 }
