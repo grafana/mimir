@@ -486,6 +486,11 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		return false
 	}
 
+	// Check for rule evaluation failures (errors that occur after query succeeds)
+	if isUserRuleEvalFailure(err) {
+		return false // User error
+	}
+
 	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
 		if code >= 400 && code < 500 {
 			return code == http.StatusTooManyRequests
@@ -504,11 +509,6 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 
 	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
-	}
-
-	// Check for rule evaluation failures (errors that occur after query succeeds)
-	if isUserRuleEvalFailure(err) {
-		return false // User error
 	}
 
 	// If internal Ruler is used, then we classify only promql.ErrStorage errors as operator-controllable.
