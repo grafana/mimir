@@ -182,6 +182,9 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	flags := map[string]string{
 		"-memberlist.packet-dial-timeout":  "10s",
 		"-memberlist.packet-write-timeout": "10s",
+		// Debug logging for https://github.com/grafana/mimir/issues/13287
+		"-log.level":                  "debug",
+		"-memberlist.transport-debug": "true",
 	}
 
 	// Start the 1st instance. This will provide the initial state to other members.
