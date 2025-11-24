@@ -7,6 +7,7 @@ package tenantshard
 
 import (
 	"iter"
+	"slices"
 	"sync"
 
 	"go.uber.org/atomic"
@@ -183,7 +184,8 @@ func (m *Map) Cleanup(watermark clock.Minutes) int {
 				// There's nothing here.
 				continue
 			}
-			if value := ^xor; watermark.GreaterOrEqualThan(value) {
+			value := ^xor
+			if watermark.GreaterOrEqualThan(value) {
 				m.index[i][j] = tombstone
 				m.keys[i][j] = 0
 				m.data[i][j] = 0
@@ -276,8 +278,10 @@ func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 }
 
 func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
-	keysClone := pooledClone(m.keys, keysPool)
-	dataClone := pooledClone(m.data, dataPool)
+	//keysClone := pooledClone(m.keys, keysPool)
+	//dataClone := pooledClone(m.data, dataPool)
+	keysClone := slices.Clone(m.keys)
+	dataClone := slices.Clone(m.data)
 	count := m.Count()
 
 	return count, func(yield func(uint64, clock.Minutes) bool) {
@@ -285,20 +289,20 @@ func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 			return
 		}
 
-		for i, g := range *dataClone {
+		for i, g := range dataClone {
 			for j, xor := range g {
 				if xor == 0 {
 					// There's nothing here.
 					continue
 				}
 				value := ^xor
-				if !yield((*keysClone)[i][j], value) {
+				if !yield((keysClone)[i][j], value) {
 					return // stop iteration
 				}
 			}
 		}
 
-		keysPool.Put(keysClone)
-		dataPool.Put(dataClone)
+		//keysPool.Put(keysClone)
+		//dataPool.Put(dataClone)
 	}
 }

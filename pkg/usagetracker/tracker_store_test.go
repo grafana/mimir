@@ -398,7 +398,7 @@ func TestTrackerStore_Cleanup_Tenants(t *testing.T) {
 func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	const tenant = "user"
 	const idleTimeoutMinutes = 5
-	const maxSeriesRange = 10000
+	const maxSeriesRange = 100
 	nowUnixMinutes := atomic.NewInt64(0)
 	now := func() time.Time { return time.Unix(nowUnixMinutes.Load()*60, 0) }
 
@@ -428,7 +428,62 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 		nowUnixMinutes.Inc()
 		tracker.cleanup(now())
 		cleanups++
+
+		watermark := clock.ToMinutes(now().Add(-idleTimeoutMinutes * time.Minute))
+		trackedTenant := tracker.getOrCreateTenant(tenant)
+		for i := uint8(0); i < shards; i++ {
+			s := trackedTenant.shards[i]
+			s.Lock()
+			_, it := tracker.tenants[tenant].shards[i].Items()
+			s.Unlock()
+			failed := false
+			var failedSeries uint64
+			for series, ts := range it {
+				if watermark.GreaterOrEqualThan(ts) {
+					t.Logf("now: %s, watermark: %s", clock.ToMinutes(now()), watermark)
+					failed = true
+					failedSeries = series
+					t.Logf("FAILED: series %d: %v, ts: %v (watermark %s alert)", series, ts, ts, watermark)
+				}
+			}
+
+			if failed {
+				t.Errorf("failed")
+				close(done)
+				wg.Wait()
+				t.Logf("failed")
+
+				_, it := tracker.tenants[tenant].shards[i].Items()
+				for its, itt := range it {
+					if its == failedSeries {
+						t.Logf("series %d: %v, ts: %v", its, itt, itt)
+					}
+					if watermark.GreaterOrEqualThan(itt) {
+						t.Logf("series %d: %v, ts: %v (watermark alert)", its, itt, itt)
+					}
+				}
+
+				t.Logf("cleaning again (now is %s, watermark is %s)", clock.ToMinutes(now()), watermark)
+				tracker.cleanup(now())
+
+				_, it = tracker.tenants[tenant].shards[i].Items()
+				for its, itt := range it {
+					if its == failedSeries {
+						t.Logf("after cleanup: series %d: %v", its, itt)
+					}
+					if watermark.GreaterOrEqualThan(itt) {
+						t.Logf("after cleanup: series %d: %v (watermark alert)", its, itt)
+					}
+				}
+
+				tracker.cleanup(now())
+
+				t.FailNow()
+			}
+		}
+		trackedTenant.RUnlock()
 	}
+
 	close(done)
 	t.Logf("Total series created: %d, cleanups: %d", createdSeries.count.Load(), cleanups)
 	wg.Wait()
