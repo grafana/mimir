@@ -4,6 +4,23 @@
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_memcached_enabled: !$._config.multi_zone_memcached_enabled,
     multi_zone_memcached_enabled: false,
+
+    // Per-zone replica counts for memcached deployments. Each defaults to the single-zone value.
+    memcached_frontend_zone_a_replicas: $._config.memcached_frontend_replicas,
+    memcached_frontend_zone_b_replicas: $._config.memcached_frontend_replicas,
+    memcached_frontend_zone_c_replicas: $._config.memcached_frontend_replicas,
+
+    memcached_index_queries_zone_a_replicas: $._config.memcached_index_queries_replicas,
+    memcached_index_queries_zone_b_replicas: $._config.memcached_index_queries_replicas,
+    memcached_index_queries_zone_c_replicas: $._config.memcached_index_queries_replicas,
+
+    memcached_chunks_zone_a_replicas: $._config.memcached_chunks_replicas,
+    memcached_chunks_zone_b_replicas: $._config.memcached_chunks_replicas,
+    memcached_chunks_zone_c_replicas: $._config.memcached_chunks_replicas,
+
+    memcached_metadata_zone_a_replicas: $._config.memcached_metadata_replicas,
+    memcached_metadata_zone_b_replicas: $._config.memcached_metadata_replicas,
+    memcached_metadata_zone_c_replicas: $._config.memcached_metadata_replicas,
   },
 
   local container = $.core.v1.container,
@@ -22,69 +39,73 @@
   memcached_frontend_zone_b_node_affinity_matchers:: $.memcached_frontend_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])],
   memcached_frontend_zone_c_node_affinity_matchers:: $.memcached_frontend_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])],
 
-  newMemcachedFrontendZone(zone, nodeAffinityMatchers=[])::
+  newMemcachedFrontendZone(zone, nodeAffinityMatchers=[], replicas=2)::
     $.newMemcachedFrontend('memcached-frontend-zone-%s' % zone, nodeAffinityMatchers) + {
       statefulSet+:
+        statefulSet.mixin.spec.withReplicas(replicas) +
         statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
     },
 
   memcached_frontend_zone_a: if !isZoneAEnabled then null else
-    $.newMemcachedFrontendZone('a', $.memcached_frontend_zone_a_node_affinity_matchers),
+    $.newMemcachedFrontendZone('a', $.memcached_frontend_zone_a_node_affinity_matchers, $._config.memcached_frontend_zone_a_replicas),
 
   memcached_frontend_zone_b: if !isZoneBEnabled then null else
-    $.newMemcachedFrontendZone('b', $.memcached_frontend_zone_b_node_affinity_matchers),
+    $.newMemcachedFrontendZone('b', $.memcached_frontend_zone_b_node_affinity_matchers, $._config.memcached_frontend_zone_b_replicas),
 
   memcached_frontend_zone_c: if !isZoneCEnabled then null else
-    $.newMemcachedFrontendZone('c', $.memcached_frontend_zone_c_node_affinity_matchers),
+    $.newMemcachedFrontendZone('c', $.memcached_frontend_zone_c_node_affinity_matchers, $._config.memcached_frontend_zone_c_replicas),
 
   // Index queries cache.
   memcached_index_queries_zone_a_node_affinity_matchers:: $.memcached_index_queries_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])],
   memcached_index_queries_zone_b_node_affinity_matchers:: $.memcached_index_queries_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])],
   memcached_index_queries_zone_c_node_affinity_matchers:: $.memcached_index_queries_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])],
 
-  newMemcachedIndexQueriesZone(zone, nodeAffinityMatchers=[])::
+  newMemcachedIndexQueriesZone(zone, nodeAffinityMatchers=[], replicas=2)::
     $.newMemcachedIndexQueries('memcached-index-queries-zone-%s' % zone, nodeAffinityMatchers) + {
       statefulSet+:
+        statefulSet.mixin.spec.withReplicas(replicas) +
         statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
     },
 
   memcached_index_queries_zone_a: if !isZoneAEnabled then null else
-    $.newMemcachedIndexQueriesZone('a', $.memcached_index_queries_zone_a_node_affinity_matchers),
+    $.newMemcachedIndexQueriesZone('a', $.memcached_index_queries_zone_a_node_affinity_matchers, $._config.memcached_index_queries_zone_a_replicas),
 
   memcached_index_queries_zone_b: if !isZoneBEnabled then null else
-    $.newMemcachedIndexQueriesZone('b', $.memcached_index_queries_zone_b_node_affinity_matchers),
+    $.newMemcachedIndexQueriesZone('b', $.memcached_index_queries_zone_b_node_affinity_matchers, $._config.memcached_index_queries_zone_b_replicas),
 
   memcached_index_queries_zone_c: if !isZoneCEnabled then null else
-    $.newMemcachedIndexQueriesZone('c', $.memcached_index_queries_zone_c_node_affinity_matchers),
+    $.newMemcachedIndexQueriesZone('c', $.memcached_index_queries_zone_c_node_affinity_matchers, $._config.memcached_index_queries_zone_c_replicas),
 
   // Chunks cache.
   memcached_chunks_zone_a_node_affinity_matchers:: $.memcached_chunks_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])],
   memcached_chunks_zone_b_node_affinity_matchers:: $.memcached_chunks_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])],
   memcached_chunks_zone_c_node_affinity_matchers:: $.memcached_chunks_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])],
 
-  newMemcachedChunksZone(zone, nodeAffinityMatchers=[])::
+  newMemcachedChunksZone(zone, nodeAffinityMatchers=[], replicas=2)::
     $.newMemcachedChunks('memcached-zone-%s' % zone, nodeAffinityMatchers) + {
       statefulSet+:
+        statefulSet.mixin.spec.withReplicas(replicas) +
         statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
     },
 
   memcached_chunks_zone_a: if !isZoneAEnabled then null else
-    $.newMemcachedChunksZone('a', $.memcached_chunks_zone_a_node_affinity_matchers),
+    $.newMemcachedChunksZone('a', $.memcached_chunks_zone_a_node_affinity_matchers, $._config.memcached_chunks_zone_a_replicas),
 
   memcached_chunks_zone_b: if !isZoneBEnabled then null else
-    $.newMemcachedChunksZone('b', $.memcached_chunks_zone_b_node_affinity_matchers),
+    $.newMemcachedChunksZone('b', $.memcached_chunks_zone_b_node_affinity_matchers, $._config.memcached_chunks_zone_b_replicas),
 
   memcached_chunks_zone_c: if !isZoneCEnabled then null else
-    $.newMemcachedChunksZone('c', $.memcached_chunks_zone_c_node_affinity_matchers),
+    $.newMemcachedChunksZone('c', $.memcached_chunks_zone_c_node_affinity_matchers, $._config.memcached_chunks_zone_c_replicas),
 
   // Metadata cache.
   memcached_metadata_zone_a_node_affinity_matchers:: $.memcached_metadata_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])],
   memcached_metadata_zone_b_node_affinity_matchers:: $.memcached_metadata_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])],
   memcached_metadata_zone_c_node_affinity_matchers:: $.memcached_metadata_node_affinity_matchers + [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])],
 
-  newMemcachedMetadataZone(zone, nodeAffinityMatchers=[])::
+  newMemcachedMetadataZone(zone, nodeAffinityMatchers=[], replicas=2)::
     $.newMemcachedMetadata('memcached-metadata-zone-%s' % zone, nodeAffinityMatchers) + {
       statefulSet+:
+        statefulSet.mixin.spec.withReplicas(replicas) +
         statefulSet.mixin.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) +
 
         // Add a label shared across all zones, used by the cross-zone service.
@@ -92,13 +113,13 @@
     },
 
   memcached_metadata_zone_a: if !isZoneAEnabled then null else
-    $.newMemcachedMetadataZone('a', $.memcached_metadata_zone_a_node_affinity_matchers),
+    $.newMemcachedMetadataZone('a', $.memcached_metadata_zone_a_node_affinity_matchers, $._config.memcached_metadata_zone_a_replicas),
 
   memcached_metadata_zone_b: if !isZoneBEnabled then null else
-    $.newMemcachedMetadataZone('b', $.memcached_metadata_zone_b_node_affinity_matchers),
+    $.newMemcachedMetadataZone('b', $.memcached_metadata_zone_b_node_affinity_matchers, $._config.memcached_metadata_zone_b_replicas),
 
   memcached_metadata_zone_c: if !isZoneCEnabled then null else
-    $.newMemcachedMetadataZone('c', $.memcached_metadata_zone_c_node_affinity_matchers),
+    $.newMemcachedMetadataZone('c', $.memcached_metadata_zone_c_node_affinity_matchers, $._config.memcached_metadata_zone_c_replicas),
 
   memcached_metadata_multi_zone_service: if !isMultiZoneEnabled then null else
     local name = 'memcached-metadata-multi-zone';
