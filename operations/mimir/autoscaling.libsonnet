@@ -747,47 +747,21 @@
       }
     ),
 
-  local isDistributorSingleZoneEnabled = $._config.single_zone_distributor_enabled,
-  local isDistributorMultiZoneEnabled = $._config.multi_zone_distributor_enabled,
-  local isDistributorAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
-  local isDistributorAutoscalingSingleZoneEnabled = isDistributorSingleZoneEnabled && isDistributorAutoscalingEnabled,
-  local isDistributorAutoscalingZoneAEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isDistributorAutoscalingZoneBEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
-  local isDistributorAutoscalingZoneCEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  //
+  // Distributors
+  //
 
-  distributor_scaled_object: if !isDistributorAutoscalingSingleZoneEnabled then null else
-    // When both single-zone and multi-zone coexists, the single-zone scaling metrics shouldn't
-    // match the multi-zone pods.
-    $.newDistributorScaledObject('distributor', extra_matchers=(if isDistributorMultiZoneEnabled then 'pod!~"distributor-zone.*"' else '')),
+  distributor_scaled_object: if !$._config.autoscaling_distributor_enabled then null else
+    $.newDistributorScaledObject('distributor'),
 
   distributor_deployment: overrideSuperIfExists(
     'distributor_deployment',
-    if !isDistributorAutoscalingSingleZoneEnabled then {} else $.removeReplicasFromSpec
+    if !$._config.autoscaling_distributor_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  distributor_zone_a_scaled_object: if !isDistributorAutoscalingZoneAEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-a', 'pod=~"distributor-zone-a.*"'),
-
-  distributor_zone_a_deployment: overrideSuperIfExists(
-    'distributor_zone_a_deployment',
-    if !isDistributorAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec
-  ),
-
-  distributor_zone_b_scaled_object: if !isDistributorAutoscalingZoneBEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-b', 'pod=~"distributor-zone-b.*"'),
-
-  distributor_zone_b_deployment: overrideSuperIfExists(
-    'distributor_zone_b_deployment',
-    if !isDistributorAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec
-  ),
-
-  distributor_zone_c_scaled_object: if !isDistributorAutoscalingZoneCEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-c', 'pod=~"distributor-zone-c.*"'),
-
-  distributor_zone_c_deployment: overrideSuperIfExists(
-    'distributor_zone_c_deployment',
-    if !isDistributorAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec
-  ),
+  //
+  // Rulers
+  //
 
   newRulerScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
