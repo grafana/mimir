@@ -216,8 +216,11 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 	return tenant
 }
 
+var lastCleanupWatermark clock.Minutes
+
 func (t *trackerStore) cleanup(now time.Time) {
 	watermark := clock.ToMinutes(now.Add(-t.idleTimeout))
+	lastCleanupWatermark = watermark
 
 	// We will work on a copy of tenants.
 	t.mtx.RLock()

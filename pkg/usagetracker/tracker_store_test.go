@@ -22,6 +22,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
+	"github.com/grafana/mimir/pkg/usagetracker/tenantshard"
 )
 
 func TestTrackerStore_HappyCase(t *testing.T) {
@@ -447,7 +448,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 			var failedSeries uint64
 			for series, ts := range it {
 				if watermark.GreaterOrEqualThan(ts) {
-					t.Logf("now: %s, watermark: %s", clock.ToMinutes(now()), watermark)
+					t.Logf("now: %s, watermark: %s, last tracker cleanup watermark %s, last map cleanup watermark %s", clock.ToMinutes(now()), watermark, lastCleanupWatermark, tenantshard.LastCleanupWatermark)
 					failed = true
 					failedSeries = series
 					t.Logf("FAILED: we found series %d with timestamp %s which is lower or equal than the watermark %s, but that should not happen as we've just cleaned up", series, ts, watermark)

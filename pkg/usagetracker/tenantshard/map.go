@@ -176,7 +176,10 @@ func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
+var LastCleanupWatermark clock.Minutes
+
 func (m *Map) Cleanup(watermark clock.Minutes) int {
+	LastCleanupWatermark = watermark
 	removed := 0
 	for i := range m.data {
 		for j, xor := range m.data[i] {
