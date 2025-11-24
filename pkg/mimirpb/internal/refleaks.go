@@ -43,6 +43,7 @@ func NextRefLeakCheck(ctx context.Context, object any) <-chan bool {
 					return
 				}
 			case <-ctx.Done():
+				return
 			}
 		}
 	}()

@@ -274,7 +274,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	}()
 
 	// Expect to receive a leak detection.
-	require.Eventually(t, func() bool { return <-leaks }, 10*time.Millisecond, 1*time.Second, "expected a reference leak")
+	require.Eventually(t, func() bool { return <-leaks }, 1*time.Second, 10*time.Millisecond, "expected a reference leak")
 	// Expect the label name contents to have been replaced with a taint word.
 	// Keep this check last, because we need to extend the lifespan of leakingLabelName
 	// to avoid Go optimizing the leak away.
@@ -289,5 +289,5 @@ func TestInstrumentRefLeaks(t *testing.T) {
 		leaks = internal.NextRefLeakCheck(t.Context(), reqNoLeak.Buffer().ReadOnlyData())
 		reqNoLeak.FreeBuffer()
 	}()
-	require.Eventually(t, func() bool { return !<-leaks }, 10*time.Millisecond, 1*time.Second, "expected no reference leaks")
+	require.Eventually(t, func() bool { return !<-leaks }, 1*time.Second, 10*time.Millisecond, "expected no reference leaks")
 }
