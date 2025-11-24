@@ -595,8 +595,8 @@ github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce h1:WI1olbgS+sEl7
 github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce/go.mod h1:GFAN9Jn9t1cX7sNfc6ZoFyc4f7i8jtm3SajrWdZM2EE=
 github.com/grafana/gomemcache v0.0.0-20251008140118-65a671e12fdf h1:4fN03UTf6i7wZbLfxL+L/jAIiAxoThFi4rb9//SoGlY=
 github.com/grafana/gomemcache v0.0.0-20251008140118-65a671e12fdf/go.mod h1:j/s0jkda4UXTemDs7Pgw/vMT06alWc42CHisvYac0qw=
-github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077 h1:pOOQ6yXCafD/qqgVasrkv2lVw0VRRASkrkEMA2MRmbM=
-github.com/grafana/memberlist v0.3.1-0.20251024121533-a7f5f8dad077/go.mod h1:h60o12SZn/ua/j0B6iKAZezA4eDaGsIuPO70eOaJ6WE=
+github.com/grafana/memberlist v0.3.1-0.20251124144104-7fbd6a14cf2b h1:gke2gf94sSJBBQnW7NSN40OC47zpZX7HWeS7Pt7AKzk=
+github.com/grafana/memberlist v0.3.1-0.20251124144104-7fbd6a14cf2b/go.mod h1:h60o12SZn/ua/j0B6iKAZezA4eDaGsIuPO70eOaJ6WE=
 github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d h1:k4NIVPYPP0sLJoGNzGwoQs2MpnWTvTcgbWPCzfdX66c=
 github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d/go.mod h1:vRYWnXvI6aWGpsdY/mOT/cbeVRBlPWtBNDb7kGR3uKM=
 github.com/grafana/mimir-prometheus v1.8.2-0.20251117025727-316b091efffc h1:+gIkMD1UjRQ81kCfY9SpaWVnj8Jz52tGEr3zHaeL5EE=
