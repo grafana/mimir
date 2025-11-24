@@ -2020,11 +2020,11 @@ func verifyRingMembersMetric(t *testing.T, reg prometheus.Gatherer, activeCount 
 		return prom_testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_ring_members Number of members in the ring
 				# TYPE cortex_ring_members gauge
-				cortex_ring_members{name="ruler",state="ACTIVE"} %d
-				cortex_ring_members{name="ruler",state="JOINING"} 0
-				cortex_ring_members{name="ruler",state="LEAVING"} 0
-				cortex_ring_members{name="ruler",state="PENDING"} 0
-				cortex_ring_members{name="ruler",state="Unhealthy"} 0
+				cortex_ring_members{name="ruler",state="ACTIVE", zone=""} %d
+				cortex_ring_members{name="ruler",state="JOINING", zone=""} 0
+				cortex_ring_members{name="ruler",state="LEAVING", zone=""} 0
+				cortex_ring_members{name="ruler",state="PENDING", zone=""} 0
+				cortex_ring_members{name="ruler",state="Unhealthy", zone=""} 0
 			`, activeCount)), "cortex_ring_members")
 	})
 }
