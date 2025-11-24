@@ -69,6 +69,7 @@ func (m *subquerySpinOffMapper) MapExpr(ctx context.Context, expr parser.Expr) (
 		selector := &parser.VectorSelector{
 			Name: DownstreamQueryMetricName,
 			LabelMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, DownstreamQueryMetricName),
 				labels.MustNewMatcher(labels.MatchEqual, DownstreamQueryLabelName, expr.String()),
 			},
 		}

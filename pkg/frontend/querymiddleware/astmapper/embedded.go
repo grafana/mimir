@@ -8,6 +8,7 @@ package astmapper
 import (
 	"encoding/json"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -121,6 +122,9 @@ func (s *embeddedQueriesSquasher) Squash(exprs ...EmbeddedQuery) (parser.Expr, e
 
 	return &parser.VectorSelector{
 		Name:          EmbeddedQueriesMetricName,
-		LabelMatchers: []*labels.Matcher{embeddedQuery},
+		LabelMatchers: []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, EmbeddedQueriesMetricName),
+			embeddedQuery,
+		},
 	}, nil
 }
