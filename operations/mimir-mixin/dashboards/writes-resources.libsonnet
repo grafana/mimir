@@ -130,5 +130,5 @@ local filename = 'mimir-writes-resources.json';
           for l in super.list
         ],
       },
-    }
+    },
 }
