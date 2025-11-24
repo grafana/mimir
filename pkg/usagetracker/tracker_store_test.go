@@ -399,8 +399,13 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	const tenant = "user"
 	const idleTimeoutMinutes = 5
 	const maxSeriesRange = 100
-	nowUnixMinutes := atomic.NewInt64(0)
-	now := func() time.Time { return time.Unix(nowUnixMinutes.Load()*60, 0) }
+	mtx := sync.RWMutex{}
+	nowUnixMinutes := int64(0)
+	now := func() time.Time {
+		mtx.RLock()
+		defer mtx.RUnlock()
+		return time.Unix(nowUnixMinutes*60, 0)
+	}
 
 	createdSeries := createdSeriesCounter{count: atomic.NewUint64(0)}
 	tracker := newTrackerStore(idleTimeoutMinutes*time.Minute, 85, log.NewNopLogger(), limiterMock{}, createdSeries)
@@ -425,7 +430,9 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	cleanups := 0
 	for createdSeries.count.Load() < 100*maxSeriesRange {
 		// Keep increasing the timestamp every time.
-		nowUnixMinutes.Inc()
+		mtx.Lock()
+		nowUnixMinutes++
+		mtx.Unlock()
 		tracker.cleanup(now())
 		cleanups++
 
@@ -489,7 +496,9 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	wg.Wait()
 
 	// Wait an idle period then cleanup.
-	nowUnixMinutes.Add(idleTimeoutMinutes)
+	mtx.Lock()
+	nowUnixMinutes += idleTimeoutMinutes
+	mtx.Unlock()
 	tracker.cleanup(now())
 	// Tracker should be empty nowUnixMinutes.
 	// If it's not, then we did something wrong.
