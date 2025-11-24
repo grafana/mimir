@@ -47,8 +47,7 @@ type index [groupSize]prefix
 
 type keys [groupSize]uint64
 
-// data is a group of groupSize data/value entries.
-// Each entry is the keyMasked key and valueMasked value.
+// data is a group of groupSize xorData entries.
 type data [groupSize]xorData
 
 // xorData is what we store in data, which is xor-ed clock.Minutes value.
