@@ -343,7 +343,7 @@ local filename = 'mimir-queries.json';
       $.row('Querier')
       .addPanel(
         $.timeseriesPanel('Number of store-gateways hit per query') +
-        $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_querier_storegateway_instances_hit_per_query', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
