@@ -1,3 +1,5 @@
+local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
+
 {
   _config+: {
     // Use a zone aware pod disruption budget for ingester and/or store-gateways
@@ -33,4 +35,176 @@
       $.core.v1.toleration.withValue($._config.multi_zone_schedule_toleration) +
       $.core.v1.toleration.withEffect('NoSchedule'),
     ],
+
+  // Validates multi-zone configuration for Mimir deployments:
+  // - CLI arguments and environment variables containing local addresses must be zonal endpoints.
+  // - If memberlist zone-aware routing is enabled, it validates that the configured zone is the correct one.
+  //
+  // Returns null on success, or an error message string on failure.
+  //
+  // Params:
+  // - deploymentNames: list of jsonnet field names, defined at root level, that Deployments or StatefulSets
+  //                    to check.
+  //
+  // Usage example:
+  //   local schedulerError = $.validateMimirMultiZoneConfig([
+  //     'ruler_query_scheduler_zone_a_deployment',
+  //     'ruler_query_scheduler_zone_b_deployment',
+  //     'ruler_query_scheduler_zone_c_deployment',
+  //   ]),
+  //   assert schedulerError == null: schedulerError,
+  validateMimirMultiZoneConfig(deploymentNames)::
+    local root = $;
+    local excludedArgs = [
+      // Memberlist is currently cross-AZ.
+      '-memberlist.join',
+      // Alertmanager is not deployed per-zone.
+      '-ruler.alertmanager-url',
+    ];
+    local excludedEnvVars = [
+      // Alloy installation is currently centralised.
+      'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
+      'OTEL_TRACES_SAMPLER_ARG',
+    ];
+
+    local isContainerArgExcluded(arg) =
+      std.foldl(
+        function(acc, excludedArg) acc || std.startsWith(arg, excludedArg + '='),
+        excludedArgs,
+        false
+      );
+
+    local isContainerEnvVarExcluded(envVarName) =
+      std.foldl(
+        function(acc, excludedEnvVar) acc || (envVarName == excludedEnvVar),
+        excludedEnvVars,
+        false
+      );
+
+    // Extracts the zone letter (a, b, or c) from a deployment name.
+    // Expected format: "*_zone_[abc]_*"
+    // Returns: the zone letter or null if not found
+    local extractZoneLetter(deploymentName) =
+      if std.length(std.findSubstr('_zone_a_', deploymentName)) > 0 then
+        'a'
+      else if std.length(std.findSubstr('_zone_b_', deploymentName)) > 0 then
+        'b'
+      else if std.length(std.findSubstr('_zone_c_', deploymentName)) > 0 then
+        'c'
+      else
+        null;
+
+    local validateContainerMemberlistConfig(deploymentName, expectedZone, container) =
+      if root._config.memberlist_zone_aware_routing_enabled then
+        local flagName = '-memberlist.zone-aware-routing.instance-availability-zone';
+
+        if std.objectHas(container, 'args') then
+          local flagPrefix = flagName + '=';
+          local expectedValue = 'zone-' + expectedZone;
+
+          // Find the memberlist flag in the args
+          local memberlistArgs = std.filter(
+            function(arg) std.isString(arg) && std.startsWith(arg, flagPrefix),
+            container.args
+          );
+
+          if std.length(memberlistArgs) == 0 then
+            'The Deployment or StatefulSet "%s" is missing the required CLI flag "%s" (expected value: "%s").' % [deploymentName, flagName, expectedValue]
+          else
+            local actualValue = std.substr(memberlistArgs[0], std.length(flagPrefix), std.length(memberlistArgs[0]));
+            if actualValue == expectedValue then
+              null
+            else
+              'The Deployment or StatefulSet "%s" contains the CLI flag "%s" with value "%s" but expected "%s" (based on deployment name).' % [deploymentName, flagName, actualValue, expectedValue]
+        else
+          'The Deployment or StatefulSet "%s" is missing the required CLI flag "%s" (expected value: "%s").' % [deploymentName, flagName, 'zone-' + expectedZone]
+      else
+        null;
+
+    local validateContainerArg(deploymentName, expectedZone, arg) =
+      if std.isString(arg) && std.length(std.findSubstr('cluster.local', arg)) > 0 && !isContainerArgExcluded(arg) then
+        local expectedZoneNotation = '-zone-' + expectedZone;
+        if std.length(std.findSubstr(expectedZoneNotation, arg)) > 0 || std.length(std.findSubstr('-multi-zone', arg)) > 0 then
+          null
+        else
+          'The Deployment or StatefulSet "%s" contains the CLI flag "%s" with a non-matching zone. Use an address in the "%s" zone (based on deployment name) or a multi-zone address, or add this CLI flag to the exclusion list.' % [deploymentName, arg, expectedZoneNotation]
+      else
+        null;
+
+    local validateContainerArgs(deploymentName, expectedZone, container) =
+      if std.objectHas(container, 'args') then
+        std.foldl(
+          function(firstError, arg)
+            if firstError != null then firstError
+            else validateContainerArg(deploymentName, expectedZone, arg),
+          container.args,
+          null
+        )
+      else
+        null;
+
+    local validateContainerEnvVar(deploymentName, expectedZone, env) =
+      if std.objectHas(env, 'name') && std.objectHas(env, 'value') && !isContainerEnvVarExcluded(env.name) then
+        local value = env.value;
+        if std.isString(value) && std.length(std.findSubstr('cluster.local', value)) > 0 then
+          local expectedZoneNotation = '-zone-' + expectedZone;
+          if std.length(std.findSubstr(expectedZoneNotation, value)) > 0 then
+            null
+          else
+            'The Deployment or StatefulSet "%s" contains the environment variable "%s" with value "%s" with a non-matching zone. Use an address in the "%s" zone (based on deployment name), or add this environment variable to the exclusion list.' % [deploymentName, env.name, value, expectedZoneNotation]
+        else
+          null
+      else
+        null;
+
+    local validateContainerEnvVars(deploymentName, expectedZone, container) =
+      if std.objectHas(container, 'env') then
+        std.foldl(
+          function(firstError, env)
+            if firstError != null then firstError
+            else validateContainerEnvVar(deploymentName, expectedZone, env),
+          container.env,
+          null
+        )
+      else
+        null;
+
+    local validateContainer(deploymentName, expectedZone, container) =
+      local validators = [
+        validateContainerMemberlistConfig,
+        validateContainerArgs,
+        validateContainerEnvVars,
+      ];
+      std.foldl(
+        function(firstError, validator)
+          if firstError != null then firstError
+          else validator(deploymentName, expectedZone, container),
+        validators,
+        null
+      );
+
+    local validateDeployment(deploymentName, deployment) =
+      local expectedZone = extractZoneLetter(deploymentName);
+      if expectedZone == null then
+        'Unable to extract zone letter from deployment name "%s". Expected format: "*_zone_[abc]_*"' % deploymentName
+      else if deployment == null then
+        null
+      else
+        local containers = jsonpath.getJSONPath(deployment, 'spec.template.spec.containers', []);
+        std.foldl(
+          function(firstError, container)
+            if firstError != null then firstError
+            else validateContainer(deploymentName, expectedZone, container),
+          containers,
+          null
+        );
+
+    // Validate all input deployments and return the first error found, or null if all valid.
+    std.foldl(
+      function(firstError, deploymentName)
+        if firstError != null then firstError
+        else validateDeployment(deploymentName, root[deploymentName]),
+      deploymentNames,
+      null
+    ),
 }
