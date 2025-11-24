@@ -414,6 +414,12 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	done := make(chan struct{})
+	type writtenSeries struct {
+		seriesID uint64
+		ts       clock.Minutes
+	}
+	lastWrittenSeries := make([]writtenSeries, maxSeriesRange)
+	lastWrittenSeriesPointer := 0
 	go func() {
 		defer wg.Done()
 		for {
@@ -422,7 +428,10 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 				return
 			default:
 				seriesID := uint64(rand.Int63n(maxSeriesRange))
-				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{seriesID}, now())
+				timestamp := now()
+				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{seriesID}, timestamp)
+				lastWrittenSeries[lastWrittenSeriesPointer] = writtenSeries{seriesID: seriesID, ts: clock.ToMinutes(timestamp)}
+				lastWrittenSeriesPointer = (lastWrittenSeriesPointer + 1) % maxSeriesRange
 			}
 		}
 	}()
@@ -460,6 +469,13 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 				close(done)
 				wg.Wait()
 				t.Logf("Stopped writing goroutine (it may have tracked some newer timestamps)")
+				t.Logf("Last written series timestamps:")
+				for idx, written := range lastWrittenSeries {
+					t.Logf("  %d: %s", written.seriesID, written.ts)
+					if idx == lastWrittenSeriesPointer {
+						t.Logf("(last written series)")
+					}
+				}
 
 				_, it := tracker.tenants[tenant].shards[i].Items()
 				for its, itt := range it {
