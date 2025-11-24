@@ -47,5 +47,19 @@
     autoscaling_ruler_query_frontend_enabled: true,
     autoscaling_ruler_query_frontend_min_replicas_per_zone: 2,
     autoscaling_ruler_query_frontend_max_replicas_per_zone: 10,
+
+    // Test different memcached replica counts per zone.
+    // Zone A: 2 replicas, Zone B: 3 replicas
+    memcached_frontend_zone_a_replicas: 2,
+    memcached_frontend_zone_b_replicas: 3,
+
+    memcached_index_queries_zone_a_replicas: 2,
+    memcached_index_queries_zone_b_replicas: 3,
+
+    memcached_chunks_zone_a_replicas: 2,
+    memcached_chunks_zone_b_replicas: 3,
+
+    memcached_metadata_zone_a_replicas: 2,
+    memcached_metadata_zone_b_replicas: 3,
   },
 }

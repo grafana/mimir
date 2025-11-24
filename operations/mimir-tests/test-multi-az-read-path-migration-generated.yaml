@@ -4860,7 +4860,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 60
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       name: memcached-frontend-zone-a
@@ -5066,7 +5066,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 60
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       name: memcached-index-queries-zone-a
@@ -5272,7 +5272,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 60
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       name: memcached-metadata-zone-a
@@ -5420,7 +5420,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 60
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       name: memcached-zone-a
