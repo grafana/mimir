@@ -258,7 +258,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('Source blocks age') +
-        $.latencyPanel('cortex_compactor_block_max_time_delta_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.ncLatencyPanel('cortex_compactor_block_max_time_delta_seconds', '%s' % $.jobMatcher($._config.job_names.compactor)) +
         $.panelDescription(
           'Source blocks age',
           |||
