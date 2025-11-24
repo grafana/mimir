@@ -53,7 +53,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Retries') +
-        $.latencyPanel('cortex_query_frontend_retries', '{$read_path_matcher}', multiplier=1) +
+        $.ncLatencyPanel('cortex_query_frontend_retries', '$read_path_matcher', multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(

@@ -138,7 +138,7 @@
                      "defaults": {
                         "custom": {
                            "drawStyle": "line",
-                           "fillOpacity": 1,
+                           "fillOpacity": 10,
                            "lineWidth": 1,
                            "pointSize": 5,
                            "showPoints": "never",
@@ -172,22 +172,40 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum(rate(cortex_query_frontend_retries_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
+                        "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
-                        "legendFormat": "99th Percentile",
+                        "legendFormat": "99th percentile",
                         "refId": "A"
                      },
                      {
-                        "expr": "histogram_quantile(0.50, sum(rate(cortex_query_frontend_retries_bucket{$read_path_matcher}[$__rate_interval])) by (le)) * 1",
+                        "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_frontend_retries_bucket{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == 1)",
                         "format": "time_series",
-                        "legendFormat": "50th Percentile",
+                        "legendFormat": "99th percentile",
+                        "refId": "A_classic"
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == -1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
                         "refId": "B"
                      },
                      {
-                        "expr": "sum(rate(cortex_query_frontend_retries_sum{$read_path_matcher}[$__rate_interval])) * 1 / sum(rate(cortex_query_frontend_retries_count{$read_path_matcher}[$__rate_interval]))",
+                        "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_frontend_retries_bucket{$read_path_matcher}[$__rate_interval]))) * 1) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "50th percentile",
+                        "refId": "B_classic"
+                     },
+                     {
+                        "expr": "(1 * sum(histogram_sum(rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_frontend_retries{$read_path_matcher}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "Average",
                         "refId": "C"
+                     },
+                     {
+                        "expr": "(1 * sum(rate(cortex_query_frontend_retries_sum{$read_path_matcher}[$__rate_interval])) /\nsum(rate(cortex_query_frontend_retries_count{$read_path_matcher}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "Average",
+                        "refId": "C_classic"
                      }
                   ],
                   "title": "Retries",
