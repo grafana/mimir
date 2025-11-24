@@ -367,7 +367,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       .addPanel(
         $.timeseriesPanel('Metadata sync duration') +
         // This metric tracks the duration of a per-tenant metadata sync.
-        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)),
+        $.ncLatencyPanel('cortex_compactor_meta_sync_duration_seconds', '%s' % $.jobMatcher($._config.job_names.compactor)),
       )
     )
     .addRows($.getObjectStoreRows('Object Store', 'compactor'))
