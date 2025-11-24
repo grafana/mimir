@@ -49,7 +49,7 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Queue duration') +
         $.onlyRelevantIfQuerySchedulerDisabled('Queue duration') +
-        $.latencyPanel('cortex_query_frontend_queue_duration_seconds', '{$read_path_matcher}'),
+        $.ncLatencyPanel('cortex_query_frontend_queue_duration_seconds', '$read_path_matcher'),
       )
       .addPanel(
         $.timeseriesPanel('Retries') +
