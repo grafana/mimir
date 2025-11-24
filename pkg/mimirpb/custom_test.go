@@ -8,7 +8,6 @@ package mimirpb
 import (
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
@@ -17,6 +16,7 @@ import (
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
 
+	"github.com/grafana/mimir/pkg/mimirpb/internal"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -208,7 +208,7 @@ func TestCodecV2_Unmarshal(t *testing.T) {
 
 	require.True(t, origReq.Equal(req))
 
-	require.NotNil(t, req.buffer)
+	require.NotNil(t, req.Buffer)
 	req.FreeBuffer()
 }
 
@@ -258,44 +258,36 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	buf, err := src.Marshal()
 	require.NoError(t, err)
 
-	var req WriteRequest
-	err = Unmarshal(buf, &req)
-	require.NoError(t, err)
+	var leaks <-chan bool
+	var leakingLabelName UnsafeMutableString
+	func() {
+		var req WriteRequest
+		err = Unmarshal(buf, &req)
+		require.NoError(t, err)
 
-	bufAddr := uintptr(unsafe.Pointer(unsafe.SliceData(req.buffer.ReadOnlyData())))
-	// Label names are UnsafeMutableStrings pointing to buf. They shouldn't outlive
-	// the call to req.FreeBuffer.
-	leakingLabelName := req.Timeseries[0].Labels[0].Name
+		// Label names are UnsafeMutableStrings pointing to buf. They shouldn't outlive
+		// the call to req.FreeBuffer.
+		leakingLabelName = req.Timeseries[0].Labels[0].Name
 
-	leaks := NextRefLeakChannel(t.Context())
-
-	recvLeak := func() (uintptr, bool) {
-		select {
-		case detectedAddr := <-leaks:
-			return detectedAddr, true
-		case <-time.After(10 * time.Millisecond):
-			return 0, false
-		}
-	}
-
-	req.FreeBuffer() // leakingLabelName becomes a leak here
+		leaks = internal.NextRefLeakCheck(t.Context(), req.Buffer.ReadOnlyData())
+		req.FreeBuffer() // leakingLabelName becomes a leak here
+	}()
 
 	// Expect to receive a leak detection.
-	detectedAddr, ok := recvLeak()
-	require.True(t, ok, "expected a reference leak")
-	require.Equal(t, bufAddr, detectedAddr)
+	require.Eventually(t, func() bool { return <-leaks }, 10*time.Millisecond, 1*time.Second, "expected a reference leak")
 	// Expect the label name contents to have been replaced with a taint word.
 	// Keep this check last, because we need to extend the lifespan of leakingLabelName
 	// to avoid Go optimizing the leak away.
 	require.Contains(t, leakingLabelName, "KAEL")
 
 	// Now let's check a non-leak doesn't get falsely detected.
-	dataNoLeak, err := src.Marshal()
-	require.NoError(t, err)
-	var reqNoLeak WriteRequest
-	err = Unmarshal(dataNoLeak, &reqNoLeak)
-	require.NoError(t, err)
-	leaks = NextRefLeakChannel(t.Context())
-	detectedAddr, ok = recvLeak()
-	require.False(t, ok, "unexpected a reference leak %x", detectedAddr)
+	func() {
+		var reqNoLeak WriteRequest
+		err = Unmarshal(buf, &reqNoLeak)
+		require.NoError(t, err)
+
+		leaks = internal.NextRefLeakCheck(t.Context(), reqNoLeak.Buffer.ReadOnlyData())
+		reqNoLeak.FreeBuffer()
+	}()
+	require.Eventually(t, func() bool { return !<-leaks }, 10*time.Millisecond, 1*time.Second, "expected no reference leaks")
 }
