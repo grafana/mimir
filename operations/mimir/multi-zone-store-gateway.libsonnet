@@ -178,7 +178,7 @@
       + podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-rollout' })
       + podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'store-gateway' }),
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local storeGatewayZoneAConfigError = if isZoneAEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_a_statefulset']) else null,
   assert storeGatewayZoneAConfigError == null : storeGatewayZoneAConfigError,
 

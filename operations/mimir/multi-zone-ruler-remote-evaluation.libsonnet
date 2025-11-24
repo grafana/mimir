@@ -96,7 +96,7 @@
     deployment.mixin.spec.withReplicas(2) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local rulerQuerierMultiZoneConfigError = $.validateMimirMultiZoneConfig([
     'ruler_querier_zone_a_deployment',
     'ruler_querier_zone_b_deployment',
@@ -200,7 +200,7 @@
     // Note: We use a headless service because the ruler uses gRPC load balancing.
     service.mixin.spec.withClusterIp('None'),
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local rulerQueryFrontendMultiZoneConfigError = $.validateMimirMultiZoneConfig([
     'ruler_query_frontend_zone_a_deployment',
     'ruler_query_frontend_zone_b_deployment',
@@ -296,7 +296,7 @@
     'query-scheduler.ring.prefix': 'ruler-query-scheduler-zone-%s/' % zone,
   },
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local rulerQuerySchedulerMultiZoneConfigError = $.validateMimirMultiZoneConfig([
     'ruler_query_scheduler_zone_a_deployment',
     'ruler_query_scheduler_zone_b_deployment',

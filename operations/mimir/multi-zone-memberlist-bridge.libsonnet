@@ -49,7 +49,7 @@
   memberlist_zone_b_args:: memberlistZoneArgs('b'),
   memberlist_zone_c_args:: memberlistZoneArgs('c'),
 
-  // We always enable zone-aware routing for the zonal memberlist-bridge, so that "bridges" are
+  // We always enable zone-aware routing for the zonal memberlist-bridge, so that "bridges" are zone-aware
   // when zone-aware routing is enabled for "members" too (members are the other Mimir components).
   local memberlistBridgeZoneArgs(zone) = {
     // When memberlist cross-zone routing is enabled, memberlist-bridge pods act as bridges between AZs
@@ -125,7 +125,7 @@
     + deployment.spec.template.spec.withPriorityClassName($._config.memberlist_bridge_priority_class)
     + $.util.antiAffinity,
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local memberlistBridgeMultiZoneConfigError = $.validateMimirMultiZoneConfig([
     'memberlist_bridge_zone_a_deployment',
     'memberlist_bridge_zone_b_deployment',
@@ -134,7 +134,8 @@
   assert memberlistBridgeMultiZoneConfigError == null : memberlistBridgeMultiZoneConfigError,
 
   //
-  // Apply memberlist config to all Mimir components.
+  // Apply memberlist config to all Mimir components. Single-zone workloads should always connect
+  // to a single zone, which is zone A, as that is the default zone by design.
   //
 
   local isZoneBAvailable = std.length($._config.multi_zone_availability_zones) >= 2,
@@ -181,13 +182,13 @@
   ruler_querier_zone_c_args+:: $.memberlist_zone_c_args,
 
   // Ingesters get split in "virtual" zones, that could eventually be mapped to different AZs.
-  // If multi-AZ deployment is enabled, then we apply the zone-specific memberlist config, otherwise zone-a one.
+  // If multi-AZ deployment is enabled, then we apply the zone-specific memberlist config, otherwise the zone-a one.
   ingester_zone_a_args+:: $.memberlist_zone_a_args,
   ingester_zone_b_args+:: if $._config.multi_zone_ingester_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
   ingester_zone_c_args+:: if $._config.multi_zone_ingester_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,
 
   // Store-gateways get split in "virtual" zones, that could eventually be mapped to different AZs.
-  // If multi-AZ deployment is enabled, then we apply the zone-specific memberlist config, otherwise zone-a one.
+  // If multi-AZ deployment is enabled, then we apply the zone-specific memberlist config, otherwise the zone-a one.
   store_gateway_zone_a_args+:: $.memberlist_zone_a_args,
   store_gateway_zone_b_args+:: if $._config.multi_zone_store_gateway_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
   store_gateway_zone_c_args+:: if $._config.multi_zone_store_gateway_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,

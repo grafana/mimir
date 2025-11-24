@@ -84,7 +84,7 @@
     $.newQueryFrontendDeployment(name, container, nodeAffinityMatchers) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local queryFrontendMultiZoneConfigError = $.validateMimirMultiZoneConfig([
     'query_frontend_zone_a_deployment',
     'query_frontend_zone_b_deployment',

@@ -151,7 +151,7 @@
     + podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout' })
     + podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'ingester' }),
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local ingesterZoneAConfigError = if isZoneAEnabled then $.validateMimirMultiZoneConfig(['ingester_zone_a_statefulset']) else null,
   assert ingesterZoneAConfigError == null : ingesterZoneAConfigError,
 

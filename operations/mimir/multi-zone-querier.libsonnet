@@ -90,7 +90,7 @@
     deployment.mixin.spec.withReplicas(2) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local querierMultiZoneConfigError = $.validateMimirMultiZoneConfig([
     'querier_zone_a_deployment',
     'querier_zone_b_deployment',

@@ -82,7 +82,7 @@
     'query-scheduler.ring.prefix': 'query-scheduler-zone-%s/' % zone,
   },
 
-  // Ensure all configured addressed are zonal ones.
+  // Ensure all configured addresses are zonal ones.
   local querySchedulerMultiZoneConfigError = $.validateMimirMultiZoneConfig([
     'query_scheduler_zone_a_deployment',
     'query_scheduler_zone_b_deployment',
