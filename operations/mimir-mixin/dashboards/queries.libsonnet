@@ -267,17 +267,17 @@ local filename = 'mimir-queries.json';
       $.row('Ingester')
       .addPanel(
         $.timeseriesPanel('Series per query') +
-        $.latencyRecordingRulePanel('cortex_ingester_queried_series', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        $.latencyRecordingRulePanelNativeHistogram('cortex_ingester_queried_series', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Samples per query') +
-        $.latencyRecordingRulePanel('cortex_ingester_queried_samples', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        $.latencyRecordingRulePanelNativeHistogram('cortex_ingester_queried_samples', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(
         $.timeseriesPanel('Exemplars per query') +
-        $.latencyRecordingRulePanel('cortex_ingester_queried_exemplars', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        $.latencyRecordingRulePanelNativeHistogram('cortex_ingester_queried_exemplars', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
     )
