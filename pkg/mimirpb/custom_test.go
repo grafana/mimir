@@ -269,7 +269,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 		// the call to req.FreeBuffer.
 		leakingLabelName = req.Timeseries[0].Labels[0].Name
 
-		leaks = internal.NextRefLeakCheck(t.Context(), req.Buffer.ReadOnlyData())
+		leaks = internal.NextRefLeakCheck(t.Context(), req.Buffer().ReadOnlyData())
 		req.FreeBuffer() // leakingLabelName becomes a leak here
 	}()
 
@@ -286,7 +286,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 		err = Unmarshal(buf, &reqNoLeak)
 		require.NoError(t, err)
 
-		leaks = internal.NextRefLeakCheck(t.Context(), reqNoLeak.Buffer.ReadOnlyData())
+		leaks = internal.NextRefLeakCheck(t.Context(), reqNoLeak.Buffer().ReadOnlyData())
 		reqNoLeak.FreeBuffer()
 	}()
 	require.Eventually(t, func() bool { return !<-leaks }, 10*time.Millisecond, 1*time.Second, "expected no reference leaks")
