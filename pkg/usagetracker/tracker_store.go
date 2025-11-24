@@ -230,7 +230,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 			shard.Lock()
 			removed := shard.Cleanup(watermark)
 			shard.Unlock()
-			
+
 			// Update the tenant's counter when not holding the mutex anymore.
 			if removed > 0 {
 				tenant.series.Add(-uint64(removed))
