@@ -12,7 +12,6 @@ import (
 	"weak"
 
 	gogoproto "github.com/gogo/protobuf/proto"
-	"github.com/grafana/mimir/pkg/mimirpb/internal"
 	"github.com/prometheus/prometheus/model/histogram"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/encoding"
@@ -20,6 +19,8 @@ import (
 	"google.golang.org/grpc/mem"
 	protobufproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
+
+	"github.com/grafana/mimir/pkg/mimirpb/internal"
 )
 
 type CustomCodecConfig struct {
