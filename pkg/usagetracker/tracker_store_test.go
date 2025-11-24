@@ -450,7 +450,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 					t.Logf("now: %s, watermark: %s", clock.ToMinutes(now()), watermark)
 					failed = true
 					failedSeries = series
-					t.Logf("FAILED: series %d: %v, ts: %v (watermark %s alert)", series, ts, ts, watermark)
+					t.Logf("FAILED: we found series %d with timestamp %s which is lower or equal than the watermark %s, but that should not happen as we've just cleaned up", series, ts, watermark)
 				}
 			}
 
@@ -458,28 +458,28 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 				t.Errorf("failed")
 				close(done)
 				wg.Wait()
-				t.Logf("failed")
+				t.Logf("Stopped writing goroutine (it may have tracked some newer timestamps)")
 
 				_, it := tracker.tenants[tenant].shards[i].Items()
 				for its, itt := range it {
 					if its == failedSeries {
-						t.Logf("series %d: %v, ts: %v", its, itt, itt)
+						t.Logf("Previously failed series  %d has timestamp %s", its, itt)
 					}
 					if watermark.GreaterOrEqualThan(itt) {
-						t.Logf("series %d: %v, ts: %v (watermark alert)", its, itt, itt)
+						t.Logf("Found series %d with timestamp %s (lower or equal than the watermark %s)", its, itt, watermark)
 					}
 				}
 
-				t.Logf("cleaning again (now is %s, watermark is %s)", clock.ToMinutes(now()), watermark)
+				t.Logf("Cleaning again (now is %s, watermark is %s)", clock.ToMinutes(now()), watermark)
 				tracker.cleanup(now())
 
 				_, it = tracker.tenants[tenant].shards[i].Items()
 				for its, itt := range it {
 					if its == failedSeries {
-						t.Logf("after cleanup: series %d: %v", its, itt)
+						t.Logf("After cleanup: series %d has timestamp %s", its, itt)
 					}
 					if watermark.GreaterOrEqualThan(itt) {
-						t.Logf("after cleanup: series %d: %v (watermark alert)", its, itt)
+						t.Logf("After cleanup: series %d: %v (lower or equal than the watermark %s)", its, itt, watermark)
 					}
 				}
 
