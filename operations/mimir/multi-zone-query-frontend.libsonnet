@@ -22,9 +22,9 @@
 
   assert !isMultiZoneEnabled || $._config.multi_zone_memcached_enabled : 'query-frontend multi-zone deployment requires memcached multi-zone to be enabled',
 
-  query_frontend_zone_a_args:: $.query_frontend_args + $.query_frontend_only_args + $.query_frontend_zone_a_caching_config + $.querySchedulerClientZoneArgs('a'),
-  query_frontend_zone_b_args:: $.query_frontend_args + $.query_frontend_only_args + $.query_frontend_zone_b_caching_config + $.querySchedulerClientZoneArgs('b'),
-  query_frontend_zone_c_args:: $.query_frontend_args + $.query_frontend_only_args + $.query_frontend_zone_c_caching_config + $.querySchedulerClientZoneArgs('c'),
+  query_frontend_zone_a_args:: $.query_frontend_args + $.query_frontend_only_args + $.query_frontend_zone_a_caching_config + $.querySchedulerClientZoneArgs('a') + $.querierClientZoneArgs('a'),
+  query_frontend_zone_b_args:: $.query_frontend_args + $.query_frontend_only_args + $.query_frontend_zone_b_caching_config + $.querySchedulerClientZoneArgs('b') + $.querierClientZoneArgs('b'),
+  query_frontend_zone_c_args:: $.query_frontend_args + $.query_frontend_only_args + $.query_frontend_zone_c_caching_config + $.querySchedulerClientZoneArgs('c') + $.querierClientZoneArgs('c'),
 
   query_frontend_zone_a_env_map:: {},
   query_frontend_zone_b_env_map:: {},

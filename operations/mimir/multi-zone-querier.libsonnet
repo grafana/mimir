@@ -27,9 +27,14 @@
     'querier.prefer-availability-zone': 'zone-%s' % zone,
   },
 
-  querier_zone_a_args:: $.querier_args + $.querier_only_args + $.blocks_metadata_zone_a_caching_config + $.querySchedulerClientZoneArgs('a') + querierZoneArgs('a'),
-  querier_zone_b_args:: $.querier_args + $.querier_only_args + $.blocks_metadata_zone_b_caching_config + $.querySchedulerClientZoneArgs('b') + querierZoneArgs('b'),
-  querier_zone_c_args:: $.querier_args + $.querier_only_args + $.blocks_metadata_zone_c_caching_config + $.querySchedulerClientZoneArgs('c') + querierZoneArgs('c'),
+  querierClientZoneArgs(zone):: {
+    // The querier runs on a dedicated ring per zone.
+    'querier.ring.prefix': 'querier-zone-%s/' % zone,
+  },
+
+  querier_zone_a_args:: $.querier_args + $.querier_only_args + $.blocks_metadata_zone_a_caching_config + $.querySchedulerClientZoneArgs('a') + $.querierClientZoneArgs('a') + querierZoneArgs('a'),
+  querier_zone_b_args:: $.querier_args + $.querier_only_args + $.blocks_metadata_zone_b_caching_config + $.querySchedulerClientZoneArgs('b') + $.querierClientZoneArgs('b') + querierZoneArgs('b'),
+  querier_zone_c_args:: $.querier_args + $.querier_only_args + $.blocks_metadata_zone_c_caching_config + $.querySchedulerClientZoneArgs('c') + $.querierClientZoneArgs('c') + querierZoneArgs('c'),
 
   querier_zone_a_env_map:: {},
   querier_zone_b_env_map:: {},

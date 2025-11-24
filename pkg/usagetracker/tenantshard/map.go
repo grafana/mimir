@@ -175,7 +175,8 @@ func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
-func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
+func (m *Map) Cleanup(watermark clock.Minutes) int {
+	removed := 0
 	for i := range m.data {
 		for j, xor := range m.data[i] {
 			if xor == 0 {
@@ -187,13 +188,14 @@ func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
 				m.keys[i][j] = 0
 				m.data[i][j] = 0
 				m.dead++
-				series.Dec()
+				removed++
 			}
 		}
 	}
 	if m.dead > m.limit/2 {
 		m.rehash(m.nextSize())
 	}
+	return removed
 }
 
 // EnsureCapacity ensure that the map has enough capacity to store |n| elements.
