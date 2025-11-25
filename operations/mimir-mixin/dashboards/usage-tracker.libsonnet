@@ -40,7 +40,7 @@ local filename = 'mimir-usage-tracker.json';
           'Request rate for TrackSeries requests broken down by status code.',
         ) +
         $.qpsPanelNativeHistogram(
-          $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector, $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector
+          $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector
         ) +
         {
           fieldConfig+: {
@@ -59,7 +59,7 @@ local filename = 'mimir-usage-tracker.json';
           'Request rate for TrackSeries requests broken down by server %s.' % $._config.per_instance_label,
         ) +
         $.queryPanel(
-          'sum by (%s) (rate(%s{%s, route=~"%s"}[$__rate_interval]))' % [$._config.per_instance_label, $.queries.requests_per_second_metric, $.jobMatcher($._config.job_names.usage_tracker), $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex],
+          'histogram_count(sum by (%s) (rate(%s{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.queries.requests_per_second_metric, $.jobMatcher($._config.job_names.usage_tracker), $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex],
           '{{%s}}' % $._config.per_instance_label,
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps', custom+: { fillOpacity: 0 } } } },
@@ -96,7 +96,7 @@ local filename = 'mimir-usage-tracker.json';
           'Request rate for GetUsersCloseToLimit requests broken down by status code.',
         ) +
         $.qpsPanelNativeHistogram(
-          '%s, %s=~"$namespace", route=~"%s"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_get_users_close_to_limit_routes_regex],
+          $.queries.usage_tracker.getUsersCloseToLimitRequestsPerSecondSelector
         ) +
         {
           fieldConfig+: {
@@ -109,14 +109,14 @@ local filename = 'mimir-usage-tracker.json';
         }
       )
       .addPanel(
-        $.timeseriesPanel('GetUsersCloseToLimit request rates by server pod') +
+        $.timeseriesPanel('GetUsersCloseToLimit request rates by server %s' % $._config.per_instance_label) +
         $.panelDescription(
-          'GetUsersCloseToLimit request rates by server pod',
-          'Request rate for GetUsersCloseToLimit requests broken down by server pod.',
+          'GetUsersCloseToLimit request rates by server %s' % $._config.per_instance_label,
+          'Request rate for GetUsersCloseToLimit requests broken down by server %s.' % $._config.per_instance_label,
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_request_duration_seconds_count{%s, %s=~"$namespace", route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_get_users_close_to_limit_routes_regex],
-          '{{pod}}',
+          'histogram_count(sum by (%s) (rate(%s{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.queries.requests_per_second_metric, $.jobMatcher($._config.job_names.usage_tracker), $.queries.usage_tracker.getUsersCloseToLimitRequestsPerSecondRouteRegex],
+          '{{%s}}' % $._config.per_instance_label,
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps', custom+: { fillOpacity: 0 } } } },
       )
@@ -128,7 +128,7 @@ local filename = 'mimir-usage-tracker.json';
         ) +
         $.ncLatencyPanel(
           $.queries.requests_per_second_metric,
-          '%s, %s=~"$namespace", route="/usagetrackerpb.UsageTracker/GetUsersCloseToLimit"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label],
+          $.queries.usage_tracker.getUsersCloseToLimitRequestsPerSecondSelector,
           multiplier='1e6',
         ) +
         {
@@ -172,7 +172,7 @@ local filename = 'mimir-usage-tracker.json';
       )
     )
     // Section 3: Object Store
-    .addRows($.getObjectStoreRows('Object Store', 'usage-tracker'))
+    .addRows($.getObjectStoreRows('Object Store', 'usage-tracker-snapshots'))
     // Section 4: Resources
     .addRow(
       $.row('Usage-tracker resources')
