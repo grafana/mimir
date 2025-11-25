@@ -146,7 +146,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     alertmanager_grpc_routes_regex: '/alertmanagerpb.Alertmanager/HandleRequest',
     // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
     ruler_query_frontend_routes_regex: '/httpgrpc.HTTP/Handle|.*api_v1_query',
-    usage_tracker_routes_regex: 'api_v1_push_influx_write',
+    usage_tracker_routes_regex: '/usagetrackerpb.UsageTracker/TrackSeries',
 
     gateway: {
       local p = self,
