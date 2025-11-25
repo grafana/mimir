@@ -4,7 +4,7 @@ local filename = 'mimir-usage-tracker.json';
 (import 'dashboard-queries.libsonnet') +
 {
   [filename]:
-    assert std.md5(filename) == 'c565e768420d79d0a632b3135d47cb30' : 'UID of the dashboard has changed, please update references to dashboard.';
+    assert std.md5(filename) == '6beb77a9b6a2318af1f540c14098436f' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Usage-tracker') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addTemplate('namespace', 'label_values(cortex_request_duration_seconds{%s}, %s)' % [$.namespaceMatcher(), $._config.per_namespace_label], 'namespace', sort=1)
