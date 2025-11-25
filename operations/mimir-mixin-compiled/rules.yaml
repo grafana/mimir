@@ -487,3 +487,19 @@ groups:
         - expr: |
             sum by(cluster, namespace, pod) (rate(cortex_ingester_ingested_samples_total[1m]))
           record: cluster_namespace_pod:cortex_ingester_ingested_samples_total:rate1m
+    - name: mimir_usage_tracker_rules
+      rules:
+        - expr: histogram_quantile(0.99, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket[1m])) by (le, cluster, job))
+          record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds:99quantile
+        - expr: histogram_quantile(0.50, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket[1m])) by (le, cluster, job))
+          record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds:50quantile
+        - expr: sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_sum[1m])) by (cluster, job) / sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_count[1m])) by (cluster, job)
+          record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds:avg
+        - expr: sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket[1m])) by (le, cluster, job)
+          record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds_bucket:sum_rate
+        - expr: sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_sum[1m])) by (cluster, job)
+          record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds_sum:sum_rate
+        - expr: sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_count[1m])) by (cluster, job)
+          record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds_count:sum_rate
+        - expr: sum(rate(cortex_usage_tracker_client_track_series_duration_seconds[1m])) by (cluster, job)
+          record: cluster_job:cortex_usage_tracker_client_track_series_duration_seconds:sum_rate
