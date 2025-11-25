@@ -732,8 +732,8 @@ groups:
             unless (
                 count by(cluster, namespace, zone) (
                     label_replace(
-                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
-                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
+                        kube_pod_status_ready{instance=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
+                        "zone", "$1", "instance", "memberlist-bridge-(zone-[abc]).*"
                     )
                 ) > 0
             )

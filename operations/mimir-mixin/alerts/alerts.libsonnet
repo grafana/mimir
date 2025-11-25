@@ -1031,8 +1031,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             unless (
                 count by(%(alert_aggregation_labels)s, zone) (
                     label_replace(
-                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
-                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
+                        kube_pod_status_ready{%(per_instance_label)s=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
+                        "zone", "$1", "%(per_instance_label)s", "memberlist-bridge-(zone-[abc]).*"
                     )
                 ) > 0
             )
