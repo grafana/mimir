@@ -226,6 +226,62 @@ local filename = 'mimir-writes.json';
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
     .addRowIf(
       $._config.usage_tracker_enabled,
+      $.row('Usage Tracker (client)')
+      .addPanel(
+        local title = 'Client req / sec';
+        $.timeseriesPanel(title) +
+        $.qpsPanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.namespaceMatcher()) +
+        $.panelDescription(
+          title,
+          |||
+            The number of tracking requests sent through the Usage Tracker client, which are later multiplexed into individual requests to the Usage Tracker service instances.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Async req / sec';
+        $.timeseriesPanel(title) +
+        $.queryPanel([
+          |||
+            sum(rate(cortex_distributor_async_usage_tracker_calls_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
+          |||
+            sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
+        ], [
+          'Asynchronous requests / sec',
+          'Asynchronous requests / sec that rejected series that were ingested',
+        ]) + {
+          fieldConfig+: {
+            defaults+: { unit: 'reqps' },
+          },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            The number of tracking requests sent asynchronously to the Usage Tracker client, while proceeding with the write request.
+            Some of those requests may have rejected the series that were actually ingested.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Client latency';
+        $.timeseriesPanel(title) +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, []) +
+        $.panelDescription(
+          title,
+          |||
+            Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Client per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.clientRequestsPerSecondMetric, [])
+      )
+    )
+    .addRowIf(
+      $._config.usage_tracker_enabled,
       $.row('Usage Tracker')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +

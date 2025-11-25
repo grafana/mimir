@@ -180,6 +180,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
     usage_tracker: {
       local p = self,
+      clientRequestsPerSecondMetric: 'cortex_usage_tracker_client_track_series_duration_seconds',
       requestsPerSecondMetric: $.queries.requests_per_second_metric,
       trackSeriesRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesRoutesRegex)s' % variables,
       trackSeriesRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesRoutesRegex)s"' % variables,
