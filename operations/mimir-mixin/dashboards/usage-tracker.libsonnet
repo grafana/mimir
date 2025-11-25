@@ -34,25 +34,6 @@ local filename = 'mimir-usage-tracker.json';
         { fieldConfig+: { defaults+: { unit: 's', custom+: { fillOpacity: 0 } } } },
       )
       .addPanel(
-        $.timeseriesPanel('TrackSeries request rates by status code') +
-        $.panelDescription(
-          'TrackSeries request rates by status code',
-          'Request rate for TrackSeries requests broken down by status code.',
-        ) +
-        $.qpsPanelNativeHistogram(
-          $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector
-        ) +
-        {
-          fieldConfig+: {
-            defaults+: {
-              custom+: {
-                fillOpacity: 0,
-              },
-            },
-          },
-        }
-      )
-      .addPanel(
         $.timeseriesPanel('TrackSeries request rates by server %s' % $._config.per_instance_label) +
         $.panelDescription(
           'TrackSeries request rates by server %s' % $._config.per_instance_label,
@@ -70,7 +51,7 @@ local filename = 'mimir-usage-tracker.json';
           'TrackSeries request latency (server-side)',
           'Server-side latency for TrackSeries requests.',
         ) +
-        $.ncLatencyPanel(
+        $.latencyPanel(
           $.queries.requests_per_second_metric,
           $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector,
           multiplier='1e6',
