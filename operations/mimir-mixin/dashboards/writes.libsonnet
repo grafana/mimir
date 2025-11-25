@@ -267,7 +267,7 @@ local filename = 'mimir-writes.json';
       .addPanel(
         local title = 'Client latency';
         $.timeseriesPanel(title) +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, []) +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler))) +
         $.panelDescription(
           title,
           |||
@@ -277,7 +277,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Client per %s p99 latency' % $._config.per_instance_label) +
-        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.clientRequestsPerSecondMetric, [])
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)))
       )
     )
     .addRowIf(
