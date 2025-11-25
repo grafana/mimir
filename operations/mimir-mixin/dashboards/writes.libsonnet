@@ -229,7 +229,7 @@ local filename = 'mimir-writes.json';
       $.row('Usage Tracker')
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanelNativeHistogram($.queries.gateway.requestsPerSecondMetric, $.queries.usage_tracker.writeRequestsPerSecondSelector)
+        $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.writeRequestsPerSecondSelector)
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
