@@ -15,6 +15,10 @@ metadata:
   namespace: "citestns"
 spec:
   type: ClusterIP
+  # The headless service is used by Kafka brokers for discovering other brokers
+  # during bootstrap. Thus, we don't want to require that they are "ready" to
+  # publish their address - the brokers need to know about each other to become
+  # ready.
   publishNotReadyAddresses: true
   clusterIP: None
   ports:
