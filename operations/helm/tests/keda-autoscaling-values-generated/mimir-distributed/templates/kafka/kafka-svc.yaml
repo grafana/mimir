@@ -14,7 +14,6 @@ metadata:
   namespace: "citestns"
 spec:
   type: ClusterIP
-  publishNotReadyAddresses: true
   ports:
     - port: 9092
       protocol: TCP

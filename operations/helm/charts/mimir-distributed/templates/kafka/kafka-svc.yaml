@@ -13,7 +13,6 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: {{ .Values.kafka.service.type }}
-  publishNotReadyAddresses: true
   ports:
     - port: {{ .Values.kafka.service.port }}
       protocol: TCP

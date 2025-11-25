@@ -14,6 +14,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   type: ClusterIP
+  publishNotReadyAddresses: true
   clusterIP: None
   ports:
     - port: {{ .Values.kafka.service.port }}
