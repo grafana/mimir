@@ -181,8 +181,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     usage_tracker: {
       local p = self,
       requestsPerSecondMetric: $.queries.requests_per_second_metric,
-      writeRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesRoutesRegex)s' % variables,
-      writeRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesRoutesRegex)s"' % variables,
+      trackSeriesRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesRoutesRegex)s' % variables,
+      trackSeriesRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesRoutesRegex)s"' % variables,
+      getUsersCloseToLimitRequestsPerSecondRouteRegex: '%(usageTrackerGetUsersCloseToLimitRoutesRegex)s' % variables,
+      getUsersCloseToLimitRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerGetUsersCloseToLimitRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
       writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),

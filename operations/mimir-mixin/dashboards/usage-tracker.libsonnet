@@ -7,8 +7,7 @@ local filename = 'mimir-usage-tracker.json';
     assert std.md5(filename) == '59bf558b63012caa3c5871e6c512eb10' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Usage-tracker') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
-    .addTemplate('namespace', 'label_values(cortex_request_duration_seconds{%s}, %s)' % [$.namespaceMatcher(), $._config.per_namespace_label], 'namespace', sort=1)
-    .addTemplate('user', 'label_values(cortex_request_duration_seconds{%s, %s=~"$namespace"}, user)' % [$.namespaceMatcher(), $._config.per_namespace_label], 'user', sort=7)
+    .addActiveUserSelectorTemplates()
     // Section 1: Requests
     .addRow(
       $.row('Tracking requests')
@@ -20,10 +19,10 @@ local filename = 'mimir-usage-tracker.json';
         ) +
         $.queryPanel(
           [
-            'histogram_quantile(1.0, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, %s=~"$namespace", job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.namespaceMatcher(), $._config.per_namespace_label],
-            'histogram_quantile(0.9999, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, %s=~"$namespace", job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.namespaceMatcher(), $._config.per_namespace_label],
-            'histogram_quantile(0.99, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, %s=~"$namespace", job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.namespaceMatcher(), $._config.per_namespace_label],
-            'histogram_quantile(0.95, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, %s=~"$namespace", job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.namespaceMatcher(), $._config.per_namespace_label],
+            'histogram_quantile(1.0, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.jobMatcher($._config.job_names.usage_tracker)],
+            'histogram_quantile(0.9999, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.jobMatcher($._config.job_names.usage_tracker)],
+            'histogram_quantile(0.99, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.jobMatcher($._config.job_names.usage_tracker)],
+            'histogram_quantile(0.95, sum(rate(cortex_usage_tracker_client_track_series_duration_seconds_bucket{%s, job!~".*load-generator.*"}[$__rate_interval])) by (le))' % [$.jobMatcher($._config.job_names.usage_tracker)],
           ],
           [
             'p100',
@@ -41,7 +40,7 @@ local filename = 'mimir-usage-tracker.json';
           'Request rate for TrackSeries requests broken down by status code.',
         ) +
         $.qpsPanelNativeHistogram(
-          $.queries.usage_tracker.writeRequestsPerSecondSelector + ', %s=~"$namespace"' % $._config.per_namespace_label,
+          $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector, $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector
         ) +
         {
           fieldConfig+: {
@@ -54,14 +53,14 @@ local filename = 'mimir-usage-tracker.json';
         }
       )
       .addPanel(
-        $.timeseriesPanel('TrackSeries request rates by server pod') +
+        $.timeseriesPanel('TrackSeries request rates by server %s' % $._config.per_instance_label) +
         $.panelDescription(
-          'TrackSeries request rates by server pod',
-          'Request rate for TrackSeries requests broken down by server pod.',
+          'TrackSeries request rates by server %s' % $._config.per_instance_label,
+          'Request rate for TrackSeries requests broken down by server %s.' % $._config.per_instance_label,
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_request_duration_seconds_count{%s, %s=~"$namespace", route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_track_series_routes_regex],
-          '{{pod}}',
+          'sum by (%s) (rate(%s{%s, route=~"%s"}[$__rate_interval]))' % [$._config.per_instance_label, $.queries.requests_per_second_metric, $.jobMatcher($._config.job_names.usage_tracker), $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex],
+          '{{%s}}' % $._config.per_instance_label,
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps', custom+: { fillOpacity: 0 } } } },
       )
@@ -73,7 +72,7 @@ local filename = 'mimir-usage-tracker.json';
         ) +
         $.ncLatencyPanel(
           $.queries.requests_per_second_metric,
-          $.queries.usage_tracker.writeRequestsPerSecondSelector + ', %s=~"$namespace"' % $._config.per_namespace_label,
+          $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector,
           multiplier='1e6',
         ) +
         {
@@ -129,7 +128,7 @@ local filename = 'mimir-usage-tracker.json';
         ) +
         $.ncLatencyPanel(
           $.queries.requests_per_second_metric,
-          '%s, %s=~"$namespace", route=~"%s"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_get_users_close_to_limit_routes_regex],
+          '%s, %s=~"$namespace", route="/usagetrackerpb.UsageTracker/GetUsersCloseToLimit"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label],
           multiplier='1e6',
         ) +
         {
