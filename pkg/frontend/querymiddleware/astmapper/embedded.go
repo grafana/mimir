@@ -121,7 +121,7 @@ func (s *embeddedQueriesSquasher) Squash(exprs ...EmbeddedQuery) (parser.Expr, e
 	}
 
 	return &parser.VectorSelector{
-		Name:          EmbeddedQueriesMetricName,
+		Name: EmbeddedQueriesMetricName,
 		LabelMatchers: []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, EmbeddedQueriesMetricName),
 			embeddedQuery,
