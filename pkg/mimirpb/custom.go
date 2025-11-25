@@ -6,10 +6,9 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"runtime"
+	"syscall"
 	"testing"
 	"unsafe"
-	"weak"
 
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -19,8 +18,6 @@ import (
 	"google.golang.org/grpc/mem"
 	protobufproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
-
-	"github.com/grafana/mimir/pkg/mimirpb/internal"
 )
 
 type CustomCodecConfig struct {
@@ -154,6 +151,8 @@ func Unmarshal(data []byte, v gogoproto.Unmarshaler) error {
 	return GlobalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
 }
 
+var pageSize = syscall.Getpagesize()
+
 // Unmarshal customizes gRPC unmarshalling.
 // If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
@@ -163,8 +162,15 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 	var buf mem.Buffer
 	if instrumentLeaks {
-		// Always allocate; we'll detect leaks by checking if it's garbage-collected.
-		b := make([]byte, data.Len())
+		// Allocate separate pages for this buffer. We'll detect ref leaks by
+		// munmaping the pages on Free, after which trying to access them will
+		// segfault.
+		pageAlignedLen := roundUpToMultiple(data.Len(), pageSize)
+		b, err := syscall.Mmap(0, 0, pageAlignedLen, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
+		if err != nil {
+			panic(fmt.Errorf("mmap: %w", err))
+		}
+		b = b[:data.Len()]
 		data.CopyTo(b)
 		buf = mem.NewBuffer(&b, nil)
 	} else {
@@ -248,34 +254,12 @@ func (b *instrumentLeaksBuf) Free() {
 
 	if b.refCount == 0 {
 		buf := b.ReadOnlyData()
-		// Taint data, in case the buffer is accessed before the panic below,
-		// or after the panic if it's recovered.
-		for i := range buf {
-			const taint = "KAEL"
-			buf[i] = taint[i%len(taint)]
-		}
-		// Remove our ref; no (strong) refs should remain (except in the stack).
-		b.Buffer = nil
 		ptr := unsafe.SliceData(buf)
-		addr := uintptr(unsafe.Pointer(ptr))
-		weakRef := weak.Make(ptr)
-
-		// Check in a separate goroutine, because this stack still has locals
-		// pointing to the buffer.
-		go func() {
-			runtime.GC()
-			runtime.GC()
-
-			leaked := weakRef.Value() != nil
-
-			select {
-			case internal.RefLeakChecks <- internal.RefLeakCheck{Addr: addr, Leaked: leaked}:
-			default:
-				if leaked {
-					panic(fmt.Sprintf("reference leak for object 0x%x", addr))
-				}
-			}
-		}()
+		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
+		err := syscall.Munmap(allPages)
+		if err != nil {
+			panic(fmt.Errorf("munmap: %w", err))
+		}
 	}
 }
 
@@ -668,4 +652,8 @@ func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
 		m.sourceBufferHolders = map[*BufferHolder]struct{}{}
 	}
 	m.sourceBufferHolders[bufh] = struct{}{}
+}
+
+func roundUpToMultiple(n, of int) int {
+	return ((n + of - 1) / of) * of
 }

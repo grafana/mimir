@@ -6,8 +6,9 @@
 package mimirpb
 
 import (
+	"fmt"
+	"runtime/debug"
 	"testing"
-	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
@@ -16,7 +17,6 @@ import (
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
 
-	"github.com/grafana/mimir/pkg/mimirpb/internal"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -258,36 +258,25 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	buf, err := src.Marshal()
 	require.NoError(t, err)
 
-	var leaks <-chan bool
 	var leakingLabelName UnsafeMutableString
+
+	var req WriteRequest
+	err = Unmarshal(buf, &req)
+	require.NoError(t, err)
+
+	// Label names are UnsafeMutableStrings pointing to buf. They shouldn't outlive
+	// the call to req.FreeBuffer.
+	leakingLabelName = req.Timeseries[0].Labels[0].Name
+
+	req.FreeBuffer() // leakingLabelName becomes a leak here
+
+	debug.SetPanicOnFault(true)
+	var recovered any
 	func() {
-		var req WriteRequest
-		err = Unmarshal(buf, &req)
-		require.NoError(t, err)
-
-		// Label names are UnsafeMutableStrings pointing to buf. They shouldn't outlive
-		// the call to req.FreeBuffer.
-		leakingLabelName = req.Timeseries[0].Labels[0].Name
-
-		leaks = internal.NextRefLeakCheck(t.Context(), req.Buffer().ReadOnlyData())
-		req.FreeBuffer() // leakingLabelName becomes a leak here
+		defer func() {
+			recovered = recover()
+		}()
+		t.Log(leakingLabelName) // Just forcing a read on leakingLabelName here
 	}()
-
-	// Expect to receive a leak detection.
-	require.Eventually(t, func() bool { return <-leaks }, 1*time.Second, 10*time.Millisecond, "expected a reference leak")
-	// Expect the label name contents to have been replaced with a taint word.
-	// Keep this check last, because we need to extend the lifespan of leakingLabelName
-	// to avoid Go optimizing the leak away.
-	require.Contains(t, leakingLabelName, "KAEL")
-
-	// Now let's check a non-leak doesn't get falsely detected.
-	func() {
-		var reqNoLeak WriteRequest
-		err = Unmarshal(buf, &reqNoLeak)
-		require.NoError(t, err)
-
-		leaks = internal.NextRefLeakCheck(t.Context(), reqNoLeak.Buffer().ReadOnlyData())
-		reqNoLeak.FreeBuffer()
-	}()
-	require.Eventually(t, func() bool { return !<-leaks }, 1*time.Second, 10*time.Millisecond, "expected no reference leaks")
+	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
 }

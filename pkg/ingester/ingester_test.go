@@ -64,7 +64,6 @@ import (
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	mimirpbtest "github.com/grafana/mimir/pkg/mimirpb/testutil"
 	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -9176,7 +9175,8 @@ func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
 	startAndWaitHealthy(t, ing, r)
 
 	syms := util_test.NewSymbolTableBuilder(nil)
-	buf, err := makeTestRW2WriteRequest(syms).Marshal()
+	orig := makeTestRW2WriteRequest(syms)
+	buf, err := orig.Marshal()
 	require.NoError(t, err)
 
 	var wr mimirpb.PreallocWriteRequest
@@ -9186,20 +9186,21 @@ func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
 	err = mimirpb.Unmarshal(buf, &wr)
 	require.NoError(t, err)
 
-	nextLeak := mimirpbtest.NextRefLeakCheck(t.Context(), wr.Buffer().ReadOnlyData())
-
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, &wr.WriteRequest)
 	require.NoError(t, err)
 
-	select {
-	case leaked := <-nextLeak:
-		if leaked {
-			require.Fail(t, "reference leak detected", "addr: %p", buf)
-		}
-	case <-time.After(1 * time.Second):
-		require.Fail(t, "expected reference leak check", "addr: %p", buf)
-	}
+	meta, err := ing.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
+		Metric: "test_metric_total",
+		Limit:  1, LimitPerMetric: 1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []*mimirpb.MetricMetadata{{
+		MetricFamilyName: "test_metric_total",
+		Type:             mimirpb.COUNTER,
+		Help:             "test_metric_help",
+		Unit:             "test_metric_unit",
+	}}, meta.Metadata)
 }
 
 func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
