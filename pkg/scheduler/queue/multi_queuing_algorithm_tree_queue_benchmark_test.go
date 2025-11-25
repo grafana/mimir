@@ -425,6 +425,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 					&map[RequestKey]*SchedulerRequest{},
 					promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+					queueStopTimeout,
 				)
 				require.NoError(t, err)
 

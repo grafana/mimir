@@ -121,6 +121,7 @@ type RequestQueue struct {
 	stopCompleted   chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 	isStopping      *atomic.Bool
 	stopRequestedAt time.Time
+	stopTimeout     time.Duration
 
 	requestsToEnqueue                     chan requestToEnqueue
 	requestsSent                          chan *SchedulerRequest
@@ -224,6 +225,7 @@ func NewRequestQueue(
 	enqueueDuration prometheus.Histogram,
 	schedulerInflightRequests *map[RequestKey]*SchedulerRequest,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
+	stopTimeout time.Duration,
 ) (*RequestQueue, error) {
 	queryComponentCapacity, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
 	if err != nil {
@@ -246,6 +248,7 @@ func NewRequestQueue(
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
 		isStopping:    atomic.NewBool(false),
+		stopTimeout:   stopTimeout,
 
 		requestsToEnqueue:                     make(chan requestToEnqueue),
 		requestsSent:                          make(chan *SchedulerRequest),
@@ -307,6 +310,8 @@ func (q *RequestQueue) dispatcherLoop() {
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			q.isStopping.Store(true)
 			q.stopRequestedAt = time.Now()
+		case <-q.stopCompleted:
+			return
 		case querierWorkerOp := <-q.querierWorkerOperations:
 			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
 			needToDispatchQueries = q.processQuerierWorkerOperation(querierWorkerOp)
@@ -511,9 +516,23 @@ func (q *RequestQueue) stop(_ error) error {
 	// Reads from stopRequested tell dispatcherLoop to enter a stopping state where it tries to clear the queue.
 	// The loop needs to keep executing other select branches while stopping in order to clear the queue.
 	q.stopRequested <- struct{}{}
-	<-q.stopCompleted
 
-	return nil
+	ctx, cancel := context.WithTimeout(context.Background(), q.stopTimeout)
+
+	for {
+		select {
+		case <-q.stopCompleted:
+			cancel()
+			return nil
+		case <-ctx.Done():
+			level.Warn(q.log).Log("msg", "queue stop timeout reached: query queue is not empty but queries have not been handled before the timeout")
+
+			q.stopCompleted <- struct{}{}
+
+			cancel()
+			return nil
+		}
+	}
 }
 
 func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {

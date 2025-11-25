@@ -38,6 +38,8 @@ var secondQueueDimensionOptions = []string{
 	unknownQueueDimension,
 }
 
+var queueStopTimeout = 5 * time.Second
+
 // randAdditionalQueueDimension is the basic implementation of additionalQueueDimensionFunc,
 // used to assign the expected query component queue dimensions to SchedulerRequests
 // before they are enqueued by the queue producer groups utilized in benchmark tests.
@@ -102,6 +104,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 								&map[RequestKey]*SchedulerRequest{},
 								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+								queueStopTimeout,
 							)
 							require.NoError(b, err)
 
@@ -350,6 +353,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		&map[RequestKey]*SchedulerRequest{},
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -465,6 +469,7 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		&map[RequestKey]*SchedulerRequest{},
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -552,6 +557,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		&map[RequestKey]*SchedulerRequest{},
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -626,6 +632,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		&map[RequestKey]*SchedulerRequest{},
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -716,6 +723,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		&map[RequestKey]*SchedulerRequest{},
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -773,6 +781,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		&map[RequestKey]*SchedulerRequest{},
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -805,6 +814,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
 		&map[RequestKey]*SchedulerRequest{},
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
