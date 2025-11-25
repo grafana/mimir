@@ -127,6 +127,7 @@
 * [ENHANCEMENT] Dashboards: Plot OMMKilled events in the workingset memory panels of resources dashboards. #13377
 * [ENHANCEMENT] Dashboards: Add variable to compactor and object store dashboards to switch between classic and native latencies. Use native histogram `thanos_objstore_bucket_operation_duration_seconds`. #12137
 * [ENHANCEMENT] Recording rules: Add native histogram version of histogram recording rules. #13553
+* [ENHANCEMENT] Alerts: Add `MimirMemberlistBridgeZoneUnavailable` alert. #13647
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 
