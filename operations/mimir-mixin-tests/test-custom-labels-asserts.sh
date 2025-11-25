@@ -22,6 +22,10 @@ assert_failed() {
 # In this test we customize some labels. We expect to not find any reference to default labels.
 FORBIDDEN_LABELS="cluster instance pod"
 
+# Alerts to exclude from validation (space-separated list of alert names).
+# These alerts are excluded because they rely on Kubernetes metrics that use hardcoded label names.
+EXCLUDED_ALERTS="MimirMemberlistBridgeZoneUnavailable"
+
 for LABEL in ${FORBIDDEN_LABELS}; do
   QUERY_REGEX="[^\$a-z_]${LABEL}[^a-z_]"
   ALERT_VARIABLE_REGEX="\\\$labels.${LABEL}"
@@ -39,12 +43,19 @@ for LABEL in ${FORBIDDEN_LABELS}; do
 
   # Check alerts.
   echo "Checking ${ALERTS_FILE}"
-  MATCHES=$(yq eval '.. | select(.expr?).expr | sub("\n", " ")' "${ALERTS_FILE}" | grep -E "${QUERY_REGEX}" || true)
+
+  # Build yq filter to exclude specific alerts.
+  EXCLUDED_ALERTS_FILTER=""
+  for ALERT in ${EXCLUDED_ALERTS}; do
+    EXCLUDED_ALERTS_FILTER="${EXCLUDED_ALERTS_FILTER} and .alert != \"${ALERT}\""
+  done
+
+  MATCHES=$(yq eval ".. | select(.expr? ${EXCLUDED_ALERTS_FILTER}).expr | sub(\"\\n\", \" \")" "${ALERTS_FILE}" | grep -E "${QUERY_REGEX}" || true)
   if [ -n "$MATCHES" ]; then
     assert_failed "The alerts at ${ALERTS_FILE} contains unexpected references to '${LABEL}' label in some queries:\n$MATCHES"
   fi
 
-  MATCHES=$(yq eval '.. | select(.message?).message | sub("\n", " ")' "${ALERTS_FILE}" | grep -E "${ALERT_VARIABLE_REGEX}" || true)
+  MATCHES=$(yq eval ".. | select(.message? ${EXCLUDED_ALERTS_FILTER}).message | sub(\"\\n\", \" \")" "${ALERTS_FILE}" | grep -E "${ALERT_VARIABLE_REGEX}" || true)
   if [ -n "$MATCHES" ]; then
     assert_failed "The alerts at ${ALERTS_FILE} contains unexpected references to '${LABEL}' label in some messages:\n$MATCHES"
   fi
