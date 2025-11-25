@@ -90,6 +90,15 @@ func TestVectorSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}, skip histogram buckets`,
 		},
+		"one matcher, eager loading enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:  singleMatcher,
+					EagerLoad: true,
+				},
+			},
+			expected: `{__name__="foo"}, eager load`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -316,6 +325,28 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			expectEquivalent: true,
 		},
+
+		"one with eager loading enabled, one without": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					EagerLoad:          false,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					EagerLoad:          true,
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+				},
+			},
+			expectEquivalent: true,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -329,7 +360,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 	}
 }
 
-func TestVectorSelector_MergeHints(t *testing.T) {
+func TestVectorSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 	runTest := func(t *testing.T, skipFirst, skipSecond bool, expectSkip bool) {
 		first := &VectorSelector{
 			VectorSelectorDetails: &VectorSelectorDetails{
@@ -360,6 +391,41 @@ func TestVectorSelector_MergeHints(t *testing.T) {
 	})
 
 	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
+		runTest(t, true, true, true)
+	})
+}
+
+func TestVectorSelector_MergeHints_EagerLoad(t *testing.T) {
+	runTest := func(t *testing.T, eagerLoadFirst, eagerLoadSecond bool, expectEagerLoad bool) {
+		first := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				EagerLoad: eagerLoadFirst,
+			},
+		}
+		second := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				EagerLoad: eagerLoadSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, expectEagerLoad, first.EagerLoad)
+	}
+
+	t.Run("neither has eager loading enabled", func(t *testing.T) {
+		runTest(t, false, false, false)
+	})
+
+	t.Run("first has eager loading enabled, other does not", func(t *testing.T) {
+		runTest(t, true, false, true)
+	})
+
+	t.Run("first has eager loading disabled, other does not", func(t *testing.T) {
+		runTest(t, false, true, true)
+	})
+
+	t.Run("both have eager loading enabled", func(t *testing.T) {
 		runTest(t, true, true, true)
 	})
 }

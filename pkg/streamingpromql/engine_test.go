@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -4226,9 +4227,9 @@ func TestEagerLoadSelectors(t *testing.T) {
 	require.NoError(t, err)
 
 	optsWithEagerLoading := NewTestEngineOpts()
-	optsWithEagerLoading.EagerLoadSelectors = true
 	plannerWithEagerLoading, err := NewQueryPlanner(optsWithEagerLoading, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
+	plannerWithEagerLoading.RegisterQueryPlanOptimizationPass(&eagerLoadAllSelectorsOptimizationPass{})
 	engineWithEagerLoading, err := NewEngine(optsWithEagerLoading, limitsProvider, metrics, plannerWithEagerLoading)
 	require.NoError(t, err)
 
@@ -4332,6 +4333,17 @@ func (s *synchronisingQuerier) Select(ctx context.Context, sortSeries bool, hint
 
 func (s *synchronisingQuerier) Close() error {
 	return s.inner.Close()
+}
+
+type eagerLoadAllSelectorsOptimizationPass struct{}
+
+func (e *eagerLoadAllSelectorsOptimizationPass) Name() string {
+	return "Eager load all selectors"
+}
+
+func (e *eagerLoadAllSelectorsOptimizationPass) Apply(ctx context.Context, p *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	plan.EnableEagerLoadingOnAllSelectors(p.Root)
+	return p, nil
 }
 
 func TestInstantQueryDurationExpression(t *testing.T) {

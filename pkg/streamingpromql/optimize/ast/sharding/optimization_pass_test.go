@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/testutils"
 )
 
 func TestOptimizationPass(t *testing.T) {
@@ -83,7 +83,9 @@ func TestOptimizationPass(t *testing.T) {
 			pass := NewOptimizationPass(limits, seriesPerShard, reg, logger)
 
 			ctx := user.InjectOrgID(context.Background(), "tenant-1")
-			afterRewrite, err := rewriteForSubquerySpinoff(ctx, testCase.input)
+			ast, err := parser.ParseExpr(testCase.input)
+			require.NoError(t, err)
+			afterRewrite, err := testutils.RewriteForSubquerySpinoff(ctx, ast)
 			require.NoError(t, err)
 
 			ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, testCase.hints, testCase.options)
@@ -115,25 +117,4 @@ func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int {
 
 func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int {
 	return m.splitAndMergeShards
-}
-
-func rewriteForSubquerySpinoff(ctx context.Context, expr string) (parser.Expr, error) {
-	stats := astmapper.NewSubquerySpinOffMapperStats()
-	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
-	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
-	ast, err := parser.ParseExpr(expr)
-	if err != nil {
-		return nil, err
-	}
-
-	rewrittenQuery, err := mapper.Map(ctx, ast)
-	if err != nil {
-		return nil, err
-	}
-
-	if stats.SpunOffSubqueries() == 0 {
-		return ast, nil
-	}
-
-	return rewrittenQuery, nil
 }

@@ -7,16 +7,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	optimizetestutils "github.com/grafana/mimir/pkg/streamingpromql/optimize/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -196,17 +195,20 @@ func TestOptimizationPass(t *testing.T) {
 	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
 
 	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, planner *streamingpromql.QueryPlanner) {
+		ast, err := parser.ParseExpr(expr)
+		require.NoError(t, err)
+
 		if enableMiddlewareSharding {
 			// Rewrite the query in a shardable form.
-			expr, err = rewriteForQuerySharding(ctx, expr)
+			ast, err = optimizetestutils.RewriteForQuerySharding(ctx, ast)
 			require.NoError(t, err)
 		}
 
 		// And do the same for queries eligible for subquery spin-off.
-		expr, err = rewriteForSubquerySpinoff(ctx, expr)
+		ast, err = optimizetestutils.RewriteForSubquerySpinoff(ctx, ast)
 		require.NoError(t, err)
 
-		p, err := planner.NewQueryPlan(ctx, expr, timeRange, observer)
+		p, err := planner.NewQueryPlan(ctx, ast.String(), timeRange, observer)
 		require.NoError(t, err)
 		actual := p.String()
 		require.Equal(t, testutils.TrimIndent(expected), actual)
@@ -227,45 +229,6 @@ func TestOptimizationPass(t *testing.T) {
 			})
 		})
 	}
-}
-
-func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
-	const maxShards = 2
-	stats := astmapper.NewMapperStats()
-	squasher := astmapper.EmbeddedQueriesSquasher
-	summer := astmapper.NewQueryShardSummer(maxShards, squasher, log.NewNopLogger(), stats)
-	ast, err := parser.ParseExpr(expr)
-	if err != nil {
-		return "", err
-	}
-
-	shardedQuery, err := summer.Map(ctx, ast)
-	if err != nil {
-		return "", err
-	}
-
-	return shardedQuery.String(), nil
-}
-
-func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error) {
-	stats := astmapper.NewSubquerySpinOffMapperStats()
-	defaultStepFunc := func(rangeMillis int64) int64 { return 1000 }
-	mapper := astmapper.NewSubquerySpinOffMapper(defaultStepFunc, log.NewNopLogger(), stats)
-	ast, err := parser.ParseExpr(expr)
-	if err != nil {
-		return "", err
-	}
-
-	rewrittenQuery, err := mapper.Map(ctx, ast)
-	if err != nil {
-		return "", err
-	}
-
-	if stats.SpunOffSubqueries() == 0 {
-		return expr, nil
-	}
-
-	return rewrittenQuery.String(), nil
 }
 
 type mockLimits struct{}

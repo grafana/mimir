@@ -100,10 +100,9 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		}),
 		queriesRejectedDueToPeakMemoryConsumption: metrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxEstimatedQueryMemoryConsumption),
 
-		pedantic:           opts.Pedantic,
-		eagerLoadSelectors: opts.EagerLoadSelectors,
-		planner:            planner,
-		nodeMaterializers:  nodeMaterializers,
+		pedantic:          opts.Pedantic,
+		planner:           planner,
+		nodeMaterializers: nodeMaterializers,
 	}, nil
 }
 
@@ -141,8 +140,6 @@ type Engine struct {
 	//
 	// Pedantic mode should only be enabled in tests. It is not intended to be used in production.
 	pedantic bool
-
-	eagerLoadSelectors bool
 
 	planner           *QueryPlanner
 	nodeMaterializers map[planning.NodeType]planning.NodeMaterializer
@@ -256,7 +253,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		Annotations:              annotations.New(),
 		QueryStats:               types.NewQueryStats(),
 		LookbackDelta:            lookbackDelta,
-		EagerLoadSelectors:       e.eagerLoadSelectors,
 		Plan:                     plan,
 		EnableDelayedNameRemoval: plan.EnableDelayedNameRemoval,
 		Logger:                   e.logger,

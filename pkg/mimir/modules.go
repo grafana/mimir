@@ -875,8 +875,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	promOpts, mqeOpts := engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, promqlEngineRegisterer)
 	// Disable concurrency limits for sharded queries spawned by the query-frontend.
 	promOpts.ActiveQueryTracker = nil
-	// Always eagerly load selectors so that they are loaded in parallel in the background.
-	mqeOpts.EagerLoadSelectors = true
 
 	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
 

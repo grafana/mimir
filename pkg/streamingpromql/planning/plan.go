@@ -208,7 +208,6 @@ type OperatorParameters struct {
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
 	LookbackDelta            time.Duration
-	EagerLoadSelectors       bool
 	Plan                     *QueryPlan
 	EnableDelayedNameRemoval bool
 	Logger                   log.Logger

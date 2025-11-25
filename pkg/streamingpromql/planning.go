@@ -86,6 +86,14 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewNarrowSelectorsOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
 
+	// Prometheus' engine evaluates all selectors (ie. calls Querier.Select()) before evaluating any part of the query.
+	// Middleware-based sharding and subquery spin-off rely on this behavior in query-frontends when evaluating shardable
+	// queries and spun-off subqueries so that all selectors are evaluated in parallel. So we need to emulate that by
+	// eagerly loading the special selectors these middlewares inject.
+	// The remote execution operator eagerly loads its children, and this is what is used to evaluate sharded legs
+	// when sharding is running inside MQE, so we don't need to handle that here.
+	planner.RegisterQueryPlanOptimizationPass(&plan.EagerLoadMiddlewareSelectorsOptimizationPass{})
+
 	return planner, nil
 }
 

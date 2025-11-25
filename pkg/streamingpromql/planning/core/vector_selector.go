@@ -22,7 +22,7 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, v.EagerLoad)
 
 	if v.ReturnSampleTimestamps {
 		return d + ", return sample timestamps"
@@ -80,6 +80,7 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	}
 
 	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
+	v.EagerLoad = v.EagerLoad || otherVectorSelector.EagerLoad
 	return nil
 }
 
@@ -95,7 +96,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Offset:                   v.Offset.Milliseconds(),
 		LookbackDelta:            params.LookbackDelta,
 		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
-		EagerLoad:                params.EagerLoadSelectors,
+		EagerLoad:                v.EagerLoad,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
 		ExpressionPosition:       v.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,

@@ -22,7 +22,7 @@ type MatrixSelector struct {
 }
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.EagerLoad)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -74,6 +74,7 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+	m.EagerLoad = m.EagerLoad || otherMatrixSelector.EagerLoad
 	return nil
 }
 
@@ -89,7 +90,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Offset:                   m.Offset.Milliseconds(),
 		Range:                    m.Range,
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
-		EagerLoad:                params.EagerLoadSelectors,
+		EagerLoad:                m.EagerLoad,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
 		ExpressionPosition:       m.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
