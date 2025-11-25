@@ -3,7 +3,7 @@ local filename = 'mimir-block-builder.json';
 (import 'dashboard-utils.libsonnet') +
 {
   [filename]:
-    assert std.md5(filename) == 'c565e768420d79d0a632b3135d47cb30' : 'UID of the dashboard has changed, please update references to dashboard.';
+    assert std.md5(filename) == 'c565e768420d79d0a632b3135d47cb30' : 'UID of the dashboard has changed, please update references to dashboard. ' + std.md5(filename);
     ($.dashboard('Block-builder') + { uid: std.md5(filename) })
     .addClusterSelectorTemplates()
     .addRow(
