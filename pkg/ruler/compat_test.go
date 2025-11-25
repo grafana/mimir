@@ -1078,6 +1078,20 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 			expectedOperatorFailed: false,
 			remoteQuerier:          false,
 		},
+		{
+			name:                   "duplicate labelset after applying rule labels (user, remote querier)",
+			err:                    errors.New("vector contains metrics with the same labelset after applying rule labels"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          true,
+		},
+		{
+			name:                   "duplicate labelset after applying rule labels (user, local querier)",
+			err:                    errors.New("vector contains metrics with the same labelset after applying rule labels"),
+			expectedUserFailed:     true,
+			expectedOperatorFailed: false,
+			remoteQuerier:          false,
+		},
 	}
 
 	for _, tt := range tests {
