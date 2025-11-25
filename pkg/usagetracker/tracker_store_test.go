@@ -408,6 +408,7 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	done := make(chan struct{})
+	observed := make(chan struct{})
 	go func() {
 		defer wg.Done()
 		for {
@@ -415,6 +416,12 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 			case <-done:
 				return
 			default:
+				select {
+				case observed <- struct{}{}:
+					// Notify that we've observed the new timestamp
+				default:
+					// Nobody is waiting there.
+				}
 				seriesID := uint64(rand.Int63n(maxSeriesRange))
 				_, _ = tracker.trackSeries(context.Background(), tenant, []uint64{seriesID}, now())
 			}
@@ -426,6 +433,9 @@ func TestTrackerStore_Cleanup_Concurrency(t *testing.T) {
 	for createdSeries.count.Load() < 100*maxSeriesRange {
 		// Keep increasing the timestamp every time.
 		nowUnixMinutes.Inc()
+		// Wait until the tracking goroutine has observed the new timestamp.
+		// This ensures that it won't be writing too-old series, making the test unrealistic and flaky.
+		<-observed
 		tracker.cleanup(now())
 		cleanups++
 	}
