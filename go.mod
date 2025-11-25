@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20251117040950-77a2234ab287
+	github.com/grafana/dskit v0.0.0-20251125153219-1b93cfe76e9f
 	github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -358,7 +358,7 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251124144104-7fbd6a14cf2b
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251125151730-2125cd96c917
 
 // gopkg.in/yaml.v3
 // + https://github.com/go-yaml/yaml/pull/691
