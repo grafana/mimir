@@ -60,7 +60,7 @@ local filename = 'mimir-usage-tracker.json';
           'Request rate for TrackSeries requests broken down by server pod.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_request_duration_seconds_count{%s, %s=~"$namespace", route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_routes_regex],
+          'sum by (pod) (rate(cortex_request_duration_seconds_count{%s, %s=~"$namespace", route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_track_series_routes_regex],
           '{{pod}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps', custom+: { fillOpacity: 0 } } } },
@@ -97,7 +97,7 @@ local filename = 'mimir-usage-tracker.json';
           'Request rate for GetUsersCloseToLimit requests broken down by status code.',
         ) +
         $.qpsPanelNativeHistogram(
-          '%s, %s=~"$namespace", route="/usagetrackerpb.UsageTracker/GetUsersCloseToLimit"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label],
+          '%s, %s=~"$namespace", route=~"%s"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_get_users_close_to_limit_routes_regex],
         ) +
         {
           fieldConfig+: {
@@ -116,7 +116,7 @@ local filename = 'mimir-usage-tracker.json';
           'Request rate for GetUsersCloseToLimit requests broken down by server pod.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_request_duration_seconds_count{%s, %s=~"$namespace", route="/usagetrackerpb.UsageTracker/GetUsersCloseToLimit"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label],
+          'sum by (pod) (rate(cortex_request_duration_seconds_count{%s, %s=~"$namespace", route=~"%s"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_get_users_close_to_limit_routes_regex],
           '{{pod}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'reqps', custom+: { fillOpacity: 0 } } } },
@@ -129,7 +129,7 @@ local filename = 'mimir-usage-tracker.json';
         ) +
         $.ncLatencyPanel(
           $.queries.requests_per_second_metric,
-          '%s, %s=~"$namespace", route="/usagetrackerpb.UsageTracker/GetUsersCloseToLimit"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label],
+          '%s, %s=~"$namespace", route=~"%s"' % [$.jobMatcher($._config.job_names.usage_tracker), $._config.per_namespace_label, $.queries.usage_tracker_get_users_close_to_limit_routes_regex],
           multiplier='1e6',
         ) +
         {

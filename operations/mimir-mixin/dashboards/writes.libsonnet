@@ -233,11 +233,11 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker_track_series_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker_routes_regex)])
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker_track_series_routes_regex)])
       )
     )
     .addRowIf(
