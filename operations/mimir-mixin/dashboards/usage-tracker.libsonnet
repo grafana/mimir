@@ -153,7 +153,7 @@ local filename = 'mimir-usage-tracker.json';
           'Rate of event records published to Kafka.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_usage_tracker_kafka_writer_produce_records_enqueued_total{%s, %s=~"$namespace", component="usage-tracker-events-writer"}[$__rate_interval]))' % [$.namespaceMatcher(), $._config.per_namespace_label],
+          'sum by (pod) (rate(cortex_usage_tracker_kafka_writer_produce_records_total{%s, component="usage-tracker-events-writer"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker)],
           '{{pod}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'evtps', custom+: { fillOpacity: 0 } } } },
@@ -165,7 +165,7 @@ local filename = 'mimir-usage-tracker.json';
           'Rate of snapshot metadata records published to Kafka.',
         ) +
         $.queryPanel(
-          'sum by (pod) (rate(cortex_usage_tracker_kafka_writer_produce_records_enqueued_total{%s, %s=~"$namespace", component="usage-tracker-snapshots-metadata-writer"}[$__rate_interval]))' % [$.namespaceMatcher(), $._config.per_namespace_label],
+          'sum by (pod) (rate(cortex_usage_tracker_kafka_writer_produce_records_enqueued_total{%s, component="usage-tracker-snapshots-metadata-writer"}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.usage_tracker)],
           '{{pod}}',
         ) +
         { fieldConfig+: { defaults+: { unit: 'evtps', custom+: { fillOpacity: 0 } } } },
