@@ -259,8 +259,8 @@ The following features are currently experimental:
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
 - Common
-  - Instrument a fraction of pooled objects for references that outlive their lifetime
-    - Only implemented for objects embedding `mimirpb.BufferHolder` so far.
+  - Instrument a fraction of pooled objects for references that outlive their lifetime.
+    - Only implemented for objects embedding `mimirpb.BufferHolder`.
     - Flag: `-common.instrument-reference-leaks-pct`
 - Preferred available zones for querying ingesters and store-gateways
   - `-querier.prefer-availability-zones`
