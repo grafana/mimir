@@ -45,9 +45,10 @@ for LABEL in ${FORBIDDEN_LABELS}; do
   echo "Checking ${ALERTS_FILE}"
 
   # Build yq filter to exclude specific alerts.
+  # Use .alert? (with optional operator) to avoid errors when yq hits arrays during recursive descent.
   EXCLUDED_ALERTS_FILTER=""
   for ALERT in ${EXCLUDED_ALERTS}; do
-    EXCLUDED_ALERTS_FILTER="${EXCLUDED_ALERTS_FILTER} and .alert != \"${ALERT}\""
+    EXCLUDED_ALERTS_FILTER="${EXCLUDED_ALERTS_FILTER} and .alert? != \"${ALERT}\""
   done
 
   MATCHES=$(yq eval ".. | select(.expr? ${EXCLUDED_ALERTS_FILTER}).expr | sub(\"\\n\", \" \")" "${ALERTS_FILE}" | grep -E "${QUERY_REGEX}" || true)
@@ -55,7 +56,7 @@ for LABEL in ${FORBIDDEN_LABELS}; do
     assert_failed "The alerts at ${ALERTS_FILE} contains unexpected references to '${LABEL}' label in some queries:\n$MATCHES"
   fi
 
-  MATCHES=$(yq eval ".. | select(.message? ${EXCLUDED_ALERTS_FILTER}).message | sub(\"\\n\", \" \")" "${ALERTS_FILE}" | grep -E "${ALERT_VARIABLE_REGEX}" || true)
+  MATCHES=$(yq eval ".. | select(.annotations?.message? ${EXCLUDED_ALERTS_FILTER}).annotations.message | sub(\"\\n\", \" \")" "${ALERTS_FILE}" | grep -E "${ALERT_VARIABLE_REGEX}" || true)
   if [ -n "$MATCHES" ]; then
     assert_failed "The alerts at ${ALERTS_FILE} contains unexpected references to '${LABEL}' label in some messages:\n$MATCHES"
   fi
