@@ -109,7 +109,8 @@ local filename = 'mimir-writes-resources.json';
         $.containerDiskSpaceUtilizationPanelByComponent('ingester'),
       )
     )
-    .addRow(
+    .addRowIf(
+      $._config.usage_tracker_enabled,
       $.row('Usage Tracker')
       .addPanel(
         $.containerCPUUsagePanelByComponent('usage_tracker'),
