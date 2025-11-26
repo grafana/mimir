@@ -1485,7 +1485,7 @@
   "common.storage.swift.request-timeout": 5000000000,
   "common.storage.filesystem.dir": "",
   "common.client-cluster-validation.label": "",
-  "common.instrument-reference-leaks-pct": 0,
+  "common.instrument-reference-leaks-percentage": 0,
   "timeseries-unmarshal-caching-optimization-enabled": true,
   "cost-attribution.eviction-interval": 1200000000000,
   "cost-attribution.registry-path": "",
