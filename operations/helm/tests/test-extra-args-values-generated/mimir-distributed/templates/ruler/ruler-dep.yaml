@@ -57,7 +57,6 @@ spec:
             - "-mem-ballast-size-bytes=1073741824"
             - "-distributor.remote-timeout=10s"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

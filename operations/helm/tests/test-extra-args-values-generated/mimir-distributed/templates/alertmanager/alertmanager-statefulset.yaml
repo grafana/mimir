@@ -93,7 +93,6 @@ spec:
             # needs to be higher to avoid connections being closed abruptly.
             - "-server.http-idle-timeout=6m"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

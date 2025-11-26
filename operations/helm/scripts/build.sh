@@ -80,7 +80,7 @@ function generate_manifests() {
   fi
 
   echo "Rendering helm test $TEST_NAME in PID $PID: 'helm template ${ARGS[*]}'"
-  helm template "${ARGS[@]}" 1>/dev/null
+  helm template --kube-version "1.32.0" "${ARGS[@]}" 1>/dev/null
   cp -r "${INTERMEDIATE_OUTPUT_DIR}" "${OUTPUT_DIR}"
   rm "${OUTPUT_DIR}/${CHART_NAME}/templates/values-for-rego-tests.yaml"
   find "${OUTPUT_DIR}/${CHART_NAME}/templates" -type f -print0 | xargs -0 "${SED}" -E -i -- "/^\s+(checksum\/(alertmanager-fallback-)?config|(helm.sh\/)?chart|app.kubernetes.io\/version|image: \"?grafana\/(mimir|enterprise-metrics)):/d"
