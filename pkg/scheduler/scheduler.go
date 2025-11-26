@@ -47,8 +47,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
-var errFrontendDisconnected = cancellation.NewErrorf("frontend disconnected")
+var (
+	errEnqueuingRequestFailed = cancellation.NewErrorf("enqueuing request failed")
+	errFrontendDisconnected   = cancellation.NewErrorf("frontend disconnected")
+)
 
 var tracer = otel.Tracer("pkg/scheduler")
 
@@ -238,6 +240,10 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 	if err != nil {
 		return err
 	}
+
+	// TODO: Instead of closing connection to frontend, we should stop "pulling from frontend" via the requestsCh.
+
+	// Cancel the queries context and close the gRPC stream only after we know that all queries have been answered and/or all querier workers have disconnected.
 	defer s.frontendDisconnected(frontendAddress)
 
 	// Response to INIT. If scheduler is not running, we skip for-loop, send SHUTTING_DOWN and exit this method.
@@ -249,7 +255,28 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 	// We stop accepting new queries in Stopping state. By returning quickly, we disconnect frontends, which in turns
 	// cancels all their queries.
+	// TODO: we don't want to disconnect frontends because then we can't send cancellations
+	// TODO: we do want to stop pulling requests though!
+
+	// TODO: we need to keep looping whether running or stopping
+	// for s.isRunningOrStopping() {
+	// 	switch s.State() {
+	// 	case services.Stopping:
+	// 	// TESTING: before actually managing request counting we could fake it for tests, then implement.
+	// 	//          e.g: activeRequests = 1 // wait until ctx.Done().
+	// 	//          e.g: activeRequests = 0 // return nil
+	//
+	// 	// check if all queries have completed, if so, return and close conn to frontend via deferred s.frontendDisconnected()
+	// 	// notify frontend we're shutting down to stop
+	// 	// frontend.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN})
+	//
+	// 	case services.Running:
+	// 		// pulls all messages including enqueue & cancel
+	// 	}
+	// }
+
 	for s.isRunning() {
+		// block waiting for request from frontend.
 		msg, err := frontend.Recv()
 		if err != nil {
 			// No need to report this as error, it is expected when query-frontend performs SendClose() (as frontendSchedulerWorker does).
@@ -279,6 +306,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 			reqCtx, enqueueSpan := tracer.Start(parentSpanContext, "enqueue")
 
+			// Send request to querier with frontendAddress so the querier can directly reply to the frontend.
 			err = s.enqueueRequest(reqCtx, frontendAddress, msg)
 			switch {
 			case err == nil:
@@ -312,6 +340,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 		}
 	}
 
+	// TODO: We're shutting down, which means we're not able to handle cancellations.
 	// Report shutdown back to frontend, so that it can retry with different scheduler. Also stop the frontend loop.
 	return frontend.Send(&schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN})
 }
@@ -634,7 +663,6 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 			Body: []byte(requestErr.Error()),
 		},
 	})
-
 	if err != nil {
 		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 		return

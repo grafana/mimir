@@ -34,8 +34,10 @@ const (
 	schedulerWorkerCancelChanCapacity = 1000
 )
 
-var errFrontendSchedulerWorkerLoopIterationStopping = cancellation.NewErrorf("frontend scheduler worker loop iteration stopping")
-var errFrontendSchedulerWorkerStopping = cancellation.NewErrorf("frontend scheduler worker stopping")
+var (
+	errFrontendSchedulerWorkerLoopIterationStopping = cancellation.NewErrorf("frontend scheduler worker loop iteration stopping")
+	errFrontendSchedulerWorkerStopping              = cancellation.NewErrorf("frontend scheduler worker stopping")
+)
 
 type frontendSchedulerWorkers struct {
 	services.Service
@@ -316,6 +318,7 @@ func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb
 			return false
 		}
 
+		// TODO: Don't want to get to here unless the scheduler connection has gone.
 		loopErr = w.schedulerLoop(loop)
 		if closeErr := util.CloseAndExhaust[*schedulerpb.SchedulerToFrontend](loop); closeErr != nil {
 			level.Debug(w.log).Log("msg", "failed to close frontend loop", "err", closeErr, "addr", w.schedulerAddr)
@@ -365,22 +368,54 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			// No need to report error if our internal context is canceled. This can happen during shutdown,
 			// or when scheduler is no longer resolvable. (It would be nice if this context reported "done" also when
 			// connection scheduler stops the call, but that doesn't seem to be the case).
+			// TODO: graceful shutdown, how interact here?!!?
 			//
 			// Reporting error here would delay reopening the stream (if the worker context is not done yet).
 			level.Debug(w.log).Log("msg", "stream context finished", "err", ctx.Err())
 			return nil
 
+		// TODO:
+		// case ....: // scheduler is shutting down signal
+		// case w.state == schedulerpb.SHUTTING_DOWN:  don't pull from requestsCh? // see frontendLoop in scheduler.
+
+		// Normal request flow
+		// Scheduler requests a query from Frontend, i.e: pull-based.
+		// TODO: stop receiving on this channel when Scheduler shutting down.
+		// new work i think
 		case req := <-w.requestsCh:
+			// "push" to Scheduler
+
+			// err can be that the Scheduler is Shutting Down
+			// if we bail out now, we'll miss any cancelCh messages.
+			//
+			// if so:
+			// - stop receiving on requestsCh:
+			//   set w.requestsCh to nil so that it can never be selected on.
+			// - ultimately disconnect scheduler and stop this loop.
+			//   TODO, <-ctx.Done() via service discovery, scheduler grpc conn disconnect? other?
+			// TODO: validate in a test.
+
+			// TODO: check codebase for similar pattern?
+			// e.g: https://github.com/grafana/loki/pull/7735/files#diff-bdfbea6cdb20797726478d486c622f89ce801c9bbf2a2ed06b7956f485298c53L90-L92
+			//
+			// schStatus, err := w.enqueueRequest(loop, req)
+			// switch {
+			// case err != nil:
+			//	return err - transport dead
+			// case schStatus == protoSHUTTINGDOWN
+			//	w.requestsCh = nil // stop listening for requests, only process ctxDone or cancelCh..
+			// }
+
 			if err := w.enqueueRequest(loop, req); err != nil {
 				return err
 			}
 
+		// existing work i think
 		case reqID := <-w.cancelCh:
 			err := loop.Send(&schedulerpb.FrontendToScheduler{
 				Type:    schedulerpb.CANCEL,
 				QueryID: reqID,
 			})
-
 			if err != nil {
 				return err
 			}
@@ -437,6 +472,7 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 	case schedulerpb.SHUTTING_DOWN:
 		// Scheduler is shutting down, report failure to enqueue and stop this loop.
 		level.Warn(spanLogger).Log("msg", "scheduler reported that it is shutting down")
+		// TODO: not necessarily failed yet if the request is allowed to gracefully complete
 		req.enqueue <- enqueueResult{status: failed}
 		return errors.New("scheduler is shutting down")
 
@@ -453,5 +489,6 @@ func (w *frontendSchedulerWorker) enqueueRequest(loop schedulerpb.SchedulerForFr
 		req.enqueue <- enqueueResult{status: failed}
 	}
 
+	// return status, err
 	return nil
 }

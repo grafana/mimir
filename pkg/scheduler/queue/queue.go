@@ -527,7 +527,7 @@ func (q *RequestQueue) stop(_ error) error {
 		case <-ctx.Done():
 			level.Warn(q.log).Log("msg", "queue stop timeout reached: query queue is not empty but queries have not been handled before the timeout")
 
-			q.stopCompleted <- struct{}{}
+			// q.stopCompleted <- struct{}{}
 
 			cancel()
 			return nil
