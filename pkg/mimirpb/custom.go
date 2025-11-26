@@ -158,7 +158,7 @@ var pageSize = syscall.Getpagesize()
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	holder, isBufferHolder := v.(MessageWithBufferRef)
-	instrumentLeaks := isBufferHolder && c.instrumentRefLeaksOneIn > 0 && c.unmarshaledWithBufferRefCount.Add(1)%c.instrumentRefLeaksOneIn == 0
+	instrumentLeaks := data.Len() > 0 && isBufferHolder && c.instrumentRefLeaksOneIn > 0 && c.unmarshaledWithBufferRefCount.Add(1)%c.instrumentRefLeaksOneIn == 0
 
 	var buf mem.Buffer
 	if instrumentLeaks {
