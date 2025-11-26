@@ -455,7 +455,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel('Bucket indexes load latency') +
-        $.latencyPanel('cortex_bucket_index_load_duration_seconds', '{$read_path_matcher}'),
+        $.ncLatencyPanel('cortex_bucket_index_load_duration_seconds', '$read_path_matcher'),
       )
     )
     .addRow(
