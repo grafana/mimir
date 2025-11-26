@@ -323,6 +323,97 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"multiple binary expressions with label_replace on only a single one": {
+			expr: `(first_metric * on (env, region) second_metric) * on (env, region) label_replace(third_metric, "region", "$1", "cluster", ".*")`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on (env, region) RHS, hints (env)
+					- LHS: BinaryExpression: LHS * on (env, region) RHS, hints (env, region)
+						- LHS: VectorSelector: {__name__="first_metric"}
+						- RHS: VectorSelector: {__name__="second_metric"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: label_replace(...)
+							- param 0: VectorSelector: {__name__="third_metric"}
+							- param 1: StringLiteral: "region"
+							- param 2: StringLiteral: "$1"
+							- param 3: StringLiteral: "cluster"
+							- param 4: StringLiteral: ".*"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"multiple binary expressions with label_join on only a single one": {
+			expr: `(sum by (env, region)(rate(first_metric[5m])) * sum(rate(second_metric[5m]))) / on (env, region) label_join(rate(third_metric[5m]), "region", "job", "workload")`,
+			expectedPlan: `
+				- BinaryExpression: LHS / on (env, region) RHS, hints (env)
+					- LHS: BinaryExpression: LHS * RHS, hints (env, region)
+						- LHS: AggregateExpression: sum by (env, region)
+							- DeduplicateAndMerge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="first_metric"}[5m0s]
+						- RHS: AggregateExpression: sum
+							- DeduplicateAndMerge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="second_metric"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: label_join(...)
+							- param 0: DeduplicateAndMerge
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="third_metric"}[5m0s]
+							- param 1: StringLiteral: "region"
+							- param 2: StringLiteral: "job"
+							- param 3: StringLiteral: "workload"
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"multiple binary expressions with label_replace on only a single one on LHS": {
+			expr: `label_replace(first_metric, "region", "$1", "cluster", ".*") * on (env, region) (second_metric * on (env, region) third_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on (env, region) RHS, hints (env)
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: label_replace(...)
+							- param 0: VectorSelector: {__name__="first_metric"}
+							- param 1: StringLiteral: "region"
+							- param 2: StringLiteral: "$1"
+							- param 3: StringLiteral: "cluster"
+							- param 4: StringLiteral: ".*"
+					- RHS: BinaryExpression: LHS * on (env, region) RHS, hints (env, region)
+						- LHS: VectorSelector: {__name__="second_metric"}
+						- RHS: VectorSelector: {__name__="third_metric"}
+
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
+		"multiple binary expressions with nested label_replace on LHS": {
+			expr: `
+				label_replace(label_replace(first_metric, "region", "$1", "cluster", ".*"), "env", "$1", "deployment", ".*")
+				* on (env, region)
+				(second_metric * on (env, region) third_metric)
+			`,
+			expectedPlan: `
+				- BinaryExpression: LHS * on (env, region) RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: label_replace(...)
+							- param 0: DeduplicateAndMerge
+								- FunctionCall: label_replace(...)
+									- param 0: VectorSelector: {__name__="first_metric"}
+									- param 1: StringLiteral: "region"
+									- param 2: StringLiteral: "$1"
+									- param 3: StringLiteral: "cluster"
+									- param 4: StringLiteral: ".*"
+							- param 1: StringLiteral: "env"
+							- param 2: StringLiteral: "$1"
+							- param 3: StringLiteral: "deployment"
+							- param 4: StringLiteral: ".*"
+					- RHS: BinaryExpression: LHS * on (env, region) RHS, hints (env, region)
+						- LHS: VectorSelector: {__name__="second_metric"}
+						- RHS: VectorSelector: {__name__="third_metric"}
+
+			`,
+			expectedAttempts: 1,
+			expectedModified: 1,
+		},
 	}
 
 	for name, testCase := range testCases {

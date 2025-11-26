@@ -1608,7 +1608,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     fieldConfig+: {
       // Take existing field overrides and extend them with the new ones. Let new ones take
       // precedence over already existing ones.
-      overrides: std.sort(std.setDiff(super.overrides, newOverrides, byName) + newOverrides, byName),
+      overrides: std.sort(std.setDiff(if 'overrides' in super then super.overrides else [], newOverrides, byName) + newOverrides, byName),
     },
   },
 
