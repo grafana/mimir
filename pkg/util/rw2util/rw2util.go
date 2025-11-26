@@ -81,7 +81,7 @@ func AddHistogramSeries(
 	help string,
 	unit string,
 	createdTimestamp int64,
-	exemplars []promRW2.Exemplar) *promRW2.Request {
+	exemplars []exemplar.Exemplar) *promRW2.Request {
 	if req == nil {
 		req = NewWriteRequest()
 	}
@@ -93,6 +93,20 @@ func AddHistogramSeries(
 		labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Name))
 		labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Value))
 	})
+
+	exemplarsRefs := make([]promRW2.Exemplar, 0, len(exemplars))
+	for _, e := range exemplars {
+		labelsRefs := make([]uint32, 0, 2*lbls.Len())
+		e.Labels.Range(func(l labels.Label) {
+			labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Name))
+			labelsRefs = append(labelsRefs, symBuilder.GetSymbol(l.Value))
+		})
+		exemplarsRefs = append(exemplarsRefs, promRW2.Exemplar{
+			LabelsRefs: labelsRefs,
+			Value:      e.Value,
+			Timestamp:  e.Ts,
+		})
+	}
 
 	metricType := promRW2.Metadata_METRIC_TYPE_HISTOGRAM
 	if histograms[0].ResetHint == promRW2.Histogram_RESET_HINT_GAUGE {
@@ -107,7 +121,7 @@ func AddHistogramSeries(
 			HelpRef: symBuilder.GetSymbol(help),
 			UnitRef: symBuilder.GetSymbol(unit),
 		},
-		Exemplars:        exemplars,
+		Exemplars:        exemplarsRefs,
 		CreatedTimestamp: createdTimestamp,
 	}
 	req.Timeseries = append(req.Timeseries, ts)
@@ -173,11 +187,6 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 	var rw2 *promRW2.Request
 
 	for _, ts := range req.Timeseries {
-		samples := make([]promRW2.Sample, 0, len(ts.Samples))
-		for _, s := range ts.Samples {
-			samples = append(samples, promRW2.Sample(s))
-		}
-
 		exemplars := make([]exemplar.Exemplar, 0, len(ts.Exemplars))
 		for _, e := range ts.Exemplars {
 			exemplars = append(exemplars, exemplar.Exemplar{
@@ -215,6 +224,7 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 				metricType = promRW2.Metadata_METRIC_TYPE_INFO
 			case prompb.MetricMetadata_STATESET:
 				metricType = promRW2.Metadata_METRIC_TYPE_STATESET
+			case prompb.MetricMetadata_UNKNOWN:
 			default:
 				panic(fmt.Errorf("unexpected metadata type: %v", metadata.Type))
 			}
@@ -222,10 +232,81 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 			unit = metadata.Unit
 		}
 
-		rw2 = AddFloatSeries(rw2, labelsFromPrompb(ts.Labels), samples, metricType, help, unit, 0, exemplars)
+		labels := labelsFromPrompb(ts.Labels)
+
+		samples := make([]promRW2.Sample, 0, len(ts.Samples))
+		for _, s := range ts.Samples {
+			samples = append(samples, promRW2.Sample(s))
+		}
+		if len(samples) > 0 {
+			rw2 = AddFloatSeries(rw2, labels, samples, metricType, help, unit, 0, exemplars)
+		}
+
+		histograms := make([]promRW2.Histogram, 0, len(ts.Histograms))
+		for _, h := range ts.Histograms {
+			histograms = append(histograms, histogramFromPrompbToRW2(&h))
+		}
+		if len(histograms) > 0 {
+			rw2 = AddHistogramSeries(rw2, labels, histograms, help, unit, 0, exemplars)
+		}
 	}
 
 	return rw2
+}
+
+func histogramFromPrompbToRW2(h *prompb.Histogram) promRW2.Histogram {
+	rw2h := promRW2.Histogram{
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		NegativeSpans:  make([]promRW2.BucketSpan, len(h.NegativeSpans)),
+		NegativeDeltas: h.NegativeDeltas,
+		NegativeCounts: h.NegativeCounts,
+		PositiveSpans:  make([]promRW2.BucketSpan, len(h.PositiveSpans)),
+		PositiveDeltas: h.PositiveDeltas,
+		PositiveCounts: h.PositiveCounts,
+		ResetHint:      promRW2.Histogram_ResetHint(h.ResetHint),
+		Timestamp:      h.Timestamp,
+		CustomValues:   h.CustomValues,
+	}
+
+	switch c := h.Count.(type) {
+	case *prompb.Histogram_CountInt:
+		rw2h.Count = &promRW2.Histogram_CountInt{CountInt: c.CountInt}
+	case *prompb.Histogram_CountFloat:
+		rw2h.Count = &promRW2.Histogram_CountFloat{CountFloat: c.CountFloat}
+	case nil:
+		// No count set
+	default:
+		panic(fmt.Errorf("unexpected histogram count type: %T", c))
+	}
+
+	switch zc := h.ZeroCount.(type) {
+	case *prompb.Histogram_ZeroCountInt:
+		rw2h.ZeroCount = &promRW2.Histogram_ZeroCountInt{ZeroCountInt: zc.ZeroCountInt}
+	case *prompb.Histogram_ZeroCountFloat:
+		rw2h.ZeroCount = &promRW2.Histogram_ZeroCountFloat{ZeroCountFloat: zc.ZeroCountFloat}
+	case nil:
+		// No zero count set
+	default:
+		panic(fmt.Errorf("unexpected histogram zero count type: %T", zc))
+	}
+
+	for i, span := range h.NegativeSpans {
+		rw2h.NegativeSpans[i] = promRW2.BucketSpan{
+			Offset: span.Offset,
+			Length: span.Length,
+		}
+	}
+
+	for i, span := range h.PositiveSpans {
+		rw2h.PositiveSpans[i] = promRW2.BucketSpan{
+			Offset: span.Offset,
+			Length: span.Length,
+		}
+	}
+
+	return rw2h
 }
 
 func labelsFromPrompb(src []prompb.Label) labels.Labels {
