@@ -2450,7 +2450,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "replicas did not mach, rejecting sample:",
+			expectedErr: "",
 		},
 	}
 
@@ -5199,7 +5199,10 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs: []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
+			expectErrs: []*status.Status{
+				nil,
+				status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error()),
+			},
 			expectDetails: []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
 		}, {
 			name:            "exceed max ha clusters limit",

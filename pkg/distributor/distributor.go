@@ -1335,7 +1335,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 		// We don't want to send samples beyond the last accepted sample - that was deduplicated
 		if samplesPerState[replicaRejectedTooManyClusters] > 0 {
-			d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, req.Timeseries[max(0, lastAccepted)].Labels)
+			d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, req.Timeseries[lastAccepted+1].Labels)
 		} else {
 			d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, nil)
 		}
@@ -1343,8 +1343,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 		if len(req.Timeseries) > 0 {
 			err = next(ctx, pushReq)
+			errs.Add(err)
 		}
-		errs.Add(err)
 
 		return errs.Err()
 	})
