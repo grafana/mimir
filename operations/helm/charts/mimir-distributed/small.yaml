@@ -1,3 +1,6 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.29"
+
 # These values configure the Grafana Mimir or Grafana Enterprise Metrics cluster
 # for higher scale than the default values, but not for high-availability production use.
 # The setup targets 70% CPU and memory utilization

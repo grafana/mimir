@@ -74,10 +74,19 @@ function generate_manifests() {
   ARGS=("${TEST_NAME}" "${CHART_PATH}" "-f" "${FILEPATH}" "--output-dir" "${INTERMEDIATE_OUTPUT_DIR}" "--namespace" "citestns" "--set-string" "regoTestGenerateValues=true")
 
   echo "Checking for kubeVersionOverride inside tests' values.yaml ..."
-  if ! grep "^kubeVersionOverride:" "${FILEPATH}" ; then
+  KUBE_VERSION=""
+  if grep -q "^kubeVersionOverride:" "${FILEPATH}" ; then
+    # Extract the kubeVersionOverride value from the file
+    KUBE_VERSION=$(grep "^kubeVersionOverride:" "${FILEPATH}" | sed 's/kubeVersionOverride:[[:space:]]*"\?\([^"]*\)"\?/\1/')
+    echo "kubeVersionOverride: \"$KUBE_VERSION\""
+  else
     echo "Warning: injecting Kubernetes version override: kubeVersionOverride=${DEFAULT_KUBE_VERSION}"
+    KUBE_VERSION="${DEFAULT_KUBE_VERSION}"
     ARGS+=("--set-string" "kubeVersionOverride=${DEFAULT_KUBE_VERSION}")
   fi
+
+  # Pass the kubeVersion to helm to avoid chart validation errors
+  ARGS+=("--kube-version" "${KUBE_VERSION}")
 
   echo "Rendering helm test $TEST_NAME in PID $PID: 'helm template ${ARGS[*]}'"
   helm template "${ARGS[@]}" 1>/dev/null

@@ -1,3 +1,6 @@
+# Pin kube version so results are the same for running in CI and locally where the installed kube version may be different.
+kubeVersionOverride: "1.29"
+
 # These values override the default configuration to run Grafana Mimir in classic architecture.
 # The "classic" architecture is what Mimir 2.x (mimir-distributed Helm chart version 5.x) used by default.
 # In this mode, Grafana Mimir doesn't use Kafka to decouple write and read paths. Instead,
