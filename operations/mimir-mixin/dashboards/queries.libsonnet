@@ -366,8 +366,16 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
+        local selector = '$read_path_matcher, route=~"%s"' % $.queries.query_http_routes_regex;
+        local query = utils.ncHistogramApplyTemplate(
+          template = 'sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left %s',
+          query = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_querier_request_duration_seconds', selector)),
+        );
         $.timeseriesPanel('Rejected queries') +
-        $.queryPanel('sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left sum(rate(cortex_querier_request_duration_seconds_count{$read_path_matcher, route=~"%(routes_regex)s"}[$__rate_interval]))' % { routes_regex: $.queries.query_http_routes_regex }, '{{reason}}') +
+        $.queryPanel(
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{reason}}','{{reason}}'],
+        ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
         $.panelDescription(
           'Rejected queries',
