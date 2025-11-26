@@ -34,6 +34,9 @@ std.manifestYamlDoc({
 
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
+
+    // If true, a secondary query path is started.
+    enable_secondary_query_path: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -41,6 +44,7 @@ std.manifestYamlDoc({
     self.distributor +
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
+    (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
     self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
@@ -119,6 +123,35 @@ std.manifestYamlDoc({
       name: 'query-scheduler',
       target: 'query-scheduler',
       httpPort: 8008,
+    }),
+  },
+
+  secondary_read_components:: {
+    local secondaryReadPathRingArgs = '-querier.ring.prefix=prometheus-querier/ -query-scheduler.ring.prefix=prometheus-scheduler/',
+    local extraArgs = '', // Add any configuration specific to this read path here.
+
+    'secondary-querier': mimirService({
+      name: 'secondary-querier',
+      target: 'querier',
+      httpPort: 8105,
+      jaegerApp: 'secondary-querier',
+      extraArguments: secondaryReadPathRingArgs + extraArgs,
+    }),
+
+    'secondary-query-frontend': mimirService({
+      name: 'secondary-query-frontend',
+      target: 'query-frontend',
+      httpPort: 8107,
+      jaegerApp: 'secondary-query-frontend',
+      extraArguments: secondaryReadPathRingArgs + extraArgs,
+    }),
+
+    'secondary-query-scheduler': mimirService({
+      name: 'secondary-query-scheduler',
+      target: 'query-scheduler',
+      httpPort: 8108,
+      jaegerApp: 'secondary-query-scheduler',
+      extraArguments: secondaryReadPathRingArgs + extraArgs,
     }),
   },
 
