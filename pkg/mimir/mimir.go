@@ -785,9 +785,9 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 }
 
 type CommonConfig struct {
-	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
-	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
-	InstrumentRefLeaksPct   float64                             `yaml:"instrument_ref_leaks_pct" category:"experimental"`
+	Storage                      bucket.StorageBackendConfig         `yaml:"storage"`
+	ClientClusterValidation      clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	InstrumentRefLeaksPercentage float64                             `yaml:"instrument_ref_leaks_percentage" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
@@ -799,7 +799,7 @@ type CommonConfigInheritance struct {
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
-	f.Float64Var(&c.InstrumentRefLeaksPct, "common.instrument-reference-leaks-pct", 0, `Percentage of buffers from pools to instrument for reference leaks. 0 to disable.`)
+	f.Float64Var(&c.InstrumentRefLeaksPercentage, "common.instrument-reference-leaks-percentage", 0, `Percentage of buffers from pools to instrument for reference leaks. 0 to disable.`)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -814,9 +814,9 @@ type configWithCustomCommonUnmarshaler struct {
 
 // commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
 type commonConfigUnmarshaler struct {
-	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
-	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
-	InstrumentRefLeaksPct   *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks_pct"`
+	Storage                      *specificLocationsUnmarshaler `yaml:"storage"`
+	ClientClusterValidation      *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
+	InstrumentRefLeaksPercentage *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks_percentage"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -912,7 +912,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	setUpGoRuntimeMetrics(cfg, reg)
 
-	mimirpb.CustomCodecConfig{InstrumentRefLeaksPct: cfg.Common.InstrumentRefLeaksPct}.RegisterGlobally()
+	mimirpb.CustomCodecConfig{InstrumentRefLeaksPct: cfg.Common.InstrumentRefLeaksPercentage}.RegisterGlobally()
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")

@@ -254,7 +254,7 @@ The following features are currently experimental:
 - Common
   - Instrument a fraction of pooled objects for references that outlive their lifetime.
     - Only implemented for objects embedding `mimirpb.BufferHolder`.
-    - Flag: `-common.instrument-reference-leaks-pct`
+    - Flag: `-common.instrument-reference-leaks-percentage`
 - Preferred available zone for querying ingesters and store-gateways
   - `-querier.prefer-availability-zone`
 - Memberlist zone-aware routing

@@ -521,8 +521,8 @@ client_cluster_validation:
 
 # (experimental) Percentage of buffers from pools to instrument for reference
 # leaks. 0 to disable.
-# CLI flag: -common.instrument-reference-leaks-pct
-[instrument_ref_leaks_pct: <float> | default = 0]
+# CLI flag: -common.instrument-reference-leaks-percentage
+[instrument_ref_leaks_percentage: <float> | default = 0]
 ```
 
 ### server
