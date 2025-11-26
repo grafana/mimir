@@ -208,7 +208,7 @@ func TestCodecV2_Unmarshal(t *testing.T) {
 
 	require.True(t, origReq.Equal(req))
 
-	require.NotNil(t, req.Buffer)
+	require.NotNil(t, req.Buffer())
 	req.FreeBuffer()
 }
 
