@@ -66,7 +66,7 @@
 * [ENHANCEMENT] Querier: Added experimental `-querier.frontend-health-check-grace-period` CLI flag to configure a grace period for query-frontend health checks. The default value of 0 preserves the existing behaviour of immediately removing query-frontend connections that have failed a health check. #13521
 * [ENHANCEMENT] Usage tracker: `loadSnapshot()` checks shard emptiness instead of using explicit `first` parameter. #13534
 * [ENHANCEMENT] OTLP: Add metric `cortex_distributor_otlp_requests_by_content_type_total` to track content type (json or proto) of OTLP packets. #13525
-* [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13525
+* [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13603
 * [ENHANCEMENT] Query-scheduler: Gracefully handle shutdown by draining queue before exiting. #12605
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
