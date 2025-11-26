@@ -117,11 +117,10 @@ type RequestQueue struct {
 	discardedRequests *prometheus.CounterVec // per user
 	enqueueDuration   prometheus.Histogram
 
-	stopRequested   chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
-	stopCompleted   chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
-	isStopping      *atomic.Bool
-	stopRequestedAt time.Time
-	stopTimeout     time.Duration
+	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
+	isStopping    *atomic.Bool
+	stopTimeout   time.Duration
 
 	requestsToEnqueue                     chan requestToEnqueue
 	requestsSent                          chan *SchedulerRequest
@@ -309,7 +308,6 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			q.isStopping.Store(true)
-			q.stopRequestedAt = time.Now()
 		case <-q.stopCompleted:
 			return
 		case querierWorkerOp := <-q.querierWorkerOperations:
@@ -502,6 +500,8 @@ func (q *RequestQueue) AwaitRequestForQuerier(dequeueReq *QuerierWorkerDequeueRe
 			return reqForQuerier.queryRequest, reqForQuerier.lastTenantIndex, reqForQuerier.err
 		case <-dequeueReq.ctx.Done():
 			return nil, dequeueReq.lastTenantIndex, dequeueReq.ctx.Err()
+		case <-q.stopCompleted:
+			return nil, dequeueReq.lastTenantIndex, ErrStopped
 		}
 	case <-dequeueReq.ctx.Done():
 		return nil, dequeueReq.lastTenantIndex, dequeueReq.ctx.Err()
@@ -527,9 +527,9 @@ func (q *RequestQueue) stop(_ error) error {
 		case <-ctx.Done():
 			level.Warn(q.log).Log("msg", "queue stop timeout reached: query queue is not empty but queries have not been handled before the timeout")
 
-			// q.stopCompleted <- struct{}{}
-
 			cancel()
+			close(q.stopCompleted)
+
 			return nil
 		}
 	}
