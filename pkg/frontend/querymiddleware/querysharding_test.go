@@ -1882,7 +1882,7 @@ func TestConflictingCounterResets(t *testing.T) {
 			metric{sample="2", foo="x"} {{sum:0 count:0 buckets:[5 5 2]}} {{sum:10 count:10 buckets:[10 10 4]}} {{sum:0 count:0 buckets:[12 12 6]}} {{sum:5 count:5 buckets:[1 1 1]}} {{sum:3 count:3 buckets:[3 3 1]}}
 	`)
 
-	series, err := queryableToHistogramSeries(context.Background(), queryable, 0, 60*1000)
+	series, err := queryableToHistogramSeries(context.Background(), queryable, 0, 60*6*1000)
 	require.Nil(t, err)
 
 	shardingAwareQueryable := testdatagen.StorageSeriesQueryable(series)
