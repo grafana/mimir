@@ -529,18 +529,33 @@ local filename = 'mimir-queries.json';
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
+        local selector = $.jobMatcher($._config.job_names.store_gateway);
+        local query = {
+          classic:
+            |||
+              # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
+              # slightly negative because of the small overhead introduced by preloading.
+              clamp_min(1 - (
+                  sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{%(selector)s}[$__rate_interval]))
+                  /
+                  sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{%(selector)s}[$__rate_interval]))
+              ), 0)
+            ||| % { selector: selector },
+          native:
+            |||
+              # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
+              # slightly negative because of the small overhead introduced by preloading.
+              clamp_min(1 - (
+                  sum(histogram_sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds{%(selector)s}[$__rate_interval])))
+                  /
+                  sum(histogram_sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds{%(selector)s}[$__rate_interval])))
+              ), 0)
+            ||| % { selector: selector },
+        };
         $.timeseriesPanel('Series batch preloading efficiency') +
         $.queryPanel(
-          |||
-            # Clamping min to 0 because if preloading not useful at all, then the actual value we get is
-            # slightly negative because of the small overhead introduced by preloading.
-            clamp_min(1 - (
-                sum(rate(cortex_bucket_store_series_batch_preloading_wait_duration_seconds_sum{%s}[$__rate_interval]))
-                /
-                sum(rate(cortex_bucket_store_series_batch_preloading_load_duration_seconds_sum{%s}[$__rate_interval]))
-            ), 0)
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          '% of time reduced by preloading'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['% of time reduced by preloading', '% of time reduced by preloading'],
         ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
         $.panelDescription(
