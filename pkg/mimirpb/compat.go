@@ -618,7 +618,6 @@ func LabelAdaptersEncode(lbls []LabelAdapter, stream *jsoniter.Stream) {
 		if i != 0 {
 			stream.WriteMore()
 		}
-		i++
 		stream.WriteString(v.Name)
 		stream.WriteRaw(`:`)
 		stream.WriteString(v.Value)
