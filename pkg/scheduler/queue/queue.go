@@ -129,7 +129,7 @@ type RequestQueue struct {
 	waitingDequeueRequests                chan *QuerierWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
 	waitingDequeueRequestsToDispatchCount *atomic.Int64
-	schedulerInflightRequests             *map[RequestKey]*SchedulerRequest
+	schedulerInflightRequests             *atomic.Int64
 
 	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
 	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
@@ -222,7 +222,7 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-	schedulerInflightRequests *map[RequestKey]*SchedulerRequest,
+	schedulerInflightRequests *atomic.Int64,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
 	stopTimeout time.Duration,
 ) (*RequestQueue, error) {
@@ -345,17 +345,17 @@ func (q *RequestQueue) dispatcherLoop() {
 		}
 
 		if q.isStopping.Load() && q.connectedQuerierWorkers.Load() == 0 {
-			if q.queueBroker.itemCount() == 0 && len(*q.schedulerInflightRequests) == 0 {
+			if q.queueBroker.itemCount() == 0 && q.schedulerInflightRequests.Load() == 0 {
 				// We are done.
 				level.Info(q.log).Log("msg", "queue stop completed: query queue is empty and all workers have been disconnected")
 				close(q.stopCompleted)
 				return
 			}
 
-			level.Warn(q.log).Log("msg", "queue stop requested but query queue is not empty, waiting for query workers to complete remaining requests", "queueBroker_count", q.queueBroker.itemCount(), "scheduler_inflight", len(*q.schedulerInflightRequests))
+			level.Warn(q.log).Log("msg", "queue stop requested but query queue is not empty, waiting for query workers to complete remaining requests", "queueBroker_count", q.queueBroker.itemCount(), "scheduler_inflight", q.schedulerInflightRequests.Load())
 		}
 
-		if q.isStopping.Load() && (len(*q.schedulerInflightRequests) == 0 && q.queueBroker.itemCount() == 0) {
+		if q.isStopping.Load() && q.schedulerInflightRequests.Load() == 0 && q.queueBroker.itemCount() == 0 {
 			level.Info(q.log).Log("msg", "queue stop requested and all pending requests have been processed, disconnecting queriers")
 
 			currentElement := q.waitingDequeueRequestsToDispatch.Front()

@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
@@ -102,7 +103,7 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-								&map[RequestKey]*SchedulerRequest{},
+								atomic.NewInt64(0),
 								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 								queueStopTimeout,
 							)
@@ -351,7 +352,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		&map[RequestKey]*SchedulerRequest{},
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		queueStopTimeout,
 	)
@@ -467,7 +468,7 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		&map[RequestKey]*SchedulerRequest{},
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		queueStopTimeout,
 	)
@@ -555,7 +556,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		&map[RequestKey]*SchedulerRequest{},
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		queueStopTimeout,
 	)
@@ -630,7 +631,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		&map[RequestKey]*SchedulerRequest{},
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		queueStopTimeout,
 	)
@@ -721,7 +722,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		&map[RequestKey]*SchedulerRequest{},
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		queueStopTimeout,
 	)
@@ -779,7 +780,7 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		&map[RequestKey]*SchedulerRequest{},
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		queueStopTimeout,
 	)
@@ -812,7 +813,7 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		&map[RequestKey]*SchedulerRequest{},
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 		queueStopTimeout,
 	)

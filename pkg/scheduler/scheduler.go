@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -72,7 +73,8 @@ type Scheduler struct {
 	inflightRequestsMu sync.Mutex
 	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
-	schedulerInflightRequests map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequests     map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequestCount *atomic.Int64
 
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
@@ -132,9 +134,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
-		connectedFrontends:        map[string]*connectedFrontend{},
-		subservicesWatcher:        services.NewFailureWatcher(),
+		schedulerInflightRequests:     map[queue.RequestKey]*queue.SchedulerRequest{},
+		schedulerInflightRequestCount: atomic.NewInt64(0),
+		connectedFrontends:            map[string]*connectedFrontend{},
+		subservicesWatcher:            services.NewFailureWatcher(),
 	}
 
 	s.queueLength = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
@@ -173,7 +176,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.queueLength,
 		s.discardedRequests,
 		enqueueDuration,
-		&s.schedulerInflightRequests,
+		s.schedulerInflightRequestCount,
 		querierInflightRequestsMetric,
 		15*time.Second,
 	)
@@ -701,10 +704,10 @@ func (s *Scheduler) running(ctx context.Context) error {
 		select {
 		case <-inflightRequestsTicker.C:
 			s.inflightRequestsMu.Lock()
-			inflight := len(s.schedulerInflightRequests)
+			s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 			s.inflightRequestsMu.Unlock()
 
-			s.inflightRequests.Observe(float64(inflight))
+			s.inflightRequests.Observe(float64(s.schedulerInflightRequestCount.Load()))
 		case <-ctx.Done():
 			return nil
 		case err := <-s.subservicesWatcher.Chan():
