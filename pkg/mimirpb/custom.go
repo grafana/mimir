@@ -196,7 +196,9 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 	if isBufferHolder {
 		if instrumentLeaks {
-			buf = &instrumentLeaksBuf{Buffer: buf, refCount: 1}
+			instrumentedBuf := &instrumentLeaksBuf{Buffer: buf}
+			instrumentedBuf.refCount.Inc()
+			buf = instrumentedBuf
 		}
 		buf.Ref()
 		holder.SetBuffer(buf)
@@ -240,19 +242,18 @@ var _ MessageWithBufferRef = &BufferHolder{}
 
 type instrumentLeaksBuf struct {
 	mem.Buffer
-	refCount int
+	refCount atomic.Int64
 }
 
 func (b *instrumentLeaksBuf) Ref() {
 	b.Buffer.Ref()
-	b.refCount++
+	b.refCount.Inc()
 }
 
 func (b *instrumentLeaksBuf) Free() {
 	b.Buffer.Free()
-	b.refCount--
 
-	if b.refCount == 0 {
+	if b.refCount.Dec() == 0 {
 		buf := b.ReadOnlyData()
 		ptr := unsafe.SliceData(buf)
 		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
