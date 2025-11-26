@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20251125153219-1b93cfe76e9f
+	github.com/grafana/dskit v0.0.0-20251126160233-849d1b75f28a
 	github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -180,7 +180,7 @@ require (
 	github.com/prometheus/sigv4 v0.3.0 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
-	github.com/sercand/kuberesolver/v6 v6.0.0 // indirect
+	github.com/sercand/kuberesolver/v6 v6.0.1 // indirect
 	github.com/shopspring/decimal v1.2.0 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
@@ -291,7 +291,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
-	github.com/hashicorp/memberlist v0.5.2 // indirect
+	github.com/hashicorp/memberlist v0.5.3 // indirect
 	github.com/hashicorp/serf v0.10.2 // indirect
 	github.com/hashicorp/vault/api/auth/approle v0.11.0
 	github.com/hashicorp/vault/api/auth/kubernetes v0.10.0
@@ -358,7 +358,7 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
-replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251125151730-2125cd96c917
+replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
 
 // gopkg.in/yaml.v3
 // + https://github.com/go-yaml/yaml/pull/691

@@ -528,7 +528,7 @@ func (m *KV) configureZoneAwareRouting(mlCfg *memberlist.Config) error {
 	m.nodeMeta = localMeta
 
 	// Set up the node selection delegate.
-	mlCfg.NodeSelection = newZoneAwareNodeSelectionDelegate(role, m.cfg.ZoneAwareRouting.Zone, m.logger)
+	mlCfg.NodeSelection = newZoneAwareNodeSelectionDelegate(role, m.cfg.ZoneAwareRouting.Zone, m.logger, m.registerer)
 
 	// The bridge always prefer another bridge as first node. If the bridge only push/pull to 1 node per interval, then
 	// it will only communicate to bridges, potentially leading to network partitioning if the gossiping is not
