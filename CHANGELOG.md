@@ -71,6 +71,7 @@
 * [ENHANCEMENT] OTLP: Add metric `cortex_distributor_otlp_requests_by_content_type_total` to track content type (json or proto) of OTLP packets. #13525
 * [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13525
 * [ENHANCEMENT] Ruler: gRPC errors without details are classified as `operator` errors, and rule evaluation failures (such as duplicate labelsets) are classified as `user` errors. #13586
+* [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
@@ -99,7 +100,6 @@
 * [BUGFIX] Rename `cortex_bucket_store_cached_postings_compression_time_seconds`, `cortex_query_frontend_regexp_matcher_count`, and `cortex_query_frontend_regexp_matcher_optimized_count` to follow naming conventions. #13599
 * [BUGFIX] Query-frontend: Fix incorrect query results when running sharding inside MQE is enabled and the query contains a subquery eligible for subquery spin-off wrapped in a shardable aggregation. #13619
 * [BUGFIX] Memberlist: Fix occasional nil pointer dereference panics. #13635
-* [ENHANCEMENT] HA: Deduplication per sample instead of per batch. #xxxxx
 
 ### Mixin
 
