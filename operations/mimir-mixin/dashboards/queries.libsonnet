@@ -505,14 +505,12 @@ local filename = 'mimir-queries.json';
     .addRow(
       $.row('')
       .addPanel(
+        local selector = $.jobMatcher($._config.job_names.store_gateway);
+        local query = utils.ncHistogramAverageRate('cortex_bucket_store_series_request_stage_duration_seconds', selector, sum_by=['stage']);
         $.timeseriesPanel('Series request average latency') +
         $.queryPanel(
-          |||
-            sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{%s}[$__rate_interval]))
-            /
-            sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          '{{stage}}'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{stage}}','{{stage}}'],
         ) +
         $.stack +
         $.showAllTooltip +

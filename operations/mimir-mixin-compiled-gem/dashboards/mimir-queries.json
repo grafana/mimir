@@ -3033,7 +3033,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n/\nsum by(stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n",
+                        "expr": "(sum by (stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])) /\nsum by (stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "{{stage}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(sum by (stage) (histogram_sum(rate(cortex_bucket_store_series_request_stage_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum by (stage) (histogram_count(rate(cortex_bucket_store_series_request_stage_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{stage}}",
                         "legendLink": null
