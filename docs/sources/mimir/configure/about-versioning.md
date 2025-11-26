@@ -61,19 +61,12 @@ The following features are currently experimental:
 - Alertmanager
   - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
     - `-alertmanager.grafana-alertmanager-compatibility-enabled`
-  - Enable support for any UTF-8 character as part of Alertmanager configuration/API matchers and labels.
-    - `-alertmanager.utf8-strict-mode-enabled`
 - Compactor
-  - Enable cleanup of remaining files in the tenant bucket when there are no blocks remaining in the bucket index.
-    - `-compactor.no-blocks-file-cleanup-enabled`
-  - In-memory cache for parsed meta.json files:
-    - `-compactor.in-memory-tenant-meta-cache-size`
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
   - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
     - `-compactor.upload-sparse-index-headers`
 - Ruler
-  - Aligning of evaluation timestamp on interval (`align_evaluation_time_on_interval`)
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
   - `-ruler.max-rule-groups-per-tenant-by-namespace`
@@ -95,10 +88,6 @@ The following features are currently experimental:
     - `/api/v1/push/influx/write` endpoint
     - `-distributor.influx-endpoint-enabled`
     - `-distributor.max-influx-request-size`
-  - Metrics relabeling
-    - `-distributor.metric-relabeling-enabled`
-  - Using status code 529 instead of 429 upon rate limit exhaustion.
-    - `-distributor.service-overload-status-code-on-rate-limit-enabled`
   - Limit exemplars per series per request
     - `-distributor.max-exemplars-per-series-per-request`
   - Limit OTLP write request byte size
@@ -109,8 +98,6 @@ The following features are currently experimental:
     - `-distributor.otel-created-timestamp-zero-ingestion-enabled`
   - Promote a certain set of OTel resource attributes to labels
     - `-distributor.otel-promote-resource-attributes`
-  - Add experimental `memberlist` key-value store for ha_tracker. Note that this feature is `experimental`, as the upper limits of propagation times have not yet been validated. Additionally, cleanup operations have not yet been implemented for the memberlist entries.
-    - `-distributor.ha-tracker.kvstore.store`
   - Allow keeping OpenTelemetry `service.instance.id`, `service.name` and `service.namespace` resource attributes in `target_info` on top of converting them to the `instance` and `job` labels.
     - `-distributor.otel-keep-identifying-resource-attributes`
   - Enable conversion of OTel explicit bucket histograms into native histograms with custom buckets.
@@ -125,40 +112,11 @@ The following features are currently experimental:
     - `-distributor.otel-translation-strategy`
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
-- Hash ring
-  - Disabling ring heartbeat timeouts
-    - `-distributor.ring.heartbeat-timeout=0`
-    - `-ingester.ring.heartbeat-timeout=0`
-    - `-ruler.ring.heartbeat-timeout=0`
-    - `-alertmanager.sharding-ring.heartbeat-timeout=0`
-    - `-compactor.ring.heartbeat-timeout=0`
-    - `-store-gateway.sharding-ring.heartbeat-timeout=0`
-    - `-overrides-exporter.ring.heartbeat-timeout=0`
-  - Disabling ring heartbeats
-    - `-distributor.ring.heartbeat-period=0`
-    - `-ingester.ring.heartbeat-period=0`
-    - `-ruler.ring.heartbeat-period=0`
-    - `-alertmanager.sharding-ring.heartbeat-period=0`
-    - `-compactor.ring.heartbeat-period=0`
-    - `-store-gateway.sharding-ring.heartbeat-period=0`
-    - `-overrides-exporter.ring.heartbeat-period=0`
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
   - Out-of-order samples ingestion (`-ingester.out-of-order-time-window`)
   - Shipper labeling out-of-order blocks before upload to cloud storage (`-ingester.out-of-order-blocks-external-label-enabled`)
-  - Postings for matchers cache configuration:
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.head-postings-for-matchers-cache-force`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-ttl`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size` (deprecated)
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-max-bytes`
-    - `-blocks-storage.tsdb.block-postings-for-matchers-cache-force`
-  - CPU/memory utilization based read request limiting:
-    - `-ingester.read-path-cpu-utilization-limit`
-    - `-ingester.read-path-memory-utilization-limit"`
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
@@ -183,29 +141,42 @@ The following features are currently experimental:
     - `-ingester.read-circuit-breaker.initial-delay`
     - `-ingester.read-circuit-breaker.request-timeout`
   - Reactive concurrency limiters
+    - `-distributor.reactive-limiter.enabled`
+    - `-distributor.reactive-limiter.min-limit`
+    - `-distributor.reactive-limiter.max-limit`
+    - `-distributor.reactive-limiter.initial-limit`
+    - `-distributor.reactive-limiter.max-limit-factor`
+    - `-distributor.reactive-limiter.recent-window-min-duration`
+    - `-distributor.reactive-limiter.recent-window-max-duration`
+    - `-distributor.reactive-limiter.recent-window-min-samples`
+    - `-distributor.reactive-limiter.recent-quantile`
+    - `-distributor.reactive-limiter.baseline-window-age`
+    - `-distributor.reactive-limiter.correlation-window`
+    - `-distributor.reactive-limiter.initial-rejection-factor`
+    - `-distributor.reactive-limiter.max-rejection-factor`
     - `-ingester.push-reactive-limiter.enabled`
-    - `-ingester.push-reactive-limiter.short-window-min-duration`
-    - `-ingester.push-reactive-limiter.short-window-max-duration`
-    - `-ingester.push-reactive-limiter.short-window-min-samples`
-    - `-ingester.push-reactive-limiter.long-window`
-    - `-ingester.push-reactive-limiter.sample-quantile`
-    - `-ingester.push-reactive-limiter.min-inflight-limit`
-    - `-ingester.push-reactive-limiter.max-inflight-limit`
-    - `-ingester.push-reactivereactive-limiter.initial-inflight-limit`
+    - `-ingester.push-reactive-limiter.min-limit`
+    - `-ingester.push-reactive-limiter.max-limit`
+    - `-ingester.push-reactive-limiter.initial-limit`
     - `-ingester.push-reactive-limiter.max-limit-factor`
+    - `-ingester.push-reactive-limiter.recent-window-min-duration`
+    - `-ingester.push-reactive-limiter.recent-window-max-duration`
+    - `-ingester.push-reactive-limiter.recent-window-min-samples`
+    - `-ingester.push-reactive-limiter.recent-quantile`
+    - `-ingester.push-reactive-limiter.baseline-window-age`
     - `-ingester.push-reactive-limiter.correlation-window`
     - `-ingester.push-reactive-limiter.initial-rejection-factor`
     - `-ingester.push-reactive-limiter.max-rejection-factor`
     - `-ingester.read-reactive-limiter.enabled`
-    - `-ingester.read-reactive-limiter.short-window-min-duration`
-    - `-ingester.read-reactive-limiter.short-window-max-duration`
-    - `-ingester.read-reactive-limiter.short-window-min-samples`
-    - `-ingester.read-reactive-limiter.long-window`
-    - `-ingester.read-reactive-limiter.sample-quantile`
-    - `-ingester.read-reactive-limiter.min-inflight-limit`
-    - `-ingester.read-reactive-limiter.max-inflight-limit`
-    - `-ingester.read-reactive-limiter.initial-inflight-limit`
+    - `-ingester.read-reactive-limiter.min-limit`
+    - `-ingester.read-reactive-limiter.max-limit`
+    - `-ingester.read-reactive-limiter.initial-limit`
     - `-ingester.read-reactive-limiter.max-limit-factor`
+    - `-ingester.read-reactive-limiter.recent-window-min-duration`
+    - `-ingester.read-reactive-limiter.recent-window-max-duration`
+    - `-ingester.read-reactive-limiter.recent-window-min-samples`
+    - `-ingester.read-reactive-limiter.recent-quantile`
+    - `-ingester.read-reactive-limiter.baseline-window-age`
     - `-ingester.read-reactive-limiter.correlation-window`
     - `-ingester.read-reactive-limiter.initial-rejection-factor`
     - `-ingester.read-reactive-limiter.max-rejection-factor`
@@ -218,17 +189,17 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.index-lookup-planning-enabled`
     - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
-  - Limiting queries based on the estimated number of chunks that will be used (`-querier.max-estimated-fetched-chunks-per-query-multiplier`)
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
-  - Maximum response size for active series queries (`-querier.active-series-results-max-size-bytes`)
   - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
+  - Querier ring (all flags beginning with `-querier.ring`)
+  - Query-frontend health check grace period (`querier.frontend-health-check-grace-period`)
 - Query-frontend
+
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
-  - Query blocking on a per-tenant basis (configured with the limit `blocked_queries`)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
   - Blocking HTTP requests on a per-tenant basis (configured with the `blocked_requests` limit)
@@ -238,15 +209,16 @@ The following features are currently experimental:
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
+  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
+  - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk` and `limit_ratio` (`-query-frontend.enabled-promql-experimental-functions=...`)
+
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
-- API endpoints:
-  - `/api/v1/user_limits`
-  - `/api/v1/cardinality/active_series`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
@@ -256,11 +228,6 @@ The following features are currently experimental:
     - `cortex_vault_token_lease_renewal_active`
     - `cortex_vault_token_lease_renewal_success_total`
     - `cortex_vault_auth_success_total`
-- Logger
-  - Rate limited logger support
-    - `log.rate-limit-enabled`
-    - `log.rate-limit-logs-per-second`
-    - `log.rate-limit-logs-burst-size`
 - Timeseries Unmarshal caching optimization in distributor (`-timeseries-unmarshal-caching-optimization-enabled`)
 - Reusing buffers for marshalling write requests in distributors (`-distributor.write-requests-buffer-pooling-enabled`)
 - Logging of requests that did not send any HTTP request: `-server.http-log-closed-connections-without-response-enabled`.
@@ -284,9 +251,14 @@ The following features are currently experimental:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
-- Kafka-based ingest storage
-  - `-ingest-storage.*`
-  - `-ingester.partition-ring.*`
+- Preferred available zone for querying ingesters and store-gateways
+  - `-querier.prefer-availability-zone`
+- Memberlist zone-aware routing
+  - `-memberlist.zone-aware-routing.enabled`
+  - `-memberlist.zone-aware-routing.instance-availability-zone`
+  - `-memberlist.zone-aware-routing.role`
+- Jsonnet
+  - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 
 ## Deprecated features
 
@@ -300,5 +272,11 @@ The following features or configuration parameters are currently deprecated and 
 - Rule group configuration file
   - `evaluation_delay` field: use `query_offset` instead
 - The `-store-gateway.sharding-ring.auto-forget-enabled` is deprecated and will be removed in a future release. Set the `-store-gateway.sharding-ring.auto-forget-unhealthy-periods` flag to 0 to disable the auto-forget feature. Deprecated since Mimir 2.17.
-- etcd is deprecated as an option for backend storage for the HA tracker since Mimir 2.17.
-- The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 2.18.
+- The `-distributor.otel-start-time-quiet-zero` parameter no longer has any effect and will be removed in a future release. Deprecated since Mimir 3.0.
+- Postings for matchers cache size (number of entries) configuration:
+  - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
+  - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+
+The following features or configuration parameters were deprecated in Mimir 3.1 and will be removed in Mimir 3.3:
+
+- Considering cached results when calculating the number of processed samples reported in query stats (`-query-frontend.cache-samples-processed-stats=true`).

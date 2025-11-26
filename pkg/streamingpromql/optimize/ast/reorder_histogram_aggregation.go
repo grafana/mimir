@@ -5,6 +5,7 @@ package ast
 import (
 	"context"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -42,7 +43,7 @@ func (mapper *reorderHistogramAggregation) MapExpr(ctx context.Context, expr par
 	}
 
 	for _, label := range agg.Grouping {
-		if label == labels.MetricName {
+		if label == model.MetricNameLabel {
 			// Do not reorder if __name__ is used in grouping, as it can lead to incorrect aggregations.
 			return expr, false, nil
 		}
@@ -83,13 +84,15 @@ func vectorSelectorContainsNonExactMetricNameMatcher(expr parser.Expr) bool {
 	switch e := expr.(type) {
 	case *parser.VectorSelector:
 		for _, matcher := range e.LabelMatchers {
-			if matcher.Name == labels.MetricName && matcher.Type != labels.MatchEqual {
+			if matcher.Name == model.MetricNameLabel && matcher.Type != labels.MatchEqual {
 				return true
 			}
 		}
 		return false
 	case *parser.MatrixSelector:
 		return vectorSelectorContainsNonExactMetricNameMatcher(e.VectorSelector)
+	case *parser.StepInvariantExpr:
+		return vectorSelectorContainsNonExactMetricNameMatcher(e.Expr)
 	case *parser.ParenExpr:
 		return vectorSelectorContainsNonExactMetricNameMatcher(e.Expr)
 	case *parser.UnaryExpr:

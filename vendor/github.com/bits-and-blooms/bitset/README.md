@@ -69,6 +69,13 @@ func main() {
 }
 ```
 
+If you have Go 1.23 or better, you can iterate over the set bits like so:
+
+```go
+for i := range b.EachSet() {}
+```
+
+
 
 Package documentation is at: https://pkg.go.dev/github.com/bits-and-blooms/bitset?tab=doc
 

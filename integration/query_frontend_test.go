@@ -317,6 +317,11 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
+	// Wait until the query-frontend has updated the querier ring.
+	require.NoError(t, queryFrontend.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "querier"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
 	// When using the ingest storage, wait until partitions are ACTIVE in the ring.
 	if flags["-ingest-storage.enabled"] == "true" {
 		for _, service := range []*e2emimir.MimirService{distributor, queryFrontend, querier} {
@@ -623,10 +628,11 @@ overrides:
 	require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
 	require.NoError(t, s.WaitReady(queryFrontend))
 
-	// Wait until both the distributor and querier have updated the ring.
+	// Wait until both the distributor, querier and query-frontend have updated the ring.
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_ring_tokens_total"))
 
 	now := time.Now()
 	nowTruncatedToLastSecond := now.Truncate(time.Second)
@@ -810,7 +816,7 @@ overrides:
 				return c.QueryRangeRaw(`sum_over_time(metric[31d:1s])`, nowTruncatedToLastSecond.Add(-time.Minute), nowTruncatedToLastSecond, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
-			expJSON:       fmt.Sprintf(`{"error":"%s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond, 720*time.Hour)),
+			expJSON:       fmt.Sprintf(`{"error":"%s", "errorType":"execution", "status":"error"}`, mimirquerier.NewMaxQueryLengthError((744*time.Hour)+(6*time.Minute)-time.Millisecond-time.Second, 720*time.Hour)),
 		},
 		{
 			name: "query remote read time range exceeds the limit",

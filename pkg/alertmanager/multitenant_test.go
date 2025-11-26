@@ -1690,7 +1690,7 @@ func TestMultitenantAlertmanager_InitialSync(t *testing.T) {
 			if tt.existing {
 				require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 					ringDesc := ring.GetOrCreateRingDesc(in)
-					ringDesc.AddIngester(amConfig.ShardingRing.Common.InstanceID, amConfig.ShardingRing.Common.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now(), false, time.Time{})
+					ringDesc.AddIngester(amConfig.ShardingRing.Common.InstanceID, amConfig.ShardingRing.Common.InstanceAddr, "", tt.initialTokens, tt.initialState, time.Now(), false, time.Time{}, nil)
 					return ringDesc, true, nil
 				}))
 			}
@@ -1852,18 +1852,18 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "when an instance is added to the ring",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			updateRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			expected: true,
 		},
 		{
 			name: "when an instance is removed from the ring",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			updateRing: func(desc *ring.Desc) {
 				desc.RemoveIngester("alertmanager-1")
@@ -1873,8 +1873,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an instance changes state",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.JOINING, registeredAt, false, time.Time{}, nil)
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-2"]
@@ -1886,8 +1886,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an healthy instance becomes unhealthy",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-1"]
@@ -1899,9 +1899,9 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should sync when an unhealthy instance becomes healthy",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 
-				instance := desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
+				instance := desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
 				desc.Ingesters["alertmanager-2"] = instance
 			},
@@ -1915,8 +1915,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should NOT sync when an instance updates the heartbeat",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 			},
 			updateRing: func(desc *ring.Desc) {
 				instance := desc.Ingesters["alertmanager-1"]
@@ -1928,8 +1928,8 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 		{
 			name: "should NOT sync when an instance is auto-forgotten in the ring but was already unhealthy in the previous state",
 			setupRing: func(desc *ring.Desc) {
-				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{})
-				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{})
+				desc.AddIngester("alertmanager-1", "127.0.0.1", "", ring.Tokens{1, 2, 3}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+				desc.AddIngester("alertmanager-2", "127.0.0.2", "", ring.Tokens{4, 5, 6}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
 
 				instance := desc.Ingesters["alertmanager-2"]
 				instance.Timestamp = time.Now().Add(-time.Hour).Unix()
@@ -2013,7 +2013,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 
 	require.NoError(t, ringStore.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		ringDesc := ring.GetOrCreateRingDesc(in)
-		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now(), false, time.Time{})
+		instance := ringDesc.AddIngester(unhealthyInstanceID, "127.0.0.1", "", ring.NewRandomTokenGenerator().GenerateTokens(RingNumTokens, nil), ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 		instance.Timestamp = time.Now().Add(-(ringAutoForgetUnhealthyPeriods + 1) * heartbeatTimeout).Unix()
 		ringDesc.Ingesters[unhealthyInstanceID] = instance
 
@@ -4371,7 +4371,7 @@ func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
 				},
 			},
 			clientClusterValidation: clusterutil.ClusterValidationConfig{Label: "client-cluster"},
-			expectedError:           grpcutil.Status(codes.Internal, `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be "server-cluster"`),
+			expectedError:           grpcutil.Status(codes.Internal, `request rejected by the server: rejected request with wrong cluster validation label "client-cluster" - it should be one of [server-cluster]`),
 			expectedMetrics: `
 				# HELP cortex_client_invalid_cluster_validation_label_requests_total Number of requests with invalid cluster validation label.
         	    # TYPE cortex_client_invalid_cluster_validation_label_requests_total counter
@@ -4398,7 +4398,7 @@ func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
 				},
 			},
 			clientClusterValidation: clusterutil.ClusterValidationConfig{},
-			expectedError:           grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be "server-cluster"`),
+			expectedError:           grpcutil.Status(codes.FailedPrecondition, `rejected request with empty cluster validation label - it should be one of [server-cluster]`),
 		},
 	}
 	for testName, testCase := range testCases {
@@ -4408,7 +4408,7 @@ func TestMultitenantAlertmanager_ClusterValidation(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				grpcOptions = []grpc.ServerOption{
 					grpc.ChainUnaryInterceptor(middleware.ClusterUnaryServerInterceptor(
-						testCase.serverClusterValidation.Label, testCase.serverClusterValidation.GRPC.SoftValidation,
+						[]string{testCase.serverClusterValidation.Label}, testCase.serverClusterValidation.GRPC.SoftValidation,
 						middleware.NewInvalidClusterRequests(reg, "cortex"), log.NewNopLogger(),
 					)),
 				}

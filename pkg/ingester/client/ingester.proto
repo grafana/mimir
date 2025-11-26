@@ -99,21 +99,14 @@ message ActiveSeriesRequest {
   RequestType type = 2;
 }
 
-message QueryResponse {
-  repeated cortexpb.TimeSeries timeseries = 1 [(gogoproto.nullable) = false];
-}
-
-// If streaming chunks is not enabled with prefer_streaming_chunks: QueryStreamResponse contains a batch of timeseries
-// chunks or timeseries. Only one of these fields will be populated.
-//
-// If streaming chunks is enabled with prefer_streaming_chunks: QueryStreamResponse contains either:
+// QueryStreamResponse contains either:
 // - a batch of series labels (sorted in series order), with is_end_of_series_stream=true for the last batch or
 // - a batch of chunks (sorted in series order).
 //
 // Only one of these two options will be populated.
 message QueryStreamResponse {
-  repeated TimeSeriesChunk chunkseries = 1 [(gogoproto.nullable) = false];
-  repeated cortexpb.TimeSeries timeseries = 2 [(gogoproto.nullable) = false];
+  reserved 1; // "chunkseries" aren't used anymore, only streaming series.
+  reserved 2; // "timeseries" aren't used anymore, only streaming series.
 
   repeated QueryStreamSeries streaming_series = 3 [(gogoproto.nullable) = false];
   bool is_end_of_series_stream = 4;
@@ -207,16 +200,6 @@ message ActiveSeriesResponse {
   // bucket_count is only used when the request type was NATIVE_HISTOGRAM_SERIES.
   // bucket_count contains the native histogram active buckets count for each series in "metric" above.
   repeated uint64 bucket_count = 2;
-}
-
-message TimeSeriesChunk {
-  string from_ingester_id = 1;
-  string user_id = 2;
-  repeated cortexpb.LabelPair labels = 3 [
-    (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
-  ];
-  repeated Chunk chunks = 4 [(gogoproto.nullable) = false];
 }
 
 message Chunk {

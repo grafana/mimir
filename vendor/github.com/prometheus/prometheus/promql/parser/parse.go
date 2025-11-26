@@ -42,6 +42,9 @@ var parserPool = sync.Pool{
 // ExperimentalDurationExpr is a flag to enable experimental duration expression parsing.
 var ExperimentalDurationExpr bool
 
+// EnableExtendedRangeSelectors is a flag to enable experimental extended range selectors.
+var EnableExtendedRangeSelectors bool
+
 type Parser interface {
 	ParseExpr() (Expr, error)
 	Close()
@@ -450,7 +453,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 		p.addParseErrf(ret.PositionRange(), "no arguments for aggregate expression provided")
 
 		// Prevents invalid array accesses.
-		return
+		return ret
 	}
 
 	desiredArgs := 1
@@ -459,7 +462,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 			// In mimir we return a custom message which doesn't mention the CLI flag that should be used to enable
 			// experimental functions, given it's different (and in SaaS customers don't even have access to it).
 			p.addParseErrf(ret.PositionRange(), "limitk() and limit_ratio() functions are not enabled")
-			return
+			return ret
 		}
 		desiredArgs = 2
 
@@ -468,7 +471,7 @@ func (p *parser) newAggregateExpr(op Item, modifier, args Node, overread bool) (
 
 	if len(arguments) != desiredArgs {
 		p.addParseErrf(ret.PositionRange(), "wrong number of arguments for aggregate expression provided, expected %d, got %d", desiredArgs, len(arguments))
-		return
+		return ret
 	}
 
 	ret.Expr = arguments[desiredArgs-1]
@@ -496,14 +499,14 @@ func (p *parser) mergeMaps(left, right *map[string]any) (ret *map[string]any) {
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		res, _, err := a.Add(b)
+		res, _, _, err := a.Add(b)
 		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
 	return p.histogramsSeries(base, inc, times, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
-		res, _, err := a.Sub(b)
+		res, _, _, err := a.Sub(b)
 		return res, err
 	})
 }
@@ -651,7 +654,7 @@ func (p *parser) buildHistogramBucketsAndSpans(desc *map[string]any, bucketsKey,
 	if bucketCount > 0 {
 		spans = []histogram.Span{{Offset: offset, Length: uint32(bucketCount)}}
 	}
-	return
+	return buckets, spans
 }
 
 // number parses a number.
@@ -729,7 +732,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			}
 			for r.End = n.RHS.PositionRange().Start - 1; isSpace(rune(p.lex.input[r.End])); r.End-- {
 			}
-			return
+			return r
 		}
 
 		if n.ReturnBool && !n.Op.IsComparisonOperator() {
@@ -802,11 +805,14 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				p.addParseErrf(node.PositionRange(), "expected type %s in %s, got %s", DocumentedType(ValueTypeVector), fmt.Sprintf("call to function %q", n.Func.Name), DocumentedType(n.Args[1].Type()))
 			}
 			// Check the vector selector in the input doesn't contain a metric name
-			if n.Args[1].(*VectorSelector).Name != "" {
+			if vs, ok := n.Args[1].(*VectorSelector); ok && vs.Name != "" {
 				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only, got vector selector instead")
+			} else if ok {
+				// Set Vector Selector flag to bypass empty matcher check
+				vs.BypassEmptyMatcherCheck = true
+			} else {
+				p.addParseErrf(n.Args[1].PositionRange(), "expected label selectors only")
 			}
-			// Set Vector Selector flag to bypass empty matcher check
-			n.Args[1].(*VectorSelector).BypassEmptyMatcherCheck = true
 		}
 
 		for i, arg := range n.Args {
@@ -818,7 +824,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				}
 				i = len(n.Func.ArgTypes) - 1
 			}
-			p.expectType(arg, n.Func.ArgTypes[i], fmt.Sprintf("call to function %q", n.Func.Name))
+			if t := p.checkAST(arg); t != n.Func.ArgTypes[i] {
+				p.addParseErrf(arg.PositionRange(), "expected type %s in call to function %q, got %s", DocumentedType(n.Func.ArgTypes[i]), n.Func.Name, DocumentedType(t))
+			}
 		}
 
 	case *ParenExpr:
@@ -876,7 +884,7 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 	default:
 		p.addParseErrf(n.PositionRange(), "unknown node type: %T", node)
 	}
-	return
+	return typ
 }
 
 func (p *parser) unquoteString(s string) string {
@@ -1021,6 +1029,52 @@ func (p *parser) addOffsetExpr(e Node, expr *DurationExpr) {
 	}
 
 	*endPosp = p.lastClosing
+}
+
+func (p *parser) setAnchored(e Node) {
+	if !EnableExtendedRangeSelectors {
+		p.addParseErrf(e.PositionRange(), "anchored modifier is experimental and not enabled")
+		return
+	}
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Anchored = true
+		if s.Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Anchored = true
+		if s.VectorSelector.(*VectorSelector).Smoothed {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *SubqueryExpr:
+		p.addParseErrf(e.PositionRange(), "anchored modifier is not supported for subqueries")
+	default:
+		p.addParseErrf(e.PositionRange(), "anchored modifier not implemented")
+	}
+}
+
+func (p *parser) setSmoothed(e Node) {
+	if !EnableExtendedRangeSelectors {
+		p.addParseErrf(e.PositionRange(), "smoothed modifier is experimental and not enabled")
+		return
+	}
+	switch s := e.(type) {
+	case *VectorSelector:
+		s.Smoothed = true
+		if s.Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *MatrixSelector:
+		s.VectorSelector.(*VectorSelector).Smoothed = true
+		if s.VectorSelector.(*VectorSelector).Anchored {
+			p.addParseErrf(e.PositionRange(), "anchored and smoothed modifiers cannot be used together")
+		}
+	case *SubqueryExpr:
+		p.addParseErrf(e.PositionRange(), "smoothed modifier is not supported for subqueries")
+	default:
+		p.addParseErrf(e.PositionRange(), "smoothed modifier not implemented")
+	}
 }
 
 // setTimestamp is used to set the timestamp from the @ modifier in the generated parser.

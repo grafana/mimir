@@ -543,14 +543,14 @@ route:
 	var emailCfg alertingReceivers.EmailSenderConfig
 	require.NoError(t, am.ApplyConfig(cfg, tmpls, cfgRaw, &url.URL{}, emailCfg, false))
 
-	doGetReceivers := func() []alertingmodels.Receiver {
+	doGetReceivers := func() []alertingmodels.ReceiverStatus {
 		rr := httptest.NewRecorder()
 		am.GetReceiversHandler(rr, nil)
 		require.Equal(t, http.StatusOK, rr.Code)
-		result := []alertingmodels.Receiver{}
+		result := []alertingmodels.ReceiverStatus{}
 		err = json.Unmarshal(rr.Body.Bytes(), &result)
 		assert.NoError(t, err)
-		slices.SortFunc(result, func(a, b alertingmodels.Receiver) int {
+		slices.SortFunc(result, func(a, b alertingmodels.ReceiverStatus) int {
 			return strings.Compare(a.Name, b.Name)
 		})
 		return result
@@ -559,11 +559,11 @@ route:
 	// Check the API returns all receivers but without any notification status.
 
 	result := doGetReceivers()
-	assert.Equal(t, []alertingmodels.Receiver{
+	assert.Equal(t, []alertingmodels.ReceiverStatus{
 		{
 			Name:   "recv-1",
 			Active: true,
-			Integrations: []alertingmodels.Integration{
+			Integrations: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "webhook",
 					LastNotifyAttemptDuration: "0s",
@@ -575,7 +575,7 @@ route:
 			Name: "recv-2",
 			// Receiver not used in a route.
 			Active: false,
-			Integrations: []alertingmodels.Integration{
+			Integrations: []alertingmodels.IntegrationStatus{
 				{
 					Name:                      "webhook",
 					LastNotifyAttemptDuration: "0s",
@@ -609,7 +609,7 @@ route:
 
 	// Wait for the API to tell us there was a notification attempt.
 
-	result = []alertingmodels.Receiver{}
+	result = []alertingmodels.ReceiverStatus{}
 	require.Eventually(t, func() bool {
 		result = doGetReceivers()
 		return len(result) == 2 &&

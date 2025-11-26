@@ -21,13 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
         with:
           fetch-depth: '0' # we need all commits so that the git history check returns valid commits
 
       - name: Retrieve Secrets from Vault
         id: get-secrets
-        uses: grafana/shared-workflows/actions/get-vault-secrets@5d7e361bc7e0a183cde8afe9899fb7b596d2659b # get-vault-secrets-v1.2.0
+        uses: grafana/shared-workflows/actions/get-vault-secrets@a37de51f3d713a30a9e4b21bcdfbd38170020593 # get-vault-secrets/v1.3.0
         with:
           repo_secrets: |
             LOKI_URL=flaky-tests-bot:loki-url
@@ -38,14 +38,14 @@ jobs:
 
       - name: Generate GitHub App Token
         id: github-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2
         with:
           app-id: ${{ env.APP_ID }}
           private-key: ${{ env.PRIVATE_KEY }}
           owner: ${{ github.repository_owner }}
 
       - name: Run Flaky Tests Analysis
-        uses: dimitarvdimitrov/shared-workflows/actions/go-flaky-tests@20a72aa1821825fb2871515ed53002e4c18842db # dimitar/analyze-test-failures/exclude-tests
+        uses: grafana/shared-workflows/actions/go-flaky-tests@8b88213bca76e86f9f59b43038cc5d7545452436
         with:
           loki-url: ${{ env.LOKI_URL }}
           loki-username: ${{ env.LOKI_USERNAME }}
@@ -54,6 +54,6 @@ jobs:
           time-range: "7d"
           top-k: "3"
           skip-posting-issues: ${{ github.event_name == 'workflow_dispatch' && inputs.skip-posting-issues || 'false' }}
-          ignored-tests: "TestOurUpstreamTestCasesAreInSyncWithUpstream,TestConfigDescriptorIsUpToDate" # TestOurUpstreamTestCasesAreInSyncWithUpstream is supposed to block upstream mimir-prometheus updates, so it's also expected to fail. TestConfigDescriptorIsUpToDate is flaky.
+          ignored-tests: "TestOurUpstreamTestCasesAreInSyncWithUpstream" # TestOurUpstreamTestCasesAreInSyncWithUpstream is supposed to block upstream mimir-prometheus updates, so it's also expected to fail.
         env:
           GITHUB_TOKEN: ${{ steps.github-token.outputs.token }}

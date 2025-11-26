@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,7 @@ func TestTSDBPrintChunk(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	spec := block.SeriesSpec{
-		Labels: labels.FromStrings(labels.MetricName, "asdf"),
+		Labels: labels.FromStrings(model.MetricNameLabel, "asdf"),
 		Chunks: []chunks.Meta{
 			must(chunks.ChunkFromSamples([]chunks.Sample{
 				test.Sample{TS: 10, Val: 11},

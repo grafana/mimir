@@ -3,163 +3,189 @@
 package lookupplan
 
 import (
-	"cmp"
 	"context"
-	"errors"
 	"fmt"
+	"iter"
 	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/grafana/dskit/tracing"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 type NoopPlanner struct{}
 
-func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _, _ int64) (index.LookupPlan, error) {
+func (i NoopPlanner) PlanIndexLookup(_ context.Context, plan index.LookupPlan, _ *storage.SelectHints) (index.LookupPlan, error) {
 	return plan, nil
 }
 
+var (
+	rawPlansWithCostPool   = &sync.Pool{}
+	rawIndexPredicatesPool = &sync.Pool{}
+)
+
+const (
+	// maxMatchersForPlanning is arbitrary. Since we generate 2^N plans for N matchers, we want to avoid allocating too many plans.
+	maxMatchersForPlanning = 10
+	maxPlansForPlanning    = 1 << maxMatchersForPlanning
+
+	// predicateIndexSlicesTotalLen is used to size the pools for the booleans which say if a predicate is an index predicate or not.
+	// We want to size the pool so we can fit a plan with numMatchersForSingleAlloc matchers by taking a single slab.
+	// We'd need 2^numMatchersForSingleAlloc plans, and each plan will have numMatchersForSingleAlloc number of matchers.
+	predicateIndexSlicesTotalLen = 1 << numMatchersForSingleAlloc * numMatchersForSingleAlloc
+	// numMatchersForSingleAlloc is an arbitrary number so we don't leave a lot of empty space in predicateIndexSlicesTotalLen
+	// while accounting for most of the queries that may come in.
+	numMatchersForSingleAlloc = 6
+)
+
+type costBasedPlannerPools struct {
+	plansWithCostPool   *pool.SlabPool[planWithCost]
+	indexPredicatesPool *pool.SlabPool[bool]
+}
+
+func newCostBasedPlannerPools() *costBasedPlannerPools {
+	return &costBasedPlannerPools{
+		plansWithCostPool:   pool.NewSlabPool[planWithCost](rawPlansWithCostPool, maxPlansForPlanning),
+		indexPredicatesPool: pool.NewSlabPool[bool](rawIndexPredicatesPool, predicateIndexSlicesTotalLen),
+	}
+}
+
+func (p *costBasedPlannerPools) GetPlans(num int) *plans {
+	pls := p.plansWithCostPool.Get(num)[:0]
+	return (*plans)(&pls)
+}
+
+func (p *costBasedPlannerPools) Release() {
+	p.plansWithCostPool.Release()
+	p.indexPredicatesPool.Release()
+}
+
 type CostBasedPlanner struct {
+	config  CostConfig
 	stats   index.Statistics
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config CostConfig) *CostBasedPlanner {
 	return &CostBasedPlanner{
+		config:  config,
 		metrics: metrics,
 		stats:   statistics,
 	}
 }
 
-func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, _, _ int64) (_ index.LookupPlan, retErr error) {
+func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan index.LookupPlan, retErr error) {
 	if planningDisabled(ctx) {
 		return inPlan, nil
 	}
 
-	var allPlans []plan
+	// Extract shard information from hints
+	var shard *sharding.ShardSelector
+	if hints != nil && hints.ShardCount > 0 {
+		shard = &sharding.ShardSelector{
+			ShardIndex: hints.ShardIndex,
+			ShardCount: hints.ShardCount,
+		}
+	}
+
+	var allPlans iter.Seq[plan]
+	memPools := newCostBasedPlannerPools()
+	defer memPools.Release()
+	defer func() {
+		if plan, ok := retPlan.(plan); ok {
+			retPlan = plan.withoutMemoryPool()
+		}
+	}()
+
 	defer func(start time.Time) {
-		var abortedEarly bool
-		retErr, abortedEarly = mapPlanningOutcomeError(retErr)
-		p.recordPlanningOutcome(ctx, start, abortedEarly, retErr, allPlans)
+		var selectedPlan *plan
+		if p, ok := retPlan.(*plan); ok {
+			selectedPlan = p
+		}
+		p.recordPlanningOutcome(ctx, start, retErr, selectedPlan, allPlans)
 	}(time.Now())
 
 	// Repartition the matchers. We don't trust other planners.
 	// Allocate a new slice so that we don't mess up the slice of the caller.
 	matchers := slices.Concat(inPlan.IndexMatchers(), inPlan.ScanMatchers())
-	if len(matchers) > 10 {
-		return inPlan, errTooManyMatchers
+
+	allPlans = p.generatePlansBranchAndBound(ctx, p.stats, matchers, memPools, shard)
+
+	lookupPlan := p.chooseBestPlan(allPlans)
+	if lookupPlan == nil {
+		return nil, fmt.Errorf("no plan with index matchers found")
 	}
 
-	allPlansUnordered := p.generatePlans(ctx, p.stats, matchers)
+	return *lookupPlan, nil
+}
 
-	type planWithCost struct {
-		plan
-		totalCost float64
-	}
-	// calculate the cost of all plans once, instead of calculating them every time we compare during sort
-	allPlansWithCosts := make([]planWithCost, len(allPlansUnordered))
-	for i, p := range allPlansUnordered {
-		allPlansWithCosts[i] = planWithCost{plan: p, totalCost: p.totalCost()}
-	}
-
-	slices.SortFunc(allPlansWithCosts, func(a, b planWithCost) int {
-		return cmp.Compare(a.totalCost, b.totalCost)
-	})
-
-	// build the sorted slice of plans
-	for _, pwc := range allPlansWithCosts {
-		allPlans = append(allPlans, pwc.plan)
-	}
-
-	// Select the cheapest plan that has at least one index matcher.
+func (p CostBasedPlanner) chooseBestPlan(allPlans iter.Seq[plan]) *plan {
+	// Select the first plan that has at least one index matcher.
 	// PostingsForMatchers will return incorrect results if there are no matchers.
-	for i, p := range allPlans {
+	for p := range allPlans {
+		p := p // make a copy of the plan because the iterator might be reusing the same memory
 		if len(p.IndexMatchers()) > 0 {
-			allPlans = allPlans[i:]
-			return p, nil
+			return &p
 		}
 	}
-
-	return nil, fmt.Errorf("no plan with index matchers found out of %d plans", len(allPlans))
+	return nil
 }
 
-var errTooManyMatchers = errors.New("too many matchers to generate plans")
-
-func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher) []plan {
-	noopPlan := newScanOnlyPlan(ctx, statistics, matchers)
-	allPlans := make([]plan, 0, 1<<uint(len(matchers)))
-
-	return generatePredicateCombinations(allPlans, noopPlan, 0)
-}
-
-// generatePredicateCombinations recursively generates all possible plans with their predicates toggled as index or as scan predicates.
-// It generates 2^n plans for n predicates and appends them to the plans slice.
-// It also returns the plans slice with all the generated plans.
-func generatePredicateCombinations(plans []plan, currentPlan plan, decidedPredicates int) []plan {
-	if decidedPredicates == len(currentPlan.predicates) {
-		return append(plans, currentPlan)
-	}
-
-	// Generate two plans, one with the current predicate applied and one without.
-	// This is done by copying the current plan and applying the predicate to the copy.
-	// The copy is then added to the list of plans to be returned.
-	plans = generatePredicateCombinations(plans, currentPlan, decidedPredicates+1)
-
-	p := currentPlan.useIndexFor(decidedPredicates)
-	plans = generatePredicateCombinations(plans, p, decidedPredicates+1)
-
-	return plans
-}
-
-func mapPlanningOutcomeError(err error) (mappedError error, tooManyMatchers bool) {
-	if errors.Is(err, errTooManyMatchers) {
-		return nil, true
-	}
-	return err, false
-}
-
-func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, abortedEarly bool, retErr error, allPlans []plan) {
+func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, retErr error, selectedPlan *plan, remainingPlans iter.Seq[plan]) {
 	span, _, traceSampled := tracing.SpanFromContext(ctx)
 
 	var outcome string
-	switch {
-	case abortedEarly:
-		outcome = "aborted_due_to_too_many_matchers"
-		if span != nil {
-			span.AddEvent("aborted creating lookup plan because there are too many matchers")
-		}
-	case retErr != nil:
+	if retErr != nil {
 		outcome = "error"
 		if span != nil {
 			span.AddEvent("failed to create lookup plan", trace.WithAttributes(
 				attribute.String("error", retErr.Error()),
 			))
 		}
-	default:
-		outcome = "success"
-		if !traceSampled {
-			// Avoid logging overhead if the events aren't going to make it into a span.
-			break
-		}
-		span.AddEvent("selected lookup plan", trace.WithAttributes(
-			attribute.Stringer("duration", time.Since(start)),
-		))
-		const topKPlans = 2
-		allPlans[0].addPredicatesToSpan(span)
-		for i, plan := range allPlans[:min(topKPlans, len(allPlans))] {
-			planName := "selected_plan"
-			if i > 0 {
-				planName = strconv.Itoa(i + 1)
+	} else {
+		if selectedPlan != nil {
+			if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
+				queryStats.SetEstimatedSelectedPostings(selectedPlan.NumSelectedPostings())
+				queryStats.SetEstimatedFinalCardinality(selectedPlan.FinalCardinality())
 			}
-			plan.addSpanEvent(span, planName)
+
+			if traceSampled {
+				// Only add span events when tracing is sampled to avoid unnecessary overhead.
+				p.addSpanEvents(span, start, *selectedPlan, remainingPlans)
+			}
 		}
+		outcome = "success"
 	}
 	p.metrics.planningDuration.WithLabelValues(outcome).Observe(time.Since(start).Seconds())
+}
+
+func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, selectedPlan plan, remainingPlans iter.Seq[plan]) {
+	span.AddEvent("selected lookup plan", trace.WithAttributes(
+		attribute.Stringer("duration", time.Since(start)),
+	))
+	selectedPlan.AddPredicatesToSpan(span)
+
+	const topKPlans = 2
+	var i int
+	for plan := range remainingPlans {
+		if i >= topKPlans {
+			break
+		}
+		planName := "selected_plan"
+		if i > 0 {
+			planName = strconv.Itoa(i + 1)
+		}
+		plan.AddSpanEvent(span, planName)
+		i++
+	}
 }
 
 type contextKey string

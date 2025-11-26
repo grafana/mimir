@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -30,7 +31,6 @@ import (
 	alertingReceivers "github.com/grafana/alerting/receivers"
 	alertingTemplates "github.com/grafana/alerting/templates"
 	"github.com/grafana/dskit/flagext"
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -273,11 +273,11 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	// State replication needs to be started after the state keys are defined.
 	if err := am.state.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start ring-based replication service")
+		return nil, fmt.Errorf("failed to start ring-based replication service: %w", err)
 	}
 
 	if err := am.persister.StartAsync(context.Background()); err != nil {
-		return nil, errors.Wrap(err, "failed to start state persister service")
+		return nil, fmt.Errorf("failed to start state persister service: %w", err)
 	}
 
 	am.pipelineBuilder = notify.NewPipelineBuilder(am.registry, cfg.Features)
@@ -477,7 +477,7 @@ func (am *Alertmanager) TestReceiversHandler(w http.ResponseWriter, r *http.Requ
 
 func (am *Alertmanager) WaitInitialStateSync(ctx context.Context) error {
 	if err := am.state.AwaitRunning(ctx); err != nil {
-		return errors.Wrap(err, "failed to wait for ring-based replication service")
+		return fmt.Errorf("failed to wait for ring-based replication service: %w", err)
 	}
 	return nil
 }
@@ -668,10 +668,9 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 	var cached *alertingTemplates.CachedFactory
 	integrationsMap := make(map[string][]*nfstatus.Integration, len(nc))
 	for _, rcv := range nc {
-		var integrations []*nfstatus.Integration
+		var grafana, mimir []*nfstatus.Integration
 		var err error
-		switch rcv.Type() {
-		case definition.GrafanaReceiverType:
+		if rcv.HasGrafanaIntegrations() {
 			if cached == nil {
 				factory, err := alertingTemplates.NewFactory(tmpls, am.logger, tmplExternalURL.String(), am.cfg.UserID)
 				if err != nil {
@@ -679,8 +678,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				cached = alertingTemplates.NewCachedFactory(factory)
 			}
-			integrations, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
-		case definition.AlertmanagerReceiverType:
+			grafana, err = buildGrafanaReceiverIntegrations(emailCfg, alertingNotify.PostableAPIReceiverToAPIReceiver(rcv), cached, am.logger, am.wrapNotifier, grafanaOpts...)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if rcv.HasMimirIntegrations() {
 			if tmpl == nil {
 				tmpl, err = loadTemplates(tmpls, WithCustomFunctions(am.cfg.UserID))
 				if err != nil {
@@ -688,15 +691,12 @@ func (am *Alertmanager) buildIntegrationsMap(emailCfg alertingReceivers.EmailSen
 				}
 				tmpl.ExternalURL = tmplExternalURL
 			}
-			integrations, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
-		case definition.EmptyReceiverType:
-			// Empty receiver, no integrations to build.
+			mimir, err = buildReceiverIntegrations(rcv.Receiver, tmpl, firewallDialer, am.logger, am.wrapNotifier)
+			if err != nil {
+				return nil, err
+			}
 		}
-		if err != nil {
-			return nil, err
-		}
-
-		integrationsMap[rcv.Name] = integrations
+		integrationsMap[rcv.Name] = append(grafana, mimir...)
 	}
 
 	// Template validation shouldn't be dependent on whether receivers exist. So, in case we didn't hot-load any

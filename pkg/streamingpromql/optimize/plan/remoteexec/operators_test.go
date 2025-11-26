@@ -5,25 +5,19 @@ package remoteexec
 import (
 	"context"
 	"testing"
-	"time"
 
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestFinalize_NoPerStepStats(t *testing.T) {
+func TestFinalize(t *testing.T) {
 	querierStats, ctx := stats.ContextWithEmptyStats(context.Background())
 	annos := annotations.New()
-	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	queryStats, err := types.NewQueryStats(timeRange, false, memoryConsumptionTracker)
-	require.NoError(t, err)
+	queryStats := types.NewQueryStats()
 
 	annos.Add(annotations.NewBadBucketLabelWarning("the_metric", "x", posrange.PositionRange{Start: 1, End: 2}))
 	annos.Add(annotations.NewPossibleNonCounterInfo("not_a_counter", posrange.PositionRange{Start: 3, End: 4}))
@@ -33,7 +27,7 @@ func TestFinalize_NoPerStepStats(t *testing.T) {
 		stats: stats.Stats{SamplesProcessed: 456, FetchedChunkBytes: 9000},
 	}
 
-	err = finalize(ctx, resp, annos, queryStats)
+	err := finalize(ctx, resp, annos, queryStats)
 	require.NoError(t, err)
 	require.Equal(t, int64(100+456), queryStats.TotalSamples)
 	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
@@ -52,39 +46,6 @@ func TestFinalize_NoPerStepStats(t *testing.T) {
 	})
 }
 
-func TestFinalize_PerStepStats(t *testing.T) {
-	querierStats, ctx := stats.ContextWithEmptyStats(context.Background())
-	annos := annotations.New()
-	timeRange := types.NewRangeQueryTimeRange(timestamp.Time(1000), timestamp.Time(3000), time.Second)
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	queryStats, err := types.NewQueryStats(timeRange, true, memoryConsumptionTracker)
-	require.NoError(t, err)
-
-	queryStats.IncrementSamplesAtTimestamp(1000, 1020)
-	queryStats.IncrementSamplesAtTimestamp(2000, 1030)
-	queryStats.IncrementSamplesAtTimestamp(3000, 1040)
-
-	resp := &mockResponse{
-		stats: stats.Stats{
-			SamplesProcessed: 123,
-			SamplesProcessedPerStep: []stats.StepStat{
-				{Timestamp: 1000, Value: 200},
-				{Timestamp: 2000, Value: 400},
-				{Timestamp: 3000, Value: 600},
-			},
-			FetchedChunkBytes: 9000,
-		},
-	}
-
-	err = finalize(ctx, resp, annos, queryStats)
-	require.NoError(t, err)
-	require.Equal(t, []int64{1220, 1430, 1640}, queryStats.TotalSamplesPerStep)
-	require.Equal(t, int64(1220+1430+1640), queryStats.TotalSamples)
-	require.Zero(t, querierStats.SamplesProcessed, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
-	require.Empty(t, querierStats.SamplesProcessedPerStep, "should not directly update number of samples processed on querier stats as this will be captured by the frontend when the query is complete")
-	require.Equal(t, uint64(9000), querierStats.FetchedChunkBytes)
-}
-
 type mockResponse struct {
 	stats stats.Stats
 }
@@ -99,4 +60,38 @@ func (m *mockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Anno
 
 func (m *mockResponse) Close() {
 	panic("should not be called")
+}
+
+type finalizationTestMockResponse struct {
+	Closed                  bool
+	GetEvaluationInfoCalled bool
+}
+
+func (m *finalizationTestMockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+	m.GetEvaluationInfoCalled = true
+	return annotations.New(), stats.Stats{}, nil
+}
+
+func (m *finalizationTestMockResponse) Close() {
+	m.Closed = true
+}
+
+func (m *finalizationTestMockResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) AdvanceToNextSeries(ctx context.Context) error {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) GetNextStepSamples(ctx context.Context) (*types.RangeVectorStepData, error) {
+	panic("not supported")
+}
+
+func (m *finalizationTestMockResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
+	panic("not supported")
 }

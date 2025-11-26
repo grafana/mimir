@@ -10,7 +10,7 @@ metadata:
     app.kubernetes.io/instance: metamonitoring-values
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: operator
-    helm.sh/chart: grafana-agent-operator-0.5.1
+    helm.sh/chart: grafana-agent-operator-0.5.2
     app.kubernetes.io/version: "0.44.2"
 spec:
   replicas: 1

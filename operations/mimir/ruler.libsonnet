@@ -19,6 +19,10 @@
     {
       target: 'ruler',
 
+      // Set the memory ballast to help with extensive CPU usage due to GC at ruler's start. This prevents the autoscaler
+      // from adding more replicas around rollouts, and reduces the effect of GC on a restart overall.
+      'mem-ballast-size-bytes': 1 << 30,  // 1GiB
+
       // File path used to store temporary rule files loaded by the Prometheus rule managers.
       'ruler.rule-path': '/rules',
 
@@ -43,31 +47,35 @@
 
   ruler_node_affinity_matchers:: [],
 
+  newRulerContainer(name, args, envVarMap={})::
+    container.new(name, $._images.ruler) +
+    container.withPorts($.util.defaultPorts) +
+    container.withArgsMixin($.util.mapToFlags(args)) +
+    (if std.length(envVarMap) > 0 then container.withEnvMap(std.prune(envVarMap)) else {}) +
+    $.util.resourcesRequests('1', '6Gi') +
+    $.util.resourcesLimits('16', '16Gi') +
+    $.util.readinessProbe +
+    $.tracing_env_mixin,
+
   ruler_container::
     if $._config.ruler_enabled then
-      container.new('ruler', $._images.ruler) +
-      container.withPorts($.util.defaultPorts) +
-      container.withArgsMixin($.util.mapToFlags($.ruler_args)) +
-      (if std.length($.ruler_env_map) > 0 then container.withEnvMap(std.prune($.ruler_env_map)) else {}) +
-      $.util.resourcesRequests('1', '6Gi') +
-      $.util.resourcesLimits('16', '16Gi') +
-      $.util.readinessProbe +
-      $.tracing_env_mixin
+      $.newRulerContainer('ruler', $.ruler_args, $.ruler_env_map)
     else {},
 
   local deployment = $.apps.v1.deployment,
 
-  ruler_deployment: if !$._config.ruler_enabled then null else
-    local name = 'ruler';
-
-    deployment.new(name, 2, [$.ruler_container]) +
-    $.newMimirNodeAffinityMatchers($.ruler_node_affinity_matchers) +
+  newRulerDeployment(name, container, nodeAffinityMatchers=[])::
+    deployment.new(name, 2, [container]) +
+    $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
     deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
     $.newMimirSpreadTopology(name, $._config.ruler_querier_topology_spread_max_skew) +
     $.mimirVolumeMounts,
+
+  ruler_deployment: if !$._config.ruler_enabled then null else
+    $.newRulerDeployment('ruler', $.ruler_container, $.ruler_node_affinity_matchers),
 
   ruler_service: if !$._config.ruler_enabled then null else
     $.util.serviceFor($.ruler_deployment, $._config.service_ignored_labels),

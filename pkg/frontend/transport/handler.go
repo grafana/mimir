@@ -58,6 +58,7 @@ const (
 	resultsCacheMissBytes        = "results_cache_miss_bytes"
 	shardedQueries               = "sharded_queries"
 	splitQueries                 = "split_queries"
+	remoteExecutionRequestCount  = "remote_execution_request_count"
 )
 
 var (
@@ -93,14 +94,13 @@ type Handler struct {
 	at           *activitytracker.ActivityTracker
 
 	// Metrics.
-	querySeconds                       *prometheus.CounterVec
-	querySeries                        *prometheus.CounterVec
-	queryChunkBytes                    *prometheus.CounterVec
-	queryChunks                        *prometheus.CounterVec
-	queryIndexBytes                    *prometheus.CounterVec
-	querySamplesProcessed              *prometheus.CounterVec
-	querySamplesProcessedCacheAdjusted *prometheus.CounterVec
-	activeUsers                        *util.ActiveUsersCleanupService
+	querySeconds          *prometheus.CounterVec
+	querySeries           *prometheus.CounterVec
+	queryChunkBytes       *prometheus.CounterVec
+	queryChunks           *prometheus.CounterVec
+	queryIndexBytes       *prometheus.CounterVec
+	querySamplesProcessed *prometheus.CounterVec
+	activeUsers           *util.ActiveUsersCleanupService
 
 	mtx              sync.Mutex
 	inflightRequests int
@@ -149,11 +149,6 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			Name: "cortex_query_samples_processed_total",
 			Help: "Number of samples processed to execute a query.",
 		}, []string{"user"})
-		h.querySamplesProcessedCacheAdjusted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_query_samples_processed_cache_adjusted_total",
-			Help: "Number of samples processed to execute a query taking into account the original number of samples processed for parts of the query results looked up from the cache. " +
-				"Note, that it is reported only in conjunction with `-query-frontend.cache-samples-processed-stats` enabled. Otherwise, it is 0.",
-		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
 			h.querySeconds.DeleteLabelValues(user, "true")
@@ -163,7 +158,6 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 			h.queryChunks.DeleteLabelValues(user)
 			h.queryIndexBytes.DeleteLabelValues(user)
 			h.querySamplesProcessed.DeleteLabelValues(user)
-			h.querySamplesProcessedCacheAdjusted.DeleteLabelValues(user)
 		})
 		// If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 		_ = h.activeUsers.StartAsync(context.Background())
@@ -331,10 +325,8 @@ func (f *Handler) reportQueryStats(
 	}
 	userID := tenant.JoinTenantIDs(tenantIDs)
 	var stats *querier_stats.SafeStats
-	var samplesProcessedCacheAdjusted uint64
 	if details != nil {
 		stats = details.QuerierStats
-		samplesProcessedCacheAdjusted = details.SamplesProcessedCacheAdjusted
 	}
 	wallTime := stats.LoadWallTime()
 	numSeries := stats.LoadFetchedSeries()
@@ -352,7 +344,6 @@ func (f *Handler) reportQueryStats(
 		f.queryIndexBytes.WithLabelValues(userID).Add(float64(numIndexBytes))
 		f.querySamplesProcessed.WithLabelValues(userID).Add(float64(samplesProcessed))
 		f.activeUsers.UpdateUserTimestamp(userID, time.Now())
-		f.querySamplesProcessedCacheAdjusted.WithLabelValues(userID).Add(float64(samplesProcessedCacheAdjusted))
 	}
 
 	// Log stats.
@@ -377,8 +368,8 @@ func (f *Handler) reportQueryStats(
 		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),
+		remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount(),
 		"samples_processed", samplesProcessed,
-		"samples_processed_cache_adjusted", samplesProcessedCacheAdjusted,
 	}, formatQueryString(details, queryString)...)
 
 	if details != nil {
@@ -402,6 +393,9 @@ func (f *Handler) reportQueryStats(
 	// Log the read consistency only when explicitly defined.
 	if consistency, ok := querierapi.ReadConsistencyLevelFromContext(r.Context()); ok {
 		logMessage = append(logMessage, "read_consistency", consistency)
+	}
+	if delay, ok := querierapi.ReadConsistencyMaxDelayFromContext(r.Context()); ok {
+		logMessage = append(logMessage, "read_consistency_max_delay", delay)
 	}
 
 	logMessage = append(logMessage, formatRequestHeaders(&r.Header, f.headersToLog)...)
@@ -560,6 +554,7 @@ func getResponseQueryStats(queryResponseTime time.Duration, contentLengthBytes i
 		statsValue(resultsCacheMissBytes, details.ResultsCacheMissBytes),
 		statsValue(shardedQueries, stats.LoadShardedQueries()),
 		statsValue(splitQueries, stats.LoadSplitQueries()),
+		statsValue(remoteExecutionRequestCount, stats.LoadRemoteExecutionRequestCount()),
 	}
 }
 

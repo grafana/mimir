@@ -73,10 +73,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             {{- if .Values.continuous_test.extraVolumeMounts }}
               {{ toYaml .Values.continuous_test.extraVolumeMounts | nindent 12}}
             {{- end }}
@@ -109,14 +105,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.continuous_test.terminationGracePeriodSeconds }}
+      {{- with .Values.continuous_test.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         {{- if .Values.continuous_test.extraVolumes }}
         {{ toYaml .Values.continuous_test.extraVolumes | nindent 8}}
         {{- end }}

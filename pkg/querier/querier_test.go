@@ -37,9 +37,9 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -240,12 +240,11 @@ func TestQuerier(t *testing.T) {
 
 			// No samples returned by ingesters.
 			distributor := &mockDistributor{}
-			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
 
-			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil, planner)
 			require.NoError(t, err)
@@ -268,47 +267,79 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	var cfg Config
 	flagext.DefaultValues(&cfg)
 
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	// Mock distributor to return chunks containing samples outside the queried range.
-	distributor := &mockDistributor{}
+	distributor := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
+
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				// Series with data points only before queryStart.
+			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
-					}, false),
+					Labels: labels.FromStrings(model.MetricNameLabel, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks: convertToChunks(t, []interface{}{
+										mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
+									}, false),
+								},
+							})},
+					},
 				},
-				// Series with data points before and after queryStart, but before queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
-						mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
-					}, false),
+					// Series with data points before and after queryStart, but before queryEnd.
+					Labels: labels.FromStrings(model.MetricNameLabel, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks: convertToChunks(t, []interface{}{
+										mimirpb.Sample{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
+										mimirpb.Sample{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
+									}, false),
+								},
+							})},
+					},
 				},
-				// Series with data points after queryEnd.
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
-					Chunks: convertToChunks(t, []interface{}{
-						mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
-						mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
-					}, false),
+					// Series with data points after queryEnd.
+					Labels: labels.FromStrings(model.MetricNameLabel, "one"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks: convertToChunks(t, []interface{}{
+										mimirpb.Sample{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
+										mimirpb.Sample{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
+									}, false),
+								},
+							})},
+					},
 				},
 			},
 		},
@@ -324,12 +355,11 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -387,20 +417,41 @@ func TestBatchMergeChunks(t *testing.T) {
 	chunks21 = append(chunks21, c2...)
 	chunks21 = append(chunks21, c1...)
 
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 	// Mock distributor to return chunks that need merging.
-	distributor := &mockDistributor{}
+	distributor := &mockDistributor{
+		memoryConsumptionTracker: memoryTracker,
+	}
 	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
-			Chunkseries: []client.TimeSeriesChunk{
-				// Series with chunks in the 1,2 order, that need merge
+			StreamingSeries: []client.StreamingSeries{
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "foo"}},
-					Chunks: chunks12,
+					Labels: labels.FromStrings(model.MetricNameLabel, "one", "instance", "foo"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      chunks12,
+								},
+							})},
+					},
 				},
-				// Series with chunks in the 2,1 order, that need merge
 				{
-					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "bar"}},
-					Chunks: chunks21,
+					Labels: labels.FromStrings(model.MetricNameLabel, "one", "instance", "bar"),
+					Sources: []client.StreamingSeriesSource{
+						{
+							SeriesIndex: 0,
+							StreamReader: createTestStreamReader([]client.QueryStreamSeriesChunks{
+								{
+									SeriesIndex: 0,
+									Chunks:      chunks21,
+								},
+							})},
+					},
 				},
 			},
 		},
@@ -412,12 +463,11 @@ func TestBatchMergeChunks(t *testing.T) {
 		Timeout:    1 * time.Minute,
 	})
 
-	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 	require.NoError(t, err)
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
 	require.NoError(t, err)
 
@@ -430,89 +480,10 @@ func TestBatchMergeChunks(t *testing.T) {
 	require.ElementsMatch(t, m[0].Histograms, m[1].Histograms)
 }
 
-func BenchmarkQueryExecute(b *testing.B) {
-	var (
-		logger    = log.NewNopLogger()
-		queryStep = time.Second
-	)
-
-	var cfg Config
-	flagext.DefaultValues(&cfg)
-
-	limits := defaultLimitsConfig()
-	limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
-	overrides := validation.NewOverrides(limits, nil)
-
-	scenarios := []struct {
-		numChunks          int
-		numSamplesPerChunk int
-		duplicationFactor  int
-	}{
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
-	}
-
-	for _, scenario := range scenarios {
-		for _, encoding := range []chunk.Encoding{
-			chunk.PrometheusXorChunk,
-			chunk.PrometheusHistogramChunk,
-			chunk.PrometheusFloatHistogramChunk,
-		} {
-			name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s", scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, encoding)
-			queryStart := time.Now().Add(-time.Second * time.Duration(scenario.numChunks*scenario.numSamplesPerChunk))
-			queryEnd := time.Now()
-			chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, queryStart, queryStep, encoding)
-			// Mock distributor to return chunks that need merging.
-			distributor := &mockDistributor{}
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-				client.CombinedQueryStreamResponse{
-					Chunkseries: []client.TimeSeriesChunk{
-						{
-							Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}, {Name: "instance", Value: "foo"}},
-							Chunks: chunks,
-						},
-					},
-				},
-				nil)
-
-			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:     util_log.SlogFromGoKit(logger),
-				MaxSamples: 1e6,
-				Timeout:    1 * time.Minute,
-			})
-
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, nil)
-			require.NoError(b, err)
-
-			ctx := user.InjectOrgID(context.Background(), "user-1")
-
-			b.Run(name, func(b *testing.B) {
-				b.ReportAllocs()
-
-				for i := 0; i < b.N; i++ {
-					query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
-					require.NoError(b, err)
-
-					r := query.Exec(ctx)
-					m, err := r.Matrix()
-					require.NoError(b, err)
-
-					require.Equal(b, 1, m.Len())
-				}
-			})
-		}
-	}
-}
-
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int, valueType func(model.Time) chunkenc.ValueType) (storage.Queryable, model.Time) {
 	dir := t.TempDir()
 
 	opts := tsdb.DefaultHeadOptions()
-	opts.EnableNativeHistograms.Store(true)
 	opts.ChunkDirRoot = dir
 	// We use TSDB head only. By using full TSDB DB, and appending samples to it, closing it would cause unnecessary HEAD compaction, which slows down the test.
 	head, err := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
@@ -561,22 +532,6 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	})
 
 	return queryable, ts
-}
-
-func createChunks(b require.TestingT, numChunks, numSamplesPerChunk, duplicationFactor int, queryStart time.Time, step time.Duration, enc chunk.Encoding) []client.Chunk {
-	result := make([]chunk.Chunk, 0, numChunks)
-
-	for d := 0; d < duplicationFactor; d++ {
-		for c := 0; c < numChunks; c++ {
-			minTime := queryStart.Add(step * time.Duration(c*numSamplesPerChunk))
-			maxTime := minTime.Add(step * time.Duration(numSamplesPerChunk))
-			result = append(result, mkChunk(b, model.TimeFromUnixNano(minTime.UnixNano()), model.TimeFromUnixNano(maxTime.UnixNano()), step, enc))
-		}
-	}
-
-	chunks, err := client.ToChunks(result)
-	require.NoError(b, err)
-	return chunks
 }
 
 func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
@@ -706,19 +661,23 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 
 	for name, c := range tests {
 		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "0")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			// We don't need to query any data for this test, so an empty store is fine.
-			distributor := &mockDistributor{}
+			distributor := &mockDistributor{
+				memoryConsumptionTracker: memoryTracker,
+			}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
 
-			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
 			require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "0")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
@@ -782,9 +741,17 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			limits.MaxPartialQueryLength = model.Duration(maxQueryLength)
 			overrides := validation.NewOverrides(limits, nil)
 
+			ctx := user.InjectOrgID(context.Background(), "test")
+			memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+			ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
 			// We don't need to query any data for this test, so an empty distributor is fine.
-			distributor := &emptyDistributor{}
-			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+			// But we still need a mock to handle memory consumption tracker.
+			distributor := &mockDistributor{
+				memoryConsumptionTracker: memoryTracker,
+			}
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
 			require.NoError(t, err)
@@ -797,7 +764,6 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 				Timeout:            1 * time.Minute,
 			})
 
-			ctx := user.InjectOrgID(context.Background(), "test")
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
 			require.NoError(t, err)
 
@@ -904,11 +870,16 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 			overrides := validation.NewOverrides(limits, nil)
 
 			t.Run("query range", func(t *testing.T) {
-				distributor := &mockDistributor{}
+				memoryTracker := limiter.NewUnlimitedMemoryConsumptionTracker(ctx)
+				ctx = limiter.AddMemoryTrackerToContext(ctx, memoryTracker)
+
+				distributor := &mockDistributor{
+					memoryConsumptionTracker: memoryTracker,
+				}
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
-				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 				require.NoError(t, err)
@@ -938,7 +909,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 				require.NoError(t, err)
@@ -951,7 +922,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					End:   util.TimeToMillis(testData.queryEndTime),
 					Func:  "series",
 				}
-				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+				matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
 
 				set := q.Select(ctx, false, hints, matcher)
 				require.False(t, set.Next()) // Expected to be empty.
@@ -978,7 +949,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, hints, matchers).Return([]string{}, nil)
 
-				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 				require.NoError(t, err)
@@ -1010,7 +981,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor := &mockDistributor{}
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, hints, mock.Anything).Return([]string{}, nil)
 
-				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
 				require.NoError(t, err)
@@ -1018,7 +989,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
-				_, _, err = q.LabelValues(ctx, labels.MetricName, hints)
+				_, _, err = q.LabelValues(ctx, model.MetricNameLabel, hints)
 				require.NoError(t, err)
 
 				if !testData.expectedSkipped {
@@ -1110,7 +1081,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
 			require.NoError(t, err)
@@ -1123,7 +1094,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 				End:   util.TimeToMillis(testData.queryEndTime),
 				Func:  "series",
 			}
-			matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+			matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
 
 			set := q.Select(ctx, false, hints, matcher)
 			require.False(t, set.Next()) // Expected to be empty.
@@ -1227,7 +1198,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 			distributor := &mockDistributor{}
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]labels.Labels{}, nil)
 
-			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
 			require.NoError(t, err)
@@ -1241,7 +1212,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 				Limit: testData.queryLimit,
 				Func:  "series",
 			}
-			matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+			matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
 
 			set := q.Select(ctx, false, hints, matcher)
 			require.False(t, set.Next()) // Expected to be empty.
@@ -1339,48 +1310,6 @@ func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels
 	return nil, errDistributorError
 }
 
-type emptyDistributor struct{}
-
-func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher, _ cardinality.CountMethod) (*client.LabelNamesAndValuesResponse, error) {
-	return nil, errors.New("method is not implemented")
-}
-
-func (d *emptyDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
-	return client.CombinedQueryStreamResponse{}, nil
-}
-
-func (d *emptyDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, *storage.LabelHints, ...*labels.Matcher) ([]string, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) MetricsForLabelMatchers(context.Context, model.Time, model.Time, *storage.SelectHints, ...*labels.Matcher) ([]labels.Labels, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) MetricsMetadata(context.Context, *client.MetricsMetadataRequest) ([]scrape.MetricMetadata, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) LabelValuesCardinality(context.Context, []model.LabelName, []*labels.Matcher, cardinality.CountMethod) (uint64, *client.LabelValuesCardinalityResponse, error) {
-	return 0, nil, nil
-}
-
-func (d *emptyDistributor) ActiveSeries(context.Context, []*labels.Matcher) ([]labels.Labels, error) {
-	return nil, nil
-}
-
-func (d *emptyDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels.Matcher) (*cardinality.ActiveNativeHistogramMetricsResponse, error) {
-	return &cardinality.ActiveNativeHistogramMetricsResponse{}, nil
-}
-
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
@@ -1443,7 +1372,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 
 			// Mock the blocks storage to return an empty SeriesSet (we just need to check whether
 			// it was hit or not).
-			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric")}
+			expectedMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric")}
 			querier := &mockBlocksStorageQuerier{}
 			querier.On("Select", mock.Anything, true, mock.Anything, expectedMatchers).Return(storage.EmptySeriesSet())
 
@@ -1451,7 +1380,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 				NewStoreGatewayTimeRangeQueryable(newMockBlocksStorageQueryable(querier), cfg),
 			}
 
-			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine)
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil, planner)
 			require.NoError(t, err)
@@ -1480,6 +1409,41 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 			} else {
 				querier.AssertNotCalled(t, "Select", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 			}
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup    func(cfg *Config)
+		expected error
+	}{
+		"should pass with default config": {
+			setup: func(*Config) {},
+		},
+		"should fail if ingester streaming buffer size is 0": {
+			setup: func(cfg *Config) {
+				cfg.StreamingChunksPerIngesterSeriesBufferSize = 0
+			},
+			expected: errStreamingIngesterBufferSize,
+		},
+		"should fail if store-gateway streaming buffer size is 0": {
+			setup: func(cfg *Config) {
+				cfg.StreamingChunksPerStoreGatewaySeriesBufferSize = 0
+			},
+			expected: errStreamingStoreGatewayBufferSize,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cfg := &Config{}
+			flagext.DefaultValues(cfg)
+
+			testData.setup(cfg)
+			err := cfg.Validate()
+
+			require.ErrorIs(t, err, testData.expected)
 		})
 	}
 }

@@ -76,6 +76,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: store-gateway
       terminationGracePeriodSeconds: 120
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -90,6 +94,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -217,6 +222,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: store-gateway
       terminationGracePeriodSeconds: 120
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -231,6 +240,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -358,6 +368,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: store-gateway
       terminationGracePeriodSeconds: 120
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -372,6 +386,7 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"

@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -29,9 +30,9 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -106,7 +107,7 @@ func TestConfig_Validate(t *testing.T) {
 			setup: func(cfg *Config) {
 				cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour, 30 * time.Hour}
 			},
-			expected: errors.Errorf(errInvalidBlockRanges, 30*time.Hour, 24*time.Hour).Error(),
+			expected: fmt.Errorf(errInvalidBlockRanges, 30*time.Hour, 24*time.Hour).Error(),
 		},
 		"should fail on unknown compaction jobs order": {
 			setup: func(cfg *Config) {
@@ -1468,7 +1469,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsWithFirstLevelCompactio
 
 	// Mock two tenants, each with 2 overlapping blocks.
 	spec := []*block.SeriesSpec{{
-		Labels: labels.FromStrings(labels.MetricName, "series_1"),
+		Labels: labels.FromStrings(model.MetricNameLabel, "series_1"),
 		Chunks: []chunks.Meta{must(chunks.ChunkFromSamples([]chunks.Sample{
 			testutil.Sample{TS: 1574776800000, Val: 0},
 			testutil.Sample{TS: 1574783999999, Val: 0},
@@ -1768,6 +1769,8 @@ func prepareConfig(t *testing.T) Config {
 
 	// The new default is 25m, but tests rely on the previous value of 0s
 	compactorCfg.CompactionWaitPeriod = 0
+
+	compactorCfg.SparseIndexHeadersSamplingRate = 32
 
 	return compactorCfg
 }
@@ -2248,7 +2251,8 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		meta, err := block.ReadMetaFromDir(blockDir)
 		require.NoErrorf(t, err, "reading meta from block at &s", blockDir)
 
-		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta))
+		_, err = block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), meta)
+		require.NoError(t, err)
 
 		metas = append(metas, meta)
 	}

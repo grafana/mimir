@@ -23,9 +23,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ingester/activeseries"
+	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/util/extract"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -94,6 +96,7 @@ type ownedSeriesState struct {
 }
 
 type userTSDB struct {
+	cfg            *Config
 	db             *tsdb.DB
 	userID         string
 	activeSeries   *activeseries.ActiveSeries
@@ -146,6 +149,44 @@ type userTSDB struct {
 	requiresOwnedSeriesUpdate atomic.String // Non-empty string means that we need to recompute "owned series" for the user. Value will be used in the log message.
 
 	postingsCache *tsdb.PostingsForMatchersCache
+
+	// plannerProvider is optional; if set, it will be used to generate and cache statistics for the user's head block.
+	// Other blocks' stats are immutable and the prometheus TSDB caches them itself.
+	plannerProvider *plannerProvider
+}
+
+// generateHeadStatistics generates statistics for this user's head block.
+func (u *userTSDB) generateHeadStatistics() error {
+	// Open head block
+	head := u.db.Head()
+	indexReader, err := head.Index()
+	if err != nil {
+		return fmt.Errorf("failed to open TSDB head index reader: %w", err)
+	}
+	defer indexReader.Close()
+
+	// Get block metadata
+	blockMeta := head.Meta()
+
+	// Generate statistics
+	u.plannerProvider.generateAndStorePlanner(blockMeta, indexReader)
+	return nil
+}
+
+// getIndexLookupPlannerFunc returns the appropriate index lookup planner function based on configuration.
+// When index lookup planning is enabled, it first checks if a pre-computed planner exists in the repository.
+// If found, it uses the cached planner; otherwise, it falls back to generating statistics on-demand.
+// When disabled, it uses NoopPlanner which performs no optimization.
+// getIndexLookupPlannerFunc returns a cached planner or generates one on-demand.
+// Not all planners are cached after being created, see plannerProvider.getPlanner() for details.
+func (u *userTSDB) getIndexLookupPlannerFunc() tsdb.IndexLookupPlannerFunc {
+	return func(blockMeta tsdb.BlockMeta, indexReader tsdb.IndexReader) index.LookupPlanner {
+		if !u.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
+			return lookupplan.NoopPlanner{}
+		}
+
+		return u.plannerProvider.getPlanner(blockMeta, indexReader)
+	}
 }
 
 func (u *userTSDB) Appender(ctx context.Context) storage.Appender {

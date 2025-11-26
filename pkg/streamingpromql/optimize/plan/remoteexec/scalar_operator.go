@@ -21,6 +21,7 @@ type ScalarRemoteExec struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
+	EagerLoad                bool
 
 	resp      ScalarRemoteExecutionResponse
 	finalized bool
@@ -29,10 +30,8 @@ type ScalarRemoteExec struct {
 var _ types.ScalarOperator = &ScalarRemoteExec{}
 
 func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	s.QueryStats = params.QueryStats
-
 	var err error
-	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.QueryStats.EnablePerStepStats)
+	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.EagerLoad)
 	return err
 }
 
@@ -63,4 +62,6 @@ func (s *ScalarRemoteExec) Close() {
 	if s.resp != nil {
 		s.resp.Close()
 	}
+
+	s.finalized = true // Don't try to finalize from a closed stream.
 }

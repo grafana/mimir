@@ -55,6 +55,7 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-querier.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
+            - "-querier.ring.prefix=ruler-querier/"
           {{- if .Values.ingester.zoneAwareReplication.migration.enabled }}
             {{- if not .Values.ingester.zoneAwareReplication.migration.readPath }}
             - "-ingester.ring.zone-awareness-enabled=false"
@@ -79,10 +80,6 @@ spec:
             {{- end }}
             - name: config
               mountPath: /etc/mimir
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
             - name: storage
@@ -133,14 +130,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler_querier.terminationGracePeriodSeconds }}
+      {{- with .Values.ruler_querier.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

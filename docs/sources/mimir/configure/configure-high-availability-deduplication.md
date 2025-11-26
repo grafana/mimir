@@ -106,14 +106,16 @@ Alternatively, you can enable the HA tracker only on a per-tenant basis, keeping
 #### Configure the HA tracker KV store
 
 The HA tracker requires a key-value (KV) store to coordinate which replica is currently elected.
-In [Grafana Mimir versions 2.17](https://github.com/grafana/mimir/releases/tag/mimir-2.17.0) and later, use `memberlist` as the KV store backend for the HA tracker. The `consul` and `etcd` backends are deprecated.
+Starting from Mimir 3.0, `memberlist` is the recommended and default KV store backend for the HA tracker.
+
+To migrate from Consul or etcd to memberlist without downtime, see [Migrate HA tracker from Consul or etcd to memberlist](../migrate-ha-tracker-to-memberlist/).
 
 The following CLI flags (and their respective YAML configuration options) are available for configuring the HA tracker KV store:
 
-- `-distributor.ha-tracker.store`: The backend storage to use, which is `memberlist`. The `consul` and `etcd` backends are deprecated.
-- `-memberlist.*`: The memberlist client configuration. It's common and used by other Mimir components as well.
-- [deprecated]`-distributor.ha-tracker.consul.*`: The Consul client configuration. Only use this if you have defined `consul` as your backend storage.
-- [deprecated]`-distributor.ha-tracker.etcd.*`: The etcd client configuration. Only use this if you have defined `etcd` as your backend storage.
+- `-distributor.ha-tracker.store`: Backend storage to use (default: `memberlist`).
+- `-memberlist.*`: Memberlist client configuration. This is shared by multiple components.
+
+The memberlist configuration is typically shared across multiple Mimir components (distributors, ingesters, etc.), so if you already have memberlist configured for hash ring synchronization, no additional configuration is required for the HA tracker.
 
 #### Configure expected label names for each Prometheus cluster and replica
 
@@ -136,12 +138,22 @@ The following configuration example snippet enables the HA tracker for all tenan
 ```yaml
 limits:
   accept_ha_samples: true
+
 distributor:
   ha_tracker:
     enable_ha_tracker: true
     kvstore:
-      [store: <string> | default = "consul"]
-      [consul | etcd: <config>]
+      store: memberlist
+
+memberlist:
+  # Memberlist configuration (typically shared with other components)
+  join_members:
+    - <IP_OR_DNS:PORT>
+    - <IP_OR_DNS:PORT>
 ```
+
+{{< admonition type="note" >}}
+If memberlist is already configured for other Mimir components, such as the hash ring, the HA tracker automatically uses that configuration. In most deployments, you don't need any additional memberlist configuration.
+{{< /admonition >}}
 
 For more information, see [distributor](../configuration-parameters/#distributor). The HA tracker flags are prefixed with `-distributor.ha-tracker.*`.

@@ -1,19 +1,28 @@
+// Copyright 2025 Grafana Labs
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package labels
 
 import "github.com/grafana/regexp/syntax"
 
 const (
-	// TODO verify relative magnitude of these costs.
 	estimatedStringEqualityCost          = 1.0
-	estimatedStringHasPrefixCost         = 0.5
-	estimatedSliceContainsCostPerElement = 1.0
-	estimatedMapContainsCostPerElement   = 0.01
-	estimatedRegexMatchCost              = 10.0
+	estimatedStringHasPrefixCost         = 1.0
+	estimatedSliceContainsCostPerElement = 1.1
+	estimatedMapContainsCost             = 4.0
 )
 
 // SingleMatchCost returns the fixed cost of running this matcher against an arbitrary label value..
-// TODO benchmark relative cost of different matchers.
-// TODO use the complexity of the regex string as a cost.
 func (m *Matcher) SingleMatchCost() float64 {
 	switch m.Type {
 	case MatchEqual, MatchNotEqual:
@@ -26,8 +35,8 @@ func (m *Matcher) SingleMatchCost() float64 {
 		}
 
 		// If we have a string matcher with a map, use that
-		if mm, ok := m.re.stringMatcher.(*equalMultiStringMapMatcher); ok {
-			return estimatedMapContainsCostPerElement*float64(len(mm.values)) + estimatedStringEqualityCost
+		if _, ok := m.re.stringMatcher.(*equalMultiStringMapMatcher); ok {
+			return estimatedMapContainsCost
 		}
 
 		// If we have a prefix optimization, use that

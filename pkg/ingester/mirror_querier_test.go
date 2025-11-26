@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -179,11 +180,11 @@ func TestRetainingChunkSeriesSet(t *testing.T) {
 func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 	series1 := &mockChunkSeries{
 		labels: labels.FromStrings("__name__", "metric1"),
-		chunks: []chunks.Meta{{MinTime: 1000, MaxTime: 2000}},
+		chunks: []chunks.Meta{{MinTime: time.Now().Add(-time.Hour).UnixMilli(), MaxTime: time.Now().Add(-time.Minute).UnixMilli()}},
 	}
 	series2 := &mockChunkSeries{
 		labels: labels.FromStrings("__name__", "metric2"),
-		chunks: []chunks.Meta{{MinTime: 1500, MaxTime: 2500}},
+		chunks: []chunks.Meta{{MinTime: time.Now().Add(-2 * time.Hour).UnixMilli(), MaxTime: time.Now().UnixMilli()}},
 	}
 
 	testCases := []struct {
@@ -235,9 +236,9 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 			primarySeries: []labels.Labels{series1.Labels()}, // Only series1 in primary
 			secondarySeries: []storage.ChunkSeries{
 				series1, // This should be included (chunk at 1000-2000, maxT=3000)
-				&mockChunkSeries{ // This should be ignored (chunk at 4000-5000, beyond maxT=3000)
+				&mockChunkSeries{ // This should be ignored (chunk at 4000-5000, beyond the time the query finished)
 					labels: labels.FromStrings("__name__", "metric3"),
-					chunks: []chunks.Meta{{MinTime: 4000, MaxTime: 5000}},
+					chunks: []chunks.Meta{{MinTime: time.Now().Add(time.Second).UnixMilli(), MaxTime: time.Now().Add(2 * time.Second).UnixMilli()}},
 				},
 			},
 			expectedMetricLabel: "success", // Should match because the beyond-maxT series is ignored
@@ -261,7 +262,7 @@ func TestMirroredChunkQuerier_CompareResults(t *testing.T) {
 				},
 			}
 			querier.recordedRequest.ctx = context.Background()
-			querier.recordedRequest.maxT = 3000
+			querier.recordedRequest.finishedAt = time.Now()
 
 			secondary := &mockChunkSeriesSet{
 				series: tc.secondarySeries,

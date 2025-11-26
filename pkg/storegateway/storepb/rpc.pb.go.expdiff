@@ -1,5 +1,5 @@
 diff --git a/pkg/storegateway/storepb/rpc.pb.go b/pkg/storegateway/storepb/rpc.pb.go
-index 23cdf0292..763f925f0 100644
+index 3bf7a4ec4d..77a75acb2f 100644
 --- a/pkg/storegateway/storepb/rpc.pb.go
 +++ b/pkg/storegateway/storepb/rpc.pb.go
 @@ -8,7 +8,6 @@ import (
@@ -18,5 +18,5 @@ index 23cdf0292..763f925f0 100644
 -	mimirpb.BufferHolder
 -
  	// Types that are valid to be assigned to Result:
- 	//	*SeriesResponse_Series
  	//	*SeriesResponse_Warning
+ 	//	*SeriesResponse_Hints

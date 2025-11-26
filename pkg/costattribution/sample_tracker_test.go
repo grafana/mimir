@@ -3,11 +3,13 @@
 package costattribution
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,10 +19,54 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
+func TestNewSampleTracker(t *testing.T) {
+	testCases := map[string]struct {
+		costAttributionLabels costattributionmodel.Labels
+		expectedErr           error
+	}{
+		"happy case single label": {
+			costAttributionLabels: costattributionmodel.Labels{{Input: "good_label", Output: "good_label"}},
+			expectedErr:           nil,
+		},
+		"happy case multiple labels": {
+			costAttributionLabels: costattributionmodel.Labels{
+				{Input: "good_label", Output: "good_label"},
+				{Input: "another_good_label", Output: "another_good_label"},
+			},
+			expectedErr: nil,
+		},
+		"incorrect label name causes an error single label": {
+			costAttributionLabels: costattributionmodel.Labels{{Input: "__bad_label__", Output: "__bad_label__"}},
+			expectedErr:           fmt.Errorf(`failed to create a sample tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_distributor_received_attributed_samples_total", help: "The total number of samples that were received per attribution.", constLabels: {}, variableLabels: {__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
+		},
+		"incorrect label name causes an error multiple labels": {
+			costAttributionLabels: costattributionmodel.Labels{
+				{Input: "good_label", Output: "good_label"},
+				{Input: "__bad_label__", Output: "__bad_label__"},
+			},
+			expectedErr: fmt.Errorf(`failed to create a sample tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_distributor_received_attributed_samples_total", help: "The total number of samples that were received per attribution.", constLabels: {}, variableLabels: {good_label,__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
+		},
+	}
+
+	for testName, testCase := range testCases {
+		t.Run(testName, func(t *testing.T) {
+			st, stErr := newSampleTracker("tenant-1", testCase.costAttributionLabels, 10, 1*time.Minute, log.NewNopLogger())
+			if testCase.expectedErr == nil {
+				require.NoError(t, stErr)
+				require.NotNil(t, st)
+			} else {
+				require.Error(t, stErr)
+				require.EqualError(t, stErr, testCase.expectedErr.Error())
+				require.Nil(t, st)
+			}
+		})
+	}
+}
+
 func TestSampleTracker_hasSameLabels(t *testing.T) {
 	manager, _, _ := newTestManager()
 	st := manager.SampleTracker("user1")
-	assert.True(t, st.hasSameLabels([]costattributionmodel.Label{{Input: "team", Output: ""}}), "Expected cost attribution labels mismatch")
+	assert.True(t, st.hasSameLabels(costattributionmodel.Labels{{Input: "team", Output: "my_team"}}), "Expected cost attribution labels mismatch")
 }
 
 func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
@@ -32,7 +78,7 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 	# TYPE cortex_distributor_received_attributed_samples_total counter
-	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 3
+	cortex_distributor_received_attributed_samples_total{my_platform="foo",tenant="user4",tracker="cost-attribution"} 3
 	`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
@@ -45,8 +91,8 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 	# TYPE cortex_distributor_received_attributed_samples_total counter
-	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 6
-	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
+	cortex_distributor_received_attributed_samples_total{my_platform="foo",tenant="user4",tracker="cost-attribution"} 6
+	cortex_distributor_received_attributed_samples_total{my_platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})
@@ -60,8 +106,8 @@ func TestSampleTracker_IncrementReceviedSamples(t *testing.T) {
 		expectedMetrics := `
 	# HELP cortex_distributor_received_attributed_samples_total The total number of samples that were received per attribution.
 	# TYPE cortex_distributor_received_attributed_samples_total counter
-	cortex_distributor_received_attributed_samples_total{platform="foo",tenant="user4",tracker="cost-attribution"} 14
-	cortex_distributor_received_attributed_samples_total{platform="bar",tenant="user4",tracker="cost-attribution"} 5
+	cortex_distributor_received_attributed_samples_total{my_platform="foo",tenant="user4",tracker="cost-attribution"} 14
+	cortex_distributor_received_attributed_samples_total{my_platform="bar",tenant="user4",tracker="cost-attribution"} 5
 	`
 		assert.NoError(t, testutil.GatherAndCompare(costAttributionReg, strings.NewReader(expectedMetrics), "cortex_distributor_received_attributed_samples_total"))
 	})

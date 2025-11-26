@@ -660,11 +660,11 @@ func TestAlertmanagerSharding(t *testing.T) {
 				for _, c := range clients {
 					list, err := c.GetReceiversExperimental(context.Background())
 					assert.NoError(t, err)
-					assert.ElementsMatch(t, list, []alertingmodels.Receiver{
+					assert.ElementsMatch(t, list, []alertingmodels.ReceiverStatus{
 						{
 							Name:   "dummy",
 							Active: true,
-							Integrations: []alertingmodels.Integration{
+							Integrations: []alertingmodels.IntegrationStatus{
 								{
 									LastNotifyAttemptDuration: "0s",
 									Name:                      "email",
@@ -1279,8 +1279,8 @@ func TestAlertmanagerTestReceivers(t *testing.T) {
 		},
 		Receivers: []*alertingNotify.APIReceiver{
 			{
-				GrafanaIntegrations: alertingNotify.GrafanaIntegrations{
-					Integrations: []*alertingNotify.GrafanaIntegrationConfig{
+				ReceiverConfig: alertingmodels.ReceiverConfig{
+					Integrations: []*alertingmodels.IntegrationConfig{
 						{
 							UID:                   "uid",
 							Name:                  "test integration",
@@ -1319,7 +1319,7 @@ func TestAlertmanagerTestReceivers(t *testing.T) {
 
 	require.Len(t, res.Receivers, 1)
 	require.Len(t, res.Receivers[0].Configs, 1)
-	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].UID, res.Receivers[0].Configs[0].UID)
-	require.Equal(t, trConfig.Receivers[0].GrafanaIntegrations.Integrations[0].Name, res.Receivers[0].Configs[0].Name)
+	require.Equal(t, trConfig.Receivers[0].ReceiverConfig.Integrations[0].UID, res.Receivers[0].Configs[0].UID)
+	require.Equal(t, trConfig.Receivers[0].ReceiverConfig.Integrations[0].Name, res.Receivers[0].Configs[0].Name)
 	require.Equal(t, "", res.Receivers[0].Configs[0].Error)
 }

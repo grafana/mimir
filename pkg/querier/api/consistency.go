@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unsafe"
 
 	"google.golang.org/grpc"
@@ -19,8 +20,9 @@ import (
 )
 
 const (
-	ReadConsistencyHeader        = "X-Read-Consistency"
-	ReadConsistencyOffsetsHeader = "X-Read-Consistency-Offsets"
+	ReadConsistencyHeader         = "X-Read-Consistency"
+	ReadConsistencyOffsetsHeader  = "X-Read-Consistency-Offsets"
+	ReadConsistencyMaxDelayHeader = "X-Read-Consistency-Max-Delay"
 
 	// ReadConsistencyStrong means that a query sent by the same client will always observe the writes
 	// that have completed before issuing the query.
@@ -37,11 +39,16 @@ func IsValidReadConsistency(lvl string) bool {
 	return slices.Contains(ReadConsistencies, lvl)
 }
 
+func IsValidReadConsistencyMaxDelay(delay time.Duration) bool {
+	return delay > 0
+}
+
 type contextKey int
 
 const (
 	consistencyContextKey        contextKey = 1
 	consistencyOffsetsContextKey contextKey = 2
+	consistencyMaxDelayKey       contextKey = 3
 )
 
 // ContextWithReadConsistencyLevel returns a new context with the given consistency level.
@@ -74,8 +81,30 @@ func ReadConsistencyEncodedOffsetsFromContext(ctx context.Context) (EncodedOffse
 	return encoded, true
 }
 
+// ContextWithReadConsistencyMaxDelay returns a new context with the given max delay configured.
+// The delay can be retrieved with ReadConsistencyMaxDelayFromContext.
+func ContextWithReadConsistencyMaxDelay(ctx context.Context, delay time.Duration) context.Context {
+	return context.WithValue(ctx, consistencyMaxDelayKey, delay)
+}
+
+// ContextWithReadConsistencyMaxDelayString is like ContextWithReadConsistencyMaxDelay but accepts
+// the delay as a string in input, and returns an error if the provided string can't be parsed as duration.
+func ContextWithReadConsistencyMaxDelayString(ctx context.Context, delay string) (context.Context, error) {
+	parsedDelay, err := time.ParseDuration(delay)
+	if err != nil {
+		return ctx, err
+	}
+	return ContextWithReadConsistencyMaxDelay(ctx, parsedDelay), nil
+}
+
+// ReadConsistencyMaxDelayFromContext returns max delay / staleness to enforce on eventually consistent requests.
+// The second return value is true if the setting is found in the context.
+func ReadConsistencyMaxDelayFromContext(ctx context.Context) (time.Duration, bool) {
+	delay, _ := ctx.Value(consistencyMaxDelayKey).(time.Duration)
+	return delay, IsValidReadConsistencyMaxDelay(delay)
+}
+
 // ConsistencyExtractor takes the consistency level from the X-Read-Consistency header and sets it in the context.
-// It can be retrieved with ReadConsistencyLevelFromContext.
 type ConsistencyExtractor struct{}
 
 func (e *ConsistencyExtractor) ExtractFromCarrier(ctx context.Context, carrier propagation.Carrier) (context.Context, error) {
@@ -87,25 +116,35 @@ func (e *ConsistencyExtractor) ExtractFromCarrier(ctx context.Context, carrier p
 		ctx = ContextWithReadConsistencyEncodedOffsets(ctx, EncodedOffsets(offsets))
 	}
 
+	if delay := carrier.Get(ReadConsistencyMaxDelayHeader); len(delay) > 0 {
+		// Ignore the error since there's not much we can do. In case of error, the original context is returned.
+		ctx, _ = ContextWithReadConsistencyMaxDelayString(ctx, delay)
+	}
+
 	return ctx, nil
 }
 
-// ConsistencyLevelInjector injects the consistency level from the context (if any) into the carrier.
+// ConsistencyInjector injects the consistency level from the context (if any) into the carrier.
 //
 // It does not add the offsets to the carrier, as these are handled by the query-frontend's list of HTTP headers to propagate.
-type ConsistencyLevelInjector struct{}
+type ConsistencyInjector struct{}
 
-func (i *ConsistencyLevelInjector) InjectToCarrier(ctx context.Context, carrier propagation.Carrier) error {
+func (i *ConsistencyInjector) InjectToCarrier(ctx context.Context, carrier propagation.Carrier) error {
 	if level, ok := ReadConsistencyLevelFromContext(ctx); ok {
 		carrier.Add(ReadConsistencyHeader, level)
+	}
+
+	if delay, ok := ReadConsistencyMaxDelayFromContext(ctx); ok {
+		carrier.Add(ReadConsistencyMaxDelayHeader, delay.String())
 	}
 
 	return nil
 }
 
 const (
-	consistencyLevelGrpcMdKey   = "__consistency_level__"
-	consistencyOffsetsGrpcMdKey = "__consistency_offsets__"
+	consistencyLevelGrpcMdKey    = "__consistency_level__"
+	consistencyOffsetsGrpcMdKey  = "__consistency_offsets__"
+	consistencyMaxDelayGrpcMdKey = "__consistency_max_delay__"
 )
 
 func ReadConsistencyClientUnaryInterceptor(ctx context.Context, method string, req any, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
@@ -114,6 +153,9 @@ func ReadConsistencyClientUnaryInterceptor(ctx context.Context, method string, r
 	}
 	if value, ok := ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
 		ctx = metadata.AppendToOutgoingContext(ctx, consistencyOffsetsGrpcMdKey, string(value))
+	}
+	if value, ok := ReadConsistencyMaxDelayFromContext(ctx); ok {
+		ctx = metadata.AppendToOutgoingContext(ctx, consistencyMaxDelayGrpcMdKey, value.String())
 	}
 	return invoker(ctx, method, req, reply, cc, opts...)
 }
@@ -129,6 +171,12 @@ func ReadConsistencyServerUnaryInterceptor(ctx context.Context, req interface{},
 		ctx = ContextWithReadConsistencyEncodedOffsets(ctx, EncodedOffsets(offsets[0]))
 	}
 
+	delay := metadata.ValueFromIncomingContext(ctx, consistencyMaxDelayGrpcMdKey)
+	if len(delay) > 0 {
+		// Ignore the error, given there's not much we can do.
+		ctx, _ = ContextWithReadConsistencyMaxDelayString(ctx, delay[0])
+	}
+
 	return handler(ctx, req)
 }
 
@@ -138,6 +186,9 @@ func ReadConsistencyClientStreamInterceptor(ctx context.Context, desc *grpc.Stre
 	}
 	if value, ok := ReadConsistencyEncodedOffsetsFromContext(ctx); ok {
 		ctx = metadata.AppendToOutgoingContext(ctx, consistencyOffsetsGrpcMdKey, string(value))
+	}
+	if value, ok := ReadConsistencyMaxDelayFromContext(ctx); ok {
+		ctx = metadata.AppendToOutgoingContext(ctx, consistencyMaxDelayGrpcMdKey, value.String())
 	}
 	return streamer(ctx, desc, cc, method, opts...)
 }
@@ -153,6 +204,12 @@ func ReadConsistencyServerStreamInterceptor(srv interface{}, ss grpc.ServerStrea
 	offsets := metadata.ValueFromIncomingContext(ctx, consistencyOffsetsGrpcMdKey)
 	if len(offsets) > 0 {
 		ctx = ContextWithReadConsistencyEncodedOffsets(ctx, EncodedOffsets(offsets[0]))
+	}
+
+	delay := metadata.ValueFromIncomingContext(ctx, consistencyMaxDelayGrpcMdKey)
+	if len(delay) > 0 {
+		// Ignore the error, given there's not much we can do.
+		ctx, _ = ContextWithReadConsistencyMaxDelayString(ctx, delay[0])
 	}
 
 	ss = ctxStream{

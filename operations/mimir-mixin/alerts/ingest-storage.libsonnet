@@ -4,7 +4,7 @@
       name: 'mimir_ingest_storage_alerts',
       rules: [
         {
-          alert: $.alertName('IngesterLastConsumedOffsetCommitFailed'),
+          alert: $.alertName('IngesterOffsetCommitFailed'),
           'for': '15m',
           expr: |||
             sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_offset_commit_failures_total[5m]))
@@ -21,7 +21,7 @@
         },
 
         {
-          alert: $.alertName('IngesterFailedToReadRecordsFromKafka'),
+          alert: $.alertName('IngesterKafkaReadFailed'),
           'for': '5m',
 
           // Metric used by this alert is reported by Kafka client on read errors from connection to Kafka.
@@ -59,7 +59,7 @@
 
         // This is an experiment. We compute derivatition (ie. rate of consumption lag change) over 5 minutes. If derivation is above 0, it means consumption lag is increasing, instead of decreasing.
         {
-          alert: $.alertName('StartingIngesterKafkaReceiveDelayIncreasing'),
+          alert: $.alertName('StartingIngesterKafkaDelayGrowing'),
           'for': '5m',
           expr: |||
             deriv((
@@ -120,7 +120,7 @@
 
         // Alert firing if an ingester is failing to read from Kafka.
         {
-          alert: $.alertName('IngesterFailsToProcessRecordsFromKafka'),
+          alert: $.alertName('IngesterKafkaProcessingFailed'),
           'for': '5m',
           expr: |||
             (
@@ -146,7 +146,7 @@
 
         // Alert firing is an ingester is reading from Kafka, there are buffered records to process, but processing is stuck.
         {
-          alert: $.alertName('IngesterStuckProcessingRecordsFromKafka'),
+          alert: $.alertName('IngesterKafkaProcessingStuck'),
           'for': '5m',
           expr: |||
             # Alert if the reader is not processing any records, but there buffered records to process in the Kafka client.
@@ -199,7 +199,7 @@
 
         // Alert firing if ingesters are receiving an unexpected high number of strongly consistent requests without an offset specified.
         {
-          alert: $.alertName('StrongConsistencyOffsetNotPropagatedToIngesters'),
+          alert: $.alertName('StrongConsistencyOffsetMissing'),
           'for': '5m',
           expr: |||
             sum by (%(alert_aggregation_labels)s) (rate(cortex_ingest_storage_strong_consistency_requests_total{component="partition-reader", with_offset="false"}[1m]))
@@ -217,10 +217,16 @@
 
         // Alert firing if the Kafka client produce buffer utilization is consistently high.
         {
-          alert: $.alertName('KafkaClientBufferedProduceBytesTooHigh'),
+          alert: $.alertName('KafkaClientProduceBufferHigh'),
           'for': '5m',
           expr: |||
-            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m]))
+            max by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                # New metric.
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_distribution{quantile="1.0"}[1m])
+                or
+                # Old metric.
+                max_over_time(cortex_ingest_storage_writer_buffered_produce_bytes{quantile="1.0"}[1m])
+            )
             /
             min by(%(alert_aggregation_labels)s, %(per_instance_label)s) (min_over_time(cortex_ingest_storage_writer_buffered_produce_bytes_limit[1m]))
             * 100 > 50
@@ -283,6 +289,24 @@
           },
         },
 
+        // Alert if block-builder-scheduler primary runloop doesn't seem to be running.
+        {
+          alert: $.alertName('BlockBuilderSchedulerNotRunning'),
+          'for': '30m',
+          // We are taking advantage of Prometheus' behavior where it will only report an increase of zero
+          // if the series was previously present. Thus we do not need to predicate the alert on presence of
+          // a block-builder-scheduler.
+          expr: |||
+            max by (%(alert_aggregation_labels)s, %(per_instance_label)s) (histogram_count(increase(cortex_blockbuilder_scheduler_schedule_update_seconds[5m])) == 0)
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s is not running.' % $._config,
+          },
+        },
+
         // Alert immediately if block-builder-scheduler detects an unexpected offset gap.
         {
           alert: $.alertName('BlockBuilderDataSkipped'),
@@ -290,10 +314,39 @@
             increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
           ||| % $._config,
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected skipped data.' % $._config,
+          },
+        },
+
+        // Alert immediately if block-builder-scheduler detects a persistently failing job.
+        {
+          alert: $.alertName('BlockBuilderPersistentJobFailure'),
+          expr: |||
+            increase(cortex_blockbuilder_scheduler_persistent_job_failures_total[1m]) > 0
+          ||| % $._config,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s has detected a persistently failing job.' % $._config,
+          },
+        },
+
+        // Alert if the number of ingesters consuming partitions is less than the number of active partitions.
+        {
+          alert: $.alertName('FewerIngestersConsumingThanActivePartitions'),
+          expr: |||
+            max(cortex_partition_ring_partitions{name="ingester-partitions", state="Active"}) by (%(alert_aggregation_labels)s) > count(count(cortex_ingest_storage_reader_last_consumed_offset{}) by (%(alert_aggregation_labels)s, partition)) by (%(alert_aggregation_labels)s)
+          ||| % $._config,
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s ingesters in %(alert_aggregation_variables)s have fewer ingesters consuming than active partitions.' % $._config,
           },
         },
       ],

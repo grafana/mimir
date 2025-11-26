@@ -38,6 +38,7 @@ func init() {
 }
 
 var tracer = otel.Tracer("pkg/streamingpromql")
+var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
@@ -48,6 +49,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 	if !opts.CommonOpts.EnableNegativeOffset {
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
+	}
+
+	if opts.CommonOpts.EnablePerStepStats {
+		return nil, errPerStepStatsNotSupported
 	}
 
 	if planner == nil {
@@ -74,8 +79,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		planning.NODE_TYPE_UNARY_EXPRESSION:      planning.NodeMaterializerFunc[*core.UnaryExpression](core.MaterializeUnaryExpression),
 		planning.NODE_TYPE_SUBQUERY:              planning.NodeMaterializerFunc[*core.Subquery](core.MaterializeSubquery),
 		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
+		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 
-		planning.NODE_TYPE_DUPLICATE: planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
+		planning.NODE_TYPE_DUPLICATE:                 planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
+		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION: planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
 	}
 
 	return &Engine{
@@ -84,7 +91,6 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
-		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
 		logger: opts.Logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -122,7 +128,6 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker QueryTracker
-	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -234,6 +239,10 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 
 	defer e.activeQueryTracker.Delete(queryID)
 
+	if opts.EnablePerStepStats() {
+		return nil, errPerStepStatsNotSupported
+	}
+
 	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
@@ -245,6 +254,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		Queryable:                queryable,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations.New(),
+		QueryStats:               types.NewQueryStats(),
 		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
 		Plan:                     plan,
@@ -258,7 +268,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		return nil, err
 	}
 
-	return NewEvaluator(op, operatorParams, nodeTimeRange, e, opts, plan.OriginalExpression)
+	return NewEvaluator(op, operatorParams, nodeTimeRange, e, plan.OriginalExpression)
 }
 
 type QueryLimitsProvider interface {

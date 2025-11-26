@@ -21,6 +21,7 @@ type InstantVectorRemoteExec struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
+	EagerLoad                bool
 
 	resp      InstantVectorRemoteExecutionResponse
 	finalized bool
@@ -29,10 +30,8 @@ type InstantVectorRemoteExec struct {
 var _ types.InstantVectorOperator = &InstantVectorRemoteExec{}
 
 func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	r.QueryStats = params.QueryStats
-
 	var err error
-	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.QueryStats.EnablePerStepStats)
+	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
 	return err
 }
 
@@ -62,4 +61,6 @@ func (r *InstantVectorRemoteExec) Close() {
 	if r.resp != nil {
 		r.resp.Close()
 	}
+
+	r.finalized = true // Don't try to finalize from a closed stream.
 }

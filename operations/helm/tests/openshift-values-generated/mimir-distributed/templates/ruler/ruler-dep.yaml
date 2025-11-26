@@ -43,17 +43,19 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ruler
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ruler"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
+            # Set the memory ballast to help with extensive CPU usage due to GC at ruler's start. This prevents the autoscaler
+            # from adding more replicas around rollouts, and reduces the effect of GC on a restart overall.
+            - "-mem-ballast-size-bytes=1073741824"
             - "-distributor.remote-timeout=10s"
           volumeMounts:
             - name: config
               mountPath: /etc/mimir
-            - name: license
-              mountPath: /license
             - name: runtime-config
               mountPath: /var/mimir
             - name: storage
@@ -106,9 +108,6 @@ spec:
             items:
               - key: "mimir.yaml"
                 path: "mimir.yaml"
-        - name: license
-          secret:
-            secretName: openshift-values-mimir-license
         - name: runtime-config
           configMap:
             name: openshift-values-mimir-runtime

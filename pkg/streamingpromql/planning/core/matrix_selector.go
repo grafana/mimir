@@ -37,8 +37,12 @@ func (m *MatrixSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_MATRIX_SELECTOR
 }
 
-func (m *MatrixSelector) Children() []planning.Node {
-	return nil
+func (m *MatrixSelector) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type MatrixSelector has no children, but attempted to get child at index %d", idx))
+}
+
+func (m *MatrixSelector) ChildCount() int {
+	return 0
 }
 
 func (m *MatrixSelector) SetChildren(children []planning.Node) error {
@@ -49,15 +53,28 @@ func (m *MatrixSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (m *MatrixSelector) EquivalentTo(other planning.Node) bool {
+func (m *MatrixSelector) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type MatrixSelector supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherMatrixSelector, ok := other.(*MatrixSelector)
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
-		m.Range == otherMatrixSelector.Range &&
-		m.SkipHistogramBuckets == otherMatrixSelector.SkipHistogramBuckets
+		m.Range == otherMatrixSelector.Range
+}
+
+func (m *MatrixSelector) MergeHints(other planning.Node) error {
+	otherMatrixSelector, ok := other.(*MatrixSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, m)
+	}
+
+	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+	return nil
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
@@ -78,7 +95,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -96,4 +113,8 @@ func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _
 
 func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
 	return m.GetExpressionPosition().ToPrometheusType()
+}
+
+func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
 }

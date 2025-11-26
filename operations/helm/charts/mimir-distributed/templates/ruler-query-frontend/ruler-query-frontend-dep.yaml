@@ -57,6 +57,7 @@ spec:
             - "-config.file=/etc/mimir/mimir.yaml"
             - "-query-frontend.cache-results=false"
             - "-query-frontend.scheduler-address={{ template "mimir.fullname" . }}-ruler-query-scheduler-headless.{{ .Release.Namespace }}.svc:{{ include "mimir.serverGrpcListenPort" .  }}"
+            - "-querier.ring.prefix=ruler-querier/"
             # Reduce the likelihood of queries hitting terminated query-frontends.
             - "-server.grpc.keepalive.max-connection-age=30s"
             - "-shutdown-delay=90s"
@@ -72,10 +73,6 @@ spec:
             {{- end }}
             - name: runtime-config
               mountPath: /var/{{ include "mimir.name" . }}
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: config
               mountPath: /etc/mimir
             - name: storage
@@ -118,14 +115,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ruler_query_frontend.terminationGracePeriodSeconds }}
+      {{- with .Values.ruler_query_frontend.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime

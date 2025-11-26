@@ -95,7 +95,7 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
@@ -107,7 +107,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -527,6 +527,134 @@ func TestPartitionReader_WaitReadConsistencyUntilLastProducedOffset_And_WaitRead
 					"cortex_ingest_storage_strong_consistency_failures_total"))
 			})
 		}
+	})
+}
+
+func TestPartitionReader_EnforceReadMaxDelay(t *testing.T) {
+	const (
+		topicName   = "test"
+		partitionID = 0
+	)
+
+	ctx := t.Context()
+
+	setup := func(t *testing.T, consumer RecordConsumer) (*PartitionReader, *kgo.Client) {
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+		reader := createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, consumer)
+
+		// In this test we produce records with an old timestamp. We need to set a very high write timeout
+		// otherwise records expire before the Kafka client even try to send them on the wire.
+		writeClient := newKafkaProduceClient(t, clusterAddr, withWriteTimeout(10*time.Minute))
+
+		return reader, writeClient
+	}
+
+	t.Run("should succeed if no record has been consumed yet", func(t *testing.T) {
+		t.Parallel()
+
+		consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+			return nil
+		})
+
+		reader, _ := setup(t, consumer)
+
+		assert.Zero(t, reader.highestConsumedTimestampBeforePartitionEnd.Load())
+		assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
+	})
+
+	t.Run("should succeed if the partition has been consumed until the end", func(t *testing.T) {
+		t.Parallel()
+
+		for _, recordTimestampAge := range []time.Duration{0, 5 * time.Minute} {
+			t.Run(fmt.Sprintf("record timestamp age: %s", recordTimestampAge.String()), func(t *testing.T) {
+				var (
+					consumedRecordsMx sync.Mutex
+					consumedRecords   []string
+				)
+
+				consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+
+					for r := range records {
+						consumedRecords = append(consumedRecords, string(r.Value))
+					}
+					return nil
+				})
+
+				reader, writeClient := setup(t, consumer)
+
+				// Produce records.
+				produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("record-1"), time.Now().Add(-recordTimestampAge))
+				produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, []byte("record-2"), time.Now().Add(-recordTimestampAge))
+				t.Log("produced 2 records")
+
+				// Wait until they've been consumed.
+				test.Poll(t, time.Second, []string{"record-1", "record-2"}, func() interface{} {
+					consumedRecordsMx.Lock()
+					defer consumedRecordsMx.Unlock()
+					return slices.Clone(consumedRecords)
+				})
+
+				// Wait until highest consumed timestamp is reset to the zero value because we reached the
+				// end of the partition.
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					return reader.highestConsumedTimestampBeforePartitionEnd.Load().IsZero()
+				})
+
+				assert.NoError(t, reader.EnforceReadMaxDelay(time.Minute))
+			})
+		}
+	})
+
+	t.Run("should fail if the partition has not been consumed until the end and the current consumption delay is above the max delay", func(t *testing.T) {
+		t.Parallel()
+
+		var (
+			firstRecordConsumed     = atomic.NewBool(false)
+			firstRecordConsumedWait = make(chan struct{})
+		)
+
+		// Mock the customer to stop processing records after the first one, to reproduce the case
+		// there are more records in Kafka and consumption hasn't reached the end of the partition.
+		consumer := consumerFunc(func(_ context.Context, records iter.Seq[*kgo.Record]) error {
+			if firstRecordConsumed.CompareAndSwap(false, true) {
+				close(firstRecordConsumedWait)
+				return nil
+			}
+
+			return errors.New("mocked error to stop consuming records")
+		})
+
+		reader, writeClient := setup(t, consumer)
+
+		// Produce a large number of records with an old timestamp (total 1GB of data to make sure records end up in
+		// different fetches).
+		payload, err := generateRandomBytes(1024 * 1024)
+		require.NoError(t, err)
+
+		const numRecords = 1024
+		for range numRecords {
+			produceRecordWithTimestamp(ctx, t, writeClient, topicName, partitionID, payload, time.Now().Add(-5*time.Minute))
+		}
+		t.Logf("produced %d records", numRecords)
+
+		// Wait until the first record is consumed.
+		select {
+		case <-firstRecordConsumedWait:
+		case <-t.Context().Done():
+			t.Fatal("test timed out")
+		}
+
+		// At this point we expect the max delay to not be honored. Due to async consumption it may not be immediate,
+		// so we wait until a timestamp is stored.
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			return !reader.highestConsumedTimestampBeforePartitionEnd.Load().IsZero()
+		})
+
+		require.NotZero(t, reader.highestConsumedTimestampBeforePartitionEnd.Load())
+		assert.Greater(t, time.Since(reader.highestConsumedTimestampBeforePartitionEnd.Load()), time.Minute)
+		assert.Error(t, reader.EnforceReadMaxDelay(time.Minute))
 	})
 }
 
@@ -2518,7 +2646,7 @@ func TestPartitionCommitter(t *testing.T) {
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
 
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -2584,7 +2712,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -2624,7 +2752,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -2645,15 +2773,84 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			"cortex_ingest_storage_reader_offset_commit_failures_total",
 			"cortex_ingest_storage_reader_last_committed_offset"))
 	})
+
+	t.Run("should call pre-commit notifier before committing", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+
+		committed := atomic.NewBool(false)
+
+		notifier := &testPreCommitNotifier{
+			onNotify: func() {
+				if committed.Load() {
+					t.Error("Commit happened before notification")
+				}
+			},
+		}
+
+		mockAdmin := &mockAdminClient{
+			onCommit: func() {
+				committed.Store(true)
+			},
+		}
+
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		require.NoError(t, committer.commit(context.Background(), 123))
+	})
+
+	t.Run("should proceed with commit even if notifier fails", func(t *testing.T) {
+		t.Parallel()
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		cfg := createTestKafkaConfig(clusterAddr, topicName)
+
+		committed := atomic.NewBool(false)
+
+		notifier := &testPreCommitNotifier{
+			err: errors.New("notification failed"),
+			onNotify: func() {
+				if committed.Load() {
+					t.Error("Commit happened before notification")
+				}
+			},
+		}
+
+		mockAdmin := &mockAdminClient{
+			onCommit: func() {
+				committed.Store(true)
+			},
+		}
+
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+
+		require.NoError(t, committer.commit(context.Background(), 123))
+	})
 }
 
-func newKafkaProduceClient(t *testing.T, addrs string) *kgo.Client {
+type writerTestCfgOpt func(cfg *KafkaConfig)
+
+func withWriteTimeout(timeout time.Duration) writerTestCfgOpt {
+	return func(cfg *KafkaConfig) {
+		cfg.WriteTimeout = timeout
+	}
+}
+
+func newKafkaProduceClient(t *testing.T, addrs string, opts ...writerTestCfgOpt) *kgo.Client {
 	// Configure it close to the writer client we use in the real producers, but
 	// do not configure the linger to keep tests running fast.
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.Address = addrs
 	cfg.disableLinger = true
+
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 
 	writeClient, err := NewKafkaWriterClient(cfg, defaultMaxInflightProduceRequests, testingLogger.WithT(t), prometheus.NewPedanticRegistry())
 
@@ -2689,6 +2886,16 @@ func produceRecordWithVersion(ctx context.Context, t *testing.T, writeClient *kg
 	return rec.Offset
 }
 
+func produceRecordWithTimestamp(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, content []byte, timestamp time.Time) int64 {
+	rec := createRecord(topicName, partitionID, content, 1)
+	rec.Timestamp = timestamp
+
+	produceResult := writeClient.ProduceSync(ctx, rec)
+	require.NoError(t, produceResult.FirstErr())
+
+	return rec.Offset
+}
+
 // produceRandomRecord produces a record with random data, in order to reduce the compression ratio and
 // get the compressed record byte size as close as possible to the uncompressed one.
 func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Client, topicName string, partitionID int32, dataSize int, dataPrefix string) {
@@ -2701,11 +2908,12 @@ func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Cli
 }
 
 type readerTestCfg struct {
-	kafka       KafkaConfig
-	partitionID int32
-	consumer    consumerFactory
-	registry    *prometheus.Registry
-	logger      log.Logger
+	kafka             KafkaConfig
+	partitionID       int32
+	consumer          consumerFactory
+	registry          *prometheus.Registry
+	logger            log.Logger
+	preCommitNotifier PreCommitNotifier
 }
 
 type readerTestCfgOpt func(cfg *readerTestCfg)
@@ -2745,6 +2953,12 @@ func withConsumeFromTimestampAtStartup(ts int64) func(cfg *readerTestCfg) {
 func withWaitStrongReadConsistencyTimeout(timeout time.Duration) func(cfg *readerTestCfg) {
 	return func(cfg *readerTestCfg) {
 		cfg.kafka.WaitStrongReadConsistencyTimeout = timeout
+	}
+}
+
+func withPreCommitNotifier(notifier PreCommitNotifier) func(cfg *readerTestCfg) {
+	return func(cfg *readerTestCfg) {
+		cfg.preCommitNotifier = notifier
 	}
 }
 
@@ -2804,7 +3018,12 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 	// Ensure the config is valid.
 	require.NoError(t, cfg.kafka.Validate())
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, cfg.logger, cfg.registry)
+	notifier := cfg.preCommitNotifier
+	if notifier == nil {
+		notifier = &NoOpPreCommitNotifier{}
+	}
+
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, notifier, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
@@ -2859,6 +3078,31 @@ func TestPartitionReader_Commit(t *testing.T) {
 		records, err := consumer.waitRecords(1, time.Second, 0)
 		assert.NoError(t, err)
 		assert.Equal(t, [][]byte{recordsSentAfterShutdown}, records)
+	})
+
+	t.Run("pre-commit notifier is called", func(t *testing.T) {
+		t.Parallel()
+		const commitInterval = 100 * time.Millisecond
+		ctx, cancel := context.WithCancelCause(context.Background())
+		t.Cleanup(func() { cancel(errors.New("test done")) })
+
+		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
+
+		baseConsumer := newTestConsumer(1)
+
+		notifier := &testPreCommitNotifier{}
+
+		createAndStartReader(ctx, t, clusterAddr, topicName, partitionID, baseConsumer,
+			withCommitInterval(commitInterval),
+			withPreCommitNotifier(notifier),
+		)
+
+		produceRecord(ctx, t, newKafkaProduceClient(t, clusterAddr), topicName, partitionID, []byte("1"))
+
+		_, err := baseConsumer.waitRecords(1, time.Second, 2*commitInterval)
+		require.NoError(t, err)
+
+		assert.Greater(t, notifier.notifyCount.Load(), int32(0))
 	})
 
 	t.Run("commit at shutdown", func(t *testing.T) {
@@ -3062,3 +3306,30 @@ func fetchSmallestRecordsBatchForEachOffset(t *testing.T, client *kgo.Client, to
 
 	return fetchResponseByRequestedOffset
 }
+
+type testPreCommitNotifier struct {
+	notifyCount atomic.Int32
+	err         error
+	onNotify    func()
+}
+
+func (t *testPreCommitNotifier) NotifyPreCommit(_ context.Context) error {
+	t.notifyCount.Inc()
+	if t.onNotify != nil {
+		t.onNotify()
+	}
+	return t.err
+}
+
+type mockAdminClient struct {
+	onCommit func()
+}
+
+func (m *mockAdminClient) CommitOffsets(ctx context.Context, group string, offsets kadm.Offsets) (kadm.OffsetResponses, error) {
+	if m.onCommit != nil {
+		m.onCommit()
+	}
+	return kadm.OffsetResponses{}, nil
+}
+
+func (m *mockAdminClient) Close() {}

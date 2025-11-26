@@ -73,8 +73,9 @@ func (s *Subquery) ChildrenTimeRange(timeRange types.QueryTimeRange) types.Query
 	}
 
 	// Find the first timestamp inside the subquery range that is aligned to the step.
-	alignedStart := stepMilliseconds * ((start - s.Offset.Milliseconds() - s.Range.Milliseconds()) / stepMilliseconds)
-	if alignedStart < start-s.Offset.Milliseconds()-s.Range.Milliseconds() {
+	// +1 because the query time range is inclusive of the start timestamp, but the subquery range is exclusive of the start.
+	alignedStart := stepMilliseconds * ((start - s.Offset.Milliseconds() - s.Range.Milliseconds() + 1) / stepMilliseconds)
+	if alignedStart < start-s.Offset.Milliseconds()-s.Range.Milliseconds()+1 {
 		alignedStart += stepMilliseconds
 	}
 
@@ -90,8 +91,16 @@ func (s *Subquery) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_SUBQUERY
 }
 
-func (s *Subquery) Children() []planning.Node {
-	return []planning.Node{s.Inner}
+func (s *Subquery) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type Subquery supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return s.Inner
+}
+
+func (s *Subquery) ChildCount() int {
+	return 1
 }
 
 func (s *Subquery) SetChildren(children []planning.Node) error {
@@ -104,15 +113,28 @@ func (s *Subquery) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (s *Subquery) EquivalentTo(other planning.Node) bool {
+func (s *Subquery) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type Subquery supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	s.Inner = node
+	return nil
+}
+
+func (s *Subquery) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherSubquery, ok := other.(*Subquery)
 
 	return ok &&
 		((s.Timestamp == nil && otherSubquery.Timestamp == nil) || (s.Timestamp != nil && otherSubquery.Timestamp != nil && s.Timestamp.Equal(*otherSubquery.Timestamp))) &&
 		s.Offset == otherSubquery.Offset &&
 		s.Range == otherSubquery.Range &&
-		s.Step == otherSubquery.Step &&
-		s.Inner.EquivalentTo(otherSubquery.Inner)
+		s.Step == otherSubquery.Step
+}
+
+func (s *Subquery) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
 }
 
 func (s *Subquery) ChildrenLabels() []string {
@@ -144,4 +166,8 @@ func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbac
 
 func (s *Subquery) ExpressionPosition() posrange.PositionRange {
 	return s.GetExpressionPosition().ToPrometheusType()
+}
+
+func (s *Subquery) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
 }

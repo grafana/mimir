@@ -34,7 +34,7 @@
           },
         },
         {
-          alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
+          alert: $.alertName('AlertmanagerStateMergeFailing'),
           expr: |||
             rate(cortex_alertmanager_partial_state_merges_failed_total[%s]) > 0
           ||| % $.alertRangeInterval(2),
@@ -84,7 +84,7 @@
             increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[%s]) > 0
           ||| % $.alertRangeInterval(1),
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: |||

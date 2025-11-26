@@ -76,6 +76,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: ingester
       terminationGracePeriodSeconds: 1200
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -90,6 +94,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -215,6 +220,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: ingester
       terminationGracePeriodSeconds: 1200
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -229,6 +238,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -354,6 +364,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: ingester
       terminationGracePeriodSeconds: 1200
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -368,6 +382,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"

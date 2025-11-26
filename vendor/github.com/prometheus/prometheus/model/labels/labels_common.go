@@ -25,6 +25,7 @@ import (
 
 const (
 	// MetricName is a special label name that represent a metric name.
+	//
 	// Deprecated: Use schema.Metadata structure and its methods.
 	MetricName = "__name__"
 
@@ -43,6 +44,15 @@ type Label struct {
 }
 
 func (ls Labels) String() string {
+	return ls.stringImpl(true)
+}
+
+// StringNoSpace is like String but does not add a space after commas.
+func (ls Labels) StringNoSpace() string {
+	return ls.stringImpl(false)
+}
+
+func (ls Labels) stringImpl(addSpace bool) string {
 	var bytea [1024]byte // On stack to avoid memory allocation while building the output.
 	b := bytes.NewBuffer(bytea[:0])
 
@@ -51,7 +61,9 @@ func (ls Labels) String() string {
 	ls.Range(func(l Label) {
 		if i > 0 {
 			b.WriteByte(',')
-			b.WriteByte(' ')
+			if addSpace {
+				b.WriteByte(' ')
+			}
 		}
 		if !model.LegacyValidation.IsValidLabelName(l.Name) {
 			b.Write(strconv.AppendQuote(b.AvailableBuffer(), l.Name))

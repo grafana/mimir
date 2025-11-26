@@ -8,8 +8,8 @@
           "subdir": "grafana-builder"
         }
       },
-      "version": "767befa8fb46a07be516dec2777d7d89909a529d",
-      "sum": "yxqWcq/N3E/a/XreeU6EuE6X7kYPnG0AspAQFKOjASo="
+      "version": "dc018f7871a01c2a4de741aa63cb88ec784ac3cb",
+      "sum": "d8iL8gbyQxspZJ8mDGsqHRR/JF3cu+YOaV50vao93Nw="
     },
     {
       "source": {
@@ -18,8 +18,18 @@
           "subdir": "mixin-utils"
         }
       },
-      "version": "767befa8fb46a07be516dec2777d7d89909a529d",
-      "sum": "SRElwa/XrKAN8aZA9zvdRUx8iebl2It7KNQ7VFvMcBA="
+      "version": "dc018f7871a01c2a4de741aa63cb88ec784ac3cb",
+      "sum": "VAik6Sh5MD5H1Km1gSIXG4rwQ4m4zyw7odP5TKu3bGo="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/rollout-operator.git",
+          "subdir": "operations/rollout-operator-mixin"
+        }
+      },
+      "version": "cba21e53975ebf1f4a16334717bee882fc2643da",
+      "sum": "9OrqagRZTX2KXoOIlMQnAPHWnX/y+S8EiR/vCl3ch5E="
     }
   ],
   "legacyImports": false

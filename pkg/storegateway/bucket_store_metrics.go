@@ -9,6 +9,8 @@
 package storegateway
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -24,6 +26,7 @@ type BucketStoreMetrics struct {
 	blockLoadFailures     prometheus.Counter
 	blockDrops            prometheus.Counter
 	blockDropFailures     prometheus.Counter
+	blockDiscoveryLatency prometheus.Histogram
 	seriesDataTouched     *prometheus.SummaryVec
 	seriesDataFetched     *prometheus.SummaryVec
 	seriesDataSizeTouched *prometheus.SummaryVec
@@ -73,6 +76,14 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.blockDropFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_bucket_store_block_drop_failures_total",
 		Help: "Total number of local blocks that failed to be dropped.",
+	})
+	m.blockDiscoveryLatency = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_bucket_store_block_discovery_latency_seconds",
+		Help: "Time elapsed from when a block was created, based on its ULID timestamp, to when it was discovered.",
+
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 	m.seriesDataTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_touched",
@@ -124,7 +135,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.cachedPostingsCompressionErrors.WithLabelValues(labelDecode)
 
 	m.cachedPostingsCompressionTimeSeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_bucket_store_cached_postings_compression_time_seconds",
+		Name: "cortex_bucket_store_cached_postings_compression_time_seconds_total",
 		Help: "Time spent compressing and decompressing postings when storing to / reading from postings cache.",
 	}, []string{"op"})
 	m.cachedPostingsCompressionTimeSeconds.WithLabelValues(labelEncode)

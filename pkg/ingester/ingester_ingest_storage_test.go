@@ -52,11 +52,11 @@ func TestIngester_Start(t *testing.T) {
 			reg                = prometheus.NewRegistry()
 			fetchRequestsCount = atomic.NewInt64(0)
 			series1            = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_1")),
+				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1")),
 				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
 			}}
 			series2 = mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{
-				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, "series_2")),
+				Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2")),
 				Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
 			}}
 		)
@@ -141,7 +141,8 @@ func TestIngester_Start(t *testing.T) {
 				ring.LEAVING,
 				time.Now(),
 				false,
-				time.Time{})
+				time.Time{},
+				nil)
 
 			return desc, true, nil
 		}))
@@ -278,7 +279,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				ctx     = context.Background()
 				series1 = mimirpb.PreallocTimeseries{
 					TimeSeries: &mimirpb.TimeSeries{
-						Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(labels.MetricName, metricName)),
+						Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, metricName)),
 						Samples: []mimirpb.Sample{{TimestampMs: 1000, Value: 10}},
 					},
 				}
@@ -348,7 +349,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 				}
 
 				close(queryIssued)
-				queryRes, _, err = runTestQuery(queryCtx, t, ingester, labels.MatchEqual, labels.MetricName, metricName)
+				queryRes, _, err = runTestQuery(queryCtx, t, ingester, labels.MatchEqual, model.MetricNameLabel, metricName)
 				require.NoError(t, err)
 			}()
 

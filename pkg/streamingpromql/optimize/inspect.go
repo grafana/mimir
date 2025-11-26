@@ -3,6 +3,7 @@
 package optimize
 
 import (
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
@@ -13,51 +14,38 @@ import (
 type InspectResult struct {
 	// HasSelectors indicates if any node in the tree has matrix or vector selectors.
 	HasSelectors bool
-	// IsRewritten indicates if the query has been rewritten by query sharding or by
+	// IsRewrittenByMiddleware indicates if the query has been rewritten by query sharding or by
 	// subquery spin-off middlewares.
-	IsRewritten bool
+	IsRewrittenByMiddleware bool
 }
 
 // Inspect traverses a tree of Nodes and returns a result that indicates if the query
 // can or should be modified by optimization passes. It is up to each optimization pass
 // to decide if this is needed or if the values in InspectResult matter to the pass.
 func Inspect(node planning.Node) InspectResult {
+	var res InspectResult
+	crawlPlanFromNode(node, &res)
+	return res
+}
+
+func crawlPlanFromNode(node planning.Node, res *InspectResult) {
 	switch e := node.(type) {
 	case *core.MatrixSelector:
-		return InspectResult{
-			HasSelectors: true,
-			IsRewritten:  isSpunOff(e.Matchers),
-		}
+		res.HasSelectors = true
+		res.IsRewrittenByMiddleware = res.IsRewrittenByMiddleware || isSpunOff(e.Matchers)
 	case *core.VectorSelector:
-		return InspectResult{
-			HasSelectors: true,
-			IsRewritten:  isSharded(e),
-		}
-	default:
-		anyChildContainsSelectors := false
+		res.HasSelectors = true
+		res.IsRewrittenByMiddleware = res.IsRewrittenByMiddleware || isSharded(e)
+	}
 
-		for _, c := range e.Children() {
-			res := Inspect(c)
-			if res.IsRewritten {
-				return InspectResult{
-					HasSelectors: true,
-					IsRewritten:  true,
-				}
-			}
-
-			anyChildContainsSelectors = anyChildContainsSelectors || res.HasSelectors
-		}
-
-		return InspectResult{
-			HasSelectors: anyChildContainsSelectors,
-			IsRewritten:  false,
-		}
+	for c := range planning.ChildrenIter(node) {
+		crawlPlanFromNode(c, res)
 	}
 }
 
 func isSharded(v *core.VectorSelector) bool {
 	for _, m := range v.Matchers {
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
 			return true
 		}
 	}
@@ -67,7 +55,7 @@ func isSharded(v *core.VectorSelector) bool {
 
 func isSpunOff(matchers []*core.LabelMatcher) bool {
 	for _, m := range matchers {
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
+		if m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
 			return true
 		}
 	}

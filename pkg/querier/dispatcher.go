@@ -7,6 +7,7 @@ package querier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,9 +36,13 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/propagation"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQueryRequest{})
+
+var errMQENotEnabled = errors.New("MQE is not enabled on this querier")
+var errZeroBatchSize = errors.New("requested batch size cannot be 0 for an instant vector result")
 
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
@@ -67,31 +73,26 @@ func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, 
 }
 
 func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, metadata propagation.Carrier, stream frontendv2pb.QueryResultStream) {
-	writer := &queryResponseWriter{
-		stream:         stream,
-		querierMetrics: d.querierMetrics,
-		serverMetrics:  d.serverMetrics,
-		logger:         d.logger,
-	}
-
+	logger := spanlogger.FromContext(ctx, d.logger)
+	writer := newQueryResponseWriter(stream, d.querierMetrics, d.serverMetrics, logger)
 	messageName, err := prototypes.AnyMessageName(req)
 	writer.Start(messageName, len(req.Value)) // We deliberately call this before checking the error below, so that we still get stats for malformed requests.
 	defer writer.Finish()
 
 	if err != nil {
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("malformed query request type %q: %v", req.TypeUrl, err))
+		writer.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("malformed query request type %q: %w", req.TypeUrl, err))
 		return
 	}
 
 	tenantID, err := user.ExtractOrgID(ctx)
 	if err != nil {
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		writer.WriteError(ctx, apierror.TypeBadData, err)
 		return
 	}
 
 	ctx, err = d.extractor.ExtractFromCarrier(ctx, metadata)
 	if err != nil {
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, err.Error())
+		writer.WriteError(ctx, apierror.TypeBadData, err)
 		return
 	}
 
@@ -102,7 +103,7 @@ func (d *Dispatcher) HandleProtobuf(ctx context.Context, req *prototypes.Any, me
 		d.evaluateQuery(ctx, req.Value, writer)
 
 	default:
-		writer.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("unknown query request type %q", req.TypeUrl))
+		writer.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("unknown query request type %q", req.TypeUrl))
 	}
 }
 
@@ -112,18 +113,20 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	span.SetAttributes(attribute.String("request.type", evaluateQueryRequestMessageName))
 
 	if d.engine == nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_NOT_FOUND, "MQE is not enabled on this querier")
+		resp.WriteError(ctx, apierror.TypeNotFound, errMQENotEnabled)
 		return
 	}
 
 	req := &querierpb.EvaluateQueryRequest{}
 	if err := proto.Unmarshal(body, req); err != nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_INTERNAL, fmt.Sprintf("could not read request body: %s", err.Error()))
+		resp.WriteError(ctx, apierror.TypeInternal, fmt.Errorf("could not read request body: %w", err))
 		return
 	}
 
+	d.querierMetrics.PlansReceived.WithLabelValues(req.Plan.Version.String()).Inc()
+
 	if len(req.Nodes) != 1 {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
 		return
 	}
 
@@ -131,14 +134,14 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 
 	plan, nodes, err := req.Plan.ToDecodedPlan(evaluationNode.NodeIndex)
 	if err != nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not decode plan: %s", err.Error()))
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not decode plan: %w", err))
 		return
 	}
 
-	opts := promql.NewPrometheusQueryOpts(req.EnablePerStepStats, 0)
+	opts := promql.NewPrometheusQueryOpts(false, 0)
 	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
 	if err != nil {
-		resp.WriteError(ctx, mimirpb.QUERY_ERROR_TYPE_BAD_DATA, fmt.Sprintf("could not materialize query: %s", err.Error()))
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
 		return
 	}
 
@@ -150,18 +153,19 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		startTime:          startTime,
 		timeNow:            d.timeNow,
 		originalExpression: req.Plan.OriginalExpression,
+		batchSize:          req.BatchSize,
 	}
 
 	if err := e.Evaluate(ctx, observer); err != nil {
-		resp.WriteError(ctx, errorTypeForError(err), err.Error())
+		resp.WriteError(ctx, apierror.TypeExec, err)
 		return
 	}
 
 	span.SetStatus(codes.Ok, "evaluation completed successfully")
 }
 
-func errorTypeForError(err error) mimirpb.QueryErrorType {
-	apiErrorType := apierror.TypeForError(err, apierror.TypeExec)
+func errorTypeForError(err error, fallback apierror.Type) mimirpb.QueryErrorType {
+	apiErrorType := apierror.TypeForError(err, fallback)
 	t, conversionErr := mimirpb.ErrorTypeFromAPIErrorType(apiErrorType)
 
 	// ErrorTypeFromAPIErrorType should never fail, as the APIError and QueryErrorType enums should remain
@@ -178,7 +182,7 @@ type queryResponseWriter struct {
 	stream         frontendv2pb.QueryResultStream
 	querierMetrics *RequestMetrics
 	serverMetrics  *server.Metrics
-	logger         log.Logger
+	logger         *spanlogger.SpanLogger
 
 	querierInflightRequests     prometheus.Gauge
 	serverInflightRequests      prometheus.Gauge
@@ -188,6 +192,15 @@ type queryResponseWriter struct {
 	routeName                   string
 	status                      string
 	tenantID                    string
+}
+
+func newQueryResponseWriter(stream frontendv2pb.QueryResultStream, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, logger *spanlogger.SpanLogger) *queryResponseWriter {
+	return &queryResponseWriter{
+		stream:         stream,
+		querierMetrics: querierMetrics,
+		serverMetrics:  serverMetrics,
+		logger:         logger,
+	}
 }
 
 // Start emits metrics at the start of request processing.
@@ -232,13 +245,31 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 		},
 	}
 
-	return w.write(ctx, resp)
+	if err := w.write(ctx, resp); err != nil {
+		if grpcutil.IsCanceled(err) {
+			level.Debug(w.logger).Log("msg", "failed to write message to query-frontend stream because the request was canceled", "err", err)
+		} else {
+			level.Warn(w.logger).Log("msg", "failed to write message to query-frontend stream", "err", err)
+		}
+
+		return err
+	}
+
+	return nil
 }
 
-func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryErrorType, msg string) {
-	span := trace.SpanFromContext(ctx)
-	span.SetStatus(codes.Error, msg)
-	span.AddEvent("returning error", trace.WithAttributes(attribute.String("type", typ.String()), attribute.String("msg", msg)))
+func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apierror.Type, err error) {
+	typ := errorTypeForError(err, fallbackType)
+	msg := err.Error()
+
+	if typ == mimirpb.QUERY_ERROR_TYPE_CANCELED {
+		level.Debug(w.logger).Log("msg", "returning cancelled status", "type", typ.String(), "msg", msg)
+	} else {
+		span := trace.SpanFromContext(ctx)
+		span.SetStatus(codes.Error, msg)
+
+		level.Warn(w.logger).Log("msg", "returning error", "type", typ.String(), "msg", msg)
+	}
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
 
@@ -252,7 +283,11 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, typ mimirpb.QueryE
 	}
 
 	if err := w.write(ctx, resp); err != nil {
-		level.Debug(w.logger).Log("msg", "failed to write error", "writeErr", err, "originalErr", msg)
+		if grpcutil.IsCanceled(err) {
+			level.Debug(w.logger).Log("msg", "failed to write error to query-frontend stream because the request was canceled", "writeErr", err, "originalErr", msg)
+		} else {
+			level.Warn(w.logger).Log("msg", "failed to write error to query-frontend stream", "writeErr", err, "originalErr", msg)
+		}
 	}
 }
 
@@ -267,8 +302,11 @@ func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.Quer
 type evaluationObserver struct {
 	w         *queryResponseWriter
 	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
+	batchSize uint64
 	startTime time.Time
 	timeNow   func() time.Time
+
+	currentInstantVectorSeriesDataBatch []types.InstantVectorSeriesData
 
 	originalExpression string
 }
@@ -296,28 +334,58 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 }
 
 func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
-	defer types.PutInstantVectorSeriesData(seriesData, evaluator.MemoryConsumptionTracker)
+	if o.batchSize == 0 {
+		return errZeroBatchSize
+	}
 
-	// TODO: batch up series to return, rather than sending each series one at a time?
+	if cap(o.currentInstantVectorSeriesDataBatch) == 0 {
+		o.currentInstantVectorSeriesDataBatch = make([]types.InstantVectorSeriesData, 0, o.batchSize)
+	}
 
-	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
+	o.currentInstantVectorSeriesDataBatch = append(o.currentInstantVectorSeriesDataBatch, seriesData)
+
+	if len(o.currentInstantVectorSeriesDataBatch) < int(o.batchSize) {
+		return nil
+	}
+
+	return o.sendInstantVectorSeriesDataBatch(ctx, evaluator)
+}
+
+func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Context, evaluator *streamingpromql.Evaluator) error {
+	series := make([]querierpb.InstantVectorSeriesData, 0, len(o.currentInstantVectorSeriesDataBatch))
+
+	for _, d := range o.currentInstantVectorSeriesDataBatch {
+		series = append(series, querierpb.InstantVectorSeriesData{
+			// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
+			// serializing the message and sending it before the deferred return to the pool occurs above.
+			Floats:     mimirpb.FromFPointsToSamples(d.Floats),
+			Histograms: mimirpb.FromHPointsToHistograms(d.Histograms),
+		})
+	}
+
+	msg := querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
 				NodeIndex: o.nodeIndex,
-
-				// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
-				// serializing the message and sending it before the deferred return to the pool occurs above.
-				Floats:     mimirpb.FromFPointsToSamples(seriesData.Floats),
-				Histograms: mimirpb.FromHPointsToHistograms(seriesData.Histograms),
+				Series:    series,
 			},
 		},
-	})
+	}
+
+	if err := o.w.Write(ctx, msg); err != nil {
+		return err
+	}
+
+	for _, d := range o.currentInstantVectorSeriesDataBatch {
+		types.PutInstantVectorSeriesData(d, evaluator.MemoryConsumptionTracker)
+	}
+
+	o.currentInstantVectorSeriesDataBatch = o.currentInstantVectorSeriesDataBatch[:0]
+	return nil
 }
 
 func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	// We do not need to return anything to the pool here: the ring buffers in stepData are reused for subsequent steps, or returned to the pool elsewhere if not needed.
-
-	// TODO: batch up series / steps to return, rather than sending each step one at a time?
 
 	floatsHead, floatsTail := stepData.Floats.UnsafePoints()
 	floats, cleanup, err := combineSlices(floatsHead, floatsTail, types.FPointSlicePool, evaluator.MemoryConsumptionTracker)
@@ -408,6 +476,13 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 }
 
 func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
+	if len(o.currentInstantVectorSeriesDataBatch) > 0 {
+		// Send any outstanding data now.
+		if err := o.sendInstantVectorSeriesDataBatch(ctx, evaluator); err != nil {
+			return err
+		}
+	}
+
 	var annos querierpb.Annotations
 
 	if annotations != nil {
@@ -418,34 +493,19 @@ func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator 
 		Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
 			EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
 				Annotations: annos,
-				Stats:       o.populateStats(ctx, evaluator, evaluationStats),
+				Stats:       o.populateStats(ctx, evaluationStats),
 			},
 		},
 	})
 }
 
-func (o *evaluationObserver) populateStats(ctx context.Context, evaluator *streamingpromql.Evaluator, evaluationStats *types.QueryStats) querier_stats.Stats {
+func (o *evaluationObserver) populateStats(ctx context.Context, evaluationStats *types.QueryStats) querier_stats.Stats {
 	querierStats := querier_stats.FromContext(ctx)
 	if querierStats == nil {
 		return querier_stats.Stats{}
 	}
 
 	querierStats.AddSamplesProcessed(uint64(evaluationStats.TotalSamples))
-
-	if evaluationStats.EnablePerStepStats {
-		stepStats := make([]querier_stats.StepStat, 0, len(evaluationStats.TotalSamplesPerStep))
-		timeRange := evaluator.GetQueryTimeRange()
-
-		for i, count := range evaluationStats.TotalSamplesPerStep {
-			stepStats = append(stepStats, querier_stats.StepStat{
-				Timestamp: timeRange.IndexTime(int64(i)),
-				Value:     count,
-			})
-		}
-
-		querierStats.AddSamplesProcessedPerStep(stepStats)
-	}
-
 	querierStats.AddWallTime(o.timeNow().Sub(o.startTime))
 
 	// Return a copy of the stats to avoid race conditions if anything is still modifying the

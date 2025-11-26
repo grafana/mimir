@@ -50,6 +50,8 @@ enum AggregationOperation {
   AGGREGATION_BOTTOMK = 10;
   AGGREGATION_COUNT_VALUES = 11;
   AGGREGATION_QUANTILE = 12;
+  AGGREGATION_LIMITK = 13;
+  AGGREGATION_LIMIT_RATIO = 14;
 }
 
 message BinaryExpressionDetails {
@@ -173,6 +175,8 @@ message SubqueryDetails {
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
 }
 
+message StepInvariantExpressionDetails {}
+
 message LabelMatcher {
   int64 type = 1 [(gogoproto.casttype) = "github.com/prometheus/prometheus/model/labels.MatchType"];
   string name = 2;
@@ -180,5 +184,8 @@ message LabelMatcher {
 }
 
 message DeduplicateAndMergeDetails {
-  bool runDelayedNameRemoval = 1;
+  reserved 1;
+  reserved "runDelayedNameRemoval";
 }
+
+message DropNameDetails {}

@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"net/textproto"
 	"net/url"
 	"slices"
 	"strconv"
@@ -36,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util/grpcencoding/s2"
 	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
+	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/version"
 )
@@ -173,13 +173,15 @@ func (q *RemoteQuerier) Read(ctx context.Context, query *prompb.Query, sortSerie
 	if err != nil {
 		return nil, err
 	}
-	req.Header = injectHTTPReadConsistencyHeader(ctx, http.Header{
-		textproto.CanonicalMIMEHeaderKey("Content-Encoding"):                 []string{"snappy"},
-		textproto.CanonicalMIMEHeaderKey("Accept-Encoding"):                  []string{"snappy"},
-		textproto.CanonicalMIMEHeaderKey("Content-Type"):                     []string{"application/x-protobuf"},
-		textproto.CanonicalMIMEHeaderKey("User-Agent"):                       []string{version.UserAgent()},
-		textproto.CanonicalMIMEHeaderKey("X-Prometheus-Remote-Read-Version"): []string{"0.1.0"},
-	})
+	req.Header.Set("Content-Encoding", "snappy")
+	req.Header.Set("Accept-Encoding", "snappy")
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("User-Agent", version.UserAgent())
+	req.Header.Set("X-Prometheus-Remote-Read-Version", "0.1.0")
+	consistencyInjector := &api.ConsistencyInjector{}
+	if err := consistencyInjector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(req.Header)); err != nil {
+		return nil, err
+	}
 
 	for _, mdw := range q.middlewares {
 		if err := mdw(ctx, req); err != nil {
@@ -296,12 +298,14 @@ func (q *RemoteQuerier) createRequest(ctx context.Context, query string, ts time
 	if err != nil {
 		return nil, err
 	}
-	req.Header = injectHTTPReadConsistencyHeader(ctx, http.Header{
-		textproto.CanonicalMIMEHeaderKey("User-Agent"):     []string{version.UserAgent()},
-		textproto.CanonicalMIMEHeaderKey("Content-Type"):   []string{mimeTypeFormPost},
-		textproto.CanonicalMIMEHeaderKey("Content-Length"): []string{strconv.Itoa(len(body))},
-		textproto.CanonicalMIMEHeaderKey("Accept"):         []string{acceptHeader},
-	})
+	req.Header.Set("User-Agent", version.UserAgent())
+	req.Header.Set("Content-Type", mimeTypeFormPost)
+	req.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	req.Header.Set("Accept", acceptHeader)
+	consistencyInjector := &api.ConsistencyInjector{}
+	if err := consistencyInjector.InjectToCarrier(ctx, propagation.HttpHeaderCarrier(req.Header)); err != nil {
+		return nil, err
+	}
 
 	for _, mdw := range q.middlewares {
 		if err := mdw(ctx, req); err != nil {
@@ -398,15 +402,4 @@ func WithOrgIDMiddleware(ctx context.Context, req *http.Request) error {
 	}
 	req.Header.Set(user.OrgIDHeaderName, orgID)
 	return nil
-}
-
-// injectHTTPReadConsistencyHeader reads the read consistency level from the ctx and, if defined, injects
-// it as an HTTP header to the list of input headers. This is required to propagate the read consistency
-// through the network when issuing an HTTPgRPC request.
-func injectHTTPReadConsistencyHeader(ctx context.Context, headers http.Header) http.Header {
-	if level, ok := api.ReadConsistencyLevelFromContext(ctx); ok {
-		headers[textproto.CanonicalMIMEHeaderKey(api.ReadConsistencyHeader)] = []string{level}
-	}
-
-	return headers
 }

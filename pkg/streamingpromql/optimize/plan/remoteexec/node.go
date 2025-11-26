@@ -3,6 +3,7 @@
 package remoteexec
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -33,8 +34,16 @@ func (r *RemoteExecution) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_REMOTE_EXEC
 }
 
-func (r *RemoteExecution) Children() []planning.Node {
-	return []planning.Node{r.Inner}
+func (r *RemoteExecution) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type RemoteExecution supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return r.Inner
+}
+
+func (r *RemoteExecution) ChildCount() int {
+	return 1
 }
 
 func (r *RemoteExecution) SetChildren(children []planning.Node) error {
@@ -47,13 +56,39 @@ func (r *RemoteExecution) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (r *RemoteExecution) EquivalentTo(other planning.Node) bool {
-	otherDuplicate, ok := other.(*RemoteExecution)
+func (r *RemoteExecution) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type RemoteExecution supports 1 child, but attempted to replace child at index %d", idx)
+	}
 
-	return ok && r.Inner.EquivalentTo(otherDuplicate.Inner)
+	r.Inner = node
+	return nil
+}
+
+func (r *RemoteExecution) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*RemoteExecution)
+
+	return ok
+}
+
+func (r *RemoteExecution) MergeHints(other planning.Node) error {
+	otherRemoteExec, ok := other.(*RemoteExecution)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, r)
+	}
+
+	if r.EagerLoad != otherRemoteExec.EagerLoad {
+		return errors.New("cannot merge RemoteExecution nodes with different eager load values")
+	}
+
+	return nil
 }
 
 func (r *RemoteExecution) Describe() string {
+	if r.EagerLoad {
+		return "eager load"
+	}
+
 	return ""
 }
 
@@ -75,6 +110,10 @@ func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, 
 
 func (r *RemoteExecution) ExpressionPosition() posrange.PositionRange {
 	return r.Inner.ExpressionPosition()
+}
+
+func (r *RemoteExecution) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
 }
 
 type RemoteExecutionMaterializer struct {
@@ -107,6 +146,8 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			QueryStats:               params.QueryStats,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	case parser.ValueTypeVector:
@@ -117,6 +158,8 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			QueryStats:               params.QueryStats,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	case parser.ValueTypeMatrix:
@@ -127,6 +170,8 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
+			QueryStats:               params.QueryStats,
+			EagerLoad:                r.EagerLoad,
 		}), nil
 
 	default:

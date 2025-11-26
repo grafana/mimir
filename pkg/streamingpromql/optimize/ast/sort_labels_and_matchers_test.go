@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package ast
+package ast_test
 
 import (
 	"context"
@@ -8,10 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
 func TestSortLabelsAndMatchers_AggregateAndBinaryExpressions(t *testing.T) {
@@ -56,15 +61,12 @@ func TestSortLabelsAndMatchers_AggregateAndBinaryExpressions(t *testing.T) {
 		"2":          "2",
 	}
 
-	sortLabelsAndMatchers := &SortLabelsAndMatchers{}
+	ctx := context.Background()
+	sortLabelsAndMatchers := &ast.SortLabelsAndMatchers{}
 
 	for input, expected := range testCases {
 		t.Run(input, func(t *testing.T) {
-			expr, err := parser.ParseExpr(input)
-			require.NoError(t, err)
-
-			result, err := sortLabelsAndMatchers.Apply(context.Background(), expr)
-			require.NoError(t, err)
+			result := runASTOptimizationPassWithoutMetrics(t, ctx, input, sortLabelsAndMatchers)
 			require.Equal(t, expected, result.String())
 		})
 	}
@@ -77,13 +79,13 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`metric{env="blah"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "env", "blah"),
 			},
 		},
@@ -91,27 +93,27 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "__env__", "blah"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`{__name__="metric", __env__="blah"}`: {
 			Name: "",
 			LabelMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "__env__", "blah"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`{__env__="blah", __name__="metric"}`: {
 			Name: "",
 			LabelMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "__env__", "blah"),
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 			},
 		},
 		`metric{env="blah", namespace="foo"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "env", "blah"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "foo"),
 			},
@@ -119,7 +121,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric{namespace="foo", env="blah"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "env", "blah"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "foo"),
 			},
@@ -129,7 +131,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric{namespace="1", namespace!="2", namespace=~"3", namespace!~"5", namespace!~"4", namespace=~"6", namespace!="7", namespace="8"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "1"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "8"),
 				labels.MustNewMatcher(labels.MatchNotEqual, "namespace", "2"),
@@ -145,7 +147,7 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		`metric{namespace="3", namespace="4", namespace="1", namespace="2"}`: {
 			Name: "metric",
 			LabelMatchers: []*labels.Matcher{
-				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "metric"),
+				labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "metric"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "1"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "2"),
 				labels.MustNewMatcher(labels.MatchEqual, "namespace", "3"),
@@ -154,14 +156,13 @@ func TestSortLabelsAndMatchers_Selectors(t *testing.T) {
 		},
 	}
 
-	sortLabelsAndMatchers := &SortLabelsAndMatchers{}
+	ctx := context.Background()
+	sortLabelsAndMatchers := &ast.SortLabelsAndMatchers{}
 
 	run := func(t *testing.T, input string, expected parser.Expr) {
-		expr, err := parser.ParseExpr(input)
-		require.NoError(t, err)
-
-		result, err := sortLabelsAndMatchers.Apply(context.Background(), expr)
-		require.NoError(t, err)
+		_, result := runASTOptimizationPass(t, ctx, input, func(prometheus.Registerer) optimize.ASTOptimizationPass {
+			return sortLabelsAndMatchers
+		})
 
 		// Compare the expected and result expressions formatted as strings for clearer diffs.
 		// Note that we can't use the VectorSelector and MatrixSelector String() methods because these

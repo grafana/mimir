@@ -229,7 +229,6 @@ func (node *Call) ShortString() string {
 }
 
 func (node *MatrixSelector) atOffset() (string, string) {
-	// Copy the Vector selector before changing the offset
 	vecSelector := node.VectorSelector.(*VectorSelector)
 	offset := ""
 	switch {
@@ -254,22 +253,28 @@ func (node *MatrixSelector) atOffset() (string, string) {
 
 func (node *MatrixSelector) String() string {
 	at, offset := node.atOffset()
-	// Copy the Vector selector before changing the offset
+	// Copy the Vector selector so we can modify it to not print @, offset, and other modifiers twice.
 	vecSelector := *node.VectorSelector.(*VectorSelector)
-	// Do not print the @ and offset twice.
-	offsetVal, offsetExprVal, atVal, preproc := vecSelector.OriginalOffset, vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd
+	anchored, smoothed := vecSelector.Anchored, vecSelector.Smoothed
 	vecSelector.OriginalOffset = 0
 	vecSelector.OriginalOffsetExpr = nil
 	vecSelector.Timestamp = nil
 	vecSelector.StartOrEnd = 0
+	vecSelector.Anchored = false
+	vecSelector.Smoothed = false
 
+	extendedAttribute := ""
+	switch {
+	case anchored:
+		extendedAttribute = " anchored"
+	case smoothed:
+		extendedAttribute = " smoothed"
+	}
 	rangeStr := model.Duration(node.Range).String()
 	if node.RangeExpr != nil {
 		rangeStr = node.RangeExpr.String()
 	}
-	str := fmt.Sprintf("%s[%s]%s%s", vecSelector.String(), rangeStr, at, offset)
-
-	vecSelector.OriginalOffset, vecSelector.OriginalOffsetExpr, vecSelector.Timestamp, vecSelector.StartOrEnd = offsetVal, offsetExprVal, atVal, preproc
+	str := fmt.Sprintf("%s[%s]%s%s%s", vecSelector.String(), rangeStr, extendedAttribute, at, offset)
 
 	return str
 }
@@ -378,6 +383,12 @@ func (node *VectorSelector) String() string {
 		b.WriteString(" @ start()")
 	case node.StartOrEnd == END:
 		b.WriteString(" @ end()")
+	}
+	switch {
+	case node.Anchored:
+		b.WriteString(" anchored")
+	case node.Smoothed:
+		b.WriteString(" smoothed")
 	}
 	switch {
 	case node.OriginalOffsetExpr != nil:

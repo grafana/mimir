@@ -64,6 +64,10 @@ spec:
             app.kubernetes.io/instance: test-ingress-values
             app.kubernetes.io/component: compactor
       terminationGracePeriodSeconds: 900
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "3"
       volumes:
         - name: config
           configMap:
@@ -78,6 +82,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"

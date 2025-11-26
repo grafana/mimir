@@ -7,15 +7,13 @@ title: Migrate from Thanos to Mimir using Thanos sidecar
 weight: 15
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Migrate from Thanos to Mimir using Thanos sidecar
 
 As an operator, you can migrate a deployment of Thanos to Grafana Mimir by using Thanos sidecar to move metrics over with a stepped workflow.
 
 ## Overview
 
-An option when migrating is to allow Thanos to query Mimir. This way you retain historical data via your existing Thanos deployment while pointing all of your Prometheus servers (or grafana agents and other metric sources) to Mimir.
+An option when migrating is to allow Thanos to query Mimir. This way you retain historical data via your existing Thanos deployment while pointing all of your Prometheus servers (or Grafana Alloy and other metric sources) to Mimir.
 
 The overall setup consists of setting up Thanos Sidecar alongside Mimir and then pointing Thanos Query to the sidecar as if it was just a normal sidecar.
 

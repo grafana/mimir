@@ -49,7 +49,7 @@ The mount options can be adjusted with `CONTAINER_MOUNT_OPTIONS`.)
 To run the unit tests suite:
 
 ```
-go test ./...
+make test
 ```
 
 To run the integration tests suite please see "[How integration tests work](./how-integration-tests-work.md)".

@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/go-metrics/compat"
+	metrics "github.com/hashicorp/go-metrics/compat"
 )
 
 type NodeStateType int
@@ -252,9 +252,8 @@ START:
 
 	// Determine if we should probe this node
 	skip := false
-	var node nodeState
+	node := *m.nodes[m.probeIndex]
 
-	node = *m.nodes[m.probeIndex]
 	if node.Name == m.config.Name {
 		skip = true
 	} else if node.DeadOrLeft() {
@@ -391,7 +390,7 @@ func (m *Memberlist) probeNode(node *nodeState) {
 	// Wait for response or round-trip-time.
 	select {
 	case v := <-ackCh:
-		if v.Complete == true {
+		if v.Complete {
 			if m.config.Ping != nil {
 				rtt := v.Timestamp.Sub(sent)
 				m.config.Ping.NotifyPingComplete(&node.Node, rtt, v.Payload)
@@ -401,7 +400,7 @@ func (m *Memberlist) probeNode(node *nodeState) {
 
 		// As an edge case, if we get a timeout, we need to re-enqueue it
 		// here to break out of the select below.
-		if v.Complete == false {
+		if !v.Complete {
 			ackCh <- v
 		}
 	case <-time.After(m.config.ProbeTimeout):
@@ -416,8 +415,10 @@ func (m *Memberlist) probeNode(node *nodeState) {
 
 HANDLE_REMOTE_FAILURE:
 	// Get some random live nodes.
+	// We intentionally don't use the node selector here for now, because we don't want to limit
+	// indirect probes. We may reconsider this in the future.
 	m.nodeLock.RLock()
-	kNodes := kRandomNodes(m.config.IndirectChecks, m.nodes, func(n *nodeState) bool {
+	kNodes := kRandomNodes(m.config.IndirectChecks, m.nodes, nil, func(n *nodeState) bool {
 		return n.Name == m.config.Name ||
 			n.Name == node.Name ||
 			n.State != StateAlive
@@ -484,11 +485,9 @@ HANDLE_REMOTE_FAILURE:
 	// channel here because we want to issue a warning below if that's the
 	// *only* way we hear back from the peer, so we have to let this time
 	// out first to allow the normal UDP-based acks to come in.
-	select {
-	case v := <-ackCh:
-		if v.Complete == true {
-			return
-		}
+	v := <-ackCh
+	if v.Complete {
+		return
 	}
 
 	// Finally, poll the fallback channel. The timeouts are set such that
@@ -552,7 +551,7 @@ func (m *Memberlist) Ping(node string, addr net.Addr) (time.Duration, error) {
 	// Wait for response or timeout.
 	select {
 	case v := <-ackCh:
-		if v.Complete == true {
+		if v.Complete {
 			return v.Timestamp.Sub(sent), nil
 		}
 	case <-time.After(m.config.ProbeTimeout):
@@ -595,7 +594,7 @@ func (m *Memberlist) gossip() {
 
 	// Get some random live, suspect, or recently dead nodes
 	m.nodeLock.RLock()
-	kNodes := kRandomNodes(m.config.GossipNodes, m.nodes, func(n *nodeState) bool {
+	kNodes := kRandomNodes(m.config.GossipNodes, m.nodes, m.config.NodeSelection, func(n *nodeState) bool {
 		if n.Name == m.config.Name {
 			return true
 		}
@@ -649,9 +648,15 @@ func (m *Memberlist) gossip() {
 // reasonably expensive as the entire state of this node is exchanged
 // with the other node.
 func (m *Memberlist) pushPull() {
-	// Get a random live node
+	// Determine how many nodes to push/pull with
+	numNodes := m.config.PushPullNodes
+	if numNodes <= 0 {
+		numNodes = 1
+	}
+
+	// Get random live nodes
 	m.nodeLock.RLock()
-	nodes := kRandomNodes(1, m.nodes, func(n *nodeState) bool {
+	nodes := kRandomNodes(numNodes, m.nodes, m.config.NodeSelection, func(n *nodeState) bool {
 		return n.Name == m.config.Name ||
 			n.State != StateAlive
 	})
@@ -661,11 +666,12 @@ func (m *Memberlist) pushPull() {
 	if len(nodes) == 0 {
 		return
 	}
-	node := nodes[0]
 
-	// Attempt a push pull
-	if err := m.pushPullNode(node.FullAddress(), false); err != nil {
-		m.logger.Printf("[ERR] memberlist: Push/Pull with %s failed: %s", node.Name, err)
+	// Attempt push/pull with each selected node
+	for _, node := range nodes {
+		if err := m.pushPullNode(node.FullAddress(), false); err != nil {
+			m.logger.Printf("[ERR] memberlist: Push/Pull with %s failed: %s", node.Name, err)
+		}
 	}
 }
 
@@ -1231,7 +1237,7 @@ func (m *Memberlist) suspectNode(s *suspect) {
 
 		m.nodeLock.Lock()
 		state, ok := m.nodeMap[s.Node]
-		timeout := ok && state.State == StateSuspect && state.StateChange == changeTime
+		timeout := ok && state.State == StateSuspect && state.StateChange.Equal(changeTime)
 		if timeout {
 			d = &dead{Incarnation: state.Incarnation, Node: state.Name, From: m.config.Name}
 		}

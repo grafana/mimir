@@ -5,14 +5,15 @@ package compactor
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"time"
 
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -156,7 +157,7 @@ func (job *Job) String() string {
 // elapsed for the input job. If the wait period has not elapsed, then this function
 // also returns the Meta of the first source block encountered for which the wait
 // period has not elapsed yet.
-func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, userBucket objstore.Bucket) (bool, *block.Meta, error) {
+func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duration, skipFutureMaxTime bool, userBucket objstore.Bucket) (bool, *block.Meta, error) {
 	if waitPeriod <= 0 {
 		return true, nil, nil
 	}
@@ -172,6 +173,10 @@ func jobWaitPeriodElapsed(ctx context.Context, job *Job, waitPeriod time.Duratio
 	for _, meta := range job.Metas() {
 		if meta.OutOfOrder || meta.Compaction.FromOutOfOrder() {
 			continue
+		}
+
+		if skipFutureMaxTime && timestamp.Time(meta.MaxTime).After(threshold) {
+			return false, meta, nil
 		}
 
 		attrs, err := block.GetMetaAttributes(ctx, meta, userBucket)

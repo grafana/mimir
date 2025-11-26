@@ -225,6 +225,78 @@ local filename = 'mimir-writes.json';
     )
     .addRowsIf(std.objectHasAll($._config.injectRows, 'postDistributor'), $._config.injectRows.postDistributor($))
     .addRowIf(
+      $._config.usage_tracker_enabled,
+      $.row('Usage Tracker (client)')
+      .addPanel(
+        local title = 'Client req / sec';
+        $.timeseriesPanel(title) +
+        $.qpsPanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.namespaceMatcher()) +
+        $.panelDescription(
+          title,
+          |||
+            The number of tracking requests sent through the Usage Tracker client, which are later multiplexed into individual requests to the Usage Tracker service instances.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Async req / sec';
+        $.timeseriesPanel(title) +
+        $.queryPanel([
+          |||
+            sum(rate(cortex_distributor_async_usage_tracker_calls_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
+          |||
+            sum(rate(cortex_distributor_async_usage_tracker_calls_with_rejected_series_total{%s}[$__rate_interval]))
+          ||| % [$.jobMatcher(std.set($._config.job_names.distributor + $._config.job_names.ruler))],
+        ], [
+          'Asynchronous requests / sec',
+          'Asynchronous requests / sec that rejected series that were ingested',
+        ]) + {
+          fieldConfig+: {
+            defaults+: { unit: 'reqps' },
+          },
+        } +
+        $.panelDescription(
+          title,
+          |||
+            The number of tracking requests sent asynchronously to the Usage Tracker client, while proceeding with the write request.
+            Some of those requests may have rejected the series that were actually ingested.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Client latency';
+        $.timeseriesPanel(title) +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler))) +
+        $.panelDescription(
+          title,
+          |||
+            Time taken to track all series in remote write request, eventually sharding the tracking among multiple usage-tracker instances.
+          |||
+        )
+      )
+      .addPanel(
+        $.timeseriesPanel('Client per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.clientRequestsPerSecondMetric, $.jobSelector(std.set($._config.job_names.distributor + $._config.job_names.ruler)))
+      )
+    )
+    .addRowIf(
+      $._config.usage_tracker_enabled,
+      $.row('Usage Tracker')
+      .addPanel(
+        $.timeseriesPanel('Requests / sec') +
+        $.qpsPanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.queries.usage_tracker.trackSeriesRequestsPerSecondSelector)
+      )
+      .addPanel(
+        $.timeseriesPanel('Latency') +
+        $.latencyRecordingRulePanelNativeHistogram($.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
+      )
+      .addPanel(
+        $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
+        $.perInstanceLatencyPanelNativeHistogram('0.99', $.queries.usage_tracker.requestsPerSecondMetric, $.jobSelector($._config.job_names.usage_tracker) + [utils.selector.re('route', $.queries.usage_tracker.trackSeriesRequestsPerSecondRouteRegex)])
+      )
+    )
+    .addRowIf(
       $._config.show_grpc_ingestion_panels,
       ($.row('Ingester'))
       .addPanel(
@@ -607,7 +679,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Upload latency') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="ingester",operation="upload"' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
           'Upload latency',
           |||

@@ -254,6 +254,7 @@ func (h *HistogramFunction) SeriesMetadata(ctx context.Context, matchers types.M
 		if h.enableDelayedNameRemoval {
 			labelsMetadata = types.SeriesMetadata{Labels: g.labels, DropName: true}
 		} else {
+			//nolint:staticcheck // SA1019: DropMetricName is deprecated.
 			labelsMetadata = types.SeriesMetadata{Labels: g.labels.DropMetricName()}
 		}
 		seriesMetadata, err = types.AppendSeriesMetadata(h.memoryConsumptionTracker, seriesMetadata, labelsMetadata)
@@ -494,7 +495,7 @@ func (h *HistogramFunction) Prepare(ctx context.Context, params *types.PreparePa
 }
 
 func (h *HistogramFunction) Finalize(ctx context.Context) error {
-	if err := h.inner.Finalize(ctx); err != nil {
+	if err := h.f.Finalize(ctx); err != nil {
 		return err
 	}
 
@@ -533,6 +534,7 @@ type histogramFunction interface {
 	ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64
 	ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations)
 	Prepare(ctx context.Context, params *types.PrepareParams) error
+	Finalize(ctx context.Context) error
 	Close()
 }
 
@@ -589,6 +591,10 @@ func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PreparePa
 	return q.phArg.Prepare(ctx, params)
 }
 
+func (q *histogramQuantile) Finalize(ctx context.Context) error {
+	return q.phArg.Finalize(ctx)
+}
+
 func (q *histogramQuantile) Close() {
 	q.phArg.Close()
 
@@ -641,6 +647,14 @@ func (f *histogramFraction) Prepare(ctx context.Context, params *types.PreparePa
 		return err
 	}
 	return f.upperArg.Prepare(ctx, params)
+}
+
+func (f *histogramFraction) Finalize(ctx context.Context) error {
+	err := f.lowerArg.Finalize(ctx)
+	if err != nil {
+		return err
+	}
+	return f.upperArg.Finalize(ctx)
 }
 
 func (f *histogramFraction) Close() {

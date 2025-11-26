@@ -72,14 +72,6 @@ ingester:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target # support for enterprise.legacyLabels
-                operator: In
-                values:
-                  - ingester
-          topologyKey: "kubernetes.io/hostname"
-
-        - labelSelector:
-            matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
                 values:
@@ -88,10 +80,6 @@ ingester:
 
   zoneAwareReplication:
     topologyKey: "kubernetes.io/hostname"
-
-admin-cache:
-  enabled: true
-  replicas: 3
 
 chunks-cache:
   enabled: true
@@ -164,14 +152,6 @@ store_gateway:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: target # support for enterprise.legacyLabels
-                operator: In
-                values:
-                  - store-gateway
-          topologyKey: "kubernetes.io/hostname"
-
-        - labelSelector:
-            matchExpressions:
               - key: app.kubernetes.io/component
                 operator: In
                 values:
@@ -179,25 +159,6 @@ store_gateway:
           topologyKey: "kubernetes.io/hostname"
   zoneAwareReplication:
     topologyKey: "kubernetes.io/hostname"
-
-nginx:
-  replicas: 1
-  resources:
-    limits:
-      memory: 731Mi
-    requests:
-      cpu: 1
-      memory: 512Mi
-
-# Grafana Enterprise Metrics feature related
-admin_api:
-  replicas: 1
-  resources:
-    limits:
-      memory: 128Mi
-    requests:
-      cpu: 100m
-      memory: 64Mi
 
 gateway:
   replicas: 1

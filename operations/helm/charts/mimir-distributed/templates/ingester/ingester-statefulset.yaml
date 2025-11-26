@@ -1,4 +1,4 @@
-{{- if and .Values.ingester.enabled (not .Values.federation_frontend.disableOtherComponents) }}
+{{- if .Values.ingester.enabled }}
 {{- $args := dict "ctx" . "component" "ingester" "memberlist" true -}}
 {{- $zonesMap := include "mimir.zoneAwareReplicationMap" $args | fromYaml -}}
 {{- range $zoneName, $rolloutZone := $zonesMap }}
@@ -45,7 +45,7 @@ spec:
     {{- else }}
     {{- toYaml .Values.ingester.statefulStrategy | nindent 4 }}
     {{- end }}
-  serviceName: {{ template "mimir.fullname" . }}-ingester{{- if not .Values.enterprise.legacyLabels -}}-headless{{- end -}}
+  serviceName: {{ template "mimir.fullname" . }}-ingester-headless
   {{- if .Values.ingester.persistentVolume.enabled }}
   {{- with .Values.ingester.persistentVolume }}
   volumeClaimTemplates:
@@ -114,14 +114,13 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.ingester.terminationGracePeriodSeconds }}
+      {{- with .Values.ingester.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" . | nindent 10 }}
-        {{- if .Values.enterprise.enabled }}
-        - name: license
-          secret:
-            secretName: {{ tpl .Values.license.secretName . }}
-        {{- end }}
         - name: runtime-config
           configMap:
             name: {{ template "mimir.fullname" . }}-runtime
@@ -180,10 +179,6 @@ spec:
               {{- if .Values.ingester.persistentVolume.subPath }}
               subPath: {{ .Values.ingester.persistentVolume.subPath }}
               {{- end }}
-            {{- if .Values.enterprise.enabled }}
-            - name: license
-              mountPath: /license
-            {{- end }}
             - name: active-queries
               mountPath: /active-query-tracker
           ports:

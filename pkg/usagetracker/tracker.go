@@ -85,12 +85,13 @@ type Config struct {
 	SnapshotCleanupIntervalJitter float64       `yaml:"snapshot_cleanup_interval_jitter"`
 
 	MaxEventsFetchSize int `yaml:"max_events_fetch_size"`
+
+	UserCloseToLimitPercentageThreshold int `yaml:"user_close_to_limit_percentage_threshold"`
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
-	f.BoolVar(&c.DoNotApplySeriesLimits, "usage-tracker.do-not-apply-series-limits", false, "If true, the usage-tracker service tracks all series and does not apply series limits.")
 	f.BoolVar(&c.UseGlobalSeriesLimits, "usage-tracker.use-global-series-limits", false, "If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.") // TODO: Remove in Mimir 3.0
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.")
@@ -124,6 +125,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.Float64Var(&c.SnapshotCleanupIntervalJitter, "usage-tracker.snapshot-cleanup-interval-jitter", 0.25, "Jitter to apply to the snapshot cleanup interval. This is a percentage of the snapshot cleanup interval, e.g. 0.1 means 10% jitter. It should be between 0 and 1.")
 
 	f.IntVar(&c.MaxEventsFetchSize, "usage-tracker.max-events-fetch-size", 100, "Maximum number of events to fetch from Kafka in a single request. This is used to limit the memory usage when fetching events.")
+
+	f.IntVar(&c.UserCloseToLimitPercentageThreshold, "usage-tracker.user-close-to-limit-percentage-threshold", 90, "Percentage of the local series limit after which a user is considered close to the limit. A user is close to the limit if their series count is above this percentage of their local limit.")
 }
 
 func (c *Config) ValidateForClient() error {
@@ -334,6 +337,7 @@ func (t *UsageTracker) start(ctx context.Context) error {
 	return nil
 }
 
+// run implements services.RunningFn.
 func (t *UsageTracker) run(ctx context.Context) error {
 	// TODO: check here if all partitions already have owners, in which case we should reconcilePartitions immediately (no need to wait).
 	// If there are no owners yet, this is a cold start, so wait until all instances have joined the ring to avoid re-shuffling.
@@ -349,10 +353,13 @@ func (t *UsageTracker) run(ctx context.Context) error {
 		select {
 		case <-time.After(t.cfg.PartitionReconcileInterval):
 			if err := t.reconcilePartitions(ctx); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
 				return err
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case err := <-t.subservicesWatcher.Chan():
 			return errors.Wrap(err, "usage-tracker dependency failed")
 		case <-snapshotsCleanupTickerChan:
@@ -467,13 +474,8 @@ losingPartitions:
 
 		logger := log.With(logger, "action", "adding", "partition", pid)
 
-		lim := limiter(t)
-		if t.cfg.DoNotApplySeriesLimits {
-			lim = &unlimitedSeriesLimiter{t}
-		}
-
 		level.Info(logger).Log("msg", "creating new partition handler")
-		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, lim, t.logger, t.registerer)
+		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create partition handler %d", pid)
 		}
@@ -661,17 +663,45 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	t.partitionsMtx.RLock()
-	p, ok := t.partitions[req.Partition]
-	t.partitionsMtx.RUnlock()
-	if !ok {
-		return nil, fmt.Errorf("partition handler %d not found", req.Partition)
+	partition := req.Partition
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
 	}
+
 	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
+}
+
+// GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
+	partition := req.Partition
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
+	}
+
+	userIDs := p.store.getSortedUsersCloseToLimit()
+	return &usagetrackerpb.GetUsersCloseToLimitResponse{
+		SortedUserIds: userIDs,
+		Partition:     partition,
+	}, nil
+}
+
+func (t *UsageTracker) runningPartition(partition int32) (*partitionHandler, error) {
+	t.partitionsMtx.RLock()
+	p, ok := t.partitions[partition]
+	t.partitionsMtx.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("partition handler %d not found", partition)
+	}
+	if p.State() != services.Running {
+		return nil, fmt.Errorf("partition handler %d is not running (state: %s)", partition, p.State())
+	}
+	return p, nil
 }
 
 // CheckReady performs a readiness check.
@@ -922,8 +952,3 @@ func (t *UsageTracker) cleanupSnapshots(ctx context.Context) error {
 	level.Info(t.logger).Log("msg", "snapshot files cleanup completed", "deleted", deleted, "duration", time.Since(t0))
 	return nil
 }
-
-// unlimitedSeriesLimiter always returns 0 as localSeriesLimit (unlimited).
-type unlimitedSeriesLimiter struct{ *UsageTracker }
-
-func (d unlimitedSeriesLimiter) localSeriesLimit(userID string) uint64 { return 0 }

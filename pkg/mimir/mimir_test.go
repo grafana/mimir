@@ -45,6 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/querier"
@@ -83,7 +84,9 @@ func TestMimir(t *testing.T) {
 					Store: "inmemory",
 				},
 				ReplicationFactor:      3,
-				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+				InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
+				HeartbeatPeriod:        5 * time.Second,
+				HeartbeatTimeout:       time.Minute,
 			},
 		},
 		BlocksStorage: tsdb.BlocksStorageConfig{
@@ -134,7 +137,7 @@ func TestMimir(t *testing.T) {
 			ShardingRing: alertmanager.RingConfig{
 				Common: util.CommonRingConfig{
 					KVStore:                kv.Config{Store: "memberlist"},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
 				},
 				ReplicationFactor: 1,
 			},
@@ -155,22 +158,33 @@ func TestMimir(t *testing.T) {
 					KVStore: kv.Config{
 						Store: "inmemory",
 					},
-					InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+					InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
 				},
 			},
 		},
 		StoreGateway: storegateway.Config{ShardingRing: storegateway.RingConfig{
 			KVStore:                kv.Config{Store: "memberlist"},
 			ReplicationFactor:      1,
-			InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+			InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
 		}},
 		Querier: querier.Config{
-			QueryEngine: "prometheus",
+			QueryEngine: "mimir",
+			Ring: querier.RingConfig{
+				Common: util.CommonRingConfig{
+					KVStore: kv.Config{
+						Store: "memberlist",
+					},
+					InstanceAddr: "test:8080",
+				},
+			},
 		},
 		Frontend: frontend.CombinedFrontendConfig{
-			QueryEngine: "prometheus",
+			QueryEngine: "mimir",
 			FrontendV2: v2.Config{
 				SchedulerAddress: "localhost",
+			},
+			QueryMiddleware: querymiddleware.Config{
+				InternalFunctionNames: querymiddleware.FunctionNamesSet{},
 			},
 		},
 		MemberlistKV: memberlist.KVConfig{

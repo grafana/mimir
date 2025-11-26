@@ -67,13 +67,13 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 			return annots, err
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
 		// OTel exponential histograms are always Int Histograms.
-		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}
@@ -86,16 +86,16 @@ func (c *PrometheusConverter) addExponentialHistogramDataPoints(ctx context.Cont
 func exponentialToNativeHistogram(p pmetric.ExponentialHistogramDataPoint, temporality pmetric.AggregationTemporality) (*histogram.Histogram, annotations.Annotations, error) {
 	var annots annotations.Annotations
 	scale := p.Scale()
-	if scale < -4 {
+	if scale < histogram.ExponentialSchemaMin {
 		return nil, annots,
 			fmt.Errorf("cannot convert exponential to native histogram."+
-				" Scale must be >= -4, was %d", scale)
+				" Scale must be >= %d, was %d", histogram.ExponentialSchemaMin, scale)
 	}
 
 	var scaleDown int32
-	if scale > 8 {
-		scaleDown = scale - 8
-		scale = 8
+	if scale > histogram.ExponentialSchemaMax {
+		scaleDown = scale - histogram.ExponentialSchemaMax
+		scale = histogram.ExponentialSchemaMax
 	}
 
 	pSpans, pDeltas := convertBucketsLayout(p.Positive().BucketCounts().AsRaw(), p.Positive().Offset(), scaleDown, true)
@@ -286,12 +286,12 @@ func (c *PrometheusConverter) addCustomBucketsHistogramDataPoints(ctx context.Co
 			return annots, err
 		}
 		ts := convertTimeStamp(pt.Timestamp())
-		ct := convertTimeStamp(pt.StartTimestamp())
+		st := convertTimeStamp(pt.StartTimestamp())
 		exemplars, err := c.getPromExemplars(ctx, pt.Exemplars())
 		if err != nil {
 			return annots, err
 		}
-		if err = c.appender.AppendHistogram(lbls, meta, ct, ts, hp, exemplars); err != nil {
+		if err = c.appender.AppendHistogram(lbls, meta, st, ts, hp, exemplars); err != nil {
 			return annots, err
 		}
 	}

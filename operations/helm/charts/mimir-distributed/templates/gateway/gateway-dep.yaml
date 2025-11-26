@@ -1,6 +1,5 @@
 {{- if (eq (include "mimir.gateway.isEnabled" .) "true") }}
 {{- with .Values.gateway }}
-{{- $isGEMGateway := $.Values.enterprise.enabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,9 +29,7 @@ spec:
         {{- include "mimir.podLabels" (dict "ctx" $ "component" "gateway") | nindent 8 }}
       annotations:
         {{- $annotations := include "mimir.podAnnotations" (dict "ctx" $ "component" "gateway") | fromYaml -}}
-        {{- if not $isGEMGateway -}}
         {{- $annotations = (dict "checksum/config" (include (print $.Template.BasePath "/gateway/nginx-configmap.yaml") $ | sha256sum )) | mergeOverwrite $annotations -}}
-        {{- end -}}
         {{- $annotations | toYaml | nindent 8 }}
       namespace: {{ $.Release.Namespace | quote }}
     spec:
@@ -53,43 +50,14 @@ spec:
       {{- end }}
       {{- end }}
       containers:
-        {{- if $isGEMGateway }}
-        - name: gateway
-          image: {{ include "mimir.imageReference" (dict "ctx" $ "component" "gateway") }}
-          imagePullPolicy: {{ $.Values.image.pullPolicy }}
-          args:
-            - "-target=gateway"
-            - "-config.expand-env=true"
-            - "-config.file=/etc/mimir/mimir.yaml"
-            {{- range $key, $value := .extraArgs }}
-            - -{{ $key }}={{ $value }}
-            {{- end }}
-          volumeMounts:
-            {{- with .extraVolumeMounts }}
-              {{ toYaml . | nindent 12}}
-            {{- end }}
-            {{- if $.Values.global.extraVolumeMounts }}
-              {{ toYaml $.Values.global.extraVolumeMounts | nindent 12 }}
-            {{- end }}
-            - name: config
-              mountPath: /etc/mimir
-            - name: runtime-config
-              mountPath: /var/{{ include "mimir.name" $ }}
-            - name: license
-              mountPath: /license
-            - name: tmp
-              mountPath: /data
-            - name: active-queries
-              mountPath: /active-query-tracker
-        {{- else }}
         - name: gateway
           image: {{ .nginx.image.registry }}/{{ .nginx.image.repository }}:{{ .nginx.image.tag }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
-          {{- with .extraArgs }}
+          {{- if .extraArgs }}
           args:
-            {{- range $key, $value := . }}
-            - "-{{ $key }} {{ $value }}"
-            {{- end }}
+          {{- range $key, $value := .extraArgs }}
+            - -{{ $key }}={{ $value }}
+          {{- end }}
           {{- end }}
           volumeMounts:
             {{- if .extraVolumeMounts }}
@@ -109,7 +77,6 @@ spec:
               mountPath: /tmp
             - name: docker-entrypoint-d-override
               mountPath: /docker-entrypoint.d
-          {{- end }}
           ports:
             - name: http-metrics
               containerPort: {{ include "mimir.serverHttpListenPort" $ }}
@@ -155,19 +122,21 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       terminationGracePeriodSeconds: {{ .terminationGracePeriodSeconds }}
+      {{- with .dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           {{- include "mimir.configVolume" $ | nindent 10 }}
         - name: runtime-config
           configMap:
             name: {{ include "mimir.fullname" $ }}-runtime
-        {{- if not $isGEMGateway }}
         - name: nginx-config
           configMap:
             name: {{ include "mimir.fullname" $ }}-gateway-nginx
         - name: docker-entrypoint-d-override
           emptyDir: {}
-        {{- end }}
         {{- if .nginx.basicAuth.enabled }}
         - name: auth
           secret:
@@ -175,15 +144,6 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
-        {{- if $isGEMGateway }}
-        - name: license
-          secret:
-            secretName: {{ tpl $.Values.license.secretName $ }}
-        - name: storage
-          emptyDir: {}
-        - name: active-queries
-          emptyDir: {}
-        {{- end -}}
         {{- if .extraVolumes }}
         {{- toYaml .extraVolumes | nindent 8 }}
         {{- end }}

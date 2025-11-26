@@ -23,6 +23,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.overrideProperty('custom.fillOpacity', 0),
     $.overrideProperty('custom.lineStyle', { fill: 'dash' }),
   ]),
+  local ommKilledStyle = $.overrideField('byRegexp', '/.+ - ommkilled/', [
+    $.overrideProperty('color', { mode: 'fixed', fixedColor: $._colors.failed }),
+    $.overrideProperty('custom.axisPlacement', 'hidden'),
+    $.overrideProperty('custom.drawStyle', 'points'),
+    $.overrideProperty('unit', 'none'),
+  ]),
 
   local sortAscending = 1,
   local sortNaturalAscending = 7,
@@ -233,20 +239,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
     },
   },
 
+  local qpsPanelColors = {
+    '1xx': $._colors.warning,
+    '2xx': $._colors.success,
+    '3xx': '#6ED0E0',
+    '4xx': '#EF843C',
+    '5xx': $._colors.failed,
+    OK: $._colors.success,
+    success: $._colors.success,
+    'error': $._colors.failed,
+    cancel: '#A9A9A9',
+    Canceled: '#A9A9A9',
+  },
+
   qpsPanel(selector, statusLabelName='status_code')::
     super.qpsPanel(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+    $.aliasColors(qpsPanelColors) + {
       fieldConfig+: {
         defaults+: { unit: 'reqps' },
       },
@@ -254,20 +262,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   qpsPanelNativeHistogram(selector, statusLabelName='status_code')::
     super.qpsPanelNativeHistogram(selector, statusLabelName) +
-    $.aliasColors({
-      '1xx': $._colors.warning,
-      '2xx': $._colors.success,
-      '3xx': '#6ED0E0',
-      '4xx': '#EF843C',
-      '5xx': $._colors.failed,
-      OK: $._colors.success,
-      Success: $._colors.success,
-      'error': $._colors.failed,
-      cancel: '#A9A9A9',
-      Canceled: '#A9A9A9',
-    }) + {
+    $.aliasColors(qpsPanelColors) + {
       fieldConfig+: {
-        defaults+: { unit: 'reqps' },
+        defaults+: {
+          unit: 'reqps',
+          custom+: {
+            fillOpacity: 100,
+          },
+        },
       },
     },
 
@@ -277,6 +279,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         defaults+: { unit: 'ms' },
       },
     },
+
+  ncLatencyPanel(metricName, selector, multiplier='1e3')::
+    super.latencyPanelNativeHistogram(metricName, selector, multiplier),
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
@@ -422,14 +427,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // The provided instanceName should be a regexp from $._config.instance_names, while
   // the provided containerName should be a regexp from $._config.container_names.
   containerMemoryWorkingSetPanel(instanceName, containerName)::
+    local queries =
+      $.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName)
+      + if $._config.deployment_type == 'kubernetes'
+      then [
+        $._config.resources_panel_queries[$._config.deployment_type].memory_oom_killed % {
+          instanceLabel: $._config.per_instance_label,
+          namespace: $.namespaceMatcher(),
+          instanceName: instanceName,
+          containerName: containerName,
+        },
+      ]
+      else [];
+    local legends =
+      $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)
+      + if $._config.deployment_type == 'kubernetes'
+      then ['{{%s}} - ommkilled' % $._config.per_instance_label]
+      else [];
+
     $.timeseriesPanel('Memory (workingset)') +
-    $.queryPanel($.resourceUtilizationAndLimitQueries('memory_working', instanceName, containerName), $.resourceUtilizationAndLimitLegend('{{%s}}' % $._config.per_instance_label)) +
+    $.queryPanel(queries, legends) +
     $.showAllTooltip +
     {
       fieldConfig+: {
         overrides+: [
           resourceRequestStyle,
           resourceLimitStyle,
+          ommKilledStyle,
         ],
         defaults+: {
           unit: 'bytes',
@@ -638,11 +662,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.timeseriesPanel('Requests / sec') +
-      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.qpsPanelNativeHistogram('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     )
     .addPanel(
       $.timeseriesPanel('Latency') +
-      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+      $.ncLatencyPanel('cortex_kv_request_duration_seconds', '%s, kv_name=~"%s"' % [$.jobMatcher($._config.job_names[jobName]), kvName])
     ),
 
   // The provided componentName should be the name of a component among the ones defined in $._config.autoscaling.
@@ -875,8 +899,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.autoScalingFailuresPanel(componentName)
     ),
 
-  ncSumCountRateStatPanel(metric, selectors, extra_selector, thresholds=[])::
-    local ncQuery = $.ncSumHistogramCountRate(metric, selectors, extra_selector);
+  // ncSumCountRateStatPanel builds a stat panel that shows the summed rate of a histogram counter.
+  ncSumCountRateStatPanel(metric, selectors, thresholds=[], unit='reqps', instant=true)::
+    local query = $.ncSumHistogramCountRate(metric, selectors);
+    local queries = [
+      utils.showClassicHistogramQuery(query),
+      utils.showNativeHistogramQuery(query),
+    ];
+    $.newStatPanel(
+      queries=queries,
+      legends=['', ''],
+      unit=unit,
+      thresholds=thresholds,
+      instant=instant,
+    ) + { options: { colorMode: 'none' } },
+
+  // ncSumCountRateRatioStatPanel builds a stat panel that shows ratios of histogram counter rates
+  // between two selector sets. Formatted as a percentage.
+  ncSumCountRateRatioStatPanel(metric, selectors, extra_selector, thresholds=[])::
+    local ncQuery = $.ncSumHistogramCountRateRatio(metric, selectors, extra_selector);
     local queries = [
       utils.showClassicHistogramQuery(ncQuery),
       utils.showNativeHistogramQuery(ncQuery),
@@ -1190,28 +1231,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Attributes') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="attributes"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Exists') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="exists"' % [$.namespaceMatcher(), component]),
     ),
     $.row('')
     .addPanel(
       $.timeseriesPanel('Latency of op: Get') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: GetRange') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="get_range"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Upload') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="upload"' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.timeseriesPanel('Latency of op: Delete') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
+      $.ncLatencyPanel('thanos_objstore_bucket_operation_duration_seconds', '%s,component="%s",operation="delete"' % [$.namespaceMatcher(), component]),
     ),
   ],
 
@@ -1555,13 +1596,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
   aliasColors(colors):: {
     // aliasColors was the configuration in (deprecated) graph panel; we hide it from JSON model.
     aliasColors:: super.aliasColors,
+    local newOverrides = [
+      $.overrideFieldByName(name, [
+        $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
+      ])
+      for name in std.objectFields(colors)
+    ],
+    local byName(o) =
+      assert o.matcher.id == 'byName' : 'invalid matcher with id %s' % o.matcher.id;
+      o.matcher.options,
     fieldConfig+: {
-      overrides+: [
-        $.overrideFieldByName(name, [
-          $.overrideProperty('color', { mode: 'fixed', fixedColor: colors[name] }),
-        ])
-        for name in std.objectFields(colors)
-      ],
+      // Take existing field overrides and extend them with the new ones. Let new ones take
+      // precedence over already existing ones.
+      overrides: std.sort(std.setDiff(if 'overrides' in super then super.overrides else [], newOverrides, byName) + newOverrides, byName),
     },
   },
 
@@ -1761,16 +1808,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.read_http_routes_regex])
+        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.querier_read_routes_regex])
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.read_http_routes_regex)])
+        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.read_http_routes_regex], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.querier_read_routes_regex], ''
         )
       ),
     ] +
@@ -1923,7 +1970,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ) +
     $.hiddenLegendQueryPanel(
       |||
-        histogram_quantile(1.0, sum by(pod) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
+        histogram_quantile(1.0, sum by(%(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds{%(job_matcher)s, phase="running"}[$__rate_interval])))
 
         # Add a filter to show only the outliers. We consider an ingester an outlier if its
         # 100th percentile latency is greater than the 200%% of the average 100th of the 10%%

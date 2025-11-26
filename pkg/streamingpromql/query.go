@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -52,42 +51,6 @@ type Query struct {
 func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 	logger, ctx := spanlogger.New(ctx, q.engine.logger, tracer, "Query.Exec")
 	defer logger.Finish()
-
-	defer func() {
-		msg := make([]interface{}, 0, 2*(3+4+2)) // 3 fields for all query types, plus worst case of 4 fields for range queries and 2 fields for a failed query
-
-		msg = append(msg,
-			"msg", "evaluation stats",
-			"estimatedPeakMemoryConsumption", int64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()),
-			"expr", q.originalExpression,
-		)
-
-		if q.topLevelQueryTimeRange.IsInstant {
-			msg = append(msg,
-				"queryType", "instant",
-				"time", q.topLevelQueryTimeRange.StartT,
-			)
-		} else {
-			msg = append(msg,
-				"queryType", "range",
-				"start", q.topLevelQueryTimeRange.StartT,
-				"end", q.topLevelQueryTimeRange.EndT,
-				"step", q.topLevelQueryTimeRange.IntervalMilliseconds,
-			)
-		}
-
-		if res.Err == nil {
-			msg = append(msg, "status", "success")
-		} else {
-			msg = append(msg,
-				"status", "failed",
-				"err", res.Err,
-			)
-		}
-
-		level.Info(logger).Log(msg...)
-		q.engine.estimatedPeakMemoryConsumption.Observe(float64(q.memoryConsumptionTracker.PeakEstimatedMemoryConsumptionBytes()))
-	}()
 
 	_, isInstantVectorOperator := q.evaluator.root.(types.InstantVectorOperator)
 	q.resultIsVector = q.topLevelQueryTimeRange.IsInstant && isInstantVectorOperator
@@ -337,11 +300,10 @@ func (q *Query) Stats() *promstats.Statistics {
 	return &promstats.Statistics{
 		Timers: promstats.NewQueryTimers(),
 		Samples: &promstats.QuerySamples{
-			TotalSamples:        q.stats.TotalSamples,
-			TotalSamplesPerStep: q.stats.TotalSamplesPerStep,
-			EnablePerStepStats:  q.stats.EnablePerStepStats,
-			Interval:            q.topLevelQueryTimeRange.IntervalMilliseconds,
-			StartTimestamp:      q.topLevelQueryTimeRange.StartT,
+			TotalSamples:       q.stats.TotalSamples,
+			EnablePerStepStats: false,
+			Interval:           q.topLevelQueryTimeRange.IntervalMilliseconds,
+			StartTimestamp:     q.topLevelQueryTimeRange.StartT,
 		},
 	}
 }

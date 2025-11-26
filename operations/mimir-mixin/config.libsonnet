@@ -25,6 +25,29 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
+    rollout_operator_dashboard_enable: true,
+    rollout_operator_dashboard_title: 'rollout-operator',
+    // This is the md5 of the rollout-operator dashboard name.
+    // This is set such that if the name / uid was to change an error will be raised in dashboard generation.
+    // This ensures that the uid is consistent and can be reliably linked to.
+    rollout_operator_dashboard_uid: 'f40e8042a6be71a98444a29b2c4e9421',
+    rollout_operator_container_name: 'rollout-operator',
+    rollout_operator_links: [
+      {
+        asDropdown: true,
+        icon: 'external link',
+        includeVars: true,
+        keepTime: true,
+        tags: $._config.tags,
+        targetBlank: false,
+        title: '%(product)s dashboards' % $._config,
+        type: 'dashboards',
+      },
+    ],
+    rollout_operator_instance_matcher:
+      if std.get($._config, 'helm', '') == '' then $._config.rollout_operator_container_name + '.*' else '(.*%g-)?%g.*' % [$._config.helm, $._config.rollout_operator_container_name],
+    rollout_operator_resources_panel_queries: self.resources_panel_queries.kubernetes,
+
     // This is mapping between a Mimir component name and the regular expression that should be used
     // to match its instance and container name. Mimir jsonnet and Helm guarantee that the instance name
     // (e.g. Kubernetes Deployment) and container name always match, so it's safe to use a shared mapping.
@@ -49,7 +72,7 @@
       store_gateway: 'store-gateway',
       overrides_exporter: 'overrides-exporter',
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
-
+      usage_tracker: 'usage-tracker',
       federation_frontend: 'federation-frontend',
     },
 
@@ -73,19 +96,20 @@
       block_builder: ['block-builder.*'],
       block_builder_scheduler: ['block-builder-scheduler.*'],
       distributor: ['distributor.*', 'cortex', 'mimir'],  // Match also per-zone distributor deployments.
-      querier: ['querier.*', 'cortex', 'mimir'],  // Match also custom querier deployments.
-      ruler_querier: ['ruler-querier.*'],  // Match also custom querier deployments.
-      ruler: ['ruler', 'cortex', 'mimir'],
-      query_frontend: ['query-frontend.*', 'cortex', 'mimir'],  // Match also custom query-frontend deployments.
-      ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom ruler-query-frontend deployments.
-      query_scheduler: ['query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom query-scheduler deployments.
-      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
+      querier: ['querier.*', 'cortex', 'mimir'],  // Match also custom and per-zone querier deployments.
+      ruler_querier: ['ruler-querier.*'],  // Match also custom and per-zone ruler-querier deployments.
+      ruler: ['ruler|ruler-zone-.*', 'cortex', 'mimir'],  // Match also per-zone ruler deployments.
+      query_frontend: ['query-frontend.*', 'cortex', 'mimir'],  // Match also custom and per-zone query-frontend deployments.
+      ruler_query_frontend: ['ruler-query-frontend.*'],  // Match also custom and per-zone ruler-query-frontend deployments.
+      query_scheduler: ['query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone query-scheduler deployments.
+      ruler_query_scheduler: ['ruler-query-scheduler.*'],  // Not part of single-binary. Match also custom and per-zone ruler-query-scheduler deployments.
+      ring_members: ['admin-api', 'alertmanager', 'compactor.*', 'distributor.*', 'ingester.*', 'query-frontend.*', 'querier.*', 'ruler|ruler-zone-.*', 'ruler-querier.*', 'store-gateway.*', 'cortex', 'mimir'],
       store_gateway: ['store-gateway.*', 'cortex', 'mimir'],  // Match also per-zone store-gateway deployments.
       gateway: ['gateway', 'cortex-gw.*'],  // Match also custom and per-zone gateway deployments.
       compactor: ['compactor.*', 'cortex', 'mimir'],  // Match also custom compactor deployments.
       alertmanager: ['alertmanager', 'cortex', 'mimir'],
       overrides_exporter: ['overrides-exporter'],
+      usage_tracker: ['usage-tracker.*'],
 
       // The following are job matchers used to select all components in the read path.
       main_read_path: std.uniq(std.sort(self.query_frontend + self.query_scheduler + self.querier)),
@@ -94,7 +118,7 @@
       // The following are job matchers used to select all components in a given "path".
       write: ['distributor.*', 'ingester.*'],
       read: ['query-frontend.*', 'querier.*', 'ruler-query-frontend.*', 'ruler-querier.*'],
-      backend: ['ruler', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter'],
+      backend: ['ruler|ruler-zone-.*', 'query-scheduler.*', 'ruler-query-scheduler.*', 'store-gateway.*', 'compactor.*', 'alertmanager', 'overrides-exporter'],
 
       federation_frontend: ['federation-frontend.*'],  // Match federation-frontend deployments
     },
@@ -125,6 +149,7 @@
       store_gateway: instanceMatcher(componentNameRegexp.store_gateway),
       overrides_exporter: instanceMatcher(componentNameRegexp.overrides_exporter),
       gateway: instanceMatcher(componentNameRegexp.gateway),
+      usage_tracker: instanceMatcher(componentNameRegexp.usage_tracker),
 
       // The following are instance matchers used to select all components in a given "path".
       local componentsGroupMatcher = function(components)
@@ -157,6 +182,7 @@
       alertmanager: componentNameRegexp.alertmanager,
       alertmanager_im: componentNameRegexp.alertmanager_im,
       compactor: componentNameRegexp.compactor,
+      usage_tracker: componentNameRegexp.usage_tracker,
 
       // The following are container matchers used to select all components in a given "path".
       local componentsGroupMatcher = function(components) std.join('|', std.map(function(name) componentNameRegexp[name], components)),
@@ -172,6 +198,7 @@
     per_cluster_label: 'cluster',
     per_namespace_label: 'namespace',
     per_job_label: 'job',
+    per_query_path_label: 'container',  // Used to differentiate between queriers, query-frontends and query-schedulers in different query paths (eg. queriers in ordinary query path and queriers in dedicated ruler path).
     per_component_loki_label: 'name',
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
@@ -204,8 +231,15 @@
     // The alertname is used to create a hyperlink to the runbooks. Currenlty we only have a single set of runbooks, so different products (e.g. GEM) should still use the same runbooks.
     alert_product: $._config.product,
 
+    // The Deployment or StatefulSet names (eg. 'querier' or 'ingester-zone-a') to exclude from the MimirRolloutStuck alert.
+    rollout_stuck_alert_ignore_deployments: [],
+    rollout_stuck_alert_ignore_statefulsets: [],
+
     // Whether alerts for experimental ingest storage are enabled.
     ingest_storage_enabled: true,
+
+    // Whether the experimental usage tracker is enabled.
+    usage_tracker_enabled: false,
 
     cortex_p99_latency_threshold_seconds: 2.5,
 
@@ -535,6 +569,14 @@
         memory_rss_limit: 'min(container_spec_memory_limit_bytes{%(namespace)s,container=~"%(containerName)s"} > 0)',
         memory_rss_request: 'min(kube_pod_container_resource_requests{%(namespace)s,container=~"%(containerName)s",resource="memory"})',
         memory_go_heap_usage: 'sum by(%(instanceLabel)s) (go_memstats_heap_inuse_bytes{%(namespace)s,container=~"%(containerName)s"})',
+        memory_oom_killed: |||
+          group by (%(instanceLabel)s, reason) (
+            kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"}
+            unless
+            # Note, this leg offsets by the "$__interval" to find the first occurrence of OOMKilled in the gauge.
+            (kube_pod_container_status_last_terminated_reason{%(namespace)s,container=~"%(containerName)s",reason="OOMKilled"} offset $__interval == bool 0)
+          ) != 0
+        |||,
         network_receive_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_receive_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         network_transmit_bytes: 'sum by(%(instanceLabel)s) (rate(container_network_transmit_bytes_total{%(namespaceMatcher)s,%(instanceLabel)s=~"%(instanceName)s"}[$__rate_interval]))',
         disk_writes:
@@ -638,23 +680,23 @@
     // of other regexps we don't break existing capture groups.
     autoscaling_hpa_prefix: 'keda-hpa-(?:mimir-)?',
 
+    // The configured hpa_name can be a regexp to support multiple deployments (e.g. multi-zone deployments).
     autoscaling: {
       query_frontend: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'query-frontend',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'query-frontend.*',
       },
       ruler_query_frontend: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-query-frontend',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-query-frontend.*',
       },
       querier: {
         enabled: false,
-        // hpa_name can be a regexp to support multiple querier deployments, like "keda-hpa-querier(-burst(-backup)?)?".
-        hpa_name: $._config.autoscaling_hpa_prefix + 'querier',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'querier.*',
       },
       ruler_querier: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler-querier.*',
       },
       store_gateway: {
         enabled: false,
@@ -662,11 +704,11 @@
       },
       distributor: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'distributor',
+        hpa_name: $._config.autoscaling_hpa_prefix + 'distributor.*',
       },
       ruler: {
         enabled: false,
-        hpa_name: $._config.autoscaling_hpa_prefix + 'ruler',
+        hpa_name: $._config.autoscaling_hpa_prefix + '(?:ruler|ruler-zone-.*)',
       },
       gateway: {
         enabled: false,
@@ -734,6 +776,6 @@
     show_grpc_ingestion_panels: true,
 
     // Show panels that use queries for "ingest storage" ingestion (distributor -> Kafka, Kafka -> ingesters)
-    show_ingest_storage_panels: false,
+    show_ingest_storage_panels: true,
   },
 }

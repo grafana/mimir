@@ -3,8 +3,10 @@
 package planning
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,9 +18,28 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+type QueryPlanVersion uint64
+
+func (v QueryPlanVersion) String() string {
+	return strconv.FormatUint(uint64(v), 10)
+}
+
+var MaximumSupportedQueryPlanVersion = QueryPlanV2
+
+const QueryPlanVersionZero = QueryPlanVersion(0)
+
+// This version introduces:
+// 1. DropName node
+// 2. Step invariant expression node
+const QueryPlanV1 = QueryPlanVersion(1)
+
+// This version introduces support for limitk and limit_ratio PromQL aggregates
+const QueryPlanV2 = QueryPlanVersion(2)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
@@ -26,6 +47,12 @@ type QueryPlan struct {
 
 	OriginalExpression       string
 	EnableDelayedNameRemoval bool
+
+	// The version of this query plan.
+	//
+	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
+	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
+	Version QueryPlanVersion
 }
 
 // Node represents a node in the query plan graph.
@@ -36,28 +63,43 @@ type Node interface {
 	// NodeType returns the identifier of this node that should be used during serialization.
 	NodeType() NodeType
 
-	// Children returns a slice of all children of this node, if any.
+	// Child returns the child at index idx.
 	//
-	// Modifying the returned slice has no effect, however, modifying the elements of the returned slice
-	// modifies the corresponding child of this node.
+	// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
 	//
-	// eg. Children()[0] = nil has no effect
-	//
-	// eg. Children()[0].DoStuff = true modifies the first child of this node
-	Children() []Node
+	// Child panics if idx is out of range. The number of children can be determined by calling ChildCount.
+	Child(idx int) Node
+
+	// ChildCount returns the number of children of this node.
+	ChildCount() int
 
 	// SetChildren replaces the children of this node with the provided nodes.
 	//
 	// SetChildren will return an error if an unsupported number of children is provided.
-	//
-	// Calling SetChildren(Children()) is a no-op.
 	SetChildren(children []Node) error
 
-	// EquivalentTo returns true if other represents the same operation as this node.
+	// ReplaceChild replaces the child at index idx with the provided node.
+	//
+	// idx is zero-based and counts in the same order as ChildrenIter and SetChildren.
+	//
+	// ReplaceChild will return an error if idx is out of range.
+	ReplaceChild(idx int, child Node) error
+
+	// EquivalentToIgnoringHintsAndChildren returns true if other represents the same operation as this node.
+	//
+	// The equivalence of child nodes should not be considered when determining equivalence
 	//
 	// Information such as the position of the corresponding expression in the original query string
-	// should be ignored.
-	EquivalentTo(other Node) bool
+	// or hints should not be considered when determining equivalence.
+	EquivalentToIgnoringHintsAndChildren(other Node) bool
+
+	// MergeHints merges any hints from other into this node.
+	//
+	// It does not apply this recursively to its children.
+	//
+	// Calling MergeHints with two nodes that are different types or not equivalent may result
+	// in an error or undefined behavior.
+	MergeHints(other Node) error
 
 	// Describe returns a human-readable representation of this node.
 	//
@@ -93,7 +135,25 @@ type Node interface {
 	// expression.
 	ExpressionPosition() posrange.PositionRange
 
+	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
+	MinimumRequiredPlanVersion() QueryPlanVersion
+
 	// FIXME: implementations for many of the above methods can be generated automatically
+}
+
+// ChildrenIter returns an iterator over all children of n.
+//
+// Children are returned in the same order as they are provided to SetChildren and ReplaceChild.
+func ChildrenIter(n Node) func(func(Node) bool) {
+	return func(yield func(Node) bool) {
+		count := n.ChildCount()
+
+		for idx := range count {
+			if !yield(n.Child(idx)) {
+				return
+			}
+		}
+	}
 }
 
 type QueriedTimeRange struct {
@@ -146,6 +206,7 @@ type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
+	QueryStats               *types.QueryStats
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
 	Plan                     *QueryPlan
@@ -166,9 +227,27 @@ func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool)
 		RootNode:                 rootNode,
 		OriginalExpression:       p.OriginalExpression,
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		Version:                  p.Version,
 	}
 
 	return encoded, nil
+}
+
+// DeterminePlanVersion will set the plan Version to the largest MinimumRequiredPlanVersion found within the plan nodes.
+func (p *QueryPlan) DeterminePlanVersion() error {
+	if p.Root == nil {
+		return errors.New("query plan version can not be determined without a root node")
+	}
+	p.Version = p.maxMinimumRequiredPlanVersion(p.Root)
+	return nil
+}
+
+func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) QueryPlanVersion {
+	maxVersion := node.MinimumRequiredPlanVersion()
+	for child := range ChildrenIter(node) {
+		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
+	}
+	return maxVersion
 }
 
 func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
@@ -205,13 +284,14 @@ func newQueryPlanEncoder(includeDescriptions bool, includeDetails bool) *queryPl
 
 func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 	encoded := &EncodedNode{}
-	children := n.Children()
+	childCount := n.ChildCount()
 
-	if len(children) > 0 {
-		childIndices := make([]int64, 0, len(children))
+	if childCount > 0 {
+		childIndices := make([]int64, 0, childCount)
 
 		// Check all children have been encoded already.
-		for _, child := range children {
+		for childIdx := range childCount {
+			child := n.Child(childIdx)
 			idx, haveWritten := e.nodesToIndex[child]
 
 			if !haveWritten {
@@ -261,8 +341,12 @@ func NodeTypeName(n Node) string {
 // ToDecodedPlan converts this encoded plan to its decoded form.
 // It returns references to the specified nodeIndices.
 func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []Node, error) {
+	if p.Version > MaximumSupportedQueryPlanVersion {
+		return nil, nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
+	}
+
 	if p.RootNode < 0 || p.RootNode >= int64(len(p.Nodes)) {
-		return nil, nil, fmt.Errorf("root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
+		return nil, nil, apierror.Newf(apierror.TypeBadData, "root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
@@ -286,6 +370,7 @@ func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []No
 		Root:                     root,
 		OriginalExpression:       p.OriginalExpression,
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		Version:                  p.Version,
 	}, nodes, nil
 }
 
@@ -392,7 +477,7 @@ func (p *planPrinter) identifyRepeatedNodes(n Node) {
 		return
 	}
 
-	for _, child := range n.Children() {
+	for child := range ChildrenIter(n) {
 		p.identifyRepeatedNodes(child)
 	}
 }
@@ -430,9 +515,8 @@ func (p *planPrinter) printNode(n Node, indent int, label string) {
 	}
 
 	p.builder.WriteRune('\n')
-	childLabels := n.ChildrenLabels()
 
-	for childIdx, child := range n.Children() {
-		p.printNode(child, indent+1, childLabels[childIdx])
+	for childIdx, label := range n.ChildrenLabels() {
+		p.printNode(n.Child(childIdx), indent+1, label)
 	}
 }

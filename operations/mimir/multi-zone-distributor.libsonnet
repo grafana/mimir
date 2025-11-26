@@ -4,9 +4,7 @@
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_distributor_enabled: !$._config.multi_zone_distributor_enabled,
     multi_zone_distributor_enabled: false,
-    multi_zone_availability_zones: [],
     multi_zone_distributor_replicas: std.length($._config.multi_zone_availability_zones),
-    multi_zone_distributor_schedule_toleration: $._config.multi_zone_schedule_toleration,
   },
 
   local container = $.core.v1.container,
@@ -18,6 +16,11 @@
   local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
   local isZoneCEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  local isAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
+  local isAutoscalingSingleZoneEnabled = isSingleZoneEnabled && isAutoscalingEnabled,
+  local isAutoscalingZoneAEnabled = isZoneAEnabled && isAutoscalingEnabled,
+  local isAutoscalingZoneBEnabled = isZoneBEnabled && isAutoscalingEnabled,
+  local isAutoscalingZoneCEnabled = isZoneCEnabled && isAutoscalingEnabled,
 
   distributor_zone_a_args:: $.distributor_args,
   distributor_zone_b_args:: $.distributor_args,
@@ -41,13 +44,16 @@
     $.newDistributorZoneContainer('c', $.distributor_zone_c_args, $.distributor_zone_c_env_map),
 
   distributor_zone_a_deployment: if !isZoneAEnabled then null else
-    $.newDistributorZoneDeployment('a', $.distributor_zone_a_container, $.distributor_zone_a_node_affinity_matchers),
+    $.newDistributorZoneDeployment('a', $.distributor_zone_a_container, $.distributor_zone_a_node_affinity_matchers) +
+    (if !isAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec),
 
   distributor_zone_b_deployment: if !isZoneBEnabled then null else
-    $.newDistributorZoneDeployment('b', $.distributor_zone_b_container, $.distributor_zone_b_node_affinity_matchers),
+    $.newDistributorZoneDeployment('b', $.distributor_zone_b_container, $.distributor_zone_b_node_affinity_matchers) +
+    (if !isAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec),
 
   distributor_zone_c_deployment: if !isZoneCEnabled then null else
-    $.newDistributorZoneDeployment('c', $.distributor_zone_c_container, $.distributor_zone_c_node_affinity_matchers),
+    $.newDistributorZoneDeployment('c', $.distributor_zone_c_container, $.distributor_zone_c_node_affinity_matchers) +
+    (if !isAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec),
 
   distributor_zone_a_service: if !isZoneAEnabled then null else
     $.util.serviceFor($.distributor_zone_a_deployment, $._config.service_ignored_labels) +
@@ -80,16 +86,26 @@
 
     $.newDistributorDeployment(name, container, nodeAffinityMatchers) +
     deployment.mixin.spec.withReplicas(std.ceil($._config.multi_zone_distributor_replicas / std.length($._config.multi_zone_availability_zones))) +
-    deployment.spec.template.spec.withTolerationsMixin(if $._config.multi_zone_distributor_schedule_toleration == '' then [] else [
-      $.core.v1.toleration.withKey('topology') +
-      $.core.v1.toleration.withOperator('Equal') +
-      $.core.v1.toleration.withValue($._config.multi_zone_distributor_schedule_toleration) +
-      $.core.v1.toleration.withEffect('NoSchedule'),
-    ]),
+    deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
   // Remove single-zone deployment when multi-zone is enabled.
-  distributor_deployment: if !isSingleZoneEnabled then null else super.distributor_deployment,
+  distributor_deployment: if !isSingleZoneEnabled then null else
+    super.distributor_deployment + (if !isAutoscalingSingleZoneEnabled then {} else $.removeReplicasFromSpec),
   distributor_service: if !isSingleZoneEnabled then null else super.distributor_service,
   distributor_pdb: if !isSingleZoneEnabled then null else super.distributor_pdb,
-  distributor_scaled_object: if !isSingleZoneEnabled then null else super.distributor_scaled_object,
+
+  // Autoscaling.
+  distributor_scaled_object:
+    if !isAutoscalingSingleZoneEnabled then
+      null
+    else if isMultiZoneEnabled then
+      // When both single-zone and multi-zone coexists, the single-zone scaling metrics shouldn't
+      // match the multi-zone pods.
+      $.newDistributorScaledObject('distributor', extra_matchers='pod!~"distributor-zone.*"')
+    else
+      super.distributor_scaled_object,
+
+  distributor_zone_a_scaled_object: if !isAutoscalingZoneAEnabled then null else $.newDistributorScaledObject('distributor-zone-a', 'pod=~"distributor-zone-a.*"'),
+  distributor_zone_b_scaled_object: if !isAutoscalingZoneBEnabled then null else $.newDistributorScaledObject('distributor-zone-b', 'pod=~"distributor-zone-b.*"'),
+  distributor_zone_c_scaled_object: if !isAutoscalingZoneCEnabled then null else $.newDistributorScaledObject('distributor-zone-c', 'pod=~"distributor-zone-c.*"'),
 }

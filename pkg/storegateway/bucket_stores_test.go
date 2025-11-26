@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -101,7 +102,7 @@ func TestBucketStores_InitialSync(t *testing.T) {
 		require.NoError(t, err)
 		assert.Empty(t, warnings)
 		require.Len(t, seriesSet, 1)
-		assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+		assert.Equal(t, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metricName}}, seriesSet[0].Labels)
 	}
 
 	// Query series of another user.
@@ -175,7 +176,7 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	require.Len(t, seriesSet, 1)
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "series_1"}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "series_1"}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_blocks_meta_syncs_total Total blocks metadata synchronization attempts
@@ -250,7 +251,7 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warnings)
 	assert.Len(t, seriesSet, 1)
-	assert.Equal(t, []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: metricName}}, seriesSet[0].Labels)
+	assert.Equal(t, []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: metricName}}, seriesSet[0].Labels)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_store_blocks_loaded Number of currently loaded blocks.
@@ -505,8 +506,8 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	require.NoError(t, err)
 	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
 
-	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", labels.MetricName, metricName)
-	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", labels.MetricName, metricName)
+	seriesWithOutOfOrderChunks := labels.FromStrings("case", "out_of_order", model.MetricNameLabel, metricName)
+	seriesWithOverlappingChunks := labels.FromStrings("case", "overlapping", model.MetricNameLabel, metricName)
 
 	// Utility function originally used to generate a block with out of order chunks
 	// used by this test. The block has been generated commenting out the checks done
@@ -547,7 +548,8 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 		blockID, err := ulid.Parse(entry.Name())
 		require.NoErrorf(t, err, "parsing block ID from directory name %q", entry.Name())
 
-		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), nil))
+		_, err = block.Upload(ctx, log.NewNopLogger(), userBkt, filepath.Join(fixtureDir, blockID.String()), nil)
+		require.NoError(t, err)
 	}
 
 	createBucketIndex(t, bkt, userID)
@@ -626,7 +628,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 	}
 }
 
-func promLabels(m *storepb.Series) labels.Labels {
+func promLabels(m *storeTestSeries) labels.Labels {
 	return mimirpb.FromLabelAdaptersToLabels(m.Labels)
 }
 
@@ -657,7 +659,7 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 		require.NoError(t, db.Close())
 	}()
 
-	series := labels.FromStrings(labels.MetricName, metricName)
+	series := labels.FromStrings(model.MetricNameLabel, metricName)
 
 	app := db.Appender(context.Background())
 	for ts := minT; ts < maxT; ts += int64(step) {
@@ -670,13 +672,13 @@ func generateStorageBlock(t *testing.T, storageDir, userID string, metricName st
 	require.NoError(t, db.Snapshot(userDir, true))
 }
 
-func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storepb.Series, annotations.Annotations, error) {
+func querySeries(t *testing.T, stores *BucketStores, userID, metricName string, minT, maxT int64) ([]*storeTestSeries, annotations.Annotations, error) {
 	req := &storepb.SeriesRequest{
 		MinTime: minT,
 		MaxTime: maxT,
 		Matchers: []storepb.LabelMatcher{{
 			Type:  storepb.LabelMatcher_EQ,
-			Name:  labels.MetricName,
+			Name:  model.MetricNameLabel,
 			Value: metricName,
 		}},
 	}

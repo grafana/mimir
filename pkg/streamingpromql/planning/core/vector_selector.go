@@ -43,8 +43,12 @@ func (v *VectorSelector) NodeType() planning.NodeType {
 	return planning.NODE_TYPE_VECTOR_SELECTOR
 }
 
-func (v *VectorSelector) Children() []planning.Node {
-	return nil
+func (v *VectorSelector) Child(idx int) planning.Node {
+	panic(fmt.Sprintf("node of type VectorSelector has no children, but attempted to get child at index %d", idx))
+}
+
+func (v *VectorSelector) ChildCount() int {
+	return 0
 }
 
 func (v *VectorSelector) SetChildren(children []planning.Node) error {
@@ -55,15 +59,28 @@ func (v *VectorSelector) SetChildren(children []planning.Node) error {
 	return nil
 }
 
-func (v *VectorSelector) EquivalentTo(other planning.Node) bool {
+func (v *VectorSelector) ReplaceChild(idx int, node planning.Node) error {
+	return fmt.Errorf("node of type VectorSelector supports no children, but attempted to replace child at index %d", idx)
+}
+
+func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherVectorSelector, ok := other.(*VectorSelector)
 
 	return ok &&
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
-		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
-		v.SkipHistogramBuckets == otherVectorSelector.SkipHistogramBuckets
+		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps
+}
+
+func (v *VectorSelector) MergeHints(other planning.Node) error {
+	otherVectorSelector, ok := other.(*VectorSelector)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, v)
+	}
+
+	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
+	return nil
 }
 
 func (v *VectorSelector) ChildrenLabels() []string {
@@ -84,7 +101,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
@@ -99,4 +116,8 @@ func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, l
 
 func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
 	return v.GetExpressionPosition().ToPrometheusType()
+}
+
+func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanVersionZero
 }

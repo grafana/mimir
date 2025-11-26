@@ -12,17 +12,14 @@ title: Grafana Mimir HTTP API
 weight: 120
 ---
 
-<!-- Note: This topic is mounted in the GEM documentation. Ensure that all updates are also applicable to GEM. -->
-
 # Grafana Mimir HTTP API
 
 Grafana Mimir exposes an HTTP API that you can use to write and query time series data, and operate the cluster.
 
-This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode, monolithic mode, and read-write mode:
+This document groups API endpoints by service. Note that the API endpoints are exposed when you run Grafana Mimir in microservices mode and monolithic mode:
 
-- **Microservices mode**: Each service exposes its own endpoints.
-- **Monolithic mode**: The Grafana Mimir instance exposes all API endpoints.
-- **Read-write mode**: The component services are exposed on the endpoint that they are contained within. Either Mimir read, Mimir write, or Mimir backend. Refer to [Deployment modes](../architecture/deployment-modes/) for the grouping of components.
+- Microservices mode: Each service exposes its own endpoints.
+- Monolithic mode: The Grafana Mimir instance exposes all API endpoints.
 
 ## Endpoints
 
@@ -55,19 +52,19 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Ingesters ring status](#ingesters-ring-status) | Distributor,Ingester | `GET /ingester/ring` |
 | [Ingester tenants](#ingester-tenants) | Ingester | `GET /ingester/tenants` |
 | [Ingester tenant TSDB](#ingester-tenant-tsdb) | Ingester | `GET /ingester/tsdb/{tenant}` |
-| [Instant query](#instant-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
-| [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
-| [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
-| [Get series by label matchers](#get-series-by-label-matchers) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
+| [Instant query](#instant-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
+| [Range query](#range-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
+| [Exemplar query](#exemplar-query) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
+| [Get series by label matchers](#get-series-by-label-matchers) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
 | [Get active series by selector](#get-active-series-by-selector) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/active_series` |
-| [Get label names](#get-label-names) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
-| [Get label values](#get-label-values) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
-| [Get metric metadata](#get-metric-metadata) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
-| [Remote read](#remote-read) | Querier, Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
-| [Label names cardinality](#label-names-cardinality) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
-| [Label values cardinality](#label-values-cardinality) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
-| [Build information](#build-information) | Querier, Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo` |
-| [Format query](#format-query) | Querier, Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/format_query` |
+| [Get label names](#get-label-names) | Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
+| [Get label values](#get-label-values) | Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
+| [Get metric metadata](#get-metric-metadata) | Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
+| [Remote read](#remote-read) | Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
+| [Label names cardinality](#label-names-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names` |
+| [Label values cardinality](#label-values-cardinality) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
+| [Build information](#build-information) | Query-frontend, Ruler | `GET <prometheus-http-prefix>/api/v1/status/buildinfo` |
+| [Format query](#format-query) | Query-frontend | `GET, POST <prometheus-http-prefix>/api/v1/format_query` |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats) | Querier | `GET /api/v1/user_stats` |
 | [Query-scheduler ring status](#query-scheduler-ring-status) | Query-scheduler | `GET /query-scheduler/ring` |
 | [Ruler ring status](#ruler-ring-status) | Ruler | `GET /ruler/ring` |
@@ -287,7 +284,6 @@ GET /api/v1/user_limits
 ```
 
 Returns realtime limits for the authenticated tenant, in `JSON` format.
-This API is experimental.
 
 Requires [authentication](#authentication).
 
@@ -538,9 +534,9 @@ GET /ingester/tsdb/{tenant}
 
 Displays a web page with details about tenant's open TSDB on given ingester.
 
-## Querier / Query-frontend
+## Query-frontend
 
-The following endpoints are exposed both by the [querier](../architecture/components/querier/) and [query-frontend](../architecture/components/query-frontend/).
+The following endpoints are exposed by the [query-frontend](../architecture/components/query-frontend/).
 
 ### Instant query
 
@@ -1373,8 +1369,6 @@ use [Check block upload](#check-block-upload) API endpoint.
 
 Requires [authentication](#authentication).
 
-This API endpoint is experimental and subject to change.
-
 ### Check block upload
 
 ```
@@ -1401,8 +1395,6 @@ Returns state of the block upload. State is returned as JSON object with field `
 ```
 
 Requires [authentication](#authentication).
-
-This API endpoint is experimental and subject to change.
 
 ### Tenant Delete Request
 

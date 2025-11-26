@@ -641,14 +641,27 @@ func (it *intersectPostings) Seek(target storage.SeriesRef) bool {
 }
 
 func (it *intersectPostings) Next() bool {
-	target := it.current
-	for _, p := range it.postings {
+	// Move forward the first Postings and take its value as the target to match.
+	if !it.postings[0].Next() {
+		return false
+	}
+	target := it.postings[0].At()
+	allEqual := true
+	for _, p := range it.postings[1:] { // Now move forward all the other ones and check if they match.
 		if !p.Next() {
 			return false
 		}
-		if p.At() > target {
-			target = p.At()
+		at := p.At()
+		if at > target { // This one is past the target, so pick up a new target to Seek at the end.
+			target = at
+			allEqual = false
+		} else if at < target { // This one needs to Seek to the target, but carry on with other postings in case they have an even higher target.
+			allEqual = false
 		}
+	}
+	if allEqual {
+		it.current = target
+		return true
 	}
 	return it.Seek(target)
 }
@@ -851,15 +864,17 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 		return false
 	}
 
-	// Do binary search between current position and end.
-	i, _ := slices.BinarySearch(it.list, x)
-	if i < len(it.list) {
-		it.cur = it.list[i]
-		it.list = it.list[i+1:]
-		return true
+	i := 0 // Check the next item in the list, otherwise binary search between current position and end.
+	if it.list[0] < x {
+		i, _ = slices.BinarySearch(it.list, x)
+		if i >= len(it.list) { // Off the end - terminate the iterator.
+			it.list = nil
+			return false
+		}
 	}
-	it.list = nil
-	return false
+	it.cur = it.list[i]
+	it.list = it.list[i+1:]
+	return true
 }
 
 func (*ListPostings) Err() error {
@@ -919,33 +934,6 @@ func (*bigEndianPostings) Err() error {
 	return nil
 }
 
-// PostingsCloner takes an existing Postings and allows independently clone them.
-type PostingsCloner struct {
-	ids []storage.SeriesRef
-	err error
-}
-
-// NewPostingsCloner takes an existing Postings and allows independently clone them.
-// The instance provided shouldn't have been used before (no Next() calls should have been done)
-// and it shouldn't be used once provided to the PostingsCloner.
-func NewPostingsCloner(p Postings) *PostingsCloner {
-	ids, err := ExpandPostings(p)
-	return &PostingsCloner{ids: ids, err: err}
-}
-
-// Clone returns another independent Postings instance.
-func (c *PostingsCloner) Clone() Postings {
-	if c.err != nil {
-		return ErrPostings(c.err)
-	}
-	return newListPostings(c.ids...)
-}
-
-// EstimateSize returns an estimate of the size of the PostingsCloner.
-func (c *PostingsCloner) EstimateSize() int64 {
-	return int64(len(c.ids) * 8)
-}
-
 // FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
 // if intersection is non empty, then i is added to the indexes returned.
 // Returned indexes are not sorted.
@@ -969,42 +957,6 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 			return indexes, p.Err()
 		}
 		if p.At() == h.at() {
-			indexes = append(indexes, h.popIndex())
-		} else if err := h.next(); err != nil {
-			return nil, err
-		}
-	}
-
-	return indexes, nil
-}
-
-// findNonContainedPostings checks whether candidates[i] for each i in candidates is contained in p.
-// If not contained, i is added to the indexes returned.
-// The idea is the need to find postings iterators not fully contained in a set you wish to exclude.
-// Returned indexes are not sorted.
-func findNonContainedPostings(p Postings, candidates []Postings) (indexes []int, err error) {
-	h := make(postingsWithIndexHeap, 0, len(candidates))
-	for idx, it := range candidates {
-		switch {
-		case it.Next():
-			h = append(h, postingsWithIndex{index: idx, p: it})
-		case it.Err() != nil:
-			return nil, it.Err()
-		}
-	}
-	if h.empty() {
-		return nil, nil
-	}
-	heap.Init(&h)
-
-	for !h.empty() {
-		// Find the first posting >= h.at()
-		if !p.Seek(h.at()) && p.Err() != nil {
-			return nil, p.Err()
-		}
-
-		// If p.At() != h.at(), we can keep h.at(), otherwise we skip past it
-		if p.At() != h.at() {
 			indexes = append(indexes, h.popIndex())
 		} else if err := h.next(); err != nil {
 			return nil, err

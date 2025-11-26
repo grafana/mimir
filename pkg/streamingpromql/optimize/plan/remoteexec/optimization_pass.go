@@ -5,9 +5,8 @@ package remoteexec
 import (
 	"context"
 
-	"github.com/prometheus/prometheus/model/labels"
-
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -24,15 +23,20 @@ func (o *OptimizationPass) Name() string {
 	return "Remote execution"
 }
 
-func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) (*planning.QueryPlan, error) {
-	containsSelectors, containsShardedOrSpunOffExpression := o.inspect(plan.Root)
+func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	inspectResult := optimize.Inspect(plan.Root)
+	if !inspectResult.HasSelectors || inspectResult.IsRewrittenByMiddleware {
+		return plan, nil
+	}
 
-	if !containsSelectors || containsShardedOrSpunOffExpression {
+	if wrappedAnyChild, err := o.wrapShardedExpressions(plan.Root); err != nil {
+		return nil, err
+	} else if wrappedAnyChild {
 		return plan, nil
 	}
 
 	var err error
-	plan.Root, err = o.wrapInRemoteExecutionNode(plan.Root)
+	plan.Root, err = o.wrapInRemoteExecutionNode(plan.Root, false)
 	if err != nil {
 		return nil, err
 	}
@@ -40,8 +44,8 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan) 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node) (planning.Node, error) {
-	n := &RemoteExecution{}
+func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool) (planning.Node, error) {
+	n := &RemoteExecution{RemoteExecutionDetails: &RemoteExecutionDetails{EagerLoad: eagerLoad}}
 	if err := n.SetChildren([]planning.Node{child}); err != nil {
 		return nil, err
 	}
@@ -49,47 +53,56 @@ func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node) (plann
 	return n, nil
 }
 
-// inspect returns two booleans:
-// - the first indicates if node or any of its children is a selector
-// - the second indicates if node or any of its children is a vector selector containing a sharded or spun-off expression
-func (o *OptimizationPass) inspect(node planning.Node) (bool, bool) {
-	switch n := node.(type) {
-	case *core.MatrixSelector:
-		return true, isSpunOff(n.Matchers)
-	case *core.VectorSelector:
-		return true, isSharded(n)
-	default:
-		anyChildContainsSelectors := false
-
-		for _, c := range n.Children() {
-			containsSelectors, containsShardedOrSpunOffExpression := o.inspect(c)
-			if containsShardedOrSpunOffExpression {
-				return true, true
-			}
-
-			anyChildContainsSelectors = anyChildContainsSelectors || containsSelectors
+// wrapShardedExpressions wraps sharded legs in a RemoteExecution node.
+// It returns true if any node was wrapped, or false otherwise.
+func (o *OptimizationPass) wrapShardedExpressions(n planning.Node) (bool, error) {
+	functionCall, isFunctionCall := n.(*core.FunctionCall)
+	if isFunctionCall && functionCall.Function == functions.FUNCTION_SHARDING_CONCAT {
+		if err := o.wrapShardedConcat(functionCall); err != nil {
+			return false, err
 		}
 
-		return anyChildContainsSelectors, false
+		// We don't expect any nested sharded expressions, so once we've found one, we can return early.
+		return true, nil
 	}
+
+	wrappedAnyChild := false
+
+	for child := range planning.ChildrenIter(n) {
+		wrapped, err := o.wrapShardedExpressions(child)
+		if err != nil {
+			return false, err
+		}
+
+		wrappedAnyChild = wrappedAnyChild || wrapped
+	}
+
+	return wrappedAnyChild, nil
 }
 
-func isSharded(v *core.VectorSelector) bool {
-	for _, m := range v.Matchers {
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.EmbeddedQueriesMetricName {
-			return true
+func (o *OptimizationPass) wrapShardedConcat(functionCall *core.FunctionCall) error {
+	if len(functionCall.Args) == 0 {
+		// It shouldn't happen that there are no children, but the condition below will panic if there are no children,
+		// so check it just to be safe.
+		return nil
+	}
+
+	if _, isRemoteExec := functionCall.Args[0].(*RemoteExecution); isRemoteExec {
+		// We've already wrapped the first child, which means we've wrapped all of the children as well.
+		// This can happen if the sharded expression is duplicated, in which case we can visit it multiple times.
+		return nil
+	}
+
+	for idx, child := range functionCall.Args {
+		child, err := o.wrapInRemoteExecutionNode(child, true)
+		if err != nil {
+			return err
+		}
+
+		if err := functionCall.ReplaceChild(idx, child); err != nil {
+			return err
 		}
 	}
 
-	return false
-}
-
-func isSpunOff(matchers []*core.LabelMatcher) bool {
-	for _, m := range matchers {
-		if m.Name == labels.MetricName && m.Type == labels.MatchEqual && m.Value == astmapper.SubqueryMetricName {
-			return true
-		}
-	}
-
-	return false
+	return nil
 }

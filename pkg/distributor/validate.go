@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -81,6 +82,14 @@ var (
 		"received a series whose label value length of %d exceeds the limit of %d, label: '%s', value: '%.200s' (truncated) series: '%.200s'",
 		validation.MaxLabelValueLengthFlag,
 	)
+	truncatedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
+		"received some series whose label value lengths exceed the limit; label values were truncated and appended their hash value",
+		validation.MaxLabelValueLengthFlag,
+	)
+	droppedLabelValueMsg = globalerror.SeriesLabelValueTooLong.MessageWithPerTenantLimitConfig(
+		"received some series whose label value lengths exceed the limit; label values were replaced by their hash value",
+		validation.MaxLabelValueLengthFlag,
+	)
 	invalidLabelMsgFormat      = globalerror.SeriesInvalidLabel.Message("received a series with an invalid label: '%.200s' series: '%.200s'")
 	invalidLabelValueMsgFormat = globalerror.SeriesInvalidLabelValue.Message("received a series with invalid value in label '%.200s': '%.200s' metric: '%.200s'")
 	duplicateLabelMsgFormat    = globalerror.SeriesWithDuplicateLabelNames.Message("received a series with duplicate label name, label: '%.200s' series: '%.200s'")
@@ -129,6 +138,8 @@ var (
 	nativeHistogramCustomBucketsNotReducibleMsgFormat = globalerror.NativeHistogramCustomBucketsNotReducible.Message("received a native histogram sample with more custom buckets than the limit, timestamp: %d series: %s, buckets: %d, limit: %d")
 )
 
+const labelValueTooLongSummariesLimit = 10
+
 type labelValueTooLongError struct {
 	Label  labels.Label
 	Series string
@@ -137,6 +148,50 @@ type labelValueTooLongError struct {
 
 func (e labelValueTooLongError) Error() string {
 	return fmt.Sprintf(labelValueTooLongMsgFormat, len(e.Label.Value), e.Limit, e.Label.Name, e.Label.Value, e.Series)
+}
+
+// labelValueTooLongSummaries holds a summary for each metric and label processed
+// in a write request that have values exceeding the limit.
+type labelValueTooLongSummaries struct {
+	globalCount int
+	summaries   []labelValueTooLongSummary
+}
+
+func (s *labelValueTooLongSummaries) measure(unsafeMetric, unsafeLabel, unsafeValue mimirpb.UnsafeMutableString) {
+	if s == nil {
+		return
+	}
+	s.globalCount++
+	if s.summaries == nil {
+		s.summaries = make([]labelValueTooLongSummary, 0, labelValueTooLongSummariesLimit)
+	}
+
+	i := slices.IndexFunc(s.summaries, func(summary labelValueTooLongSummary) bool {
+		return summary.metric == unsafeMetric && summary.label == unsafeLabel
+	})
+	if i != -1 {
+		s.summaries[i].count++
+		return
+	}
+
+	if len(s.summaries) >= labelValueTooLongSummariesLimit {
+		return
+	}
+
+	s.summaries = append(s.summaries, labelValueTooLongSummary{
+		metric:            strings.Clone(unsafeMetric),
+		label:             strings.Clone(unsafeLabel),
+		sampleValue:       fmt.Sprintf("%.200s (truncated)", unsafeValue),
+		sampleValueLength: len(unsafeValue),
+		count:             1,
+	})
+}
+
+type labelValueTooLongSummary struct {
+	metric, label     string
+	count             int
+	sampleValueLength int
+	sampleValue       string
 }
 
 // sampleValidationConfig helps with getting required config to validate sample.
@@ -422,7 +477,7 @@ func removeNonASCIIChars(in string) (out string) {
 // validateLabels returns an err if the labels are invalid.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It may mutate ls and the underlying UnsafeMutableLabel/Strings.
-func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time) error {
+func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userID, group string, ls []mimirpb.UnsafeMutableLabel, skipLabelValidation, skipLabelCountValidation bool, cat *costattribution.SampleTracker, ts time.Time, valueTooLongSummaries *labelValueTooLongSummaries) error {
 	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 	if err != nil {
 		cat.IncrementDiscardedSamples(ls, 1, reasonMissingMetricName, ts)
@@ -483,9 +538,11 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 					Limit:  maxLabelValueLength,
 				}
 			case validation.LabelValueLengthOverLimitStrategyTruncate:
+				valueTooLongSummaries.measure(unsafeMetricName, l.Name, l.Value)
 				_ = hashLabelValueInto(l.Value[maxLabelValueLength-validation.LabelValueHashLen:], l.Value)
 				ls[i].Value = ls[i].Value[:maxLabelValueLength]
 			case validation.LabelValueLengthOverLimitStrategyDrop:
+				valueTooLongSummaries.measure(unsafeMetricName, l.Name, l.Value)
 				ls[i].Value = hashLabelValueInto(l.Value[:validation.LabelValueHashLen], l.Value)
 			default:
 				panic(fmt.Errorf("unexpected value: %v", labelValueLengthOverLimitStrategy))

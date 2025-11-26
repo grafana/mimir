@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -68,7 +69,7 @@ func NewAggregation(
 	}
 
 	if without {
-		grouping = append(grouping, labels.MetricName)
+		grouping = append(grouping, model.MetricNameLabel)
 	}
 
 	slices.Sort(grouping)
@@ -167,6 +168,7 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 			g.group = groupPool.Get()
 			g.group.aggregation = a.aggregationGroupFactory()
 			g.group.remainingSeriesCount = 0
+			g.dropName = series.DropName
 
 			groups[string(groupLabelsString)] = g
 		}
@@ -174,7 +176,8 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 		g.group.remainingSeriesCount++
 		g.group.lastSeriesIndex = seriesIdx
 		a.remainingInnerSeriesToGroup = append(a.remainingInnerSeriesToGroup, g.group)
-		if g.dropName != series.DropName {
+		// If at least 1 series drops the name, we drop the name for all series.
+		if !g.dropName && series.DropName {
 			g.dropName = series.DropName
 			groups[string(groupLabelsString)] = g
 		}
@@ -298,10 +301,12 @@ func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
 }
 
 func (a *Aggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	// The wrapping operator (if any) is responsible for calling Prepare() on whatever provides a.ParamData, so we don't need to do it here.
 	return a.Inner.Prepare(ctx, params)
 }
 
 func (a *Aggregation) Finalize(ctx context.Context) error {
+	// The wrapping operator (if any) is responsible for calling Finalize() on whatever provides a.ParamData, so we don't need to do it here.
 	return a.Inner.Finalize(ctx)
 }
 
@@ -338,4 +343,8 @@ func (g groupSorter) Swap(i, j int) {
 
 func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
 	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
+}
+
+func newAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
 }

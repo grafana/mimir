@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -20,24 +23,27 @@ type plannerTestCase struct {
 	inputMatchers         []*labels.Matcher
 	expectedIndexMatchers []*labels.Matcher
 	expectedScanMatchers  []*labels.Matcher
+	queryShard            string // Format: "shardIndex_of_shardCount" (e.g., "1_of_16") or empty for no sharding
 }
 
 func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	ctx := context.Background()
 
 	data := newCSVTestData(
-		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
+		[]string{"queryShard", "testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
 		func(record []string) plannerTestCase {
 			return plannerTestCase{
-				name:                  record[0],
-				inputMatchers:         parseVectorSelector(t, record[1]),
-				expectedIndexMatchers: parseVectorSelector(t, record[2]),
-				expectedScanMatchers:  parseVectorSelector(t, record[3]),
+				queryShard:            record[0],
+				name:                  record[1],
+				inputMatchers:         parseVectorSelector(t, record[2]),
+				expectedIndexMatchers: parseVectorSelector(t, record[3]),
+				expectedScanMatchers:  parseVectorSelector(t, record[4]),
 			}
 		},
 		func(tc plannerTestCase) []string {
 			return []string{
+				tc.queryShard,
 				tc.name,
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.inputMatchers)),
 				fmt.Sprintf("{%s}", util.MatchersStringer(tc.expectedIndexMatchers)),
@@ -49,8 +55,8 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 	testCases := data.ParseTestCases(t)
 
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
+	metrics := NewMetrics(nil).ForUser("test-user")
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	const writeOutNewResults = false
 	if writeOutNewResults {
@@ -64,7 +70,18 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 				indexMatchers: tc.inputMatchers,
 			}
 
-			result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+			// Parse query shard if specified
+			var hints *storage.SelectHints
+			if tc.queryShard != "" {
+				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
+				require.NoError(t, err, "failed to parse queryShard: %q", tc.queryShard)
+				hints = &storage.SelectHints{
+					ShardIndex: shardIndex,
+					ShardCount: shardCount,
+				}
+			}
+
+			result, err := planner.PlanIndexLookup(ctx, inputPlan, hints)
 			require.NoError(t, err)
 			require.NotNil(t, result)
 
@@ -90,14 +107,15 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 	ctx := context.Background()
 
 	data := newCSVTestData(
-		[]string{"testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
+		[]string{"queryShard", "testName", "inputMatchers", "expectedIndexMatchers", "expectedScanMatchers"},
 		filepath.Join("testdata", "planner_test_cases.csv"),
 		func(record []string) plannerTestCase {
 			return plannerTestCase{
-				name:                  record[0],
-				inputMatchers:         parseVectorSelector(b, record[1]),
-				expectedIndexMatchers: parseVectorSelector(b, record[2]),
-				expectedScanMatchers:  parseVectorSelector(b, record[3]),
+				queryShard:            record[0],
+				name:                  record[1],
+				inputMatchers:         parseVectorSelector(b, record[2]),
+				expectedIndexMatchers: parseVectorSelector(b, record[3]),
+				expectedScanMatchers:  parseVectorSelector(b, record[4]),
 			}
 		},
 		func(tc plannerTestCase) []string {
@@ -110,8 +128,8 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 	testCases := data.ParseTestCases(b)
 
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
+	metrics := NewMetrics(nil).ForUser("test-user")
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
@@ -120,10 +138,21 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 				indexMatchers: tc.inputMatchers,
 			}
 
+			// Parse query shard if specified
+			var hints *storage.SelectHints
+			if tc.queryShard != "" {
+				shardIndex, shardCount, err := sharding.ParseShardIDLabelValue(tc.queryShard)
+				require.NoError(b, err, "failed to parse queryShard: %q", tc.queryShard)
+				hints = &storage.SelectHints{
+					ShardIndex: shardIndex,
+					ShardCount: shardCount,
+				}
+			}
+
 			b.ReportAllocs()
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+				_, err := planner.PlanIndexLookup(ctx, inputPlan, hints)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -140,30 +169,36 @@ func matchersStrings(ms []*labels.Matcher) []string {
 	return matchers
 }
 
-func TestCostBasedPlannerTooManyMatchers(t *testing.T) {
+func TestCostBasedPlannerWithManyMatchers(t *testing.T) {
 	ctx := context.Background()
-	stats := newMockStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
+	stats := newHighCardinalityMockStatistics()
+	metrics := NewMetrics(nil).ForUser("test-user")
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
-	// Create more than 10 matchers to trigger the limit
-	var matchers []*labels.Matcher
-	for i := 0; i < 12; i++ {
-		matcher := labels.MustNewMatcher(labels.MatchEqual, fmt.Sprintf("label_%d", i), "value")
-		matchers = append(matchers, matcher)
+	// Generate 1000 matchers with different label names and values
+	matchers := make([]*labels.Matcher, 1000)
+	for i := 0; i < 1000; i++ {
+		matchers[i] = labels.MustNewMatcher(labels.MatchEqual, fmt.Sprintf("label_%d", i), fmt.Sprintf("value_%d", i))
 	}
 
 	inputPlan := &basicLookupPlan{
 		indexMatchers: matchers,
-		scanMatchers:  []*labels.Matcher{},
 	}
 
-	result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+	start := time.Now()
+	result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
+	elapsed := time.Since(start)
 
-	// Should return the original plan without error (aborted early)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, inputPlan, result)
+	assert.Less(t, elapsed.Seconds(), 30.0, "Planning with 1000 matchers should complete in less than 30 seconds, took %v", elapsed)
+
+	// Verify all matchers are preserved
+	var allResultMatchers []string
+	allResultMatchers = append(allResultMatchers, matchersStrings(result.IndexMatchers())...)
+	allResultMatchers = append(allResultMatchers, matchersStrings(result.ScanMatchers())...)
+	assert.ElementsMatch(t, matchersStrings(matchers), allResultMatchers)
+	assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers")
 }
 
 // basicLookupPlan is a simple implementation of index.LookupPlan for testing
@@ -183,8 +218,8 @@ func (p *basicLookupPlan) ScanMatchers() []*labels.Matcher {
 func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 	ctx := context.Background()
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
+	metrics := NewMetrics(nil).ForUser("test-user")
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	t.Run("mixed_index_and_scan_matchers", func(t *testing.T) {
 		// Create a plan that already has both index and scan matchers
@@ -202,7 +237,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 			scanMatchers:  scanMatchers,
 		}
 
-		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -217,9 +252,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 
 		assert.ElementsMatch(t, allOriginalMatchers, allResultMatchers, "Planner should preserve all matchers, just potentially repartition them")
 
-		// Verify we have both index and scan matchers in result (planner should optimize)
 		assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers")
-		assert.NotEmpty(t, result.ScanMatchers(), "Result should have scan matchers")
 	})
 
 	t.Run("scan_only_input_gets_optimized", func(t *testing.T) {
@@ -235,7 +268,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 			scanMatchers:  scanOnlyMatchers,
 		}
 
-		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -252,8 +285,8 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
 	ctx := context.Background()
 	stats := newSingleValueStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
+	metrics := NewMetrics(nil).ForUser("test-user")
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	matchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "label", "value"),
@@ -264,7 +297,7 @@ func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
 		scanMatchers:  []*labels.Matcher{},
 	}
 
-	result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+	result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers despite potentially higher cost")
 }
@@ -272,18 +305,18 @@ func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
 func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 	ctx := context.Background()
 	stats := newMockStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
+	metrics := NewMetrics(nil).ForUser("test-user")
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
-	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, 0, 0)
-	assert.ErrorContains(t, err, "no plan with index matchers found out of 1 plans")
+	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, nil)
+	assert.ErrorContains(t, err, "no plan with index matchers found")
 	assert.Nil(t, result, "Result should be nil when no matchers are provided")
 }
 
 func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 	stats := newHighCardinalityMockStatistics()
-	metrics := NewMetrics(nil)
-	planner := NewCostBasedPlanner(metrics, stats)
+	metrics := NewMetrics(nil).ForUser("test-user")
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	inputPlan := &basicLookupPlan{
 		indexMatchers: []*labels.Matcher{
@@ -296,7 +329,7 @@ func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 
 	t.Run("disabled_planning_returns_input_plan", func(t *testing.T) {
 		ctx := ContextWithDisabledPlanning(context.Background())
-		result, err := planner.PlanIndexLookup(ctx, inputPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -318,7 +351,7 @@ func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 		}
 
 		ctx := ContextWithDisabledPlanning(context.Background())
-		result, err := planner.PlanIndexLookup(ctx, mixedPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, mixedPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 
@@ -335,7 +368,7 @@ func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 		}
 
 		ctx := ContextWithDisabledPlanning(context.Background())
-		result, err := planner.PlanIndexLookup(ctx, emptyPlan, 0, 0)
+		result, err := planner.PlanIndexLookup(ctx, emptyPlan, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 

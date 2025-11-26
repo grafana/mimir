@@ -699,6 +699,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_LN, "ln", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("ln", Ln)))
 	must(RegisterFunction(FUNCTION_LOG10, "log10", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log10", Log10)))
 	must(RegisterFunction(FUNCTION_LOG2, "log2", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log2", Log2)))
+	must(RegisterFunction(FUNCTION_MAD_OVER_TIME, "mad_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("mad_over_time", MadOverTime)))
 	must(RegisterFunction(FUNCTION_MAX_OVER_TIME, "max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime)))
 	must(RegisterFunction(FUNCTION_MINUTE, "minute", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("minute", Minute)))
 	must(RegisterFunction(FUNCTION_MIN_OVER_TIME, "min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime)))
@@ -727,6 +728,10 @@ func init() {
 	must(RegisterFunction(FUNCTION_TANH, "tanh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("tanh", Tanh)))
 	must(RegisterFunction(FUNCTION_TIME, "time", parser.ValueTypeScalar, timeOperatorFactory))
 	must(RegisterFunction(FUNCTION_TIMESTAMP, "timestamp", parser.ValueTypeVector, TimestampFunctionOperatorFactory))
+	must(RegisterFunction(FUNCTION_TS_OF_FIRST_OVER_TIME, "ts_of_first_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_first_over_time", TsOfFirstOverTime)))
+	must(RegisterFunction(FUNCTION_TS_OF_LAST_OVER_TIME, "ts_of_last_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_last_over_time", TsOfLastOverTime)))
+	must(RegisterFunction(FUNCTION_TS_OF_MAX_OVER_TIME, "ts_of_max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_max_over_time", TsOfMaxOverTime)))
+	must(RegisterFunction(FUNCTION_TS_OF_MIN_OVER_TIME, "ts_of_min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_min_over_time", TsOfMinOverTime)))
 	must(RegisterFunction(FUNCTION_VECTOR, "vector", parser.ValueTypeVector, scalarToInstantVectorOperatorFactory))
 	must(RegisterFunction(FUNCTION_YEAR, "year", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("year", Year)))
 }

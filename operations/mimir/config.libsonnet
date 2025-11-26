@@ -117,21 +117,22 @@
     cache_frontend_enabled: true,
     cache_frontend_max_item_size_mb: 5,
     cache_frontend_connection_limit: 16384,
+    cache_frontend_min_ready_seconds: 60,
 
     cache_index_queries_enabled: true,
     cache_index_queries_max_item_size_mb: 5,
     cache_index_queries_connection_limit: 16384,
+    cache_index_queries_min_ready_seconds: 60,
 
     cache_chunks_enabled: true,
     cache_chunks_max_item_size_mb: 1,
     cache_chunks_connection_limit: 16384,
+    cache_chunks_min_ready_seconds: 60,
 
     cache_metadata_enabled: true,
     cache_metadata_max_item_size_mb: 1,
     cache_metadata_connection_limit: 16384,
-
-    // Number of etcd replicas.
-    etcd_replicas: 3,
+    cache_metadata_min_ready_seconds: 60,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -532,14 +533,28 @@
     ingester_tsdb_head_early_compaction_enabled: false,
     ingester_tsdb_head_early_compaction_reduction_percentage: 15,
 
-    // The default threshold to triger the TSDB Head early compaction is once the ingester in-memory
-    // series reach the 66% of the configured hard limit on max in-memory series. If the limit is not
-    // configured, then we just use a constant default value.
+    // The default threshold to triger the TSDB Head early compaction.
     ingester_tsdb_head_early_compaction_min_in_memory_series:
-      if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
-        std.ceil($._config.ingester_instance_limits.max_series / 1.5)
+      local max_series_per_ingester =
+        if $._config.ingester_instance_limits != null && std.objectHas($._config.ingester_instance_limits, 'max_series') then
+          $._config.ingester_instance_limits.max_series
+        else
+          3e6;
+
+      if $._config.ingest_storage_ingester_autoscaling_enabled then
+        // In the ingest storage architecture, if we hit the max series per ingester it causes a read path outage but
+        // not a write path outage, so it's a bit less severe than the classic architecture. For this reason, we intentionally
+        // set an higher in-memory series threshold before TSDB head early compaction triggers, as a last resort to push
+        // in-memory series down before the hard limit is hit.
+        std.max(
+          std.ceil(1.2 * $._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold),
+          std.ceil(max_series_per_ingester * 0.8)
+        )
       else
-        2000000,
+        // In the classic architecture, if we hit the max series per ingester it causes both a read and write path outage.
+        // In this case we prefer to be more conservative and trigger the TSDB head early compaction whe nthe ingester
+        // in-memory series reach the 66% of the configured hard limit on max in-memory series.
+        std.ceil(max_series_per_ingester / 1.5),
 
     gossip_member_label: 'gossip_ring_member',
     // Labels that service selectors should not use

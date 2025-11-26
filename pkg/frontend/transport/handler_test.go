@@ -85,17 +85,18 @@ func TestHandler_ServeHTTP(t *testing.T) {
 	}
 
 	for _, tt := range []struct {
-		name                    string
-		cfg                     HandlerConfig
-		request                 func() *http.Request
-		downstreamResponse      *http.Response
-		downstreamErr           error
-		expectedStatusCode      int
-		expectedParams          url.Values
-		expectedMetrics         int
-		expectedActivity        string
-		expectedReadConsistency string
-		assertHeaders           func(t *testing.T, headers http.Header)
+		name                            string
+		cfg                             HandlerConfig
+		request                         func() *http.Request
+		downstreamResponse              *http.Response
+		downstreamErr                   error
+		expectedStatusCode              int
+		expectedParams                  url.Values
+		expectedMetrics                 int
+		expectedActivity                string
+		expectedReadConsistencyLevel    string
+		expectedReadConsistencyMaxDelay time.Duration
+		assertHeaders                   func(t *testing.T, headers http.Header)
 	}{
 		{
 			name: "handler with stats enabled, POST request with params",
@@ -116,9 +117,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA:test-user-agent req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 		},
 		{
 			name: "handler with stats enabled, GET request with params",
@@ -134,12 +135,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 		},
 		{
-			name: "handler with stats enabled, GET request with params and read consistency specified",
+			name: "handler with stats enabled, GET request with params and read consistency level specified",
 			cfg:  HandlerConfig{QueryStatsEnabled: true},
 			request: func() *http.Request {
 				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
@@ -152,9 +153,32 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: api.ReadConsistencyStrong,
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: api.ReadConsistencyStrong,
+		},
+		{
+			name: "handler with stats enabled, GET request with params and read consistency level and max delay specified",
+			cfg:  HandlerConfig{QueryStatsEnabled: true},
+			request: func() *http.Request {
+				r := httptest.NewRequest("GET", "/api/v1/query?query=some_metric&time=42", nil)
+				r.Header.Add("User-Agent", "test-user-agent")
+				return r.WithContext(
+					api.ContextWithReadConsistencyMaxDelay(
+						api.ContextWithReadConsistencyLevel(context.Background(), api.ReadConsistencyEventual),
+						time.Minute),
+				)
+			},
+			downstreamResponse: makeSuccessfulDownstreamResponse(),
+			expectedStatusCode: 200,
+			expectedParams: url.Values{
+				"query": []string{"some_metric"},
+				"time":  []string{"42"},
+			},
+			expectedMetrics:                 6,
+			expectedActivity:                "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel:    api.ReadConsistencyEventual,
+			expectedReadConsistencyMaxDelay: time.Minute,
 		},
 		{
 			name: "handler with stats enabled, GET request without params",
@@ -164,12 +188,12 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				r.Header.Add("User-Agent", "test-user-agent")
 				return r
 			},
-			downstreamResponse:      makeSuccessfulDownstreamResponse(),
-			expectedStatusCode:      200,
-			expectedParams:          url.Values{},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
-			expectedReadConsistency: "",
+			downstreamResponse:           makeSuccessfulDownstreamResponse(),
+			expectedStatusCode:           200,
+			expectedParams:               url.Values{},
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query (no params)",
+			expectedReadConsistencyLevel: "",
 		},
 		{
 			name: "handler with stats disabled, GET request with params",
@@ -185,9 +209,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         0,
-			expectedActivity:        "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              0,
+			expectedActivity:             "user:12345 UA:test-user-agent req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 		},
 		{
 			name: "handler with stats enabled, serving remote read query with snappy compression",
@@ -250,9 +274,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 		},
 		{
 			name: "downstream returns a gRPC error with 4xx status code",
@@ -266,9 +290,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 		},
 		{
 			name: "downstream returns a generic error",
@@ -282,9 +306,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA: req:GET /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 		},
 		{
 			name: "handler with stats enabled, check ServiceTimingHeader",
@@ -300,9 +324,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "querier_wall_time;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
@@ -325,9 +349,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         6,
-			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              6,
+			expectedActivity:             "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "querier_wall_time;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "response_time;dur=")
@@ -347,6 +371,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_miss_bytes;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
 			},
 		},
 		{
@@ -364,9 +389,9 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"query": []string{"some_metric"},
 				"time":  []string{"42"},
 			},
-			expectedMetrics:         0,
-			expectedActivity:        "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
-			expectedReadConsistency: "",
+			expectedMetrics:              0,
+			expectedActivity:             "user:12345 UA: req:POST /api/v1/query query=some_metric&time=42",
+			expectedReadConsistencyLevel: "",
 			assertHeaders: func(t *testing.T, headers http.Header) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "encode_time_seconds;dur=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "estimated_series_count;val=0")
@@ -382,6 +407,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "results_cache_miss_bytes;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "sharded_queries;val=0")
 				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "split_queries;val=0")
+				assert.Contains(t, headers.Get(ServiceTimingHeaderName), "remote_execution_request_count;val=0")
 			},
 		},
 	} {
@@ -463,6 +489,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				require.EqualValues(t, 0, msg["split_queries"])
 				require.EqualValues(t, 0, msg["estimated_series_count"])
 				require.EqualValues(t, 0, msg["queue_time_seconds"])
+				require.EqualValues(t, 0, msg["remote_execution_request_count"])
 
 				if tt.expectedStatusCode >= 200 && tt.expectedStatusCode < 300 {
 					require.Equal(t, "success", msg["status"])
@@ -487,10 +514,17 @@ func TestHandler_ServeHTTP(t *testing.T) {
 					require.Equal(t, value[0], msg["param_"+key])
 				}
 
-				if tt.expectedReadConsistency != "" {
-					require.Equal(t, tt.expectedReadConsistency, msg["read_consistency"])
+				if tt.expectedReadConsistencyLevel != "" {
+					require.Equal(t, tt.expectedReadConsistencyLevel, msg["read_consistency"])
 				} else {
 					_, ok := msg["read_consistency"]
+					require.False(t, ok)
+				}
+
+				if tt.expectedReadConsistencyMaxDelay > 0 {
+					require.Equal(t, tt.expectedReadConsistencyMaxDelay, msg["read_consistency_max_delay"])
+				} else {
+					_, ok := msg["read_consistency_max_delay"]
 					require.False(t, ok)
 				}
 			} else {
@@ -531,7 +565,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				return nil, context.Canceled
 			},
 			expectedStatusCode:  StatusClientClosedRequest,
-			expectedMetrics:     7,
+			expectedMetrics:     6,
 			expectedStatusLog:   "canceled",
 			expectQueryParamLog: false,
 		},
@@ -546,7 +580,7 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				}, nil
 			},
 			expectedStatusCode:  http.StatusInternalServerError,
-			expectedMetrics:     7,
+			expectedMetrics:     6,
 			expectedStatusLog:   "failed",
 			expectQueryParamLog: false,
 		},
@@ -573,7 +607,6 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 				"cortex_query_fetched_chunks_total",
 				"cortex_query_fetched_index_bytes_total",
 				"cortex_query_samples_processed_total",
-				"cortex_query_samples_processed_cache_adjusted_total",
 			)
 			require.NoError(t, err)
 
@@ -591,12 +624,12 @@ func TestHandler_FailedRoundTrip(t *testing.T) {
 func TestHandler_Stop(t *testing.T) {
 	const (
 		// We want to verify that the Stop method will wait on 10 in-flight requests.
-		requests = 10
+		inflightRequestCountBeforeStopping = 10
 	)
 	inProgress := make(chan int32)
-	var reqID atomic.Int32
+	var requestCount atomic.Int32
 	roundTripper := roundTripperFunc(func(*http.Request) (*http.Response, error) {
-		id := reqID.Inc()
+		id := requestCount.Inc()
 		t.Logf("request %d sending its ID", id)
 		inProgress <- id
 		return &http.Response{
@@ -610,32 +643,38 @@ func TestHandler_Stop(t *testing.T) {
 	logger := &testLogger{}
 	handler := NewHandler(cfg, roundTripper, logger, reg, nil)
 
+	makeRequest := func() (body []byte, statusCode int) {
+		form := url.Values{
+			"query": []string{"some_metric"},
+			"time":  []string{"42"},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(form.Encode()))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Add("User-Agent", "test-user-agent")
+		req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
+		resp := httptest.NewRecorder()
+
+		handler.ServeHTTP(resp, req)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return body, resp.Code
+	}
+
 	var wg sync.WaitGroup
-	for i := 0; i < requests; i++ {
+	for i := 0; i < inflightRequestCountBeforeStopping; i++ {
 		wg.Add(1)
 
 		go func() {
 			defer wg.Done()
 
-			form := url.Values{
-				"query": []string{"some_metric"},
-				"time":  []string{"42"},
-			}
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/query", strings.NewReader(form.Encode()))
-			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-			req.Header.Add("User-Agent", "test-user-agent")
-			req = req.WithContext(user.InjectOrgID(context.Background(), "12345"))
-			resp := httptest.NewRecorder()
-
-			handler.ServeHTTP(resp, req)
-			_, _ = io.ReadAll(resp.Body)
-			require.Equal(t, http.StatusOK, resp.Code)
+			_, statusCode := makeRequest()
+			require.Equal(t, http.StatusOK, statusCode)
 		}()
 	}
 
 	// Wait for all requests to be in flight
-	test.Poll(t, 1*time.Second, requests, func() interface{} {
-		return int(reqID.Load())
+	test.Poll(t, 1*time.Second, inflightRequestCountBeforeStopping, func() interface{} {
+		return int(requestCount.Load())
 	})
 	t.Log("all requests in flight")
 
@@ -654,8 +693,15 @@ func TestHandler_Stop(t *testing.T) {
 		return handler.stopped
 	})
 
+	t.Log("handler has entered stopping mode, making another request")
+
+	// Make another request, make sure it immediately fails.
+	body, statusCode := makeRequest()
+	require.Equal(t, http.StatusServiceUnavailable, statusCode)
+	require.Contains(t, string(body), "frontend stopped")
+
 	// Complete the requests, by consuming their messages
-	for i := 0; i < requests; i++ {
+	for i := 0; i < inflightRequestCountBeforeStopping; i++ {
 		require.False(t, stopped.Load(), "handler stopped too early")
 
 		ri := <-inProgress

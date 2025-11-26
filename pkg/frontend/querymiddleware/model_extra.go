@@ -35,8 +35,8 @@ var (
 	}.Froze()
 )
 
-// newEmptyPrometheusResponse returns an empty successful Prometheus query range response.
-func newEmptyPrometheusResponse() *PrometheusResponse {
+// NewEmptyPrometheusResponse returns an empty successful Prometheus query range response.
+func NewEmptyPrometheusResponse() *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: statusSuccess,
 		Data: &PrometheusData{
@@ -136,6 +136,10 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 		return r.queryExpr.String()
 	}
 	return ""
+}
+
+func (r *PrometheusRangeQueryRequest) GetParsedQuery() parser.Expr {
+	return r.queryExpr
 }
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
@@ -337,6 +341,10 @@ func (r *PrometheusInstantQueryRequest) GetQuery() string {
 		return r.queryExpr.String()
 	}
 	return ""
+}
+
+func (r *PrometheusInstantQueryRequest) GetParsedQuery() parser.Expr {
+	return r.queryExpr
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {

@@ -10,7 +10,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 )
 
@@ -149,7 +148,7 @@ func (g blocksGroup) getNonShardedBlocks() []*block.Meta {
 	var out []*block.Meta
 
 	for _, b := range g.blocks {
-		if value, ok := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; !ok || value == "" {
+		if value, ok := b.Thanos.Labels[block.CompactorShardIDExternalLabel]; !ok || value == "" {
 			out = append(out, b)
 		}
 	}

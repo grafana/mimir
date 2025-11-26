@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -113,7 +114,7 @@ func (c *ownedSeriesWithIngesterRingTestContext) registerTestedIngesterIntoRing(
 		tokens = append(tokens, userToken(c.user, c.ingesterZone, skip)+1)
 		slices.Sort(tokens)
 
-		desc.AddIngester(instanceID, instanceAddr, instanceZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(instanceID, instanceAddr, instanceZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 }
 
@@ -133,7 +134,7 @@ func (c *ownedSeriesWithIngesterRingTestContext) registerSecondIngesterOwningHal
 		slices.Sort(tokens)
 
 		// Must be in the same zone, because we use RF=1, and require RF=num of zones.
-		desc.AddIngester("second-ingester", "localhost", c.ingesterZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("second-ingester", "localhost", c.ingesterZone, tokens, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 }
 
@@ -444,7 +445,7 @@ func TestOwnedSeriesServiceWithIngesterRing(t *testing.T) {
 
 				// add a PENDING ingester with no tokens
 				updateRingAndWaitForWatcherToReadUpdate(t, c.kvStore, func(desc *ring.Desc) {
-					desc.AddIngester("second-ingester", "localhost", c.ingesterZone, []uint32{}, ring.PENDING, time.Now(), false, time.Time{})
+					desc.AddIngester("second-ingester", "localhost", c.ingesterZone, []uint32{}, ring.PENDING, time.Now(), false, time.Time{}, nil)
 				})
 
 				// verify no change in state before owned series run
@@ -803,7 +804,7 @@ func generateSeriesWithTokensAt(testUser string, startTime time.Time) ([]util_te
 	var seriesTokens []uint32
 	for seriesIdx := 0; seriesIdx < ownedServiceSeriesCount; seriesIdx++ {
 		s := util_test.Series{
-			Labels:  labels.FromStrings(labels.MetricName, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "test", fmt.Sprintf("lbl_%05d", seriesIdx), "value"),
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(seriesIdx) * time.Millisecond).UnixMilli(), Val: float64(0)}},
 		}
 		seriesToWrite = append(seriesToWrite, s)
@@ -818,7 +819,7 @@ func generateSeriesWithTargetInfoAt(testUser string, startTime time.Time, target
 	// Generate target_info series
 	for i := range targetInfoCount {
 		s := util_test.Series{
-			Labels:  labels.FromStrings(labels.MetricName, "target_info", "instance", fmt.Sprintf("instance_%d", i), "job", "test_job"),
+			Labels:  labels.FromStrings(model.MetricNameLabel, "target_info", "instance", fmt.Sprintf("instance_%d", i), "job", "test_job"),
 			Samples: []util_test.Sample{{TS: startTime.Add(time.Duration(i) * time.Millisecond).UnixMilli(), Val: float64(1)}},
 		}
 		seriesToWrite = append(seriesToWrite, s)
@@ -844,7 +845,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) pushUserSeries(t *testing.T) 
 	})
 
 	for _, s := range c.seriesToWrite {
-		req, _, _, _ := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
+		req := mockWriteRequest(t, s.Labels, s.Samples[0].Val, s.Samples[0].TS)
 		require.NoError(t, writer.WriteSync(context.Background(), c.partitionID, c.user, req))
 	}
 
@@ -1577,7 +1578,7 @@ func TestOwnedSeriesStartsQuicklyWithEmptyIngesterRing(t *testing.T) {
 
 	// Add an instance to the ring. This is enough to start doing checks.
 	updateRingAndWaitForWatcherToReadUpdate(t, kvStore, func(desc *ring.Desc) {
-		desc.AddIngester("an-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester("an-instance", "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 
 	// We should see owned series doing its checks now.
@@ -1648,7 +1649,7 @@ func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 	ringStrategy := newOwnedSeriesIngesterRingStrategy(instanceID1, rng, nil)
 
 	updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
-		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{})
+		desc.AddIngester(instanceID1, "localhost:11111", "zone", []uint32{1, 2, 3}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 	})
 
 	// First call should indicate ring change.
@@ -1666,7 +1667,7 @@ func TestOwnedSeriesIngesterRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("new instance added", func(t *testing.T) {
 		updateRingAndWaitForWatcherToReadUpdate(t, wkv, func(desc *ring.Desc) {
-			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now(), false, time.Time{})
+			desc.AddIngester(instanceID2, "localhost:22222", "zone", []uint32{4, 5, 6}, ring.ACTIVE, time.Now(), false, time.Time{}, nil)
 		})
 
 		changed, err := ringStrategy.checkRingForChanges()

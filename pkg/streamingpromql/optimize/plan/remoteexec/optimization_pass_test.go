@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -20,8 +23,9 @@ import (
 
 func TestOptimizationPass(t *testing.T) {
 	testCases := map[string]struct {
-		expr         string
-		expectedPlan string
+		expr                               string
+		expectedPlan                       string
+		expectedPlanWithMiddlewareSharding string
 	}{
 		"string expression": {
 			expr: `"the string"`,
@@ -79,13 +83,54 @@ func TestOptimizationPass(t *testing.T) {
 		},
 		"shardable instant vector expression": {
 			expr: `sum(my_metric)`,
-			// Query-frontends use a query engine instance when evaluating sharded queries, and again when evaluating the individual legs.
-			// For now, we don't want to apply remote execution to the sharded queries, only to the individual legs.
-			// So we need to leave the query plan unchanged and allow it to fall through to the special
-			// sharding Queryable used in the query-frontend, which will then make the requests to queriers itself.
 			expectedPlan: `
 				- AggregateExpression: sum
+					- FunctionCall: __sharded_concat__(...)
+						- param 0: RemoteExecution: eager load
+							- AggregateExpression: sum
+								- VectorSelector: {__query_shard__="1_of_2", __name__="my_metric"}
+						- param 1: RemoteExecution: eager load
+							- AggregateExpression: sum
+								- VectorSelector: {__query_shard__="2_of_2", __name__="my_metric"}
+			`,
+
+			// Query-frontends use a query engine instance when evaluating sharded queries, and again when evaluating the individual legs.
+			// If we're using middleware sharding, we don't want to apply remote execution to the sharded queries, only to the individual legs.
+			// So we need to leave the query plan unchanged and allow it to fall through to the special
+			// sharding Queryable used in the query-frontend, which will then make the requests to queriers itself.
+			expectedPlanWithMiddlewareSharding: `
+				- AggregateExpression: sum
 					- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(my_metric{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(my_metric{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+			`,
+		},
+		"multiple shardable expressions": {
+			expr: `sum(my_metric) + count(my_other_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecution: eager load
+								- AggregateExpression: sum
+									- VectorSelector: {__query_shard__="1_of_2", __name__="my_metric"}
+							- param 1: RemoteExecution: eager load
+								- AggregateExpression: sum
+									- VectorSelector: {__query_shard__="2_of_2", __name__="my_metric"}
+					- RHS: AggregateExpression: sum
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecution: eager load
+								- AggregateExpression: count
+									- VectorSelector: {__query_shard__="1_of_2", __name__="my_other_metric"}
+							- param 1: RemoteExecution: eager load
+								- AggregateExpression: count
+									- VectorSelector: {__query_shard__="2_of_2", __name__="my_other_metric"}
+			`,
+
+			expectedPlanWithMiddlewareSharding: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(my_metric{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(my_metric{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+					- RHS: AggregateExpression: sum
+						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"count(my_other_metric{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"count(my_other_metric{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 			`,
 		},
 		"subquery with spin-off": {
@@ -98,32 +143,88 @@ func TestOptimizationPass(t *testing.T) {
 						- MatrixSelector: {__query__="sum(my_metric)", __range__="6h0m0s", __step__="5m0s", __name__="__subquery_spinoff__"}[6h0m0s]
 			`,
 		},
+		"expression with common sharded subexpression": {
+			expr: `sum(foo) + sum(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- AggregateExpression: sum
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+								- param 1: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+					- RHS: ref#1 Duplicate ...
+			`,
+			expectedPlanWithMiddlewareSharding: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- AggregateExpression: sum
+							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+					- RHS: ref#1 Duplicate ...
+			`,
+		},
+		"expression with common subexpression that is not sharded": {
+			expr: `foo + foo`,
+			expectedPlan: `
+				- RemoteExecution
+					- BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- RHS: ref#1 Duplicate ...
+			`,
+		},
 	}
 
-	ctx := context.Background()
+	ctx := user.InjectOrgID(context.Background(), "tenant-1")
 	observer := streamingpromql.NoopPlanningObserver{}
+	timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+	opts1 := streamingpromql.NewTestEngineOpts()
+	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts1.Logger))
+	plannerForMQESharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts1.CommonOpts.Reg, opts1.Logger))
+	plannerForMQESharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+	opts2 := streamingpromql.NewTestEngineOpts()
+	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts2.CommonOpts.Reg, opts2.Logger))
+	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+
+	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, planner *streamingpromql.QueryPlanner) {
+		if enableMiddlewareSharding {
+			// Rewrite the query in a shardable form.
+			expr, err = rewriteForQuerySharding(ctx, expr)
+			require.NoError(t, err)
+		}
+
+		// And do the same for queries eligible for subquery spin-off.
+		expr, err = rewriteForSubquerySpinoff(ctx, expr)
+		require.NoError(t, err)
+
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, observer)
+		require.NoError(t, err)
+		actual := p.String()
+		require.Equal(t, testutils.TrimIndent(expected), actual)
+	}
 
 	for name, testCase := range testCases {
+		if testCase.expectedPlanWithMiddlewareSharding == "" {
+			testCase.expectedPlanWithMiddlewareSharding = testCase.expectedPlan
+		}
+
 		t.Run(name, func(t *testing.T) {
-			opts := streamingpromql.NewTestEngineOpts()
-			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts)
-			require.NoError(t, err)
-			planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+			t.Run("MQE sharding", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.expectedPlan, false, plannerForMQESharding)
+			})
 
-			timeRange := types.NewInstantQueryTimeRange(time.Now())
-
-			// Rewrite the query in a shardable form, if we can.
-			testCase.expr, err = rewriteForQuerySharding(ctx, testCase.expr)
-			require.NoError(t, err)
-
-			// And do the same for queries eligible for subquery spin-off.
-			testCase.expr, err = rewriteForSubquerySpinoff(ctx, testCase.expr)
-			require.NoError(t, err)
-
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
-			require.NoError(t, err)
-			actual := p.String()
-			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
+			t.Run("middleware sharding", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.expectedPlanWithMiddlewareSharding, true, plannerForMiddlewareSharding)
+			})
 		})
 	}
 }
@@ -132,21 +233,15 @@ func rewriteForQuerySharding(ctx context.Context, expr string) (string, error) {
 	const maxShards = 2
 	stats := astmapper.NewMapperStats()
 	squasher := astmapper.EmbeddedQueriesSquasher
-	summer := astmapper.NewQueryShardSummer(maxShards, false, squasher, log.NewNopLogger(), stats)
-	mapper := astmapper.NewSharding(summer, false, squasher)
+	summer := astmapper.NewQueryShardSummer(maxShards, squasher, log.NewNopLogger(), stats)
 	ast, err := parser.ParseExpr(expr)
 	if err != nil {
 		return "", err
 	}
 
-	shardedQuery, err := mapper.Map(ctx, ast)
+	shardedQuery, err := summer.Map(ctx, ast)
 	if err != nil {
 		return "", err
-	}
-
-	if stats.GetShardedQueries() == 0 {
-		// If no part of the query was shardable, then the query-frontend will use the original expression as-is.
-		return expr, nil
 	}
 
 	return shardedQuery.String(), nil
@@ -172,3 +267,10 @@ func rewriteForSubquerySpinoff(ctx context.Context, expr string) (string, error)
 
 	return rewrittenQuery.String(), nil
 }
+
+type mockLimits struct{}
+
+func (m *mockLimits) QueryShardingTotalShards(userID string) int        { return 2 }
+func (m *mockLimits) QueryShardingMaxRegexpSizeBytes(userID string) int { return 0 }
+func (m *mockLimits) QueryShardingMaxShardedQueries(userID string) int  { return 0 }
+func (m *mockLimits) CompactorSplitAndMergeShards(userID string) int    { return 0 }

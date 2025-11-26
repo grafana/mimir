@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -23,7 +24,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -122,7 +122,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
-		}, nil, 0)
+		}, 0)
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -229,7 +229,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
 			noCompactMarkerFilter,
-		}, nil, 0)
+		}, 0)
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
@@ -244,7 +244,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, prometheus.NewPedanticRegistry())
 		cfg := indexheader.Config{VerifyOnLoad: true}
 		bComp, err := NewBucketCompactor(
-			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, 4, metrics, true, 32, cfg, 8,
+			logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 0, false, 4, metrics, true, 32, cfg, 8,
 		)
 		require.NoError(t, err)
 
@@ -505,7 +505,8 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec) (
 	for _, b := range blocks {
 		id, meta := createBlock(ctx, t, prepareDir, b)
 		metas = append(metas, meta)
-		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil))
+		_, err := block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), nil)
+		require.NoError(t, err)
 	}
 
 	return metas
@@ -572,7 +573,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
-		}, nil, 0)
+		}, 0)
 		require.NoError(t, err)
 
 		sy, err := newMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, blocksMarkedForDeletion)
@@ -656,20 +657,20 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 	uid := ulid.MustNew(ulid.Now(), entropy)
 
 	if err := os.Mkdir(path.Join(dir, uid.String()), os.ModePerm); err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "close index")
+		return ulid.ULID{}, fmt.Errorf("close index: %w", err)
 	}
 
 	if err := os.Mkdir(path.Join(dir, uid.String(), "chunks"), os.ModePerm); err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "close index")
+		return ulid.ULID{}, fmt.Errorf("close index: %w", err)
 	}
 
 	w, err := index.NewWriter(context.Background(), path.Join(dir, uid.String(), "index"))
 	if err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "new index")
+		return ulid.ULID{}, fmt.Errorf("new index: %w", err)
 	}
 
 	if err := w.Close(); err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "close index")
+		return ulid.ULID{}, fmt.Errorf("close index: %w", err)
 	}
 
 	m := tsdb.BlockMeta{
@@ -688,7 +689,7 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 	}
 
 	if err := os.WriteFile(path.Join(dir, uid.String(), "meta.json"), b, os.ModePerm); err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "saving meta.json")
+		return ulid.ULID{}, fmt.Errorf("saving meta.json: %w", err)
 	}
 
 	if _, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(dir, uid.String()), block.ThanosMeta{
@@ -696,7 +697,7 @@ func createEmptyBlock(dir string, mint, maxt int64, extLset labels.Labels, resol
 		Downsample: block.ThanosDownsample{Resolution: resolution},
 		Source:     block.TestSource,
 	}, nil); err != nil {
-		return ulid.ULID{}, errors.Wrap(err, "finalize block")
+		return ulid.ULID{}, fmt.Errorf("finalize block: %w", err)
 	}
 
 	return uid, nil
@@ -719,17 +720,16 @@ func createBlockWithOptions(
 	numSamples := numFloatSamples + numHistogramSamples
 
 	headOpts := tsdb.DefaultHeadOptions()
-	headOpts.EnableNativeHistograms.Store(true)
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
 	headOpts.ChunkRange = 10000000000
 	h, err := tsdb.NewHead(nil, nil, nil, nil, headOpts, nil)
 	if err != nil {
-		return id, errors.Wrap(err, "create head block")
+		return id, fmt.Errorf("create head block: %w", err)
 	}
 	defer func() {
 		runutil.CloseWithErrCapture(&err, h, "TSDB Head")
 		if e := os.RemoveAll(headOpts.ChunkDirRoot); e != nil {
-			err = errors.Wrap(e, "delete chunks dir")
+			err = fmt.Errorf("delete chunks dir: %w", e)
 		}
 	}()
 
@@ -766,14 +766,14 @@ func createBlockWithOptions(
 					}
 					if err != nil {
 						if rerr := app.Rollback(); rerr != nil {
-							err = errors.Wrapf(err, "rollback failed: %v", rerr)
+							err = fmt.Errorf("rollback failed: %v: %w", rerr, err)
 						}
 
-						return errors.Wrap(err, "add sample")
+						return fmt.Errorf("add sample: %w", err)
 					}
 				}
 				if err := app.Commit(); err != nil {
-					return errors.Wrap(err, "commit")
+					return fmt.Errorf("commit: %w", err)
 				}
 				t += timeStepSize
 			}
@@ -785,19 +785,19 @@ func createBlockWithOptions(
 	}
 	c, err := tsdb.NewLeveledCompactor(ctx, nil, promslog.NewNopLogger(), []int64{maxt - mint}, nil, nil)
 	if err != nil {
-		return id, errors.Wrap(err, "create compactor")
+		return id, fmt.Errorf("create compactor: %w", err)
 	}
 
 	blocks, err := c.Write(dir, h, mint, maxt, nil)
 	if err != nil {
-		return id, errors.Wrap(err, "write block")
+		return id, fmt.Errorf("write block: %w", err)
 	}
 
 	if len(blocks) == 0 || (blocks[0] == ulid.ULID{}) {
-		return id, errors.Errorf("nothing to write, asked for %d samples", numSamples)
+		return id, fmt.Errorf("nothing to write, asked for %d samples", numSamples)
 	}
 	if len(blocks) > 1 {
-		return id, errors.Errorf("expected one block, got %d, asked for %d samples", len(blocks), numSamples)
+		return id, fmt.Errorf("expected one block, got %d, asked for %d samples", len(blocks), numSamples)
 	}
 
 	id = blocks[0]
@@ -810,12 +810,12 @@ func createBlockWithOptions(
 		Source:     block.TestSource,
 		Files:      []block.File{},
 	}, nil); err != nil {
-		return id, errors.Wrap(err, "finalize block")
+		return id, fmt.Errorf("finalize block: %w", err)
 	}
 
 	if !tombstones {
 		if err = os.Remove(filepath.Join(dir, id.String(), "tombstones")); err != nil {
-			return id, errors.Wrap(err, "remove tombstones")
+			return id, fmt.Errorf("remove tombstones: %w", err)
 		}
 	}
 
