@@ -30,7 +30,8 @@ type AvgAggregationGroup struct {
 	// This is necessary to do per point (instead of just counting the input series) as a series may have
 	// stale or non-existent values that are not added towards the count.
 	// We use float64 instead of uint64 so that we can reuse the float pool and don't have to retype on each division.
-	groupSeriesCounts []float64
+	groupSeriesCounts            []float64
+	histogramCounterResetTracker *histogramCounterResetTracker
 }
 
 func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
@@ -163,6 +164,10 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			return err
 		}
 		g.histograms = g.histograms[:timeRange.StepCount]
+		g.histogramCounterResetTracker, err = newHistogramCounterResetTracker(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
 	}
 
 	for inputIdx, p := range data.Histograms {
@@ -182,10 +187,17 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
 			data.Histograms[inputIdx].H = nil
 
+			// Safe to ignore this first response as there will be nothing to compare to
+			g.histogramCounterResetTracker.init(outputIdx, p.H.CounterResetHint)
+
 			continue
 		}
 
-		_, counterResetCollision, nhcbBoundsReconciled, err := p.H.Sub(g.histograms[outputIdx])
+		if g.histogramCounterResetTracker.checkCounterResetConflicts(outputIdx, p.H.CounterResetHint) {
+			emitAnnotation(newAggregationCounterResetCollisionWarning)
+		}
+
+		_, _, nhcbBoundsReconciled, err := p.H.Sub(g.histograms[outputIdx])
 		if err != nil {
 			// Unable to subtract histograms (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
@@ -197,15 +209,13 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			}
 			continue
 		}
-		if counterResetCollision {
-			emitAnnotation(newAggregationCounterResetCollisionWarning)
-		}
+
 		if nhcbBoundsReconciled {
 			emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 		}
 
 		p.H.Div(g.groupSeriesCounts[outputIdx])
-		_, counterResetCollision, nhcbBoundsReconciled, err = g.histograms[outputIdx].Add(p.H)
+		_, _, nhcbBoundsReconciled, err = g.histograms[outputIdx].Add(p.H)
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
@@ -217,9 +227,7 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			}
 			continue
 		}
-		if counterResetCollision {
-			emitAnnotation(newAggregationCounterResetCollisionWarning)
-		}
+
 		if nhcbBoundsReconciled {
 			emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 		}
@@ -322,4 +330,8 @@ func (g *AvgAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryCons
 	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(&g.histograms, memoryConsumptionTracker)
 	types.Float64SlicePool.Put(&g.groupSeriesCounts, memoryConsumptionTracker)
+	if g.histogramCounterResetTracker != nil {
+		g.histogramCounterResetTracker.close()
+		g.histogramCounterResetTracker = nil
+	}
 }
