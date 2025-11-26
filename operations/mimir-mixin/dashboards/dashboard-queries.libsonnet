@@ -104,6 +104,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       requestsPerSecondMetric: $.requests_per_second_metric,
       gatewayMatcher: $.jobMatcher($._config.job_names.gateway),
       distributorMatcher: $.jobMatcher($._config.job_names.distributor),
+      usageTrackerMatcher: $.jobMatcher($._config.job_names.usage_tracker),
       ingesterMatcher: $.jobMatcher($._config.job_names.ingester),
       queryFrontendMatcher: $.jobMatcher($._config.job_names.query_frontend),
       rulerMatcher: $.jobMatcher($._config.job_names.ruler),
@@ -121,6 +122,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       readGRPCIngesterRoute: $.queries.read_grpc_ingester_route,
       readGRPCStoreGatewayRoute: $.queries.read_grpc_store_gateway_route,
       rulerQueryFrontendRoutesRegex: $.queries.ruler_query_frontend_routes_regex,
+      usageTrackerTrackSeriesRoutesRegex: $.queries.usage_tracker_track_series_routes_regex,
+      usageTrackerGetUsersCloseToLimitRoutesRegex: $.queries.usage_tracker_get_users_close_to_limit_routes_regex,
       perClusterLabel: $._config.per_cluster_label,
       recordingRulePrefix: $.recordingRulePrefix($.jobSelector('any')),  // The job name does not matter here.
       groupPrefixJobs: $._config.group_prefix_jobs,
@@ -144,6 +147,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     alertmanager_grpc_routes_regex: '/alertmanagerpb.Alertmanager/HandleRequest',
     // Both support gRPC and HTTP requests. HTTP request is used when rule evaluation query requests go through the query-tee.
     ruler_query_frontend_routes_regex: '/httpgrpc.HTTP/Handle|.*api_v1_query',
+    usage_tracker_track_series_routes_regex: '/usagetrackerpb.UsageTracker/TrackSeries',
+    usage_tracker_get_users_close_to_limit_routes_regex: '/usagetrackerpb.UsageTracker/GetUsersCloseToLimit',
 
     gateway: {
       local p = self,
@@ -168,6 +173,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       writeRequestsPerSecondSelector: '%(distributorMatcher)s, route=~"%(writeDistributorRoutesRegex)s"' % variables,
       samplesPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_samples:rate5m{%(distributorMatcher)s})' % variables,
       exemplarsPerSecond: 'sum(%(groupPrefixJobs)s:cortex_distributor_received_exemplars:rate5m{%(distributorMatcher)s})' % variables,
+
+      // Write failures rate as percentage of total requests.
+      writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),
+    },
+
+    usage_tracker: {
+      local p = self,
+      clientRequestsPerSecondMetric: 'cortex_usage_tracker_client_track_series_duration_seconds',
+      requestsPerSecondMetric: $.queries.requests_per_second_metric,
+      trackSeriesRequestsPerSecondRouteRegex: '%(usageTrackerTrackSeriesRoutesRegex)s' % variables,
+      trackSeriesRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerTrackSeriesRoutesRegex)s"' % variables,
+      getUsersCloseToLimitRequestsPerSecondRouteRegex: '%(usageTrackerGetUsersCloseToLimitRoutesRegex)s' % variables,
+      getUsersCloseToLimitRequestsPerSecondSelector: '%(usageTrackerMatcher)s, route=~"%(usageTrackerGetUsersCloseToLimitRoutesRegex)s"' % variables,
 
       // Write failures rate as percentage of total requests.
       writeFailuresRate: $.ncHistogramFailureRate(p.requestsPerSecondMetric, p.writeRequestsPerSecondSelector),

@@ -132,21 +132,6 @@ func (s Matchers) ToPrometheusType() ([]*labels.Matcher, error) {
 	return out, nil
 }
 
-// Append appends other Matchers to this matcher if both are non-nil.
-// If this Matchers is nil, other is returned unchanged.
-// If other is nil, this Matchers is returned unchanged.
-func (s Matchers) Append(other Matchers) Matchers {
-	if s == nil {
-		return other
-	}
-
-	if other == nil {
-		return s
-	}
-
-	return append(s, other...)
-}
-
 // With returns a new Matchers that only contains matchers targeting labels
 // with the given names.
 func (s Matchers) With(names ...string) Matchers {

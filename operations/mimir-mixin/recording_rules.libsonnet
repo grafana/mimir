@@ -340,6 +340,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         ],
       },
+      {
+        name: 'mimir_usage_tracker_rules',
+        rules:
+          utils.histogramRules('cortex_usage_tracker_client_track_series_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
+      },
     ],
   },
 }

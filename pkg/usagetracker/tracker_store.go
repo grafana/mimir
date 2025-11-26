@@ -228,8 +228,13 @@ func (t *trackerStore) cleanup(now time.Time) {
 	for tenantID, tenant := range tenantsClone {
 		for _, shard := range tenant.shards {
 			shard.Lock()
-			shard.Cleanup(watermark, tenant.series)
+			removed := shard.Cleanup(watermark)
 			shard.Unlock()
+
+			// Update the tenant's counter when not holding the mutex anymore.
+			if removed > 0 {
+				tenant.series.Add(-uint64(removed))
+			}
 		}
 
 		if tenant.series.Load() == 0 {

@@ -150,7 +150,7 @@ func kRandomNodes(k int, nodes []*nodeState, delegate NodeSelectionDelegate, exc
 
 		nodes = filteredNodes
 
-		// Select 1 random preferred node first. We guarantee that only 1 preferred node is picked.
+		// Select 1 random preferred node first to guarantee at least one preferred node in the result set.
 		if n := len(preferredNodes); n > 0 && k > 0 {
 			startIdx := randomOffset(n)
 
