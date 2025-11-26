@@ -517,12 +517,12 @@ local filename = 'mimir-queries.json';
         { fieldConfig+: { defaults+: { unit: 's' } } },
       )
       .addPanel(
+        local selector = $.jobMatcher($._config.job_names.store_gateway);
+        local query = utils.ncHistogramQuantile('0.99', 'cortex_bucket_store_series_request_stage_duration_seconds', selector, sum_by=['stage']);
         $.timeseriesPanel('Series request 99th percentile latency') +
         $.queryPanel(
-          |||
-            histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{%s}[$__rate_interval])))
-          ||| % [$.jobMatcher($._config.job_names.store_gateway)],
-          '{{stage}}'
+          [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
+          ['{{stage}}','{{stage}}'],
         ) +
         $.stack +
         $.showAllTooltip +

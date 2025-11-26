@@ -3087,7 +3087,13 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "histogram_quantile(0.99, sum by(stage, le) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])))\n",
+                        "expr": "(histogram_quantile(0.99, sum by (le,stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                        "format": "time_series",
+                        "legendFormat": "{{stage}}",
+                        "legendLink": null
+                     },
+                     {
+                        "expr": "(histogram_quantile(0.99, sum by (stage) (rate(cortex_bucket_store_series_request_stage_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                         "format": "time_series",
                         "legendFormat": "{{stage}}",
                         "legendLink": null
