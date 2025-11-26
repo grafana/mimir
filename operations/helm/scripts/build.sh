@@ -76,8 +76,8 @@ function generate_manifests() {
   echo "Checking for kubeVersionOverride inside tests' values.yaml ..."
   KUBE_VERSION=""
   if grep -q "^kubeVersionOverride:" "${FILEPATH}" ; then
-    # Extract the kubeVersionOverride value from the file
-    KUBE_VERSION=$(grep "^kubeVersionOverride:" "${FILEPATH}" | sed 's/kubeVersionOverride:[[:space:]]*"\?\([^"]*\)"\?/\1/')
+    # Extract the kubeVersionOverride value from the file (portable across GNU and BSD sed)
+    KUBE_VERSION=$(grep "^kubeVersionOverride:" "${FILEPATH}" | awk -F': ' '{print $2}' | tr -d '"')
     echo "kubeVersionOverride: \"$KUBE_VERSION\""
   else
     echo "Warning: injecting Kubernetes version override: kubeVersionOverride=${DEFAULT_KUBE_VERSION}"
