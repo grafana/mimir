@@ -627,6 +627,7 @@ func LabelAdaptersEncode(lbls []LabelAdapter, stream *jsoniter.Stream) {
 
 func decodeLabelAdapters(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	laPtr := (*[]LabelAdapter)(ptr)
+	*laPtr = (*laPtr)[:0] // Set to zero length before we start appending elements.
 	iter.ReadMapCB(func(iter *jsoniter.Iterator, key string) bool {
 		value := iter.ReadString()
 		*laPtr = append(*laPtr, LabelAdapter{Name: key, Value: value})
