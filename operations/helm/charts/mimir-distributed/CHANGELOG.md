@@ -29,6 +29,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 
 ## main / unreleased
 
+* [FEATURE] Add support for commonLabels and labels. `commonLabels` are added to all K8s, including pods. `labels` are added to all K8s, excluding pods. #13479
 * [ENHANCEMENT] Add support for KEDA ScaledObject fallback configuration. This allows configuring fallback behavior when the scaler fails to get metrics from the source. #13467
 * [CHANGE] Set default memory ballast for ruler to 1GiB to reduce GC pressure during startup. #13376
 * [CHANGE] Set docker.io as the default registry for mimir image. #13267

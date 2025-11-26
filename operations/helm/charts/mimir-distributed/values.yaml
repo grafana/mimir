@@ -71,6 +71,14 @@ global:
   # scope: alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podAnnotations: {}
 
+  # -- Common labels directly added to all K8S resources managed by this chart INCLUDING pods.
+  # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
+  commonLabels: {}
+
+  # -- Labels directly added to all K8S resources managed by this chart except pods.
+  # scope: alertmanager, compactor, continuous-test, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
+  labels: {}
+
   # -- Pod labels for all pods directly managed by this chart.
   # scope: alertmanager, compactor, distributor, gateway, ingester, memcached, nginx, overrides-exporter, querier, query-frontend, query-scheduler, ruler, store-gateway
   podLabels: {}

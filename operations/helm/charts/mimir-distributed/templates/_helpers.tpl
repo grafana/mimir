@@ -226,6 +226,12 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.labels" -}}
+{{ with .ctx.Values.global.commonLabels -}}
+{{ toYaml . }}
+{{ end -}}
+{{ with .ctx.Values.global.labels -}}
+{{ toYaml . }}
+{{ end -}}
 helm.sh/chart: {{ include "mimir.chart" .ctx }}
 app.kubernetes.io/name: {{ include "mimir.name" .ctx }}
 app.kubernetes.io/instance: {{ .ctx.Release.Name }}
@@ -258,6 +264,9 @@ Params:
   rolloutZoneName = rollout zone name (optional)
 */}}
 {{- define "mimir.podLabels" -}}
+{{ with .ctx.Values.global.commonLabels -}}
+{{ toYaml . }}
+{{ end -}}
 {{ with .ctx.Values.global.podLabels -}}
 {{ toYaml . }}
 {{ end -}}
