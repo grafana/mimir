@@ -126,6 +126,7 @@
 * [ENHANCEMENT] Ingester: Check labels order and uniqueness on ingestion to protect against corruption. #14089
 * [ENHANCEMENT] Ingester: Add experimental file based Kafka consumer group offset tracking via flag `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`. #14110
 * [ENHANCEMENT] Store-gateway: Add "OOO" column to the tenant blocks page to indicate whether each block was created from out-of-order samples. #14283
+* [ENHANCEMENT] HA: Deduplication per sample instead of per batch. #13665
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053

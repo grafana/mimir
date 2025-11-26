@@ -1163,24 +1163,35 @@ type haReplica struct {
 	cluster, replica string
 }
 
-// TODO document what this does
-func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica) (replicaState, error) {
+type replicaInfo struct {
+	state       replicaState
+	sampleCount int
+}
+
+// replicaObserved checks if a sample from a given replica should be accepted for ingestion based on HA deduplication rules.
+//
+// Returns a replicaState indicating the acceptance status and classification of the replica:
+//   - replicaIsPrimary: sample is from the elected primary replica and should be accepted
+//   - replicaNotHA: sample doesn't have both HA labels and should be accepted
+//   - replicaDeduped: sample is from a non-primary replica and should be deduplicated
+//   - replicaRejectedTooManyClusters: sample is rejected because the tenant has too many HA clusters
+//   - replicaRejectedUnknown: sample is rejected due to an unknown error
+func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
 	if span := opentracing.SpanFromContext(ctx); span != nil {
-		// TODO move this if in a separate function
 		// Make a copy of these, since they may be retained as tags
 		span.LogFields(
-			opentracing_log.String("cluster", copyString(replica.cluster)),
-			opentracing_log.String("replica", copyString(replica.replica)),
+			opentracing_log.String("cluster", strings.Clone(replica.cluster)),
+			opentracing_log.String("replica", strings.Clone(replica.replica)),
 		)
 	}
 
-	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica)
+	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica, ts)
 	if err != nil {
 		switch {
-		case errors.Is(err, replicasNotMatchError{}):
+		case errors.As(err, &replicasDidNotMatchError{}):
 			// These samples have been deduped.
 			return replicaDeduped, err
-		case errors.Is(err, tooManyClustersError{}):
+		case errors.As(err, &tooManyClustersError{}):
 			return replicaRejectedTooManyClusters, err
 		default:
 			return replicaRejectedUnknown, err
@@ -1193,7 +1204,6 @@ func (d *Distributor) replicaObserved(ctx context.Context, userID string, replic
 	// If there wasn't an error but isAccepted is false that means we didn't find both HA labels.
 	return replicaNotHA, nil
 }
-
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
@@ -1212,7 +1222,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
-		cluster, replica := findHALabels(haReplicaLabel, d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		haClusterLabel := d.limits.HAClusterLabel(userID)
+		cluster, replica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[0].Labels)
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
@@ -1225,12 +1236,11 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		numSamples := 0
 		now := time.Now()
 
-		var getReplicaForSample func(int) haReplica
-		{
-			var replicaKey haReplica // TODO dimitarvdimitrov - do we need this closure or a regular func also works?
-			getReplicaForSample = func(i int) haReplica {
-				replicaKey.cluster, replicaKey.replica = findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[i].Labels)
-				return replicaKey
+		getReplicaForSample := func(i int) haReplica {
+			cluster, replica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[i].Labels)
+			return haReplica{
+				cluster: cluster,
+				replica: replica,
 			}
 		}
 
@@ -1259,61 +1269,57 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		var errs multierror.MultiError
-		// TODO dimitarvdimitrov maybe unite the two maps that have the haReplicas as the key
-		samplesPerReplica := make(map[haReplica]int)
-		replicaStates := make(map[haReplica]replicaState, len(samplesPerReplica))
+		replicaInfos := make(map[haReplica]*replicaInfo)
 		samplesPerState := make(map[replicaState]int)
+		// Check if all timeseries belong to the same replica
+		firstReplica := getReplicaForSample(0)
 		isOneReplica := true
-		{
-			replica := getReplicaForSample(0)
+		for i := 1; i < len(req.Timeseries); i++ {
+			if getReplicaForSample(i) != firstReplica {
+				isOneReplica = false
+				break
+			}
+		}
 
-			for i := range req.Timeseries {
-				if getReplicaForSample(i) != replica {
-					isOneReplica = false
-					break
-				}
-			}
-		}
-		{
-			if isOneReplica {
-				samplesPerReplica[getReplicaForSample(0)] = numSamples
-			} else {
-				for i := range req.Timeseries {
-					samplesPerReplica[getReplicaForSample(i)]++
-				}
-			}
-		}
+		// Count samples per replica
 		if isOneReplica {
-			var r haReplica
-			for k := range samplesPerReplica {
-				r = k
-			}
+			replicaInfos[firstReplica] = &replicaInfo{sampleCount: numSamples}
+			// Optimize getReplicaForSample to return the single replica directly
 			getReplicaForSample = func(i int) haReplica {
-				return r
+				return firstReplica
+			}
+		} else {
+			for i := range req.Timeseries {
+				r := getReplicaForSample(i)
+				info := replicaInfos[r]
+				if info == nil {
+					info = &replicaInfo{}
+					replicaInfos[r] = info
+				}
+				info.sampleCount++
 			}
 		}
-		for replicaKey, numSamples := range samplesPerReplica {
-			state, ok := replicaStates[replicaKey]
-			if !ok {
-				state, err = d.replicaObserved(ctx, userID, replicaKey)
-				replicaStates[replicaKey] = state
+		for replicaKey, info := range replicaInfos {
+			if info.state == replicaRejectedUnknown {
+				state, err := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
+				info.state = state
 				errs.Add(err)
 			}
-			samplesPerState[state] += numSamples
+			samplesPerState[info.state] += info.sampleCount
 		}
-		lastAccepted := sortByAccepted(req, replicaStates, getReplicaForSample)
+		lastAccepted := sortByAccepted(req, replicaInfos, getReplicaForSample)
 		var getReplicaState func(haReplica) replicaState
 		if isOneReplica {
 			var s replicaState
-			for _, rs := range replicaStates {
-				s = rs
+			for _, info := range replicaInfos {
+				s = info.state
 			}
 			getReplicaState = func(replica haReplica) replicaState {
 				return s
 			}
 		} else {
 			getReplicaState = func(replica haReplica) replicaState {
-				return replicaStates[replica]
+				return replicaInfos[replica].state
 			}
 		}
 		for i := 0; i <= lastAccepted; i++ {
@@ -1329,35 +1335,15 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 		// We don't want to send samples beyond the last accepted sample - that was deduplicated
 		pushReq.AddCleanup(sliceUnacceptedRequests(req, lastAccepted))
-		{
-			// TODO move into a function
-			for replica, state := range replicaStates {
-				if state&replicaDeduped != 0 && samplesPerReplica[replica] > 0 {
-					cluster := copyString(replica.cluster) // Make a copy of this, since it may be retained as labels on our metrics
-					d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(samplesPerReplica[replica]))
-				}
-			}
-			if samplesPerState[replicaNotHA] > 0 {
-				d.nonHASamples.WithLabelValues(userID).Add(float64(samplesPerState[replicaNotHA]))
-			}
-			if samplesPerState[replicaRejectedTooManyClusters] > 0 {
-				d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
-			}
-		}
-		var resp *mimirpb.WriteResponse
+		d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState)
+
 		if len(req.Timeseries) > 0 {
-			cleanupInDefer = false
-			resp, err = next(ctx, pushReq)
+			err = next(ctx, pushReq)
 		}
 		errs.Add(err)
 
-		if samplesPerState[replicaDeduped] > 0 {
-			return nil, httpgrpc.Errorf(http.StatusAccepted, errs.Err().Error())
-		} else if len(errs) > 0 {
-			return nil, httpgrpc.Errorf(http.StatusBadRequest, errs.Err().Error()) // ermmm?
-		}
-		return resp, nil
-	}
+		return errs.Err()
+	})
 }
 
 func sliceUnacceptedRequests(req *mimirpb.WriteRequest, lastAccepted int) func() {
@@ -1370,20 +1356,36 @@ func sliceUnacceptedRequests(req *mimirpb.WriteRequest, lastAccepted int) func()
 
 }
 
+// updateHADedupeMetrics updates metrics related to HA deduplication.
+func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int) {
+	for replica, info := range replicaInfos {
+		if info.state&replicaDeduped != 0 && info.sampleCount > 0 {
+			cluster := strings.Clone(replica.cluster) // Make a copy of this, since it may be retained as labels on our metrics
+			d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(info.sampleCount))
+		}
+	}
+	if samplesPerState[replicaNotHA] > 0 {
+		d.nonHASamples.WithLabelValues(userID).Add(float64(samplesPerState[replicaNotHA]))
+	}
+	if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+		d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
+	}
+}
+
 // sortByAccepted returns the index of the last acepted timeseries in the write request based on the ha dedup sattes of the eplicas
-func sortByAccepted(req *mimirpb.WriteRequest, replicaStates map[haReplica]replicaState, getReplicaForSample func(int) haReplica) int {
+func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*replicaInfo, getReplicaForSample func(int) haReplica) int {
 	numAcceptedReplicas := 0
-	for _, state := range replicaStates {
-		if state&replicaAccepted != 0 {
+	for _, info := range replicaInfos {
+		if info.state&replicaAccepted != 0 {
 			numAcceptedReplicas++
 		}
 	}
-	if numAcceptedReplicas == len(replicaStates) {
+	if numAcceptedReplicas == len(replicaInfos) {
 		return len(req.Timeseries) - 1
 	}
 	findPreviousAccepted := func(i int) int {
 		for i > 0 {
-			state := replicaStates[getReplicaForSample(i)]
+			state := replicaInfos[getReplicaForSample(i)].state
 			if state&replicaAccepted != 0 {
 				break
 			}
@@ -1397,7 +1399,7 @@ func sortByAccepted(req *mimirpb.WriteRequest, replicaStates map[haReplica]repli
 		if i > lastAccepted {
 			break
 		}
-		state := replicaStates[getReplicaForSample(i)]
+		state := replicaInfos[getReplicaForSample(i)].state
 		if state&replicaAccepted == 0 {
 			req.Timeseries[i], req.Timeseries[lastAccepted] = req.Timeseries[lastAccepted], req.Timeseries[i]
 			lastAccepted--

@@ -960,15 +960,15 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			samples:          5,
 			expectedResponse: emptyResponse,
 		},
-		// Using very long replica label value results in not pushing the sample, hence a success.
+		// Using very long replica label value results in validation error.
 		{
-			enableTracker:    true,
-			acceptedReplica:  "instance0",
-			testReplica:      "instance1234567890123456789012345678901234567890",
-			cluster:          "cluster0",
-			samples:          5,
-			expectedResponse: emptyResponse,
-			expectedCode:     0,
+			enableTracker:   true,
+			acceptedReplica: "instance0",
+			testReplica:     "instance1234567890123456789012345678901234567890",
+			cluster:         "cluster0",
+			samples:         5,
+			expectedError:   status.New(codes.InvalidArgument, fmt.Sprintf(labelValueTooLongMsgFormat, 48, 15, "__replica__", "instance1234567890123456789012345678901234567890", mimirpb.FromLabelAdaptersToString(labelSetGenWithReplicaAndCluster("instance1234567890123456789012345678901234567890", "cluster0")(0)))),
+			expectedDetails: &mimirpb.ErrorDetails{Cause: mimirpb.ERROR_CAUSE_BAD_DATA},
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
@@ -2384,7 +2384,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
 					for i := 0; i < 10; i++ {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
@@ -2412,7 +2412,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				samples := make([]mimirpb.Sample, numSeriesPerRequest)
 
 				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
 					for i := 0; i < 10; i++ {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
@@ -5199,8 +5199,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
-			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
+			expectErrs: []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
+			expectDetails: []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
 		}, {
 			name:            "exceed max ha clusters limit",
 			ctx:             ctxWithUser,
@@ -5243,7 +5243,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				return []*mimirpb.WriteRequest{c1, c2}
 			}(),
 			expectedNextCalls: 2,
-			expectErrs:        []int{0, 202},
+			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
+			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
 		},
 	}
 
@@ -5303,22 +5304,16 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			for i := range gotReqs {
 				assert.ElementsMatch(t, tc.expectedReqs[i].Timeseries, gotReqs[i].Timeseries)
 				assert.ElementsMatch(t, tc.expectedReqs[i].Metadata, gotReqs[i].Metadata)
-				assert.Equal(t, tc.expectedReqs[i].SkipLabelNameValidation, gotReqs[i].SkipLabelNameValidation)
 				assert.Equal(t, tc.expectedReqs[i].Source, gotReqs[i].Source)
 			}
 			assert.Len(t, gotErrs, len(tc.expectErrs))
 			for errIdx, expectErr := range tc.expectErrs {
-				if expectErr > 0 {
-					// Expect an httpgrpc error with specific status code.
-					resp, ok := httpgrpc.HTTPResponseFromError(gotErrs[errIdx])
-					if assert.True(t, ok) {
-						assert.Equal(t, expectErr, int(resp.Code))
-					}
-				} else if expectErr == 0 {
+				if expectErr != nil {
+					// Expect a gRPC error.
+					checkGRPCError(t, expectErr, tc.expectDetails[errIdx], gotErrs[errIdx])
+				} else {
 					// Expect no error.
 					assert.Nil(t, gotErrs[errIdx])
-				} else {
-					checkGRPCError(t, expectErr, tc.expectDetails[errIdx], gotErrs[errIdx])
 				}
 			}
 
