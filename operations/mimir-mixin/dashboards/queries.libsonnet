@@ -368,13 +368,13 @@ local filename = 'mimir-queries.json';
       .addPanel(
         local selector = '$read_path_matcher, route=~"%s"' % $.queries.query_http_routes_regex;
         local query = utils.ncHistogramApplyTemplate(
-          template = 'sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left %s',
-          query = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_querier_request_duration_seconds', selector)),
+          template='sum by (reason) (rate(cortex_querier_queries_rejected_total{$read_path_matcher}[$__rate_interval])) / ignoring (reason) group_left %s',
+          query=utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_querier_request_duration_seconds', selector)),
         );
         $.timeseriesPanel('Rejected queries') +
         $.queryPanel(
           [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
-          ['{{reason}}','{{reason}}'],
+          ['{{reason}}', '{{reason}}'],
         ) +
         { fieldConfig+: { defaults+: { unit: 'percentunit', min: 0, max: 1 } } } +
         $.panelDescription(
@@ -510,7 +510,7 @@ local filename = 'mimir-queries.json';
         $.timeseriesPanel('Series request average latency') +
         $.queryPanel(
           [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
-          ['{{stage}}','{{stage}}'],
+          ['{{stage}}', '{{stage}}'],
         ) +
         $.stack +
         $.showAllTooltip +
@@ -522,7 +522,7 @@ local filename = 'mimir-queries.json';
         $.timeseriesPanel('Series request 99th percentile latency') +
         $.queryPanel(
           [utils.showClassicHistogramQuery(query), utils.showNativeHistogramQuery(query)],
-          ['{{stage}}','{{stage}}'],
+          ['{{stage}}', '{{stage}}'],
         ) +
         $.stack +
         $.showAllTooltip +
