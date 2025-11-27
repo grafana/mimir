@@ -1356,6 +1356,7 @@
   "query-scheduler.ring.instance-port": 0,
   "query-scheduler.ring.instance-addr": "",
   "query-scheduler.max-used-instances": 0,
+  "query-scheduler.graceful-shutdown-timeout": 30000000000,
   "usage-stats.enabled": true,
   "usage-stats.installation-mode": "custom",
   "overrides-exporter.ring.store": "memberlist",

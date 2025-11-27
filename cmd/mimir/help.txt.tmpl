@@ -641,6 +641,8 @@ Usage of ./cmd/mimir/mimir:
     	The socket read/write timeout. (default 200ms)
   -query-frontend.scheduler-address string
     	Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -query-scheduler.service-discovery-mode is set to 'dns'.
+  -query-scheduler.graceful-shutdown-timeout duration
+    	Maximum time that the scheduler will wait for the queue to be drained on shutdown. (default 30s)
   -query-scheduler.max-outstanding-requests-per-tenant int
     	Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429. (default 100)
   -query-scheduler.max-used-instances int
