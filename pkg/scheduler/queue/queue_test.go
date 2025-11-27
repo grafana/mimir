@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -863,4 +864,88 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
+}
+
+func TestRequestQueue_ShutdownWithInflightRequests_ShouldTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		tenantID := "testing"
+
+		queue, err := NewRequestQueue(
+			log.NewNopLogger(),
+			1,
+			0,
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+			atomic.NewInt64(0),
+			promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+			queueStopTimeout,
+		)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+		// Push a request to it
+		req := makeSchedulerRequest(tenantID, []string{})
+		require.NotNil(t, req)
+		err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
+		require.NoError(t, err)
+
+		require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
+
+		// Stop the Queue
+		now := time.Now()
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+		synctest.Wait()
+
+		// Ensure requests Queue stops after timeout
+		assert.True(t, queueStopTimeout <= time.Since(now))
+		assert.True(t, time.Since(now) <= queueStopTimeout+time.Second)
+	})
+}
+
+func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testing.T) {
+	ctx := context.Background()
+	tenantID := "testing"
+	querierID := "querier"
+
+	queue, err := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		0,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
+	)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+	conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
+
+	// Push a request to it
+	req := makeSchedulerRequest(tenantID, []string{})
+	require.NotNil(t, req)
+	err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
+	require.NoError(t, err)
+
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
+
+	// Stop the Queue
+	now := time.Now()
+	queue.StopAsync()
+
+	// Consume existing requests
+	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
+	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+	assert.NoError(t, err)
+	assert.NotNil(t, r)
+
+	// Ensure requests Queue is empty and stops
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
+	require.NoError(t, queue.AwaitTerminated(ctx))
+	assert.True(t, time.Since(now) <= queueStopTimeout)
 }
