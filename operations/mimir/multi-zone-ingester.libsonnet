@@ -15,6 +15,9 @@
 
     // the regex subexpression group number - only required if the above regular expression has more then 1 grouping
     multi_zone_ingester_zpdb_partition_group: 1,
+
+    // Controls whether the multi (virtual) zone ingester should also be deployed multi-AZ.
+    multi_zone_ingester_multi_az_enabled: false,
   },
 
   local container = $.core.v1.container,
@@ -22,6 +25,13 @@
   local podDisruptionBudget = $.policy.v1.podDisruptionBudget,
   local service = $.core.v1.service,
   local podAntiAffinity = $.apps.v1.deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
+
+  local isMultiAZEnabled = $._config.multi_zone_ingester_multi_az_enabled,
+  local isZoneAEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+
+  assert !isMultiAZEnabled || $._config.multi_zone_ingester_enabled : 'ingester multi-AZ deployment requires ingester multi-zone to be enabled',
 
   //
   // Zone-aware replication.
@@ -51,9 +61,9 @@
   ingester_zone_b_env_map:: $.ingester_env_map,
   ingester_zone_c_env_map:: $.ingester_env_map,
 
-  ingester_zone_a_node_affinity_matchers:: $.ingester_node_affinity_matchers,
-  ingester_zone_b_node_affinity_matchers:: $.ingester_node_affinity_matchers,
-  ingester_zone_c_node_affinity_matchers:: $.ingester_node_affinity_matchers,
+  ingester_zone_a_node_affinity_matchers:: $.ingester_node_affinity_matchers + (if isZoneAEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])] else []),
+  ingester_zone_b_node_affinity_matchers:: $.ingester_node_affinity_matchers + (if isZoneBEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])] else []),
+  ingester_zone_c_node_affinity_matchers:: $.ingester_node_affinity_matchers + (if isZoneCEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])] else []),
 
   newIngesterZoneContainer(zone, zone_args, envmap={})::
     $.ingester_container +
@@ -104,7 +114,8 @@
     $.newIngesterZoneContainer('a', $.ingester_zone_a_args, $.ingester_zone_a_env_map),
 
   ingester_zone_a_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    $.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $.ingester_zone_a_node_affinity_matchers),
+    $.newIngesterZoneStatefulSet('a', $.ingester_zone_a_container, $.ingester_zone_a_node_affinity_matchers) +
+    (if isZoneAEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   ingester_zone_a_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_a_statefulset),
@@ -113,7 +124,8 @@
     $.newIngesterZoneContainer('b', $.ingester_zone_b_args, $.ingester_zone_b_env_map),
 
   ingester_zone_b_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    $.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $.ingester_zone_b_node_affinity_matchers),
+    $.newIngesterZoneStatefulSet('b', $.ingester_zone_b_container, $.ingester_zone_b_node_affinity_matchers) +
+    (if isZoneBEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   ingester_zone_b_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_b_statefulset),
@@ -122,7 +134,8 @@
     $.newIngesterZoneContainer('c', $.ingester_zone_c_args, $.ingester_zone_c_env_map),
 
   ingester_zone_c_statefulset: if !$._config.multi_zone_ingester_enabled then null else
-    $.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $.ingester_zone_c_node_affinity_matchers),
+    $.newIngesterZoneStatefulSet('c', $.ingester_zone_c_container, $.ingester_zone_c_node_affinity_matchers) +
+    (if isZoneCEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}),
 
   ingester_zone_c_service: if !$._config.multi_zone_ingester_enabled then null else
     $.newIngesterZoneService($.ingester_zone_c_statefulset),
@@ -137,6 +150,17 @@
     )
     + podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-rollout' })
     + podDisruptionBudget.mixin.spec.selector.withMatchLabels({ 'rollout-group': 'ingester' }),
+
+  // Ensure all configured addresses are zonal ones.
+  local ingesterZoneAConfigError = if isZoneAEnabled then $.validateMimirMultiZoneConfig(['ingester_zone_a_statefulset']) else null,
+  assert ingesterZoneAConfigError == null : ingesterZoneAConfigError,
+
+  local ingesterZoneBConfigError = if isZoneBEnabled then $.validateMimirMultiZoneConfig(['ingester_zone_b_statefulset']) else null,
+  assert ingesterZoneBConfigError == null : ingesterZoneBConfigError,
+
+  local ingesterZoneCConfigError = if isZoneCEnabled then $.validateMimirMultiZoneConfig(['ingester_zone_c_statefulset']) else null,
+  assert ingesterZoneCConfigError == null : ingesterZoneCConfigError,
+
   //
   // Single-zone ingesters shouldn't be configured when multi-zone is enabled.
   //

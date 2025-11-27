@@ -1808,3 +1808,24 @@ eval instant at 0 a + on (__name__, env) group_left a
 
 eval_fail instant at 0 {__name__=~"a|b"} + on (__name__, env) group_left {__name__=~"a|b"}
   expected_fail_regexp (vector cannot contain metrics with the same labelset|multiple matches for labels: grouping labels must ensure unique matches)
+
+clear
+
+# Test the behavior of the "narrow binary selectors" optimization pass. Ensure that it
+# does not try to add a `pod=X` matcher to the selector for metric_c since the "pod" label
+# is created from the "zone" label and doesn't actually exist on the series.
+load 6m
+  metric_a{env="test", pod="a", group="foo"} 1 2 3
+  metric_a{env="test", pod="b", group="bar"} 4 5 6
+  metric_a{env="prod", pod="a", group="baz"} 7 8 9
+  metric_b{env="test", pod="a", group="bar"} 10 20 30
+  metric_b{env="test", pod="b", group="baz"} 40 50 60
+  metric_b{env="prod", pod="a", group="foo"} 70 80 90
+  metric_c{env="test", zone="a", group="foo"} 100 200 300
+  metric_c{env="test", zone="b", group="bar"} 400 500 600
+  metric_c{env="prod", zone="a", group="baz"} 700 800 900
+
+eval range from 0 to 24m step 6m (metric_a + on(env, pod) metric_b) + on(env, pod) (label_replace(metric_c, "pod", "$1", "zone", "(.+)"))
+  {env="prod", pod="a"} 777 888 999
+  {env="test", pod="a"} 111 222 333
+  {env="test", pod="b"} 444 555 666

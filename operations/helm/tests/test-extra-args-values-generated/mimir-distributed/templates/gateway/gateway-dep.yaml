@@ -48,7 +48,6 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

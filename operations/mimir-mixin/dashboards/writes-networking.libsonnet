@@ -10,6 +10,7 @@ local filename = 'mimir-writes-networking.json';
     .addRowIf($._config.gateway_enabled, $.containerNetworkingRowByComponent('Gateway', 'gateway'))
     .addRow($.containerNetworkingRowByComponent('Distributor', 'distributor'))
     .addRow($.containerNetworkingRowByComponent('Ingester', 'ingester'))
+    .addRowIf($._config.usage_tracker_enabled, $.containerNetworkingRowByComponent('Usage Tracker', 'usage_tracker'))
     + {
       templating+: {
         list: [

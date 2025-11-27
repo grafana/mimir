@@ -9,6 +9,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -32,6 +34,10 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, expr parser.Expr) (parser.Expr, error) {
+	if containsSpunOffSubquery(expr) {
+		return expr, nil
+	}
+
 	options := querymiddleware.RequestOptionsFromContext(ctx)
 	if options.ShardingDisabled {
 		return expr, nil
@@ -85,4 +91,26 @@ func (c *concatSquasher) Squash(exprs ...astmapper.EmbeddedQuery) (parser.Expr, 
 		Func: ConcatFunction,
 		Args: args,
 	}, nil
+}
+
+func containsSpunOffSubquery(expr parser.Expr) bool {
+	return astmapper.AnyNode(expr, func(node parser.Node) bool {
+		ms, isMatrixSelector := node.(*parser.MatrixSelector)
+		if !isMatrixSelector {
+			return false
+		}
+
+		vs, isVectorSelector := ms.VectorSelector.(*parser.VectorSelector)
+		if !isVectorSelector {
+			return false
+		}
+
+		for _, matcher := range vs.LabelMatchers {
+			if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual && matcher.Value == astmapper.SubqueryMetricName {
+				return true
+			}
+		}
+
+		return false
+	})
 }

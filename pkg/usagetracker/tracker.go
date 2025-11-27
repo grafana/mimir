@@ -92,7 +92,6 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
-	f.BoolVar(&c.DoNotApplySeriesLimits, "usage-tracker.do-not-apply-series-limits", false, "If true, the usage-tracker service tracks all series and does not apply series limits.")
 	f.BoolVar(&c.UseGlobalSeriesLimits, "usage-tracker.use-global-series-limits", false, "If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.") // TODO: Remove in Mimir 3.0
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.")
@@ -338,6 +337,7 @@ func (t *UsageTracker) start(ctx context.Context) error {
 	return nil
 }
 
+// run implements services.RunningFn.
 func (t *UsageTracker) run(ctx context.Context) error {
 	// TODO: check here if all partitions already have owners, in which case we should reconcilePartitions immediately (no need to wait).
 	// If there are no owners yet, this is a cold start, so wait until all instances have joined the ring to avoid re-shuffling.
@@ -353,10 +353,13 @@ func (t *UsageTracker) run(ctx context.Context) error {
 		select {
 		case <-time.After(t.cfg.PartitionReconcileInterval):
 			if err := t.reconcilePartitions(ctx); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return nil
+				}
 				return err
 			}
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case err := <-t.subservicesWatcher.Chan():
 			return errors.Wrap(err, "usage-tracker dependency failed")
 		case <-snapshotsCleanupTickerChan:
@@ -471,13 +474,8 @@ losingPartitions:
 
 		logger := log.With(logger, "action", "adding", "partition", pid)
 
-		lim := limiter(t)
-		if t.cfg.DoNotApplySeriesLimits {
-			lim = &unlimitedSeriesLimiter{t}
-		}
-
 		level.Info(logger).Log("msg", "creating new partition handler")
-		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, lim, t.logger, t.registerer)
+		p, err := newPartitionHandler(pid, t.cfg, t.partitionKVClient, t.eventsKafkaWriter, t.snapshotsMetadataKafkaWriter, t.snapshotsBucket, t, t.logger, t.registerer)
 		if err != nil {
 			return errors.Wrapf(err, "unable to create partition handler %d", pid)
 		}
@@ -954,8 +952,3 @@ func (t *UsageTracker) cleanupSnapshots(ctx context.Context) error {
 	level.Info(t.logger).Log("msg", "snapshot files cleanup completed", "deleted", deleted, "duration", time.Since(t0))
 	return nil
 }
-
-// unlimitedSeriesLimiter always returns 0 as localSeriesLimit (unlimited).
-type unlimitedSeriesLimiter struct{ *UsageTracker }
-
-func (d unlimitedSeriesLimiter) localSeriesLimit(userID string) uint64 { return 0 }

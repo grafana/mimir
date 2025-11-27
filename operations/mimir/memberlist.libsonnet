@@ -99,129 +99,59 @@
   store_gateway_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
   query_scheduler_ports+:: if !querySchedulerMemberlistEnabled then [] else [gossipPort],
   query_frontend_ports+:: if !queryFrontendMemberlistEnabled then [] else [gossipPort],
+  memberlist_bridge_ports+:: if !$._config.memberlist_ring_enabled then [] else [gossipPort],
 
   // Don't add label to matcher, only to pod labels.
   local gossipLabel = $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'true' }),
 
-  alertmanager_statefulset: overrideSuperIfExists(
-    'alertmanager_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  compactor_statefulset: overrideSuperIfExists(
-    'compactor_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  distributor_deployment: overrideSuperIfExists(
-    'distributor_deployment',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  distributor_zone_a_deployment: overrideSuperIfExists(
-    'distributor_zone_a_deployment',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  distributor_zone_b_deployment: overrideSuperIfExists(
-    'distributor_zone_b_deployment',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  distributor_zone_c_deployment: overrideSuperIfExists(
-    'distributor_zone_c_deployment',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ingester_statefulset: overrideSuperIfExists(
-    'ingester_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ingester_zone_a_statefulset: overrideSuperIfExists(
-    'ingester_zone_a_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ingester_zone_b_statefulset: overrideSuperIfExists(
-    'ingester_zone_b_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ingester_zone_c_statefulset: overrideSuperIfExists(
-    'ingester_zone_c_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ingester_partition_zone_a_statefulset: overrideSuperIfExists(
-    'ingester_partition_zone_a_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ingester_partition_zone_b_statefulset: overrideSuperIfExists(
-    'ingester_partition_zone_b_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ingester_partition_zone_c_statefulset: overrideSuperIfExists(
-    'ingester_partition_zone_c_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  querier_deployment: overrideSuperIfExists(
-    'querier_deployment',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ruler_querier_deployment: overrideSuperIfExists(
-    'ruler_querier_deployment',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  ruler_deployment: overrideSuperIfExists(
-    'ruler_deployment',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  query_scheduler_deployment: overrideSuperIfExists(
-    'query_scheduler_deployment',
-    if !querySchedulerMemberlistEnabled then {} else gossipLabel
-  ),
-
-  ruler_query_scheduler_deployment: overrideSuperIfExists(
-    'ruler_query_scheduler_deployment',
-    if !querySchedulerMemberlistEnabled then {} else gossipLabel
-  ),
-
-  query_frontend_deployment: overrideSuperIfExists(
-    'query_frontend_deployment',
-    if !queryFrontendMemberlistEnabled then {} else gossipLabel
-  ),
-
-  ruler_query_frontend_deployment: overrideSuperIfExists(
-    'ruler_query_frontend_deployment',
-    if !queryFrontendMemberlistEnabled then {} else gossipLabel
-  ),
-
-  store_gateway_statefulset: overrideSuperIfExists(
-    'store_gateway_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  store_gateway_zone_a_statefulset: overrideSuperIfExists(
-    'store_gateway_zone_a_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  store_gateway_zone_b_statefulset: overrideSuperIfExists(
-    'store_gateway_zone_b_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
-
-  store_gateway_zone_c_statefulset: overrideSuperIfExists(
-    'store_gateway_zone_c_statefulset',
-    if !$._config.memberlist_ring_enabled then {} else gossipLabel
-  ),
+  alertmanager_statefulset: overrideSuperIfExists('alertmanager_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  compactor_statefulset: overrideSuperIfExists('compactor_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_deployment: overrideSuperIfExists('distributor_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_a_deployment: overrideSuperIfExists('distributor_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_b_deployment: overrideSuperIfExists('distributor_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  distributor_zone_c_deployment: overrideSuperIfExists('distributor_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_statefulset: overrideSuperIfExists('ingester_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_a_statefulset: overrideSuperIfExists('ingester_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_b_statefulset: overrideSuperIfExists('ingester_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_zone_c_statefulset: overrideSuperIfExists('ingester_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_partition_zone_a_statefulset: overrideSuperIfExists('ingester_partition_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_partition_zone_b_statefulset: overrideSuperIfExists('ingester_partition_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ingester_partition_zone_c_statefulset: overrideSuperIfExists('ingester_partition_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  querier_deployment: overrideSuperIfExists('querier_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  querier_zone_a_deployment: overrideSuperIfExists('querier_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  querier_zone_b_deployment: overrideSuperIfExists('querier_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  querier_zone_c_deployment: overrideSuperIfExists('querier_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_deployment: overrideSuperIfExists('ruler_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_zone_a_deployment: overrideSuperIfExists('ruler_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_zone_b_deployment: overrideSuperIfExists('ruler_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_zone_c_deployment: overrideSuperIfExists('ruler_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_querier_deployment: overrideSuperIfExists('ruler_querier_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_querier_zone_a_deployment: overrideSuperIfExists('ruler_querier_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_querier_zone_b_deployment: overrideSuperIfExists('ruler_querier_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  ruler_querier_zone_c_deployment: overrideSuperIfExists('ruler_querier_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  query_scheduler_deployment: overrideSuperIfExists('query_scheduler_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  query_scheduler_zone_a_deployment: overrideSuperIfExists('query_scheduler_zone_a_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  query_scheduler_zone_b_deployment: overrideSuperIfExists('query_scheduler_zone_b_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  query_scheduler_zone_c_deployment: overrideSuperIfExists('query_scheduler_zone_c_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  ruler_query_scheduler_deployment: overrideSuperIfExists('ruler_query_scheduler_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  ruler_query_scheduler_zone_a_deployment: overrideSuperIfExists('ruler_query_scheduler_zone_a_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  ruler_query_scheduler_zone_b_deployment: overrideSuperIfExists('ruler_query_scheduler_zone_b_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  ruler_query_scheduler_zone_c_deployment: overrideSuperIfExists('ruler_query_scheduler_zone_c_deployment', if !querySchedulerMemberlistEnabled then {} else gossipLabel),
+  query_frontend_deployment: overrideSuperIfExists('query_frontend_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  query_frontend_zone_a_deployment: overrideSuperIfExists('query_frontend_zone_a_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  query_frontend_zone_b_deployment: overrideSuperIfExists('query_frontend_zone_b_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  query_frontend_zone_c_deployment: overrideSuperIfExists('query_frontend_zone_c_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  ruler_query_frontend_deployment: overrideSuperIfExists('ruler_query_frontend_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  ruler_query_frontend_zone_a_deployment: overrideSuperIfExists('ruler_query_frontend_zone_a_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  ruler_query_frontend_zone_b_deployment: overrideSuperIfExists('ruler_query_frontend_zone_b_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  ruler_query_frontend_zone_c_deployment: overrideSuperIfExists('ruler_query_frontend_zone_c_deployment', if !queryFrontendMemberlistEnabled then {} else gossipLabel),
+  store_gateway_statefulset: overrideSuperIfExists('store_gateway_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_a_statefulset: overrideSuperIfExists('store_gateway_zone_a_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_b_statefulset: overrideSuperIfExists('store_gateway_zone_b_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  memberlist_bridge_zone_a_deployment: overrideSuperIfExists('memberlist_bridge_zone_a_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  memberlist_bridge_zone_b_deployment: overrideSuperIfExists('memberlist_bridge_zone_b_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
+  memberlist_bridge_zone_c_deployment: overrideSuperIfExists('memberlist_bridge_zone_c_deployment', if !$._config.memberlist_ring_enabled then {} else gossipLabel),
 
   // Headless service (= no assigned IP, DNS returns all targets instead) pointing to gossip network members.
   gossip_ring_service:

@@ -57,6 +57,8 @@ const (
 	PastGracePeriodFlag                       = "validation.past-grace-period"
 	MaxPartialQueryLengthFlag                 = "querier.max-partial-query-length"
 	MaxSeriesQueryLimitFlag                   = "querier.max-series-query-limit"
+	MaxLabelNamesLimitFlag                    = "querier.max-label-names-limit"
+	MaxLabelValuesLimitFlag                   = "querier.max-label-values-limit"
 	MaxTotalQueryLengthFlag                   = "query-frontend.max-total-query-length"
 	MaxQueryExpressionSizeBytesFlag           = "query-frontend.max-query-expression-size-bytes"
 	MaxActiveSeriesPerUserFlag                = "distributor.max-active-series-per-user"
@@ -203,6 +205,8 @@ type Limits struct {
 	MaxQueryParallelism                   int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength                  model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
 	MaxSeriesQueryLimit                   int            `yaml:"max_series_query_limit" json:"max_series_query_limit"`
+	MaxLabelNamesLimit                    int            `yaml:"max_label_names_limit" json:"max_label_names_limit"`
+	MaxLabelValuesLimit                   int            `yaml:"max_label_values_limit" json:"max_label_values_limit"`
 	MaxCacheFreshness                     model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
 	MaxQueriersPerTenant                  int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
@@ -404,7 +408,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
+
 	f.IntVar(&l.MaxSeriesQueryLimit, MaxSeriesQueryLimitFlag, 0, "Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
+	f.IntVar(&l.MaxLabelNamesLimit, MaxLabelNamesLimitFlag, 0, "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
+	f.IntVar(&l.MaxLabelValuesLimit, MaxLabelValuesLimitFlag, 0, "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
+
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
@@ -947,6 +955,16 @@ func (o *Overrides) MaxLabelsQueryLength(userID string) time.Duration {
 // MaxSeriesQueryLimit returns the query limit of a series request.
 func (o *Overrides) MaxSeriesQueryLimit(userID string) int {
 	return o.getOverridesForUser(userID).MaxSeriesQueryLimit
+}
+
+// MaxLabelNamesLimit returns the query limit of a label names request.
+func (o *Overrides) MaxLabelNamesLimit(userID string) int {
+	return o.getOverridesForUser(userID).MaxLabelNamesLimit
+}
+
+// MaxLabelValuesLimit returns the query limit of a label values request.
+func (o *Overrides) MaxLabelValuesLimit(userID string) int {
+	return o.getOverridesForUser(userID).MaxLabelValuesLimit
 }
 
 // MaxCacheFreshness returns the period after which results are cacheable,

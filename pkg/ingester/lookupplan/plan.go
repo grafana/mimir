@@ -58,6 +58,14 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 	return p
 }
 
+func newIndexOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
+	p := newScanOnlyPlan(ctx, stats, config, matchers, predicatesPool, shard)
+	for i := range p.indexPredicate {
+		p.indexPredicate[i] = true
+	}
+	return p
+}
+
 // virtualPredicate returns the predicate at idx and whether it's an index predicate.
 // For undecided predicates:
 // - The first undecided predicate is treated as an index predicate for lower bound calculation
@@ -81,6 +89,15 @@ func (p plan) virtualPredicate(idx int) (planPredicate, bool) {
 	virtualPred.indexScanCost = 1
 
 	return virtualPred, idx == p.numDecidedPredicates
+}
+
+func (p plan) hasAnyIndexPredicate() bool {
+	for _, useIndex := range p.indexPredicate {
+		if useIndex {
+			return true
+		}
+	}
+	return false
 }
 
 func (p plan) IndexMatchers() []*labels.Matcher {

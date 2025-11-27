@@ -1107,6 +1107,26 @@ How to **investigate**:
        $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
      ```
 
+### MimirMemberlistBridgeZoneUnavailable
+
+This alert fires when there are no available memberlist-bridge pods in a zone where it's expected to be deployed.
+
+How it **works**:
+
+- The memberlist-bridge is deployed in multiple zones (e.g. zone-a, zone-b, zone-c) to facilitate gossip protocol communication across zones.
+- When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), each zone must have at least one healthy memberlist-bridge pod running to guarantee inter-AZ communication, and avoid network partitioning issues.
+- This alert triggers when a zone has a memberlist-bridge deployment configured but no pods are in ready state.
+
+How to **investigate**:
+
+- Check the status of memberlist-bridge pods in the affected zone, and why they're not running
+- In case of emergency, disable zone-aware routing in Mimir by setting `-memberlist.zone-aware-routing.enabled=false` on each Mimir component or by using the following jsonnet snippet:
+  ```
+  _config+:: {
+    memberlist_zone_aware_routing_enabled: false,
+  }
+  ```
+
 ### MimirAlertmanagerSyncConfigsFailing
 
 How it **works**:

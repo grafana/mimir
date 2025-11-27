@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -168,30 +169,36 @@ func matchersStrings(ms []*labels.Matcher) []string {
 	return matchers
 }
 
-func TestCostBasedPlannerTooManyMatchers(t *testing.T) {
+func TestCostBasedPlannerWithManyMatchers(t *testing.T) {
 	ctx := context.Background()
-	stats := newMockStatistics()
+	stats := newHighCardinalityMockStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
 	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
-	// Create more than 10 matchers to trigger the limit
-	var matchers []*labels.Matcher
-	for i := 0; i < 12; i++ {
-		matcher := labels.MustNewMatcher(labels.MatchEqual, fmt.Sprintf("label_%d", i), "value")
-		matchers = append(matchers, matcher)
+	// Generate 1000 matchers with different label names and values
+	matchers := make([]*labels.Matcher, 1000)
+	for i := 0; i < 1000; i++ {
+		matchers[i] = labels.MustNewMatcher(labels.MatchEqual, fmt.Sprintf("label_%d", i), fmt.Sprintf("value_%d", i))
 	}
 
 	inputPlan := &basicLookupPlan{
 		indexMatchers: matchers,
-		scanMatchers:  []*labels.Matcher{},
 	}
 
+	start := time.Now()
 	result, err := planner.PlanIndexLookup(ctx, inputPlan, nil)
+	elapsed := time.Since(start)
 
-	// Should return the original plan without error (aborted early)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	assert.Equal(t, inputPlan, result)
+	assert.Less(t, elapsed.Seconds(), 30.0, "Planning with 1000 matchers should complete in less than 30 seconds, took %v", elapsed)
+
+	// Verify all matchers are preserved
+	var allResultMatchers []string
+	allResultMatchers = append(allResultMatchers, matchersStrings(result.IndexMatchers())...)
+	allResultMatchers = append(allResultMatchers, matchersStrings(result.ScanMatchers())...)
+	assert.ElementsMatch(t, matchersStrings(matchers), allResultMatchers)
+	assert.NotEmpty(t, result.IndexMatchers(), "Result should have index matchers")
 }
 
 // basicLookupPlan is a simple implementation of index.LookupPlan for testing
@@ -302,7 +309,7 @@ func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, nil)
-	assert.ErrorContains(t, err, "no plan with index matchers found out of 1 plans")
+	assert.ErrorContains(t, err, "no plan with index matchers found")
 	assert.Nil(t, result, "Result should be nil when no matchers are provided")
 }
 

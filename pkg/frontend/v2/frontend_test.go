@@ -166,7 +166,7 @@ func sendStreamingResponse(t testing.TB, f *Frontend, userID string, queryID uin
 	require.NoError(t, sendStreamingResponseWithErrorCapture(f, userID, queryID, nil, resp...))
 }
 
-func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID uint64, afterLastMessageSent func(), resp ...*frontendv2pb.QueryResultStreamRequest) error {
+func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID uint64, beforeLastMessageSent func(), resp ...*frontendv2pb.QueryResultStreamRequest) error {
 	for _, m := range resp {
 		m.QueryID = queryID
 	}
@@ -191,7 +191,11 @@ func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID u
 		return err
 	}
 
-	for _, m := range resp {
+	for idx, m := range resp {
+		if idx == len(resp)-1 && beforeLastMessageSent != nil {
+			beforeLastMessageSent()
+		}
+
 		if err := stream.Send(m); err != nil {
 			if errors.Is(err, io.EOF) {
 				// If Send returns EOF, then we need to call RecvMsg to get that error.
@@ -206,10 +210,6 @@ func sendStreamingResponseWithErrorCapture(f *Frontend, userID string, queryID u
 
 			return err
 		}
-	}
-
-	if afterLastMessageSent != nil {
-		afterLastMessageSent()
 	}
 
 	_, err = stream.CloseAndRecv()

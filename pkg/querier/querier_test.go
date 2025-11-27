@@ -1151,7 +1151,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 			queryEndTime:        now,
 			queryLimit:          1_000_000,
 			expectedLimit:       1000,
-			expectedWarning:     NewMaxSeriesQueryLimitError(1_000_000, 1000),
+			expectedWarning:     NewMaxLimitError(1_000_000, 1000, validation.MaxSeriesQueryLimitFlag),
 		},
 		"should manipulate limit for a query without a limit when enforced": {
 			maxSeriesQueryLimit: 1000,
@@ -1160,7 +1160,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 			queryEndTime:        now,
 			queryLimit:          0,
 			expectedLimit:       1000,
-			expectedWarning:     NewMaxSeriesQueryLimitError(0, 1000),
+			expectedWarning:     NewMaxLimitError(0, 1000, validation.MaxSeriesQueryLimitFlag),
 		},
 		"should not manipulate limit for a query with limit smaller than what is enforced": {
 			maxSeriesQueryLimit: 1000,
@@ -1228,8 +1228,194 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 
 			// Assert on the limit of the actual executed query.
 			require.Len(t, distributor.Calls, 1)
-			assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+			require.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
 			gotHints := distributor.Calls[0].Arguments.Get(3).(*storage.SelectHints)
+			require.Equal(t, testData.expectedLimit, gotHints.Limit)
+		})
+	}
+}
+
+func TestQuerier_ValidateQuery_MaxLabelNamesLimit(t *testing.T) {
+	tests := map[string]struct {
+		maxLabelNamesLimit int
+		queryLimit         int
+		expectedLimit      int
+		expectedWarning    error
+	}{
+		"should not manipulate limit for a request when limit is not enforced": {
+			maxLabelNamesLimit: 0,
+			queryLimit:         1000,
+			expectedLimit:      1000,
+			expectedWarning:    nil,
+		},
+		"should not manipulate limit for a request without a limit when not enforced": {
+			maxLabelNamesLimit: 0,
+			queryLimit:         0,
+			expectedLimit:      0,
+			expectedWarning:    nil,
+		},
+		"should manipulate limit for a request when enforced": {
+			maxLabelNamesLimit: 1000,
+			queryLimit:         10_000,
+			expectedLimit:      1000,
+			expectedWarning:    NewMaxLimitError(10_000, 1000, validation.MaxLabelNamesLimitFlag),
+		},
+		"should manipulate limit for a request without a limit when enforced": {
+			maxLabelNamesLimit: 1000,
+			queryLimit:         0,
+			expectedLimit:      1000,
+			expectedWarning:    NewMaxLimitError(0, 1000, validation.MaxLabelNamesLimitFlag),
+		},
+		"should not manipulate limit for a request with limit smaller than what is enforced": {
+			maxLabelNamesLimit: 1000,
+			queryLimit:         100,
+			expectedLimit:      100,
+			expectedWarning:    nil,
+		},
+		"should not manipulate limit for a request with limit equal to what is enforced": {
+			maxLabelNamesLimit: 1000,
+			queryLimit:         1000,
+			expectedLimit:      1000,
+			expectedWarning:    nil,
+		},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "test")
+			end := time.Now()
+			start := end.Add(-time.Hour)
+
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+
+			limits := defaultLimitsConfig()
+			limits.MaxLabelNamesLimit = testData.maxLabelNamesLimit
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+			overrides := validation.NewOverrides(limits, nil)
+
+			distributor := &mockDistributor{}
+			distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
+
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			require.NoError(t, err)
+
+			q, err := queryable.Querier(util.TimeToMillis(start), util.TimeToMillis(end))
+			require.NoError(t, err)
+
+			hints := &storage.LabelHints{Limit: testData.queryLimit}
+			matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
+
+			_, warnings, err := q.LabelNames(ctx, hints, matcher)
+			require.NoError(t, err)
+
+			gotWarnings := warnings.AsErrors()
+			if testData.expectedWarning != nil {
+				require.EqualError(t, stderrors.Join(gotWarnings...), testData.expectedWarning.Error())
+			} else {
+				require.Empty(t, gotWarnings)
+			}
+
+			// Assert on the limit of the actual executed query.
+			require.Len(t, distributor.Calls, 1)
+			require.Equal(t, "LabelNames", distributor.Calls[0].Method)
+			gotHints := distributor.Calls[0].Arguments.Get(3).(*storage.LabelHints)
+			require.Equal(t, testData.expectedLimit, gotHints.Limit)
+		})
+	}
+}
+
+func TestQuerier_ValidateQuery_MaxLabelValuesLimit(t *testing.T) {
+	tests := map[string]struct {
+		maxLabelValuesLimit int
+		queryLimit          int
+		expectedLimit       int
+		expectedWarning     error
+	}{
+		"should not manipulate limit for a request when limit is not enforced": {
+			maxLabelValuesLimit: 0,
+			queryLimit:          1000,
+			expectedLimit:       1000,
+			expectedWarning:     nil,
+		},
+		"should not manipulate limit for a request without a limit when not enforced": {
+			maxLabelValuesLimit: 0,
+			queryLimit:          0,
+			expectedLimit:       0,
+			expectedWarning:     nil,
+		},
+		"should manipulate limit for a request when enforced": {
+			maxLabelValuesLimit: 1000,
+			queryLimit:          10_000,
+			expectedLimit:       1000,
+			expectedWarning:     NewMaxLimitError(10_000, 1000, validation.MaxLabelValuesLimitFlag),
+		},
+		"should manipulate limit for a request without a limit when enforced": {
+			maxLabelValuesLimit: 1000,
+			queryLimit:          0,
+			expectedLimit:       1000,
+			expectedWarning:     NewMaxLimitError(0, 1000, validation.MaxLabelValuesLimitFlag),
+		},
+		"should not manipulate limit for a request with limit smaller than what is enforced": {
+			maxLabelValuesLimit: 1000,
+			queryLimit:          100,
+			expectedLimit:       100,
+			expectedWarning:     nil,
+		},
+		"should not manipulate limit for a request with limit equal to what is enforced": {
+			maxLabelValuesLimit: 1000,
+			queryLimit:          1000,
+			expectedLimit:       1000,
+			expectedWarning:     nil,
+		},
+	}
+
+	for name, testData := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "test")
+			end := time.Now()
+			start := end.Add(-time.Hour)
+
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+
+			limits := defaultLimitsConfig()
+			limits.MaxLabelValuesLimit = testData.maxLabelValuesLimit
+			limits.QueryIngestersWithin = 0 // Always query ingesters in this test.
+			overrides := validation.NewOverrides(limits, nil)
+
+			distributor := &mockDistributor{}
+			distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
+
+			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			require.NoError(t, err)
+
+			q, err := queryable.Querier(util.TimeToMillis(start), util.TimeToMillis(end))
+			require.NoError(t, err)
+
+			hints := &storage.LabelHints{Limit: testData.queryLimit}
+			matcher := labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test")
+
+			_, warnings, err := q.LabelValues(ctx, "some_metric", hints, matcher)
+			require.NoError(t, err)
+
+			gotWarnings := warnings.AsErrors()
+			if testData.expectedWarning != nil {
+				require.EqualError(t, stderrors.Join(gotWarnings...), testData.expectedWarning.Error())
+			} else {
+				require.Empty(t, gotWarnings)
+			}
+
+			// Assert on the limit of the actual executed query.
+			require.Len(t, distributor.Calls, 1)
+			require.Equal(t, "LabelValuesForLabelName", distributor.Calls[0].Method)
+			gotHints := distributor.Calls[0].Arguments.Get(4).(*storage.LabelHints)
 			require.Equal(t, testData.expectedLimit, gotHints.Limit)
 		})
 	}

@@ -648,9 +648,15 @@ func (m *Memberlist) gossip() {
 // reasonably expensive as the entire state of this node is exchanged
 // with the other node.
 func (m *Memberlist) pushPull() {
-	// Get a random live node
+	// Determine how many nodes to push/pull with
+	numNodes := m.config.PushPullNodes
+	if numNodes <= 0 {
+		numNodes = 1
+	}
+
+	// Get random live nodes
 	m.nodeLock.RLock()
-	nodes := kRandomNodes(1, m.nodes, m.config.NodeSelection, func(n *nodeState) bool {
+	nodes := kRandomNodes(numNodes, m.nodes, m.config.NodeSelection, func(n *nodeState) bool {
 		return n.Name == m.config.Name ||
 			n.State != StateAlive
 	})
@@ -660,11 +666,12 @@ func (m *Memberlist) pushPull() {
 	if len(nodes) == 0 {
 		return
 	}
-	node := nodes[0]
 
-	// Attempt a push pull
-	if err := m.pushPullNode(node.FullAddress(), false); err != nil {
-		m.logger.Printf("[ERR] memberlist: Push/Pull with %s failed: %s", node.Name, err)
+	// Attempt push/pull with each selected node
+	for _, node := range nodes {
+		if err := m.pushPullNode(node.FullAddress(), false); err != nil {
+			m.logger.Printf("[ERR] memberlist: Push/Pull with %s failed: %s", node.Name, err)
+		}
 	}
 }
 

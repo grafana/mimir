@@ -34,6 +34,10 @@ std.manifestYamlDoc({
 
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
+
+    // If true, a secondary query path is started.
+    enable_secondary_query_path: false,
+    secondary_query_path_extra_args: '',
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -41,6 +45,7 @@ std.manifestYamlDoc({
     self.distributor +
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
+    (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
     self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
@@ -101,26 +106,39 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components:: {
-    querier: mimirService({
-      name: 'querier',
+  read_path(prefix='', portOffset=0, extraArgs=''):: {
+    [prefix + 'querier']: mimirService({
+      name: prefix + 'querier',
       target: 'querier',
-      httpPort: 8005,
+      httpPort: 8005 + portOffset,
+      jaegerApp: prefix + 'querier',
+      extraArguments: extraArgs,
     }),
 
-    'query-frontend': mimirService({
-      name: 'query-frontend',
+    [prefix + 'query-frontend']: mimirService({
+      name: prefix + 'query-frontend',
       target: 'query-frontend',
-      httpPort: 8007,
-      jaegerApp: 'query-frontend',
+      httpPort: 8007 + portOffset,
+      jaegerApp: prefix + 'query-frontend',
+      extraArguments: extraArgs,
     }),
 
-    'query-scheduler': mimirService({
-      name: 'query-scheduler',
+    [prefix + 'query-scheduler']: mimirService({
+      name: prefix + 'query-scheduler',
       target: 'query-scheduler',
-      httpPort: 8008,
+      httpPort: 8008 + portOffset,
+      jaegerApp: prefix + 'query-scheduler',
+      extraArguments: extraArgs,
     }),
   },
+
+  read_components:: self.read_path(),
+
+  secondary_read_components:: self.read_path(
+    prefix='secondary-',
+    portOffset=100,
+    extraArgs='-querier.ring.prefix=secondary-querier/ -query-scheduler.ring.prefix=secondary-scheduler/ ' + $._config.secondary_query_path_extra_args,
+  ),
 
   compactor:: {
     compactor: mimirService({

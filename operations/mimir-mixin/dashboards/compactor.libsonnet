@@ -258,7 +258,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('Source blocks age') +
-        $.latencyPanel('cortex_compactor_block_max_time_delta_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.ncLatencyPanel('cortex_compactor_block_max_time_delta_seconds', $.jobMatcher($._config.job_names.compactor)) +
         $.panelDescription(
           'Source blocks age',
           |||
@@ -281,7 +281,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       )
       .addPanel(
         $.timeseriesPanel('TSDB compaction duration') +
-        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.ncLatencyPanel('prometheus_tsdb_compaction_duration_seconds', $.jobMatcher($._config.job_names.compactor)) +
         $.panelDescription(
           'TSDB compaction duration',
           |||
@@ -367,7 +367,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
       .addPanel(
         $.timeseriesPanel('Metadata sync duration') +
         // This metric tracks the duration of a per-tenant metadata sync.
-        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)),
+        $.ncLatencyPanel('cortex_compactor_meta_sync_duration_seconds', $.jobMatcher($._config.job_names.compactor)),
       )
     )
     .addRows($.getObjectStoreRows('Object Store', 'compactor'))

@@ -250,7 +250,7 @@ local filename = 'mimir-queries.json';
       $.row('Ingester')
       .addPanel(
         $.timeseriesPanel('Series per query') +
-        $.latencyRecordingRulePanel('cortex_ingester_queried_series', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        $.latencyRecordingRulePanel('cortex_ingester_queried_series', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('stage', 'merged_blocks')], multiplier=1) +
         { fieldConfig+: { defaults+: { unit: 'short' } } },
       )
       .addPanel(

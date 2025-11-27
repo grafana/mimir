@@ -50,13 +50,21 @@ func (t *trackerStore) snapshot(shard uint8, now time.Time, buf []byte) []byte {
 // This speeds up the snapshot loading process as each shard can be loaded independently.
 // This reduces the amount of time track requests spend waiting on shard locks.
 func (t *trackerStore) loadSnapshots(shards [][]byte, now time.Time) error {
+	if len(shards) == 0 {
+		return nil
+	}
+
+	if len(shards) == 1 {
+		return t.loadSnapshot(shards[0], now)
+	}
+
 	jobs := make(chan []byte, len(shards))
 	for _, shard := range shards {
 		jobs <- shard
 	}
 	close(jobs)
 
-	workers := runtime.GOMAXPROCS(0)
+	workers := min(len(shards), runtime.GOMAXPROCS(0))
 	g := errgroup.Group{}
 	for i := 0; i < workers; i++ {
 		g.Go(func() error {
