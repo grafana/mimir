@@ -29,25 +29,26 @@ func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, range
 
 	first := head[0]
 
-	// Add synthetic start boundary
+	// Add synthetic or clamp start boundary
 	if first.T == rangeStart {
+		buff = append(buff, first)
+	} else if first.T > rangeStart {
+		buff = append(buff, promql.FPoint{T: rangeStart, F: first.F})
 		buff = append(buff, first)
 	} else {
 		buff = append(buff, promql.FPoint{T: rangeStart, F: first.F})
-		if first.T > rangeStart {
-			buff = append(buff, first)
-		}
 	}
 
 	buff = append(buff, head[1:]...)
 	buff = append(buff, tail...)
 
-	// Add or clamp final boundary
-	last := buff[len(buff)-1]
+	// Add synthetic or clamp end boundary
+	lastIdx := len(buff) - 1
+	last := buff[lastIdx]
 	if last.T < rangeEnd {
 		buff = append(buff, promql.FPoint{T: rangeEnd, F: last.F})
 	} else if last.T > rangeEnd {
-		buff[len(buff)-1].T = rangeEnd
+		buff[lastIdx].T = rangeEnd
 	}
 
 	// Smoothing has 2 special cases.
@@ -57,17 +58,14 @@ func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, range
 	smoothedPointSetMask := uint8(0)
 	if smoothed && len(buff) > 1 {
 		if first.T < rangeStart {
-			buff[0].F = interpolate(first, buff[1], rangeStart, false, true)
+			buff[0].F, smoothedHead.F = interpolateCombined(first, buff[1], rangeStart, true)
 			smoothedHead.T = rangeStart
-			smoothedHead.F = interpolate(first, buff[1], rangeStart, true, true)
 			smoothedPointSetMask |= 1 << 0
 		}
 
 		if last.T > rangeEnd {
-			prev := buff[len(buff)-2]
-			buff[len(buff)-1].F = interpolate(prev, last, rangeEnd, false, false)
+			buff[len(buff)-1].F, smoothedTail.F = interpolateCombined(buff[len(buff)-2], last, rangeEnd, false)
 			smoothedTail.T = rangeEnd
-			smoothedTail.F = interpolate(prev, last, rangeEnd, true, false)
 			smoothedPointSetMask |= 1 << 1
 		}
 	}
@@ -76,22 +74,24 @@ func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, range
 }
 
 // interpolate performs linear interpolation between two points.
-// If isCounter is true and there is a counter reset:
-// - on the left edge, it sets the value to 0.
-// - on the right edge, it adds the left value to the right value.
-// It then calculates the interpolated value at the given timestamp.
+// 2 floats are returned. The first is treating the points as not being counters,
+// and the second assumes the points are counters and adjusts for a counter reset.
 // This has been adapted from interpolate() in promql/functions.go
-func interpolate(p1, p2 promql.FPoint, t int64, isCounter, leftEdge bool) float64 {
+func interpolateCombined(p1, p2 promql.FPoint, t int64, leftEdge bool) (float64, float64) {
 	y1 := p1.F
 	y2 := p2.F
 
-	if isCounter && y2 < y1 {
+	notCounter := y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)
+	asCounter := notCounter
+
+	if y2 < y1 {
 		if leftEdge {
 			y1 = 0
 		} else {
 			y2 += y1
 		}
+		asCounter = y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)
 	}
 
-	return y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)
+	return notCounter, asCounter
 }

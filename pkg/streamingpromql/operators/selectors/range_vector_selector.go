@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -186,18 +185,12 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 
 	if extendedRangeStart != rangeStart {
 		defer func() {
-			// Initialise the view to end at the rangeStart
-			// We only want to have 1 point in the time range up to this rangeStart
-			// Prune any points which are before the most recent point in this range
 			// This ensures that we have at most 1 point <= rangeStart
 			// Note we only do this for floats, as this is only relevant to the smoothed/anchored implementation which does not consider histograms
 			m.extendedRangeView = m.floats.ViewUntilSearchingForwards(rangeStart, m.extendedRangeView)
-			head, tail := m.extendedRangeView.UnsafePoints()
-
-			if len(tail) > 0 {
-				m.floats.DiscardPointsAtOrBefore(tail[len(tail)-1].T - 1)
-			} else if len(head) > 0 {
-				m.floats.DiscardPointsAtOrBefore(head[len(head)-1].T - 1)
+			last, ok := m.extendedRangeView.Last()
+			if ok {
+				m.floats.DiscardPointsAtOrBefore(last.T - 1)
 			}
 		}()
 	}
@@ -213,13 +206,9 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			return histogramObserved, m.chunkIterator.Err()
 		case chunkenc.ValFloat:
 			t, f := m.chunkIterator.At()
-			if value.IsStaleNaN(f) {
+			if value.IsStaleNaN(f) || t <= extendedRangeStart {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
-				continue
-			}
-
-			if t <= extendedRangeStart {
 				continue
 			}
 
