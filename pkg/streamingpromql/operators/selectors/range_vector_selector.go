@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
