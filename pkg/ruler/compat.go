@@ -44,6 +44,12 @@ const (
 	failureReasonClientError = "client_error"
 )
 
+// TODO: remove this once these errors are populated as sentinenls at
+const (
+	prometheusDuplicateLabelsetAlertingRuleError  = "vector contains metrics with the same labelset after applying alert labels"
+	prometheusDuplicateLabelsetRecordingRuleError = "vector contains metrics with the same labelset after applying rule labels"
+)
+
 // Pusher is an ingester server that accepts pushes.
 type Pusher interface {
 	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
@@ -488,7 +494,7 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 
 	// Check for rule evaluation failures (errors that occur after query succeeds)
 	if isUserRuleEvalFailure(err) {
-		return false // User error
+		return false
 	}
 
 	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
@@ -525,5 +531,7 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 }
 
 func isUserRuleEvalFailure(err error) bool {
-	return strings.Contains(err.Error(), "vector contains metrics with the same labelset")
+	errStr := err.Error()
+	return strings.Contains(errStr, prometheusDuplicateLabelsetAlertingRuleError) ||
+		strings.Contains(errStr, prometheusDuplicateLabelsetRecordingRuleError)
 }

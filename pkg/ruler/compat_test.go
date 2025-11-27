@@ -1275,3 +1275,47 @@ func getMetricValue(t *testing.T, reg prometheus.Gatherer, metricName, labelName
 	}
 	return 0
 }
+
+func TestPrometheusErrorStringsForDuplicateLabelsets(t *testing.T) {
+	logger := promslog.New(&promslog.Config{})
+	expr, err := parser.ParseExpr("test_metric")
+	require.NoError(t, err)
+
+	// Mock query function that returns duplicate metrics
+	queryFunc := func(_ context.Context, _ string, _ time.Time) (promql.Vector, error) {
+		return promql.Vector{
+			promql.Sample{Metric: labels.FromStrings("__name__", "test_metric", "job", "test"), T: 0, F: 1.0},
+			promql.Sample{Metric: labels.FromStrings("__name__", "test_metric", "job", "test"), T: 0, F: 2.0},
+		}, nil
+	}
+
+	testCases := []struct {
+		name                string
+		rule                rules.Rule
+		expectedErrorSubstr string
+	}{
+		{
+			name:                "alerting rule",
+			rule:                rules.NewAlertingRule("test_alert", expr, time.Minute, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", false, logger),
+			expectedErrorSubstr: prometheusDuplicateLabelsetAlertingRuleError,
+		},
+		{
+			name:                "recording rule",
+			rule:                rules.NewRecordingRule("test_record", expr, labels.EmptyLabels()),
+			expectedErrorSubstr: prometheusDuplicateLabelsetRecordingRuleError,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.rule.SetDependencyRules([]rules.Rule{})
+
+			_, err := tc.rule.Eval(context.Background(), 0, time.Now(), queryFunc, nil, 0)
+
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.expectedErrorSubstr,
+				"Prometheus error message changed! Update isUserRuleEvalFailure() in compat.go")
+			require.True(t, isUserRuleEvalFailure(err), "isUserRuleEvalFailure should detect this error")
+		})
+	}
+}
