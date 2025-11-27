@@ -13,7 +13,6 @@ func NewWriteRequest() *promRW2.Request {
 }
 
 // AddFloatSeries is used in testing Remote Write 2.0 to add a float series to a write request.
-// Write 0 into createdTimestamp to not use it.
 func AddFloatSeries(
 	req *promRW2.Request,
 	lbls labels.Labels,
@@ -21,7 +20,6 @@ func AddFloatSeries(
 	metricType promRW2.Metadata_MetricType,
 	help string,
 	unit string,
-	createdTimestamp int64,
 	exemplars []promRW2.Exemplar) *promRW2.Request {
 	if req == nil {
 		req = NewWriteRequest()
@@ -43,8 +41,7 @@ func AddFloatSeries(
 			HelpRef: symBuilder.GetSymbol(help),
 			UnitRef: symBuilder.GetSymbol(unit),
 		},
-		Exemplars:        exemplars,
-		CreatedTimestamp: createdTimestamp,
+		Exemplars: exemplars,
 	}
 	req.Timeseries = append(req.Timeseries, ts)
 	req.Symbols = symBuilder.GetSymbols()
@@ -53,14 +50,12 @@ func AddFloatSeries(
 }
 
 // AddHistogramSeries is used in testing Remote Write 2.0 to add a histogram series to a write request.
-// Write 0 into createdTimestamp to not use it.
 func AddHistogramSeries(
 	req *promRW2.Request,
 	lbls labels.Labels,
 	histograms []promRW2.Histogram,
 	help string,
 	unit string,
-	createdTimestamp int64,
 	exemplars []promRW2.Exemplar) *promRW2.Request {
 	if req == nil {
 		req = NewWriteRequest()
@@ -87,8 +82,7 @@ func AddHistogramSeries(
 			HelpRef: symBuilder.GetSymbol(help),
 			UnitRef: symBuilder.GetSymbol(unit),
 		},
-		Exemplars:        exemplars,
-		CreatedTimestamp: createdTimestamp,
+		Exemplars: exemplars,
 	}
 	req.Timeseries = append(req.Timeseries, ts)
 	req.Symbols = symBuilder.GetSymbols()
