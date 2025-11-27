@@ -55,7 +55,7 @@ services:
   grafana-agent:
     profiles:
       - grafana-agent-static
-    image: grafana/agent:v0.44.5@sha256:a83416559d65abb72d3ec244d5db046b4462faeed814a427c1e0547ae94777fd
+    image: grafana/agent:v0.44.6@sha256:173c2717229fbcdbee00d1f9d4629a08c83512b3579c87f22782a8fe12b043fd
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-metrics.wal-directory=/tmp", "-server.http.address=127.0.0.1:9091"]
     volumes:
       - ./config:/etc/agent-config

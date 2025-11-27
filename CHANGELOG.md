@@ -64,6 +64,7 @@
 * [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313, #13470
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_block_discovery_latency_seconds` metric to track time from block creation to discovery by store-gateway. #13489 #13552
 * [ENHANCEMENT] Querier: Added experimental `-querier.frontend-health-check-grace-period` CLI flag to configure a grace period for query-frontend health checks. The default value of 0 preserves the existing behaviour of immediately removing query-frontend connections that have failed a health check. #13521
+* [ENHANCEMENT] Querier: Add optional per-tenant max limits for label name and label value requests, `max_label_names_limit` and `max_label_values_limit`. #13654
 * [ENHANCEMENT] Usage tracker: `loadSnapshot()` checks shard emptiness instead of using explicit `first` parameter. #13534
 * [ENHANCEMENT] OTLP: Add metric `cortex_distributor_otlp_requests_by_content_type_total` to track content type (json or proto) of OTLP packets. #13525
 * [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13525
@@ -309,6 +310,7 @@
 * [ENHANCEMENT] Alerts: Replace experimental `BlockBuilderLagging` alert with `BlockBuilderSchedulerPendingJobs` alert. The new alert triggers when the block-builder scheduler has pending jobs, indicating that block-builders are unable to keep up with the workload. #12593
 * [ENHANCEMENT] Rollout-operator: Vendor rollout-operator monitoring dashboard from rollout-operator repository. #12688
 * [BUGFIX] Block-builder dashboard: fix reference to detected gaps metric in errors panel. #12401
+* [BUGFIX] Internal: Fix `qpsPanelNativeHistogram` signature. #13649
 
 ### Jsonnet
 
