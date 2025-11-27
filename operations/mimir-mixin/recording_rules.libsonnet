@@ -45,7 +45,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       {
         name: 'mimir_ingester_queries',
         rules:
-          utils.histogramRules('cortex_ingester_queried_series', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true) +
+          utils.histogramRules('cortex_ingester_queried_series', [$._config.per_cluster_label, 'job', 'stage'], $._config.recording_rules_range_interval, record_native=true) +
           utils.histogramRules('cortex_ingester_queried_samples', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true) +
           utils.histogramRules('cortex_ingester_queried_exemplars', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
       },
