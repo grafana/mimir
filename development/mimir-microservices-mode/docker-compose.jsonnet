@@ -37,6 +37,7 @@ std.manifestYamlDoc({
 
     // If true, a secondary query path is started.
     enable_secondary_query_path: false,
+    secondary_query_path_extra_args: '',
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -105,55 +106,39 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components:: {
-    querier: mimirService({
-      name: 'querier',
+  read_path(prefix='', portOffset=0, extraArgs=''):: {
+    [prefix + 'querier']: mimirService({
+      name: prefix + 'querier',
       target: 'querier',
-      httpPort: 8005,
+      httpPort: 8005 + portOffset,
+      jaegerApp: prefix + 'querier',
+      extraArguments: extraArgs,
     }),
 
-    'query-frontend': mimirService({
-      name: 'query-frontend',
+    [prefix + 'query-frontend']: mimirService({
+      name: prefix + 'query-frontend',
       target: 'query-frontend',
-      httpPort: 8007,
-      jaegerApp: 'query-frontend',
+      httpPort: 8007 + portOffset,
+      jaegerApp: prefix + 'query-frontend',
+      extraArguments: extraArgs,
     }),
 
-    'query-scheduler': mimirService({
-      name: 'query-scheduler',
+    [prefix + 'query-scheduler']: mimirService({
+      name: prefix + 'query-scheduler',
       target: 'query-scheduler',
-      httpPort: 8008,
+      httpPort: 8008 + portOffset,
+      jaegerApp: prefix + 'query-scheduler',
+      extraArguments: extraArgs,
     }),
   },
 
-  secondary_read_components:: {
-    local secondaryReadPathRingArgs = '-querier.ring.prefix=prometheus-querier/ -query-scheduler.ring.prefix=prometheus-scheduler/',
-    local extraArgs = '', // Add any configuration specific to this read path here.
+  read_components:: self.read_path(),
 
-    'secondary-querier': mimirService({
-      name: 'secondary-querier',
-      target: 'querier',
-      httpPort: 8105,
-      jaegerApp: 'secondary-querier',
-      extraArguments: secondaryReadPathRingArgs + extraArgs,
-    }),
-
-    'secondary-query-frontend': mimirService({
-      name: 'secondary-query-frontend',
-      target: 'query-frontend',
-      httpPort: 8107,
-      jaegerApp: 'secondary-query-frontend',
-      extraArguments: secondaryReadPathRingArgs + extraArgs,
-    }),
-
-    'secondary-query-scheduler': mimirService({
-      name: 'secondary-query-scheduler',
-      target: 'query-scheduler',
-      httpPort: 8108,
-      jaegerApp: 'secondary-query-scheduler',
-      extraArguments: secondaryReadPathRingArgs + extraArgs,
-    }),
-  },
+  secondary_read_components:: self.read_path(
+    prefix='secondary-',
+    portOffset=100,
+    extraArgs='-querier.ring.prefix=secondary-querier/ -query-scheduler.ring.prefix=secondary-scheduler/ ' + $._config.secondary_query_path_extra_args,
+  ),
 
   compactor:: {
     compactor: mimirService({
