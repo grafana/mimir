@@ -1372,7 +1372,7 @@ func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos m
 	}
 }
 
-// sortByAccepted returns the index of the last acepted timeseries in the write request based on the ha dedup sattes of the eplicas
+// sortByAccepted returns the index of the last accepted timeseries in the write request based on the ha dedup states of the replicas
 func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*replicaInfo, getReplicaForSample func(int) haReplica) int {
 	numAcceptedReplicas := 0
 	for _, info := range replicaInfos {
