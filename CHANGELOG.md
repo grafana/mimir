@@ -59,7 +59,7 @@
   * `-common.storage.gcs.max-retries`
   * `-ruler-storage.gcs.max-retries`
 * [ENHANCEMENT] Usage-tracker: Improve first snapshot loading & rehash speed. #13284
-* [ENHANCEMENT] Query-frontend: Limits middleware will record different error messages when experimental functions, aggregations, or extended range selector modifiers are used but not enabled for a tenant. #13398
+* [ENHANCEMENT] Query-frontend: Return different error messages when experimental functions, aggregations, or extended range selector modifiers are used but not enabled for a tenant. #13398
 * [ENHANCEMENT] Usage-tracker: Improved snapshot loading by doing it in parallel with GOMAXPROCS workers. #13608 #13622
 * [ENHANCEMENT] Usage-tracker, distributor: Make usage-tracker calls asynchronous for users who are far enough from the series limits. #13427
 * [ENHANCEMENT] Usage-tracker: Ensure tenant shards have enough capacity when loading a snapshot. #13607
