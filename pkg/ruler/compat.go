@@ -44,7 +44,7 @@ const (
 	failureReasonClientError = "client_error"
 )
 
-// TODO: remove this once these errors are populated as sentinenls at
+// TODO: remove this once these errors are populated as sentinels at mimir-prometheus
 const (
 	prometheusDuplicateLabelsetAlertingRuleError  = "vector contains metrics with the same labelset after applying alert labels"
 	prometheusDuplicateLabelsetRecordingRuleError = "vector contains metrics with the same labelset after applying rule labels"
