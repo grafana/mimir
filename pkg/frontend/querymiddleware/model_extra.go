@@ -873,7 +873,11 @@ func prometheusDataJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	case model.ValVector:
 		var vss []vectorSample
 		v.Result.ToVal(&vss)
-		d.Result = fromVectorSamples(vss)
+		var errString string
+		d.Result, errString = fromVectorSamples(vss)
+		if errString != "" {
+			iter.ReportError("PrometheusData", errString)
+		}
 
 	case model.ValMatrix:
 		v.Result.ToVal(&d.Result)
@@ -963,19 +967,23 @@ func scalarSampleEncode(sss []SampleStream, stream *jsoniter.Stream) {
 }
 
 type vectorSample struct {
-	Labels []mimirpb.LabelAdapter `json:"metric"`
-	Value  model.SamplePair       `json:"value"`
+	Labels    []mimirpb.LabelAdapter `json:"metric"`
+	Value     model.SamplePair       `json:"value"`
+	Histogram *model.SampleHistogram `json:"histogram"`
 }
 
-func fromVectorSamples(vss []vectorSample) []SampleStream {
+func fromVectorSamples(vss []vectorSample) ([]SampleStream, string) {
 	ret := make([]SampleStream, len(vss))
 	for i, s := range vss {
+		if s.Histogram != nil {
+			return nil, "cannot unmarshal native histogram from JSON"
+		}
 		ret[i] = SampleStream{
 			Labels:  s.Labels,
 			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Value.Timestamp), Value: float64(s.Value.Value)}},
 		}
 	}
-	return ret
+	return ret, ""
 }
 
 func validateVectorSampleStream(vss []SampleStream) error {
