@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20251126160233-849d1b75f28a
+	github.com/grafana/dskit v0.0.0-20251127144755-c43f690981c8
 	github.com/grafana/e2e v0.1.2-0.20250825134630-3cea6f657739
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.7.12
@@ -173,7 +173,7 @@ require (
 	github.com/open-telemetry/opentelemetry-collector-contrib/pkg/pdatautil v0.139.0 // indirect
 	github.com/open-telemetry/opentelemetry-collector-contrib/processor/deltatocumulativeprocessor v0.139.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
-	github.com/pires/go-proxyproto v0.7.0 // indirect
+	github.com/pires/go-proxyproto v0.8.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_golang/exp v0.0.0-20250914183048-a974e0d45e0a // indirect
@@ -231,7 +231,6 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	cloud.google.com/go/iam v1.5.2 // indirect
 	github.com/DmitriyVTitov/size v1.5.0
-	github.com/HdrHistogram/hdrhistogram-go v1.1.2 // indirect
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.40.0 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.31.17 // indirect
@@ -249,7 +248,7 @@ require (
 	github.com/bits-and-blooms/bitset v1.24.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/coreos/go-semver v0.3.0 // indirect
+	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.6.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgraph-io/ristretto v0.1.1 // indirect
@@ -332,7 +331,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/uber/jaeger-lib v2.4.1+incompatible // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
-	go.etcd.io/etcd/api/v3 v3.5.4 // indirect
+	go.etcd.io/etcd/api/v3 v3.6.6 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.4 // indirect
 	go.etcd.io/etcd/client/v3 v3.5.4 // indirect
 	go.mongodb.org/mongo-driver v1.17.6 // indirect

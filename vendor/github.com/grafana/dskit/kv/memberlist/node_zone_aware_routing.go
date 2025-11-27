@@ -145,13 +145,15 @@ func (d *zoneAwareNodeSelectionDelegate) SelectNodes(nodes []*memberlist.NodeSta
 			if remoteRole == NodeRoleBridge {
 				// Only count alive bridges.
 				if node.State == memberlist.StateAlive {
-					if !slices.Contains(zonesWithAliveBridges, remoteZone) {
+					if !containsZone(zonesWithAliveBridges, remoteZone) {
 						zonesWithAliveBridges = append(zonesWithAliveBridges, remoteZone)
+						slices.Sort(zonesWithAliveBridges)
 					}
 				}
 			} else {
-				if !slices.Contains(zonesWithMembers, remoteZone) {
+				if !containsZone(zonesWithMembers, remoteZone) {
 					zonesWithMembers = append(zonesWithMembers, remoteZone)
+					slices.Sort(zonesWithMembers)
 				}
 			}
 		}
@@ -217,4 +219,24 @@ func (d *zoneAwareNodeSelectionDelegate) selectNode(remoteZone string, remoteRol
 		// Unknown role: select but don't prefer (should never happen).
 		return true, false
 	}
+}
+
+// containsZone checks whether zones slice contains a given zone.
+// It's optimized for a sorted zones slice, and zones that end with 'a' to 'z'.
+// When all zones from 'a' to last one are present, it attempts to check only the expected position.
+func containsZone(zones []string, zone string) bool {
+	if zone == "" {
+		return slices.Contains(zones, zone)
+	}
+	optimisticIndex := int(zone[len(zone)-1]) - 'a'
+	if len(zones) <= optimisticIndex {
+		return slices.Contains(zones, zone)
+	}
+
+	if zones[optimisticIndex] == zone {
+		return true // Here's where we skip the strings check.
+	}
+
+	// Bad luck, just check slices.Contains.
+	return slices.Contains(zones, zone)
 }

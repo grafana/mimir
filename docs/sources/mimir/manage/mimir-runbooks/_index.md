@@ -1115,7 +1115,8 @@ How it **works**:
 
 - The memberlist-bridge is deployed in multiple zones (e.g. zone-a, zone-b, zone-c) to facilitate gossip protocol communication across zones.
 - When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), each zone must have at least one healthy memberlist-bridge pod running to guarantee inter-AZ communication, and avoid network partitioning issues.
-- This alert triggers when a zone has a memberlist-bridge deployment configured but no pods are in ready state.
+- If a zone has no alive bridge running, the memberlist client automatically temporarily disable the zone-aware routing in order to reduce likelihood of network partitioning. However, detecting that bridges are unhealthy may take a while, and during this period of time one or more zones could not receive memberlist updates. For this reason it's desired that there's always at least 1 healthy bridge per zone.
+- This alert triggers when a zone has a memberlist-bridge deployment configured but no bridge pods are in ready state in that zone.
 
 How to **investigate**:
 
