@@ -1334,8 +1334,12 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			req.Timeseries[i].RemoveLabel(haReplicaLabel)
 		}
 		// We don't want to send samples beyond the last accepted sample - that was deduplicated
+		if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+			d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, req.Timeseries[max(0, lastAccepted)].Labels)
+		} else {
+			d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState, nil)
+		}
 		pushReq.AddCleanup(sliceUnacceptedRequests(req, lastAccepted))
-		d.updateHADedupeMetrics(userID, group, replicaInfos, samplesPerState)
 
 		if len(req.Timeseries) > 0 {
 			err = next(ctx, pushReq)
@@ -1357,7 +1361,7 @@ func sliceUnacceptedRequests(req *mimirpb.WriteRequest, lastAccepted int) func()
 }
 
 // updateHADedupeMetrics updates metrics related to HA deduplication.
-func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int) {
+func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos map[haReplica]*replicaInfo, samplesPerState map[replicaState]int, labels []mimirpb.LabelAdapter) {
 	for replica, info := range replicaInfos {
 		if info.state&replicaDeduped != 0 && info.sampleCount > 0 {
 			cluster := strings.Clone(replica.cluster) // Make a copy of this, since it may be retained as labels on our metrics
@@ -1368,6 +1372,7 @@ func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos m
 		d.nonHASamples.WithLabelValues(userID).Add(float64(samplesPerState[replicaNotHA]))
 	}
 	if samplesPerState[replicaRejectedTooManyClusters] > 0 {
+		d.costAttributionMgr.SampleTracker(userID).IncrementDiscardedSamples(labels, float64(samplesPerState[replicaRejectedTooManyClusters]), reasonTooManyHAClusters, time.Now())
 		d.discardedSamplesTooManyHaClusters.WithLabelValues(userID, group).Add(float64(samplesPerState[replicaRejectedTooManyClusters]))
 	}
 }
