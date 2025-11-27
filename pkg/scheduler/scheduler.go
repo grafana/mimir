@@ -110,11 +110,14 @@ type Config struct {
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
+
+	SchedulerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
+	f.DurationVar(&cfg.SchedulerGracefulShutdownTimeout, "query-scheduler.graceful-shutdown-timeout", 30*time.Second, "Maximum duration that the scheduler will attempt to drain the queue on shutdown before exiting.")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
@@ -178,7 +181,7 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		enqueueDuration,
 		s.schedulerInflightRequestCount,
 		querierInflightRequestsMetric,
-		15*time.Second,
+		cfg.SchedulerGracefulShutdownTimeout,
 	)
 	if err != nil {
 		return nil, err
