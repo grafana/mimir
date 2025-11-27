@@ -173,7 +173,7 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, s
 	endTimestamp = endTimestamp - offset
 
 	if anchored || smoothed {
-		startTimestamp -= selectorRange.Milliseconds() + lookbackDelta.Milliseconds()
+		startTimestamp -= selectorRange.Milliseconds() + 1
 	}
 
 	if smoothed {

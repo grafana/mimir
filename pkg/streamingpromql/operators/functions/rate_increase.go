@@ -57,7 +57,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 
 		if fCount >= 2 {
 			// TODO: just pass step here? (and below)
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored, step.SmoothedBasisForHeadPoint, step.SmoothedBasisForTailPoint)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored, step.SmoothedBasisPointsSetMask, step.SmoothedBasisForHeadPoint, step.SmoothedBasisForTailPoint)
 			return val, true, nil, nil
 		}
 
@@ -184,7 +184,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	return val, err
 }
 
-func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothedOrAnchored bool, smoothedBasisForHeadPoint, smoothedBasisForTailPoint *promql.FPoint) float64 {
+func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothedOrAnchored bool, smoothedBasisPointSetMask uint8, smoothedBasisForHeadPoint, smoothedBasisForTailPoint promql.FPoint) float64 {
 	firstPoint := fHead[0]
 	fHead = fHead[1:]
 
@@ -201,18 +201,19 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 		// These alternate boundary points have been pre-calculated by the range vector selector.
 		// Note that the rate() which calls this floatRate() has already tested that fCount >= 2, so we should not have issues pruning the head and tail of these slices.
 
-		if smoothedBasisForHeadPoint != nil {
-			firstPoint = *smoothedBasisForHeadPoint
+		if smoothedBasisPointSetMask&1 != 0 {
+			firstPoint = smoothedBasisForHeadPoint
 		}
 
-		if smoothedBasisForTailPoint != nil {
-			lastPoint = *smoothedBasisForTailPoint
+		if smoothedBasisPointSetMask&2 != 0 {
+			lastPoint = smoothedBasisForTailPoint
 		}
 
 		// We are essentially replacing the last point in the slices with the smoothed tail point
 		// We could achieve the same thing by setting the last value.F in the slice to the smoothedBasisForTailPoint.F,
 		// and not pruning the slice. This would then avoid the need for the extra delta addition after the accumulations.
 		// However, we probably do not want to edit values in these slices.
+		// We still do this even of the smoothedBasisForTailPoint is not set, as this last point still handled in the same manner.
 		if len(fTail) > 0 {
 			fTail = fTail[:len(fTail)-1]
 		} else {

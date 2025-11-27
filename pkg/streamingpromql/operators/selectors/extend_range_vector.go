@@ -15,50 +15,64 @@ import (
 // extendRangeVectorPoints will return a slice of points which has been adjusted to have anchored/smoothed points on the bounds of the given range.
 // This is used with the anchored/smoothed range query modifiers.
 // This implementation is based on extendFloats() found in promql/engine.go
-func extendRangeVectorPoints(it *types.FPointRingBufferViewIterator, rangeStart, rangeEnd int64, smoothed bool, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, *promql.FPoint, *promql.FPoint, error) {
+func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, smoothed bool, smoothedHead, smoothedTail *promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, byte, error) {
+
+	head, tail := view.UnsafePoints()
+	count := len(head) + len(tail)
 
 	// We need a new buffer to store the extended points
 	// The caller is responsible for releasing this slice back to the slices pool
-	buff, err := types.FPointSlicePool.Get(it.Count()+2, memoryConsumptionTracker)
+	buff, err := types.FPointSlicePool.Get(count+2, memoryConsumptionTracker)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, 0, err
 	}
-	
-	// Find the last point before the rangeStart, or the first point >= rangeStart
-	first := it.Seek(rangeStart)
 
-	// Use this first value as the range boundary value
-	buff = append(buff, promql.FPoint{T: rangeStart, F: first.F})
+	first := head[0]
 
-	// Accumulate the points <= rangeEnd into the buffer.
-	// Note - if the first.T > rangeStart, it will also be accumulated into buff as the 2nd point in the buffer.
-	buff = it.CopyRemainingPointsTo(rangeEnd, buff)
-	last := it.At()
+	// Add synthetic start boundary
+	if first.T == rangeStart {
+		buff = append(buff, first)
+	} else {
+		buff = append(buff, promql.FPoint{T: rangeStart, F: first.F})
+		if first.T > rangeStart {
+			buff = append(buff, first)
+		}
+	}
 
-	if last.T != rangeEnd {
-		// Use the last point >= rangeEnd, or the point immediately preceding as the value for the end boundary
+	buff = append(buff, head[1:]...)
+	buff = append(buff, tail...)
+
+	// Add or clamp final boundary
+	last := buff[len(buff)-1]
+	if last.T < rangeEnd {
 		buff = append(buff, promql.FPoint{T: rangeEnd, F: last.F})
+	} else if last.T > rangeEnd {
+		buff[len(buff)-1].T = rangeEnd
 	}
 
 	// Smoothing has 2 special cases.
 	// Firstly, the values on the boundaries are replaced with an interpolated values - there by smoothing the value to reflect the time of the point before/after the boundary
 	// Secondly, if vector will be used in a rate/increase function then the boundary points must be calculated differently to consider the value as a counter.
 	// These alternate points will be stored alongside the resulting vector so that the rate/increase function handler can utilise these values.
-	var smoothedHead *promql.FPoint
-	var smoothedTail *promql.FPoint
+	smoothedPointSetMask := uint8(0)
 	if smoothed && len(buff) > 1 {
 		if first.T < rangeStart {
 			buff[0].F = interpolate(first, buff[1], rangeStart, false, true)
-			smoothedHead = &promql.FPoint{T: rangeStart, F: interpolate(first, buff[1], rangeStart, true, true)}
+			smoothedHead.T = rangeStart
+			smoothedHead.F = interpolate(first, buff[1], rangeStart, true, true)
+			smoothedPointSetMask |= 1 << 0
 		}
 
 		if last.T > rangeEnd {
-			buff[len(buff)-1].F = interpolate(buff[len(buff)-2], last, rangeEnd, false, false)
-			smoothedTail = &promql.FPoint{T: rangeEnd, F: interpolate(buff[len(buff)-2], last, rangeEnd, true, false)}
+			prev := buff[len(buff)-2]
+			buff[len(buff)-1].F = interpolate(prev, last, rangeEnd, false, false)
+			smoothedTail.T = rangeEnd
+			smoothedTail.F = interpolate(prev, last, rangeEnd, true, false)
+			smoothedPointSetMask |= 1 << 1
 		}
 	}
 
-	return buff, smoothedHead, smoothedTail, nil
+	return buff, smoothedPointSetMask, nil
 }
 
 // interpolate performs linear interpolation between two points.

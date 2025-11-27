@@ -18,13 +18,13 @@ const (
 	allExperimentalFeatures = "all"
 )
 
-type experimentalFeatureType struct {
-	label string
-}
+type experimentalFeatureType string
 
-var functionType = experimentalFeatureType{label: "function"}
-var aggregationType = experimentalFeatureType{label: "aggregation"}
-var extendedRangeSelectorModifierType = experimentalFeatureType{label: "extended range selector modifier"}
+const (
+	functionType                      = experimentalFeatureType("function")
+	aggregationType                   = experimentalFeatureType("aggregation")
+	extendedRangeSelectorModifierType = experimentalFeatureType("extended range selector modifier")
+)
 
 // experimentalFeaturesMiddleware manages the per-tenant access to experimental functions, aggregations and extended range selector modifiers.
 type experimentalFeaturesMiddleware struct {
@@ -112,7 +112,7 @@ func (m *experimentalFeaturesMiddleware) Do(ctx context.Context, req MetricsQuer
 }
 
 func createExperimentalFeatureError(featureType experimentalFeatureType, feature string) error {
-	err := fmt.Errorf("experimental %s %q is not enabled for tenant", featureType.label, feature)
+	err := fmt.Errorf("experimental %s %q is not enabled for tenant", featureType, feature)
 	return apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 }
 
