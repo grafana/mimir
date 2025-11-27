@@ -280,8 +280,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
-  ncLatencyPanel(metricName, selector, multiplier='1e3')::
-    super.latencyPanelNativeHistogram(metricName, selector, multiplier),
+  ncLatencyPanel(metricName, selector, multiplier='1e3', quantile=[99, 50])::
+    super.latencyPanelNativeHistogram(metricName, selector, multiplier, quantile),
 
   // hiddenLegendQueryPanel adds on to 'timeseriesPanel', not the deprecated 'panel'.
   // It is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and
