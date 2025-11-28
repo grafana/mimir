@@ -759,7 +759,7 @@ spec:
                       )
                   ) > 0
               )
-            for: 3m
+            for: 10m
             labels:
               severity: critical
       - name: golang_alerts

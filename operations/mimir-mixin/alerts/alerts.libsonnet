@@ -1037,7 +1037,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 ) > 0
             )
           ||| % $._config,
-          'for': '3m',
+          'for': '10m',
           labels: {
             severity: 'critical',
           },
