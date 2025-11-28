@@ -6,7 +6,7 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Build: Upgrade Go to 1.25.4. #13692
+* [CHANGE] Build: Upgrade Go to 1.25.4. #13692 #13695
 
 ## 3.0.0
 
