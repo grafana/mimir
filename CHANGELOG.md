@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Update to Go v1.24.9 to address [CVE-2025-61725](https://www.cve.org/CVERecord?id=CVE-2025-61725), [CVE-2025-58188](https://www.cve.org/CVERecord?id=CVE-2025-58188). #13353
+* [BUGFIX] Update to Go v1.25.4 to address [CVE-2025-61725](https://www.cve.org/CVERecord?id=CVE-2025-61725), [CVE-2025-58188](https://www.cve.org/CVERecord?id=CVE-2025-58188). #13700
 
 ## 2.17.2
 
