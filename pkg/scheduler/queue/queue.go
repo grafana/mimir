@@ -9,6 +9,7 @@ import (
 	"container/list"
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -117,10 +118,11 @@ type RequestQueue struct {
 	discardedRequests *prometheus.CounterVec // per user
 	enqueueDuration   prometheus.Histogram
 
-	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
-	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
-	isStopping    *atomic.Bool
-	stopTimeout   time.Duration
+	stopRequested      chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted      chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
+	closeStopCompleted func()
+	isStopping         *atomic.Bool
+	stopTimeout        time.Duration
 
 	requestsToEnqueue                     chan requestToEnqueue
 	requestsSent                          chan *SchedulerRequest
@@ -262,6 +264,10 @@ func NewRequestQueue(
 		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
 	}
 
+	q.closeStopCompleted = sync.OnceFunc(func() {
+		close(q.stopCompleted)
+	})
+
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
 
 	return q, nil
@@ -351,7 +357,8 @@ func (q *RequestQueue) dispatcherLoop() {
 			if q.queueBroker.itemCount() == 0 && q.schedulerInflightRequests.Load() == 0 {
 				// We are done.
 				level.Info(q.log).Log("msg", "queue stop completed: query queue is empty and all workers have been disconnected")
-				close(q.stopCompleted)
+
+				q.closeStopCompleted()
 				return
 			}
 
@@ -383,7 +390,7 @@ func (q *RequestQueue) dispatcherLoop() {
 
 			// We are done.
 			level.Info(q.log).Log("msg", "queue stop completed: all query dequeue requests closed")
-			close(q.stopCompleted)
+			q.closeStopCompleted()
 			return
 		}
 	}
@@ -540,7 +547,7 @@ func (q *RequestQueue) stop(_ error) error {
 			level.Warn(q.log).Log("msg", "queue stop timeout reached: query queue is not empty but queries have not been handled before the timeout")
 
 			cancel()
-			close(q.stopCompleted)
+			q.closeStopCompleted()
 
 			return nil
 		}
