@@ -30,7 +30,7 @@
 * [CHANGE] Ingester: Stabilize experimental flag `-ingest-storage.write-logs-fsync-before-kafka-commit-concurrency` to fsync write logs before the offset is committed to Kafka. Remove `-ingest-storage.write-logs-fsync-before-kafka-commit-enabled` since this is always enabled now. #13591
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
-* [FEATURE] Memberlist: Add experimental support for zone-aware routing, in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
+* [FEATURE] Memberlist: Add experimental support for zone-aware routing in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
 * [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058
 * [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
