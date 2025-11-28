@@ -20853,7 +20853,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n",
+                            "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Requests/s",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Requests/s",
                             "legendLink": null
@@ -20869,7 +20875,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -20903,22 +20909,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Latency (Time in Queue)",
@@ -21046,10 +21070,16 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
+                            "refId": "A_classic"
                          }
                       ],
                       "title": "99th Percentile Latency by Expected Query Component",
@@ -21096,10 +21126,16 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
+                            "refId": "A_classic"
                          }
                       ],
                       "title": "50th Percentile Latency by Expected Query Component",
@@ -21146,10 +21182,16 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "(label_replace(1e3 * sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(label_replace(1e3 * sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((query-scheduler.*))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average: {{ additional_queue_dimensions }}",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Average Latency by Expected Query Component",
@@ -21563,7 +21605,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{status}}",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_querier_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -21612,22 +21660,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
-                            "refId": "A"
+                            "refId": "A_classic"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_native"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
-                            "refId": "B"
+                            "refId": "B_classic"
                          },
                          {
-                            "expr": "1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}) / sum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})",
+                            "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_native"
+                         },
+                         {
+                            "expr": "(1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}) /\nsum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
-                            "refId": "C"
+                            "refId": "C_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) /\nsum(histogram_count(cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_native"
                          }
                       ],
                       "title": "Latency",
@@ -21674,7 +21740,14 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "",
+                            "legendLink": null
+                         },
+                         {
+                            "exemplar": true,
+                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_querier_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
@@ -22264,7 +22337,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -22298,22 +22371,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Latency",
@@ -22976,7 +23067,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -23010,22 +23101,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_storegateway_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(cortex_storegateway_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) /\nsum(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Latency",
@@ -28634,7 +28743,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))\n",
+                            "expr": "(sum (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Requests/s",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(sum (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Requests/s",
                             "legendLink": null
@@ -28650,7 +28765,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -28684,22 +28799,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) /\nsum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Latency (Time in Queue)",
@@ -28827,10 +28960,16 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.99, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "(label_replace(histogram_quantile(0.99, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "99th Percentile: {{ additional_queue_dimensions }}",
+                            "refId": "A_classic"
                          }
                       ],
                       "title": "99th Percentile Latency by Expected Query Component",
@@ -28877,10 +29016,16 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(histogram_quantile(0.50, sum(rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (le, additional_queue_dimensions)) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
                             "refId": "A"
+                         },
+                         {
+                            "expr": "(label_replace(histogram_quantile(0.50, sum by (le,additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) * 1e3, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th Percentile: {{ additional_queue_dimensions }}",
+                            "refId": "A_classic"
                          }
                       ],
                       "title": "50th Percentile Latency by Expected Query Component",
@@ -28927,10 +29072,16 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "label_replace(sum(rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions) * 1e3 / sum(rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) by (additional_queue_dimensions), \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n",
+                            "expr": "(label_replace(1e3 * sum by (additional_queue_dimensions) (histogram_sum(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))) /\nsum by (additional_queue_dimensions) (histogram_count(rate(cortex_query_scheduler_queue_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average: {{ additional_queue_dimensions }}",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(label_replace(1e3 * sum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval])) /\nsum by (additional_queue_dimensions) (rate(cortex_query_scheduler_queue_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-query-scheduler.*))\"}[$__rate_interval]))\n, \"additional_queue_dimensions\", \"unknown\", \"additional_queue_dimensions\", \"^$\")\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average: {{ additional_queue_dimensions }}",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Average Latency by Expected Query Component",
@@ -29205,7 +29356,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(cortex_querier_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{status}}",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(cortex_querier_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -29254,22 +29411,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
-                            "refId": "A"
+                            "refId": "A_classic"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_native"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum by (le) (cluster_job_route:cortex_querier_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
-                            "refId": "B"
+                            "refId": "B_classic"
                          },
                          {
-                            "expr": "1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}) / sum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})",
+                            "expr": "(histogram_quantile(0.50, sum (cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_native"
+                         },
+                         {
+                            "expr": "(1e3 * sum(cluster_job_route:cortex_querier_request_duration_seconds_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}) /\nsum(cluster_job_route:cortex_querier_request_duration_seconds_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "Average",
-                            "refId": "C"
+                            "refId": "C_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"})) /\nsum(histogram_count(cluster_job_route:cortex_querier_request_duration_seconds:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_native"
                          }
                       ],
                       "title": "Latency",
@@ -29316,7 +29491,14 @@ data:
                       "targets": [
                          {
                             "exemplar": true,
-                            "expr": "histogram_quantile(0.99, sum by(le, pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))",
+                            "expr": "(histogram_quantile(0.99, sum by (le,pod) (rate(cortex_querier_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "",
+                            "legendLink": null
+                         },
+                         {
+                            "exemplar": true,
+                            "expr": "(histogram_quantile(0.99, sum by (pod) (rate(cortex_querier_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", route=~\"((prometheus|api_prom)_api_v1_.+|querierpb.EvaluateQueryRequest)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "",
                             "legendLink": null
@@ -29906,7 +30088,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -29940,22 +30122,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(cortex_ingester_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/cortex.Ingester/(QueryStream|QueryExemplars|LabelValues|LabelNames|UserStats|AllUserStats|MetricsForLabelMatchers|MetricsMetadata|LabelNamesAndValues|LabelValuesCardinality|ActiveSeries)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Latency",
@@ -30618,7 +30818,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -30652,22 +30852,40 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_storegateway_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_storegateway_client_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_storegateway_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(cortex_storegateway_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval])) /\nsum(rate(cortex_storegateway_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ruler-querier.*))\", operation=~\"/gatewaypb.StoreGateway/.*\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Latency",
