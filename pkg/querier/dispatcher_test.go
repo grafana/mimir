@@ -146,46 +146,26 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 0.123},
-												{TimestampMs: 10_000, Value: 1.123},
-												{TimestampMs: 20_000, Value: 2.123},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 0.123},
+							{TimestampMs: 10_000, Value: 1.123},
+							{TimestampMs: 20_000, Value: 2.123},
 						},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 1.123},
-												{TimestampMs: 10_000, Value: 3.123},
-												{TimestampMs: 20_000, Value: 5.123},
-											},
-										},
-									},
-								},
-							},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 1.123},
+							{TimestampMs: 10_000, Value: 3.123},
+							{TimestampMs: 20_000, Value: 5.123},
 						},
 					},
-				},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   6,
 					QueueTime:          3 * time.Second,
@@ -208,40 +188,30 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 3.123},
-												{TimestampMs: 10_000, Value: 7.123},
-												{TimestampMs: 20_000, Value: 11.123},
-											},
-										},
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 4.123},
-												{TimestampMs: 10_000, Value: 9.123},
-												{TimestampMs: 20_000, Value: 14.123},
-											},
-										},
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 5.123},
-												{TimestampMs: 10_000, Value: 11.123},
-												{TimestampMs: 20_000, Value: 17.123},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
-				},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
@@ -264,40 +234,30 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 3.123},
-												{TimestampMs: 10_000, Value: 7.123},
-												{TimestampMs: 20_000, Value: 11.123},
-											},
-										},
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 4.123},
-												{TimestampMs: 10_000, Value: 9.123},
-												{TimestampMs: 20_000, Value: 14.123},
-											},
-										},
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 5.123},
-												{TimestampMs: 10_000, Value: 11.123},
-												{TimestampMs: 20_000, Value: 17.123},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
-				},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
@@ -320,53 +280,33 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 3.123},
-												{TimestampMs: 10_000, Value: 7.123},
-												{TimestampMs: 20_000, Value: 11.123},
-											},
-										},
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 4.123},
-												{TimestampMs: 10_000, Value: 9.123},
-												{TimestampMs: 20_000, Value: 14.123},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3.123},
+							{TimestampMs: 10_000, Value: 7.123},
+							{TimestampMs: 20_000, Value: 11.123},
 						},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 5.123},
-												{TimestampMs: 10_000, Value: 11.123},
-												{TimestampMs: 20_000, Value: 17.123},
-											},
-										},
-									},
-								},
-							},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4.123},
+							{TimestampMs: 10_000, Value: 9.123},
+							{TimestampMs: 20_000, Value: 14.123},
 						},
 					},
-				},
+				),
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5.123},
+							{TimestampMs: 10_000, Value: 11.123},
+							{TimestampMs: 20_000, Value: 17.123},
+						},
+					},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
@@ -561,24 +501,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					7,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 7,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 30_000, Value: math.Inf(1)},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					7,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 30_000, Value: math.Inf(1)},
 						},
 					},
-				},
+				),
 				newEvaluationCompletedMessageWithAnnotations(
 					stats.Stats{
 						SamplesProcessed:   3,
@@ -625,70 +555,40 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 0,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 0},
-												{TimestampMs: 10_000, Value: 1},
-												{TimestampMs: 20_000, Value: 2},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					0,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 0},
+							{TimestampMs: 10_000, Value: 1},
+							{TimestampMs: 20_000, Value: 2},
 						},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 0,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 1},
-												{TimestampMs: 10_000, Value: 3},
-												{TimestampMs: 20_000, Value: 5},
-											},
-										},
-									},
-								},
-							},
+				),
+				newInstantVectorSeriesDataMessage(
+					0,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 1},
+							{TimestampMs: 10_000, Value: 3},
+							{TimestampMs: 20_000, Value: 5},
 						},
 					},
-				},
+				),
 				newSeriesMetadataMessage(
 					1,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 1,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 2},
-												{TimestampMs: 10_000, Value: 5},
-												{TimestampMs: 20_000, Value: 8},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					1,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 2},
+							{TimestampMs: 10_000, Value: 5},
+							{TimestampMs: 20_000, Value: 8},
 						},
 					},
-				},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
@@ -718,106 +618,66 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 0,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 3},
-												{TimestampMs: 10_000, Value: 7},
-												{TimestampMs: 20_000, Value: 11},
-											},
-										},
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 4},
-												{TimestampMs: 10_000, Value: 9},
-												{TimestampMs: 20_000, Value: 14},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					0,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3},
+							{TimestampMs: 10_000, Value: 7},
+							{TimestampMs: 20_000, Value: 11},
 						},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 0,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 5},
-												{TimestampMs: 10_000, Value: 11},
-												{TimestampMs: 20_000, Value: 17},
-											},
-										},
-									},
-								},
-							},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4},
+							{TimestampMs: 10_000, Value: 9},
+							{TimestampMs: 20_000, Value: 14},
 						},
 					},
-				},
+				),
+				newInstantVectorSeriesDataMessage(
+					0,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5},
+							{TimestampMs: 10_000, Value: 11},
+							{TimestampMs: 20_000, Value: 17},
+						},
+					},
+				),
 				newSeriesMetadataMessage(
 					1,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 1,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 3},
-												{TimestampMs: 10_000, Value: 7},
-												{TimestampMs: 20_000, Value: 11},
-											},
-										},
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 4},
-												{TimestampMs: 10_000, Value: 9},
-												{TimestampMs: 20_000, Value: 14},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					1,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3},
+							{TimestampMs: 10_000, Value: 7},
+							{TimestampMs: 20_000, Value: 11},
 						},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 1,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 5},
-												{TimestampMs: 10_000, Value: 11},
-												{TimestampMs: 20_000, Value: 17},
-											},
-										},
-									},
-								},
-							},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4},
+							{TimestampMs: 10_000, Value: 9},
+							{TimestampMs: 20_000, Value: 14},
 						},
 					},
-				},
+				),
+				newInstantVectorSeriesDataMessage(
+					1,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 5},
+							{TimestampMs: 10_000, Value: 11},
+							{TimestampMs: 20_000, Value: 17},
+						},
+					},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   18,
 					QueueTime:          3 * time.Second,
@@ -1083,46 +943,26 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 1,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 0},
-												{TimestampMs: 10_000, Value: 1},
-												{TimestampMs: 20_000, Value: 2},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					1,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 0},
+							{TimestampMs: 10_000, Value: 1},
+							{TimestampMs: 20_000, Value: 2},
 						},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 1,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 0, Value: 1},
-												{TimestampMs: 10_000, Value: 3},
-												{TimestampMs: 20_000, Value: 5},
-											},
-										},
-									},
-								},
-							},
+				),
+				newInstantVectorSeriesDataMessage(
+					1,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 1},
+							{TimestampMs: 10_000, Value: 3},
+							{TimestampMs: 20_000, Value: 5},
 						},
 					},
-				},
+				),
 				newSeriesMetadataMessage(
 					3,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
@@ -1435,24 +1275,14 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 					1,
 					querierpb.SeriesMetadata{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "some_total", "idx", "0"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 1,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 9_000, Value: 1},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					1,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 9_000, Value: 1},
 						},
 					},
-				},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed: 5,
 					WallTime:         expectedQueryWallTime,
@@ -1472,24 +1302,14 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 					3,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
-								InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-									NodeIndex: 3,
-									Series: []querierpb.InstantVectorSeriesData{
-										{
-											Floats: []mimirpb.Sample{
-												{TimestampMs: 9_000, Value: 1},
-											},
-										},
-									},
-								},
-							},
+				newInstantVectorSeriesDataMessage(
+					3,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 9_000, Value: 1},
 						},
 					},
-				},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed: 5,
 					WallTime:         expectedQueryWallTime,
@@ -1783,6 +1603,21 @@ func newScalarMessage(nodeIndex int64, values ...mimirpb.Sample) *frontendv2pb.Q
 					ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
 						NodeIndex: nodeIndex,
 						Values:    values,
+					},
+				},
+			},
+		},
+	}
+}
+
+func newInstantVectorSeriesDataMessage(nodeIndex int64, series ...querierpb.InstantVectorSeriesData) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
+					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+						NodeIndex: nodeIndex,
+						Series:    series,
 					},
 				},
 			},
