@@ -2,6 +2,12 @@
 
 ## main / unreleased
 
+## 3.0.1-rc.0
+
+### Grafana Mimir
+
+* [CHANGE] Build: Upgrade Go to 1.25.4. #13692
+
 ## 3.0.0
 
 ### Grafana Mimir
