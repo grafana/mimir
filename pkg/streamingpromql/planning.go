@@ -86,9 +86,9 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 			splitInterval = 2 * time.Hour
 		}
 		planner.RegisterQueryPlanOptimizationPass(querysplitting.NewOptimizationPass(splitInterval, opts.Logger))
-		opts.Logger.Log("msg", "query splitting optimization pass enabled", "split_interval", splitInterval)
-	} else {
-		opts.Logger.Log("msg", "query splitting optimization pass disabled")
+		if opts.Logger != nil {
+			opts.Logger.Log("msg", "query splitting optimization pass enabled", "split_interval", splitInterval)
+		}
 	}
 
 	if opts.EnableCommonSubexpressionElimination {
