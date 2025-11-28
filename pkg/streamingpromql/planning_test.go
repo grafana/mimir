@@ -1407,9 +1407,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
-			encoded, err := originalPlan.ToEncodedPlan(true, true)
+			encoded, nodes, err := originalPlan.ToEncodedPlan(true, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedPlan, encoded)
+			require.Equal(t, []int64{testCase.expectedPlan.RootNode}, nodes)
 
 			// Decode plan, confirm it matches the original plan
 			decodedPlan, _, err := encoded.ToDecodedPlan()
@@ -1461,7 +1462,7 @@ func TestPlanVersioning(t *testing.T) {
 	err := plan.DeterminePlanVersion()
 	require.NoError(t, err)
 
-	encoded, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
 	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
@@ -1635,7 +1636,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 				var marshalled []byte
 
 				for b.Loop() {
-					encoded, err := plan.ToEncodedPlan(false, true)
+					encoded, _, err := plan.ToEncodedPlan(false, true)
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1650,7 +1651,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 			})
 
 			b.Run("decode", func(b *testing.B) {
-				encoded, err := plan.ToEncodedPlan(false, true)
+				encoded, _, err := plan.ToEncodedPlan(false, true)
 				require.NoError(b, err)
 
 				marshalled, err := encoded.Marshal()

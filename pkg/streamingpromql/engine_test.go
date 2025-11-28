@@ -1773,6 +1773,7 @@ func assertEstimatedPeakMemoryConsumption(
 		attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
 		attribute.String("originalExpression", expr),
 		attribute.String("timeRangeType", queryType),
+		attribute.Int("nodeCount", 1),
 	}
 
 	switch queryType {
@@ -1876,7 +1877,7 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
 	require.NoError(t, err)
 
-	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan, plan.Root, plan.TimeRange)
+	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan, []NodeEvaluationRequest{{Node: plan.Root, TimeRange: plan.TimeRange}})
 	require.NoError(t, err)
 
 	err = evaluator.Evaluate(ctx, noopEvaluationObserver{})
@@ -1907,7 +1908,7 @@ func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, eva
 	return nil
 }
 
-func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error {
 	return nil
 }
 
