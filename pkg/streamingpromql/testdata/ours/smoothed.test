@@ -682,3 +682,53 @@ eval instant at 100m delta(metric[100m] smoothed)
 eval instant at 100m delta(metric[500m] smoothed)
   {instance="1"} -78
   {instance="2"} -79
+
+clear
+load 1m
+  metric _ 2 _
+
+eval instant at 1m increase(metric[1s] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[30s] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[59s] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[1m] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[1m1s] smoothed)
+  {} 0
+
+eval instant at 2m increase(metric[1m1s] smoothed)
+  {} 0
+
+clear
+load 1m
+  metric _ 2 4
+
+eval instant at 1m increase(metric[1s] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[30s] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[59s] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[1m] smoothed)
+  {} 0
+
+eval instant at 1m increase(metric[1m1s] smoothed)
+  {} 0
+
+eval instant at 2m increase(metric[1m1s] smoothed)
+  {} 2
+
+eval instant at 2m increase(metric[1m30s] smoothed)
+  {} 2
+
+eval instant at 2m31s increase(metric[1m] smoothed)
+  {} 0.9666666666666668
