@@ -7,8 +7,6 @@ package querymiddleware
 
 import (
 	"bytes"
-	stdjson "encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -20,6 +18,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/util/jsonutil"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -34,6 +33,11 @@ var (
 		ValidateJsonRawMessage: true,
 	}.Froze()
 )
+
+func init() {
+	jsoniter.RegisterTypeEncoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterEncode, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeDecoderFunc("querymiddleware.PrometheusData", prometheusDataJsoniterDecode)
+}
 
 // NewEmptyPrometheusResponse returns an empty successful Prometheus query range response.
 func NewEmptyPrometheusResponse() *PrometheusResponse {
@@ -838,247 +842,180 @@ func (m *PrometheusSeriesResponse) Reset()         { *m = PrometheusSeriesRespon
 func (*PrometheusSeriesResponse) ProtoMessage()    {}
 func (m *PrometheusSeriesResponse) String() string { return fmt.Sprintf("%+v", *m) }
 
-func (d *PrometheusData) UnmarshalJSON(b []byte) error {
+func prometheusDataJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
+	d := (*PrometheusData)(ptr)
 	v := struct {
-		Type   model.ValueType    `json:"resultType"`
-		Result stdjson.RawMessage `json:"result"`
+		Type   model.ValueType `json:"resultType"`
+		Result jsoniter.Any    `json:"result"`
 	}{}
 
-	err := json.Unmarshal(b, &v)
-	if err != nil {
-		return err
+	iter.ReadVal(&v)
+	if iter.Error != nil {
+		return
 	}
 	d.ResultType = v.Type.String()
 	switch v.Type {
 	case model.ValString:
-		var sss stringSampleStreams
-		if err := json.Unmarshal(v.Result, &sss); err != nil {
-			return err
-		}
-		d.Result = sss
-		return nil
+		var sv model.String
+		v.Result.ToVal(&sv)
+		d.Result = []SampleStream{{
+			Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
+			Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp)}},
+		}}
 
 	case model.ValScalar:
-		var sss scalarSampleStreams
-		if err := json.Unmarshal(v.Result, &sss); err != nil {
-			return err
-		}
-		d.Result = sss
-		return nil
+		var sv model.Scalar
+		v.Result.ToVal(&sv)
+		d.Result = []SampleStream{{
+			Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
+		}}
 
 	case model.ValVector:
-		var vss []vectorSampleStream
-		if err := json.Unmarshal(v.Result, &vss); err != nil {
-			return err
+		var vss []vectorSample
+		v.Result.ToVal(&vss)
+		var errString string
+		d.Result, errString = fromVectorSamples(vss)
+		if errString != "" {
+			iter.ReportError("PrometheusData", errString)
 		}
-		d.Result = fromVectorSampleStreams(vss)
-		return nil
 
 	case model.ValMatrix:
-		return json.Unmarshal(v.Result, &d.Result)
+		v.Result.ToVal(&d.Result)
 
 	default:
-		return fmt.Errorf("unsupported value type %q", v.Type)
+		iter.ReportError("PrometheusData", fmt.Sprintf("unsupported value type %q", v.Type))
 	}
 }
 
-func (d *PrometheusData) MarshalJSON() ([]byte, error) {
-	if d == nil {
-		return []byte("null"), nil
-	}
-
+func prometheusDataJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
+	d := (*PrometheusData)(ptr)
+	stream.WriteObjectStart()
+	stream.WriteObjectField(`resultType`)
+	stream.WriteString(d.ResultType)
+	stream.WriteMore()
+	stream.WriteObjectField(`result`)
 	switch d.ResultType {
 	case model.ValString.String():
-		return json.Marshal(struct {
-			Type   model.ValueType     `json:"resultType"`
-			Result stringSampleStreams `json:"result"`
-		}{
-			Type:   model.ValString,
-			Result: d.Result,
-		})
-
+		if err := validateStringSampleStream(d.Result); err != nil {
+			stream.Error = err
+			return
+		}
+		stringSampleEncode(d.Result, stream)
 	case model.ValScalar.String():
-		return json.Marshal(struct {
-			Type   model.ValueType     `json:"resultType"`
-			Result scalarSampleStreams `json:"result"`
-		}{
-			Type:   model.ValScalar,
-			Result: d.Result,
-		})
-
+		if err := validateScalarSampleStream(d.Result); err != nil {
+			stream.Error = err
+			return
+		}
+		scalarSampleEncode(d.Result, stream)
 	case model.ValVector.String():
-		return json.Marshal(struct {
-			Type   model.ValueType      `json:"resultType"`
-			Result []vectorSampleStream `json:"result"`
-		}{
-			Type:   model.ValVector,
-			Result: asVectorSampleStreams(d.Result),
-		})
-
+		if err := validateVectorSampleStream(d.Result); err != nil {
+			stream.Error = err
+			return
+		}
+		vectorSampleStreamEncode(d.Result, stream)
 	case model.ValMatrix.String():
-		type plain *PrometheusData
-		return json.Marshal(plain(d))
+		stream.WriteVal(d.Result)
 
 	default:
-		return nil, fmt.Errorf("can't marshal prometheus result type %q", d.ResultType)
+		stream.Error = fmt.Errorf("can't marshal prometheus result type %q", d.ResultType)
 	}
+	stream.WriteObjectEnd()
 }
 
-type stringSampleStreams []SampleStream
-
-func (sss stringSampleStreams) MarshalJSON() ([]byte, error) {
+func validateStringSampleStream(sss []SampleStream) error {
 	if len(sss) != 1 {
-		return nil, fmt.Errorf("string sample streams should have exactly one stream, got %d", len(sss))
+		return fmt.Errorf("string sample streams should have exactly one stream, got %d", len(sss))
 	}
 	ss := sss[0]
 	if len(ss.Labels) != 1 || ss.Labels[0].Name != "value" {
-		return nil, fmt.Errorf("string sample stream should have exactly one label called value, got %d: %v", len(ss.Labels), ss.Labels)
+		return fmt.Errorf("string sample stream should have exactly one label called value, got %d: %v", len(ss.Labels), ss.Labels)
 	}
-	l := ss.Labels[0]
-
 	if len(ss.Samples) != 1 {
-		return nil, fmt.Errorf("string sample stream should have exactly one sample, got %d", len(ss.Samples))
+		return fmt.Errorf("string sample stream should have exactly one sample, got %d", len(ss.Samples))
 	}
-	s := ss.Samples[0]
-
-	return json.Marshal(model.String{Value: l.Value, Timestamp: model.Time(s.TimestampMs)})
-}
-
-func (sss *stringSampleStreams) UnmarshalJSON(b []byte) error {
-	var sv model.String
-	if err := json.Unmarshal(b, &sv); err != nil {
-		return err
-	}
-	*sss = []SampleStream{{
-		Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
-		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp)}},
-	}}
 	return nil
 }
 
-type scalarSampleStreams []SampleStream
+// A string sample is written like `[12345678, "hello"]`
+func stringSampleEncode(sss []SampleStream, stream *jsoniter.Stream) {
+	stream.WriteArrayStart()
+	stream.WriteRaw(model.Time(sss[0].Samples[0].TimestampMs).String())
+	stream.WriteMore()
+	stream.WriteString(sss[0].Labels[0].Value)
+	stream.WriteArrayEnd()
+}
 
-func (sss scalarSampleStreams) MarshalJSON() ([]byte, error) {
+func validateScalarSampleStream(sss []SampleStream) error {
 	if len(sss) != 1 {
-		return nil, fmt.Errorf("scalar sample streams should have exactly one stream, got %d", len(sss))
+		return fmt.Errorf("scalar sample streams should have exactly one stream, got %d", len(sss))
 	}
 	ss := sss[0]
 	if len(ss.Samples) != 1 {
-		return nil, fmt.Errorf("scalar sample stream should have exactly one sample, got %d", len(ss.Samples))
-	}
-	s := ss.Samples[0]
-	return json.Marshal(model.Scalar{
-		Timestamp: model.Time(s.TimestampMs),
-		Value:     model.SampleValue(s.Value),
-	})
-}
-
-func (sss *scalarSampleStreams) UnmarshalJSON(b []byte) error {
-	var sv model.Scalar
-	if err := json.Unmarshal(b, &sv); err != nil {
-		return err
-	}
-	*sss = []SampleStream{{
-		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
-	}}
-	return nil
-}
-
-// asVectorSampleStreams converts a slice of SampleStream into a slice of vectorSampleStream.
-// This can be done as vectorSampleStream is defined as a SampleStream.
-func asVectorSampleStreams(ss []SampleStream) []vectorSampleStream {
-	return *(*[]vectorSampleStream)(unsafe.Pointer(&ss))
-}
-
-// fromVectorSampleStreams is the inverse of asVectorSampleStreams.
-func fromVectorSampleStreams(vss []vectorSampleStream) []SampleStream {
-	return *(*[]SampleStream)(unsafe.Pointer(&vss))
-}
-
-type vectorSampleStream SampleStream
-
-func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
-	s := model.Sample{}
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	if s.Histogram != nil {
-		return errors.New("cannot unmarshal native histogram from JSON")
-	}
-
-	*vs = vectorSampleStream{
-		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
-		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
+		return fmt.Errorf("scalar sample stream should have exactly one sample, got %d", len(ss.Samples))
 	}
 	return nil
 }
 
-func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
-	if (len(vs.Samples) == 1) == (len(vs.Histograms) == 1) { // not XOR
-		return nil, fmt.Errorf("vector sample stream should have exactly one sample or one histogram, got %d samples and %d histograms", len(vs.Samples), len(vs.Histograms))
-	}
-	var sample model.Sample
-	if len(vs.Samples) == 1 {
-		sample = model.Sample{
-			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-			Timestamp: model.Time(vs.Samples[0].TimestampMs),
-			Value:     model.SampleValue(vs.Samples[0].Value),
-		}
-	} else {
-		sample = model.Sample{
-			Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-			Timestamp: model.Time(vs.Histograms[0].TimestampMs),
-			Histogram: mimirpb.FromFloatHistogramToPromHistogram(vs.Histograms[0].Histogram.ToPrometheusModel()),
-		}
-	}
-	return json.Marshal(sample)
+// A scalar sample is written like `[12345678, "42"]`
+func scalarSampleEncode(sss []SampleStream, stream *jsoniter.Stream) {
+	s := sss[0].Samples[0]
+	stream.WriteArrayStart()
+	stream.WriteRaw(model.Time(s.TimestampMs).String())
+	stream.WriteMore()
+	jsonutil.MarshalFloat(s.Value, stream)
+	stream.WriteArrayEnd()
 }
 
-// UnmarshalJSON implements json.Unmarshaler.
-func (s *SampleStream) UnmarshalJSON(data []byte) error {
-	var stream struct {
-		Metric     model.Metric                  `json:"metric"`
-		Values     []mimirpb.Sample              `json:"values"`
-		Histograms []mimirpb.SampleHistogramPair `json:"histograms"`
+type vectorSample struct {
+	Labels    []mimirpb.LabelAdapter `json:"metric"`
+	Value     model.SamplePair       `json:"value"`
+	Histogram *model.SampleHistogram `json:"histogram"`
+}
+
+func fromVectorSamples(vss []vectorSample) ([]SampleStream, string) {
+	ret := make([]SampleStream, len(vss))
+	for i, s := range vss {
+		if s.Histogram != nil {
+			return nil, "cannot unmarshal native histogram from JSON"
+		}
+		ret[i] = SampleStream{
+			Labels:  s.Labels,
+			Samples: []mimirpb.Sample{{TimestampMs: int64(s.Value.Timestamp), Value: float64(s.Value.Value)}},
+		}
 	}
-	if err := json.Unmarshal(data, &stream); err != nil {
-		return err
-	}
-	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
-	if len(stream.Values) > 0 {
-		s.Samples = stream.Values
-	}
-	if len(stream.Histograms) > 0 {
-		return fmt.Errorf("cannot unmarshal native histograms from JSON, but stream contains %d histograms", len(stream.Histograms))
+	return ret, ""
+}
+
+func validateVectorSampleStream(vss []SampleStream) error {
+	for _, vs := range vss {
+		if (len(vs.Samples) == 1) == (len(vs.Histograms) == 1) { // not XOR
+			return fmt.Errorf("vector sample stream should have exactly one sample or one histogram, got %d samples and %d histograms", len(vs.Samples), len(vs.Histograms))
+		}
 	}
 	return nil
 }
 
-// MarshalJSON implements json.Marshaler.
-func (s *SampleStream) MarshalJSON() ([]byte, error) {
-	var histograms []mimirpb.SampleHistogramPair
-	if len(s.Histograms) > 0 {
-		histograms = make([]mimirpb.SampleHistogramPair, len(s.Histograms))
-	}
-
-	for i, h := range s.Histograms {
-		histograms[i] = mimirpb.SampleHistogramPair{
-			Timestamp: h.TimestampMs,
-			Histogram: mimirpb.FromFloatHistogramToSampleHistogram(h.Histogram.ToPrometheusModel()),
+// Encode a slice of SampleStream objects which each hold just one data point.
+func vectorSampleStreamEncode(vss []SampleStream, stream *jsoniter.Stream) {
+	stream.WriteArrayStart()
+	for i, vs := range vss {
+		if i > 0 {
+			stream.WriteMore()
 		}
+		stream.WriteObjectStart()
+		stream.WriteObjectField(`metric`)
+		mimirpb.LabelAdaptersEncode(vs.Labels, stream)
+		stream.WriteMore()
+		if len(vs.Samples) == 1 {
+			stream.WriteObjectField(`value`)
+			mimirpb.SampleJsoniterEncode(vs.Samples[0], stream)
+		} else {
+			stream.WriteObjectField(`histogram`)
+			mimirpb.HistogramJsoniterEncode(vs.Histograms[0], stream)
+		}
+		stream.WriteObjectEnd()
 	}
-
-	stream := struct {
-		Metric     model.Metric                  `json:"metric"`
-		Values     []mimirpb.Sample              `json:"values,omitempty"`
-		Histograms []mimirpb.SampleHistogramPair `json:"histograms,omitempty"`
-	}{
-		Metric:     mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values:     s.Samples,
-		Histograms: histograms,
-	}
-
-	return json.Marshal(stream)
+	stream.WriteArrayEnd()
 }
 
 func (resp *PrometheusResponse) Close() {
