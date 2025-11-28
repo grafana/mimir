@@ -31,11 +31,6 @@ func (v *VectorSelector) Describe() string {
 	return d
 }
 
-func (v *VectorSelector) QuerySplittingCacheKey() (string, bool) {
-	// VectorSelector doesn't support query splitting cache keys yet
-	return "", false
-}
-
 func (v *VectorSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
 	return timeRange
 }
