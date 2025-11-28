@@ -1349,34 +1349,33 @@ func longPollFetches(fetchers *ConcurrentFetchers, minRecords int, timeout time.
 // we may have to call it multiple times to process all buffered records that need to be
 // discarded.
 func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *ConcurrentFetchers) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
 	// If there are no buffered records, we can skip the polling at all.
 	if fetchers.BufferedRecords() == 0 {
 		return
 	}
 
-	for {
+	// Poll with a short timeout for each call, but keep polling as long as there are buffered records.
+	// This handles the case where with high concurrency, some fetches contain only duplicate records
+	// and take time to be polled and discarded.
+	const pollTimeout = 100 * time.Millisecond
+	const maxAttempts = 50 // 50 * 100ms = 5s total
+
+	for attempt := 0; attempt < maxAttempts && fetchers.BufferedRecords() > 0; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 		fetches, returnCtx := fetchers.PollFetches(ctx)
+		cancel()
+
+		// If context timed out and there are still buffered records, continue trying
 		if errors.Is(returnCtx.Err(), context.DeadlineExceeded) {
-			break
+			continue
 		}
 
 		// We always expect that PollFetches() returns zero records.
 		assert.Len(t, fetches.Records(), 0)
-
-		// If there are no buffered records, we're good. We can end the assertion.
-		if fetchers.BufferedRecords() == 0 {
-			return
-		}
 	}
 
-	// We stopped polling fetches. We have to make sure there are no buffered records.
-	if !assert.Zero(t, fetchers.BufferedRecords(), "expected there aren't any buffered records") {
-		fetches, _ := fetchers.PollFetches(ctx)
-		t.Logf("%#v", fetches)
-	}
+	// After all attempts, verify there are no buffered records remaining.
+	assert.Zero(t, fetchers.BufferedRecords(), "expected there aren't any buffered records after polling")
 }
 
 type waiterFunc func()
