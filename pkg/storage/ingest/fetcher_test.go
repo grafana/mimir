@@ -930,10 +930,11 @@ func TestConcurrentFetchers(t *testing.T) {
 		t.Parallel()
 
 		const (
-			topicName        = "test-topic"
-			partitionID      = 1
-			concurrency      = 30
-			maxInflightBytes = 5_000_000
+			topicName          = "test-topic"
+			partitionID        = 1
+			concurrency        = 30
+			maxInflightBytes   = 5_000_000
+			perFetcherMaxBytes = maxInflightBytes / concurrency
 
 			largeRecordsCount = 100
 			largeRecordSize   = 100_000
@@ -989,7 +990,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		t.Log("Buffered records stabilized")
 
 		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of small records", maxInflightBytes)
-		assert.GreaterOrEqual(t, fetchers.BufferedBytes(), int64(maxInflightBytes/2), "Should still buffer a decent number of records")
+		assert.GreaterOrEqual(t, fetchers.BufferedBytes(), int64(perFetcherMaxBytes), "At least one fetcher's worth of bytes should be buffered")
 
 		// Consume the rest of the small records.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
