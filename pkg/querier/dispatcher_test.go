@@ -186,24 +186,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   6,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   6,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -252,24 +242,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   9,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -318,24 +298,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   9,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -397,24 +367,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   9,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -546,24 +506,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   6,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   6,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -588,23 +538,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode: "OK",
 		},
@@ -624,23 +564,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode: "OK",
 		},
@@ -670,28 +600,18 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Annotations: querierpb.Annotations{
-										Infos:    []string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_series" (1:20)`},
-										Warnings: []string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:67)`},
-									},
-									Stats: stats.Stats{
-										SamplesProcessed:   3,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
+				newEvaluationCompletedMessageWithAnnotations(
+					stats.Stats{
+						SamplesProcessed:   3,
+						QueueTime:          3 * time.Second,
+						WallTime:           expectedQueryWallTime,
+						FetchedSeriesCount: 123,
+						FetchedChunksCount: 456,
+						FetchedChunkBytes:  789,
 					},
-				},
+					[]string{`PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "my_series" (1:20)`},
+					[]string{`PromQL warning: quantile value should be between 0 and 1, got 2 (1:67)`},
+				),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -790,24 +710,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   9,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -929,24 +839,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   18,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   18,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -1139,24 +1039,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   9,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -1204,23 +1094,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode: "OK",
 		},
@@ -1357,24 +1237,14 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed:   9,
-										QueueTime:          3 * time.Second,
-										WallTime:           expectedQueryWallTime,
-										FetchedSeriesCount: 123,
-										FetchedChunksCount: 456,
-										FetchedChunkBytes:  789,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed:   9,
+					QueueTime:          3 * time.Second,
+					WallTime:           expectedQueryWallTime,
+					FetchedSeriesCount: 123,
+					FetchedChunksCount: 456,
+					FetchedChunkBytes:  789,
+				}),
 			},
 			expectedStatusCode:                           "OK",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -1637,20 +1507,10 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed: 5,
-										WallTime:         expectedQueryWallTime,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed: 5,
+					WallTime:         expectedQueryWallTime,
+				}),
 			},
 		},
 		"root of query": {
@@ -1684,20 +1544,10 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
-								EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
-									Stats: stats.Stats{
-										SamplesProcessed: 5,
-										WallTime:         expectedQueryWallTime,
-									},
-								},
-							},
-						},
-					},
-				},
+				newEvaluationCompletedMessage(stats.Stats{
+					SamplesProcessed: 5,
+					WallTime:         expectedQueryWallTime,
+				}),
 			},
 		},
 	}
@@ -1935,6 +1785,28 @@ func newSeriesMetadataMessage(nodeIndex int64, series ...querierpb.SeriesMetadat
 					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
 						NodeIndex: nodeIndex,
 						Series:    series,
+					},
+				},
+			},
+		},
+	}
+}
+
+func newEvaluationCompletedMessage(stats stats.Stats) *frontendv2pb.QueryResultStreamRequest {
+	return newEvaluationCompletedMessageWithAnnotations(stats, nil, nil)
+}
+
+func newEvaluationCompletedMessageWithAnnotations(stats stats.Stats, infos []string, warnings []string) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_EvaluationCompleted{
+					EvaluationCompleted: &querierpb.EvaluateQueryResponseEvaluationCompleted{
+						Stats: stats,
+						Annotations: querierpb.Annotations{
+							Infos:    infos,
+							Warnings: warnings,
+						},
 					},
 				},
 			},
