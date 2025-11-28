@@ -130,6 +130,10 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, &errNotApplied{reason: "failed to cast first child to SplittableNode"}
 	}
 
+	if !inner.GetTimeRangeParams().IsSet {
+		return nil, &errNotApplied{reason: "time range params not specified"}
+	}
+
 	if inner.GetTimeRangeParams().Range.Milliseconds() <= o.splitInterval.Milliseconds() {
 		return nil, &errNotApplied{reason: "range is not larger than split interval"}
 	}

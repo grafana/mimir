@@ -83,6 +83,7 @@ type RangeVectorOperator interface {
 }
 
 type TimeRangeParams struct {
+	IsSet     bool
 	Range     time.Duration
 	Offset    time.Duration
 	Timestamp *time.Time

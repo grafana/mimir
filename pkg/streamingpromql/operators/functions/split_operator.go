@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
@@ -202,8 +201,9 @@ func (m *SplittingFunctionOverRangeVector[T]) materializeOperatorForTimeRange(st
 	subRange := time.Duration(end-start) * time.Millisecond
 
 	overrideTimeParams := types.TimeRangeParams{
-		Range: subRange,
+		IsSet: true,
 
+		Range: subRange,
 		// The offset and timestamp are cleared
 		Offset:    0,
 		Timestamp: nil,
@@ -211,7 +211,7 @@ func (m *SplittingFunctionOverRangeVector[T]) materializeOperatorForTimeRange(st
 
 	splitTimeRange := types.NewInstantQueryTimeRange(promts.Time(end))
 
-	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(m.innerNode, splitTimeRange, util.Some(overrideTimeParams))
+	op, err := m.materializer.ConvertNodeToOperatorWithSubRange(m.innerNode, splitTimeRange, overrideTimeParams)
 	if err != nil {
 		return nil, err
 	}

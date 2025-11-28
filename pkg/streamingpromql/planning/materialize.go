@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // Materializer is responsible for converting query plan nodes to operators for a single query plan.
@@ -23,7 +22,7 @@ type OperatorFactoryKey struct {
 	node               Node
 	timeRange          types.QueryTimeRange
 	subRange           time.Duration
-	overrideTimeParams util.Optional[types.TimeRangeParams]
+	overrideTimeParams types.TimeRangeParams
 }
 
 func NewMaterializer(params *OperatorParameters, nodeMaterializers map[NodeType]NodeMaterializer) *Materializer {
@@ -35,12 +34,12 @@ func NewMaterializer(params *OperatorParameters, nodeMaterializers map[NodeType]
 }
 
 func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTimeRange) (types.Operator, error) {
-	return m.ConvertNodeToOperatorWithSubRange(node, timeRange, util.None[types.TimeRangeParams]())
+	return m.ConvertNodeToOperatorWithSubRange(node, timeRange, types.TimeRangeParams{IsSet: false})
 }
 
 // ConvertNodeToOperatorWithSubRange will call materialize with the selected subrange.
 // Use util.None() to indicate no override, or util.Some() to override with specific values.
-func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange types.QueryTimeRange, overrideTimeParams util.Optional[types.TimeRangeParams]) (types.Operator, error) {
+func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange types.QueryTimeRange, overrideTimeParams types.TimeRangeParams) (types.Operator, error) {
 	key := OperatorFactoryKey{
 		node:               node,
 		timeRange:          timeRange,
@@ -112,12 +111,12 @@ type NodeMaterializer interface {
 	// Materialize returns a factory that produces operators for the given node.
 	//
 	// Implementations may retain the provided Materializer for later use.
-	Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams util.Optional[types.TimeRangeParams]) (OperatorFactory, error)
+	Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams types.TimeRangeParams) (OperatorFactory, error)
 }
 
 type NodeMaterializerFunc[T Node] func(n T, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters) (OperatorFactory, error)
 
-func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, _ util.Optional[types.TimeRangeParams]) (OperatorFactory, error) {
+func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, _ types.TimeRangeParams) (OperatorFactory, error) {
 	node, ok := n.(T)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to node materializer: expected %T, got %T", new(T), n)
@@ -126,9 +125,9 @@ func (f NodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer,
 	return f(node, materializer, timeRange, params)
 }
 
-type RangeAwareNodeMaterializerFunc[T Node] func(n T, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams util.Optional[types.TimeRangeParams]) (OperatorFactory, error)
+type RangeAwareNodeMaterializerFunc[T Node] func(n T, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams types.TimeRangeParams) (OperatorFactory, error)
 
-func (f RangeAwareNodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams util.Optional[types.TimeRangeParams]) (OperatorFactory, error) {
+func (f RangeAwareNodeMaterializerFunc[T]) Materialize(n Node, materializer *Materializer, timeRange types.QueryTimeRange, params *OperatorParameters, overrideTimeRangeParams types.TimeRangeParams) (OperatorFactory, error) {
 	node, ok := n.(T)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to range aware node materializer: expected %T, got %T", new(T), n)

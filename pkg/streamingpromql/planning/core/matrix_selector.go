@@ -4,10 +4,11 @@ package core
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model/labels"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -17,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/selectors"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type MatrixSelector struct {
@@ -115,15 +115,14 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams util.Optional[types.TimeRangeParams]) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams types.TimeRangeParams) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
 	selectorTs := m.Timestamp
 	selectorOffset := m.Offset.Milliseconds()
-	if overrideTimeParams.IsPresent() {
-		params := overrideTimeParams.Value()
-		selectorOffset = params.Offset.Milliseconds()
-		selectorTs = params.Timestamp
-		selectorRange = params.Range
+	if overrideTimeParams.IsSet {
+		selectorOffset = overrideTimeParams.Offset.Milliseconds()
+		selectorTs = overrideTimeParams.Timestamp
+		selectorRange = overrideTimeParams.Range
 	}
 
 	selector := &selectors.Selector{
@@ -169,6 +168,7 @@ func (m *MatrixSelector) GetRange() time.Duration {
 
 func (m *MatrixSelector) GetTimeRangeParams() types.TimeRangeParams {
 	return types.TimeRangeParams{
+		IsSet:     true,
 		Range:     m.Range,
 		Offset:    m.Offset,
 		Timestamp: m.Timestamp,

@@ -182,6 +182,7 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 			name:     "basic 5h range at 6h",
 			evalTime: 6 * hourInMs,
 			timeParams: types.TimeRangeParams{
+				IsSet: true,
 				Range: 5 * time.Hour,
 			},
 			expectedStart: 1 * hourInMs,
@@ -191,6 +192,7 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 			name:     "5h range with 1h offset at 8h",
 			evalTime: 8 * hourInMs,
 			timeParams: types.TimeRangeParams{
+				IsSet:  true,
 				Offset: 1 * time.Hour,
 				Range:  5 * time.Hour,
 			},
@@ -201,6 +203,7 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 			name:     "5h range with @ 7h evaluated at 8h",
 			evalTime: 8 * hourInMs,
 			timeParams: types.TimeRangeParams{
+				IsSet:     true,
 				Timestamp: func() *time.Time { t := time.UnixMilli(7 * hourInMs); return &t }(),
 				Range:     5 * time.Hour,
 			},
@@ -211,6 +214,7 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 			name:     "3h range with 31m offset at 4h30m",
 			evalTime: 4*hourInMs + 30*minuteInMs,
 			timeParams: types.TimeRangeParams{
+				IsSet:  true,
 				Offset: 31 * time.Minute,
 				Range:  3 * time.Hour,
 			},

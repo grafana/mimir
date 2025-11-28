@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func init() {
@@ -138,7 +137,7 @@ func NewMaterializer(cache *cache.Cache) *Materializer {
 	}
 }
 
-func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ util.Optional[types.TimeRangeParams]) (planning.OperatorFactory, error) {
+func (m Materializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ types.TimeRangeParams) (planning.OperatorFactory, error) {
 	s, ok := n.(*SplittableFunctionCall)
 	if !ok {
 		return nil, fmt.Errorf("unexpected type passed to materializer: expected SplittableFunctionCall, got %T", n)
