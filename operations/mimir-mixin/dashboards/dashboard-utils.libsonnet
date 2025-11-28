@@ -1282,15 +1282,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency (getmulti)') +
-      $.latencyPanel(
+      $.ncLatencyPanel(
         'thanos_cache_operation_duration_seconds',
         |||
-          {
-            %(jobMatcher)s,
-            operation="getmulti",
-            component="%(component)s",
-            name="%(cacheName)s"
-          }
+          %(jobMatcher)s, operation="getmulti", component="%(component)s", name="%(cacheName)s"
         ||| % config
       )
     )
@@ -1817,9 +1812,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
         .addPanel(
           $.timeseriesPanel('Latency') +
-          $.latencyPanel(
+          $.ncLatencyPanel(
             'thanos_cache_operation_duration_seconds',
-            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+            '%s, name="frontend-cache"' % $.jobMatcher(queryFrontendJobName)
           )
         ),
       ]
