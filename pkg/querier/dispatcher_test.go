@@ -522,22 +522,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that returns a scalar": {
 			req: createQueryRequest(`time() + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_ScalarValue{
-								ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
-									NodeIndex: 2,
-									Values: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 0.123},
-										{TimestampMs: 10_000, Value: 10.123},
-										{TimestampMs: 20_000, Value: 20.123},
-									},
-								},
-							},
-						},
-					},
-				},
+				newScalarMessage(
+					2,
+					mimirpb.Sample{TimestampMs: 0, Value: 0.123},
+					mimirpb.Sample{TimestampMs: 10_000, Value: 10.123},
+					mimirpb.Sample{TimestampMs: 20_000, Value: 20.123},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					QueueTime:          3 * time.Second,
 					WallTime:           expectedQueryWallTime,
@@ -1051,38 +1041,16 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				[]string{"DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "RHS: NumberLiteral: 20"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_ScalarValue{
-								ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
-									NodeIndex: 0,
-									Values: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 10},
-										{TimestampMs: 10_000, Value: 10},
-										{TimestampMs: 20_000, Value: 10},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_ScalarValue{
-								ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
-									NodeIndex: 1,
-									Values: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 20},
-										{TimestampMs: 10_000, Value: 20},
-										{TimestampMs: 20_000, Value: 20},
-									},
-								},
-							},
-						},
-					},
-				},
+				newScalarMessage(0,
+					mimirpb.Sample{TimestampMs: 0, Value: 10},
+					mimirpb.Sample{TimestampMs: 10_000, Value: 10},
+					mimirpb.Sample{TimestampMs: 20_000, Value: 10},
+				),
+				newScalarMessage(1,
+					mimirpb.Sample{TimestampMs: 0, Value: 20},
+					mimirpb.Sample{TimestampMs: 10_000, Value: 20},
+					mimirpb.Sample{TimestampMs: 20_000, Value: 20},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					QueueTime:          3 * time.Second,
 					WallTime:           expectedQueryWallTime,
@@ -1105,22 +1073,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_ScalarValue{
-								ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
-									NodeIndex: 0,
-									Values: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 12},
-										{TimestampMs: 10_000, Value: 12},
-										{TimestampMs: 20_000, Value: 12},
-									},
-								},
-							},
-						},
-					},
-				},
+				newScalarMessage(0,
+					mimirpb.Sample{TimestampMs: 0, Value: 12},
+					mimirpb.Sample{TimestampMs: 10_000, Value: 12},
+					mimirpb.Sample{TimestampMs: 20_000, Value: 12},
+				),
 				newSeriesMetadataMessage(
 					1,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
@@ -1811,6 +1768,21 @@ func newStringMessage(nodeIndex int64, s string) *frontendv2pb.QueryResultStream
 					StringValue: &querierpb.EvaluateQueryResponseStringValue{
 						NodeIndex: nodeIndex,
 						Value:     s,
+					},
+				},
+			},
+		},
+	}
+}
+
+func newScalarMessage(nodeIndex int64, values ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_ScalarValue{
+					ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
+						NodeIndex: nodeIndex,
+						Values:    values,
 					},
 				},
 			},
