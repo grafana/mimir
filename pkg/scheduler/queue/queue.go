@@ -309,6 +309,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			q.isStopping.Store(true)
 		case <-q.stopCompleted:
+			// We still check if q.stopCompleted is closed or else we'd be leaving this goroutine running in a timeout exit condition
 			return
 		case querierWorkerOp := <-q.querierWorkerOperations:
 			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
@@ -344,6 +345,8 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
+		// If the queue is stopping and theres no connected query workers,
+		// we exit immediately because there is no way for (any) remaining queries to be processed
 		if q.isStopping.Load() && q.connectedQuerierWorkers.Load() == 0 {
 			if q.queueBroker.itemCount() == 0 && q.schedulerInflightRequests.Load() == 0 {
 				// We are done.
@@ -352,9 +355,15 @@ func (q *RequestQueue) dispatcherLoop() {
 				return
 			}
 
-			level.Warn(q.log).Log("msg", "queue stop requested but query queue is not empty, waiting for query workers to complete remaining requests", "queueBroker_count", q.queueBroker.itemCount(), "scheduler_inflight", q.schedulerInflightRequests.Load())
+			level.Warn(q.log).Log(
+				"msg", "queue stop requested but query queue is not empty, waiting for query workers to complete remaining requests",
+				"queueBroker_count", q.queueBroker.itemCount(),
+				"scheduler_inflight", q.schedulerInflightRequests.Load(),
+			)
 		}
 
+		// If the queue is stopping and theres no requests in the queue we cancel any remaining dequeue requests,
+		// which stops the query workers and exit the service
 		if q.isStopping.Load() && q.schedulerInflightRequests.Load() == 0 && q.queueBroker.itemCount() == 0 {
 			level.Info(q.log).Log("msg", "queue stop requested and all pending requests have been processed, disconnecting queriers")
 
@@ -517,6 +526,9 @@ func (q *RequestQueue) stop(_ error) error {
 	// The loop needs to keep executing other select branches while stopping in order to clear the queue.
 	q.stopRequested <- struct{}{}
 
+	// We set a context with a timeout to ensure that in the event the scheduler is the last component
+	// running we do not hang forever waiting for the queue to be drained.
+	// This timeout is set using -query-scheduler.graceful-shutdown-timeout and defaults to 30 seconds
 	ctx, cancel := context.WithTimeout(context.Background(), q.stopTimeout)
 
 	for {
