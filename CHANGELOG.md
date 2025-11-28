@@ -2,7 +2,7 @@
 
 ## main / unreleased
 
-## 3.0.1-rc.0
+## 3.0.1 2025-11-28
 
 ### Grafana Mimir
 
