@@ -141,21 +141,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that returns an instant vector": {
 			req: createQueryRequest(`my_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second)),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -222,22 +212,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that returns an instant vector with batching, where all series fit into one batch with space to spare": {
 			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 4),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -298,22 +278,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that returns an instant vector with batching, where all series fit exactly into one batch": {
 			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 3),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -374,22 +344,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that returns an instant vector with batching, where the last batch is not completely full": {
 			req: createQueryRequestWithBatchSize(`my_three_item_series + 0.123`, types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second), 2),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "2"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -469,21 +429,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				[]string{"FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -698,20 +648,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that returns annotations": {
 			req: createQueryRequest(`sum by (idx) (rate(my_series{idx="0"}[11s])) + quantile by (idx) (2, my_series{idx="0"})`, types.NewInstantQueryTimeRange(startT.Add(30*time.Second))),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 7,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					7,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -760,21 +700,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that fails with an error": {
 			req: createQueryRequest(`abs({__name__=~"(my_series|my_other_series)"})`, types.NewInstantQueryTimeRange(startT)),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 2,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					2,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "1"))},
+				),
 				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_EXECUTION, `vector cannot contain metrics with the same labelset`),
 			},
 			expectedStatusCode:                           "ERROR_EXECUTION",
@@ -791,21 +721,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_other_series"}`},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 0,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					0,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -846,20 +766,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -913,22 +823,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_three_item_series", idx=~".*"}`},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 0,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					0,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -976,22 +876,12 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1072,21 +962,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1199,20 +1079,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1382,21 +1252,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1437,20 +1297,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1765,20 +1615,10 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				[]string{"DeduplicateAndMerge", "DropName", "FunctionCall: rate(...)"}, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 1,
-									Series: []querierpb.SeriesMetadata{
-										{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "some_total", "idx", "0"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{DropName: true, Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "some_total", "idx", "0"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1822,20 +1662,10 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				nil, // The root of the query
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
-								SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-									NodeIndex: 3,
-									Series: []querierpb.SeriesMetadata{
-										{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
-									},
-								},
-							},
-						},
-					},
-				},
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
+				),
 				{
 					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -2092,6 +1922,21 @@ func newErrorMessage(typ mimirpb.QueryErrorType, message string) *frontendv2pb.Q
 			Error: &querierpb.Error{
 				Type:    typ,
 				Message: message,
+			},
+		},
+	}
+}
+
+func newSeriesMetadataMessage(nodeIndex int64, series ...querierpb.SeriesMetadata) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
+					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
+						NodeIndex: nodeIndex,
+						Series:    series,
+					},
+				},
 			},
 		},
 	}
