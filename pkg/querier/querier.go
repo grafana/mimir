@@ -812,11 +812,12 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 }
 
 type RequestMetrics struct {
-	RequestDuration     *prometheus.HistogramVec
-	ReceivedMessageSize *prometheus.HistogramVec
-	SentMessageSize     *prometheus.HistogramVec
-	InflightRequests    *prometheus.GaugeVec
-	PlansReceived       *prometheus.CounterVec
+	RequestDuration          *prometheus.HistogramVec
+	ReceivedMessageSize      *prometheus.HistogramVec
+	SentMessageSize          *prometheus.HistogramVec
+	InflightRequests         *prometheus.GaugeVec
+	PlansReceived            *prometheus.CounterVec
+	QueryPlanNodesPerRequest prometheus.Histogram
 }
 
 func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
@@ -848,5 +849,11 @@ func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
 			Name: "cortex_querier_received_query_plans_total",
 			Help: "Total number of query plans received by the querier.",
 		}, []string{"version"}),
+
+		QueryPlanNodesPerRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_querier_query_evaluation_requests_nodes_per_request",
+			Help:                        "Number of nodes requested to be evaluated per query evaluation request.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
 	}
 }

@@ -87,13 +87,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		expectedResponseMessages                     []*frontendv2pb.QueryResultStreamRequest
 		expectedStatusCode                           string
 		expectStorageToBeCalledWithPropagatedHeaders bool
-		dontExpectQueryPlanVersionMetric             bool
+		isNotValidQueryEvaluationRequest             bool
 	}{
 		"unknown payload type": {
 			req: &prototypes.Any{
 				TypeUrl: "grafana.com/something/unknown",
 			},
-			dontExpectQueryPlanVersionMetric: true,
+			isNotValidQueryEvaluationRequest: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `unknown query request type "grafana.com/something/unknown"`),
 			},
@@ -105,7 +105,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				TypeUrl: "unknown",
 			},
 			dontSetTenantID:                  true,
-			dontExpectQueryPlanVersionMetric: true,
+			isNotValidQueryEvaluationRequest: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `malformed query request type "unknown": message type url "unknown" is invalid`),
 			},
@@ -115,7 +115,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"request without tenant ID": {
 			req:                              createQueryRequest(`my_series`, types.NewInstantQueryTimeRange(startT)),
 			dontSetTenantID:                  true,
-			dontExpectQueryPlanVersionMetric: true,
+			isNotValidQueryEvaluationRequest: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `no org id`),
 			},
@@ -989,7 +989,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				require.Equal(t, "some-value-from-the-request", storage.ctx.Value(testExtractorKey))
 			}
 
-			if !testCase.dontExpectQueryPlanVersionMetric {
+			if !testCase.isNotValidQueryEvaluationRequest {
 				req := &querierpb.EvaluateQueryRequest{}
 				require.NoError(t, prototypes.UnmarshalAny(testCase.req, req))
 
@@ -1002,6 +1002,15 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				`, expectedVersion)
 
 				require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_received_query_plans_total"))
+
+				expectedMetrics = fmt.Sprintf(`
+					# HELP cortex_querier_query_evaluation_requests_nodes_per_request Number of nodes requested to be evaluated per query evaluation request.
+					# TYPE cortex_querier_query_evaluation_requests_nodes_per_request histogram
+					cortex_querier_query_evaluation_requests_nodes_per_request_sum %[1]v
+					cortex_querier_query_evaluation_requests_nodes_per_request_count 1
+				`, len(req.Nodes))
+
+				requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, "cortex_querier_query_evaluation_requests_nodes_per_request")
 			}
 		})
 	}
