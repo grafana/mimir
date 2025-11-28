@@ -1,4 +1,4 @@
-// Copyright 2015 The etcd Authors
+// Copyright 2023 The etcd Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows && !plan9 && !solaris && !linux
+//go:build wasm || js
 
-package fileutil
+package transport
 
 import (
-	"os"
+	"errors"
+	"syscall"
 )
 
-func TryLockFile(path string, flag int, perm os.FileMode) (*LockedFile, error) {
-	return flockTryLockFile(path, flag, perm)
+func setReusePort(network, address string, c syscall.RawConn) error {
+	return errors.New("port reuse is not supported on WASM")
 }
 
-func LockFile(path string, flag int, perm os.FileMode) (*LockedFile, error) {
-	return flockLockFile(path, flag, perm)
+func setReuseAddress(network, addr string, conn syscall.RawConn) error {
+	return errors.New("address reuse is not supported on WASM")
 }

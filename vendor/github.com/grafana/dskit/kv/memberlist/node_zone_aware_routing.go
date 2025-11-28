@@ -229,7 +229,7 @@ func containsZone(zones []string, zone string) bool {
 		return slices.Contains(zones, zone)
 	}
 	optimisticIndex := int(zone[len(zone)-1]) - 'a'
-	if len(zones) <= optimisticIndex {
+	if optimisticIndex < 0 || len(zones) <= optimisticIndex {
 		return slices.Contains(zones, zone)
 	}
 

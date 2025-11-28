@@ -1,4 +1,4 @@
-// Copyright 2015 The etcd Authors
+// Copyright 2023 The etcd Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows && !plan9 && !solaris && !linux
+//go:build openbsd
 
-package fileutil
+package transport
 
-import (
-	"os"
-)
+import "time"
 
-func TryLockFile(path string, flag int, perm os.FileMode) (*LockedFile, error) {
-	return flockTryLockFile(path, flag, perm)
-}
-
-func LockFile(path string, flag int, perm os.FileMode) (*LockedFile, error) {
-	return flockLockFile(path, flag, perm)
+// SetKeepAlivePeriod sets keepalive period
+func (l *keepAliveConn) SetKeepAlivePeriod(d time.Duration) error {
+	// OpenBSD has no user-settable per-socket TCP keepalive options.
+	// Refer to https://github.com/etcd-io/etcd/issues/15811.
+	return nil
 }

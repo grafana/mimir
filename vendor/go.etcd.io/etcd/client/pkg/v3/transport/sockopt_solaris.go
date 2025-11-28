@@ -1,4 +1,4 @@
-// Copyright 2015 The etcd Authors
+// Copyright 2021 The etcd Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,18 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows && !plan9 && !solaris && !linux
+//go:build solaris
 
-package fileutil
+package transport
 
 import (
-	"os"
+	"errors"
+	"syscall"
+
+	"golang.org/x/sys/unix"
 )
 
-func TryLockFile(path string, flag int, perm os.FileMode) (*LockedFile, error) {
-	return flockTryLockFile(path, flag, perm)
+func setReusePort(network, address string, c syscall.RawConn) error {
+	return errors.New("port reuse is not supported on Solaris")
 }
 
-func LockFile(path string, flag int, perm os.FileMode) (*LockedFile, error) {
-	return flockLockFile(path, flag, perm)
+func setReuseAddress(network, address string, conn syscall.RawConn) error {
+	return conn.Control(func(fd uintptr) {
+		syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, unix.SO_REUSEADDR, 1)
+	})
 }
