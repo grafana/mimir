@@ -414,6 +414,7 @@ func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
 	defer s.inflightRequestsMu.Unlock()
 
 	s.schedulerInflightRequests[req.Key()] = req
+	s.schedulerInflightRequestCount.Add(1)
 }
 
 // This method doesn't do removal from the queue.
@@ -427,6 +428,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 	}
 
 	delete(s.schedulerInflightRequests, key)
+	s.schedulerInflightRequestCount.Sub(1)
 	return req
 }
 
@@ -678,10 +680,6 @@ func (s *Scheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-inflightRequestsTicker.C:
-			s.inflightRequestsMu.Lock()
-			s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
-			s.inflightRequestsMu.Unlock()
-
 			s.inflightRequests.Observe(float64(s.schedulerInflightRequestCount.Load()))
 		case <-ctx.Done():
 			return nil
