@@ -1987,18 +1987,16 @@ func TestPartitionReader_ShouldNotBufferRecordsInTheKafkaClientWhenDone(t *testi
 		"with fetch concurrency": {
 			concurrencyVariant:      []readerTestCfgOpt{withFetchConcurrency(2)},
 			expectedBufferedRecords: 1,
-			// only one fetcher is active because we don't fetch over the HWM.
-			// That fetcher should fetch 1MB. It's padded with 5% to account for underestimation of the record size.
-			// The expected buffered bytes are 1.05MB
-			expectedBufferedBytes:             1_050_000,
+			// only one fetcher is active because we don't fetch over the HWM. That fetcher should fetch 1MB.
+			// The 5% padding is overriden because 1MB+5% is beyond the limit for the individual fetcher.
+			expectedBufferedBytes:             1_000_000,
 			expectedBufferedRecordsFromClient: 0,
 		},
 		"with higher fetch concurrency": {
 			concurrencyVariant:      []readerTestCfgOpt{withFetchConcurrency(4)},
 			expectedBufferedRecords: 1,
 			// There is one fetcher fetching. That fetcher should fetch 500KB.
-			// But we clamp the MaxBytes to at least 1MB, so that we don't underfetch when the absolute volume of data is low.
-			expectedBufferedBytes:             1_000_000,
+			expectedBufferedBytes:             500_000,
 			expectedBufferedRecordsFromClient: 0,
 		},
 	}
