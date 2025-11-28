@@ -186,8 +186,6 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 
 			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
 			data.Histograms[inputIdx].H = nil
-
-			// Safe to ignore this first response as there will be nothing to compare to
 			g.histogramCounterResetTracker.init(outputIdx, p.H.CounterResetHint)
 
 			continue

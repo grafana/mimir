@@ -69,8 +69,8 @@ const (
 	TopKBottomKInstantQuerySeriesSlices
 	TopKBottomKRangeQuerySeriesSlices
 	Labels
-	ByteSlices
-	memoryConsumptionSourceCount = ByteSlices + 1
+	CounterResetHintSlices
+	memoryConsumptionSourceCount = CounterResetHintSlices + 1
 )
 
 const (
@@ -97,8 +97,8 @@ func (s MemoryConsumptionSource) String() string {
 		return "[][]int"
 	case Int64Slices:
 		return "[]int64"
-	case ByteSlices:
-		return "[]byte"
+	case CounterResetHintSlices:
+		return "[]CounterResetHint"
 	case BoolSlices:
 		return "[]bool"
 	case HistogramPointerSlices:

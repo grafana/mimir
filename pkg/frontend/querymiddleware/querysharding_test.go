@@ -28,9 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -41,7 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
-	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -1869,21 +1866,28 @@ func TestMapEngineError(t *testing.T) {
 	}
 }
 
-// Note that this test requires https://github.com/prometheus/prometheus/pull/17608
+// Note that this test will fail until these are vendored in.
+// https://github.com/prometheus/prometheus/pull/17608 and https://github.com/grafana/mimir/pull/13676
 func TestConflictingCounterResets(t *testing.T) {
 
 	queries := []string{
 		`histogram_count(sum(rate(metric[1m1s])) by (foo))`,
 	}
 
-	queryable := promqltest.LoadedStorage(t, `
-		load 1m
-			metric{sample="3", foo="x"} {{sum:0 count:0 buckets:[5 5 2]}} {{sum:5 count:5 buckets:[10 10 4]}} {{sum:10 count:10 buckets:[12 12 6]}} {{sum:15 count:15 buckets:[1 1 1]}} {{sum:20 count:20 buckets:[3 3 1]}}
-			metric{sample="2", foo="x"} {{sum:0 count:0 buckets:[5 5 2]}} {{sum:10 count:10 buckets:[10 10 4]}} {{sum:0 count:0 buckets:[12 12 6]}} {{sum:5 count:5 buckets:[1 1 1]}} {{sum:3 count:3 buckets:[3 3 1]}}
-	`)
+	// create 2 histogram series. One has counter resets
+	series := make([]storage.Series, 0, 2)
+	values1 := []float64{0, 5, 12, 15, 20, 25}
+	values2 := []float64{0, 10, 0, 1, 3, 5}
+	gen1 := func(ts int64) float64 {
+		return values1[ts/60000]
+	}
 
-	series, err := queryableToHistogramSeries(context.Background(), queryable, 0, 60*6*1000)
-	require.Nil(t, err)
+	gen2 := func(ts int64) float64 {
+		return values2[ts/60000]
+	}
+
+	series = append(series, testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "metric", "sample", "3", "foo", "x"), time.UnixMilli(0), time.UnixMilli(1000*60*5), time.Minute, gen1))
+	series = append(series, testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "metric", "sample", "2", "foo", "x"), time.UnixMilli(0), time.UnixMilli(1000*60*5), time.Minute, gen2))
 
 	shardingAwareQueryable := testdatagen.StorageSeriesQueryable(series)
 
@@ -1945,48 +1949,4 @@ func TestConflictingCounterResets(t *testing.T) {
 			})
 		})
 	}
-}
-
-// queryableToHistogramSeries copies all series in [mint, maxt] into a concrete storage.Series.
-// Note that the implementation only supports histograms.
-func queryableToHistogramSeries(ctx context.Context, q storage.Queryable, mint, maxt int64) ([]storage.Series, error) {
-	m, _ := labels.NewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".*")
-	matchers := []*labels.Matcher{m}
-
-	querier, err := q.Querier(mint, maxt)
-	if err != nil {
-		return nil, err
-	}
-	defer querier.Close()
-
-	set := querier.Select(ctx, true, &storage.SelectHints{Start: mint, End: maxt}, matchers...)
-
-	out := make([]storage.Series, 0, 1024)
-	var it chunkenc.Iterator
-
-	for set.Next() {
-		ser := set.At()
-		lset := ser.Labels()
-		histos := make([]mimirpb.Histogram, 0)
-
-		it = ser.Iterator(it)
-		for v := it.Next(); v != chunkenc.ValNone; v = it.Next() {
-			switch v {
-			case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-				// Convert FloatHistogram to wire proto.
-				t := it.AtT()
-				_, fh := it.AtFloatHistogram(nil)
-				if fh != nil && !value.IsStaleNaN(fh.Sum) {
-					histos = append(histos, mimirpb.FromFloatHistogramToHistogramProto(t, fh.Copy()))
-				}
-			}
-		}
-
-		out = append(out, series.NewConcreteSeries(lset, []model.SamplePair{}, histos))
-	}
-	if err := set.Err(); err != nil {
-		return nil, err
-	}
-
-	return out, nil
 }

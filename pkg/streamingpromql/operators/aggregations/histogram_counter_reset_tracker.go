@@ -3,8 +3,6 @@
 package aggregations
 
 import (
-	"unsafe"
-
 	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -21,19 +19,18 @@ func newHistogramCounterResetTracker(size int, memoryConsumptionTracker *limiter
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 
-	byteSlice, err := types.ByteSlicePool.Get(size, memoryConsumptionTracker)
+	var err error
+	g.histogramCounterReset, err = types.CounterResetHintSlicePool.Get(size, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
-
-	g.histogramCounterReset = *(*[]histogram.CounterResetHint)(unsafe.Pointer(&byteSlice))
 	g.histogramCounterReset = g.histogramCounterReset[:size]
 
 	return g, nil
 }
 
 func (c *histogramCounterResetTracker) close() {
-	types.ByteSlicePool.Put((*[]byte)(unsafe.Pointer(&c.histogramCounterReset)), c.memoryConsumptionTracker)
+	types.CounterResetHintSlicePool.Put(&c.histogramCounterReset, c.memoryConsumptionTracker)
 }
 
 func (c *histogramCounterResetTracker) init(outputIdx int64, hint histogram.CounterResetHint) {
