@@ -3846,6 +3846,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-series-query-limit
 [max_series_query_limit: <int> | default = 0]
 
+# Maximum number of names the label names endpoint returns. This limit is
+# enforced in the querier. If the requested limit is outside of the allowed
+# value, the request doesn't fail, but is manipulated to only query data up to
+# the allowed limit. Set to 0 to disable.
+# CLI flag: -querier.max-label-names-limit
+[max_label_names_limit: <int> | default = 0]
+
+# Maximum number of values the label values endpoint returns. This limit is
+# enforced in the querier. If the requested limit is outside of the allowed
+# value, the request doesn't fail, but is manipulated to only query data up to
+# the allowed limit. Set to 0 to disable.
+# CLI flag: -querier.max-label-values-limit
+[max_label_values_limit: <int> | default = 0]
+
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness

@@ -709,7 +709,7 @@ local filename = 'mimir-writes.json';
       )
       .addPanel(
         $.timeseriesPanel('Compactions latency') +
-        $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.ncLatencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '%s' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
           'Compaction latency',
           |||

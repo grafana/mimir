@@ -379,6 +379,8 @@
   "querier.max-query-parallelism": 14,
   "store.max-labels-query-length": 0,
   "querier.max-series-query-limit": 0,
+  "querier.max-label-names-limit": 0,
+  "querier.max-label-values-limit": 0,
   "query-frontend.max-cache-freshness": 600000000000,
   "query-frontend.max-queriers-per-tenant": 0,
   "query-frontend.query-sharding-total-shards": 16,

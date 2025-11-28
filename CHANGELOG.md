@@ -64,10 +64,13 @@
 * [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313, #13470
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_block_discovery_latency_seconds` metric to track time from block creation to discovery by store-gateway. #13489 #13552
 * [ENHANCEMENT] Querier: Added experimental `-querier.frontend-health-check-grace-period` CLI flag to configure a grace period for query-frontend health checks. The default value of 0 preserves the existing behaviour of immediately removing query-frontend connections that have failed a health check. #13521
+* [ENHANCEMENT] Querier: Add optional per-tenant max limits for label name and label value requests, `max_label_names_limit` and `max_label_values_limit`. #13654
 * [ENHANCEMENT] Usage tracker: `loadSnapshot()` checks shard emptiness instead of using explicit `first` parameter. #13534
 * [ENHANCEMENT] OTLP: Add metric `cortex_distributor_otlp_requests_by_content_type_total` to track content type (json or proto) of OTLP packets. #13525
 * [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13603
 * [ENHANCEMENT] Query-scheduler: Gracefully handle shutdown by draining queue before exiting. #12605
+* [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13525
+* [ENHANCEMENT] Ruler: gRPC errors without details are classified as `operator` errors, and rule evaluation failures (such as duplicate labelsets) are classified as `user` errors. #13586
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
@@ -119,7 +122,7 @@
   * `MimirIngesterStuckProcessingRecordsFromKafka` → `MimirIngesterKafkaProcessingStuck`
   * `MimirStrongConsistencyOffsetNotPropagatedToIngesters` → `MimirStrongConsistencyOffsetMissing`
   * `MimirKafkaClientBufferedProduceBytesTooHigh` → `MimirKafkaClientProduceBufferHigh`
-* [ENHANCEMENT] Dashboards: Support native histograms in the Alertmanager, Compactor, Ruler dashboard. #13556 #13621 #13629
+* [ENHANCEMENT] Dashboards: Support native histograms in the Alertmanager, Compactor, Rollout operator, Ruler, Writes dashboard. #13556 #13621 #13629 #13673 #13672
 * [ENHANCEMENT] Alerts: Add `MimirFewerIngestersConsumingThanActivePartitions` alert. #13159
 * [ENHANCEMENT] Querier and query-frontend: Add alerts for querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13165
 * [ENHANCEMENT] Alerts: Add `MimirBlockBuilderSchedulerNotRunning` alert. #13208
@@ -131,6 +134,7 @@
 * [ENHANCEMENT] Recording rules: Add native histogram version of histogram recording rules. #13553
 * [ENHANCEMENT] Alerts: Add `MimirMemberlistBridgeZoneUnavailable` alert. #13647
 * [ENHANCEMENT] Dashboards and recording rules: Add usage-tracker rows to writes, writes-networking, writes-resources dashboards if the config.usage_tracker_enabled var is set. Add usage-tracker client latency recording rules. #13639 #13652
+* [ENHANCEMENT] Recording rules and dashboards: Add `stage` label to `cortex_ingester_queried_series` recording rules and filter Queries dashboard "Series per query" panel to show only `stage=merged_blocks`. #13666
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 
@@ -309,6 +313,7 @@
 * [ENHANCEMENT] Alerts: Replace experimental `BlockBuilderLagging` alert with `BlockBuilderSchedulerPendingJobs` alert. The new alert triggers when the block-builder scheduler has pending jobs, indicating that block-builders are unable to keep up with the workload. #12593
 * [ENHANCEMENT] Rollout-operator: Vendor rollout-operator monitoring dashboard from rollout-operator repository. #12688
 * [BUGFIX] Block-builder dashboard: fix reference to detected gaps metric in errors panel. #12401
+* [BUGFIX] Internal: Fix `qpsPanelNativeHistogram` signature. #13649
 
 ### Jsonnet
 

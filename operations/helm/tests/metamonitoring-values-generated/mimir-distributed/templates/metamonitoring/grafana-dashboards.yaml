@@ -13157,19 +13157,19 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
+                            "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_stage:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", stage=\"merged_blocks\"})) * 1",
                             "format": "time_series",
                             "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})) * 1",
+                            "expr": "histogram_quantile(0.50, sum by (le) (cluster_job_stage:cortex_ingester_queried_series_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", stage=\"merged_blocks\"})) * 1",
                             "format": "time_series",
                             "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "1 * sum(cluster_job:cortex_ingester_queried_series_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}) / sum(cluster_job:cortex_ingester_queried_series_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})",
+                            "expr": "1 * sum(cluster_job_stage:cortex_ingester_queried_series_sum:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", stage=\"merged_blocks\"}) / sum(cluster_job_stage:cortex_ingester_queried_series_count:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", stage=\"merged_blocks\"})",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
@@ -48502,7 +48502,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -48536,22 +48536,40 @@ data:
                       "span": 6,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(cortex_ingester_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(cortex_ingester_tsdb_compaction_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(cortex_ingester_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(cortex_ingester_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(cortex_ingester_tsdb_compaction_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(cortex_ingester_tsdb_compaction_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) * 1e3 / sum(rate(cortex_ingester_tsdb_compaction_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(cortex_ingester_tsdb_compaction_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(cortex_ingester_tsdb_compaction_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))) /\nsum(histogram_count(rate(cortex_ingester_tsdb_compaction_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(cortex_ingester_tsdb_compaction_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval])) /\nsum(rate(cortex_ingester_tsdb_compaction_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Compactions latency",
@@ -49596,7 +49614,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{status}}",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -49644,7 +49668,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "sum by (route) (rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))",
+                            "expr": "(sum by (route) (rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "__auto",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(sum by (route) (histogram_count(rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "__auto",
                             "legendLink": null
@@ -49659,7 +49689,7 @@ data:
                          "defaults": {
                             "custom": {
                                "drawStyle": "line",
-                               "fillOpacity": 1,
+                               "fillOpacity": 10,
                                "lineWidth": 1,
                                "pointSize": 5,
                                "showPoints": "never",
@@ -49693,22 +49723,40 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum(rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum (rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
-                            "legendFormat": "99th Percentile",
+                            "legendFormat": "99th percentile",
                             "refId": "A"
                          },
                          {
-                            "expr": "histogram_quantile(0.50, sum(rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])) by (le)) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le) (rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
-                            "legendFormat": "50th Percentile",
+                            "legendFormat": "99th percentile",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.50, sum (rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
                             "refId": "B"
                          },
                          {
-                            "expr": "sum(rate(rollout_operator_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])) * 1e3 / sum(rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))",
+                            "expr": "(histogram_quantile(0.50, sum by (le) (rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "50th percentile",
+                            "refId": "B_classic"
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) /\nsum(histogram_count(rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "Average",
                             "refId": "C"
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(rollout_operator_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval])) /\nsum(rate(rollout_operator_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "Average",
+                            "refId": "C_classic"
                          }
                       ],
                       "title": "Latency (all webhooks)",
@@ -49771,7 +49819,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "histogram_quantile(0.99, sum by (le, route) (rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3",
+                            "expr": "(histogram_quantile(0.99, sum by (le,route) (rate(rollout_operator_request_duration_seconds_bucket{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "__auto",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(histogram_quantile(0.99, sum by (route) (rate(rollout_operator_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\", route=~\"admission.*\"}[$__rate_interval]))) * 1e3) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "__auto",
                             "legendLink": null
@@ -49928,7 +49982,13 @@ data:
                       "span": 3,
                       "targets": [
                          {
-                            "expr": "1e3 * sum by (namespace, rollout_group) (rate(rollout_operator_group_reconcile_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / sum by (namespace, rollout_group) (rate(rollout_operator_group_reconcile_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "expr": "(1e3 * sum by (namespace, rollout_group) (rate(rollout_operator_group_reconcile_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) /\nsum by (namespace, rollout_group) (rate(rollout_operator_group_reconcile_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{namespace}}/{{rollout_group}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(1e3 * sum by (namespace, rollout_group) (histogram_sum(rate(rollout_operator_group_reconcile_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))) /\nsum by (namespace, rollout_group) (histogram_count(rate(rollout_operator_group_reconcile_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{namespace}}/{{rollout_group}}",
                             "legendLink": null
@@ -50187,7 +50247,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (status) (\n  label_replace(label_replace(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n",
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{status}}",
+                            "refId": "A_classic"
+                         },
+                         {
+                            "expr": "(sum by (status) (\n  label_replace(label_replace(histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])),\n  \"status\", \"${1}xx\", \"status_code\", \"([0-9])..\"),\n  \"status\", \"${1}\", \"status_code\", \"([a-zA-Z_]+)\"))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{status}}",
                             "refId": "A"
@@ -50235,7 +50301,13 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "expr": "(sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "{{method}} {{path}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(sum by (method, path) (histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])))) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "{{method}} {{path}}",
                             "legendLink": null
@@ -50309,13 +50381,25 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) * 1e3",
+                            "expr": "(1e3 * sum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) /\nsum by (method, path) (rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
                             "format": "time_series",
                             "legendFormat": "{{method}} {{path}}",
                             "legendLink": null
                          },
                          {
-                            "expr": "sum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) / sum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) * 1e3",
+                            "expr": "(1e3 * sum by (method, path) (histogram_sum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))) /\nsum by (method, path) (histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
+                            "format": "time_series",
+                            "legendFormat": "{{method}} {{path}}",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(1e3 * sum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_sum{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])) /\nsum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))\n) and on() (vector($latency_metrics) == 1)",
+                            "format": "time_series",
+                            "legendFormat": "All routes",
+                            "legendLink": null
+                         },
+                         {
+                            "expr": "(1e3 * sum(histogram_sum(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))) /\nsum(histogram_count(rate(rollout_operator_kubernetes_api_client_request_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval])))\n) and on() (vector($latency_metrics) == -1)",
                             "format": "time_series",
                             "legendFormat": "All routes",
                             "legendLink": null
@@ -50682,6 +50766,35 @@ data:
                    "tags": [ ],
                    "tagsQuery": "",
                    "type": "query",
+                   "useTags": false
+                },
+                {
+                   "current": {
+                      "selected": true,
+                      "text": "classic",
+                      "value": "1"
+                   },
+                   "description": "Choose between showing latencies based on low precision classic or high precision native histogram metrics.",
+                   "hide": 0,
+                   "includeAll": false,
+                   "label": "Latency metrics",
+                   "multi": false,
+                   "name": "latency_metrics",
+                   "options": [
+                      {
+                         "selected": false,
+                         "text": "native",
+                         "value": "-1"
+                      },
+                      {
+                         "selected": true,
+                         "text": "classic",
+                         "value": "1"
+                      }
+                   ],
+                   "query": "native : -1,classic : 1",
+                   "skipUrlSync": false,
+                   "type": "custom",
                    "useTags": false
                 }
              ]
