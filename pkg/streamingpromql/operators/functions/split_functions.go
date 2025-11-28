@@ -3,9 +3,10 @@
 package functions
 
 import (
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"io"
 	"math"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -17,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+// TODO: investigate Kahan summation more, are we using the compensation correctly?
 var SplitSumOverTime = NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, SumOverTime, FUNCTION_SUM_OVER_TIME)
 
 func sumOverTimeGenerate(
@@ -76,7 +78,7 @@ func sumOverTimeCombine(
 		return 0, false, nil, nil
 	}
 
-	return sumF, haveFloats, sumH, nil
+	return sumF + c, haveFloats, sumH, nil
 }
 
 var SumOverTimeCodec = newProtoListCodec(

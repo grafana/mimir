@@ -23,9 +23,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// SplittingFunctionOverRangeVector performs range vector function calculation with intermediate result caching.
+// FunctionOverRangeVectorSplit performs range vector function calculation with intermediate result caching.
 // T is the type of intermediate result produced by the function's generate step.
-type SplittingFunctionOverRangeVector[T any] struct {
+type FunctionOverRangeVectorSplit[T any] struct {
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	FuncId                   Function
 	FuncDef                  FunctionOverRangeVectorDefinition
@@ -55,7 +55,7 @@ type SplittingFunctionOverRangeVector[T any] struct {
 	currentSeriesIdx int
 }
 
-var _ types.InstantVectorOperator = (*SplittingFunctionOverRangeVector[any])(nil)
+var _ types.InstantVectorOperator = (*FunctionOverRangeVectorSplit[any])(nil)
 
 func NewSplittingFunctionOverRangeVector[T any](
 	innerNode planning.Node,
@@ -73,12 +73,12 @@ func NewSplittingFunctionOverRangeVector[T any](
 	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
-) (*SplittingFunctionOverRangeVector[T], error) {
+) (*FunctionOverRangeVectorSplit[T], error) {
 	if !timeRange.IsInstant {
-		return nil, fmt.Errorf("SplittingFunctionOverRangeVector only supports instant queries")
+		return nil, fmt.Errorf("FunctionOverRangeVectorSplit only supports instant queries")
 	}
 
-	o := &SplittingFunctionOverRangeVector[T]{
+	o := &FunctionOverRangeVectorSplit[T]{
 		innerNode:                innerNode,
 		materializer:             materializer,
 		queryTimeRange:           timeRange,
@@ -110,11 +110,11 @@ func NewSplittingFunctionOverRangeVector[T any](
 	return o, nil
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) ExpressionPosition() posrange.PositionRange {
+func (m *FunctionOverRangeVectorSplit[T]) ExpressionPosition() posrange.PositionRange {
 	return m.expressionPosition
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
+func (m *FunctionOverRangeVectorSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
 	m.splits, err = m.createSplits(ctx)
 	if err != nil {
@@ -132,7 +132,7 @@ func (m *SplittingFunctionOverRangeVector[T]) Prepare(ctx context.Context, param
 // createSplits creates splits for the given time range, checking for cache entries and merging contiguous uncached
 // split ranges to create uncached splits.
 // Uses pre-computed split ranges from the optimization pass.
-func (m *SplittingFunctionOverRangeVector[T]) createSplits(ctx context.Context) ([]Split[T], error) {
+func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]Split[T], error) {
 	var splits []Split[T]
 	var currentUncachedStart int64
 	var currentUncachedRanges []Range
@@ -197,7 +197,7 @@ func (m *SplittingFunctionOverRangeVector[T]) createSplits(ctx context.Context) 
 	return splits, nil
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
+func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
 	subRange := time.Duration(end-start) * time.Millisecond
 
 	overrideTimeParams := types.TimeRangeParams{
@@ -224,7 +224,7 @@ func (m *SplittingFunctionOverRangeVector[T]) materializeOperatorForTimeRange(st
 	return innerOperator, nil
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	var err error
 	var metadata []types.SeriesMetadata
 	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
@@ -243,7 +243,7 @@ func (m *SplittingFunctionOverRangeVector[T]) SeriesMetadata(ctx context.Context
 	return metadata, nil
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) mergeSplitsMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]SplitSeries, error) {
+func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, [][]SplitSeries, error) {
 	if len(m.splits) == 0 {
 		return nil, nil, nil
 	}
@@ -315,7 +315,7 @@ func (m *SplittingFunctionOverRangeVector[T]) mergeSplitsMetadata(ctx context.Co
 	return mergedMetadata, seriesToSplits, nil
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if m.currentSeriesIdx >= len(m.seriesToSplits) {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
@@ -367,14 +367,14 @@ func (m *SplittingFunctionOverRangeVector[T]) NextSeries(ctx context.Context) (t
 	return data, nil
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) emitAnnotation(generator types.AnnotationGenerator) {
+func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
 	pos := m.innerNode.ExpressionPosition()
 
 	m.Annotations.Add(generator(metricName, pos))
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) Finalize(ctx context.Context) error {
+func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 	for _, split := range m.splits {
 		if err := split.Finalize(ctx); err != nil {
 			return err
@@ -384,7 +384,7 @@ func (m *SplittingFunctionOverRangeVector[T]) Finalize(ctx context.Context) erro
 	return nil
 }
 
-func (m *SplittingFunctionOverRangeVector[T]) Close() {
+func (m *FunctionOverRangeVectorSplit[T]) Close() {
 	for _, split := range m.splits {
 		split.Close()
 	}
@@ -405,10 +405,10 @@ type SplitSeries struct {
 
 type CachedSplit[T any] struct {
 	cachedResults cache.ReadEntry[T]
-	parent        *SplittingFunctionOverRangeVector[T]
+	parent        *FunctionOverRangeVectorSplit[T]
 }
 
-func NewCachedSplit[T any](cachedResults cache.ReadEntry[T], parent *SplittingFunctionOverRangeVector[T]) *CachedSplit[T] {
+func NewCachedSplit[T any](cachedResults cache.ReadEntry[T], parent *FunctionOverRangeVectorSplit[T]) *CachedSplit[T] {
 	return &CachedSplit[T]{
 		cachedResults: cachedResults,
 		parent:        parent,
@@ -444,7 +444,7 @@ type UncachedSplit[T any] struct {
 	ranges   []Range
 	operator types.RangeVectorOperator
 
-	parent *SplittingFunctionOverRangeVector[T]
+	parent *FunctionOverRangeVectorSplit[T]
 
 	cacheWriteEntries []cache.WriteEntry[T]
 	finalized         bool
@@ -456,7 +456,7 @@ func NewUncachedSplit[T any](
 	ctx context.Context,
 	ranges []Range,
 	operator types.RangeVectorOperator,
-	parent *SplittingFunctionOverRangeVector[T],
+	parent *FunctionOverRangeVectorSplit[T],
 ) (*UncachedSplit[T], error) {
 	cacheEntries := make([]cache.WriteEntry[T], len(ranges))
 	var err error

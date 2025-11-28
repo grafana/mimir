@@ -27,7 +27,7 @@ type MatrixSelector struct {
 var _ planning.SplittableNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, false)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
 }
 
 // QuerySplittingCacheKey returns the cache key for the matrix selector.

@@ -94,7 +94,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
 		if nextReqSize+seriesSize+symbolsSize > maxSize && len(nextReq.TimeseriesRW2) > 0 {
-			// Flush the next partial request.
+			// Finalize the next partial request.
 			nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 			partialReqs = append(partialReqs, nextReq)
 
@@ -118,7 +118,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 	}
 
 	if len(nextReq.TimeseriesRW2) > 0 {
-		// Flush the last partial request.
+		// Finalize the next partial request.
 		nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 		partialReqs = append(partialReqs, nextReq)
 	}
@@ -168,7 +168,7 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 		// If the next partial request doesn't have any timeseries yet, we add the series anyway, in order to avoid an infinite loop
 		// if a single timeseries is bigger than the limit.
 		if nextReqSize+seriesSize > maxSize && nextReqTimeseriesLength > 0 {
-			// Flush the next partial request.
+			// Finalize the next partial request.
 			nextReq.Timeseries = req.Timeseries[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
 			partialReqs = append(partialReqs, nextReq)
 
@@ -184,7 +184,7 @@ func splitTimeseriesByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []
 	}
 
 	if nextReqTimeseriesLength > 0 {
-		// Flush the last partial request.
+		// Finalize the last partial request.
 		nextReq.Timeseries = req.Timeseries[nextReqTimeseriesStart : nextReqTimeseriesStart+nextReqTimeseriesLength]
 		partialReqs = append(partialReqs, nextReq)
 	}
@@ -234,7 +234,7 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 		// If the next partial request doesn't have any metadata yet, we add the metadata anyway, in order to avoid an infinite loop
 		// if a single metadata is bigger than the limit.
 		if nextReqSize+metadataSize > maxSize && nextReqMetadataLength > 0 {
-			// Flush the next partial request.
+			// Finalize the next partial request.
 			nextReq.Metadata = req.Metadata[nextReqMetadataStart : nextReqMetadataStart+nextReqMetadataLength]
 			partialReqs = append(partialReqs, nextReq)
 

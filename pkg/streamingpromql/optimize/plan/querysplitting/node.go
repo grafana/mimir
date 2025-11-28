@@ -4,6 +4,7 @@ package querysplitting
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -71,7 +72,13 @@ func (s *SplittableFunctionCall) MergeHints(other planning.Node) error {
 
 func (s *SplittableFunctionCall) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherSplit, ok := other.(*SplittableFunctionCall)
-	return ok && s.Inner.EquivalentToIgnoringHintsAndChildren(otherSplit.Inner)
+	if !ok {
+		return false
+	}
+
+	return slices.EqualFunc(s.SplitRanges, otherSplit.SplitRanges, func(a, b SplitRange) bool {
+		return a.Start == b.Start && a.End == b.End && a.Cacheable == b.Cacheable
+	})
 }
 
 func (s *SplittableFunctionCall) Describe() string {

@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
-func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets bool, forCacheKey bool) string {
+func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets bool) string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range matchers {
@@ -31,18 +31,16 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 		builder.WriteRune(']')
 	}
 
-	if ts != nil && !forCacheKey { // @ modifiers are adjusted for when doing query splitting/caching
+	if ts != nil {
 		builder.WriteString(" @ ")
 		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
-		if !forCacheKey {
-			// Only include human-readable timestamp for display purposes (redundant with unix timestamp)
-			builder.WriteString(" (")
-			builder.WriteString(ts.Format(time.RFC3339Nano))
-			builder.WriteRune(')')
-		}
+		// Only include human-readable timestamp for display purposes (redundant with unix timestamp)
+		builder.WriteString(" (")
+		builder.WriteString(ts.Format(time.RFC3339Nano))
+		builder.WriteRune(')')
 	}
 
-	if offset != 0 && !forCacheKey { // @ modifiers are adjusted for when doing query splitting/caching
+	if offset != 0 {
 		builder.WriteString(" offset ")
 		builder.WriteString(offset.String())
 	}

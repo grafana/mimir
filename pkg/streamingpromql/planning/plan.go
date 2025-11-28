@@ -216,8 +216,6 @@ type SplittableNode interface {
 	Node
 
 	// QuerySplittingCacheKey returns a cache key for this node's intermediate results.
-	// The key should include all semantic properties that affect the computation but exclude
-	// implementation details like RFC3339 timestamps or expression positions.
 	QuerySplittingCacheKey() string
 
 	// GetRange returns the time range duration for this range vector operation.
