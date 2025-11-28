@@ -1420,6 +1420,46 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 	}
 }
 
+func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `topk(5, foo)`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	aggregationNode := plan.Root.(*core.AggregateExpression)
+	numberLiteralNode := aggregationNode.Param
+	vectorSelectorNode := aggregationNode.Inner
+
+	encoded, nodes, err := plan.ToEncodedPlan(false, true, numberLiteralNode, vectorSelectorNode)
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+	require.Len(t, encoded.Nodes, 2)
+	require.Equal(t, planning.NODE_TYPE_NUMBER_LITERAL, encoded.Nodes[nodes[0]].NodeType)
+	require.Equal(t, planning.NODE_TYPE_VECTOR_SELECTOR, encoded.Nodes[nodes[1]].NodeType)
+}
+
+func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `sum(foo)`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
+	require.NoError(t, err)
+	require.Len(t, encoded.Nodes, 2)
+	require.Equal(t, []int64{1, 1}, nodes)
+	require.Equal(t, planning.NODE_TYPE_VECTOR_SELECTOR, encoded.Nodes[0].NodeType)
+	require.Equal(t, planning.NODE_TYPE_AGGREGATE_EXPRESSION, encoded.Nodes[1].NodeType)
+}
+
 func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
 	opts := NewTestEngineOpts()
 	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewStaticQueryPlanVersionProvider(12))
