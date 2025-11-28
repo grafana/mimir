@@ -414,7 +414,7 @@ func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
 	defer s.inflightRequestsMu.Unlock()
 
 	s.schedulerInflightRequests[req.Key()] = req
-	s.schedulerInflightRequestCount.Add(1)
+	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 }
 
 // This method doesn't do removal from the queue.
@@ -428,7 +428,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 	}
 
 	delete(s.schedulerInflightRequests, key)
-	s.schedulerInflightRequestCount.Sub(1)
+	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 	return req
 }
 
