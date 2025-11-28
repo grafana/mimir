@@ -1866,12 +1866,40 @@ func TestMapEngineError(t *testing.T) {
 	}
 }
 
+// TestConflictingCounterResets verifies the expected handling of sharded histogram aggregates
+// when counter-reset hints conflict.
+//
+// When PromQL evaluates sum() or avg() over histograms, it inspects the histogram counter reset
+// hints for each series in the aggregation group. If both histogram.CounterReset and
+// histogram.NotCounterReset appear within the same group, PromQL emits a
+// "conflicting counter resets during histogram aggregation" warning.
+//
+// Whenever histogram_count() is used, the PromQL engine enables the histogram_stats_iterator.
+// This iterator inflates histogram samples and updates their CounterResetHint values.
+//
+// When a query like:
+//
+//	histogram_count(sum(rate(<hist>)))
+//
+// is sharded in the Mimir query-frontend, the inner `sum(rate(...))` portion runs once per shard,
+// and the results are merged back together. Because the outer expression is `histogram_count(...)`,
+// the histogram_stats_iterator is applied over the *already rate-adjusted* histograms.
+//
+// This is incorrect: rate() has already compensated for all counter resets, and the histograms
+// produced by rate() must *not* have their CounterResetHint rewritten. Instead, the histograms
+// returned by rate() must have their CounterResetHint explicitly set to histogram.GaugeType.
+// This prevents the outer sum() or avg() from detecting false counter-reset conflicts.
+//
+// This test sets up a scenario where the query is intentionally sharded by the query-frontend
+// to validate that the correct (GaugeType) hints prevent spurious reset-conflict warnings.
+//
 // Note that this test will fail until these are vendored in.
 // https://github.com/prometheus/prometheus/pull/17608 and https://github.com/grafana/mimir/pull/13676
 func TestConflictingCounterResets(t *testing.T) {
 
 	queries := []string{
 		`histogram_count(sum(rate(metric[1m1s])) by (foo))`,
+		`histogram_count(avg(rate(metric[1m1s])) by (foo))`,
 	}
 
 	// create 2 histogram series. One has counter resets

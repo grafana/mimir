@@ -57,6 +57,18 @@ func TestCounterResets(t *testing.T) {
 			hints:    []histogram.CounterResetHint{histogram.GaugeType, histogram.UnknownCounterReset},
 			expected: false,
 		},
+		"NotCounterReset, UnknownCounterReset, CounterReset": {
+			hints:    []histogram.CounterResetHint{histogram.NotCounterReset, histogram.UnknownCounterReset, histogram.CounterReset},
+			expected: true,
+		},
+		"NotCounterReset, GaugeType, CounterReset multiple": {
+			hints:    []histogram.CounterResetHint{histogram.NotCounterReset, histogram.GaugeType, histogram.CounterReset},
+			expected: true,
+		},
+		"NotCounterReset + GaugeType across multiple": {
+			hints:    []histogram.CounterResetHint{histogram.NotCounterReset, histogram.UnknownCounterReset, histogram.GaugeType},
+			expected: false,
+		},
 	}
 
 	for name, testCase := range testCases {

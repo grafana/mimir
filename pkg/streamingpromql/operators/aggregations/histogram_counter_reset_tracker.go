@@ -10,7 +10,7 @@ import (
 )
 
 type histogramCounterResetTracker struct {
-	histogramCounterReset    []histogram.CounterResetHint
+	resetHints               []histogram.CounterResetHint
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 }
 
@@ -20,27 +20,27 @@ func newHistogramCounterResetTracker(size int, memoryConsumptionTracker *limiter
 	}
 
 	var err error
-	g.histogramCounterReset, err = types.CounterResetHintSlicePool.Get(size, memoryConsumptionTracker)
+	g.resetHints, err = types.CounterResetHintSlicePool.Get(size, memoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
-	g.histogramCounterReset = g.histogramCounterReset[:size]
+	g.resetHints = g.resetHints[:size]
 
 	return g, nil
 }
 
 func (c *histogramCounterResetTracker) close() {
-	types.CounterResetHintSlicePool.Put(&c.histogramCounterReset, c.memoryConsumptionTracker)
+	types.CounterResetHintSlicePool.Put(&c.resetHints, c.memoryConsumptionTracker)
 }
 
 func (c *histogramCounterResetTracker) init(outputIdx int64, hint histogram.CounterResetHint) {
-	c.histogramCounterReset[outputIdx] = hint
+	c.resetHints[outputIdx] = hint
 }
 
 // checkCounterResetConflicts will return true if we see a histogram.NotCounterReset and histogram.CounterReset for histograms in the same group.
 func (c *histogramCounterResetTracker) checkCounterResetConflicts(outputIdx int64, hint histogram.CounterResetHint) bool {
 
-	existing := c.histogramCounterReset[outputIdx]
+	existing := c.resetHints[outputIdx]
 	if existing == hint {
 		return false
 	}
@@ -49,12 +49,12 @@ func (c *histogramCounterResetTracker) checkCounterResetConflicts(outputIdx int6
 		if existing == histogram.CounterReset {
 			return true
 		}
-		c.histogramCounterReset[outputIdx] = hint
+		c.resetHints[outputIdx] = hint
 	case histogram.CounterReset:
 		if existing == histogram.NotCounterReset {
 			return true
 		}
-		c.histogramCounterReset[outputIdx] = hint
+		c.resetHints[outputIdx] = hint
 	}
 	return false
 }
