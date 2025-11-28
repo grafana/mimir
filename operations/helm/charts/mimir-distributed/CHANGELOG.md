@@ -27,6 +27,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 6.0.4
+
+* [CHANGE] Upgrade Mimir to [3.0.1](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#301). #13702
+
 ## 6.0.3
 
 * [BUGFIX] Fix missing newline for custom pod labels. #13325
