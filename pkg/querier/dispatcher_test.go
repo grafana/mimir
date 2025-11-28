@@ -552,18 +552,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"query that returns a string": {
 			req: createQueryRequest(`"the string"`, types.NewInstantQueryTimeRange(startT)),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_StringValue{
-								StringValue: &querierpb.EvaluateQueryResponseStringValue{
-									NodeIndex: 0,
-									Value:     "the string",
-								},
-							},
-						},
-					},
-				},
+				newStringMessage(0, "the string"),
 				newEvaluationCompletedMessage(stats.Stats{
 					QueueTime:          3 * time.Second,
 					WallTime:           expectedQueryWallTime,
@@ -1807,6 +1796,21 @@ func newEvaluationCompletedMessageWithAnnotations(stats stats.Stats, infos []str
 							Infos:    infos,
 							Warnings: warnings,
 						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func newStringMessage(nodeIndex int64, s string) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_StringValue{
+					StringValue: &querierpb.EvaluateQueryResponseStringValue{
+						NodeIndex: nodeIndex,
+						Value:     s,
 					},
 				},
 			},
