@@ -170,9 +170,10 @@ type RangeVectorStepData struct {
 	// are calculated differently to accommodate counter arithmetic for the derived values spanning the boundary.
 	// To avoid needing to re-calculate these alternate points they are included here for the rate/increate function
 	// handler to substitute in.
-	SmoothedBasisForHeadPoint  promql.FPoint
-	SmoothedBasisForTailPoint  promql.FPoint
-	SmoothedBasisPointsSetMask uint8 // a bitmask for tracking which point has been set
+	SmoothedBasisForHeadPoint    promql.FPoint
+	SmoothedBasisForTailPoint    promql.FPoint
+	SmoothedBasisForHeadPointSet bool
+	SmoothedBasisForTailPointSet bool
 }
 
 type ScalarData struct {

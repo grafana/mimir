@@ -120,9 +120,11 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 	m.floats.DiscardPointsAtOrBefore(rangeStart)
 	m.histograms.DiscardPointsAtOrBefore(rangeStart)
-	m.stepData.SmoothedBasisPointsSetMask = 0
+	m.stepData.SmoothedBasisForHeadPointSet = false
+	m.stepData.SmoothedBasisForTailPointSet = false
 
-	// Fill the buffer with an extended range of points (smoothed/anchored) - these will be filtered out in the extendRangeVectorPoints() below
+	// When smoothed/anchored is used, the buffer is filled for the user requested time range.
+	// In addition, the buffer may include points immediately outside the range boundaries if they are within the extended time windows.
 	histogramObserved, err := m.fillBuffer(m.floats, m.histograms, originalRangeStart, originalRangeEnd, rangeStart)
 	if err != nil {
 		return nil, err
@@ -136,33 +138,25 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
 		}
 
-		// Note the extended range end is used since smoothed will have extended this
+		// Note that this view includes the extended range window, so will have the extended points used in the anchored/smoothed filling
 		m.extendedRangeView = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.extendedRangeView)
 
+		// A temporary buffer to capture the extended points.
+		// We do not modify the main ring buffer.
+		// A future optimisation may be to support synthetic points being inserted into the ring buffer, and there by avoid the need for this separate buffer.
 		var buff []promql.FPoint
-		if m.extendedRangeView.Any() {
-			// ignore ok as we already tested that we have points
-			lastInView, _ := m.extendedRangeView.Last()
+		lastInView, hasLastPoint := m.extendedRangeView.Last()
 
-			// No points were found within the original range.
-			// If we only find points prior to the start of the original range then no points are returned.
-			if lastInView.T > originalRangeStart {
-				buff, m.stepData.SmoothedBasisPointsSetMask, err = extendRangeVectorPoints(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.smoothed, &m.stepData.SmoothedBasisForHeadPoint, &m.stepData.SmoothedBasisForTailPoint, m.memoryConsumptionTracker)
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-
-		if buff != nil {
-			err := m.extendedRangeFloats.Use(buff)
+		// If we only find points prior to the start of the original range then no points are returned.
+		if hasLastPoint && lastInView.T > originalRangeStart {
+			buff, m.stepData.SmoothedBasisForHeadPointSet, m.stepData.SmoothedBasisForTailPointSet, err = extendRangeVectorPoints(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.smoothed, &m.stepData.SmoothedBasisForHeadPoint, &m.stepData.SmoothedBasisForTailPoint, m.memoryConsumptionTracker)
 			if err != nil {
 				return nil, err
 			}
+			if err := m.extendedRangeFloats.Use(buff); err != nil {
+				return nil, err
+			}
 		}
-
-		// Store the smoothed points in the range step data result so that consumers of this data can reference these values
-		// without having to re-calculate off the original points. Re-use the view
 		m.stepData.Floats = m.extendedRangeFloats.ViewAll(m.stepData.Floats)
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
@@ -179,11 +173,15 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 // fillBuffer will iterate through the chunkIterator and add points to the given ring buffers.
 // points are accumulated into the buffer if they are rangeStart < T <= rangeEnd.
-// When extendedRangeStart != rangeStart, the last point which is extendedRangeStart < T <= rangeStart is accumulated into the buffer.
+// When extendedRangeStart != rangeStart, the last point which is in the range extendedRangeStart < T <= rangeStart is accumulated into the buffer.
 // When extendedRangeStart != rangeStart, the float buffer is automatically left-trimmed to ensure that there is at most 1 point <= rangeStart.
 func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64, extendedRangeStart int64) (bool, error) {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 
+	// This block is responsible for left trimming of points in the extended look back window.
+	// The reason for doing this at the end and not during accumulation is because of the re-use of the given ring buffers.
+	// We would need to read the points at the start of the ring buffer on each iteration of fillBuffer in order to decide if pruning is required.
+	// And the decision to prune depends on which points are read from the iterator.
 	if extendedRangeStart != rangeStart {
 		defer func() {
 			// This ensures that we have at most 1 point <= rangeStart

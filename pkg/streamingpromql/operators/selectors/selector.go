@@ -172,10 +172,6 @@ func ComputeQueriedTimeRange(timeRange types.QueryTimeRange, timestamp *int64, s
 	startTimestamp = startTimestamp - lookbackDelta.Milliseconds() - rangeMilliseconds - offset + 1 // +1 to exclude samples on the lower boundary of the range (queriers work with closed intervals, we use left-open).
 	endTimestamp = endTimestamp - offset
 
-	if anchored || smoothed {
-		startTimestamp -= selectorRange.Milliseconds() + 1
-	}
-
 	if smoothed {
 		endTimestamp += lookbackDelta.Milliseconds()
 	}

@@ -15,7 +15,8 @@ import (
 // extendRangeVectorPoints will return a slice of points which has been adjusted to have anchored/smoothed points on the bounds of the given range.
 // This is used with the anchored/smoothed range query modifiers.
 // This implementation is based on extendFloats() found in promql/engine.go
-func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, smoothed bool, smoothedHead, smoothedTail *promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, byte, error) {
+// The function also returns bool's indicating if alternate counter reset compensating interpolated head & tail points have been pre-calculated for the boundaries.
+func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, smoothed bool, smoothedHead, smoothedTail *promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]promql.FPoint, bool, bool, error) {
 
 	head, tail := view.UnsafePoints()
 	count := len(head) + len(tail)
@@ -24,7 +25,7 @@ func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, range
 	// The caller is responsible for releasing this slice back to the slices pool
 	buff, err := types.FPointSlicePool.Get(count+2, memoryConsumptionTracker)
 	if err != nil {
-		return nil, 0, err
+		return nil, false, false, err
 	}
 
 	first := head[0]
@@ -55,22 +56,24 @@ func extendRangeVectorPoints(view *types.FPointRingBufferView, rangeStart, range
 	// Firstly, the values on the boundaries are replaced with an interpolated values - there by smoothing the value to reflect the time of the point before/after the boundary
 	// Secondly, if vector will be used in a rate/increase function then the boundary points must be calculated differently to consider the value as a counter.
 	// These alternate points will be stored alongside the resulting vector so that the rate/increase function handler can utilise these values.
-	smoothedPointSetMask := uint8(0)
+	smoothedBasisForHeadPointSet := false
+	smoothedBasisForTailPointSet := false
+
 	if smoothed && len(buff) > 1 {
 		if first.T < rangeStart {
 			buff[0].F, smoothedHead.F = interpolateCombined(first, buff[1], rangeStart, true)
 			smoothedHead.T = rangeStart
-			smoothedPointSetMask |= 1 << 0
+			smoothedBasisForHeadPointSet = true
 		}
 
 		if last.T > rangeEnd {
 			buff[len(buff)-1].F, smoothedTail.F = interpolateCombined(buff[len(buff)-2], last, rangeEnd, false)
 			smoothedTail.T = rangeEnd
-			smoothedPointSetMask |= 1 << 1
+			smoothedBasisForTailPointSet = true
 		}
 	}
 
-	return buff, smoothedPointSetMask, nil
+	return buff, smoothedBasisForHeadPointSet, smoothedBasisForTailPointSet, nil
 }
 
 // interpolate performs linear interpolation between two points.

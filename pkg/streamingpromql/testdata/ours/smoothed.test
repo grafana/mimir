@@ -474,9 +474,6 @@ load 1s
   metric{instance="2"} 1 5 6 3 1 8 7 3 0 19 NaN NaN 10-1x10
   metric{instance="3"} 0x10 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 10-1x10
 
-eval instant at 0 increase(metric[1m] smoothed)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
 eval instant at 10m increase(metric[1s] smoothed)
 
 eval instant at 0 increase(metric{instance="1"}[1m] smoothed)
@@ -500,9 +497,6 @@ eval instant at 3m increase(metric{instance="2"}[10s] smoothed)
 eval instant at 5m increase(metric{instance="1"}[1m] smoothed)
 
 eval instant at 5m increase(metric{instance="2"}[1m] smoothed)
-
-eval instant at 0 rate(metric[1m] smoothed)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 eval instant at 10m rate(metric[1s] smoothed)
 
@@ -528,9 +522,6 @@ eval instant at 5m rate(metric{instance="1"}[1m] smoothed)
 
 eval instant at 5m rate(metric{instance="2"}[1m] smoothed)
 
-eval instant at 0 delta(metric[1m] smoothed)
-  expect fail msg: smoothed and anchored modifiers do not work with native histograms
-
 eval instant at 10m delta(metric[1s] smoothed)
 
 eval instant at 0 delta(metric{instance="1"}[1m] smoothed)
@@ -554,6 +545,18 @@ eval instant at 3m delta(metric{instance="2"}[10s] smoothed)
 eval instant at 5m delta(metric{instance="1"}[1m] smoothed)
 
 eval instant at 5m delta(metric{instance="2"}[1m] smoothed)
+
+# MQE and Prometheus have different behaviour here.
+# MQE will fail a query where histograms are found within the query range, or in the points immediately either side of the range.
+# Prometheus will fail a query where histograms are found anywhere within the extended range window.
+eval instant at 11s increase(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 11s rate(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
+
+eval instant at 11s delta(metric[1m] smoothed)
+  expect fail msg: smoothed and anchored modifiers do not work with native histograms
 
 clear
 load 1m
