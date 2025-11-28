@@ -95,14 +95,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			},
 			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_Error{
-						Error: &querierpb.Error{
-							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
-							Message: `unknown query request type "grafana.com/something/unknown"`,
-						},
-					},
-				},
+				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `unknown query request type "grafana.com/something/unknown"`),
 			},
 			expectedStatusCode: "ERROR_BAD_DATA",
 		},
@@ -114,14 +107,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			dontSetTenantID:                  true,
 			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_Error{
-						Error: &querierpb.Error{
-							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
-							Message: `malformed query request type "unknown": message type url "unknown" is invalid`,
-						},
-					},
-				},
+				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `malformed query request type "unknown": message type url "unknown" is invalid`),
 			},
 			expectedStatusCode: "ERROR_BAD_DATA",
 		},
@@ -131,14 +117,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			dontSetTenantID:                  true,
 			dontExpectQueryPlanVersionMetric: true,
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_Error{
-						Error: &querierpb.Error{
-							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
-							Message: `no org id`,
-						},
-					},
-				},
+				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `no org id`),
 			},
 			expectedStatusCode: "ERROR_BAD_DATA",
 		},
@@ -146,14 +125,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"request with no nodes": {
 			req: createQueryRequestWithNoNodes(),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_Error{
-						Error: &querierpb.Error{
-							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
-							Message: `request contains no nodes to evaluate`,
-						},
-					},
-				},
+				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `request contains no nodes to evaluate`),
 			},
 			expectedStatusCode: "ERROR_BAD_DATA",
 		},
@@ -161,14 +133,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		"request with the same node provided multiple times": {
 			req: createQueryRequestForSpecificNodes(t, ctx, planner, `my_series`, types.NewInstantQueryTimeRange(startT), 1, nil, nil),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_Error{
-						Error: &querierpb.Error{
-							Type:    mimirpb.QUERY_ERROR_TYPE_BAD_DATA,
-							Message: `request contains at least one node multiple times: have 2 requested node(s), but only 1 unique node(s)`,
-						},
-					},
-				},
+				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `request contains at least one node multiple times: have 2 requested node(s), but only 1 unique node(s)`),
 			},
 			expectedStatusCode: "ERROR_BAD_DATA",
 		},
@@ -810,14 +775,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						},
 					},
 				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_Error{
-						Error: &querierpb.Error{
-							Type:    mimirpb.QUERY_ERROR_TYPE_EXECUTION,
-							Message: `vector cannot contain metrics with the same labelset`,
-						},
-					},
-				},
+				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_EXECUTION, `vector cannot contain metrics with the same labelset`),
 			},
 			expectedStatusCode:                           "ERROR_EXECUTION",
 			expectStorageToBeCalledWithPropagatedHeaders: true,
@@ -1987,14 +1945,7 @@ func TestDispatcher_MQEDisabled(t *testing.T) {
 	dispatcher.HandleProtobuf(ctx, req, nil, stream)
 
 	expected := []*frontendv2pb.QueryResultStreamRequest{
-		{
-			Data: &frontendv2pb.QueryResultStreamRequest_Error{
-				Error: &querierpb.Error{
-					Type:    mimirpb.QUERY_ERROR_TYPE_NOT_FOUND,
-					Message: `MQE is not enabled on this querier`,
-				},
-			},
-		},
+		newErrorMessage(mimirpb.QUERY_ERROR_TYPE_NOT_FOUND, `MQE is not enabled on this querier`),
 	}
 	require.Equal(t, expected, stream.messages)
 }
@@ -2127,17 +2078,21 @@ func TestQueryResponseWriter_WriteError(t *testing.T) {
 			writer.WriteError(ctx, apierror.TypeNotFound, testCase.err)
 
 			expectedMessages := []*frontendv2pb.QueryResultStreamRequest{
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_Error{
-						Error: &querierpb.Error{
-							Type:    testCase.expectedType,
-							Message: testCase.expectedMessage,
-						},
-					},
-				},
+				newErrorMessage(testCase.expectedType, testCase.expectedMessage),
 			}
 
 			require.Equal(t, expectedMessages, stream.messages)
 		})
+	}
+}
+
+func newErrorMessage(typ mimirpb.QueryErrorType, message string) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_Error{
+			Error: &querierpb.Error{
+				Type:    typ,
+				Message: message,
+			},
+		},
 	}
 }
