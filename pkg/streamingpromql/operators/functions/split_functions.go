@@ -19,14 +19,6 @@ import (
 
 var SplitSumOverTime = NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, SumOverTime, FUNCTION_SUM_OVER_TIME)
 
-type SumOverTimeIntermediate struct {
-	SumF float64
-	// FIXME: use SumC properly
-	SumC     float64 // Kahan compensation
-	SumH     *histogram.FloatHistogram
-	HasFloat bool
-}
-
 func sumOverTimeGenerate(
 	step *types.RangeVectorStepData,
 	_ []types.ScalarData,
@@ -38,7 +30,18 @@ func sumOverTimeGenerate(
 	if err != nil {
 		return SumOverTimeIntermediate{}, err
 	}
-	return SumOverTimeIntermediate{SumF: f, HasFloat: hasFloat, SumH: h}, nil
+
+	result := SumOverTimeIntermediate{
+		SumF:     f,
+		HasFloat: hasFloat,
+	}
+
+	if h != nil {
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		result.SumH = &histProto
+	}
+
+	return result, nil
 }
 
 func sumOverTimeCombine(
@@ -56,10 +59,11 @@ func sumOverTimeCombine(
 			sumF, c = floats.KahanSumInc(p.SumF, sumF, c)
 		}
 		if p.SumH != nil {
+			h := mimirpb.FromHistogramProtoToFloatHistogram(p.SumH)
 			if sumH == nil {
-				sumH = p.SumH.Copy()
+				sumH = h
 			} else {
-				if _, _, _, err := sumH.Add(p.SumH); err != nil {
+				if _, _, _, err := sumH.Add(h); err != nil {
 					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
 				}
@@ -75,167 +79,41 @@ func sumOverTimeCombine(
 	return sumF, haveFloats, sumH, nil
 }
 
-// sumOverTimeWriter currently buffers all the results and only writes to the underlying writer when Finalize() is called.
-type sumOverTimeWriter struct {
-	setResultBytes func([]byte)
-	results        []*SumOverTimeIntermediateProto
-}
-
-func (w *sumOverTimeWriter) WriteNextResult(result SumOverTimeIntermediate) error {
-	proto := &SumOverTimeIntermediateProto{
-		SumF:     result.SumF,
-		HasFloat: result.HasFloat,
-		SumC:     result.SumC,
-	}
-
-	if result.SumH != nil {
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, result.SumH)
-		proto.SumH = &histProto
-	}
-
-	w.results = append(w.results, proto)
-	return nil
-}
-
-func (w *sumOverTimeWriter) Finalize() error {
-	// TODO: this might not be the final serialization format, we might want something more streamable rather than a
-	//  single list proto
-	listProto := &SumOverTimeIntermediateListProto{
-		Results: w.results,
-	}
-
-	listBytes, err := listProto.Marshal()
-	if err != nil {
-		return errors.Wrap(err, "marshaling list proto")
-	}
-
-	w.setResultBytes(listBytes)
-	return nil
-}
-
-type sumOverTimeReader struct {
-	results []SumOverTimeIntermediate
-}
-
-func (r *sumOverTimeReader) ReadResultAt(idx int) (SumOverTimeIntermediate, error) {
-	if idx >= len(r.results) {
-		return SumOverTimeIntermediate{}, io.EOF
-	}
-	return r.results[idx], nil
-}
-
-type sumOverTimeCodec struct{}
-
-func (s *sumOverTimeCodec) NewWriter(setResultBytes func([]byte)) (cache.SplitWriter[SumOverTimeIntermediate], error) {
-	return &sumOverTimeWriter{setResultBytes: setResultBytes}, nil
-}
-
-func (s *sumOverTimeCodec) NewReader(bytes []byte) (cache.SplitReader[SumOverTimeIntermediate], error) {
-	var listProto SumOverTimeIntermediateListProto
-	if err := listProto.Unmarshal(bytes); err != nil {
-		return nil, errors.Wrap(err, "unmarshaling sum over time list proto")
-	}
-
-	results := make([]SumOverTimeIntermediate, len(listProto.Results))
-	for i, proto := range listProto.Results {
-		results[i] = SumOverTimeIntermediate{
-			SumF:     proto.SumF,
-			HasFloat: proto.HasFloat,
-			SumC:     proto.SumC,
+var SumOverTimeCodec = newProtoListCodec(
+	func(results []SumOverTimeIntermediate) ([]byte, error) {
+		listProto := &SumOverTimeIntermediateList{Results: results}
+		listBytes, err := listProto.Marshal()
+		if err != nil {
+			return nil, errors.Wrap(err, "marshaling sum over time list")
 		}
-		if proto.SumH != nil {
-			results[i].SumH = mimirpb.FromHistogramProtoToFloatHistogram(proto.SumH)
+		return listBytes, nil
+	},
+	func(bytes []byte) ([]SumOverTimeIntermediate, error) {
+		var listProto SumOverTimeIntermediateList
+		if err := listProto.Unmarshal(bytes); err != nil {
+			return nil, errors.Wrap(err, "unmarshaling sum over time list")
 		}
-	}
+		return listProto.Results, nil
+	},
+)
 
-	return &sumOverTimeReader{results: results}, nil
-}
-
-var SumOverTimeCodec = &sumOverTimeCodec{}
-
-type SingleSampleIntermediate struct {
-	F        float64
-	H        *histogram.FloatHistogram
-	HasFloat bool
-}
-
-// singleSampleWriter currently buffers all the results and only writes to the underlying writer when Finalize() is called.
-type singleSampleWriter struct {
-	setResultBytes func([]byte)
-	results        []*SingleSampleIntermediateProto
-}
-
-func (w *singleSampleWriter) WriteNextResult(result SingleSampleIntermediate) error {
-	proto := &SingleSampleIntermediateProto{
-		F:        result.F,
-		HasFloat: result.HasFloat,
-	}
-
-	if result.H != nil {
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, result.H)
-		proto.H = &histProto
-	}
-
-	w.results = append(w.results, proto)
-	return nil
-}
-
-func (w *singleSampleWriter) Finalize() error {
-	// TODO: this might not be the final serialization format, we might want something more streamable rather than a
-	//  single list proto
-	listProto := &SingleSampleIntermediateListProto{
-		Results: w.results,
-	}
-
-	listBytes, err := listProto.Marshal()
-	if err != nil {
-		return errors.Wrap(err, "marshaling list proto")
-	}
-
-	w.setResultBytes(listBytes)
-
-	return nil
-}
-
-type singleSampleReader struct {
-	results []SingleSampleIntermediate
-}
-
-func (r *singleSampleReader) ReadResultAt(idx int) (SingleSampleIntermediate, error) {
-	if idx >= len(r.results) {
-		return SingleSampleIntermediate{}, io.EOF
-	}
-	return r.results[idx], nil
-}
-
-type singleSampleCodec struct{}
-
-func (s *singleSampleCodec) NewWriter(setResultBytes func([]byte)) (cache.SplitWriter[SingleSampleIntermediate], error) {
-	return &singleSampleWriter{setResultBytes: setResultBytes}, nil
-}
-
-func (s *singleSampleCodec) NewReader(bytes []byte) (cache.SplitReader[SingleSampleIntermediate], error) {
-	var listProto SingleSampleIntermediateListProto
-	if err := listProto.Unmarshal(bytes); err != nil {
-		return nil, errors.Wrap(err, "unmarshaling list proto")
-	}
-
-	results := make([]SingleSampleIntermediate, len(listProto.Results))
-	for i, proto := range listProto.Results {
-		results[i] = SingleSampleIntermediate{
-			F:        proto.F,
-			HasFloat: proto.HasFloat,
+var SingleSampleCodec = newProtoListCodec(
+	func(results []SingleSampleIntermediate) ([]byte, error) {
+		listProto := &SingleSampleIntermediateList{Results: results}
+		listBytes, err := listProto.Marshal()
+		if err != nil {
+			return nil, errors.Wrap(err, "marshaling single sample list")
 		}
-
-		if proto.H != nil {
-			results[i].H = mimirpb.FromHistogramProtoToFloatHistogram(proto.H)
+		return listBytes, nil
+	},
+	func(bytes []byte) ([]SingleSampleIntermediate, error) {
+		var listProto SingleSampleIntermediateList
+		if err := listProto.Unmarshal(bytes); err != nil {
+			return nil, errors.Wrap(err, "unmarshaling single sample list")
 		}
-	}
-
-	return &singleSampleReader{results: results}, nil
-}
-
-var SingleSampleCodec = &singleSampleCodec{}
+		return listProto.Results, nil
+	},
+)
 
 var SplitCountOverTime = NewSplitOperatorFactory[SingleSampleIntermediate](
 	countOverTimeGenerate,
@@ -285,7 +163,18 @@ func minOverTimeGenerate(
 	if err != nil {
 		return SingleSampleIntermediate{}, err
 	}
-	return SingleSampleIntermediate{F: f, HasFloat: hasFloat, H: h}, nil
+
+	result := SingleSampleIntermediate{
+		F:        f,
+		HasFloat: hasFloat,
+	}
+
+	if h != nil {
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		result.H = &histProto
+	}
+
+	return result, nil
 }
 
 func minOverTimeCombine(pieces []SingleSampleIntermediate, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -319,7 +208,18 @@ func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, 
 	if err != nil {
 		return SingleSampleIntermediate{}, err
 	}
-	return SingleSampleIntermediate{F: f, HasFloat: hasFloat, H: h}, nil
+
+	result := SingleSampleIntermediate{
+		F:        f,
+		HasFloat: hasFloat,
+	}
+
+	if h != nil {
+		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
+		result.H = &histProto
+	}
+
+	return result, nil
 }
 
 func maxOverTimeCombine(pieces []SingleSampleIntermediate, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
@@ -338,4 +238,67 @@ func maxOverTimeCombine(pieces []SingleSampleIntermediate, _ types.EmitAnnotatio
 	}
 
 	return maxF, hasFloat, nil, nil
+}
+
+// Generic codec implementation for protobuf list-based intermediate results.
+type protoListCodec[ItemProto any] struct {
+	marshalList   func([]ItemProto) ([]byte, error)
+	unmarshalList func([]byte) ([]ItemProto, error)
+}
+
+func newProtoListCodec[ItemProto any](
+	marshalList func([]ItemProto) ([]byte, error),
+	unmarshalList func([]byte) ([]ItemProto, error),
+) cache.SplitCodec[ItemProto] {
+	return &protoListCodec[ItemProto]{
+		marshalList:   marshalList,
+		unmarshalList: unmarshalList,
+	}
+}
+
+func (c *protoListCodec[ItemProto]) NewWriter(setResultBytes func([]byte)) (cache.SplitWriter[ItemProto], error) {
+	return &protoListWriter[ItemProto]{
+		setResultBytes: setResultBytes,
+		marshalList:    c.marshalList,
+	}, nil
+}
+
+func (c *protoListCodec[ItemProto]) NewReader(bytes []byte) (cache.SplitReader[ItemProto], error) {
+	results, err := c.unmarshalList(bytes)
+	if err != nil {
+		return nil, err
+	}
+	return &protoListReader[ItemProto]{results: results}, nil
+}
+
+type protoListWriter[ItemProto any] struct {
+	setResultBytes func([]byte)
+	marshalList    func([]ItemProto) ([]byte, error)
+	results        []ItemProto
+}
+
+func (w *protoListWriter[ItemProto]) WriteNextResult(result ItemProto) error {
+	w.results = append(w.results, result)
+	return nil
+}
+
+func (w *protoListWriter[ItemProto]) Finalize() error {
+	listBytes, err := w.marshalList(w.results)
+	if err != nil {
+		return err
+	}
+	w.setResultBytes(listBytes)
+	return nil
+}
+
+type protoListReader[ItemProto any] struct {
+	results []ItemProto
+}
+
+func (r *protoListReader[ItemProto]) ReadResultAt(idx int) (ItemProto, error) {
+	if idx >= len(r.results) {
+		var zero ItemProto
+		return zero, io.EOF
+	}
+	return r.results[idx], nil
 }

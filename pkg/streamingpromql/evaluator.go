@@ -166,7 +166,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	}
 
 	if e.engine.pedantic {
-		// Finalize the root operator a second time to ensure all operators behave correctly if Finalize is called multiple times.
+		// Flush the root operator a second time to ensure all operators behave correctly if Finalize is called multiple times.
 		if err := e.root.Finalize(ctx); err != nil {
 			return fmt.Errorf("pedantic mode: failed to finalize operator a second time after successfully finalizing the first time: %w", err)
 		}

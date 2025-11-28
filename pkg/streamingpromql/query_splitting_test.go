@@ -4,6 +4,10 @@ package streamingpromql
 
 import (
 	"context"
+	"io"
+	"io/fs"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -607,12 +611,7 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	// Query at 4h30m with 3h range and 31m offset
 	// Storage time: (4h30m - 3h - 31m, 4h30m - 31m] = (59m, 3h59m]
 	// First aligned boundary after 59m: 2h
-	// Check complete block: 2h + 2h = 4h > 3h59m, so NO complete block
-	//
-	// Without offset adjustment: would incorrectly compute storage time as (1h30m, 4h30m]
-	// and think there's a complete block [2h, 4h] fitting within (1h30m, 4h30m]
-	// Data: first sample @ 1h = 6, last sample @ 3h50m = 23, samples = 18
-	// Sum: (6+23)*(18/2) = 261
+	// 2h + 2h = 4h > 3h59m (end time of query), so NO complete block
 	expr := "sum_over_time(test_metric[3h] offset 31m)"
 	ts := baseT.Add(4*time.Hour + 30*time.Minute)
 
@@ -627,6 +626,63 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 
 	// No cache operations should occur since splitting wasn't applied
 	verifyCacheStats(t, testCache, 0, 0, 0)
+}
+
+// TestQuerySplitting_TestFiles runs PromQL test files with query splitting enabled.
+// This verifies that splitting produces correct results for various functions.
+// TODO: Run all engine test files with query splitting enabled (maybe with smaller splits like 1m)
+func TestQuerySplitting_TestFiles(t *testing.T) {
+	testdataFS := os.DirFS("./testdata")
+	testFiles, err := fs.Glob(testdataFS, "ours-only/*splitting*.test")
+	require.NoError(t, err)
+	require.NotEmpty(t, testFiles, "expected to find test files matching pattern 'ours-only/*splitting*.test'")
+
+	for _, testFile := range testFiles {
+		t.Run(testFile, func(t *testing.T) {
+			f, err := testdataFS.Open(testFile)
+			require.NoError(t, err)
+			defer f.Close()
+
+			b, err := io.ReadAll(f)
+			require.NoError(t, err)
+
+			// Split test file on 'clear' statements and run each section with a fresh cache.
+			// This ensures that when tests use 'clear' to reset storage and load new data,
+			// the cache is also cleared so we don't get stale cached results.
+			// TODO: Instead of this hacky string splitting, properly hook into promqltest's
+			// clear statement handling
+			testScript := string(b)
+			sections := strings.Split(testScript, "\nclear\n")
+
+			opts := NewTestEngineOpts()
+			opts.InstantQuerySplitting.Enabled = true
+			opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+
+			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			for i, section := range sections {
+				section = strings.TrimSpace(section)
+				if section == "" {
+					continue
+				}
+
+				backend := newTestCacheBackend()
+				irCache := cache.NewResultsCacheWithBackend(backend, log.NewNopLogger())
+				innerEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, irCache)
+				require.NoError(t, err)
+
+				engine := &engineWithOrgID{engine: innerEngine, orgID: "test-user"}
+
+				// Add 'clear' back so promqltest knows to reset storage
+				if i > 0 {
+					section = "clear\n" + section
+				}
+
+				promqltest.RunTest(t, section, engine)
+			}
+		})
+	}
 }
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
@@ -735,4 +791,37 @@ func (w *wrappedQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 		w.onSelect(mint, maxt)
 	}
 	return w.inner.Querier(mint, maxt)
+}
+
+// engineWithOrgID wraps a query engine to return queries with orgID injection.
+// This is needed for query splitting tests the cache key requires the orgID.
+type engineWithOrgID struct {
+	engine promql.QueryEngine
+	orgID  string
+}
+
+func (e *engineWithOrgID) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	query, err := e.engine.NewInstantQuery(ctx, q, opts, qs, ts)
+	if err != nil {
+		return nil, err
+	}
+	return &queryWithOrgID{Query: query, orgID: e.orgID}, nil
+}
+
+func (e *engineWithOrgID) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	query, err := e.engine.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
+	if err != nil {
+		return nil, err
+	}
+	return &queryWithOrgID{Query: query, orgID: e.orgID}, nil
+}
+
+type queryWithOrgID struct {
+	promql.Query
+	orgID string
+}
+
+func (q *queryWithOrgID) Exec(ctx context.Context) *promql.Result {
+	ctx = user.InjectOrgID(ctx, q.orgID)
+	return q.Query.Exec(ctx)
 }

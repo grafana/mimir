@@ -75,7 +75,17 @@ func rate(isRate bool) RangeVectorStepFunction {
 }
 
 func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
-	firstPoint := hHead[0]
+	firstPoint, lastPoint, delta, fpHistCount, err := calculateHistogramDelta(hHead, hTail, emitAnnotation)
+	if err != nil {
+		return nil, err
+	}
+
+	val := calculateHistogramRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, fpHistCount)
+	return val, nil
+}
+
+func calculateHistogramDelta(hHead, hTail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, fpHistCount float64, err error) {
+	firstPoint = hHead[0]
 	hHead = hHead[1:]
 
 	if firstPoint.H.CounterResetHint == histogram.GaugeType {
@@ -91,7 +101,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 
 	// Store the original first point count before potential reset.
 	// It's needed to calculate the rate correctly later.
-	fpHistCount := firstPoint.H.Count
+	fpHistCount = firstPoint.H.Count
 
 	// Ignore the first point if there is a counter reset between the first and second point.
 	// This means we'll ignore any incompatibility between the layout of the first and second point,
@@ -104,7 +114,6 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 		}
 	}
 
-	var lastPoint promql.HPoint
 	if len(hTail) > 0 {
 		lastPoint = hTail[len(hTail)-1]
 	} else {
@@ -122,13 +131,13 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 
 	usingCustomBuckets := firstPoint.H.UsesCustomBuckets()
 	if lastPoint.H.UsesCustomBuckets() != usingCustomBuckets {
-		return nil, histogram.ErrHistogramsIncompatibleSchema
+		return promql.HPoint{}, promql.HPoint{}, nil, 0, histogram.ErrHistogramsIncompatibleSchema
 	}
 
-	delta := lastPoint.H.CopyToSchema(desiredSchema)
+	delta = lastPoint.H.CopyToSchema(desiredSchema)
 	_, _, nhcbBoundsReconciled, err := delta.Sub(firstPoint.H)
 	if err != nil {
-		return nil, err
+		return promql.HPoint{}, promql.HPoint{}, nil, 0, err
 	}
 	if nhcbBoundsReconciled {
 		emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
@@ -167,35 +176,37 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 
 	err = accumulate(hHead)
 	if err != nil {
-		return nil, err
-
+		return promql.HPoint{}, promql.HPoint{}, nil, 0, err
 	}
 	err = accumulate(hTail)
 	if err != nil {
-		return nil, err
-
+		return promql.HPoint{}, promql.HPoint{}, nil, 0, err
 	}
 
 	if delta.Schema != desiredSchema {
 		delta = delta.CopyToSchema(desiredSchema)
 	}
 
-	val := calculateHistogramRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, fpHistCount)
-	return val, err
+	return firstPoint, lastPoint, delta, fpHistCount, nil
 }
 
 func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
-	firstPoint := fHead[0]
+	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail)
+	val := calculateFloatRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+	return val
+}
+
+func calculateFloatDelta(fHead, fTail []promql.FPoint) (firstPoint, lastPoint promql.FPoint, delta float64) {
+	firstPoint = fHead[0]
 	fHead = fHead[1:]
 
-	var lastPoint promql.FPoint
 	if len(fTail) > 0 {
 		lastPoint = fTail[len(fTail)-1]
 	} else {
 		lastPoint = fHead[len(fHead)-1]
 	}
 
-	delta := lastPoint.F - firstPoint.F
+	delta = lastPoint.F - firstPoint.F
 	previousValue := firstPoint.F
 
 	accumulate := func(points []promql.FPoint) {
@@ -212,8 +223,7 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 	accumulate(fHead)
 	accumulate(fTail)
 
-	val := calculateFloatRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
-	return val
+	return firstPoint, lastPoint, delta
 }
 
 // This is based on extrapolatedRate from promql/functions.go.

@@ -276,7 +276,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponse(ctx context.Context, c
 		item.Reset(labels.EmptyLabels())
 		labelBuilderPool.Put(item)
 
-		// Finalize the stream buffer if it's getting too large.
+		// Flush the stream buffer if it's getting too large.
 		if stream.Buffered() > jsoniterMaxBufferSize {
 			_ = stream.Flush()
 		}
@@ -344,7 +344,7 @@ func (s *shardActiveSeriesMiddleware) writeMergedResponseWithZeroAllocationDecod
 		// Write the value as is, since it's already a JSON array.
 		stream.WriteRaw(rawStr)
 
-		// Finalize the stream buffer if it's getting too large.
+		// Flush the stream buffer if it's getting too large.
 		if stream.Buffered() > jsoniterMaxBufferSize {
 			_ = stream.Flush()
 		}

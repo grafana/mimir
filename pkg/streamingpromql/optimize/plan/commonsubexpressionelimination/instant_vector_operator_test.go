@@ -106,7 +106,7 @@ func TestInstantVectorOperator_Buffering(t *testing.T) {
 	require.False(t, inner.Finalized)
 	require.False(t, inner.Closed)
 
-	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
+	// Flush each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
 	require.NoError(t, consumer1.Finalize(ctx))
 	require.False(t, inner.Finalized)
 	require.NoError(t, consumer2.Finalize(ctx))

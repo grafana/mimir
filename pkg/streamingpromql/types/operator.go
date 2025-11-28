@@ -33,11 +33,11 @@ type Operator interface {
 	// Prepare must only be called once.
 	Prepare(ctx context.Context, params *PrepareParams) error
 
-	// Finalize performs any outstanding work required before the query result is considered complete.
+	// Flush performs any outstanding work required before the query result is considered complete.
 	// For example, any outstanding annotations should be emitted and query stats should be updated.
 	// It must be safe to call Finalize even if Prepare, SeriesMetadata, NextSeries, NextStepSamples or Finalize have not been called.
 	// It must be safe to call Finalize multiple times.
-	// Finalize must not call SeriesMetadata, NextSeries, NextStepSamples or Prepare on another operator, and is expected to call Finalize on
+	// Flush must not call SeriesMetadata, NextSeries, NextStepSamples or Prepare on another operator, and is expected to call Finalize on
 	// any nested operators.
 	// Calling Finalize after Prepare, SeriesMetadata, NextSeries or NextStepSamples have returned an error may result in unpredictable
 	// behaviour, corruption or crashes.

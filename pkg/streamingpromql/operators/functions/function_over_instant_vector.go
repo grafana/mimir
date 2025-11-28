@@ -21,7 +21,7 @@ type FunctionOverInstantVector struct {
 	// as an argument. We can assume this will always be the Inner operator and therefore
 	// what we use for the SeriesMetadata.
 	Inner types.InstantVectorOperator
-	// Any scalar arguments will be read once and passed to FuncDef.SeriesDataFunc.
+	// Any scalar arguments will be read once and passed to Func.SeriesDataFunc.
 	ScalarArgs               []types.ScalarOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Func                     FunctionOverInstantVectorDefinition

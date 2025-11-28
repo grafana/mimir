@@ -129,7 +129,7 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//
-		// Mimir does use FuncDef to determine if it's a /series request, but this doesn't go
+		// Mimir does use Func to determine if it's a /series request, but this doesn't go
 		// through the PromQL engine, so we don't need to include it here either.
 		//
 		// Mimir does use ShardCount, ShardIndex and DisableTrimming, but not at this level:

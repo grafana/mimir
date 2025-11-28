@@ -124,7 +124,7 @@ func TestRangeVectorOperator_Buffering(t *testing.T) {
 	require.False(t, inner.finalized)
 	require.False(t, inner.closed)
 
-	// Finalize each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
+	// Flush each consumer, and check that the inner operator was only finalized after the last consumer is finalized.
 	require.NoError(t, consumer1.Finalize(ctx))
 	require.False(t, inner.finalized)
 	require.NoError(t, consumer2.Finalize(ctx))

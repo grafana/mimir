@@ -27,25 +27,24 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// SumOverTimeIntermediateProto is the protobuf representation of a single SumOverTimeIntermediate.
-type SumOverTimeIntermediateProto struct {
+type SumOverTimeIntermediate struct {
 	SumF     float64            `protobuf:"fixed64,1,opt,name=sumF,proto3" json:"sumF,omitempty"`
 	HasFloat bool               `protobuf:"varint,2,opt,name=hasFloat,proto3" json:"hasFloat,omitempty"`
 	SumC     float64            `protobuf:"fixed64,3,opt,name=sumC,proto3" json:"sumC,omitempty"`
 	SumH     *mimirpb.Histogram `protobuf:"bytes,4,opt,name=sumH,proto3" json:"sumH,omitempty"`
 }
 
-func (m *SumOverTimeIntermediateProto) Reset()      { *m = SumOverTimeIntermediateProto{} }
-func (*SumOverTimeIntermediateProto) ProtoMessage() {}
-func (*SumOverTimeIntermediateProto) Descriptor() ([]byte, []int) {
+func (m *SumOverTimeIntermediate) Reset()      { *m = SumOverTimeIntermediate{} }
+func (*SumOverTimeIntermediate) ProtoMessage() {}
+func (*SumOverTimeIntermediate) Descriptor() ([]byte, []int) {
 	return fileDescriptor_bc43311063e4cdd6, []int{0}
 }
-func (m *SumOverTimeIntermediateProto) XXX_Unmarshal(b []byte) error {
+func (m *SumOverTimeIntermediate) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *SumOverTimeIntermediateProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *SumOverTimeIntermediate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SumOverTimeIntermediateProto.Marshal(b, m, deterministic)
+		return xxx_messageInfo_SumOverTimeIntermediate.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -55,34 +54,33 @@ func (m *SumOverTimeIntermediateProto) XXX_Marshal(b []byte, deterministic bool)
 		return b[:n], nil
 	}
 }
-func (m *SumOverTimeIntermediateProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SumOverTimeIntermediateProto.Merge(m, src)
+func (m *SumOverTimeIntermediate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SumOverTimeIntermediate.Merge(m, src)
 }
-func (m *SumOverTimeIntermediateProto) XXX_Size() int {
+func (m *SumOverTimeIntermediate) XXX_Size() int {
 	return m.Size()
 }
-func (m *SumOverTimeIntermediateProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_SumOverTimeIntermediateProto.DiscardUnknown(m)
+func (m *SumOverTimeIntermediate) XXX_DiscardUnknown() {
+	xxx_messageInfo_SumOverTimeIntermediate.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SumOverTimeIntermediateProto proto.InternalMessageInfo
+var xxx_messageInfo_SumOverTimeIntermediate proto.InternalMessageInfo
 
-// SumOverTimeIntermediateListProto contains a list of SumOverTimeIntermediate results.
-type SumOverTimeIntermediateListProto struct {
-	Results []*SumOverTimeIntermediateProto `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+type SumOverTimeIntermediateList struct {
+	Results []SumOverTimeIntermediate `protobuf:"bytes,1,rep,name=results,proto3" json:"results"`
 }
 
-func (m *SumOverTimeIntermediateListProto) Reset()      { *m = SumOverTimeIntermediateListProto{} }
-func (*SumOverTimeIntermediateListProto) ProtoMessage() {}
-func (*SumOverTimeIntermediateListProto) Descriptor() ([]byte, []int) {
+func (m *SumOverTimeIntermediateList) Reset()      { *m = SumOverTimeIntermediateList{} }
+func (*SumOverTimeIntermediateList) ProtoMessage() {}
+func (*SumOverTimeIntermediateList) Descriptor() ([]byte, []int) {
 	return fileDescriptor_bc43311063e4cdd6, []int{1}
 }
-func (m *SumOverTimeIntermediateListProto) XXX_Unmarshal(b []byte) error {
+func (m *SumOverTimeIntermediateList) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *SumOverTimeIntermediateListProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *SumOverTimeIntermediateList) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SumOverTimeIntermediateListProto.Marshal(b, m, deterministic)
+		return xxx_messageInfo_SumOverTimeIntermediateList.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -92,36 +90,35 @@ func (m *SumOverTimeIntermediateListProto) XXX_Marshal(b []byte, deterministic b
 		return b[:n], nil
 	}
 }
-func (m *SumOverTimeIntermediateListProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SumOverTimeIntermediateListProto.Merge(m, src)
+func (m *SumOverTimeIntermediateList) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SumOverTimeIntermediateList.Merge(m, src)
 }
-func (m *SumOverTimeIntermediateListProto) XXX_Size() int {
+func (m *SumOverTimeIntermediateList) XXX_Size() int {
 	return m.Size()
 }
-func (m *SumOverTimeIntermediateListProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_SumOverTimeIntermediateListProto.DiscardUnknown(m)
+func (m *SumOverTimeIntermediateList) XXX_DiscardUnknown() {
+	xxx_messageInfo_SumOverTimeIntermediateList.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SumOverTimeIntermediateListProto proto.InternalMessageInfo
+var xxx_messageInfo_SumOverTimeIntermediateList proto.InternalMessageInfo
 
-// SingleSampleIntermediateProto is a generic protobuf representation for functions that track a single sample.
-type SingleSampleIntermediateProto struct {
+type SingleSampleIntermediate struct {
 	F        float64            `protobuf:"fixed64,1,opt,name=f,proto3" json:"f,omitempty"`
 	H        *mimirpb.Histogram `protobuf:"bytes,2,opt,name=h,proto3" json:"h,omitempty"`
 	HasFloat bool               `protobuf:"varint,3,opt,name=hasFloat,proto3" json:"hasFloat,omitempty"`
 }
 
-func (m *SingleSampleIntermediateProto) Reset()      { *m = SingleSampleIntermediateProto{} }
-func (*SingleSampleIntermediateProto) ProtoMessage() {}
-func (*SingleSampleIntermediateProto) Descriptor() ([]byte, []int) {
+func (m *SingleSampleIntermediate) Reset()      { *m = SingleSampleIntermediate{} }
+func (*SingleSampleIntermediate) ProtoMessage() {}
+func (*SingleSampleIntermediate) Descriptor() ([]byte, []int) {
 	return fileDescriptor_bc43311063e4cdd6, []int{2}
 }
-func (m *SingleSampleIntermediateProto) XXX_Unmarshal(b []byte) error {
+func (m *SingleSampleIntermediate) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *SingleSampleIntermediateProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *SingleSampleIntermediate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SingleSampleIntermediateProto.Marshal(b, m, deterministic)
+		return xxx_messageInfo_SingleSampleIntermediate.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -131,34 +128,33 @@ func (m *SingleSampleIntermediateProto) XXX_Marshal(b []byte, deterministic bool
 		return b[:n], nil
 	}
 }
-func (m *SingleSampleIntermediateProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SingleSampleIntermediateProto.Merge(m, src)
+func (m *SingleSampleIntermediate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SingleSampleIntermediate.Merge(m, src)
 }
-func (m *SingleSampleIntermediateProto) XXX_Size() int {
+func (m *SingleSampleIntermediate) XXX_Size() int {
 	return m.Size()
 }
-func (m *SingleSampleIntermediateProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_SingleSampleIntermediateProto.DiscardUnknown(m)
+func (m *SingleSampleIntermediate) XXX_DiscardUnknown() {
+	xxx_messageInfo_SingleSampleIntermediate.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SingleSampleIntermediateProto proto.InternalMessageInfo
+var xxx_messageInfo_SingleSampleIntermediate proto.InternalMessageInfo
 
-// SingleSampleIntermediateListProto contains a list of single sample intermediate results.
-type SingleSampleIntermediateListProto struct {
-	Results []*SingleSampleIntermediateProto `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+type SingleSampleIntermediateList struct {
+	Results []SingleSampleIntermediate `protobuf:"bytes,1,rep,name=results,proto3" json:"results"`
 }
 
-func (m *SingleSampleIntermediateListProto) Reset()      { *m = SingleSampleIntermediateListProto{} }
-func (*SingleSampleIntermediateListProto) ProtoMessage() {}
-func (*SingleSampleIntermediateListProto) Descriptor() ([]byte, []int) {
+func (m *SingleSampleIntermediateList) Reset()      { *m = SingleSampleIntermediateList{} }
+func (*SingleSampleIntermediateList) ProtoMessage() {}
+func (*SingleSampleIntermediateList) Descriptor() ([]byte, []int) {
 	return fileDescriptor_bc43311063e4cdd6, []int{3}
 }
-func (m *SingleSampleIntermediateListProto) XXX_Unmarshal(b []byte) error {
+func (m *SingleSampleIntermediateList) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *SingleSampleIntermediateListProto) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *SingleSampleIntermediateList) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SingleSampleIntermediateListProto.Marshal(b, m, deterministic)
+		return xxx_messageInfo_SingleSampleIntermediateList.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -168,63 +164,169 @@ func (m *SingleSampleIntermediateListProto) XXX_Marshal(b []byte, deterministic 
 		return b[:n], nil
 	}
 }
-func (m *SingleSampleIntermediateListProto) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SingleSampleIntermediateListProto.Merge(m, src)
+func (m *SingleSampleIntermediateList) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SingleSampleIntermediateList.Merge(m, src)
 }
-func (m *SingleSampleIntermediateListProto) XXX_Size() int {
+func (m *SingleSampleIntermediateList) XXX_Size() int {
 	return m.Size()
 }
-func (m *SingleSampleIntermediateListProto) XXX_DiscardUnknown() {
-	xxx_messageInfo_SingleSampleIntermediateListProto.DiscardUnknown(m)
+func (m *SingleSampleIntermediateList) XXX_DiscardUnknown() {
+	xxx_messageInfo_SingleSampleIntermediateList.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_SingleSampleIntermediateListProto proto.InternalMessageInfo
+var xxx_messageInfo_SingleSampleIntermediateList proto.InternalMessageInfo
+
+type RateIntermediate struct {
+	SampleCount int64 `protobuf:"varint,1,opt,name=sample_count,json=sampleCount,proto3" json:"sample_count,omitempty"`
+	IsHistogram bool  `protobuf:"varint,2,opt,name=is_histogram,json=isHistogram,proto3" json:"is_histogram,omitempty"`
+	// For floats
+	FirstSample *mimirpb.Sample `protobuf:"bytes,3,opt,name=first_sample,json=firstSample,proto3" json:"first_sample,omitempty"`
+	LastSample  *mimirpb.Sample `protobuf:"bytes,4,opt,name=last_sample,json=lastSample,proto3" json:"last_sample,omitempty"`
+	Delta       float64         `protobuf:"fixed64,5,opt,name=delta,proto3" json:"delta,omitempty"`
+	// For histograms
+	FirstHistogram                 *mimirpb.Histogram `protobuf:"bytes,10,opt,name=first_histogram,json=firstHistogram,proto3" json:"first_histogram,omitempty"`
+	LastHistogram                  *mimirpb.Histogram `protobuf:"bytes,11,opt,name=last_histogram,json=lastHistogram,proto3" json:"last_histogram,omitempty"`
+	DeltaHistogram                 *mimirpb.Histogram `protobuf:"bytes,12,opt,name=delta_histogram,json=deltaHistogram,proto3" json:"delta_histogram,omitempty"`
+	FirstHistogramCountBeforeReset float64            `protobuf:"fixed64,13,opt,name=first_histogram_count_before_reset,json=firstHistogramCountBeforeReset,proto3" json:"first_histogram_count_before_reset,omitempty"`
+	FirstHistogramTimestamp        int64              `protobuf:"varint,14,opt,name=first_histogram_timestamp,json=firstHistogramTimestamp,proto3" json:"first_histogram_timestamp,omitempty"`
+	LastHistogramTimestamp         int64              `protobuf:"varint,15,opt,name=last_histogram_timestamp,json=lastHistogramTimestamp,proto3" json:"last_histogram_timestamp,omitempty"`
+	// Split range boundaries (for extrapolation in combine phase)
+	SplitRangeStart int64 `protobuf:"varint,16,opt,name=split_range_start,json=splitRangeStart,proto3" json:"split_range_start,omitempty"`
+	SplitRangeEnd   int64 `protobuf:"varint,17,opt,name=split_range_end,json=splitRangeEnd,proto3" json:"split_range_end,omitempty"`
+}
+
+func (m *RateIntermediate) Reset()      { *m = RateIntermediate{} }
+func (*RateIntermediate) ProtoMessage() {}
+func (*RateIntermediate) Descriptor() ([]byte, []int) {
+	return fileDescriptor_bc43311063e4cdd6, []int{4}
+}
+func (m *RateIntermediate) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *RateIntermediate) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_RateIntermediate.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *RateIntermediate) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_RateIntermediate.Merge(m, src)
+}
+func (m *RateIntermediate) XXX_Size() int {
+	return m.Size()
+}
+func (m *RateIntermediate) XXX_DiscardUnknown() {
+	xxx_messageInfo_RateIntermediate.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_RateIntermediate proto.InternalMessageInfo
+
+type RateIntermediateList struct {
+	Results []RateIntermediate `protobuf:"bytes,1,rep,name=results,proto3" json:"results"`
+}
+
+func (m *RateIntermediateList) Reset()      { *m = RateIntermediateList{} }
+func (*RateIntermediateList) ProtoMessage() {}
+func (*RateIntermediateList) Descriptor() ([]byte, []int) {
+	return fileDescriptor_bc43311063e4cdd6, []int{5}
+}
+func (m *RateIntermediateList) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *RateIntermediateList) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_RateIntermediateList.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *RateIntermediateList) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_RateIntermediateList.Merge(m, src)
+}
+func (m *RateIntermediateList) XXX_Size() int {
+	return m.Size()
+}
+func (m *RateIntermediateList) XXX_DiscardUnknown() {
+	xxx_messageInfo_RateIntermediateList.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_RateIntermediateList proto.InternalMessageInfo
 
 func init() {
-	proto.RegisterType((*SumOverTimeIntermediateProto)(nil), "thanos.SumOverTimeIntermediateProto")
-	proto.RegisterType((*SumOverTimeIntermediateListProto)(nil), "thanos.SumOverTimeIntermediateListProto")
-	proto.RegisterType((*SingleSampleIntermediateProto)(nil), "thanos.SingleSampleIntermediateProto")
-	proto.RegisterType((*SingleSampleIntermediateListProto)(nil), "thanos.SingleSampleIntermediateListProto")
+	proto.RegisterType((*SumOverTimeIntermediate)(nil), "thanos.SumOverTimeIntermediate")
+	proto.RegisterType((*SumOverTimeIntermediateList)(nil), "thanos.SumOverTimeIntermediateList")
+	proto.RegisterType((*SingleSampleIntermediate)(nil), "thanos.SingleSampleIntermediate")
+	proto.RegisterType((*SingleSampleIntermediateList)(nil), "thanos.SingleSampleIntermediateList")
+	proto.RegisterType((*RateIntermediate)(nil), "thanos.RateIntermediate")
+	proto.RegisterType((*RateIntermediateList)(nil), "thanos.RateIntermediateList")
 }
 
 func init() { proto.RegisterFile("split_functions.proto", fileDescriptor_bc43311063e4cdd6) }
 
 var fileDescriptor_bc43311063e4cdd6 = []byte{
-	// 381 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x92, 0x31, 0x6b, 0xdb, 0x40,
-	0x14, 0xc7, 0xf5, 0x6a, 0xe3, 0xba, 0xe7, 0x4e, 0x6a, 0x0b, 0xc2, 0xb4, 0x87, 0x2c, 0x5a, 0xaa,
-	0x49, 0x2a, 0xee, 0xde, 0x42, 0x0d, 0xc6, 0x85, 0x42, 0x8b, 0xdd, 0x29, 0x4b, 0x38, 0xd9, 0x27,
-	0xe9, 0x88, 0x4e, 0x27, 0xee, 0x4e, 0x21, 0x63, 0xf6, 0x2c, 0xf9, 0x18, 0xf9, 0x28, 0x1e, 0x3d,
-	0x7a, 0x8c, 0xe4, 0x25, 0xa3, 0x3f, 0x42, 0x88, 0xe4, 0x28, 0x38, 0xc4, 0x9e, 0xee, 0x7f, 0x8f,
-	0xf7, 0x78, 0xff, 0xdf, 0x9f, 0x87, 0x3e, 0xa8, 0x2c, 0x61, 0xfa, 0x34, 0xcc, 0xd3, 0xb9, 0x66,
-	0x22, 0x55, 0x5e, 0x26, 0x85, 0x16, 0x66, 0x47, 0xc7, 0x24, 0x15, 0xaa, 0xff, 0x2d, 0x62, 0x3a,
-	0xce, 0x03, 0x6f, 0x2e, 0xb8, 0x1f, 0x49, 0x12, 0x92, 0x94, 0xf8, 0x9c, 0x71, 0x26, 0xfd, 0xec,
-	0x2c, 0xaa, 0x55, 0x16, 0xd4, 0x6f, 0x3d, 0xd9, 0x7f, 0x1f, 0x89, 0x48, 0x54, 0xd2, 0x7f, 0x50,
-	0x75, 0xd5, 0xb9, 0x02, 0xf4, 0x71, 0x96, 0xf3, 0xbf, 0xe7, 0x54, 0xfe, 0x67, 0x9c, 0xfe, 0x4e,
-	0x35, 0x95, 0x9c, 0x2e, 0x18, 0xd1, 0xf4, 0x5f, 0xb5, 0xd0, 0x44, 0x6d, 0x95, 0xf3, 0xb1, 0x05,
-	0x36, 0xb8, 0x30, 0xad, 0xb4, 0xd9, 0x47, 0xdd, 0x98, 0xa8, 0x71, 0x22, 0x88, 0xb6, 0x5e, 0xd9,
-	0xe0, 0x76, 0xa7, 0xcd, 0x7f, 0xd7, 0x3f, 0xb2, 0x5a, 0x4d, 0xff, 0xc8, 0xfc, 0x5a, 0xd5, 0x26,
-	0x56, 0xdb, 0x06, 0xb7, 0x37, 0x7c, 0xe7, 0xcd, 0x85, 0xd4, 0xf4, 0x22, 0x0b, 0xbc, 0x09, 0x53,
-	0x5a, 0x44, 0x92, 0xf0, 0xaa, 0x71, 0xe2, 0x04, 0xc8, 0x3e, 0x60, 0xe6, 0x0f, 0x53, 0xba, 0x36,
-	0xf4, 0x03, 0xbd, 0x96, 0x54, 0xe5, 0x89, 0x56, 0x16, 0xd8, 0x2d, 0xb7, 0x37, 0xfc, 0xec, 0xd5,
-	0x99, 0x78, 0xc7, 0x38, 0xa6, 0x8f, 0x43, 0x4e, 0x82, 0x3e, 0xcd, 0x58, 0x1a, 0x25, 0x74, 0x46,
-	0x78, 0x96, 0xbc, 0x40, 0xfc, 0x16, 0x41, 0xb8, 0xc3, 0x85, 0xd0, 0x1c, 0x20, 0x88, 0x2b, 0xc8,
-	0x03, 0xc6, 0x21, 0xde, 0x8b, 0xa3, 0xb5, 0x1f, 0x87, 0xb3, 0x40, 0x83, 0x43, 0xdb, 0x9e, 0x90,
-	0x7e, 0x3e, 0x47, 0xfa, 0xd2, 0x20, 0x1d, 0x73, 0xda, 0x30, 0xfd, 0x1a, 0x2d, 0x0b, 0x6c, 0xac,
-	0x0a, 0x6c, 0xac, 0x0b, 0x6c, 0x6c, 0x0b, 0x0c, 0x97, 0x25, 0x86, 0x9b, 0x12, 0xc3, 0xb2, 0xc4,
-	0xb0, 0x2a, 0x31, 0xdc, 0x96, 0x18, 0xee, 0x4a, 0x6c, 0x6c, 0x4b, 0x0c, 0xd7, 0x1b, 0x6c, 0xac,
-	0x36, 0xd8, 0x58, 0x6f, 0xb0, 0x71, 0xf2, 0xa6, 0x39, 0xb0, 0xa0, 0x53, 0x5d, 0xc4, 0xf7, 0xfb,
-	0x00, 0x00, 0x00, 0xff, 0xff, 0xe7, 0x6c, 0x8e, 0xdd, 0x7a, 0x02, 0x00, 0x00,
+	// 644 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x7c, 0x94, 0x4f, 0x6f, 0xd3, 0x30,
+	0x18, 0xc6, 0x63, 0xda, 0x8d, 0xf1, 0xa6, 0x5b, 0xb7, 0x30, 0x58, 0x18, 0xc8, 0xeb, 0x7a, 0x80,
+	0x8a, 0x43, 0x0b, 0xdb, 0x65, 0x9a, 0x26, 0x81, 0x56, 0x31, 0x0d, 0x84, 0x04, 0x4a, 0x77, 0xe2,
+	0x40, 0x70, 0x5b, 0x37, 0xb5, 0xc8, 0x3f, 0xd9, 0x2e, 0xe2, 0xc8, 0x89, 0x33, 0x1f, 0x82, 0x03,
+	0x1f, 0x65, 0xc7, 0x1d, 0x77, 0x42, 0x34, 0xbb, 0x70, 0xdc, 0x47, 0x40, 0xb1, 0xdb, 0x66, 0x89,
+	0x14, 0x4e, 0xb1, 0xdf, 0x3c, 0xbf, 0xf8, 0x79, 0x5e, 0xc7, 0x86, 0x7b, 0x22, 0xf6, 0x99, 0x74,
+	0x47, 0x93, 0x70, 0x20, 0x59, 0x14, 0x8a, 0x76, 0xcc, 0x23, 0x19, 0x59, 0xcb, 0x72, 0x4c, 0xc2,
+	0x48, 0x6c, 0x3f, 0xf3, 0x98, 0x1c, 0x4f, 0xfa, 0xed, 0x41, 0x14, 0x74, 0x3c, 0x4e, 0x46, 0x24,
+	0x24, 0x9d, 0x80, 0x05, 0x8c, 0x77, 0xe2, 0xcf, 0x9e, 0x1e, 0xc5, 0x7d, 0xfd, 0xd4, 0xe4, 0xf6,
+	0xa6, 0x17, 0x79, 0x91, 0x1a, 0x76, 0xd2, 0x91, 0xae, 0x36, 0xbf, 0x23, 0xd8, 0xea, 0x4d, 0x82,
+	0x77, 0x5f, 0x28, 0x3f, 0x63, 0x01, 0x7d, 0x1d, 0x4a, 0xca, 0x03, 0x3a, 0x64, 0x44, 0x52, 0xcb,
+	0x82, 0xaa, 0x98, 0x04, 0x27, 0x36, 0x6a, 0xa0, 0x16, 0x72, 0xd4, 0xd8, 0xda, 0x86, 0x95, 0x31,
+	0x11, 0x27, 0x7e, 0x44, 0xa4, 0x7d, 0xab, 0x81, 0x5a, 0x2b, 0xce, 0x62, 0x3e, 0xd3, 0x77, 0xed,
+	0xca, 0x42, 0xdf, 0xb5, 0x9e, 0xa8, 0xda, 0xa9, 0x5d, 0x6d, 0xa0, 0x96, 0xb9, 0x77, 0xb7, 0x3d,
+	0x88, 0xb8, 0xa4, 0x5f, 0xe3, 0x7e, 0xfb, 0x94, 0x09, 0x19, 0x79, 0x9c, 0x04, 0x4a, 0x78, 0xda,
+	0xfc, 0x08, 0x0f, 0x4b, 0x7c, 0xbc, 0x65, 0x42, 0x5a, 0x2f, 0xe0, 0x36, 0xa7, 0x62, 0xe2, 0x4b,
+	0x61, 0xa3, 0x46, 0xa5, 0x65, 0xee, 0xed, 0xb4, 0x75, 0x27, 0xda, 0x25, 0xd4, 0x71, 0xf5, 0xfc,
+	0xf7, 0x8e, 0xe1, 0xcc, 0xa9, 0xa6, 0x07, 0x76, 0x8f, 0x85, 0x9e, 0x4f, 0x7b, 0x24, 0x88, 0xfd,
+	0x7c, 0xd0, 0x1a, 0xa0, 0xd1, 0x2c, 0x25, 0x1a, 0x59, 0xbb, 0x80, 0xc6, 0x2a, 0x5b, 0x89, 0x5f,
+	0x34, 0xce, 0x75, 0xa1, 0x92, 0xef, 0x42, 0xf3, 0x13, 0x3c, 0x2a, 0x5b, 0x48, 0x25, 0x79, 0x59,
+	0x4c, 0xd2, 0x58, 0x24, 0x29, 0xc1, 0x8a, 0x51, 0x7e, 0x2e, 0xc1, 0xba, 0x43, 0x64, 0x3e, 0xc3,
+	0x2e, 0xd4, 0x84, 0x22, 0xdd, 0x41, 0x34, 0x09, 0xa5, 0x8a, 0x53, 0x71, 0x4c, 0x5d, 0xeb, 0xa6,
+	0xa5, 0x54, 0xc2, 0x84, 0x3b, 0x9e, 0x07, 0x99, 0xed, 0x9f, 0xc9, 0xc4, 0x22, 0x9b, 0xb5, 0x0f,
+	0xb5, 0x11, 0xe3, 0x42, 0xba, 0x9a, 0x53, 0xe1, 0xcc, 0xbd, 0xf5, 0xac, 0x0d, 0xda, 0x9d, 0x63,
+	0x2a, 0x95, 0x9e, 0x58, 0xcf, 0xc1, 0xf4, 0x49, 0xc6, 0x54, 0x4b, 0x18, 0x48, 0x45, 0x33, 0x64,
+	0x13, 0x96, 0x86, 0xd4, 0x97, 0xc4, 0x5e, 0x52, 0x5d, 0xd7, 0x13, 0xeb, 0x08, 0xea, 0x7a, 0xf5,
+	0xcc, 0x23, 0x94, 0xef, 0xc3, 0x9a, 0xd2, 0x66, 0xde, 0x0f, 0x61, 0x4d, 0xd9, 0xc8, 0x60, 0xb3,
+	0x1c, 0x5e, 0x4d, 0xa5, 0x19, 0x7b, 0x04, 0x75, 0x65, 0xe1, 0x06, 0x5c, 0xfb, 0xcf, 0xca, 0x4a,
+	0x9b, 0xd1, 0x6f, 0xa0, 0x59, 0xf0, 0xad, 0x37, 0xc1, 0xed, 0xd3, 0x51, 0xc4, 0xa9, 0xcb, 0xa9,
+	0xa0, 0xd2, 0x5e, 0x55, 0x51, 0x71, 0xde, 0xb5, 0xda, 0x99, 0x63, 0x25, 0x73, 0x52, 0x95, 0x75,
+	0x08, 0x0f, 0x8a, 0xdf, 0x92, 0x2c, 0xa0, 0x42, 0x92, 0x20, 0xb6, 0xd7, 0xd4, 0xa6, 0x6e, 0xe5,
+	0x3f, 0x71, 0x36, 0x7f, 0x6d, 0x1d, 0x80, 0x9d, 0xef, 0xc0, 0x0d, 0xb4, 0xae, 0xd0, 0xfb, 0xb9,
+	0xd8, 0x19, 0xf9, 0x14, 0x36, 0xf4, 0x7d, 0xc3, 0x49, 0xe8, 0x51, 0x57, 0x48, 0xc2, 0xa5, 0xbd,
+	0xae, 0x90, 0xba, 0x7a, 0xe1, 0xa4, 0xf5, 0x5e, 0x5a, 0xb6, 0x1e, 0x43, 0xfd, 0xa6, 0x96, 0x86,
+	0x43, 0x7b, 0x43, 0x29, 0x57, 0x33, 0xe5, 0xab, 0x70, 0xd8, 0x7c, 0x0f, 0x9b, 0xc5, 0xbf, 0x54,
+	0x1d, 0x80, 0x83, 0xe2, 0x01, 0xb0, 0xe7, 0x07, 0xa0, 0x28, 0x2f, 0xfc, 0xf8, 0xc7, 0xdd, 0xf3,
+	0x29, 0x36, 0x2e, 0xa6, 0xd8, 0xb8, 0x9c, 0x62, 0xe3, 0x7a, 0x8a, 0xd1, 0xb7, 0x04, 0xa3, 0x5f,
+	0x09, 0x46, 0xe7, 0x09, 0x46, 0x17, 0x09, 0x46, 0x7f, 0x12, 0x8c, 0xfe, 0x26, 0xd8, 0xb8, 0x4e,
+	0x30, 0xfa, 0x71, 0x85, 0x8d, 0x8b, 0x2b, 0x6c, 0x5c, 0x5e, 0x61, 0xe3, 0xc3, 0x9d, 0xc5, 0x3d,
+	0xda, 0x5f, 0x56, 0x17, 0xdf, 0xfe, 0xbf, 0x00, 0x00, 0x00, 0xff, 0xff, 0xf0, 0xed, 0x06, 0x9a,
+	0x61, 0x05, 0x00, 0x00,
 }
 
-func (this *SumOverTimeIntermediateProto) Equal(that interface{}) bool {
+func (this *SumOverTimeIntermediate) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*SumOverTimeIntermediateProto)
+	that1, ok := that.(*SumOverTimeIntermediate)
 	if !ok {
-		that2, ok := that.(SumOverTimeIntermediateProto)
+		that2, ok := that.(SumOverTimeIntermediate)
 		if ok {
 			that1 = &that2
 		} else {
@@ -250,14 +352,14 @@ func (this *SumOverTimeIntermediateProto) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *SumOverTimeIntermediateListProto) Equal(that interface{}) bool {
+func (this *SumOverTimeIntermediateList) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*SumOverTimeIntermediateListProto)
+	that1, ok := that.(*SumOverTimeIntermediateList)
 	if !ok {
-		that2, ok := that.(SumOverTimeIntermediateListProto)
+		that2, ok := that.(SumOverTimeIntermediateList)
 		if ok {
 			that1 = &that2
 		} else {
@@ -273,20 +375,20 @@ func (this *SumOverTimeIntermediateListProto) Equal(that interface{}) bool {
 		return false
 	}
 	for i := range this.Results {
-		if !this.Results[i].Equal(that1.Results[i]) {
+		if !this.Results[i].Equal(&that1.Results[i]) {
 			return false
 		}
 	}
 	return true
 }
-func (this *SingleSampleIntermediateProto) Equal(that interface{}) bool {
+func (this *SingleSampleIntermediate) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*SingleSampleIntermediateProto)
+	that1, ok := that.(*SingleSampleIntermediate)
 	if !ok {
-		that2, ok := that.(SingleSampleIntermediateProto)
+		that2, ok := that.(SingleSampleIntermediate)
 		if ok {
 			that1 = &that2
 		} else {
@@ -309,14 +411,14 @@ func (this *SingleSampleIntermediateProto) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *SingleSampleIntermediateListProto) Equal(that interface{}) bool {
+func (this *SingleSampleIntermediateList) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*SingleSampleIntermediateListProto)
+	that1, ok := that.(*SingleSampleIntermediateList)
 	if !ok {
-		that2, ok := that.(SingleSampleIntermediateListProto)
+		that2, ok := that.(SingleSampleIntermediateList)
 		if ok {
 			that1 = &that2
 		} else {
@@ -332,18 +434,107 @@ func (this *SingleSampleIntermediateListProto) Equal(that interface{}) bool {
 		return false
 	}
 	for i := range this.Results {
-		if !this.Results[i].Equal(that1.Results[i]) {
+		if !this.Results[i].Equal(&that1.Results[i]) {
 			return false
 		}
 	}
 	return true
 }
-func (this *SumOverTimeIntermediateProto) GoString() string {
+func (this *RateIntermediate) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*RateIntermediate)
+	if !ok {
+		that2, ok := that.(RateIntermediate)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.SampleCount != that1.SampleCount {
+		return false
+	}
+	if this.IsHistogram != that1.IsHistogram {
+		return false
+	}
+	if !this.FirstSample.Equal(that1.FirstSample) {
+		return false
+	}
+	if !this.LastSample.Equal(that1.LastSample) {
+		return false
+	}
+	if this.Delta != that1.Delta {
+		return false
+	}
+	if !this.FirstHistogram.Equal(that1.FirstHistogram) {
+		return false
+	}
+	if !this.LastHistogram.Equal(that1.LastHistogram) {
+		return false
+	}
+	if !this.DeltaHistogram.Equal(that1.DeltaHistogram) {
+		return false
+	}
+	if this.FirstHistogramCountBeforeReset != that1.FirstHistogramCountBeforeReset {
+		return false
+	}
+	if this.FirstHistogramTimestamp != that1.FirstHistogramTimestamp {
+		return false
+	}
+	if this.LastHistogramTimestamp != that1.LastHistogramTimestamp {
+		return false
+	}
+	if this.SplitRangeStart != that1.SplitRangeStart {
+		return false
+	}
+	if this.SplitRangeEnd != that1.SplitRangeEnd {
+		return false
+	}
+	return true
+}
+func (this *RateIntermediateList) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*RateIntermediateList)
+	if !ok {
+		that2, ok := that.(RateIntermediateList)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.Results) != len(that1.Results) {
+		return false
+	}
+	for i := range this.Results {
+		if !this.Results[i].Equal(&that1.Results[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *SumOverTimeIntermediate) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 8)
-	s = append(s, "&functions.SumOverTimeIntermediateProto{")
+	s = append(s, "&functions.SumOverTimeIntermediate{")
 	s = append(s, "SumF: "+fmt.Sprintf("%#v", this.SumF)+",\n")
 	s = append(s, "HasFloat: "+fmt.Sprintf("%#v", this.HasFloat)+",\n")
 	s = append(s, "SumC: "+fmt.Sprintf("%#v", this.SumC)+",\n")
@@ -353,24 +544,28 @@ func (this *SumOverTimeIntermediateProto) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *SumOverTimeIntermediateListProto) GoString() string {
+func (this *SumOverTimeIntermediateList) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 5)
-	s = append(s, "&functions.SumOverTimeIntermediateListProto{")
+	s = append(s, "&functions.SumOverTimeIntermediateList{")
 	if this.Results != nil {
-		s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+		vs := make([]SumOverTimeIntermediate, len(this.Results))
+		for i := range vs {
+			vs[i] = this.Results[i]
+		}
+		s = append(s, "Results: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *SingleSampleIntermediateProto) GoString() string {
+func (this *SingleSampleIntermediate) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 7)
-	s = append(s, "&functions.SingleSampleIntermediateProto{")
+	s = append(s, "&functions.SingleSampleIntermediate{")
 	s = append(s, "F: "+fmt.Sprintf("%#v", this.F)+",\n")
 	if this.H != nil {
 		s = append(s, "H: "+fmt.Sprintf("%#v", this.H)+",\n")
@@ -379,14 +574,66 @@ func (this *SingleSampleIntermediateProto) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *SingleSampleIntermediateListProto) GoString() string {
+func (this *SingleSampleIntermediateList) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 5)
-	s = append(s, "&functions.SingleSampleIntermediateListProto{")
+	s = append(s, "&functions.SingleSampleIntermediateList{")
 	if this.Results != nil {
-		s = append(s, "Results: "+fmt.Sprintf("%#v", this.Results)+",\n")
+		vs := make([]SingleSampleIntermediate, len(this.Results))
+		for i := range vs {
+			vs[i] = this.Results[i]
+		}
+		s = append(s, "Results: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *RateIntermediate) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 17)
+	s = append(s, "&functions.RateIntermediate{")
+	s = append(s, "SampleCount: "+fmt.Sprintf("%#v", this.SampleCount)+",\n")
+	s = append(s, "IsHistogram: "+fmt.Sprintf("%#v", this.IsHistogram)+",\n")
+	if this.FirstSample != nil {
+		s = append(s, "FirstSample: "+fmt.Sprintf("%#v", this.FirstSample)+",\n")
+	}
+	if this.LastSample != nil {
+		s = append(s, "LastSample: "+fmt.Sprintf("%#v", this.LastSample)+",\n")
+	}
+	s = append(s, "Delta: "+fmt.Sprintf("%#v", this.Delta)+",\n")
+	if this.FirstHistogram != nil {
+		s = append(s, "FirstHistogram: "+fmt.Sprintf("%#v", this.FirstHistogram)+",\n")
+	}
+	if this.LastHistogram != nil {
+		s = append(s, "LastHistogram: "+fmt.Sprintf("%#v", this.LastHistogram)+",\n")
+	}
+	if this.DeltaHistogram != nil {
+		s = append(s, "DeltaHistogram: "+fmt.Sprintf("%#v", this.DeltaHistogram)+",\n")
+	}
+	s = append(s, "FirstHistogramCountBeforeReset: "+fmt.Sprintf("%#v", this.FirstHistogramCountBeforeReset)+",\n")
+	s = append(s, "FirstHistogramTimestamp: "+fmt.Sprintf("%#v", this.FirstHistogramTimestamp)+",\n")
+	s = append(s, "LastHistogramTimestamp: "+fmt.Sprintf("%#v", this.LastHistogramTimestamp)+",\n")
+	s = append(s, "SplitRangeStart: "+fmt.Sprintf("%#v", this.SplitRangeStart)+",\n")
+	s = append(s, "SplitRangeEnd: "+fmt.Sprintf("%#v", this.SplitRangeEnd)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *RateIntermediateList) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&functions.RateIntermediateList{")
+	if this.Results != nil {
+		vs := make([]RateIntermediate, len(this.Results))
+		for i := range vs {
+			vs[i] = this.Results[i]
+		}
+		s = append(s, "Results: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -399,7 +646,7 @@ func valueToGoStringSplitFunctions(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
-func (m *SumOverTimeIntermediateProto) Marshal() (dAtA []byte, err error) {
+func (m *SumOverTimeIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -409,12 +656,12 @@ func (m *SumOverTimeIntermediateProto) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *SumOverTimeIntermediateProto) MarshalTo(dAtA []byte) (int, error) {
+func (m *SumOverTimeIntermediate) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SumOverTimeIntermediateProto) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *SumOverTimeIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -456,7 +703,7 @@ func (m *SumOverTimeIntermediateProto) MarshalToSizedBuffer(dAtA []byte) (int, e
 	return len(dAtA) - i, nil
 }
 
-func (m *SumOverTimeIntermediateListProto) Marshal() (dAtA []byte, err error) {
+func (m *SumOverTimeIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -466,12 +713,12 @@ func (m *SumOverTimeIntermediateListProto) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *SumOverTimeIntermediateListProto) MarshalTo(dAtA []byte) (int, error) {
+func (m *SumOverTimeIntermediateList) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SumOverTimeIntermediateListProto) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *SumOverTimeIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -493,7 +740,7 @@ func (m *SumOverTimeIntermediateListProto) MarshalToSizedBuffer(dAtA []byte) (in
 	return len(dAtA) - i, nil
 }
 
-func (m *SingleSampleIntermediateProto) Marshal() (dAtA []byte, err error) {
+func (m *SingleSampleIntermediate) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -503,12 +750,12 @@ func (m *SingleSampleIntermediateProto) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *SingleSampleIntermediateProto) MarshalTo(dAtA []byte) (int, error) {
+func (m *SingleSampleIntermediate) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SingleSampleIntermediateProto) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *SingleSampleIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -544,7 +791,7 @@ func (m *SingleSampleIntermediateProto) MarshalToSizedBuffer(dAtA []byte) (int, 
 	return len(dAtA) - i, nil
 }
 
-func (m *SingleSampleIntermediateListProto) Marshal() (dAtA []byte, err error) {
+func (m *SingleSampleIntermediateList) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -554,12 +801,183 @@ func (m *SingleSampleIntermediateListProto) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *SingleSampleIntermediateListProto) MarshalTo(dAtA []byte) (int, error) {
+func (m *SingleSampleIntermediateList) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SingleSampleIntermediateListProto) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *SingleSampleIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Results) > 0 {
+		for iNdEx := len(m.Results) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Results[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintSplitFunctions(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *RateIntermediate) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *RateIntermediate) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *RateIntermediate) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.SplitRangeEnd != 0 {
+		i = encodeVarintSplitFunctions(dAtA, i, uint64(m.SplitRangeEnd))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x88
+	}
+	if m.SplitRangeStart != 0 {
+		i = encodeVarintSplitFunctions(dAtA, i, uint64(m.SplitRangeStart))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x80
+	}
+	if m.LastHistogramTimestamp != 0 {
+		i = encodeVarintSplitFunctions(dAtA, i, uint64(m.LastHistogramTimestamp))
+		i--
+		dAtA[i] = 0x78
+	}
+	if m.FirstHistogramTimestamp != 0 {
+		i = encodeVarintSplitFunctions(dAtA, i, uint64(m.FirstHistogramTimestamp))
+		i--
+		dAtA[i] = 0x70
+	}
+	if m.FirstHistogramCountBeforeReset != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.FirstHistogramCountBeforeReset))))
+		i--
+		dAtA[i] = 0x69
+	}
+	if m.DeltaHistogram != nil {
+		{
+			size, err := m.DeltaHistogram.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSplitFunctions(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x62
+	}
+	if m.LastHistogram != nil {
+		{
+			size, err := m.LastHistogram.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSplitFunctions(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x5a
+	}
+	if m.FirstHistogram != nil {
+		{
+			size, err := m.FirstHistogram.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSplitFunctions(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x52
+	}
+	if m.Delta != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Delta))))
+		i--
+		dAtA[i] = 0x29
+	}
+	if m.LastSample != nil {
+		{
+			size, err := m.LastSample.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSplitFunctions(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.FirstSample != nil {
+		{
+			size, err := m.FirstSample.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintSplitFunctions(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.IsHistogram {
+		i--
+		if m.IsHistogram {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.SampleCount != 0 {
+		i = encodeVarintSplitFunctions(dAtA, i, uint64(m.SampleCount))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *RateIntermediateList) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *RateIntermediateList) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *RateIntermediateList) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -592,7 +1010,7 @@ func encodeVarintSplitFunctions(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *SumOverTimeIntermediateProto) Size() (n int) {
+func (m *SumOverTimeIntermediate) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -614,7 +1032,7 @@ func (m *SumOverTimeIntermediateProto) Size() (n int) {
 	return n
 }
 
-func (m *SumOverTimeIntermediateListProto) Size() (n int) {
+func (m *SumOverTimeIntermediateList) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -629,7 +1047,7 @@ func (m *SumOverTimeIntermediateListProto) Size() (n int) {
 	return n
 }
 
-func (m *SingleSampleIntermediateProto) Size() (n int) {
+func (m *SingleSampleIntermediate) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -648,7 +1066,75 @@ func (m *SingleSampleIntermediateProto) Size() (n int) {
 	return n
 }
 
-func (m *SingleSampleIntermediateListProto) Size() (n int) {
+func (m *SingleSampleIntermediateList) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Results) > 0 {
+		for _, e := range m.Results {
+			l = e.Size()
+			n += 1 + l + sovSplitFunctions(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *RateIntermediate) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.SampleCount != 0 {
+		n += 1 + sovSplitFunctions(uint64(m.SampleCount))
+	}
+	if m.IsHistogram {
+		n += 2
+	}
+	if m.FirstSample != nil {
+		l = m.FirstSample.Size()
+		n += 1 + l + sovSplitFunctions(uint64(l))
+	}
+	if m.LastSample != nil {
+		l = m.LastSample.Size()
+		n += 1 + l + sovSplitFunctions(uint64(l))
+	}
+	if m.Delta != 0 {
+		n += 9
+	}
+	if m.FirstHistogram != nil {
+		l = m.FirstHistogram.Size()
+		n += 1 + l + sovSplitFunctions(uint64(l))
+	}
+	if m.LastHistogram != nil {
+		l = m.LastHistogram.Size()
+		n += 1 + l + sovSplitFunctions(uint64(l))
+	}
+	if m.DeltaHistogram != nil {
+		l = m.DeltaHistogram.Size()
+		n += 1 + l + sovSplitFunctions(uint64(l))
+	}
+	if m.FirstHistogramCountBeforeReset != 0 {
+		n += 9
+	}
+	if m.FirstHistogramTimestamp != 0 {
+		n += 1 + sovSplitFunctions(uint64(m.FirstHistogramTimestamp))
+	}
+	if m.LastHistogramTimestamp != 0 {
+		n += 1 + sovSplitFunctions(uint64(m.LastHistogramTimestamp))
+	}
+	if m.SplitRangeStart != 0 {
+		n += 2 + sovSplitFunctions(uint64(m.SplitRangeStart))
+	}
+	if m.SplitRangeEnd != 0 {
+		n += 2 + sovSplitFunctions(uint64(m.SplitRangeEnd))
+	}
+	return n
+}
+
+func (m *RateIntermediateList) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -669,11 +1155,11 @@ func sovSplitFunctions(x uint64) (n int) {
 func sozSplitFunctions(x uint64) (n int) {
 	return sovSplitFunctions(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (this *SumOverTimeIntermediateProto) String() string {
+func (this *SumOverTimeIntermediate) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&SumOverTimeIntermediateProto{`,
+	s := strings.Join([]string{`&SumOverTimeIntermediate{`,
 		`SumF:` + fmt.Sprintf("%v", this.SumF) + `,`,
 		`HasFloat:` + fmt.Sprintf("%v", this.HasFloat) + `,`,
 		`SumC:` + fmt.Sprintf("%v", this.SumC) + `,`,
@@ -682,26 +1168,26 @@ func (this *SumOverTimeIntermediateProto) String() string {
 	}, "")
 	return s
 }
-func (this *SumOverTimeIntermediateListProto) String() string {
+func (this *SumOverTimeIntermediateList) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForResults := "[]*SumOverTimeIntermediateProto{"
+	repeatedStringForResults := "[]SumOverTimeIntermediate{"
 	for _, f := range this.Results {
-		repeatedStringForResults += strings.Replace(f.String(), "SumOverTimeIntermediateProto", "SumOverTimeIntermediateProto", 1) + ","
+		repeatedStringForResults += strings.Replace(strings.Replace(f.String(), "SumOverTimeIntermediate", "SumOverTimeIntermediate", 1), `&`, ``, 1) + ","
 	}
 	repeatedStringForResults += "}"
-	s := strings.Join([]string{`&SumOverTimeIntermediateListProto{`,
+	s := strings.Join([]string{`&SumOverTimeIntermediateList{`,
 		`Results:` + repeatedStringForResults + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *SingleSampleIntermediateProto) String() string {
+func (this *SingleSampleIntermediate) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&SingleSampleIntermediateProto{`,
+	s := strings.Join([]string{`&SingleSampleIntermediate{`,
 		`F:` + fmt.Sprintf("%v", this.F) + `,`,
 		`H:` + strings.Replace(fmt.Sprintf("%v", this.H), "Histogram", "mimirpb.Histogram", 1) + `,`,
 		`HasFloat:` + fmt.Sprintf("%v", this.HasFloat) + `,`,
@@ -709,16 +1195,53 @@ func (this *SingleSampleIntermediateProto) String() string {
 	}, "")
 	return s
 }
-func (this *SingleSampleIntermediateListProto) String() string {
+func (this *SingleSampleIntermediateList) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForResults := "[]*SingleSampleIntermediateProto{"
+	repeatedStringForResults := "[]SingleSampleIntermediate{"
 	for _, f := range this.Results {
-		repeatedStringForResults += strings.Replace(f.String(), "SingleSampleIntermediateProto", "SingleSampleIntermediateProto", 1) + ","
+		repeatedStringForResults += strings.Replace(strings.Replace(f.String(), "SingleSampleIntermediate", "SingleSampleIntermediate", 1), `&`, ``, 1) + ","
 	}
 	repeatedStringForResults += "}"
-	s := strings.Join([]string{`&SingleSampleIntermediateListProto{`,
+	s := strings.Join([]string{`&SingleSampleIntermediateList{`,
+		`Results:` + repeatedStringForResults + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *RateIntermediate) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&RateIntermediate{`,
+		`SampleCount:` + fmt.Sprintf("%v", this.SampleCount) + `,`,
+		`IsHistogram:` + fmt.Sprintf("%v", this.IsHistogram) + `,`,
+		`FirstSample:` + strings.Replace(fmt.Sprintf("%v", this.FirstSample), "Sample", "mimirpb.Sample", 1) + `,`,
+		`LastSample:` + strings.Replace(fmt.Sprintf("%v", this.LastSample), "Sample", "mimirpb.Sample", 1) + `,`,
+		`Delta:` + fmt.Sprintf("%v", this.Delta) + `,`,
+		`FirstHistogram:` + strings.Replace(fmt.Sprintf("%v", this.FirstHistogram), "Histogram", "mimirpb.Histogram", 1) + `,`,
+		`LastHistogram:` + strings.Replace(fmt.Sprintf("%v", this.LastHistogram), "Histogram", "mimirpb.Histogram", 1) + `,`,
+		`DeltaHistogram:` + strings.Replace(fmt.Sprintf("%v", this.DeltaHistogram), "Histogram", "mimirpb.Histogram", 1) + `,`,
+		`FirstHistogramCountBeforeReset:` + fmt.Sprintf("%v", this.FirstHistogramCountBeforeReset) + `,`,
+		`FirstHistogramTimestamp:` + fmt.Sprintf("%v", this.FirstHistogramTimestamp) + `,`,
+		`LastHistogramTimestamp:` + fmt.Sprintf("%v", this.LastHistogramTimestamp) + `,`,
+		`SplitRangeStart:` + fmt.Sprintf("%v", this.SplitRangeStart) + `,`,
+		`SplitRangeEnd:` + fmt.Sprintf("%v", this.SplitRangeEnd) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *RateIntermediateList) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForResults := "[]RateIntermediate{"
+	for _, f := range this.Results {
+		repeatedStringForResults += strings.Replace(strings.Replace(f.String(), "RateIntermediate", "RateIntermediate", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForResults += "}"
+	s := strings.Join([]string{`&RateIntermediateList{`,
 		`Results:` + repeatedStringForResults + `,`,
 		`}`,
 	}, "")
@@ -732,7 +1255,7 @@ func valueToStringSplitFunctions(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *SumOverTimeIntermediateProto) Unmarshal(dAtA []byte) error {
+func (m *SumOverTimeIntermediate) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -755,10 +1278,10 @@ func (m *SumOverTimeIntermediateProto) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: SumOverTimeIntermediateProto: wiretype end group for non-group")
+			return fmt.Errorf("proto: SumOverTimeIntermediate: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: SumOverTimeIntermediateProto: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: SumOverTimeIntermediate: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -860,7 +1383,7 @@ func (m *SumOverTimeIntermediateProto) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *SumOverTimeIntermediateListProto) Unmarshal(dAtA []byte) error {
+func (m *SumOverTimeIntermediateList) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -883,10 +1406,10 @@ func (m *SumOverTimeIntermediateListProto) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: SumOverTimeIntermediateListProto: wiretype end group for non-group")
+			return fmt.Errorf("proto: SumOverTimeIntermediateList: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: SumOverTimeIntermediateListProto: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: SumOverTimeIntermediateList: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -918,7 +1441,7 @@ func (m *SumOverTimeIntermediateListProto) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Results = append(m.Results, &SumOverTimeIntermediateProto{})
+			m.Results = append(m.Results, SumOverTimeIntermediate{})
 			if err := m.Results[len(m.Results)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -944,7 +1467,7 @@ func (m *SumOverTimeIntermediateListProto) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *SingleSampleIntermediateProto) Unmarshal(dAtA []byte) error {
+func (m *SingleSampleIntermediate) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -967,10 +1490,10 @@ func (m *SingleSampleIntermediateProto) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: SingleSampleIntermediateProto: wiretype end group for non-group")
+			return fmt.Errorf("proto: SingleSampleIntermediate: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: SingleSampleIntermediateProto: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: SingleSampleIntermediate: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1061,7 +1584,7 @@ func (m *SingleSampleIntermediateProto) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *SingleSampleIntermediateListProto) Unmarshal(dAtA []byte) error {
+func (m *SingleSampleIntermediateList) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1084,10 +1607,10 @@ func (m *SingleSampleIntermediateListProto) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: SingleSampleIntermediateListProto: wiretype end group for non-group")
+			return fmt.Errorf("proto: SingleSampleIntermediateList: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: SingleSampleIntermediateListProto: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: SingleSampleIntermediateList: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1119,7 +1642,458 @@ func (m *SingleSampleIntermediateListProto) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Results = append(m.Results, &SingleSampleIntermediateProto{})
+			m.Results = append(m.Results, SingleSampleIntermediate{})
+			if err := m.Results[len(m.Results)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSplitFunctions(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *RateIntermediate) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSplitFunctions
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: RateIntermediate: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: RateIntermediate: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SampleCount", wireType)
+			}
+			m.SampleCount = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SampleCount |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field IsHistogram", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.IsHistogram = bool(v != 0)
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FirstSample", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.FirstSample == nil {
+				m.FirstSample = &mimirpb.Sample{}
+			}
+			if err := m.FirstSample.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LastSample", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.LastSample == nil {
+				m.LastSample = &mimirpb.Sample{}
+			}
+			if err := m.LastSample.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Delta", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.Delta = float64(math.Float64frombits(v))
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FirstHistogram", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.FirstHistogram == nil {
+				m.FirstHistogram = &mimirpb.Histogram{}
+			}
+			if err := m.FirstHistogram.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 11:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LastHistogram", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.LastHistogram == nil {
+				m.LastHistogram = &mimirpb.Histogram{}
+			}
+			if err := m.LastHistogram.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 12:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DeltaHistogram", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.DeltaHistogram == nil {
+				m.DeltaHistogram = &mimirpb.Histogram{}
+			}
+			if err := m.DeltaHistogram.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 13:
+			if wireType != 1 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FirstHistogramCountBeforeReset", wireType)
+			}
+			var v uint64
+			if (iNdEx + 8) > l {
+				return io.ErrUnexpectedEOF
+			}
+			v = uint64(encoding_binary.LittleEndian.Uint64(dAtA[iNdEx:]))
+			iNdEx += 8
+			m.FirstHistogramCountBeforeReset = float64(math.Float64frombits(v))
+		case 14:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FirstHistogramTimestamp", wireType)
+			}
+			m.FirstHistogramTimestamp = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.FirstHistogramTimestamp |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 15:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field LastHistogramTimestamp", wireType)
+			}
+			m.LastHistogramTimestamp = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.LastHistogramTimestamp |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 16:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SplitRangeStart", wireType)
+			}
+			m.SplitRangeStart = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SplitRangeStart |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 17:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SplitRangeEnd", wireType)
+			}
+			m.SplitRangeEnd = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.SplitRangeEnd |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipSplitFunctions(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *RateIntermediateList) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowSplitFunctions
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: RateIntermediateList: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: RateIntermediateList: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Results", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowSplitFunctions
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthSplitFunctions
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Results = append(m.Results, RateIntermediate{})
 			if err := m.Results[len(m.Results)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}

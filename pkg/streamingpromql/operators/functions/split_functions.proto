@@ -20,27 +20,49 @@ option (gogoproto.unmarshaler_all) = true;
 // Protobuf messages for splittable range vector functions.
 // These messages are used to serialize intermediate results for caching during query splitting.
 
-// SumOverTimeIntermediateProto is the protobuf representation of a single SumOverTimeIntermediate.
-message SumOverTimeIntermediateProto {
+message SumOverTimeIntermediate {
   double sumF = 1;
   bool hasFloat = 2;
   double sumC = 3;
   cortexpb.Histogram sumH = 4;
 }
 
-// SumOverTimeIntermediateListProto contains a list of SumOverTimeIntermediate results.
-message SumOverTimeIntermediateListProto {
-  repeated SumOverTimeIntermediateProto results = 1;
+message SumOverTimeIntermediateList {
+  repeated SumOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
 }
 
-// SingleSampleIntermediateProto is a generic protobuf representation for functions that track a single sample.
-message SingleSampleIntermediateProto {
+message SingleSampleIntermediate {
   double f = 1;
   cortexpb.Histogram h = 2;
   bool hasFloat = 3;
 }
 
-// SingleSampleIntermediateListProto contains a list of single sample intermediate results.
-message SingleSampleIntermediateListProto {
-  repeated SingleSampleIntermediateProto results = 1;
+message SingleSampleIntermediateList {
+  repeated SingleSampleIntermediate results = 1 [(gogoproto.nullable) = false];
+}
+
+message RateIntermediate {
+  int64 sample_count = 1;
+  bool is_histogram = 2;
+
+  // For floats
+  cortexpb.Sample first_sample = 3;
+  cortexpb.Sample last_sample = 4;
+  double delta = 5;
+
+  // For histograms
+  cortexpb.Histogram first_histogram = 10;
+  cortexpb.Histogram last_histogram = 11;
+  cortexpb.Histogram delta_histogram = 12;
+  double first_histogram_count_before_reset = 13;
+  int64 first_histogram_timestamp = 14;
+  int64 last_histogram_timestamp = 15;
+
+  // Split range boundaries (for extrapolation in combine phase)
+  int64 split_range_start = 16;
+  int64 split_range_end = 17;
+}
+
+message RateIntermediateList {
+  repeated RateIntermediate results = 1 [(gogoproto.nullable) = false];
 }

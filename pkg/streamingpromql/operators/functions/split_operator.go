@@ -179,7 +179,7 @@ func (m *SplittingFunctionOverRangeVector[T]) createSplits(ctx context.Context) 
 		}
 	}
 
-	// Finalize any remaining uncached ranges
+	// Flush any remaining uncached ranges
 	if currentUncachedRanges != nil {
 		lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
 		operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)

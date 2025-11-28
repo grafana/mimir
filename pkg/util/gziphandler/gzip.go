@@ -276,7 +276,7 @@ func (w *GzipResponseWriter) Flush() {
 	if w.gw == nil && !w.ignore {
 		// Only flush once startGzip or startPlain has been called.
 		//
-		// Finalize is thus a no-op until we're certain whether a plain
+		// Flush is thus a no-op until we're certain whether a plain
 		// or gzipped response will be served.
 		return
 	}
