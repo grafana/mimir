@@ -334,118 +334,70 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 0,
-									StepT:       0,
-									RangeStart:  -11_000,
-									RangeEnd:    0,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 0},
-									},
-								},
-							},
-						},
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 0,
+					StepT:       0,
+					RangeStart:  -11_000,
+					RangeEnd:    0,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 0},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 0,
-									StepT:       10_000,
-									RangeStart:  -1_000,
-									RangeEnd:    10_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 0},
-										{TimestampMs: 10_000, Value: 1},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 0,
+					StepT:       10_000,
+					RangeStart:  -1_000,
+					RangeEnd:    10_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 0},
+						{TimestampMs: 10_000, Value: 1},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 0,
-									StepT:       20_000,
-									RangeStart:  9_000,
-									RangeEnd:    20_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 10_000, Value: 1},
-										{TimestampMs: 20_000, Value: 2},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 0,
+					StepT:       20_000,
+					RangeStart:  9_000,
+					RangeEnd:    20_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 10_000, Value: 1},
+						{TimestampMs: 20_000, Value: 2},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 1,
-									StepT:       0,
-									RangeStart:  -11_000,
-									RangeEnd:    0,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 1},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       0,
+					RangeStart:  -11_000,
+					RangeEnd:    0,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 1},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 1,
-									StepT:       10_000,
-									RangeStart:  -1_000,
-									RangeEnd:    10_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 1},
-										{TimestampMs: 10_000, Value: 3},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       10_000,
+					RangeStart:  -1_000,
+					RangeEnd:    10_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 1},
+						{TimestampMs: 10_000, Value: 3},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 1,
-									StepT:       20_000,
-									RangeStart:  9_000,
-									RangeEnd:    20_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 10_000, Value: 3},
-										{TimestampMs: 20_000, Value: 5},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       20_000,
+					RangeStart:  9_000,
+					RangeEnd:    20_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 10_000, Value: 3},
+						{TimestampMs: 20_000, Value: 5},
 					},
-				},
+				}),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   6,
 					QueueTime:          3 * time.Second,
@@ -706,178 +658,106 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 0,
-									StepT:       0,
-									RangeStart:  -11_000,
-									RangeEnd:    0,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 0},
-									},
-								},
-							},
-						},
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 0,
+					StepT:       0,
+					RangeStart:  -11_000,
+					RangeEnd:    0,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 0},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 0,
-									StepT:       10_000,
-									RangeStart:  -1_000,
-									RangeEnd:    10_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 0},
-										{TimestampMs: 10_000, Value: 1},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 0,
+					StepT:       10_000,
+					RangeStart:  -1_000,
+					RangeEnd:    10_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 0},
+						{TimestampMs: 10_000, Value: 1},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 0,
-									StepT:       20_000,
-									RangeStart:  9_000,
-									RangeEnd:    20_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 10_000, Value: 1},
-										{TimestampMs: 20_000, Value: 2},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 0,
+					StepT:       20_000,
+					RangeStart:  9_000,
+					RangeEnd:    20_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 10_000, Value: 1},
+						{TimestampMs: 20_000, Value: 2},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 1,
-									StepT:       0,
-									RangeStart:  -11_000,
-									RangeEnd:    0,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 1},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       0,
+					RangeStart:  -11_000,
+					RangeEnd:    0,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 1},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 1,
-									StepT:       10_000,
-									RangeStart:  -1_000,
-									RangeEnd:    10_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 1},
-										{TimestampMs: 10_000, Value: 3},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       10_000,
+					RangeStart:  -1_000,
+					RangeEnd:    10_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 1},
+						{TimestampMs: 10_000, Value: 3},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   1,
-									SeriesIndex: 1,
-									StepT:       20_000,
-									RangeStart:  9_000,
-									RangeEnd:    20_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 10_000, Value: 3},
-										{TimestampMs: 20_000, Value: 5},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       20_000,
+					RangeStart:  9_000,
+					RangeEnd:    20_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 10_000, Value: 3},
+						{TimestampMs: 20_000, Value: 5},
 					},
-				},
+				}),
 				newSeriesMetadataMessage(
 					3,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   3,
-									SeriesIndex: 0,
-									StepT:       0,
-									RangeStart:  -11_000,
-									RangeEnd:    0,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 2},
-									},
-								},
-							},
-						},
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   3,
+					SeriesIndex: 0,
+					StepT:       0,
+					RangeStart:  -11_000,
+					RangeEnd:    0,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 2},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   3,
-									SeriesIndex: 0,
-									StepT:       10_000,
-									RangeStart:  -1_000,
-									RangeEnd:    10_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 2},
-										{TimestampMs: 10_000, Value: 5},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   3,
+					SeriesIndex: 0,
+					StepT:       10_000,
+					RangeStart:  -1_000,
+					RangeEnd:    10_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 2},
+						{TimestampMs: 10_000, Value: 5},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   3,
-									SeriesIndex: 0,
-									StepT:       20_000,
-									RangeStart:  9_000,
-									RangeEnd:    20_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 10_000, Value: 5},
-										{TimestampMs: 20_000, Value: 8},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   3,
+					SeriesIndex: 0,
+					StepT:       20_000,
+					RangeStart:  9_000,
+					RangeEnd:    20_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 10_000, Value: 5},
+						{TimestampMs: 20_000, Value: 8},
 					},
-				},
+				}),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
@@ -967,62 +847,38 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					3,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
 				),
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   3,
-									SeriesIndex: 0,
-									StepT:       0,
-									RangeStart:  -11_000,
-									RangeEnd:    0,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 2},
-									},
-								},
-							},
-						},
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   3,
+					SeriesIndex: 0,
+					StepT:       0,
+					RangeStart:  -11_000,
+					RangeEnd:    0,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 2},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   3,
-									SeriesIndex: 0,
-									StepT:       10_000,
-									RangeStart:  -1_000,
-									RangeEnd:    10_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 0, Value: 2},
-										{TimestampMs: 10_000, Value: 5},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   3,
+					SeriesIndex: 0,
+					StepT:       10_000,
+					RangeStart:  -1_000,
+					RangeEnd:    10_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 2},
+						{TimestampMs: 10_000, Value: 5},
 					},
-				},
-				{
-					Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
-						EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
-							Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
-								RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-									NodeIndex:   3,
-									SeriesIndex: 0,
-									StepT:       20_000,
-									RangeStart:  9_000,
-									RangeEnd:    20_000,
-									Floats: []mimirpb.Sample{
-										{TimestampMs: 10_000, Value: 5},
-										{TimestampMs: 20_000, Value: 8},
-									},
-								},
-							},
-						},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   3,
+					SeriesIndex: 0,
+					StepT:       20_000,
+					RangeStart:  9_000,
+					RangeEnd:    20_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 10_000, Value: 5},
+						{TimestampMs: 20_000, Value: 8},
 					},
-				},
+				}),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,
@@ -1619,6 +1475,18 @@ func newInstantVectorSeriesDataMessage(nodeIndex int64, series ...querierpb.Inst
 						NodeIndex: nodeIndex,
 						Series:    series,
 					},
+				},
+			},
+		},
+	}
+}
+
+func newRangeVectorStepDataMessage(data querierpb.EvaluateQueryResponseRangeVectorStepData) *frontendv2pb.QueryResultStreamRequest {
+	return &frontendv2pb.QueryResultStreamRequest{
+		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
+			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
+				Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
+					RangeVectorStepData: &data,
 				},
 			},
 		},
