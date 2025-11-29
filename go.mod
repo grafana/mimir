@@ -58,7 +58,7 @@ require (
 	github.com/cortexproject/promqlsmith v0.0.0-20251018201159-9e00e5e62e4e
 	github.com/dennwc/varint v1.0.0
 	github.com/felixge/fgprof v0.9.5
-	github.com/go-openapi/swag/jsonutils v0.25.3
+	github.com/go-openapi/swag/jsonutils v0.25.4
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v79 v79.0.0
@@ -130,14 +130,14 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-openapi/swag/cmdutils v0.25.1 // indirect
-	github.com/go-openapi/swag/conv v0.25.3 // indirect
+	github.com/go-openapi/swag/conv v0.25.4 // indirect
 	github.com/go-openapi/swag/fileutils v0.25.1 // indirect
 	github.com/go-openapi/swag/jsonname v0.25.1 // indirect
 	github.com/go-openapi/swag/loading v0.25.1 // indirect
 	github.com/go-openapi/swag/mangling v0.25.1 // indirect
 	github.com/go-openapi/swag/netutils v0.25.1 // indirect
 	github.com/go-openapi/swag/stringutils v0.25.1 // indirect
-	github.com/go-openapi/swag/typeutils v0.25.3 // indirect
+	github.com/go-openapi/swag/typeutils v0.25.4 // indirect
 	github.com/go-openapi/swag/yamlutils v0.25.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
