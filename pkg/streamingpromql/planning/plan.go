@@ -29,17 +29,25 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV2
+var MaximumSupportedQueryPlanVersion = QueryPlanV3
+
+// IMPORTANT:
+// Do not change the value or meaning of these constants once they have been merged.
+// Doing so could result in queriers receiving query plans they don't understand, which could
+// lead to errors or silently incorrect behaviour or results.
 
 const QueryPlanVersionZero = QueryPlanVersion(0)
 
-// This version introduces:
+// QueryPlanV1 introduces:
 // 1. DropName node
-// 2. Step invariant expression node
+// 2. StepInvariantExpression node
 const QueryPlanV1 = QueryPlanVersion(1)
 
-// This version introduces support for limitk and limit_ratio PromQL aggregates
+// QueryPlanV2 introduces support for limitk and limit_ratio PromQL aggregates
 const QueryPlanV2 = QueryPlanVersion(2)
+
+// QueryPlanV3 introduces support for evaluating multiple query plan nodes in a single querier request.
+const QueryPlanV3 = QueryPlanVersion(3)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
