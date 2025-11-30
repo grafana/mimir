@@ -86,7 +86,8 @@ func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt
 	var err error
 
 	readerFactory = func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+		//return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+		return NewBucketBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg)
 	}
 
 	if p.lazyReaderEnabled {
