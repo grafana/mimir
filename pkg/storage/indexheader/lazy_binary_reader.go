@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -149,18 +148,20 @@ func NewLazyBinaryReader(
 
 	logger = log.With(logger, "id", id)
 
-	g := errgroup.Group{}
-	g.Go(func() error {
-		return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
-	})
+	tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
 
-	g.Go(func() error {
-		tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
-		return nil
-	})
-	if err := g.Wait(); err != nil {
-		return nil, err
-	}
+	//g := errgroup.Group{}
+	//g.Go(func() error {
+	//	return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
+	//})
+	//
+	//g.Go(func() error {
+	//	tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
+	//	return nil
+	//})
+	//if err := g.Wait(); err != nil {
+	//	return nil, err
+	//}
 
 	reader := &LazyBinaryReader{
 		logger:          logger,
