@@ -19,13 +19,28 @@ var (
 	ErrInvalidChecksum = errors.New("invalid checksum")
 )
 
-// Decbuf provides safe methods to extract data from a binary file. It does all
-// necessary bounds checking and advancing of the binary file. Several datums can
+// reader is the interface that both fileReader and bufReader implement.
+type reader interface {
+	reset() error
+	resetAt(off int) error
+	skip(l int) error
+	peek(n int) ([]byte, error)
+	read(n int) ([]byte, error)
+	readInto(b []byte) error
+	size() int
+	len() int
+	position() int
+	buffered() int
+	close() error
+}
+
+// Decbuf provides safe methods to extract data from a binary reader. It does all
+// necessary bounds checking and advancing of the binary data. Several datums can
 // be extracted without checking for errors. However, before using any datum, the
-// Err() method must be checked. New file-backed Decbuf instances must be created
-// via DecbufFactory
+// Err() method must be checked.
+// New Decbuf instances must be created via DecbufFactory.
 type Decbuf struct {
-	r *fileReader
+	r reader
 	E error
 }
 

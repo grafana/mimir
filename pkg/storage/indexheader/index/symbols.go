@@ -30,7 +30,7 @@ func init() {
 }
 
 type Symbols struct {
-	factory *streamencoding.DecbufFactory
+	factory DecbufFactory
 
 	version     int
 	tableOffset int
@@ -42,7 +42,7 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbolsFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSparseHeader(factory *streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
+func NewSymbolsFromSparseHeader(factory DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
 		version:     version,
@@ -77,7 +77,7 @@ func (s *Symbols) NewSparseSymbol() (sparse *indexheaderpb.Symbols) {
 }
 
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
+func NewSymbols(factory DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
 	var d streamencoding.Decbuf
 	if doChecksum {
 		d = factory.NewDecbufAtChecked(offset, castagnoliTable)
