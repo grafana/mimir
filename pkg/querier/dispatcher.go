@@ -127,7 +127,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	}
 
 	d.querierMetrics.PlansReceived.WithLabelValues(req.Plan.Version.String()).Inc()
-	d.querierMetrics.QueryPlanNodesPerRequest.Observe(float64(len(req.Nodes)))
+	d.querierMetrics.NodesPerQueryEvaluationRequest.Observe(float64(len(req.Nodes)))
 
 	if len(req.Nodes) == 0 {
 		resp.WriteError(ctx, apierror.TypeBadData, errNoNodesInRequest)

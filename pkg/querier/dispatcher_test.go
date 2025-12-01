@@ -1004,13 +1004,13 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_querier_received_query_plans_total"))
 
 				expectedMetrics = fmt.Sprintf(`
-					# HELP cortex_querier_query_evaluation_requests_nodes_per_request Number of nodes requested to be evaluated per query evaluation request.
-					# TYPE cortex_querier_query_evaluation_requests_nodes_per_request histogram
-					cortex_querier_query_evaluation_requests_nodes_per_request_sum %[1]v
-					cortex_querier_query_evaluation_requests_nodes_per_request_count 1
+					# HELP cortex_querier_nodes_per_query_evaluation_request Number of nodes requested to be evaluated per query evaluation request.
+					# TYPE cortex_querier_nodes_per_query_evaluation_request histogram
+					cortex_querier_nodes_per_query_evaluation_request_sum %[1]v
+					cortex_querier_nodes_per_query_evaluation_request_count 1
 				`, len(req.Nodes))
 
-				requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, "cortex_querier_query_evaluation_requests_nodes_per_request")
+				requireMetricsIgnoringHistogramBucketsAndDurationSums(t, reg, expectedMetrics, "cortex_querier_nodes_per_query_evaluation_request")
 			}
 		})
 	}
