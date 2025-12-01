@@ -1289,14 +1289,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 				return firstReplica
 			}
 		} else {
-			for i := range req.Timeseries {
+			for i, ts := range req.Timeseries {
 				r := getReplicaForSample(i)
 				info := replicaInfos[r]
 				if info == nil {
 					info = &replicaInfo{}
 					replicaInfos[r] = info
 				}
-				info.sampleCount++
+				info.sampleCount += len(ts.Samples) + len(ts.Histograms)
 			}
 		}
 		for replicaKey, info := range replicaInfos {
