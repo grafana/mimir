@@ -39,7 +39,7 @@ var table = [5]enc{
 func TestNewSeriesHLL(t *testing.T) {
 	const partitions = 5000
 	for _, registersK := range []uint{2, 16} {
-		for _, seriesPerPartition := range []int{1, 10, 100} {
+		for _, seriesPerPartition := range []int{1, 10, 100, 300, 500} {
 			hlls := make([]*hyperloglog.HyperLogLog, partitions)
 			for i := range hlls {
 				var err error
