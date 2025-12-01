@@ -8,6 +8,7 @@ import (
 	"compress/zlib"
 	"fmt"
 	"math"
+	"math/bits"
 	"math/rand"
 	"slices"
 	"strings"
@@ -71,6 +72,31 @@ func TestNewSeriesHLL(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestLimitedHLL(t *testing.T) {
+	hll, err := hyperloglog.New(2 * 1024)
+	require.NoError(t, err)
+	// Add 3M series, that's our limit.
+	for i := 0; i < 3e6; i++ {
+		hll.Add64(rand.Uint64())
+	}
+	// Add 1M more series, see how many pass the gate.
+	var passed int
+	for i := 0; i < 1e6; i++ {
+		if Can(hll, rand.Uint64()) {
+			passed++
+		}
+	}
+	t.Logf("After adding 3M series, when tried to add more, %d passed the gate (%.2f%%)", passed, 100*float64(passed)/1e6)
+}
+
+func Can(h *hyperloglog.HyperLogLog, val uint64) bool {
+	k := 64 - h.B
+	slice := (val << h.B) | (1 << (h.B - 1))
+	r := uint8(bits.LeadingZeros64(slice) + 1)
+	j := val >> uint(k)
+	return r <= h.Registers[j]
 }
 
 func TestHLL(t *testing.T) {
