@@ -109,6 +109,8 @@ func (s *statsTrackingChunkSeriesSet) recordStatsToMetrics() {
 		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.FinalCardinalityRatio.WithLabelValues(), float64(estimatedFinal)/float64(actualFinal))
 	}
 	if actualPostings > 0 {
+		//intersectionSizeRatio := float64(estimatedPostings) / float64(actualPostings)
+		//fmt.Printf("Intersection Size: estimatedPostings: %d, actualPostings: %d, ratio: %f\n", estimatedPostings, actualPostings, intersectionSizeRatio)
 		instrument.ObserveWithExemplar(s.ctx, s.lookupPlanMetrics.IntersectionSizeRatio.WithLabelValues(), float64(estimatedPostings)/float64(actualPostings))
 	}
 }

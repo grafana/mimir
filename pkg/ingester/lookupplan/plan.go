@@ -4,14 +4,15 @@ package lookupplan
 
 import (
 	"context"
+	"math"
 	"slices"
+	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -139,7 +140,7 @@ func (p plan) filterCost() float64 {
 }
 
 func (p plan) intersectionSize() uint64 {
-	finalSelectivity := 1.0
+	predSelectivities := make([]float64, 0, len(p.predicates))
 	for i, pred := range p.predicates {
 		if !p.indexPredicate[i] {
 			continue
@@ -151,7 +152,14 @@ func (p plan) intersectionSize() uint64 {
 		// We also assume independence between the predicates. This is a simplification.
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
 		// While finalSelectivity is neither an upper bound nor a lower bound, assuming independence allows us to come up with cost estimates comparable between plans.
-		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
+		predSelectivities = append(predSelectivities, float64(pred.cardinality)/float64(p.totalSeries))
+	}
+
+	sort.Float64s(predSelectivities)
+
+	finalSelectivity := 1.0
+	for i, sel := range predSelectivities {
+		finalSelectivity *= math.Pow(sel, 1.0/float64(int(1)<<i))
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
@@ -185,21 +193,43 @@ func (p plan) addPredicatesToSpan(span trace.Span) {
 			attribute.Float64("index_scan_cost", pred.indexScanCost),
 			attribute.Float64("index_lookup_cost", pred.indexLookupCost()),
 		}
+		//fmt.Println("lookup_plan_predicate",
+		//	"matcher", pred.matcher,
+		//	"selectivity", pred.selectivity,
+		//	"cardinality", int64(pred.cardinality),
+		//	"label_name_unique_values", int64(pred.labelNameUniqueVals),
+		//	"single_match_cost", pred.singleMatchCost,
+		//	"index_scan_cost", pred.indexScanCost,
+		//	"index_lookup_cost", pred.indexLookupCost(),
+		//)
 		attributes = append(attributes, predAttr[:]...)
 	}
-	span.AddEvent("lookup_plan_predicate", trace.WithAttributes(attributes...))
+	//fmt.Println("lookup_plan_predicate", trace.WithAttributes(attributes...))
 }
 
 func (p plan) addSpanEvent(span trace.Span, planName string) {
-	span.AddEvent("lookup plan", trace.WithAttributes(
-		attribute.String("plan_name", planName),
-		attribute.Float64("total_cost", p.totalCost()),
-		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
-		attribute.Float64("filter_cost", p.filterCost()),
-		attribute.Float64("intersection_cost", p.intersectionCost()),
-		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
-		attribute.Int64("cardinality", int64(p.cardinality())),
-		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
-		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
-	))
+	//fmt.Println("lookup plan", trace.WithAttributes(
+	//	attribute.String("plan_name", planName),
+	//	attribute.Float64("total_cost", p.totalCost()),
+	//	attribute.Float64("index_lookup_cost", p.indexLookupCost()),
+	//	attribute.Float64("filter_cost", p.filterCost()),
+	//	attribute.Float64("intersection_cost", p.intersectionCost()),
+	//	attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
+	//	attribute.Int64("cardinality", int64(p.cardinality())),
+	//	attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
+	//	attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
+	//))
+	//fmt.Println("lookup plan",
+	//	"plan_name", planName,
+	//	"total_series", p.totalSeries,
+	//	"total_cost", p.totalCost(),
+	//	"index_lookup_cost", p.indexLookupCost(),
+	//	"filter_cost", p.filterCost(),
+	//	"intersection_cost", p.intersectionCost(),
+	//	"intersection_size", p.intersectionSize(),
+	//	"series_retrieval_cost", p.seriesRetrievalCost(),
+	//	"cardinality", int64(p.cardinality()),
+	//	"index_matchers", util.MatchersStringer(p.IndexMatchers()),
+	//	"scan_matchers", util.MatchersStringer(p.ScanMatchers()),
+	//)
 }

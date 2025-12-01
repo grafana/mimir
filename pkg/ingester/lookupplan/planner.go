@@ -180,6 +180,7 @@ func mapPlanningOutcomeError(err error) (mappedError error, tooManyMatchers bool
 
 func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, abortedEarly bool, retErr error, allPlans []plan) {
 	span, _, traceSampled := tracing.SpanFromContext(ctx)
+	//traceSampled = true
 
 	var outcome string
 	switch {
@@ -212,9 +213,9 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 }
 
 func (p CostBasedPlanner) addSpanEvents(span trace.Span, start time.Time, selectedPlan plan, allPlans []plan) {
-	span.AddEvent("selected lookup plan", trace.WithAttributes(
-		attribute.Stringer("duration", time.Since(start)),
-	))
+	//span.AddEvent("selected lookup plan", trace.WithAttributes(
+	//	attribute.Stringer("duration", time.Since(start)),
+	//))
 	selectedPlan.addPredicatesToSpan(span)
 
 	const topKPlans = 2

@@ -27,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/benchmarks"
 	"github.com/grafana/mimir/pkg/util/bench"
 )
@@ -104,6 +105,8 @@ func BenchmarkQueryExecution(b *testing.B) {
 	// Start ingester
 	ing, _, cleanupFunc, err := benchmarks.StartBenchmarkIngester(*dataDirFlag, func(config *ingester.Config) {
 		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = true
+		config.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce = true
+		config.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce = true
 	})
 	require.NoError(b, err)
 	b.Cleanup(cleanupFunc)
@@ -117,7 +120,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 			b.Run(queryID, func(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					queryResult, err := queryIngester(ing, q.VectorSelectors[selectorIdx], q.User)
+					queryResult, err := queryIngester(ing, q.VectorSelectors[selectorIdx], q.ShardedQueries, q.User)
 					if err != nil {
 						b.Fatalf("Query failed: %v (query: %s)", err, q.Query)
 					}
@@ -137,11 +140,19 @@ type queryResult struct {
 	ChunksCount int
 }
 
-func queryIngester(ing *ingester.Ingester, matchers []*labels.Matcher, userID string) (*queryResult, error) {
+func queryIngester(ing *ingester.Ingester, matchers []*labels.Matcher, shards uint64, userID string) (*queryResult, error) {
 	// Convert to client format
 	labelMatchers, err := client.ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert label matchers: %w", err)
+	}
+
+	if shards > 1 {
+		labelMatchers = append(labelMatchers, &client.LabelMatcher{
+			Type:  client.EQUAL,
+			Name:  sharding.ShardLabel,
+			Value: sharding.FormatShardIDLabelValue(1, shards),
+		})
 	}
 
 	// Create query request

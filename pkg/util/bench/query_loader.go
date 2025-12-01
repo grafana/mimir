@@ -141,6 +141,7 @@ type Query struct {
 	Step            time.Duration
 	Timestamp       time.Time
 	User            string
+	ShardedQueries  uint64
 	valid           bool // internal flag to track if query should be included
 }
 
@@ -252,12 +253,13 @@ func extractLabelMatchers(query string) ([][]*labels.Matcher, error) {
 func (q *Query) UnmarshalJSON(b []byte) error {
 	var d struct {
 		Labels struct {
-			Query  string `json:"param_query"`
-			Start  string `json:"param_start"`
-			Step   string `json:"param_step"`
-			End    string `json:"param_end"`
-			Method string `json:"method"`
-			User   string `json:"user"`
+			Query          string `json:"param_query"`
+			Start          string `json:"param_start"`
+			Step           string `json:"param_step"`
+			End            string `json:"param_end"`
+			Method         string `json:"method"`
+			User           string `json:"user"`
+			ShardedQueries string `json:"sharded_queries"`
 		} `json:"labels"`
 		Timestamp string `json:"timestamp"`
 	}
@@ -280,6 +282,10 @@ func (q *Query) UnmarshalJSON(b []byte) error {
 	q.Query = d.Labels.Query
 	q.User = d.Labels.User
 	q.VectorSelectors = vectorSelectors
+	q.ShardedQueries, err = strconv.ParseUint(d.Labels.ShardedQueries, 10, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse sharded_queries: %w", err)
+	}
 
 	// Parse timestamp
 	timestamp, err := time.Parse(time.RFC3339Nano, d.Timestamp)
