@@ -287,6 +287,7 @@
 * [BUGFIX] Distributor: Fix metric metadata of type Unknown being silently dropped from RW2 requests. #12461
 * [BUGFIX] Distributor: Preserve inconsistent metric metadata in Remote Write 1.0 to 2.0 conversion. Previously, when converting RW1.0 requests with multiple different metadata for the same series, only the first metadata was kept. Now all inconsistent metadata are preserved to match Prometheus behavior. This only affects experimental Remote Write 2.0. #12541 #12804
 * [BUGFIX] Ruler: Fix ruler remotequerier request body consumption on retries. #12514
+* [BUGFIX] Ingester: (Ingest storage) Fix fetcher potentially requesting more bytes from Kafka than its configured limit when bytes-per-record estimation is incorrect. #13051
 * [BUGFIX] Block-builder: Fix a bug where a consumption error can cause a job to stay assigned to a worker for the remainder of its lifetime. #12522
 * [BUGFIX] Querier: Fix possible panic when evaluating a nested subquery where the parent has no steps. #12524
 * [BUGFIX] Querier: Fix bug where the pruning toggles AST optimization pass doesn't work in the query planner. #12783
