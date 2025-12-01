@@ -726,6 +726,30 @@ groups:
           for: 5m
           labels:
             severity: critical
+        - alert: MimirMemberlistBridgeZoneUnavailable
+          annotations:
+            message: GEM memberlist-bridge in {{ $labels.cluster }}/{{ $labels.namespace }} {{ $labels.zone }} has no available pods.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirmemberlistbridgezoneunavailable
+          expr: |
+            # Find the expected memberlist-bridge zonal deployments.
+            count by (cluster, namespace, zone) (
+                label_replace(
+                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"} > 0,
+                    "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
+                )
+            )
+            # Excluding zones where there is at least 1 healthy memberlist-bridge.
+            unless (
+                count by(cluster, namespace, zone) (
+                    label_replace(
+                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
+                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
+                    )
+                ) > 0
+            )
+          for: 10m
+          labels:
+            severity: critical
     - name: golang_alerts
       rules:
         - alert: MimirGoThreadsTooHigh

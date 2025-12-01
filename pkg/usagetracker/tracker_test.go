@@ -102,27 +102,6 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, resp.RejectedSeriesHashes, 2)
 	})
-
-	t.Run("service dry-run does not reject series", func(t *testing.T) {
-		t.Parallel()
-
-		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
-			"tenant": {
-				MaxActiveSeriesPerUser: testPartitionsCount,     // one series per partition.
-				MaxGlobalSeriesPerUser: testPartitionsCount * 2, // two series per partition
-			},
-		}, func(cfg *Config) {
-			cfg.DoNotApplySeriesLimits = true
-		})
-
-		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
-			UserID:       "tenant",
-			Partition:    0,
-			SeriesHashes: []uint64{0, 1, 2, 3, 4, 5, 6, 7},
-		})
-		require.NoError(t, err)
-		require.Equal(t, &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: nil}, resp)
-	})
 }
 
 func TestUsageTracker_PartitionAssignment(t *testing.T) {

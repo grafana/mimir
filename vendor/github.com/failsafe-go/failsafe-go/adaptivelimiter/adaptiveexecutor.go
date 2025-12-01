@@ -62,10 +62,15 @@ func (e *executor[R]) Apply(innerFn func(failsafe.Execution[R]) *common.PolicyRe
 		}
 
 		result := innerFn(exec)
-		result = e.PostExecute(execInternal, result)
 		if permit != nil {
-			permit.Record()
+			// Check for cancellation during execution
+			if canceled, _ := execInternal.IsCanceledWithResult(); canceled {
+				permit.Drop()
+			} else {
+				permit.Record()
+			}
 		}
-		return result
+
+		return e.PostExecute(execInternal, result)
 	}
 }

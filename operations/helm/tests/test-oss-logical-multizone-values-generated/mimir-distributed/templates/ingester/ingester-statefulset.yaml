@@ -81,6 +81,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -115,7 +116,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -208,6 +209,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -242,7 +244,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -335,6 +337,7 @@ spec:
           emptyDir: {}
       containers:
         - name: ingester
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=ingester"
@@ -369,7 +372,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

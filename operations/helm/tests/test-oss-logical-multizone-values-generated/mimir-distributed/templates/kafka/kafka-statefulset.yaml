@@ -13,6 +13,7 @@ metadata:
     {}
   namespace: "citestns"
 spec:
+  podManagementPolicy: Parallel
   replicas: 1
   selector:
     matchLabels:

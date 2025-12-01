@@ -44,13 +44,13 @@ spec:
           type: RuntimeDefault
       containers:
         - name: overrides-exporter
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=overrides-exporter"
             - "-config.expand-env=true"
             - "-config.file=/etc/mimir/mimir.yaml"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

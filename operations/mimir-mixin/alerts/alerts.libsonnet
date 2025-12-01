@@ -1016,6 +1016,35 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s gossip-ring service endpoints list in %(alert_aggregation_variables)s is out of sync.' % $._config,
           },
         },
+        {
+          // Alert if there's no available memberlist-bridge pod in any of the zones where it's deployed.
+          alert: $.alertName('MemberlistBridgeZoneUnavailable'),
+          expr: |||
+            # Find the expected memberlist-bridge zonal deployments.
+            count by (%(alert_aggregation_labels)s, zone) (
+                label_replace(
+                    kube_deployment_spec_replicas{deployment=~"memberlist-bridge-zone-[abc]"} > 0,
+                    "zone", "$1", "deployment", "memberlist-bridge-(zone-[abc])"
+                )
+            )
+            # Excluding zones where there is at least 1 healthy memberlist-bridge.
+            unless (
+                count by(%(alert_aggregation_labels)s, zone) (
+                    label_replace(
+                        kube_pod_status_ready{pod=~"memberlist-bridge-zone-[abc]-.*", condition="true"} == 1,
+                        "zone", "$1", "pod", "memberlist-bridge-(zone-[abc]).*"
+                    )
+                ) > 0
+            )
+          ||| % $._config,
+          'for': '10m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '%(product)s memberlist-bridge in %(alert_aggregation_variables)s {{ $labels.zone }} has no available pods.' % $._config,
+          },
+        },
       ],
     },
     {

@@ -69,6 +69,7 @@ spec:
           emptyDir: {}
       containers:
         - name: compactor
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=compactor"
@@ -101,7 +102,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

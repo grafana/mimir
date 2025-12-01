@@ -37,6 +37,7 @@ spec:
         []
       containers:
         - name: smoke-test
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=continuous-test"
@@ -49,7 +50,6 @@ spec:
             - "-tests.write-read-series-test.max-query-age=48h"
             - "-server.http-listen-port=8080"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

@@ -25,7 +25,10 @@ import (
 	"github.com/grafana/mimir/pkg/mimir"
 )
 
-const MimirImage = "grafana/mimir"
+const (
+	DockerRegistryPrefix = "docker.io/"
+	MimirImage           = "grafana/mimir"
+)
 
 type ValueAnnotator struct {
 	Value string `yaml:"value" json:"value"`
@@ -124,7 +127,7 @@ func (c *ConfigExtractor) ResolveConfigs() ([]*yaml.RNode, error) {
 		}
 
 		for _, container := range pod.Containers {
-			if !strings.HasPrefix(container.Image, MimirImage) {
+			if !strings.HasPrefix(strings.TrimPrefix(container.Image, DockerRegistryPrefix), MimirImage) {
 				continue
 			}
 

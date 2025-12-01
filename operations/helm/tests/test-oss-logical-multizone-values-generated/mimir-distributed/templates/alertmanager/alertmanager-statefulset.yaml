@@ -81,6 +81,7 @@ spec:
             name: test-oss-logical-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -122,7 +123,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -214,6 +215,7 @@ spec:
             name: test-oss-logical-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -255,7 +257,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -347,6 +349,7 @@ spec:
             name: test-oss-logical-multizone-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -388,7 +391,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

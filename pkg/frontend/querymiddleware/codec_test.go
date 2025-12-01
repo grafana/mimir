@@ -1555,7 +1555,7 @@ func BenchmarkCodec_DecodeResponse(b *testing.B) {
 	codec := newTestCodec()
 
 	// Generate a mocked response and marshal it.
-	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
+	res := mockPrometheusResponse(numSeries, numSamplesPerSeries, "matrix")
 	encodedRes, err := json.Marshal(res)
 	require.NoError(b, err)
 	b.Log("test prometheus response size:", len(encodedRes))
@@ -1587,18 +1587,27 @@ func BenchmarkCodec_EncodeResponse(b *testing.B) {
 	require.NoError(b, err)
 
 	// Generate a mocked response and marshal it.
-	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
 
-	b.ResetTimer()
-	b.ReportAllocs()
+	b.Run("matrix", func(b *testing.B) {
+		res := mockPrometheusResponse(numSeries, numSamplesPerSeries, "matrix")
+		b.ReportAllocs()
+		for b.Loop() {
+			_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+			require.NoError(b, err)
+		}
+	})
 
-	for n := 0; n < b.N; n++ {
-		_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, res)
-		require.NoError(b, err)
-	}
+	b.Run("vector", func(b *testing.B) {
+		res := mockPrometheusResponse(numSeries, 1, "vector")
+		b.ReportAllocs()
+		for b.Loop() {
+			_, err := codec.EncodeMetricsQueryResponse(context.Background(), req, res)
+			require.NoError(b, err)
+		}
+	})
 }
 
-func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusResponse {
+func mockPrometheusResponse(numSeries, numSamplesPerSeries int, ty string) *PrometheusResponse {
 	stream := make([]SampleStream, numSeries)
 	for s := 0; s < numSeries; s++ {
 		// Generate random samples.
@@ -1626,7 +1635,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 	return &PrometheusResponse{
 		Status: "success",
 		Data: &PrometheusData{
-			ResultType: "matrix",
+			ResultType: ty,
 			Result:     stream,
 		},
 	}

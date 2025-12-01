@@ -4,8 +4,8 @@
 # Provenance-includes-copyright: The Cortex Authors.
 
 FROM registry.k8s.io/kustomize/kustomize:v5.4.3 AS kustomize
-FROM alpine/helm:3.17.2 AS helm
-FROM golang:1.25.2-trixie@sha256:b08c20ae3aa771d333b1e2ad77986b42b1ded17362bbfdd452977bfc2b107295
+FROM alpine/helm:4.0.1 AS helm
+FROM golang:1.25.4-trixie@sha256:a02d35efc036053fdf0da8c15919276bf777a80cbfda6a35c5e9f087e652adfc
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 ENV SKOPEO_DEPS="libgpgme-dev libassuan-dev libbtrfs-dev libdevmapper-dev pkg-config"

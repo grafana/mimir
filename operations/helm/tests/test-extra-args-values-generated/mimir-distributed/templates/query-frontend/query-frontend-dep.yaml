@@ -45,6 +45,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-frontend
+          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"
@@ -54,7 +55,6 @@ spec:
             - "-server.grpc.keepalive.max-connection-age=30s"
             - "-shutdown-delay=90s"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}
