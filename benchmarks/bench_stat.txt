@@ -1,0 +1,186 @@
+goos: linux
+goarch: amd64
+pkg: github.com/grafana/mimir/pkg/distributor
+cpu: Intel(R) Xeon(R) CPU E5-2689 v4 @ 3.10GHz
+                                                                                                                           │ bench_main.txt │          bench_ha_dedup.txt          │
+                                                                                                                           │     sec/op     │    sec/op      vs base               │
+Distributor_prePushMaxSeriesLimitMiddleware/10%_series_rejected-5                                                              122.4µ ± 17%    114.8µ ±  4%   -6.17% (p=0.002 n=6)
+Distributor_prePushMaxSeriesLimitMiddleware/50%_series_rejected-5                                                              141.2µ ± 15%    138.6µ ± 15%        ~ (p=0.485 n=6)
+Distributor_prePushMaxSeriesLimitMiddleware/all_series_rejected-5                                                              192.0µ ±  9%    176.5µ ± 10%        ~ (p=0.065 n=6)
+Distributor_prePushMaxSeriesLimitMiddleware/no_series_rejected-5                                                               97.63µ ± 14%    89.97µ ±  7%        ~ (p=0.310 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_histogram-5                                                       194.5n ±  4%    184.5n ±  2%   -5.12% (p=0.002 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_histograms-5                                                      409.8n ±  7%    400.2n ±  2%   -2.34% (p=0.015 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_samples_and_80_000_histograms_with_duplicated_timestamps-5     3.744m ±  8%    3.527m ±  3%   -5.81% (p=0.041 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_sample-5                                                          187.2n ± 11%    180.0n ±  2%   -3.85% (p=0.041 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_sample_and_one_histogram-5                                        321.7n ±  6%    314.6n ±  5%        ~ (p=0.167 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_samples-5                                                         383.3n ±  2%    368.2n ± 16%        ~ (p=0.104 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_samples_and_two_histograms-5                                      705.0n ±  5%    684.8n ±  4%   -2.87% (p=0.041 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_samples_with_duplicated_timestamps-5                           804.6µ ±  3%    811.6µ ±  4%        ~ (p=0.818 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_histograms_with_duplicated_timestamps-5                        2.860m ±  4%    2.805m ±  9%        ~ (p=0.394 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=too_many_labels_limit_reached-5                                            4.958m ±  2%    5.266m ±  5%   +6.21% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=max_label_name_length_limit_reached-5                                      3.544m ±  3%    3.812m ±  9%   +7.57% (p=0.009 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=max_label_value_length_limit_reached-5                                     4.059m ±  3%    3.888m ±  3%   -4.21% (p=0.004 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=timestamp_too_new-5                                                        1.763m ± 11%    1.697m ±  4%        ~ (p=0.394 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=all_samples_go_to_metric_relabel_configs-5                                 3.217m ±  5%    3.264m ±  2%        ~ (p=0.132 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=all_samples_successfully_pushed-5                                          1.684m ±  5%    1.788m ±  2%   +6.17% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=ingestion_rate_limit_reached-5                                            1007.9µ ±  6%    918.9µ ± 11%   -8.83% (p=0.026 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=all_samples_successfully_pushed-5                                           1.818m ±  3%    1.838m ±  6%        ~ (p=0.394 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=ingestion_rate_limit_reached-5                                             1048.1µ ±  2%    986.9µ ±  9%        ~ (p=0.589 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=too_many_labels_limit_reached-5                                             5.186m ±  3%    5.328m ±  4%        ~ (p=0.180 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=max_label_name_length_limit_reached-5                                       3.718m ±  2%    3.829m ±  6%        ~ (p=0.180 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=max_label_value_length_limit_reached-5                                      4.182m ±  3%    4.191m ±  3%        ~ (p=0.937 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=timestamp_too_new-5                                                         1.964m ±  2%    2.028m ±  5%   +3.26% (p=0.015 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=all_samples_go_to_metric_relabel_configs-5                                  3.441m ±  4%    3.516m ±  4%        ~ (p=0.093 n=6)
+Distributor_ActiveSeries-5                                                                                                     35.25m ±  5%    35.89m ±  1%        ~ (p=0.093 n=6)
+OTLPHandler/protobuf-5                                                                                                         51.70m ±  5%    50.02m ±  4%        ~ (p=0.132 n=6)
+OTLPHandler/JSON-5                                                                                                             69.46m ±  3%    69.36m ±  3%        ~ (p=0.394 n=6)
+PushHandler-5                                                                                                                  3.330µ ±  5%    3.380µ ±  6%        ~ (p=0.937 n=6)
+MergeExemplars-5                                                                                                               2.767m ±  3%    2.736m ±  5%        ~ (p=0.699 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_1_zones,_1_series_per_ingester-5                                                 247.0n ±  5%    252.8n ±  4%        ~ (p=0.169 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_1_zones,_10_series_per_ingester-5                                                1.695µ ±  3%    1.766µ ±  6%        ~ (p=0.394 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_1_zones,_100_series_per_ingester-5                                               13.15µ ±  4%    13.54µ ±  6%        ~ (p=0.132 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_1_zones,_1000_series_per_ingester-5                                              115.3µ ±  4%    118.0µ ±  2%   +2.35% (p=0.026 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_1_zones,_10000_series_per_ingester-5                                             1.624m ±  7%    1.664m ±  6%        ~ (p=0.310 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_2_zones,_1_series_per_ingester-5                                                 355.7n ±  4%    380.3n ±  7%        ~ (p=0.065 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_2_zones,_10_series_per_ingester-5                                                2.498µ ±  5%    2.561µ ±  3%        ~ (p=0.394 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_2_zones,_100_series_per_ingester-5                                               20.70µ ±  4%    20.98µ ±  4%        ~ (p=0.699 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_2_zones,_1000_series_per_ingester-5                                              191.2µ ±  3%    194.5µ ±  4%        ~ (p=0.065 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_2_zones,_10000_series_per_ingester-5                                             2.361m ±  3%    2.431m ±  6%        ~ (p=0.180 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_3_zones,_1_series_per_ingester-5                                                 518.3n ±  5%    556.5n ±  2%   +7.37% (p=0.002 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_3_zones,_10_series_per_ingester-5                                                3.470µ ±  6%    3.496µ ±  2%        ~ (p=0.905 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_3_zones,_100_series_per_ingester-5                                               29.86µ ±  2%    30.23µ ±  3%        ~ (p=0.180 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_3_zones,_1000_series_per_ingester-5                                              282.3µ ±  4%    284.8µ ±  1%        ~ (p=0.589 n=6)
+MergingAndSortingSeries/1_ingesters_per_zone,_3_zones,_10000_series_per_ingester-5                                             3.315m ±  4%    3.504m ±  4%   +5.71% (p=0.015 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_1_zones,_1_series_per_ingester-5                                                 495.3n ±  4%    510.0n ±  3%        ~ (p=0.065 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_1_zones,_10_series_per_ingester-5                                                3.599µ ±  3%    3.687µ ±  4%        ~ (p=0.180 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_1_zones,_100_series_per_ingester-5                                               31.93µ ±  4%    32.32µ ±  3%        ~ (p=0.372 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_1_zones,_1000_series_per_ingester-5                                              322.4µ ±  4%    330.9µ ±  3%        ~ (p=0.132 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_1_zones,_10000_series_per_ingester-5                                             4.207m ±  5%    4.411m ±  2%   +4.85% (p=0.015 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_2_zones,_1_series_per_ingester-5                                                 857.4n ±  8%    860.2n ±  4%        ~ (p=0.818 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_2_zones,_10_series_per_ingester-5                                                5.764µ ±  3%    5.640µ ±  2%        ~ (p=0.132 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_2_zones,_100_series_per_ingester-5                                               51.66µ ±  5%    53.16µ ±  6%        ~ (p=0.310 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_2_zones,_1000_series_per_ingester-5                                              515.1µ ±  2%    507.1µ ±  5%        ~ (p=0.485 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_2_zones,_10000_series_per_ingester-5                                             6.289m ±  4%    6.728m ±  3%   +6.98% (p=0.002 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_3_zones,_1_series_per_ingester-5                                                 1.173µ ±  3%    1.248µ ±  5%   +6.44% (p=0.002 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_3_zones,_10_series_per_ingester-5                                                8.201µ ±  3%    8.263µ ±  3%        ~ (p=0.240 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_3_zones,_100_series_per_ingester-5                                               79.32µ ±  4%    82.29µ ±  4%   +3.74% (p=0.015 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_3_zones,_1000_series_per_ingester-5                                              785.3µ ±  3%    833.9µ ±  2%   +6.18% (p=0.002 n=6)
+MergingAndSortingSeries/2_ingesters_per_zone,_3_zones,_10000_series_per_ingester-5                                             9.150m ±  4%    9.451m ±  8%        ~ (p=0.065 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_1_zones,_1_series_per_ingester-5                                                 1.054µ ±  4%    1.125µ ±  7%   +6.74% (p=0.002 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_1_zones,_10_series_per_ingester-5                                                8.563µ ±  7%    8.243µ ±  7%        ~ (p=0.394 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_1_zones,_100_series_per_ingester-5                                               76.62µ ±  1%    74.66µ ±  7%        ~ (p=0.310 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_1_zones,_1000_series_per_ingester-5                                              794.9µ ±  8%    796.7µ ±  6%        ~ (p=0.937 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_1_zones,_10000_series_per_ingester-5                                             10.89m ±  3%    10.66m ±  7%        ~ (p=0.589 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_2_zones,_1_series_per_ingester-5                                                 1.760µ ±  6%    1.709µ ±  4%        ~ (p=0.310 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_2_zones,_10_series_per_ingester-5                                                13.25µ ±  5%    13.09µ ±  4%        ~ (p=0.485 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_2_zones,_100_series_per_ingester-5                                               132.7µ ±  7%    129.7µ ± 19%        ~ (p=0.589 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_2_zones,_1000_series_per_ingester-5                                              1.356m ±  5%    1.374m ±  3%        ~ (p=0.485 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_2_zones,_10000_series_per_ingester-5                                             16.30m ±  3%    16.36m ±  3%        ~ (p=0.937 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_3_zones,_1_series_per_ingester-5                                                 2.554µ ±  4%    2.524µ ±  4%        ~ (p=0.485 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_3_zones,_10_series_per_ingester-5                                                19.70µ ±  2%    19.89µ ±  3%        ~ (p=0.937 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_3_zones,_100_series_per_ingester-5                                               202.2µ ±  4%    204.9µ ±  4%        ~ (p=0.394 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_3_zones,_1000_series_per_ingester-5                                              2.065m ±  5%    2.083m ±  3%        ~ (p=0.937 n=6)
+MergingAndSortingSeries/4_ingesters_per_zone,_3_zones,_10000_series_per_ingester-5                                             23.66m ±  8%    23.88m ±  3%        ~ (p=0.589 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_1_zones,_1_series_per_ingester-5                                                2.925µ ±  6%    3.055µ ±  3%   +4.43% (p=0.026 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_1_zones,_10_series_per_ingester-5                                               23.23µ ±  4%    23.13µ ±  4%        ~ (p=0.818 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_1_zones,_100_series_per_ingester-5                                              218.8µ ±  4%    221.7µ ±  1%        ~ (p=0.093 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_1_zones,_1000_series_per_ingester-5                                             2.721m ±  4%    2.769m ±  3%        ~ (p=0.310 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_1_zones,_10000_series_per_ingester-5                                            35.79m ±  2%    35.22m ±  2%        ~ (p=0.180 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_2_zones,_1_series_per_ingester-5                                                5.102µ ±  5%    5.219µ ±  5%        ~ (p=0.329 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_2_zones,_10_series_per_ingester-5                                               40.51µ ±  4%    41.36µ ±  4%        ~ (p=0.180 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_2_zones,_100_series_per_ingester-5                                              412.8µ ±  2%    410.2µ ±  4%        ~ (p=0.394 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_2_zones,_1000_series_per_ingester-5                                             4.597m ±  4%    4.760m ±  3%   +3.53% (p=0.015 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_2_zones,_10000_series_per_ingester-5                                            54.58m ±  2%    57.78m ±  4%   +5.87% (p=0.009 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_3_zones,_1_series_per_ingester-5                                                7.382µ ±  2%    7.885µ ±  6%   +6.81% (p=0.002 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_3_zones,_10_series_per_ingester-5                                               61.47µ ±  4%    63.29µ ±  3%        ~ (p=0.065 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_3_zones,_100_series_per_ingester-5                                              618.1µ ±  3%    620.0µ ±  3%        ~ (p=0.485 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_3_zones,_1000_series_per_ingester-5                                             6.746m ±  4%    7.014m ±  3%   +3.97% (p=0.002 n=6)
+MergingAndSortingSeries/10_ingesters_per_zone,_3_zones,_10000_series_per_ingester-5                                            76.24m ±  4%    76.99m ±  3%        ~ (p=0.818 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_1_zones,_1_series_per_ingester-5                                               35.63µ ±  3%    37.09µ ±  6%   +4.09% (p=0.004 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_1_zones,_10_series_per_ingester-5                                              333.2µ ±  3%    339.2µ ±  3%        ~ (p=0.093 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_1_zones,_100_series_per_ingester-5                                             3.839m ±  2%    4.016m ±  3%   +4.61% (p=0.002 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_1_zones,_1000_series_per_ingester-5                                            48.63m ±  2%    48.23m ±  3%        ~ (p=0.394 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_1_zones,_10000_series_per_ingester-5                                           458.3m ±  5%    466.6m ±  4%        ~ (p=0.699 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_2_zones,_1_series_per_ingester-5                                               69.64µ ±  3%    71.28µ ±  7%        ~ (p=0.132 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_2_zones,_10_series_per_ingester-5                                              633.8µ ±  1%    651.2µ ±  4%   +2.74% (p=0.002 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_2_zones,_100_series_per_ingester-5                                             6.929m ±  2%    7.671m ±  3%  +10.72% (p=0.002 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_2_zones,_1000_series_per_ingester-5                                            78.03m ±  2%    79.39m ±  4%        ~ (p=0.240 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_2_zones,_10000_series_per_ingester-5                                           723.6m ±  4%    730.2m ±  4%        ~ (p=0.818 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_3_zones,_1_series_per_ingester-5                                               102.5µ ±  6%    104.8µ ±  4%        ~ (p=0.485 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_3_zones,_10_series_per_ingester-5                                              931.6µ ±  3%    953.4µ ±  3%        ~ (p=0.065 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_3_zones,_100_series_per_ingester-5                                             9.807m ±  3%   10.113m ±  2%        ~ (p=0.093 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_3_zones,_1000_series_per_ingester-5                                            108.7m ±  4%    108.4m ±  5%        ~ (p=0.818 n=6)
+MergingAndSortingSeries/100_ingesters_per_zone,_3_zones,_10000_series_per_ingester-5                                            1.027 ±  3%     1.025 ±  3%        ~ (p=0.818 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=HA_dedup;_all_samples_same_replica-5                                                       1.934m ±  4%
+Distributor_Push/cost_attribution=disabled/scenario=HA_dedup;_4_clusters_8_replicas_evenly_split-5                                             1.971m ±  4%
+Distributor_Push/cost_attribution=enabled/scenario=HA_dedup;_all_samples_same_replica-5                                                        2.078m ±  4%
+Distributor_Push/cost_attribution=enabled/scenario=HA_dedup;_4_clusters_8_replicas_evenly_split-5                                              2.167m ±  4%
+geomean                                                                                                                        257.1µ          279.6µ         +1.00%
+
+                                                                                                                           │ bench_main.txt │          bench_ha_dedup.txt          │
+                                                                                                                           │      B/op      │     B/op      vs base                │
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_histogram-5                                                       0.000 ± 0%       0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_histograms-5                                                      0.000 ± 0%       0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_samples_and_80_000_histograms_with_duplicated_timestamps-5   4.923Ki ± 0%     4.903Ki ± 0%  -0.40% (p=0.015 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_sample-5                                                          0.000 ± 0%       0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_sample_and_one_histogram-5                                        0.000 ± 0%       0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_samples-5                                                         0.000 ± 0%       0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_samples_and_two_histograms-5                                      0.000 ± 0%       0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_samples_with_duplicated_timestamps-5                         2.364Ki ± 0%     2.365Ki ± 0%       ~ (p=0.444 n=6)
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_histograms_with_duplicated_timestamps-5                      2.555Ki ± 1%     2.553Ki ± 1%       ~ (p=0.855 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=too_many_labels_limit_reached-5                                          1.149Mi ± 0%     1.176Mi ± 0%  +2.35% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=max_label_name_length_limit_reached-5                                    1.089Mi ± 0%     1.115Mi ± 0%  +2.43% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=max_label_value_length_limit_reached-5                                   709.4Ki ± 0%     726.3Ki ± 0%  +2.37% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=timestamp_too_new-5                                                      318.6Ki ± 0%     326.3Ki ± 0%  +2.43% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=all_samples_go_to_metric_relabel_configs-5                               236.7Ki ± 0%     240.9Ki ± 0%  +1.78% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=all_samples_successfully_pushed-5                                        157.2Ki ± 0%     159.3Ki ± 0%  +1.35% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=ingestion_rate_limit_reached-5                                           2.486Ki ± 4%     2.524Ki ± 2%       ~ (p=0.699 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=all_samples_successfully_pushed-5                                         157.2Ki ± 0%     159.3Ki ± 0%  +1.35% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=ingestion_rate_limit_reached-5                                            2.463Ki ± 1%     2.504Ki ± 2%       ~ (p=0.065 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=too_many_labels_limit_reached-5                                           1.149Mi ± 0%     1.176Mi ± 0%  +2.37% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=max_label_name_length_limit_reached-5                                     1.089Mi ± 0%     1.115Mi ± 0%  +2.39% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=max_label_value_length_limit_reached-5                                    709.2Ki ± 0%     726.1Ki ± 0%  +2.38% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=timestamp_too_new-5                                                       318.5Ki ± 0%     325.7Ki ± 0%  +2.28% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=all_samples_go_to_metric_relabel_configs-5                                236.6Ki ± 0%     241.0Ki ± 0%  +1.86% (p=0.002 n=6)
+Distributor_ActiveSeries-5                                                                                                   6.430Mi ± 4%     6.404Mi ± 0%  -0.39% (p=0.026 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=HA_dedup;_all_samples_same_replica-5                                                      159.4Ki ± 0%
+Distributor_Push/cost_attribution=disabled/scenario=HA_dedup;_4_clusters_8_replicas_evenly_split-5                                            159.7Ki ± 0%
+Distributor_Push/cost_attribution=enabled/scenario=HA_dedup;_all_samples_same_replica-5                                                       175.5Ki ± 0%
+Distributor_Push/cost_attribution=enabled/scenario=HA_dedup;_4_clusters_8_replicas_evenly_split-5                                             175.6Ki ± 0%
+geomean                                                                                                                                   ²                 +1.15%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
+
+                                                                                                                           │ bench_main.txt │         bench_ha_dedup.txt          │
+                                                                                                                           │   allocs/op    │  allocs/op   vs base                │
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_histogram-5                                                       0.000 ± 0%      0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_histograms-5                                                      0.000 ± 0%      0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_samples_and_80_000_histograms_with_duplicated_timestamps-5     9.000 ± 0%      9.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_sample-5                                                          0.000 ± 0%      0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_one_sample_and_one_histogram-5                                        0.000 ± 0%      0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_samples-5                                                         0.000 ± 0%      0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_two_samples_and_two_histograms-5                                      0.000 ± 0%      0.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_samples_with_duplicated_timestamps-5                           3.000 ± 0%      3.000 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_SampleDuplicateTimestamp/one_timeseries_with_80_000_histograms_with_duplicated_timestamps-5                        5.500 ± 9%      5.500 ± 9%       ~ (p=1.000 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=too_many_labels_limit_reached-5                                           5.064k ± 0%     5.184k ± 0%  +2.37% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=max_label_name_length_limit_reached-5                                     5.064k ± 0%     5.184k ± 0%  +2.38% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=max_label_value_length_limit_reached-5                                    4.066k ± 0%     4.162k ± 0%  +2.36% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=timestamp_too_new-5                                                       4.058k ± 0%     4.154k ± 0%  +2.38% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=all_samples_go_to_metric_relabel_configs-5                                5.083k ± 0%     5.203k ± 0%  +2.36% (p=0.002 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=all_samples_successfully_pushed-5                                          79.00 ± 1%      80.00 ± 1%       ~ (p=0.080 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=ingestion_rate_limit_reached-5                                             46.00 ± 0%      46.00 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_Push/cost_attribution=enabled/scenario=all_samples_successfully_pushed-5                                           80.00 ± 0%      80.00 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_Push/cost_attribution=enabled/scenario=ingestion_rate_limit_reached-5                                              46.00 ± 0%      46.00 ± 0%       ~ (p=1.000 n=6) ¹
+Distributor_Push/cost_attribution=enabled/scenario=too_many_labels_limit_reached-5                                            5.064k ± 0%     5.185k ± 0%  +2.38% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=max_label_name_length_limit_reached-5                                      5.065k ± 0%     5.185k ± 0%  +2.37% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=max_label_value_length_limit_reached-5                                     4.066k ± 0%     4.162k ± 0%  +2.36% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=timestamp_too_new-5                                                        4.058k ± 0%     4.154k ± 0%  +2.37% (p=0.002 n=6)
+Distributor_Push/cost_attribution=enabled/scenario=all_samples_go_to_metric_relabel_configs-5                                 5.083k ± 0%     5.203k ± 0%  +2.36% (p=0.002 n=6)
+Distributor_ActiveSeries-5                                                                                                    85.53k ± 2%     85.35k ± 0%  -0.20% (p=0.026 n=6)
+Distributor_Push/cost_attribution=disabled/scenario=HA_dedup;_all_samples_same_replica-5                                                       85.00 ± 0%
+Distributor_Push/cost_attribution=disabled/scenario=HA_dedup;_4_clusters_8_replicas_evenly_split-5                                             92.00 ± 0%
+Distributor_Push/cost_attribution=enabled/scenario=HA_dedup;_all_samples_same_replica-5                                                       1.109k ± 0%
+Distributor_Push/cost_attribution=enabled/scenario=HA_dedup;_4_clusters_8_replicas_evenly_split-5                                             1.116k ± 0%
+geomean                                                                                                                                   ²                +1.02%               ²
+¹ all samples are equal
+² summaries must be >0 to compute geomean
