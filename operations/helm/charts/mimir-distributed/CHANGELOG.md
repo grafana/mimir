@@ -46,7 +46,6 @@ Entries should include a reference to the Pull Request that introduced the chang
 ## 6.0.1
 
 * [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13312
-* [BUGFIX] Delete gateway's serviceMonitor #13481
 
 ## 6.0.0
 
