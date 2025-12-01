@@ -82,9 +82,17 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 	}
 }
 
-func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan index.LookupPlan, retErr error) {
-	if planningDisabled(ctx) {
+func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (index.LookupPlan, error) {
+	outPlan, err := p.planIndexLookup(ctx, inPlan, hints)
+	if err != nil {
 		return inPlan, nil
+	}
+	return outPlan, nil
+}
+
+func (p CostBasedPlanner) planIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan plan, retErr error) {
+	if planningDisabled(ctx) {
+		return plan{}, fmt.Errorf("cost-based planning is disabled in the context")
 	}
 
 	// Extract shard information from hints
@@ -98,19 +106,13 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 	var allPlans iter.Seq[plan]
 	memPools := newCostBasedPlannerPools()
-	defer memPools.Release()
 	defer func() {
-		if plan, ok := retPlan.(plan); ok {
-			retPlan = plan.withoutMemoryPool()
-		}
+		retPlan = retPlan.withoutMemoryPool()
+		memPools.Release()
 	}()
 
 	defer func(start time.Time) {
-		var selectedPlan *plan
-		if p, ok := retPlan.(*plan); ok {
-			selectedPlan = p
-		}
-		p.recordPlanningOutcome(ctx, start, retErr, selectedPlan, allPlans)
+		p.recordPlanningOutcome(ctx, start, retErr, retPlan, allPlans)
 	}(time.Now())
 
 	// Repartition the matchers. We don't trust other planners.
@@ -121,7 +123,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 	lookupPlan := p.chooseBestPlan(allPlans)
 	if lookupPlan == nil {
-		return nil, fmt.Errorf("no plan with index matchers found")
+		return plan{}, fmt.Errorf("no plan with index matchers found")
 	}
 
 	return *lookupPlan, nil
@@ -139,7 +141,7 @@ func (p CostBasedPlanner) chooseBestPlan(allPlans iter.Seq[plan]) *plan {
 	return nil
 }
 
-func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, retErr error, selectedPlan *plan, remainingPlans iter.Seq[plan]) {
+func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.Time, retErr error, selectedPlan plan, remainingPlans iter.Seq[plan]) {
 	span, _, traceSampled := tracing.SpanFromContext(ctx)
 
 	var outcome string
@@ -151,16 +153,14 @@ func (p CostBasedPlanner) recordPlanningOutcome(ctx context.Context, start time.
 			))
 		}
 	} else {
-		if selectedPlan != nil {
-			if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
-				queryStats.SetEstimatedSelectedPostings(selectedPlan.NumSelectedPostings())
-				queryStats.SetEstimatedFinalCardinality(selectedPlan.FinalCardinality())
-			}
+		if queryStats := QueryStatsFromContext(ctx); queryStats != nil {
+			queryStats.SetEstimatedSelectedPostings(selectedPlan.NumSelectedPostings())
+			queryStats.SetEstimatedFinalCardinality(selectedPlan.FinalCardinality())
+		}
 
-			if traceSampled {
-				// Only add span events when tracing is sampled to avoid unnecessary overhead.
-				p.addSpanEvents(span, start, *selectedPlan, remainingPlans)
-			}
+		if traceSampled {
+			// Only add span events when tracing is sampled to avoid unnecessary overhead.
+			p.addSpanEvents(span, start, selectedPlan, remainingPlans)
 		}
 		outcome = "success"
 	}
