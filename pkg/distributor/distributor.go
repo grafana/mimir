@@ -1227,8 +1227,8 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		getReplicaForSample := func(i int) haReplica {
 			cluster, replica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[i].Labels)
 			return haReplica{
-				cluster: cluster,
-				replica: replica,
+				cluster: strings.Clone(cluster),
+				replica: strings.Clone(replica),
 			}
 		}
 
@@ -1289,9 +1289,11 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 		for replicaKey, info := range replicaInfos {
 			if info.state == replicaRejectedUnknown {
-				state, err := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
+				state, replicaErr := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
 				info.state = state
-				errs.Add(err)
+				if replicaErr != nil {
+					errs.Add(replicaErr)
+				}
 			}
 			samplesPerState[info.state] += info.sampleCount
 		}
@@ -1330,8 +1332,9 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		pushReq.AddCleanup(sliceUnacceptedRequests(req, lastAccepted))
 
 		if len(req.Timeseries) > 0 {
-			err = next(ctx, pushReq)
-			errs.Add(err)
+			if pushErr := next(ctx, pushReq); pushErr != nil {
+				errs.Add(pushErr)
+			}
 		}
 
 		return errs.Err()
