@@ -17,7 +17,7 @@ import (
 func TestRateLimiter(t *testing.T) {
 	t.Run("starts at initial QPS capped by max", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
-		limiter := newRateLimiter(1000, 3200, 20*time.Minute, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 1000, 3200, 20*time.Minute, uploadRateLimiter, reg)
 
 		assert.Equal(t, 1000, limiter.getCurrentQPS())
 	})
@@ -25,7 +25,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("doubles QPS each ramp period until max", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		// Use short ramp period for testing.
-		limiter := newRateLimiter(1000, 8000, 100*time.Millisecond, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 1000, 8000, 100*time.Millisecond, uploadRateLimiter, reg)
 
 		assert.Equal(t, 1000, limiter.getCurrentQPS())
 
@@ -49,7 +49,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("allows requests up to burst limit immediately", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		// maxQPS below initialQPS, so it will be capped at maxQPS=500.
-		limiter := newRateLimiter(1000, 500, 20*time.Minute, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 1000, 500, 20*time.Minute, uploadRateLimiter, reg)
 
 		ctx := context.Background()
 		start := time.Now()
@@ -68,7 +68,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("blocks when burst is exhausted", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		// Low QPS to test blocking (will cap initialQPS=1000 to maxQPS=10).
-		limiter := newRateLimiter(1000, 10, 20*time.Minute, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 1000, 10, 20*time.Minute, uploadRateLimiter, reg)
 
 		ctx := context.Background()
 
@@ -92,7 +92,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("returns error when context cancelled", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		// Very low QPS to ensure blocking (will cap initialQPS=1000 to maxQPS=1).
-		limiter := newRateLimiter(1000, 1, 20*time.Minute, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 1000, 1, 20*time.Minute, uploadRateLimiter, reg)
 
 		// Consume all initial burst tokens (burst = 2 * 1 = 2).
 		for range 2 {
@@ -110,7 +110,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("records metrics for allowed and limited requests", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		// maxQPS=100 caps initialQPS=1000 down to 100.
-		limiter := newRateLimiter(1000, 100, 20*time.Minute, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 1000, 100, 20*time.Minute, uploadRateLimiter, reg)
 
 		ctx := context.Background()
 
@@ -140,7 +140,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("is safe for concurrent use", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		// maxQPS=50 caps initialQPS=1000 down to 50.
-		limiter := newRateLimiter(1000, 50, 20*time.Minute, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 1000, 50, 20*time.Minute, uploadRateLimiter, reg)
 
 		ctx := context.Background()
 		numGoroutines := 100
@@ -175,8 +175,8 @@ func TestRateLimiter(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 
 		// Create rate limiters for different operations.
-		uploadLimiter := newRateLimiter(100, 100, 20*time.Minute, uploadRateLimiter, reg)
-		readLimiter := newRateLimiter(200, 200, 20*time.Minute, readRateLimiter, reg)
+		uploadLimiter := newRateLimiter("test", 100, 100, 20*time.Minute, uploadRateLimiter, reg)
+		readLimiter := newRateLimiter("test", 200, 200, 20*time.Minute, readRateLimiter, reg)
 
 		ctx := context.Background()
 
@@ -192,7 +192,7 @@ func TestRateLimiter(t *testing.T) {
 	})
 
 	t.Run("works without metrics when registerer is nil", func(t *testing.T) {
-		limiter := newRateLimiter(100, 100, 20*time.Minute, uploadRateLimiter, nil)
+		limiter := newRateLimiter("test", 100, 100, 20*time.Minute, uploadRateLimiter, nil)
 
 		// Verify rate limiter works without metrics.
 		ctx := context.Background()
@@ -209,7 +209,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("rate limits without panic when registerer is nil", func(t *testing.T) {
 		// Test that rate limiting works correctly even with nil registerer
 		// when we need to wait (i.e., exceed the burst).
-		limiter := newRateLimiter(1000, 10, 20*time.Minute, uploadRateLimiter, nil)
+		limiter := newRateLimiter("test", 1000, 10, 20*time.Minute, uploadRateLimiter, nil)
 
 		ctx := context.Background()
 
@@ -232,7 +232,7 @@ func TestRateLimiter(t *testing.T) {
 	t.Run("respects custom initial QPS", func(t *testing.T) {
 		reg := prometheus.NewPedanticRegistry()
 		// Use a custom initial QPS of 50 with max of 200.
-		limiter := newRateLimiter(50, 200, 100*time.Millisecond, uploadRateLimiter, reg)
+		limiter := newRateLimiter("test", 50, 200, 100*time.Millisecond, uploadRateLimiter, reg)
 
 		assert.Equal(t, 50, limiter.getCurrentQPS())
 
@@ -243,5 +243,89 @@ func TestRateLimiter(t *testing.T) {
 		// After two ramp periods, should double to 200 (max).
 		time.Sleep(100 * time.Millisecond)
 		assert.Equal(t, 200, limiter.getCurrentQPS())
+	})
+
+	t.Run("backoff halves QPS", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
+		limiter := newRateLimiter("test", 100, 100, 20*time.Minute, uploadRateLimiter, reg)
+
+		assert.Equal(t, 100, limiter.getCurrentQPS())
+
+		limiter.Backoff()
+		assert.Equal(t, 50, limiter.getCurrentQPS())
+
+		// Verify metric was incremented.
+		assert.Equal(t, 1.0, testutil.ToFloat64(limiter.backoffsTotal))
+		assert.Equal(t, 50.0, testutil.ToFloat64(limiter.currentQPSGauge))
+	})
+
+	t.Run("backoff respects cooldown", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
+		limiter := newRateLimiter("test", 100, 100, 20*time.Minute, uploadRateLimiter, reg)
+
+		assert.Equal(t, 100, limiter.getCurrentQPS())
+
+		// First backoff should work.
+		limiter.Backoff()
+		assert.Equal(t, 50, limiter.getCurrentQPS())
+
+		// Second immediate backoff should be ignored due to cooldown.
+		limiter.Backoff()
+		assert.Equal(t, 50, limiter.getCurrentQPS())
+
+		// Only one backoff should have been recorded.
+		assert.Equal(t, 1.0, testutil.ToFloat64(limiter.backoffsTotal))
+	})
+
+	t.Run("backoff does not go below 1 QPS", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
+		limiter := newRateLimiter("test", 2, 2, 20*time.Minute, uploadRateLimiter, reg)
+
+		assert.Equal(t, 2, limiter.getCurrentQPS())
+
+		// First backoff: 2 -> 1.
+		limiter.Backoff()
+		assert.Equal(t, 1, limiter.getCurrentQPS())
+
+		// Manually reset lastBackoff to allow another backoff.
+		limiter.mu.Lock()
+		limiter.lastBackoff = time.Time{}
+		limiter.mu.Unlock()
+
+		// Second backoff should not go below 1.
+		limiter.Backoff()
+		assert.Equal(t, 1, limiter.getCurrentQPS())
+
+		// Only one backoff should have been recorded (second was a no-op).
+		assert.Equal(t, 1.0, testutil.ToFloat64(limiter.backoffsTotal))
+	})
+
+	t.Run("backoff restarts ramp-up from backed-off rate", func(t *testing.T) {
+		reg := prometheus.NewPedanticRegistry()
+		limiter := newRateLimiter("test", 100, 200, 50*time.Millisecond, uploadRateLimiter, reg)
+
+		assert.Equal(t, 100, limiter.getCurrentQPS())
+
+		// Let it ramp up to 200.
+		time.Sleep(60 * time.Millisecond)
+		assert.Equal(t, 200, limiter.getCurrentQPS())
+
+		// Backoff: 200 -> 100.
+		limiter.Backoff()
+		assert.Equal(t, 100, limiter.getCurrentQPS())
+
+		// After one ramp period, should double to 200 again.
+		time.Sleep(60 * time.Millisecond)
+		assert.Equal(t, 200, limiter.getCurrentQPS())
+	})
+
+	t.Run("backoff works without metrics when registerer is nil", func(t *testing.T) {
+		limiter := newRateLimiter("test", 100, 100, 20*time.Minute, uploadRateLimiter, nil)
+
+		assert.Equal(t, 100, limiter.getCurrentQPS())
+
+		// Should not panic.
+		limiter.Backoff()
+		assert.Equal(t, 50, limiter.getCurrentQPS())
 	})
 }

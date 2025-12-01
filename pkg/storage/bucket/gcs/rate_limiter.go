@@ -20,29 +20,40 @@ const (
 	readRateLimiter
 )
 
+const (
+	// backoffCooldown is the minimum time between successive backoffs to prevent
+	// oscillation when multiple concurrent requests hit rate limits.
+	backoffCooldown = 5 * time.Second
+)
+
 // rateLimiter implements request rate limiting with exponential doubling
 // following Google Cloud Storage best practices for ramping up request rates.
 // See: https://cloud.google.com/storage/docs/request-rate#ramp-up.
+//
+// The rate limiter also supports adaptive backoff: when GCS returns a 429
+// rate limit error, the rate is immediately halved to reduce pressure.
 type rateLimiter struct {
 	initialQPS int
 	maxQPS     int
 	rampPeriod time.Duration
 
-	mu         sync.Mutex
-	startTime  time.Time
-	currentQPS int
-	limiter    *rate.Limiter
+	mu          sync.Mutex
+	startTime   time.Time
+	currentQPS  int
+	limiter     *rate.Limiter
+	lastBackoff time.Time // Time of last backoff to prevent rapid successive backoffs
 
 	rateLimitedSeconds prometheus.Counter
 	currentQPSGauge    prometheus.Gauge
 	requestsTotal      *prometheus.CounterVec
+	backoffsTotal      prometheus.Counter
 }
 
 // newRateLimiter creates a new rate limiter with exponential doubling.
 // The rate starts at initialQPS (capped by maxQPS) and doubles every rampPeriod until it reaches maxQPS.
 // The mode parameter configures whether to rate limit uploads or reads (used for metrics labels).
 // If reg is nil, no metrics will be registered.
-func newRateLimiter(initialQPS, maxQPS int, rampPeriod time.Duration, mode rateLimiterMode, reg prometheus.Registerer) *rateLimiter {
+func newRateLimiter(name string, initialQPS, maxQPS int, rampPeriod time.Duration, mode rateLimiterMode, reg prometheus.Registerer) *rateLimiter {
 	var operation string
 	switch mode {
 	case uploadRateLimiter:
@@ -63,7 +74,7 @@ func newRateLimiter(initialQPS, maxQPS int, rampPeriod time.Duration, mode rateL
 	}
 
 	if reg != nil {
-		constLabels := prometheus.Labels{"operation": operation}
+		constLabels := prometheus.Labels{"name": name, "operation": operation}
 		rl.rateLimitedSeconds = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name:        "cortex_gcs_rate_limited_seconds_total",
 			Help:        "Total seconds spent waiting due to GCS rate limiting.",
@@ -79,6 +90,11 @@ func newRateLimiter(initialQPS, maxQPS int, rampPeriod time.Duration, mode rateL
 			Help:        "Total GCS requests, labeled by whether they were allowed immediately or rate limited.",
 			ConstLabels: constLabels,
 		}, []string{"allowed"})
+		rl.backoffsTotal = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_gcs_rate_limit_backoffs_total",
+			Help:        "Total number of backoffs due to GCS 429 rate limit errors.",
+			ConstLabels: constLabels,
+		})
 		rl.currentQPSGauge.Set(float64(startQPS))
 	}
 
@@ -150,4 +166,45 @@ func (rl *rateLimiter) getCurrentQPS() int {
 	defer rl.mu.Unlock()
 	rl.maybeUpdateRate()
 	return rl.currentQPS
+}
+
+// Backoff reduces the rate limit in response to a 429 rate limit error from GCS.
+// It halves the current QPS and resets the ramp-up start time so that the rate
+// will gradually increase again from the new lower value.
+//
+// To prevent oscillation when multiple concurrent requests hit rate limits,
+// backoff is only applied if at least backoffCooldown has passed since the last backoff.
+func (rl *rateLimiter) Backoff() {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	now := time.Now()
+	if now.Sub(rl.lastBackoff) < backoffCooldown {
+		// Too soon since last backoff, skip to avoid oscillation.
+		return
+	}
+
+	// Halve the current QPS, but don't go below 1.
+	newQPS := max(rl.currentQPS/2, 1)
+	if newQPS == rl.currentQPS {
+		// Already at minimum, nothing to do.
+		return
+	}
+
+	rl.currentQPS = newQPS
+	rl.limiter.SetLimit(rate.Limit(newQPS))
+	rl.limiter.SetBurst(newQPS * 2)
+
+	// Reset start time so ramp-up begins from this new lower rate.
+	// We set initialQPS to the new backed-off rate so doubling starts from here.
+	rl.initialQPS = newQPS
+	rl.startTime = now
+	rl.lastBackoff = now
+
+	if rl.currentQPSGauge != nil {
+		rl.currentQPSGauge.Set(float64(newQPS))
+	}
+	if rl.backoffsTotal != nil {
+		rl.backoffsTotal.Inc()
+	}
 }

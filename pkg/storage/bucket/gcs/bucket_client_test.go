@@ -5,6 +5,8 @@ package gcs
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
+	"google.golang.org/api/googleapi"
 )
 
 // mockBucket is a simple mock implementation of objstore.Bucket for testing.
@@ -94,7 +97,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:        mock,
-				uploadLimiter: newRateLimiter(10, 10, 20*time.Minute, uploadRateLimiter, reg),
+				uploadLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, uploadRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -112,7 +115,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:        mock,
-				uploadLimiter: newRateLimiter(5, 5, 20*time.Minute, uploadRateLimiter, reg),
+				uploadLimiter: newRateLimiter("test", 5, 5, 20*time.Minute, uploadRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -141,7 +144,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:        mock,
-				uploadLimiter: newRateLimiter(1, 1, 20*time.Minute, uploadRateLimiter, reg),
+				uploadLimiter: newRateLimiter("test", 1, 1, 20*time.Minute, uploadRateLimiter, reg),
 			}
 
 			// Consume all burst tokens (burst = 2 * maxQPS = 2).
@@ -167,7 +170,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:        mock,
-				uploadLimiter: newRateLimiter(20, 20, 20*time.Minute, uploadRateLimiter, reg),
+				uploadLimiter: newRateLimiter("test", 20, 20, 20*time.Minute, uploadRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -208,7 +211,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(10, 10, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -227,7 +230,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(5, 5, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 5, 5, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -256,7 +259,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(1, 1, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 1, 1, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			// Consume all burst tokens (burst = 2 * maxQPS = 2).
@@ -286,7 +289,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(10, 10, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -305,7 +308,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(5, 5, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 5, 5, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -336,7 +339,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(10, 10, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -353,7 +356,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(1, 1, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 1, 1, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			// Consume all burst tokens (burst = 2 * maxQPS = 2).
@@ -377,7 +380,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(10, 10, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			ctx := context.Background()
@@ -394,7 +397,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(1, 1, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 1, 1, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			// Consume all burst tokens (burst = 2 * maxQPS = 2).
@@ -417,7 +420,7 @@ func TestRateLimitedBucket(t *testing.T) {
 			mock := &mockBucket{}
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(10, 10, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, readRateLimiter, reg),
 			}
 			ctx := context.Background()
 
@@ -431,7 +434,7 @@ func TestRateLimitedBucket(t *testing.T) {
 			mock := &mockBucket{}
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(1, 1, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 1, 1, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			// Consume all burst tokens (burst = 2 * maxQPS = 2).
@@ -453,7 +456,7 @@ func TestRateLimitedBucket(t *testing.T) {
 			mock := &mockBucket{}
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(10, 10, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, readRateLimiter, reg),
 			}
 			ctx := context.Background()
 
@@ -467,7 +470,7 @@ func TestRateLimitedBucket(t *testing.T) {
 			mock := &mockBucket{}
 			bucket := &rateLimitedBucket{
 				Bucket:      mock,
-				readLimiter: newRateLimiter(1, 1, 20*time.Minute, readRateLimiter, reg),
+				readLimiter: newRateLimiter("test", 1, 1, 20*time.Minute, readRateLimiter, reg),
 			}
 
 			// Consume all burst tokens (burst = 2 * maxQPS = 2).
@@ -489,7 +492,7 @@ func TestRateLimitedBucket(t *testing.T) {
 			mock := &mockBucket{}
 			bucket := &rateLimitedBucket{
 				Bucket:        mock,
-				uploadLimiter: newRateLimiter(10, 10, 20*time.Minute, uploadRateLimiter, reg),
+				uploadLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, uploadRateLimiter, reg),
 			}
 			ctx := context.Background()
 
@@ -503,7 +506,7 @@ func TestRateLimitedBucket(t *testing.T) {
 			mock := &mockBucket{}
 			bucket := &rateLimitedBucket{
 				Bucket:        mock,
-				uploadLimiter: newRateLimiter(1, 1, 20*time.Minute, uploadRateLimiter, reg),
+				uploadLimiter: newRateLimiter("test", 1, 1, 20*time.Minute, uploadRateLimiter, reg),
 			}
 
 			// Consume all burst tokens (burst = 2 * maxQPS = 2).
@@ -525,8 +528,8 @@ func TestRateLimitedBucket(t *testing.T) {
 
 		bucket := &rateLimitedBucket{
 			Bucket:        mock,
-			uploadLimiter: newRateLimiter(10, 10, 20*time.Minute, uploadRateLimiter, reg),
-			readLimiter:   newRateLimiter(20, 20, 20*time.Minute, readRateLimiter, reg),
+			uploadLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, uploadRateLimiter, reg),
+			readLimiter:   newRateLimiter("test", 20, 20, 20*time.Minute, readRateLimiter, reg),
 		}
 
 		ctx := context.Background()
@@ -565,7 +568,7 @@ func TestRateLimitedBucket(t *testing.T) {
 
 		bucket := &rateLimitedBucket{
 			Bucket:        mock,
-			uploadLimiter: newRateLimiter(10, 10, 20*time.Minute, uploadRateLimiter, reg),
+			uploadLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, uploadRateLimiter, reg),
 			// readLimiter is nil
 		}
 
@@ -585,7 +588,7 @@ func TestRateLimitedBucket(t *testing.T) {
 		bucket := &rateLimitedBucket{
 			Bucket: mock,
 			// uploadLimiter is nil
-			readLimiter: newRateLimiter(10, 10, 20*time.Minute, readRateLimiter, reg),
+			readLimiter: newRateLimiter("test", 10, 10, 20*time.Minute, readRateLimiter, reg),
 		}
 
 		ctx := context.Background()
@@ -777,6 +780,52 @@ func TestConfig_Validate(t *testing.T) {
 			} else {
 				assert.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestIsRateLimitError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "generic error",
+			err:      errors.New("some error"),
+			expected: false,
+		},
+		{
+			name:     "googleapi 429 error",
+			err:      &googleapi.Error{Code: 429},
+			expected: true,
+		},
+		{
+			name:     "googleapi 500 error",
+			err:      &googleapi.Error{Code: 500},
+			expected: false,
+		},
+		{
+			name:     "googleapi 404 error",
+			err:      &googleapi.Error{Code: 404},
+			expected: false,
+		},
+		{
+			name:     "wrapped googleapi 429 error",
+			err:      fmt.Errorf("operation failed: %w", &googleapi.Error{Code: 429}),
+			expected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isRateLimitError(tc.err)
+			assert.Equal(t, tc.expected, result)
 		})
 	}
 }
