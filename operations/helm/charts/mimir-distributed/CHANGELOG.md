@@ -27,6 +27,10 @@ Entries should be ordered as follows:
 
 Entries should include a reference to the Pull Request that introduced the change.
 
+## 6.0.5
+
+* [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650
+
 ## 6.0.4
 
 * [CHANGE] Upgrade Mimir to [3.0.1](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#301). #13702
