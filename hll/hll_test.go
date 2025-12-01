@@ -36,6 +36,42 @@ var table = [5]enc{
 	2 + tableOffset:  {val: 0b101, bits: 3},
 }
 
+func TestNewSeriesHLL(t *testing.T) {
+	const partitions = 5000
+	const seriesPerPartition = 10
+	for _, seriesPerPartition := range []int{1, 10, 100} {
+		hlls := make([]*hyperloglog.HyperLogLog, partitions)
+		for i := range hlls {
+			var err error
+			hlls[i], err = hyperloglog.New(2048)
+			require.NoError(t, err)
+		}
+
+		for i := range hlls {
+			for s := 0; s < seriesPerPartition; s++ {
+				hlls[i].Add64(rand.Uint64())
+			}
+		}
+
+		var totalSize int
+		{
+			var buf bytes.Buffer
+			z, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
+			for _, hll := range hlls {
+				_, err := z.Write(hll.Registers)
+				require.NoError(t, err)
+				totalSize += size.Of(hll.Registers)
+			}
+			require.NoError(t, z.Flush())
+			require.NoError(t, z.Close())
+			t.Logf("Total new series: %d (%d per partition, %d partitions), registers gzipped size: %d, ratio: %2.2f%%",
+				seriesPerPartition*partitions, seriesPerPartition, partitions,
+				len(buf.Bytes()),
+				100*float64(len(buf.Bytes()))/float64(totalSize))
+		}
+	}
+}
+
 func TestHLL(t *testing.T) {
 	const total = 3e6 / 20
 
