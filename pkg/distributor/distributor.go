@@ -35,8 +35,6 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
-	"github.com/opentracing/opentracing-go"
-	opentracing_log "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -1177,13 +1175,12 @@ type replicaInfo struct {
 //   - replicaRejectedTooManyClusters: sample is rejected because the tenant has too many HA clusters
 //   - replicaRejectedUnknown: sample is rejected due to an unknown error
 func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
-	if span := opentracing.SpanFromContext(ctx); span != nil {
+	span := trace.SpanFromContext(ctx)
+	span.SetAttributes(
 		// Make a copy of these, since they may be retained as tags
-		span.LogFields(
-			opentracing_log.String("cluster", strings.Clone(replica.cluster)),
-			opentracing_log.String("replica", strings.Clone(replica.replica)),
-		)
-	}
+		attribute.String("cluster", strings.Clone(replica.cluster)),
+		attribute.String("replica", strings.Clone(replica.replica)),
+	)
 
 	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica, ts)
 	if err != nil {
