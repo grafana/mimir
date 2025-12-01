@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !slicelabels && !dedupelabels && !uniquelabels
+//go:build uniquelabels
 
 package labels
 
@@ -24,31 +24,24 @@ import (
 func StableHash(ls Labels) uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
-	var h *xxhash.Digest
-	for i := 0; i < len(ls.data); {
-		var v Label
-		v.Name, i = decodeString(ls.data, i)
-		v.Value, i = decodeString(ls.data, i)
-		if h == nil && len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
-			// If labels entry is 1KB+, switch to Write API. Copy in the values up to this point.
-			h = xxhash.New()
+	for i, v := range ls {
+		if len(b)+len(v.name.String())+len(v.value.String())+2 >= cap(b) {
+			// If labels entry is 1KB+ do not allocate whole entry.
+			h := xxhash.New()
 			_, _ = h.Write(b)
-		}
-		if h != nil {
-			_, _ = h.WriteString(v.Name)
-			_, _ = h.Write(seps)
-			_, _ = h.WriteString(v.Value)
-			_, _ = h.Write(seps)
-			continue
+			for _, v := range ls[i:] {
+				_, _ = h.WriteString(v.name.String())
+				_, _ = h.Write(seps)
+				_, _ = h.WriteString(v.value.String())
+				_, _ = h.Write(seps)
+			}
+			return h.Sum64()
 		}
 
-		b = append(b, v.Name...)
+		b = append(b, v.name.String()...)
 		b = append(b, sep)
-		b = append(b, v.Value...)
+		b = append(b, v.value.String()...)
 		b = append(b, sep)
-	}
-	if h != nil {
-		return h.Sum64()
 	}
 	return xxhash.Sum64(b)
 }
