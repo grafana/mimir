@@ -83,14 +83,14 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 }
 
 func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (index.LookupPlan, error) {
+	if planningDisabled(ctx) {
+		return inPlan, nil
+	}
+
 	return p.planIndexLookup(ctx, inPlan, hints)
 }
 
 func (p CostBasedPlanner) planIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan *plan, retErr error) {
-	if planningDisabled(ctx) {
-		return nil, fmt.Errorf("cost-based planning is disabled in the context")
-	}
-
 	// Extract shard information from hints
 	var shard *sharding.ShardSelector
 	if hints != nil && hints.ShardCount > 0 {
@@ -103,8 +103,10 @@ func (p CostBasedPlanner) planIndexLookup(ctx context.Context, inPlan index.Look
 	var allPlans iter.Seq[plan]
 	memPools := newCostBasedPlannerPools()
 	defer func() {
-		planWithoutPools := retPlan.withoutMemoryPool()
-		retPlan = &planWithoutPools
+		if retPlan != nil {
+			planWithoutPools := retPlan.withoutMemoryPool()
+			retPlan = &planWithoutPools
+		}
 		memPools.Release()
 	}()
 
