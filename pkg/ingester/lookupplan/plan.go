@@ -4,7 +4,9 @@ package lookupplan
 
 import (
 	"context"
+	"math"
 	"slices"
+	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -138,7 +140,7 @@ func (p plan) filterCost() float64 {
 }
 
 func (p plan) intersectionSize() uint64 {
-	finalSelectivity := 1.0
+	predSelectivities := make([]float64, 0, len(p.predicates))
 	for i, pred := range p.predicates {
 		if !p.indexPredicate[i] {
 			continue
@@ -150,7 +152,17 @@ func (p plan) intersectionSize() uint64 {
 		// We also assume independence between the predicates. This is a simplification.
 		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
 		// While finalSelectivity is neither an upper bound nor a lower bound, assuming independence allows us to come up with cost estimates comparable between plans.
-		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
+		predSelectivities = append(predSelectivities, float64(pred.cardinality)/float64(p.totalSeries))
+	}
+
+	sort.Slice(predSelectivities, func(i, j int) bool {
+		// Sort in descending order
+		return predSelectivities[i] > predSelectivities[j]
+	})
+
+	finalSelectivity := 1.0
+	for i, sel := range predSelectivities {
+		finalSelectivity *= math.Pow(sel, 1.0/float64(int(1)<<i))
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
