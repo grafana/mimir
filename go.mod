@@ -339,7 +339,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/otel/metric v1.38.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6
+	golang.org/x/exp v0.0.0-20251125195548-87e1e737ad39
 	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/oauth2 v0.33.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
