@@ -101,13 +101,13 @@ func (q *Query) Exec(ctx context.Context) (res *promql.Result) {
 }
 
 // SeriesMetadataEvaluated implements the EvaluationObserver interface.
-func (q *Query) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, series []types.SeriesMetadata) error {
+func (q *Query) SeriesMetadataEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, series []types.SeriesMetadata) error {
 	q.seriesMetadata = series
 	return nil
 }
 
 // InstantVectorSeriesDataEvaluated implements the EvaluationObserver interface.
-func (q *Query) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error {
+func (q *Query) InstantVectorSeriesDataEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, seriesIndex int, _ int, seriesData types.InstantVectorSeriesData) error {
 	if len(seriesData.Floats) == 0 && len(seriesData.Histograms) == 0 {
 		// Nothing to do.
 		types.PutInstantVectorSeriesData(seriesData, q.memoryConsumptionTracker)
@@ -174,7 +174,7 @@ func (q *Query) appendSeriesToMatrix(series types.SeriesMetadata, seriesData typ
 }
 
 // RangeVectorStepSamplesEvaluated implements the EvaluationObserver interface.
-func (q *Query) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+func (q *Query) RangeVectorStepSamplesEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	if stepIndex != 0 {
 		// Top-level range vector expressions should only ever have one step (ie. be an instant query).
 		return fmt.Errorf("unexpected step index for range vector result: %d", stepIndex)
@@ -212,7 +212,7 @@ func (q *Query) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *
 }
 
 // ScalarEvaluated implements the EvaluationObserver interface.
-func (q *Query) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data types.ScalarData) error {
+func (q *Query) ScalarEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, data types.ScalarData) error {
 	if q.topLevelQueryTimeRange.IsInstant {
 		defer types.FPointSlicePool.Put(&data.Samples, q.memoryConsumptionTracker)
 
@@ -234,7 +234,7 @@ func (q *Query) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, node 
 }
 
 // StringEvaluated implements the EvaluationObserver interface.
-func (q *Query) StringEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data string) error {
+func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, data string) error {
 	q.string = &promql.String{
 		T: q.topLevelQueryTimeRange.StartT,
 		V: data,
@@ -244,7 +244,7 @@ func (q *Query) StringEvaluated(ctx context.Context, evaluator *Evaluator, node 
 }
 
 // EvaluationCompleted implements the EvaluationObserver interface.
-func (q *Query) EvaluationCompleted(ctx context.Context, evaluator *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
+func (q *Query) EvaluationCompleted(_ context.Context, _ *Evaluator, annotations *annotations.Annotations, stats *types.QueryStats) error {
 	q.annotations = annotations
 	q.stats = stats
 	return nil
