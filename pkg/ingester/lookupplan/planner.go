@@ -82,11 +82,15 @@ func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config Co
 	}
 }
 
-func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan index.LookupPlan, retErr error) {
+func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (index.LookupPlan, error) {
 	if planningDisabled(ctx) {
 		return inPlan, nil
 	}
 
+	return p.planIndexLookup(ctx, inPlan, hints)
+}
+
+func (p CostBasedPlanner) planIndexLookup(ctx context.Context, inPlan index.LookupPlan, hints *storage.SelectHints) (retPlan *plan, retErr error) {
 	// Extract shard information from hints
 	var shard *sharding.ShardSelector
 	if hints != nil && hints.ShardCount > 0 {
@@ -98,19 +102,16 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 
 	var allPlans iter.Seq[plan]
 	memPools := newCostBasedPlannerPools()
-	defer memPools.Release()
 	defer func() {
-		if plan, ok := retPlan.(plan); ok {
-			retPlan = plan.withoutMemoryPool()
+		if retPlan != nil {
+			planWithoutPools := retPlan.withoutMemoryPool()
+			retPlan = &planWithoutPools
 		}
+		memPools.Release()
 	}()
 
 	defer func(start time.Time) {
-		var selectedPlan *plan
-		if p, ok := retPlan.(*plan); ok {
-			selectedPlan = p
-		}
-		p.recordPlanningOutcome(ctx, start, retErr, selectedPlan, allPlans)
+		p.recordPlanningOutcome(ctx, start, retErr, retPlan, allPlans)
 	}(time.Now())
 
 	// Repartition the matchers. We don't trust other planners.
@@ -124,7 +125,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 		return nil, fmt.Errorf("no plan with index matchers found")
 	}
 
-	return *lookupPlan, nil
+	return lookupPlan, nil
 }
 
 func (p CostBasedPlanner) chooseBestPlan(allPlans iter.Seq[plan]) *plan {
