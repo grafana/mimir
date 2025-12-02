@@ -82,6 +82,12 @@ message TimeSeries {
   // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
   // Zero value means value not set. If you need to use exactly zero value for
   // the timestamp, use 1 millisecond before or after.
+  //
+  // In https://github.com/prometheus/prometheus/pull/17411 this field was deprecated
+  // in favor of start_timestamp on samples/histograms. This was done in a compatibility
+  // breaking manner. In order to preserve an easier transition across the breaking change,
+  // we keep the old field around for older clients.
+  // In general, prefer start_timestamp fields instead.
   int64 created_timestamp = 6;
 }
 
