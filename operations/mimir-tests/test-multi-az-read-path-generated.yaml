@@ -1392,7 +1392,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 10
-  replicas: 3
+  replicas: 2
   revisionHistoryLimit: 10
   selector:
     matchLabels:
@@ -1477,7 +1477,7 @@ metadata:
   namespace: default
 spec:
   minReadySeconds: 10
-  replicas: 3
+  replicas: 2
   revisionHistoryLimit: 10
   selector:
     matchLabels:

@@ -8,6 +8,12 @@
     // Priority class for memberlist-bridge pods. Memberlist-bridge pods act as bridges between AZs
     // so they're critical to avoid network partitioning.
     memberlist_bridge_priority_class: 'high-nonpreempting',
+
+    // Number of memberlist-bridge replicas per zone. Memberlist zone-aware routing has an
+    // auto-failover mechanism to temporarily disable zone-aware routing if it detects that
+    // a zone has no healthy bridges; for this reason, 2 replicas are enough for high-availability
+    // without a significant risk of network partitioning if both bridges in a zone are unhealthy.
+    memberlist_bridge_replicas_per_zone: 2,
   },
 
   _images+:: if $._config.multi_zone_memberlist_bridge_enabled then {
@@ -113,7 +119,7 @@
   newMemberlistBridgeZoneDeployment(zone, container, nodeAffinityMatchers=[])::
     local name = 'memberlist-bridge-zone-%s' % zone;
 
-    deployment.new(name, 3, [container])
+    deployment.new(name, $._config.memberlist_bridge_replicas_per_zone, [container])
     + $.newMimirSpreadTopology(name, 1)
     + $.newMimirNodeAffinityMatchers(nodeAffinityMatchers)
     + (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector))

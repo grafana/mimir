@@ -158,6 +158,7 @@
 * [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Ingester: Increase `$._config.ingester_tsdb_head_early_compaction_min_in_memory_series` default when Mimir is running with the ingest storage architecture. #13450
+* [ENHANCEMENT] Memberlist bridge: Add `memberlist_bridge_replicas_per_zone` configuration option (default: 2). #13727
 * [ENHANCEMENT] Update the list of OTel resource attributes used for tracing. #13469
 * [ENHANCEMENT] Ingester: Set `-ingester.partition-ring.delete-inactive-partition-after` based on  `-querier.query-ingesters-within`. #13550
 * [ENHANCEMENT] Add extra, **experimental**, KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled and `$._config.autoscaling_oom_protection_enabled` is true. #13509
