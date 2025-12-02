@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	// "runtime/metrics"
 	"slices"
 	"strconv"
 	"strings"
@@ -1032,6 +1033,29 @@ var extraLabels = []labels.Label{
 	{Name: "pod_name", Value: "some-other-name-5j8s8"},
 }
 
+func pushFunc(_ context.Context, pushReq *Request) error {
+	/*
+	sample := []metrics.Sample{
+		{
+			Name: "/gc/heap/allocs:bytes",
+		},
+		{
+			Name: "/gc/heap/frees:bytes",
+		},
+	}
+
+	metrics.Read(sample)
+	fmt.Println("ldufresne:", sample[0].Value.Uint64() - sample[1].Value.Uint64())
+	*/
+
+	if _, err := pushReq.WriteRequest(); err != nil {
+		return err
+	}
+
+	pushReq.CleanUp()
+	return nil
+}
+
 func BenchmarkOTLPHandler(b *testing.B) {
 	const numSeries = 2000
 	const numSamplesPerSeries = 1
@@ -1101,15 +1125,6 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	}
 
 	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
-
-	pushFunc := func(_ context.Context, pushReq *Request) error {
-		if _, err := pushReq.WriteRequest(); err != nil {
-			return err
-		}
-
-		pushReq.CleanUp()
-		return nil
-	}
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		10000000, nil, nil, limits, nil, nil,
@@ -1118,6 +1133,19 @@ func BenchmarkOTLPHandler(b *testing.B) {
 
 	b.Run("protobuf", func(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("lazy", func(b *testing.B) {
+		req := createOTLPProtoRequest(b, exportReq, "")
+		req.Header.Set("X-Lazy", "true")
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
@@ -1203,14 +1231,6 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 		}
 	}
 
-	pushFunc := func(_ context.Context, pushReq *Request) error {
-		if _, err := pushReq.WriteRequest(); err != nil {
-			return err
-		}
-
-		pushReq.CleanUp()
-		return nil
-	}
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		200000000, nil, nil, limits, nil, nil,
@@ -1223,13 +1243,23 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
 		req := createOTLPProtoRequest(b, exportReq, "")
 
-		// Get rid of all the temporary limit used to marshal the request in
-		// order to get more accurate and reliable results.
-		// exportReq = pmetricotlp.ExportRequest{}
-		// runtime.GC()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("lazy", func(b *testing.B) {
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md, NumberOfResourceMetrics)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+		req.Header.Set("X-Lazy", "true")
 
 		b.ResetTimer()
-
 		for i := 0; i < b.N; i++ {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)

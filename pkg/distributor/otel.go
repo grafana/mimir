@@ -246,6 +246,7 @@ func newOTLPParser(
 				exportReq := pmetricotlp.NewExportRequest()
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
+					lazy: r.Header.Get("X-Lazy") != "",
 				}
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
@@ -525,6 +526,7 @@ func marshal(payload proto.Message, contentType string) ([]byte, string, error) 
 // otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest.
 type otlpProtoUnmarshaler struct {
 	request *pmetricotlp.ExportRequest
+	lazy     bool
 }
 
 func (o otlpProtoUnmarshaler) ProtoMessage() {}
@@ -536,7 +538,11 @@ func (o otlpProtoUnmarshaler) String() string {
 }
 
 func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
-	return o.request.UnmarshalProto(data)
+	if o.lazy {
+		return o.request.UnmarshalProtoLazy(data)
+	} else {
+		return o.request.UnmarshalProto(data)
+	}
 }
 
 type conversionOptions struct {
