@@ -94,6 +94,12 @@ message Sample {
   // Fields order MUST match promql.FPoint so that we can cast types between them.
   int64 timestamp_ms = 2;
   double value = 1;
+  // Copy from remote write 2.0.
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 3;
 }
 
 message MetricMetadata {
