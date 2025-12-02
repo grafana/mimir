@@ -19,6 +19,21 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
 
     // Toleration to add to all Mimir components when multi-zone deployment is enabled.
     multi_zone_schedule_toleration: 'secondary-az',
+
+    // CLI arguments to exclude from multi-zone config validation.
+    multi_zone_config_validation_excluded_args: [
+      // Memberlist is currently cross-AZ.
+      '-memberlist.join',
+      // Alertmanager is not deployed per-zone.
+      '-ruler.alertmanager-url',
+    ],
+
+    // Environment variables to exclude from multi-zone config validation.
+    multi_zone_config_validation_excluded_env_vars: [
+      // Alloy installation is currently centralised.
+      'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
+      'OTEL_TRACES_SAMPLER_ARG',
+    ],
   },
 
   assert !$._config.multi_zone_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
@@ -55,17 +70,8 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   //   assert schedulerError == null: schedulerError,
   validateMimirMultiZoneConfig(deploymentNames)::
     local root = $;
-    local excludedArgs = [
-      // Memberlist is currently cross-AZ.
-      '-memberlist.join',
-      // Alertmanager is not deployed per-zone.
-      '-ruler.alertmanager-url',
-    ];
-    local excludedEnvVars = [
-      // Alloy installation is currently centralised.
-      'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
-      'OTEL_TRACES_SAMPLER_ARG',
-    ];
+    local excludedArgs = $._config.multi_zone_config_validation_excluded_args;
+    local excludedEnvVars = $._config.multi_zone_config_validation_excluded_env_vars;
 
     local isContainerArgExcluded(arg) =
       std.foldl(
