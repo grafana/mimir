@@ -1,11 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package rw2util
 
 import (
 	"testing"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestMetadataOnly(t *testing.T) {
