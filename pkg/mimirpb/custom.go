@@ -40,10 +40,12 @@ func (cfg CustomCodecConfig) RegisterGlobally() {
 }
 
 func init() {
-	// Instrument all buffers when testing.
+	config := CustomCodecConfig{}
 	if testing.Testing() {
-		CustomCodecConfig{InstrumentRefLeaksPct: 100}.RegisterGlobally()
+		// Instrument all buffers when testing.
+		config.InstrumentRefLeaksPct = 100
 	}
+	config.RegisterGlobally()
 }
 
 // codecV2 customizes gRPC marshalling and unmarshalling.
