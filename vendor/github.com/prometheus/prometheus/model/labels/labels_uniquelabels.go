@@ -27,15 +27,15 @@ import (
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
-type Labels []symbolisedLabel
+type Labels []SymbolisedLabel
 
-type symbolisedLabel struct {
-	name  Symbol
-	value Symbol
+type SymbolisedLabel struct {
+	Name  Symbol
+	Value Symbol
 }
 
-func (s symbolisedLabel) ToLabel() Label {
-	return Label{Name: s.name.String(), Value: s.value.String()}
+func (s SymbolisedLabel) ToLabel() Label {
+	return Label{Name: s.Name.String(), Value: s.Value.String()}
 }
 
 type Symbol unique.Handle[string]
@@ -54,7 +54,7 @@ var EmptySymbol = NewSymbol("")
 
 func (ls Labels) Len() int           { return len(ls) }
 func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
-func (ls Labels) Less(i, j int) bool { return ls[i].name.String() < ls[j].name.String() }
+func (ls Labels) Less(i, j int) bool { return ls[i].Name.String() < ls[j].Name.String() }
 
 // Bytes returns an opaque, not-human-readable, encoding of ls, usable as a map key.
 // Encoding may change over time or between runs of Prometheus.
@@ -65,9 +65,9 @@ func (ls Labels) Bytes(buf []byte) []byte {
 		if i > 0 {
 			b.WriteByte(sep)
 		}
-		b.WriteString(l.name.String())
+		b.WriteString(l.Name.String())
 		b.WriteByte(sep)
-		b.WriteString(l.value.String())
+		b.WriteString(l.Value.String())
 	}
 	return b.Bytes()
 }
@@ -84,7 +84,7 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	}
 
 	for _, v := range ls {
-		if _, ok := nameSet[v.name.String()]; on == ok && (on || v.name != MetricNameSymbol) {
+		if _, ok := nameSet[v.Name.String()]; on == ok && (on || v.Name != MetricNameSymbol) {
 			matchedLabels = append(matchedLabels, v)
 		}
 	}
@@ -98,22 +98,22 @@ func (ls Labels) Hash() uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
 	for i, v := range ls {
-		if len(b)+len(v.name.String())+len(v.value.String())+2 >= cap(b) {
+		if len(b)+len(v.Name.String())+len(v.Value.String())+2 >= cap(b) {
 			// If labels entry is 1KB+ do not allocate whole entry.
 			h := xxhash.New()
 			_, _ = h.Write(b)
 			for _, v := range ls[i:] {
-				_, _ = h.WriteString(v.name.String())
+				_, _ = h.WriteString(v.Name.String())
 				_, _ = h.Write(seps)
-				_, _ = h.WriteString(v.value.String())
+				_, _ = h.WriteString(v.Value.String())
 				_, _ = h.Write(seps)
 			}
 			return h.Sum64()
 		}
 
-		b = append(b, v.name.String()...)
+		b = append(b, v.Name.String()...)
 		b = append(b, sep)
-		b = append(b, v.value.String()...)
+		b = append(b, v.Value.String()...)
 		b = append(b, sep)
 	}
 	return xxhash.Sum64(b)
@@ -126,14 +126,14 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
 		switch {
-		case names[j] < ls[i].name.String():
+		case names[j] < ls[i].Name.String():
 			j++
-		case ls[i].name.String() < names[j]:
+		case ls[i].Name.String() < names[j]:
 			i++
 		default:
-			b = append(b, ls[i].name.String()...)
+			b = append(b, ls[i].Name.String()...)
 			b = append(b, sep)
-			b = append(b, ls[i].value.String()...)
+			b = append(b, ls[i].Value.String()...)
 			b = append(b, sep)
 			i++
 			j++
@@ -149,15 +149,15 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
 	j := 0
 	for i := range ls {
-		for j < len(names) && names[j] < ls[i].name.String() {
+		for j < len(names) && names[j] < ls[i].Name.String() {
 			j++
 		}
-		if ls[i].name == MetricNameSymbol || (j < len(names) && ls[i].name.String() == names[j]) {
+		if ls[i].Name == MetricNameSymbol || (j < len(names) && ls[i].Name.String() == names[j]) {
 			continue
 		}
-		b = append(b, ls[i].name.String()...)
+		b = append(b, ls[i].Name.String()...)
 		b = append(b, sep)
-		b = append(b, ls[i].value.String()...)
+		b = append(b, ls[i].Value.String()...)
 		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
@@ -171,17 +171,17 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
 		switch {
-		case names[j] < ls[i].name.String():
+		case names[j] < ls[i].Name.String():
 			j++
-		case ls[i].name.String() < names[j]:
+		case ls[i].Name.String() < names[j]:
 			i++
 		default:
 			if b.Len() > 1 {
 				b.WriteByte(sep)
 			}
-			b.WriteString(ls[i].name.String())
+			b.WriteString(ls[i].Name.String())
 			b.WriteByte(sep)
-			b.WriteString(ls[i].value.String())
+			b.WriteString(ls[i].Value.String())
 			i++
 			j++
 		}
@@ -196,18 +196,18 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 	b.WriteByte(labelSep)
 	j := 0
 	for i := range ls {
-		for j < len(names) && names[j] < ls[i].name.String() {
+		for j < len(names) && names[j] < ls[i].Name.String() {
 			j++
 		}
-		if j < len(names) && ls[i].name.String() == names[j] {
+		if j < len(names) && ls[i].Name.String() == names[j] {
 			continue
 		}
 		if b.Len() > 1 {
 			b.WriteByte(sep)
 		}
-		b.WriteString(ls[i].name.String())
+		b.WriteString(ls[i].Name.String())
 		b.WriteByte(sep)
-		b.WriteString(ls[i].value.String())
+		b.WriteString(ls[i].Value.String())
 	}
 	return b.Bytes()
 }
@@ -223,8 +223,8 @@ func (ls Labels) Copy() Labels {
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
 	for _, l := range ls {
-		if l.name.String() == name {
-			return l.value.String()
+		if l.Name.String() == name {
+			return l.Value.String()
 		}
 	}
 	return ""
@@ -234,8 +234,8 @@ func (ls Labels) Get(name string) string {
 // Returns an empty symbol if the label doesn't exist.
 func (ls Labels) getSymbol(name Symbol) Symbol {
 	for _, l := range ls {
-		if l.name == name {
-			return l.value
+		if l.Name == name {
+			return l.Value
 		}
 	}
 	return EmptySymbol
@@ -244,7 +244,7 @@ func (ls Labels) getSymbol(name Symbol) Symbol {
 // Has returns true if the label with the given name is present.
 func (ls Labels) Has(name string) bool {
 	for _, l := range ls {
-		if l.name.String() == name {
+		if l.Name.String() == name {
 			return true
 		}
 	}
@@ -258,8 +258,8 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 		if i == 0 {
 			continue
 		}
-		if l.name == ls[i-1].name {
-			return l.name.String(), true
+		if l.Name == ls[i-1].Name {
+			return l.Name.String(), true
 		}
 	}
 	return "", false
@@ -269,13 +269,13 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {
 	for _, v := range ls {
-		if v.value != EmptySymbol {
+		if v.Value != EmptySymbol {
 			continue
 		}
 		// Do not copy the slice until it's necessary.
 		els := make(Labels, 0, len(ls)-1)
 		for _, v := range ls {
-			if v.value != EmptySymbol {
+			if v.Value != EmptySymbol {
 				els = append(els, v)
 			}
 		}
@@ -290,7 +290,7 @@ func (ls Labels) WithoutEmpty() Labels {
 func (ls Labels) ByteSize() uint64 {
 	var size uint64
 	for _, l := range ls {
-		size += uint64(len(l.name.String())+len(l.value.String())) + 2*uint64(unsafe.Sizeof(""))
+		size += uint64(len(l.Name.String())+len(l.Value.String())) + 2*uint64(unsafe.Sizeof(""))
 	}
 	return size
 }
@@ -311,9 +311,9 @@ func New(ls ...Label) Labels {
 	res := make(Labels, 0, len(ls))
 
 	for _, l := range ls {
-		res = append(res, symbolisedLabel{
-			name:  NewSymbol(l.Name),
-			value: NewSymbol(l.Value),
+		res = append(res, SymbolisedLabel{
+			Name:  NewSymbol(l.Name),
+			Value: NewSymbol(l.Value),
 		})
 	}
 
@@ -328,9 +328,9 @@ func FromStrings(ss ...string) Labels {
 	}
 	res := make(Labels, 0, len(ss)/2)
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, symbolisedLabel{
-			name:  NewSymbol(ss[i]),
-			value: NewSymbol(ss[i+1]),
+		res = append(res, SymbolisedLabel{
+			Name:  NewSymbol(ss[i]),
+			Value: NewSymbol(ss[i+1]),
 		})
 	}
 
@@ -345,9 +345,9 @@ func FromSymbols(ss ...Symbol) Labels {
 	}
 	res := make(Labels, 0, len(ss)/2)
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, symbolisedLabel{
-			name:  ss[i],
-			value: ss[i+1],
+		res = append(res, SymbolisedLabel{
+			Name:  ss[i],
+			Value: ss[i+1],
 		})
 	}
 
@@ -357,7 +357,7 @@ func FromSymbols(ss ...Symbol) Labels {
 
 // sort sorts the labels in this label set by name.
 func (ls Labels) sort() {
-	slices.SortFunc(ls, func(a, b symbolisedLabel) int { return strings.Compare(a.name.String(), b.name.String()) })
+	slices.SortFunc(ls, func(a, b SymbolisedLabel) int { return strings.Compare(a.Name.String(), b.Name.String()) })
 }
 
 // Compare compares the two label sets.
@@ -369,14 +369,14 @@ func Compare(a, b Labels) int {
 	}
 
 	for i := 0; i < l; i++ {
-		if a[i].name != b[i].name {
-			if a[i].name.String() < b[i].name.String() {
+		if a[i].Name != b[i].Name {
+			if a[i].Name.String() < b[i].Name.String() {
 				return -1
 			}
 			return 1
 		}
-		if a[i].value != b[i].value {
-			if a[i].value.String() < b[i].value.String() {
+		if a[i].Value != b[i].Value {
+			if a[i].Value.String() < b[i].Value.String() {
 				return -1
 			}
 			return 1
@@ -407,7 +407,7 @@ func (ls Labels) Range(f func(l Label)) {
 // rangeSymbols calls f on each label.
 func (ls Labels) rangeSymbols(f func(name, value Symbol)) {
 	for _, l := range ls {
-		f(l.name, l.value)
+		f(l.Name, l.Value)
 	}
 }
 
@@ -438,10 +438,10 @@ func (ls Labels) DropReserved(shouldDropFn func(name string) bool) Labels {
 func (ls Labels) dropReservedSymbols(shouldDropFn func(name Symbol) bool) Labels {
 	rm := 0
 	for i, l := range ls {
-		if l.name.String()[0] > '_' { // Stop looking if we've gone past special labels.
+		if l.Name.String()[0] > '_' { // Stop looking if we've gone past special labels.
 			break
 		}
-		if shouldDropFn(l.name) {
+		if shouldDropFn(l.Name) {
 			i := i - rm // Offsetting after removals.
 			if i == 0 { // Make common case fast with no allocations.
 				ls = ls[1:]
@@ -459,16 +459,16 @@ func (ls Labels) dropReservedSymbols(shouldDropFn func(name Symbol) bool) Labels
 // InternStrings calls intern on every string value inside ls, replacing them with what it returns.
 func (ls *Labels) InternStrings(intern func(string) string) {
 	for i, l := range *ls {
-		(*ls)[i].name = NewSymbol(intern(l.name.String()))
-		(*ls)[i].value = NewSymbol(intern(l.value.String()))
+		(*ls)[i].Name = NewSymbol(intern(l.Name.String()))
+		(*ls)[i].Value = NewSymbol(intern(l.Value.String()))
 	}
 }
 
 // ReleaseStrings calls release on every string value inside ls.
 func (ls Labels) ReleaseStrings(release func(string)) {
 	for _, l := range ls {
-		release(l.name.String())
-		release(l.value.String())
+		release(l.Name.String())
+		release(l.Value.String())
 	}
 }
 
@@ -476,14 +476,14 @@ func (ls Labels) ReleaseStrings(release func(string)) {
 type Builder struct {
 	base Labels
 	del  []Symbol
-	add  []symbolisedLabel
+	add  []SymbolisedLabel
 }
 
 // NewBuilder returns a new LabelsBuilder.
 func NewBuilder(base Labels) *Builder {
 	b := &Builder{
 		del: make([]Symbol, 0, 5),
-		add: make([]symbolisedLabel, 0, 5),
+		add: make([]SymbolisedLabel, 0, 5),
 	}
 	b.Reset(base)
 	return b
@@ -495,7 +495,7 @@ func (b *Builder) Del(ns ...string) *Builder {
 		n := NewSymbol(n)
 
 		for i, a := range b.add {
-			if a.name == n {
+			if a.Name == n {
 				b.add = append(b.add[:i], b.add[i+1:]...)
 			}
 		}
@@ -527,14 +527,14 @@ func (b *Builder) Set(n, v string) *Builder {
 	vSymbol := NewSymbol(v)
 
 	for i, a := range b.add {
-		if a.name.String() == n {
-			b.add[i].value = vSymbol
+		if a.Name.String() == n {
+			b.add[i].Value = vSymbol
 			return b
 		}
 	}
 
 	nSymbol := NewSymbol(n)
-	b.add = append(b.add, symbolisedLabel{name: nSymbol, value: vSymbol})
+	b.add = append(b.add, SymbolisedLabel{Name: nSymbol, Value: vSymbol})
 
 	return b
 }
@@ -544,8 +544,8 @@ func (b *Builder) Get(n string) string {
 
 	// Del() removes entries from .add but Set() does not remove from .del, so check .add first.
 	for _, a := range b.add {
-		if a.name == nSymbol {
-			return a.value.String()
+		if a.Name == nSymbol {
+			return a.Value.String()
 		}
 	}
 	if slices.Contains(b.del, nSymbol) {
@@ -558,7 +558,7 @@ func (b *Builder) Get(n string) string {
 // Range calls f on each label in the Builder.
 func (b *Builder) Range(f func(l Label)) {
 	// Stack-based arrays to avoid heap allocation in most cases.
-	var addStack [128]symbolisedLabel
+	var addStack [128]SymbolisedLabel
 	var delStack [128]Symbol
 	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
 	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
@@ -572,9 +572,9 @@ func (b *Builder) Range(f func(l Label)) {
 	}
 }
 
-func contains(s []symbolisedLabel, n Symbol) bool {
+func contains(s []SymbolisedLabel, n Symbol) bool {
 	for _, a := range s {
-		if a.name == n {
+		if a.Name == n {
 			return true
 		}
 	}
@@ -607,7 +607,7 @@ func (b *Builder) Labels() Labels {
 	}
 	res := make(Labels, 0, expectedSize)
 	for _, l := range b.base {
-		if slices.Contains(b.del, l.name) || contains(b.add, l.name) {
+		if slices.Contains(b.del, l.Name) || contains(b.add, l.Name) {
 			continue
 		}
 		res = append(res, l)
@@ -634,7 +634,7 @@ func (*SymbolTable) Len() int { return 0 }
 
 // NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
 func NewScratchBuilder(n int) ScratchBuilder {
-	return ScratchBuilder{add: make([]symbolisedLabel, 0, n)}
+	return ScratchBuilder{add: make([]SymbolisedLabel, 0, n)}
 }
 
 // NewBuilderWithSymbolTable creates a Builder, for api parity with dedupelabels.
@@ -668,7 +668,7 @@ func (b *ScratchBuilder) Reset() {
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
 // If SetUnsafeAdd was set to false, the values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
-	b.add = append(b.add, symbolisedLabel{name: NewSymbol(name), value: NewSymbol(value)})
+	b.add = append(b.add, SymbolisedLabel{Name: NewSymbol(name), Value: NewSymbol(value)})
 }
 
 // Sort the labels added so far by name.
