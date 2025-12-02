@@ -186,6 +186,11 @@ func (symbols *SymbolTableBuilder) GetSymbols() []string {
 func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 	var rw2 *promRW2.Request
 
+	metadataByMetricName := make(map[string]prompb.MetricMetadata, len(req.Metadata))
+	for _, m := range req.Metadata {
+		metadataByMetricName[m.MetricFamilyName] = m
+	}
+
 	for _, ts := range req.Timeseries {
 		exemplars := make([]exemplar.Exemplar, 0, len(ts.Exemplars))
 		for _, e := range ts.Exemplars {
@@ -204,32 +209,9 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 		metricName := ts.Labels[slices.IndexFunc(ts.Labels, func(l prompb.Label) bool {
 			return l.Name == "__name__"
 		})].Value
-		metadataIdx := slices.IndexFunc(req.Metadata, func(m prompb.MetricMetadata) bool {
-			return m.MetricFamilyName == metricName
-		})
-		if metadataIdx >= 0 {
-			metadata := req.Metadata[metadataIdx]
-			switch metadata.Type {
-			case prompb.MetricMetadata_COUNTER:
-				metricType = promRW2.Metadata_METRIC_TYPE_COUNTER
-			case prompb.MetricMetadata_GAUGE:
-				metricType = promRW2.Metadata_METRIC_TYPE_GAUGE
-			case prompb.MetricMetadata_HISTOGRAM:
-				metricType = promRW2.Metadata_METRIC_TYPE_HISTOGRAM
-			case prompb.MetricMetadata_SUMMARY:
-				metricType = promRW2.Metadata_METRIC_TYPE_SUMMARY
-			case prompb.MetricMetadata_GAUGEHISTOGRAM:
-				metricType = promRW2.Metadata_METRIC_TYPE_GAUGEHISTOGRAM
-			case prompb.MetricMetadata_INFO:
-				metricType = promRW2.Metadata_METRIC_TYPE_INFO
-			case prompb.MetricMetadata_STATESET:
-				metricType = promRW2.Metadata_METRIC_TYPE_STATESET
-			case prompb.MetricMetadata_UNKNOWN:
-			default:
-				panic(fmt.Errorf("unexpected metadata type: %v", metadata.Type))
-			}
-			help = metadata.Help
-			unit = metadata.Unit
+		if metadata, ok := metadataByMetricName[metricName]; ok {
+			delete(metadataByMetricName, metricName)
+			metricType, help, unit = metadataFromPrompb(metadata)
 		}
 
 		labels := labelsFromPrompb(ts.Labels)
@@ -249,6 +231,11 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 		if len(histograms) > 0 {
 			rw2 = AddHistogramSeries(rw2, labels, histograms, help, unit, 0, exemplars)
 		}
+	}
+
+	for _, metadata := range metadataByMetricName {
+		metricType, help, unit := metadataFromPrompb(metadata)
+		rw2 = AddFloatSeries(rw2, labels.New(labels.Label{Name: "__name__", Value: metadata.MetricFamilyName}), nil, metricType, help, unit, 0, nil)
 	}
 
 	return rw2
@@ -315,4 +302,27 @@ func labelsFromPrompb(src []prompb.Label) labels.Labels {
 		dst = append(dst, labels.Label{Name: l.Name, Value: l.Value})
 	}
 	return labels.New(dst...)
+}
+
+func metadataFromPrompb(metadata prompb.MetricMetadata) (metricType promRW2.Metadata_MetricType, help string, unit string) {
+	switch metadata.Type {
+	case prompb.MetricMetadata_COUNTER:
+		metricType = promRW2.Metadata_METRIC_TYPE_COUNTER
+	case prompb.MetricMetadata_GAUGE:
+		metricType = promRW2.Metadata_METRIC_TYPE_GAUGE
+	case prompb.MetricMetadata_HISTOGRAM:
+		metricType = promRW2.Metadata_METRIC_TYPE_HISTOGRAM
+	case prompb.MetricMetadata_SUMMARY:
+		metricType = promRW2.Metadata_METRIC_TYPE_SUMMARY
+	case prompb.MetricMetadata_GAUGEHISTOGRAM:
+		metricType = promRW2.Metadata_METRIC_TYPE_GAUGEHISTOGRAM
+	case prompb.MetricMetadata_INFO:
+		metricType = promRW2.Metadata_METRIC_TYPE_INFO
+	case prompb.MetricMetadata_STATESET:
+		metricType = promRW2.Metadata_METRIC_TYPE_STATESET
+	case prompb.MetricMetadata_UNKNOWN:
+	default:
+		panic(fmt.Errorf("unexpected metadata type: %v", metadata.Type))
+	}
+	return metricType, metadata.Help, metadata.Unit
 }
