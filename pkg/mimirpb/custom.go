@@ -143,8 +143,8 @@ func unmarshalSlicePoolSizes() []int {
 	return sizes
 }
 
-// Unmarshal unmarshals an object using the global codec. Prefer this over calling
-// the Unmarshal method directly, as it will take advantage of pools and leak
+// Unmarshal unmarshals an object using the global codec. Prefer this over
+// calling the Unmarshal method directly, as it will take advantage of leak
 // detection.
 func Unmarshal(data []byte, v gogoproto.Unmarshaler) error {
 	return globalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
@@ -175,6 +175,12 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		instrumentedBuf := &instrumentLeaksBuf{Buffer: buf}
 		instrumentedBuf.refCount.Inc()
 		buf = instrumentedBuf
+	} else if len(data) == 1 {
+		// BufferSlice.MaterializeToBuffer already has this behavior when
+		// len(data) == 1, but we reproduce it here for explicitness and for
+		// ensuring forward-compatibility.
+		data[0].Ref()
+		buf = data[0]
 	} else {
 		buf = data.MaterializeToBuffer(unmarshalSlicePool)
 	}
