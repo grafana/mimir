@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Remote Write 2.0 related variables and functions.
@@ -34,15 +36,15 @@ const rw2SymbolPageSize = 16
 // or do reallocation. This is a compromise between the two.
 type rw2PagedSymbols struct {
 	count         uint32
-	pages         []*[]string
+	pages         []*[]labels.Symbol
 	offset        uint32
-	commonSymbols []string
+	commonSymbols []labels.Symbol
 }
 
-func (ps *rw2PagedSymbols) append(symbol string) {
+func (ps *rw2PagedSymbols) append(symbol labels.Symbol) {
 	symbolPage := ps.count >> rw2SymbolPageSize
 	if int(symbolPage) >= len(ps.pages) {
-		ps.pages = append(ps.pages, rw2PagedSymbolsPool.Get().(*[]string))
+		ps.pages = append(ps.pages, rw2PagedSymbolsPool.Get().(*[]labels.Symbol))
 	}
 	*ps.pages[symbolPage] = append(*ps.pages[symbolPage], symbol)
 	ps.count++
@@ -57,18 +59,18 @@ func (ps *rw2PagedSymbols) releasePages() {
 	ps.count = 0
 }
 
-func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
+func (ps *rw2PagedSymbols) get(ref uint32) (labels.Symbol, error) {
 	// RW2.0 Spec: The first element of the symbols table MUST be an empty string.
 	if ref == 0 {
-		return "", nil
+		return labels.EmptySymbol, nil
 	}
 
 	if ref < ps.offset {
 		if len(ps.commonSymbols) == 0 {
-			return "", fmt.Errorf("symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
+			return labels.EmptySymbol, fmt.Errorf("symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
 		}
 		if ref >= uint32(len(ps.commonSymbols)) {
-			return "", fmt.Errorf("common symbol reference %d is out of bounds", ref)
+			return labels.EmptySymbol, fmt.Errorf("common symbol reference %d is out of bounds", ref)
 		}
 		return ps.commonSymbols[ref], nil
 	}
@@ -77,13 +79,13 @@ func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
 		page := ps.pages[ref>>rw2SymbolPageSize]
 		return (*page)[ref&((1<<rw2SymbolPageSize)-1)], nil
 	}
-	return "", fmt.Errorf("symbol reference %d (offset %d) is out of bounds", ref, ps.offset)
+	return labels.EmptySymbol, fmt.Errorf("symbol reference %d (offset %d) is out of bounds", ref, ps.offset)
 }
 
 var (
 	rw2PagedSymbolsPool = sync.Pool{
 		New: func() interface{} {
-			page := make([]string, 0, 1<<rw2SymbolPageSize)
+			page := make([]labels.Symbol, 0, 1<<rw2SymbolPageSize)
 			return &page
 		},
 	}

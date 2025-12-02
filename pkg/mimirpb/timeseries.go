@@ -72,7 +72,7 @@ type PreallocWriteRequest struct {
 	RW2SymbolOffset uint32
 	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
 	// These symbols are never sent in the request to begin with.
-	RW2CommonSymbols []string
+	RW2CommonSymbols []labels.Symbol
 	// SkipNormalizeMetadataMetricName skips normalization of metric name in metadata on unmarshal. E.g., don't remove `_count` suffixes from histograms.
 	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
 	SkipNormalizeMetadataMetricName bool
@@ -289,7 +289,13 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 	p.TimeSeries = TimeseriesFromPool()
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
 	if symbols != nil {
-		return p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName)
+		if err := p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName); err != nil {
+			return err
+		}
+
+		// FIXME: this is a quick way to avoid changing all the places that refer to p.Labels.
+		p.Labels = FromLabelsToLabelAdapters(p.LabelsInstanceFromSymbols)
+		return nil
 	}
 	return p.TimeSeries.Unmarshal(dAtA)
 }

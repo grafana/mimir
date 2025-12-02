@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/prometheus/model/labels"
 	rw2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/stretchr/testify/require"
 	"github.com/xlab/treeprint"
@@ -75,6 +76,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									Value: "test_job",
 								},
 							},
+							LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total", "job", "test_job"),
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -169,8 +171,9 @@ func TestRW2Unmarshal(t *testing.T) {
 											Value: "test_metric_total",
 										},
 									},
-									Samples:   []Sample{},
-									Exemplars: []Exemplar{},
+									LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total"),
+									Samples:                   []Sample{},
+									Exemplars:                 []Exemplar{},
 								},
 							},
 						},
@@ -463,6 +466,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									Value: "test_job",
 								},
 							},
+							LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total", "job", "test_job"),
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -535,6 +539,7 @@ func TestRW2Unmarshal(t *testing.T) {
 
 	t.Run("offset and shared symbols produces expected write request", func(t *testing.T) {
 		commonSymbols := []string{"", "__name__", "job"}
+		symbolisedCommonSymbols := []labels.Symbol{labels.EmptySymbol, labels.MetricNameSymbol, labels.NewSymbol("job")}
 		syms := test.NewSymbolTableBuilderWithCommon(nil, uint32(len(commonSymbols)), commonSymbols)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
@@ -545,7 +550,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		received := PreallocWriteRequest{}
 		received.UnmarshalFromRW2 = true
 		received.RW2SymbolOffset = uint32(len(commonSymbols))
-		received.RW2CommonSymbols = commonSymbols
+		received.RW2CommonSymbols = symbolisedCommonSymbols
 		err = received.Unmarshal(data)
 		require.NoError(t, err)
 
@@ -564,6 +569,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									Value: "test_job",
 								},
 							},
+							LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total", "job", "test_job"),
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -598,11 +604,11 @@ func TestRW2Unmarshal(t *testing.T) {
 					},
 				},
 				unmarshalFromRW2: true,
-				rw2symbols:       rw2PagedSymbols{offset: 3, commonSymbols: commonSymbols},
+				rw2symbols:       rw2PagedSymbols{offset: 3, commonSymbols: symbolisedCommonSymbols},
 			},
 			UnmarshalFromRW2: true,
 			RW2SymbolOffset:  3,
-			RW2CommonSymbols: commonSymbols,
+			RW2CommonSymbols: symbolisedCommonSymbols,
 		}
 
 		// Check that the unmarshalled data matches the original data.
@@ -667,6 +673,7 @@ func TestRW2Unmarshal(t *testing.T) {
 
 	t.Run("common symbol out of bounds", func(t *testing.T) {
 		commonSyms := []string{"__name__"}
+		symbolisedCommonSymbols := []labels.Symbol{labels.MetricNameSymbol}
 		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, commonSyms)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
@@ -678,7 +685,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		received := PreallocWriteRequest{}
 		received.UnmarshalFromRW2 = true
 		received.RW2SymbolOffset = 256
-		received.RW2CommonSymbols = commonSyms
+		received.RW2CommonSymbols = symbolisedCommonSymbols
 		err = received.Unmarshal(data)
 		require.ErrorContains(t, err, "invalid")
 	})

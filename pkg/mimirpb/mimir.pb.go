@@ -10,6 +10,8 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -494,6 +496,8 @@ type TimeSeries struct {
 
 	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
+
+	LabelsInstanceFromSymbols labels.Labels
 }
 
 func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
@@ -7549,7 +7553,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 				return errorInvalidFirstSymbol
 			}
 			seenFirstSymbol = true
-			m.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))
+			m.rw2symbols.append(labels.NewSymbol(yoloString(dAtA[iNdEx:postIndex])))
 			iNdEx = postIndex
 		case 5:
 			if !m.unmarshalFromRW2 {
@@ -11309,8 +11313,8 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 				if elementCount%2 != 0 {
 					return errorOddNumberOfLabelRefs
 				}
-				if elementCount != 0 && len(m.Labels) == 0 {
-					m.Labels = make([]LabelAdapter, 0, elementCount/2)
+				if elementCount != 0 && len(m.LabelsInstanceFromSymbols) == 0 {
+					m.LabelsInstanceFromSymbols = make(labels.Labels, 0, elementCount/2)
 				}
 				idx := 0
 				metricNameLabel := false
@@ -11335,8 +11339,8 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 						if err != nil {
 							return errorInvalidLabelRef
 						}
-						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
-						if labelName == "__name__" {
+						m.LabelsInstanceFromSymbols = append(m.LabelsInstanceFromSymbols, labels.SymbolisedLabel{Name: labelName})
+						if labelName == labels.MetricNameSymbol {
 							metricNameLabel = true
 						}
 					} else {
@@ -11344,9 +11348,9 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 						if err != nil {
 							return errorInvalidLabelRef
 						}
-						m.Labels[len(m.Labels)-1].Value = labelValue
+						m.LabelsInstanceFromSymbols[len(m.LabelsInstanceFromSymbols)-1].Value = labelValue
 						if metricNameLabel {
-							metricName = labelValue
+							metricName = labelValue.String()
 							metricNameLabel = false
 						}
 					}
@@ -11625,18 +11629,19 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 							break
 						}
 					}
+					// FIXME: use symbolised labels here
 					if idx%2 == 0 {
 						labelName, err := symbols.get(v)
 						if err != nil {
 							return errorInvalidExemplarLabelRef
 						}
-						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
+						m.Labels = append(m.Labels, LabelAdapter{Name: labelName.String()})
 					} else {
 						labelValue, err := symbols.get(v)
 						if err != nil {
 							return errorInvalidExemplarLabelRef
 						}
-						m.Labels[len(m.Labels)-1].Value = labelValue
+						m.Labels[len(m.Labels)-1].Value = labelValue.String()
 					}
 					idx++
 				}
@@ -11699,7 +11704,6 @@ func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 }
 func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 	var (
-		err error
 		help string
 		metricType MetadataRW2_MetricType
 		normalizedMetricName string
@@ -11771,10 +11775,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 					break
 				}
 			}
-			help, err = symbols.get(helpRef)
+			helpSym, err := symbols.get(helpRef)
 			if err != nil {
 				return errorInvalidHelpRef
 			}
+			help = helpSym.String()
 		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field UnitRef", wireType)
@@ -11794,10 +11799,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 					break
 				}
 			}
-			unit, err = symbols.get(unitRef)
+			unitSym, err := symbols.get(unitRef)
 			if err != nil {
 				return errorInvalidUnitRef
 			}
+			unit = unitSym.String()
 		default:
 			iNdEx = preIndex
 			skippy, err := skipMimir(dAtA[iNdEx:])

@@ -5,6 +5,7 @@ package mimirpb
 import (
 	"sync"
 
+	"github.com/prometheus/prometheus/model/labels"
 	writev2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 )
 
@@ -170,25 +171,39 @@ func (t *FastSymbolsTable) Reset() {
 // It can look like either a slice, where the position in the slice is the symbol, or a map from string to symbol.
 // Thread safe.
 type CommonSymbols struct {
-	symbols []string
+	strings []string
+	symbols []labels.Symbol
 	mapFunc func() map[string]uint32
 }
 
-func NewCommonSymbols(symbols []string) *CommonSymbols {
+func NewCommonSymbols(strings []string) *CommonSymbols {
 	mapFunc := sync.OnceValue(func() map[string]uint32 {
-		res := make(map[string]uint32, len(symbols))
-		for ref, str := range symbols {
+		res := make(map[string]uint32, len(strings))
+		for ref, str := range strings {
 			res[str] = uint32(ref)
 		}
 		return res
 	})
+	symbols := make([]labels.Symbol, len(strings))
+	for i, s := range strings {
+		symbols[i] = labels.NewSymbol(s)
+	}
+
 	return &CommonSymbols{
+		strings: strings,
 		symbols: symbols,
 		mapFunc: mapFunc,
 	}
 }
 
 func (cs *CommonSymbols) GetSlice() []string {
+	if cs == nil {
+		return nil
+	}
+	return cs.strings
+}
+
+func (cs *CommonSymbols) GetSymbols() []labels.Symbol {
 	if cs == nil {
 		return nil
 	}

@@ -332,16 +332,31 @@ func TestRecordSerializer(t *testing.T) {
 		err = DeserializeRecordContent(record.Value, resultReq, 2)
 		require.NoError(t, err)
 
-		require.Len(t, resultReq.Timeseries, 3)
-		require.Equal(t, req.Timeseries, resultReq.Timeseries[0:2])
+		expectedTimeseries := []mimirpb.PreallocTimeseries{
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:                    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1", "pod", "test-application-123456")),
+				LabelsInstanceFromSymbols: labels.FromStrings(model.MetricNameLabel, "series_1", "pod", "test-application-123456"),
+				Samples:                   []mimirpb.Sample{{TimestampMs: 20}},
+				Exemplars:                 []mimirpb.Exemplar{{TimestampMs: 30}},
+				Histograms:                []mimirpb.Histogram{{Timestamp: 10}},
+			}},
+			{TimeSeries: &mimirpb.TimeSeries{
+				Labels:                    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2", "pod", "test-application-123456")),
+				LabelsInstanceFromSymbols: labels.FromStrings(model.MetricNameLabel, "series_2", "pod", "test-application-123456"),
+				Samples:                   []mimirpb.Sample{{TimestampMs: 30}},
+				Exemplars:                 []mimirpb.Exemplar{},
+			}},
+		}
+		require.Equal(t, expectedTimeseries, resultReq.Timeseries[0:2])
 
 		// The only way to carry a metadata in RW2.0 is attached to a timeseries.
 		// Metadata not attached to any series in the request must fabricate extra timeseries to house it.
 		expMetadataSeries := []mimirpb.PreallocTimeseries{
 			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_3")),
-				Samples:   []mimirpb.Sample{},
-				Exemplars: []mimirpb.Exemplar{},
+				Labels:                    mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_3")),
+				LabelsInstanceFromSymbols: labels.FromStrings(model.MetricNameLabel, "series_3"),
+				Samples:                   []mimirpb.Sample{},
+				Exemplars:                 []mimirpb.Exemplar{},
 			}},
 		}
 		require.Equal(t, expMetadataSeries, resultReq.Timeseries[2:])
