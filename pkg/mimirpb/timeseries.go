@@ -586,6 +586,8 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels[i].Value = ""
 	}
 
+	clear(ts.LabelsInstanceFromSymbols)
+
 	// Retain the slices only if their capacity is not bigger than the desired max pre-allocated size.
 	// This allows us to ensure we don't put very large slices back to the pool (e.g. a few requests with
 	// a huge number of samples may cause in-use heap memory to significantly increase, because the slices
@@ -594,6 +596,12 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels = nil
 	} else {
 		ts.Labels = ts.Labels[:0]
+	}
+
+	if cap(ts.LabelsInstanceFromSymbols) > maxPreallocatedLabels {
+		ts.LabelsInstanceFromSymbols = nil
+	} else {
+		ts.LabelsInstanceFromSymbols = ts.LabelsInstanceFromSymbols[:0]
 	}
 
 	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {
