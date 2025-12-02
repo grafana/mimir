@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -586,6 +587,10 @@ func (orig *Metric) MarshalProto(buf []byte) int {
 }
 
 func (orig *Metric) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Metric) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -653,7 +658,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Gauge.Get().(*Metric_Gauge)
 			}
 			ov.Gauge = NewGauge()
-			err = ov.Gauge.UnmarshalProto(buf[startPos:pos])
+			err = ov.Gauge.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -676,7 +681,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Sum.Get().(*Metric_Sum)
 			}
 			ov.Sum = NewSum()
-			err = ov.Sum.UnmarshalProto(buf[startPos:pos])
+			err = ov.Sum.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -699,7 +704,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Histogram.Get().(*Metric_Histogram)
 			}
 			ov.Histogram = NewHistogram()
-			err = ov.Histogram.UnmarshalProto(buf[startPos:pos])
+			err = ov.Histogram.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -722,7 +727,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_ExponentialHistogram.Get().(*Metric_ExponentialHistogram)
 			}
 			ov.ExponentialHistogram = NewExponentialHistogram()
-			err = ov.ExponentialHistogram.UnmarshalProto(buf[startPos:pos])
+			err = ov.ExponentialHistogram.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -745,7 +750,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Summary.Get().(*Metric_Summary)
 			}
 			ov.Summary = NewSummary()
-			err = ov.Summary.UnmarshalProto(buf[startPos:pos])
+			err = ov.Summary.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -762,7 +767,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Metadata = append(orig.Metadata, KeyValue{})
-			err = orig.Metadata[len(orig.Metadata)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Metadata[len(orig.Metadata)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}

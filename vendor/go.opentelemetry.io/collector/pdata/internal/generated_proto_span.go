@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -491,6 +492,10 @@ func (orig *Span) MarshalProto(buf []byte) int {
 }
 
 func (orig *Span) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Span) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -516,7 +521,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.TraceId.UnmarshalProto(buf[startPos:pos])
+			err = orig.TraceId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -532,7 +537,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.SpanId.UnmarshalProto(buf[startPos:pos])
+			err = orig.SpanId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -560,7 +565,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.ParentSpanId.UnmarshalProto(buf[startPos:pos])
+			err = orig.ParentSpanId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -636,7 +641,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -664,7 +669,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Events = append(orig.Events, NewSpanEvent())
-			err = orig.Events[len(orig.Events)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Events[len(orig.Events)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -692,7 +697,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Links = append(orig.Links, NewSpanLink())
-			err = orig.Links[len(orig.Links)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Links[len(orig.Links)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -720,7 +725,7 @@ func (orig *Span) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Status.UnmarshalProto(buf[startPos:pos])
+			err = orig.Status.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}

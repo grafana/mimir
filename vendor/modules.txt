@@ -1553,8 +1553,9 @@ go.opentelemetry.io/collector/consumer/internal
 # go.opentelemetry.io/collector/featuregate v1.45.0
 ## explicit; go 1.24.0
 go.opentelemetry.io/collector/featuregate
-# go.opentelemetry.io/collector/pdata v1.45.0
+# go.opentelemetry.io/collector/pdata v1.45.0 => github.com/grafana/opentelemetry-collector/pdata v0.0.0-20251203082452-8791c7be3360
 ## explicit; go 1.24.0
+go.opentelemetry.io/collector/pdata
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/json
 go.opentelemetry.io/collector/pdata/internal/otelgrpc
@@ -2199,3 +2200,4 @@ sigs.k8s.io/yaml
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
+# go.opentelemetry.io/collector/pdata => github.com/grafana/opentelemetry-collector/pdata v0.0.0-20251203082452-8791c7be3360

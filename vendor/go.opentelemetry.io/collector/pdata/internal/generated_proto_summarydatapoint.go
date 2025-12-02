@@ -12,6 +12,7 @@ import (
 	"math"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -306,6 +307,10 @@ func (orig *SummaryDataPoint) MarshalProto(buf []byte) int {
 }
 
 func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *SummaryDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -331,7 +336,7 @@ func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -395,7 +400,7 @@ func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.QuantileValues = append(orig.QuantileValues, NewSummaryDataPointValueAtQuantile())
-			err = orig.QuantileValues[len(orig.QuantileValues)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.QuantileValues[len(orig.QuantileValues)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}

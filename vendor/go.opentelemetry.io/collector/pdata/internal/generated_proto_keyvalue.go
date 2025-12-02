@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -186,6 +187,10 @@ func (orig *KeyValue) MarshalProto(buf []byte) int {
 }
 
 func (orig *KeyValue) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *KeyValue) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -223,7 +228,7 @@ func (orig *KeyValue) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Value.UnmarshalProto(buf[startPos:pos])
+			err = orig.Value.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}

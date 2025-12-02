@@ -12,6 +12,7 @@ import (
 	"math"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -596,6 +597,10 @@ func (orig *ExponentialHistogramDataPoint) MarshalProto(buf []byte) int {
 }
 
 func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -621,7 +626,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -715,7 +720,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Positive.UnmarshalProto(buf[startPos:pos])
+			err = orig.Positive.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -731,7 +736,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Negative.UnmarshalProto(buf[startPos:pos])
+			err = orig.Negative.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -759,7 +764,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Exemplars = append(orig.Exemplars, Exemplar{})
-			err = orig.Exemplars[len(orig.Exemplars)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Exemplars[len(orig.Exemplars)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}

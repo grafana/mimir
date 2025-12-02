@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -201,6 +202,10 @@ func (orig *ProfilesData) MarshalProto(buf []byte) int {
 }
 
 func (orig *ProfilesData) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ProfilesData) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -226,7 +231,7 @@ func (orig *ProfilesData) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.ResourceProfiles = append(orig.ResourceProfiles, NewResourceProfiles())
-			err = orig.ResourceProfiles[len(orig.ResourceProfiles)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.ResourceProfiles[len(orig.ResourceProfiles)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -242,7 +247,7 @@ func (orig *ProfilesData) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Dictionary.UnmarshalProto(buf[startPos:pos])
+			err = orig.Dictionary.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
