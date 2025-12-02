@@ -352,7 +352,7 @@ func (h *Head) resetInMemoryState() error {
 	if h.series != nil {
 		// reset the existing series to make sure we call the appropriated hooks
 		// and increment the series removed metrics
-		fs := h.series.iterForDeletion(func(_ int, _ uint64, s *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+		fs := h.series.iterForDeletion(func(_ int, _ labels.UnstableHash, s *memSeries, flushedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
 			// All series should be flushed
 			flushedForCallback[s.ref] = s.lset
 		})
@@ -1781,7 +1781,7 @@ func (*Head) String() string {
 	return "head"
 }
 
-func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
+func (h *Head) getOrCreate(hash labels.UnstableHash, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
 	s := h.series.getByHash(hash, lset)
 	if s != nil {
 		return s, false, nil
@@ -1791,7 +1791,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels, pendingCommit bool) 
 }
 
 // If id is zero, one will be allocated.
-func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
+func (h *Head) getOrCreateWithOptionalID(id chunks.HeadSeriesRef, hash labels.UnstableHash, lset labels.Labels, pendingCommit bool) (*memSeries, bool, error) {
 	if preCreationErr := h.series.seriesLifecycleCallback.PreCreation(lset); preCreationErr != nil {
 		return nil, false, preCreationErr
 	}
@@ -1878,11 +1878,11 @@ func (h *Head) FsyncWLSegments() error {
 // Its methods require the hash to be submitted with it to avoid re-computations throughout
 // the code.
 type seriesHashmap struct {
-	unique    map[uint64]*memSeries
-	conflicts map[uint64][]*memSeries
+	unique    map[labels.UnstableHash]*memSeries
+	conflicts map[labels.UnstableHash][]*memSeries
 }
 
-func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
+func (m *seriesHashmap) get(hash labels.UnstableHash, lset labels.Labels) *memSeries {
 	if s, found := m.unique[hash]; found {
 		if labels.Equal(s.labels(), lset) {
 			return s
@@ -1896,13 +1896,13 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
-func (m *seriesHashmap) set(hash uint64, s *memSeries) {
+func (m *seriesHashmap) set(hash labels.UnstableHash, s *memSeries) {
 	if existing, found := m.unique[hash]; !found || labels.Equal(existing.labels(), s.labels()) {
 		m.unique[hash] = s
 		return
 	}
 	if m.conflicts == nil {
-		m.conflicts = make(map[uint64][]*memSeries)
+		m.conflicts = make(map[labels.UnstableHash][]*memSeries)
 	}
 	l := m.conflicts[hash]
 	for i, prev := range l {
@@ -1914,7 +1914,7 @@ func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	m.conflicts[hash] = append(l, s)
 }
 
-func (m *seriesHashmap) del(hash uint64, ref chunks.HeadSeriesRef) {
+func (m *seriesHashmap) del(hash labels.UnstableHash, ref chunks.HeadSeriesRef) {
 	var rem []*memSeries
 	unique, found := m.unique[hash]
 	switch {
@@ -1981,7 +1981,7 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 	}
 	for i := range s.hashes {
 		s.hashes[i] = seriesHashmap{
-			unique:    map[uint64]*memSeries{},
+			unique:    map[labels.UnstableHash]*memSeries{},
 			conflicts: nil, // Initialized on demand in set().
 		}
 	}
@@ -2005,7 +2005,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, n
 	minMmapFile = math.MaxInt32
 
 	// For one series, truncate old chunks and check if any chunks left. If not, mark as deleted and collect the ID.
-	check := func(hashShard int, hash uint64, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
+	check := func(hashShard int, hash labels.UnstableHash, series *memSeries, deletedForCallback map[chunks.HeadSeriesRef]labels.Labels) {
 		series.Lock()
 		defer series.Unlock()
 
@@ -2077,7 +2077,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef, n
 // The iterForDeletion function iterates through all series, invoking the checkDeletedFunc for each.
 // The checkDeletedFunc takes a map as input and should add to it all series that were deleted and should be included
 // when invoking the PostDeletion hook.
-func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, uint64, *memSeries, map[chunks.HeadSeriesRef]labels.Labels)) int {
+func (s *stripeSeries) iterForDeletion(checkDeletedFunc func(int, labels.UnstableHash, *memSeries, map[chunks.HeadSeriesRef]labels.Labels)) int {
 	seriesSetFromPrevStripe := 0
 	totalDeletedSeries := 0
 	// Run through all series shard by shard
@@ -2113,8 +2113,8 @@ func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
 	return series
 }
 
-func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
-	i := hash & uint64(s.size-1)
+func (s *stripeSeries) getByHash(hash labels.UnstableHash, lset labels.Labels) *memSeries {
+	i := uint64(hash) & uint64(s.size-1)
 
 	s.locks[i].RLock()
 	series := s.hashes[i].get(hash, lset)
@@ -2123,8 +2123,8 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	return series
 }
 
-func (s *stripeSeries) setUnlessAlreadySet(hash uint64, lset labels.Labels, series *memSeries) (*memSeries, bool) {
-	i := hash & uint64(s.size-1)
+func (s *stripeSeries) setUnlessAlreadySet(hash labels.UnstableHash, lset labels.Labels, series *memSeries) (*memSeries, bool) {
+	i := uint64(hash) & uint64(s.size-1)
 	s.locks[i].Lock()
 	if prev := s.hashes[i].get(hash, lset); prev != nil {
 		s.locks[i].Unlock()
