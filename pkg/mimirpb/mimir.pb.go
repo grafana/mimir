@@ -11315,7 +11315,10 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 					return errorOddNumberOfLabelRefs
 				}
 				if elementCount != 0 && len(m.LabelsInstanceFromSymbols) == 0 {
-					m.LabelsInstanceFromSymbols = make(labels.Labels, 0, elementCount/2)
+					desiredCap := elementCount / 2
+					if cap(m.LabelsInstanceFromSymbols) < desiredCap {
+						m.LabelsInstanceFromSymbols = make(labels.Labels, 0, desiredCap)
+					}
 				}
 				idx := 0
 				metricNameLabel := false
