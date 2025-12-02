@@ -63,6 +63,14 @@ func FromLabelsToLabelAdapters(ls labels.Labels) []LabelAdapter {
 	return r
 }
 
+func FromLabelsToLabelAdaptersWithReuse(ls labels.Labels, reuse []LabelAdapter) []LabelAdapter {
+	reuse = reuse[:0]
+	ls.Range(func(l labels.Label) {
+		reuse = append(reuse, LabelAdapter{Name: l.Name, Value: l.Value})
+	})
+	return reuse
+}
+
 // CompareLabelAdapters returns 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	return labels.Compare(FromLabelAdaptersToLabels(a), FromLabelAdaptersToLabels(b))

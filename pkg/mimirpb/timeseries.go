@@ -294,7 +294,8 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 		}
 
 		// FIXME: this is a quick way to avoid changing all the places that refer to p.Labels.
-		p.Labels = FromLabelsToLabelAdapters(p.LabelsInstanceFromSymbols)
+		// FIXME: only do this if Labels is needed
+		p.Labels = FromLabelsToLabelAdaptersWithReuse(p.LabelsInstanceFromSymbols, p.Labels)
 		return nil
 	}
 	return p.TimeSeries.Unmarshal(dAtA)
