@@ -141,7 +141,7 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 
 	if t.cfg.WithHistograms {
 		for i, histProfile := range histogramProfiles {
-			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, nil, querySumHist, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
+			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, histProfile.metadata, querySumHist, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 		}
 	}
 
