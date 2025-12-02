@@ -785,9 +785,10 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 }
 
 type CommonConfig struct {
-	Storage                      bucket.StorageBackendConfig         `yaml:"storage"`
-	ClientClusterValidation      clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
-	InstrumentRefLeaksPercentage float64                             `yaml:"instrument_ref_leaks_percentage" category:"experimental"`
+	Storage                             bucket.StorageBackendConfig         `yaml:"storage"`
+	ClientClusterValidation             clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	InstrumentRefLeaksPercentage        float64                             `yaml:"instrument_ref_leaks_percentage" category:"experimental"`
+	InstrumentRefLeaksBeforeReusePeriod time.Duration                       `yaml:"instrument_ref_leaks_after_free_period" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
@@ -799,7 +800,8 @@ type CommonConfigInheritance struct {
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
-	f.Float64Var(&c.InstrumentRefLeaksPercentage, "common.instrument-reference-leaks-percentage", 0, `Percentage [0-100] of request or message buffers to instrument for reference leaks. 0 to disable.`)
+	f.Float64Var(&c.InstrumentRefLeaksPercentage, "common.instrument-reference-leaks-percentage", 0, `Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.`)
+	f.DurationVar(&c.InstrumentRefLeaksBeforeReusePeriod, "common.instrument-reference-leaks-after-free-period", 2*time.Minute, `Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection.`)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -912,7 +914,10 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	setUpGoRuntimeMetrics(cfg, reg)
 
-	mimirpb.CustomCodecConfig{InstrumentRefLeaksPct: cfg.Common.InstrumentRefLeaksPercentage}.RegisterGlobally()
+	mimirpb.CustomCodecConfig{
+		InstrumentRefLeaksPct:             cfg.Common.InstrumentRefLeaksPercentage,
+		WaitBeforeReuseInstrumentedBuffer: cfg.Common.InstrumentRefLeaksBeforeReusePeriod,
+	}.RegisterGlobally()
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")

@@ -520,9 +520,16 @@ client_cluster_validation:
   [label: <string> | default = ""]
 
 # (experimental) Percentage [0-100] of request or message buffers to instrument
-# for reference leaks. 0 to disable.
+# for reference leaks. Set to 0 to disable.
 # CLI flag: -common.instrument-reference-leaks-percentage
 [instrument_ref_leaks_percentage: <float> | default = 0]
+
+# (experimental) Period after a buffer instrumented for referenced leaks is
+# nominally freed until the buffer is uninstrumented and effectively freed to be
+# reused. After this period, any lingering references to the buffer may
+# potentially be dereferenced again with no detection.
+# CLI flag: -common.instrument-reference-leaks-after-free-period
+[instrument_ref_leaks_after_free_period: <duration> | default = 2m]
 ```
 
 ### server
