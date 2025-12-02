@@ -8,11 +8,13 @@ import (
 	"flag"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
@@ -180,6 +182,9 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		err = t.runInstantQueryAndVerifyResult(ctx, ts, false, typeLabel, queryMetric, generateValue, generateSampleHistogram, records)
 		errs.Add(err)
 	}
+
+	err = t.runMetadataQueryAndVerifyResult(ctx, metricMetadata)
+	errs.Add(err)
 }
 
 func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metadata []prompb.MetricMetadata, records *MetricHistory) error {
@@ -376,6 +381,49 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	}
 
 	level.Info(logger).Log("msg", "Instant query result check succeeded")
+
+	return nil
+}
+
+func (t *WriteReadSeriesTest) runMetadataQueryAndVerifyResult(ctx context.Context, expectedMetadata []prompb.MetricMetadata) error {
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runMetadataQueryAndVerifyResult")
+	defer sp.Finish()
+
+	logger := log.With(sp)
+	level.Debug(logger).Log("msg", "Running metadata query")
+
+	const typeLabel = "metadata"
+
+	for _, expected := range expectedMetadata {
+		t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
+		queryStart := time.Now()
+		got, err := t.client.Metadata(ctx, expected.MetricFamilyName)
+		t.metrics.queriesLatency.WithLabelValues(typeLabel, "false").Observe(time.Since(queryStart).Seconds())
+		if err != nil {
+			t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
+			level.Warn(logger).Log("msg", "Failed to execute metadata query", "err", err)
+			return fmt.Errorf("failed to execute metadata query: %w", err)
+		}
+
+		t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
+		var errs multierror.MultiError
+		if expectedType := v1.MetricType(strings.ToLower(expected.Type.String())); expectedType != got.Type {
+			errs.Add(fmt.Errorf("expected:%q got:%q", expectedType, got.Type))
+		}
+		if expected.Help != got.Help {
+			errs.Add(fmt.Errorf("expected:%q got:%q", expected.Help, got.Help))
+		}
+		if expected.Unit != got.Unit {
+			errs.Add(fmt.Errorf("expected:%q got:%q", expected.Unit, got.Unit))
+		}
+		if err := errs.Err(); err != nil {
+			t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
+			level.Warn(logger).Log("msg", "Metadata query result check failed", "err", err)
+			return fmt.Errorf("metadata query result check failed: %w", err)
+		}
+	}
+
+	level.Info(logger).Log("msg", "Metadata query result check succeeded")
 
 	return nil
 }

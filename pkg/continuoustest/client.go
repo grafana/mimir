@@ -43,6 +43,9 @@ type MimirClient interface {
 
 	// Query performs an instant query.
 	Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error)
+
+	// Metadata performs a metadata query.
+	Metadata(ctx context.Context, metricName string) (v1.Metadata, error)
 }
 
 type ClientConfig struct {
@@ -242,6 +245,19 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 	}
 
 	return vector, nil
+}
+
+// Metadata implements MimirClient.
+func (c *Client) Metadata(ctx context.Context, metricName string) (v1.Metadata, error) {
+	result, err := c.readClient.Metadata(ctx, metricName, "1")
+	if err != nil {
+		return v1.Metadata{}, nil
+	}
+	m := result[metricName]
+	if len(m) == 0 {
+		return v1.Metadata{}, fmt.Errorf("metadata for metric %q not found", metricName)
+	}
+	return m[0], nil
 }
 
 // WriteSeries implements MimirClient.
