@@ -24,8 +24,10 @@ type CustomCodecConfig struct {
 	InstrumentRefLeaksPct float64
 }
 
+var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
+
 func (cfg CustomCodecConfig) Codec() encoding.CodecV2 {
-	c := &codecV2{codec: encoding.GetCodecV2(proto.Name)}
+	c := &codecV2{}
 	if cfg.InstrumentRefLeaksPct > 0 {
 		c.instrumentRefLeaksOneIn = uint64(math.Trunc(100 / cfg.InstrumentRefLeaksPct))
 	}
@@ -53,8 +55,6 @@ func init() {
 // We customize unmarshalling in order to use an optimized path when possible,
 // and to retain the unmarshalling buffer when necessary.
 type codecV2 struct {
-	codec encoding.CodecV2
-
 	instrumentRefLeaksOneIn       uint64
 	unmarshaledWithBufferRefCount atomic.Uint64
 }
@@ -205,7 +205,7 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 }
 
 func (c *codecV2) Name() string {
-	return c.codec.Name()
+	return baseCodecV2Name
 }
 
 // MessageWithBufferRef is an unmarshalling buffer retaining protobuf message.
