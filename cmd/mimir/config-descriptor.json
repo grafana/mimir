@@ -20861,7 +20861,7 @@
           "kind": "field",
           "name": "instrument_ref_leaks_percentage",
           "required": false,
-          "desc": "Percentage of buffers from pools to instrument for reference leaks. 0 to disable.",
+          "desc": "Percentage [0-100] of request or message buffers to instrument for reference leaks. 0 to disable.",
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "common.instrument-reference-leaks-percentage",

@@ -862,7 +862,7 @@ Usage of ./cmd/mimir/mimir:
   -common.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -common.instrument-reference-leaks-percentage float
-    	[experimental] Percentage of buffers from pools to instrument for reference leaks. 0 to disable.
+    	[experimental] Percentage [0-100] of request or message buffers to instrument for reference leaks. 0 to disable.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string

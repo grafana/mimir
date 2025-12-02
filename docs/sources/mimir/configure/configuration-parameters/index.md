@@ -519,8 +519,8 @@ client_cluster_validation:
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
 
-# (experimental) Percentage of buffers from pools to instrument for reference
-# leaks. 0 to disable.
+# (experimental) Percentage [0-100] of request or message buffers to instrument
+# for reference leaks. 0 to disable.
 # CLI flag: -common.instrument-reference-leaks-percentage
 [instrument_ref_leaks_percentage: <float> | default = 0]
 ```
