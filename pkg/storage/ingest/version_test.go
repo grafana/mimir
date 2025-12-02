@@ -13,7 +13,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/rw2util"
 )
 
 func TestV2SymbolsCompat(t *testing.T) {
@@ -128,7 +128,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 	})
 
 	t.Run("v2", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
 		reqv2 := &mimirpb.WriteRequestRW2{
 			Timeseries: []mimirpb.TimeSeriesRW2{{
 				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
@@ -210,7 +210,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 	})
 
 	t.Run("v2 skips metadata normalization", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
 		reqv2 := &mimirpb.WriteRequestRW2{
 			Timeseries: []mimirpb.TimeSeriesRW2{{
 				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_histogram_seconds_bucket")},
@@ -246,7 +246,7 @@ func TestDeserializeRecordContent(t *testing.T) {
 	})
 
 	t.Run("v2 preserves conflicting metadata", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, V2RecordSymbolOffset, V2CommonSymbols.GetSlice())
 		reqv2 := &mimirpb.WriteRequestRW2{
 			Timeseries: []mimirpb.TimeSeriesRW2{
 				{
