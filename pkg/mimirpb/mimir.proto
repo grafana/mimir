@@ -193,6 +193,19 @@ message Histogram {
   // Used only for converting from OpenTelemetry to Prometheus internally and
   // to unmarshal Remote Write 2.0 messages.
   repeated double custom_values = 16;
+
+  // Copy from Remote Write 2.0.
+  //
+  // start_timestamp represents an optional start timestamp for the histogram sample,
+  // in ms format. The start timestamp represents the time when the histogram
+  // started counting, which can increase the accuracy of certain processing and
+  // query semantics (e.g. rates).
+  //
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 17;
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
