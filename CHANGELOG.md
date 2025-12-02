@@ -133,6 +133,7 @@
 * [ENHANCEMENT] Dashboards: Add variable to compactor and object store dashboards to switch between classic and native latencies. Use native histogram `thanos_objstore_bucket_operation_duration_seconds`. #12137
 * [ENHANCEMENT] Recording rules: Add native histogram version of histogram recording rules. #13553
 * [ENHANCEMENT] Alerts: Add `MimirMemberlistBridgeZoneUnavailable` alert. #13647
+* [ENHANCEMENT] Alerts: Add `MimirMemberlistZoneAwareRoutingAutoFailover` alert that fires when memberlist zone-aware routing auto-failover triggers due to missing memberlist bridges. #13726
 * [ENHANCEMENT] Dashboards and recording rules: Add usage-tracker rows to writes, writes-networking, writes-resources dashboards if the config.usage_tracker_enabled var is set. Add usage-tracker client latency recording rules. #13639 #13652
 * [ENHANCEMENT] Recording rules and dashboards: Add `stage` label to `cortex_ingester_queried_series` recording rules and filter Queries dashboard "Series per query" panel to show only `stage=merged_blocks`. #13666
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184

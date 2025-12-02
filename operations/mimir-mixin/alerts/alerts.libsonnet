@@ -1045,6 +1045,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s memberlist-bridge in %(alert_aggregation_variables)s {{ $labels.zone }} has no available pods.' % $._config,
           },
         },
+        {
+          alert: $.alertName('MemberlistZoneAwareRoutingAutoFailover'),
+          expr: |||
+            sum by (%(alert_aggregation_labels)s) (rate(memberlist_client_zone_aware_routing_select_nodes_skipped_total[1m])) > 0
+          ||| % $._config,
+          'for': '10m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s memberlist in %(alert_aggregation_variables)s has automatically temporarily disabled zone-aware routing because it detected missing memberlist bridges.' % $._config,
+          },
+        },
       ],
     },
     {
