@@ -528,8 +528,8 @@ client_cluster_validation:
 # nominally freed until the buffer is uninstrumented and effectively freed to be
 # reused. After this period, any lingering references to the buffer may
 # potentially be dereferenced again with no detection.
-# CLI flag: -common.instrument-reference-leaks-after-free-period
-[instrument_ref_leaks_after_free_period: <duration> | default = 2m]
+# CLI flag: -common.instrument-reference-leaks-before-reuse-period
+[instrument_ref_leaks_before_reuse_period: <duration> | default = 2m]
 ```
 
 ### server
