@@ -173,15 +173,15 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		b = b[:data.Len()]
 		data.CopyTo(b)
 		buf = mem.NewBuffer(&b, nil)
+		instrumentedBuf := &instrumentLeaksBuf{Buffer: buf}
+		instrumentedBuf.refCount.Inc()
+		buf = instrumentedBuf
 	} else {
 		buf = data.MaterializeToBuffer(unmarshalSlicePool)
 	}
 	// Decrement buf's reference count. Note though that if v implements MessageWithBufferRef,
 	// we increase buf's reference count first so it doesn't go to zero.
-	//
-	// We're possibly replacing buf below, so it's important to keep this a closure
-	// rather than a direct call to buf.Free.
-	defer func() { buf.Free() }()
+	defer buf.Free()
 
 	if unmarshaler, ok := v.(gogoproto.Unmarshaler); ok {
 		if err := unmarshaler.Unmarshal(buf.ReadOnlyData()); err != nil {
@@ -195,11 +195,6 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	}
 
 	if isBufferHolder {
-		if instrumentLeaks {
-			instrumentedBuf := &instrumentLeaksBuf{Buffer: buf}
-			instrumentedBuf.refCount.Inc()
-			buf = instrumentedBuf
-		}
 		buf.Ref()
 		holder.SetBuffer(buf)
 	}
