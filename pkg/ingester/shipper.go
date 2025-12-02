@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/thanos-io/objstore"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -132,6 +133,9 @@ func (s *shipper) Sync(ctx context.Context) (shipped int, err error) {
 			meta.Shipped[m.ULID] = model.TimeFromUnixNano(shippedTime.UnixNano())
 			continue
 		}
+
+		sc := trace.SpanContextFromContext(ctx)
+		m.TraceID = sc.TraceID().String()
 
 		if m.Stats.NumSamples == 0 {
 			// Ignore empty blocks.

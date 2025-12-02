@@ -74,7 +74,8 @@ const (
 type Meta struct {
 	tsdb.BlockMeta
 
-	Thanos ThanosMeta `json:"thanos"`
+	Thanos  ThanosMeta `json:"thanos"`
+	TraceID string     `json:"trace_id"`
 }
 
 func (m Meta) GetMinTime() time.Time {
