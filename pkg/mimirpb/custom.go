@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"sync"
 	"syscall"
 	"testing"
+	"time"
 	"unsafe"
 
 	gogoproto "github.com/gogo/protobuf/proto"
@@ -21,7 +23,8 @@ import (
 )
 
 type CustomCodecConfig struct {
-	InstrumentRefLeaksPct float64
+	InstrumentRefLeaksPct             float64
+	WaitBeforeReuseInstrumentedBuffer time.Duration
 }
 
 var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
@@ -37,6 +40,9 @@ func (cfg CustomCodecConfig) codec() *codecV2 {
 var globalCodec encoding.CodecV2
 
 func (cfg CustomCodecConfig) RegisterGlobally() {
+	if cfg.InstrumentRefLeaksPct > 0 && cfg.WaitBeforeReuseInstrumentedBuffer > 0 {
+		startFreeingInstrumentedBuffers()
+	}
 	globalCodec = cfg.codec()
 	encoding.RegisterCodecV2(globalCodec)
 }
@@ -46,6 +52,7 @@ func init() {
 	if testing.Testing() {
 		// Instrument all buffers when testing.
 		config.InstrumentRefLeaksPct = 100
+		config.WaitBeforeReuseInstrumentedBuffer = 0
 	}
 	config.RegisterGlobally()
 }
@@ -57,6 +64,7 @@ func init() {
 type codecV2 struct {
 	instrumentRefLeaksOneIn       uint64
 	unmarshaledWithBufferRefCount atomic.Uint64
+	waitBeforeReuse               time.Duration
 }
 
 var _ encoding.CodecV2 = &codecV2{}
@@ -165,14 +173,14 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		// munmaping the pages on Free, after which trying to access them will
 		// segfault.
 		pageAlignedLen := roundUpToMultiple(data.Len(), pageSize)
-		b, err := syscall.Mmap(0, 0, pageAlignedLen, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
+		b, err := syscall.Mmap(-1, 0, pageAlignedLen, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
 		if err != nil {
 			panic(fmt.Errorf("mmap: %w", err))
 		}
 		b = b[:data.Len()]
 		data.CopyTo(b)
 		buf = mem.NewBuffer(&b, nil)
-		instrumentedBuf := &instrumentLeaksBuf{Buffer: buf}
+		instrumentedBuf := &instrumentLeaksBuf{Buffer: buf, waitBeforeReuse: c.waitBeforeReuse}
 		instrumentedBuf.refCount.Inc()
 		buf = instrumentedBuf
 	} else if len(data) == 1 {
@@ -242,7 +250,8 @@ var _ MessageWithBufferRef = &BufferHolder{}
 
 type instrumentLeaksBuf struct {
 	mem.Buffer
-	refCount atomic.Int64
+	refCount        atomic.Int64
+	waitBeforeReuse time.Duration
 }
 
 func (b *instrumentLeaksBuf) Ref() {
@@ -257,12 +266,40 @@ func (b *instrumentLeaksBuf) Free() {
 		buf := b.ReadOnlyData()
 		ptr := unsafe.SliceData(buf)
 		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
+		if b.waitBeforeReuse > 0 {
+			select {
+			case unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse)}:
+				return
+			default:
+				// Queue is full, munmap right away.
+			}
+		}
 		err := syscall.Munmap(allPages)
 		if err != nil {
 			panic(fmt.Errorf("munmap: %w", err))
 		}
 	}
 }
+
+type unmapTask struct {
+	buf []byte
+	at  time.Time
+}
+
+var unmapQueue chan unmapTask
+
+var startFreeingInstrumentedBuffers = sync.OnceFunc(func() {
+	unmapQueue = make(chan unmapTask, 1000)
+	go func() {
+		for t := range unmapQueue {
+			time.Sleep(time.Until(t.at))
+			err := syscall.Munmap(t.buf)
+			if err != nil {
+				panic(fmt.Errorf("munmap: %w", err))
+			}
+		}
+	}()
+})
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.

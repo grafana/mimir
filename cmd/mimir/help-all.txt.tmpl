@@ -861,8 +861,10 @@ Usage of ./cmd/mimir/mimir:
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
+  -common.instrument-reference-leaks-after-free-period duration
+    	[experimental] Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection. (default 2m0s)
   -common.instrument-reference-leaks-percentage float
-    	[experimental] Percentage [0-100] of request or message buffers to instrument for reference leaks. 0 to disable.
+    	[experimental] Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
