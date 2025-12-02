@@ -16,6 +16,7 @@ ingest_storage:
     topic:   mimir-ingest
     last_produced_offset_poll_interval: 500ms
     fetch_concurrency_max: 15
+    producer_record_version: 2
 
 ingester:
   track_ingester_owned_series: true
