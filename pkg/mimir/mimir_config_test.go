@@ -25,6 +25,8 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 		args := []string{
 			"-common.storage.backend", "s3",
 			"-common.client-cluster-validation.label", "client-cluster",
+			"-common.instrument-reference-leaks-percentage", "13.37",
+			"-common.instrument-reference-leaks-before-reuse-period", "20h",
 		}
 		require.NoError(t, fs.Parse(args))
 
@@ -36,6 +38,10 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 
 		// Mimir's inheritance should still work.
 		checkAllClusterValidationLabels(t, cfg, "client-cluster")
+
+		// Non-inherited flags still work.
+		require.Equal(t, 13.37, cfg.MimirConfig.Common.InstrumentRefLeaksPercentage)
+		require.Equal(t, 20*time.Hour, cfg.MimirConfig.Common.InstrumentRefLeaksBeforeReusePeriod)
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -45,6 +51,8 @@ common:
     backend: s3
   client_cluster_validation:
     label: client-cluster
+  instrument_ref_leaks_percentage: 13.37
+  instrument_ref_leaks_before_reuse_period: 20h
 `
 
 		var cfg customExtendedConfig
@@ -60,6 +68,10 @@ common:
 
 		// Mimir's inheritance should still work.
 		checkAllClusterValidationLabels(t, cfg, "client-cluster")
+
+		// Non-inherited flags should still work.
+		require.Equal(t, 13.37, cfg.MimirConfig.Common.InstrumentRefLeaksPercentage)
+		require.Equal(t, 20*time.Hour, cfg.MimirConfig.Common.InstrumentRefLeaksBeforeReusePeriod)
 	})
 }
 

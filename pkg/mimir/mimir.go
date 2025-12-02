@@ -713,11 +713,21 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.ClientClusterValidation {
 			specificClusterValidationLocations[name] = loc
 		}
+		specificInstrumentRefLeaksPercentageLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.InstrumentRefLeaksPercentage {
+			specificInstrumentRefLeaksPercentageLocations[name] = loc
+		}
+		specificInstrumentRefLeaksBeforeReusePeriodLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.InstrumentRefLeaksBeforeReusePeriod {
+			specificInstrumentRefLeaksBeforeReusePeriodLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
-				Storage:                 &specificStorageLocations,
-				ClientClusterValidation: &specificClusterValidationLocations,
+				Storage:                             &specificStorageLocations,
+				ClientClusterValidation:             &specificClusterValidationLocations,
+				InstrumentRefLeaksPercentage:        &specificInstrumentRefLeaksPercentageLocations,
+				InstrumentRefLeaksBeforeReusePeriod: &specificInstrumentRefLeaksBeforeReusePeriodLocations,
 			},
 		}
 
@@ -792,8 +802,10 @@ type CommonConfig struct {
 }
 
 type CommonConfigInheritance struct {
-	Storage                 map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
+	Storage                             map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation             map[string]*clusterutil.ClusterValidationConfig
+	InstrumentRefLeaksPercentage        map[string]*float64
+	InstrumentRefLeaksBeforeReusePeriod map[string]*time.Duration
 }
 
 // RegisterFlags registers flag.
@@ -816,9 +828,10 @@ type configWithCustomCommonUnmarshaler struct {
 
 // commonConfigUnmarshaler will unmarshal each field of the common config into specific locations.
 type commonConfigUnmarshaler struct {
-	Storage                      *specificLocationsUnmarshaler `yaml:"storage"`
-	ClientClusterValidation      *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
-	InstrumentRefLeaksPercentage *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks_percentage"`
+	Storage                             *specificLocationsUnmarshaler `yaml:"storage"`
+	ClientClusterValidation             *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
+	InstrumentRefLeaksPercentage        *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks_percentage"`
+	InstrumentRefLeaksBeforeReusePeriod *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks_before_reuse_period"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
