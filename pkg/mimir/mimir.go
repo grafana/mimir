@@ -799,7 +799,7 @@ type CommonConfigInheritance struct {
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
-	f.Float64Var(&c.InstrumentRefLeaksPercentage, "common.instrument-reference-leaks-percentage", 0, `Percentage of buffers from pools to instrument for reference leaks. 0 to disable.`)
+	f.Float64Var(&c.InstrumentRefLeaksPercentage, "common.instrument-reference-leaks-percentage", 0, `Percentage [0-100] of request or message buffers to instrument for reference leaks. 0 to disable.`)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
