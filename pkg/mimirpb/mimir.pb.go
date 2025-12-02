@@ -7553,6 +7553,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 				return errorInvalidFirstSymbol
 			}
 			seenFirstSymbol = true
+			// No need to take a copy of the string here: NewSymbol will clone the string if it hasn't seen it before.
 			m.rw2symbols.append(labels.NewSymbol(yoloString(dAtA[iNdEx:postIndex])))
 			iNdEx = postIndex
 		case 5:
