@@ -26,7 +26,7 @@ type CustomCodecConfig struct {
 
 var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
 
-func (cfg CustomCodecConfig) Codec() encoding.CodecV2 {
+func (cfg CustomCodecConfig) codec() *codecV2 {
 	c := &codecV2{}
 	if cfg.InstrumentRefLeaksPct > 0 {
 		c.instrumentRefLeaksOneIn = uint64(math.Trunc(100 / cfg.InstrumentRefLeaksPct))
@@ -34,11 +34,11 @@ func (cfg CustomCodecConfig) Codec() encoding.CodecV2 {
 	return c
 }
 
-var GlobalCodec encoding.CodecV2
+var globalCodec encoding.CodecV2
 
 func (cfg CustomCodecConfig) RegisterGlobally() {
-	GlobalCodec = cfg.Codec()
-	encoding.RegisterCodecV2(GlobalCodec)
+	globalCodec = cfg.codec()
+	encoding.RegisterCodecV2(globalCodec)
 }
 
 func init() {
@@ -147,10 +147,7 @@ func unmarshalSlicePoolSizes() []int {
 // the Unmarshal method directly, as it will take advantage of pools and leak
 // detection.
 func Unmarshal(data []byte, v gogoproto.Unmarshaler) error {
-	if GlobalCodec == nil {
-		return v.Unmarshal(data)
-	}
-	return GlobalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
+	return globalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
 }
 
 var pageSize = syscall.Getpagesize()
