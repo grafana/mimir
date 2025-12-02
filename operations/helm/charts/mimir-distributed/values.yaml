@@ -31,7 +31,8 @@ image:
   # -- Grafana Mimir container image repository
   repository: docker.io/grafana/mimir
   # -- Grafana Mimir container image tag
-  tag: r371-9d0b4807
+  # When set it takes precedence over what is defined as "appVersion" in Chart.yaml.
+  # tag: 3.0.0
   # -- Container pull policy
   pullPolicy: IfNotPresent
   # -- Optionally specify an array of imagePullSecrets
@@ -480,10 +481,10 @@ alertmanager:
   revisionHistoryLimit: null
 
   # -- Allows to override the container image of the alertmanager component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   statefulSet:
     enabled: true
@@ -776,10 +777,10 @@ distributor:
   enabled: true
 
   # -- Allows to override the container image of the distributor component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -903,10 +904,10 @@ ingester:
   enabled: true
 
   # -- Allows to override the container image of the ingester component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   # -- Total number of replicas for the ingester across all availability zones
   # If ingester.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -1168,10 +1169,10 @@ overrides_exporter:
   enabled: true
 
   # -- Allows to override the container image of the overrides-exporter component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   replicas: 1
   revisionHistoryLimit: null
@@ -1263,10 +1264,10 @@ ruler:
   enabled: true
 
   # -- Allows to override the container image of the ruler component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   replicas: 1
   revisionHistoryLimit: null
@@ -1396,10 +1397,10 @@ ruler:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_querier:
   # -- Allows to override the container image of the ruler-querier component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -1521,10 +1522,10 @@ ruler_querier:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_frontend:
   # -- Allows to override the container image of the ruler-query-frontend component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -1642,10 +1643,10 @@ ruler_query_frontend:
 # -- Only deployed if .Values.ruler.remoteEvaluationDedicatedQueryPath
 ruler_query_scheduler:
   # -- Allows to override the container image of the ruler-query-scheduler component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -1736,10 +1737,10 @@ querier:
   enabled: true
 
   # -- Allows to override the container image of the querier component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -1876,10 +1877,10 @@ query_frontend:
   enabled: true
 
   # -- Allows to override the container image of the query-frontend component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   # Setting it to null will produce a deployment without replicas set, allowing you to use autoscaling with the deployment
   replicas: 1
@@ -2000,10 +2001,10 @@ query_scheduler:
   enabled: true
 
   # -- Allows to override the container image of the query-scheduler component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   replicas: 2
   revisionHistoryLimit: null
@@ -2096,10 +2097,10 @@ store_gateway:
   enabled: true
 
   # -- Allows to override the container image of the store-gateway component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   # -- Total number of replicas for the store-gateway across all availability zones
   # If store_gateway.zoneAwareReplication.enabled=false, this number is taken as is.
@@ -2360,10 +2361,10 @@ compactor:
   enabled: true
 
   # -- Allows to override the container image of the compactor component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
 
   replicas: 1
 
@@ -3806,10 +3807,10 @@ grafana-agent-operator:
 
 smoke_test:
   # -- Allows to override the container image of the smoke-test component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir
-    # tag: 2.16.0
+    # tag: 3.0.0
   # -- Controls the backoffLimit on the Kubernetes Job. The Job is marked as failed after that many retries.
   backoffLimit: 5
   # The image section has been removed as continuous test is now a module of the regular Mimir image.
@@ -3831,10 +3832,10 @@ smoke_test:
 continuous_test:
   enabled: false
   # -- Allows to override the container image of the continuous-test component.
-  # When set it takes precedence over what is defined in global "image" .
+  # When set it takes precedence over what is defined in global "image".
   image:
     # repository: grafana/mimir-continuous-test
-    # tag: 2.16.0
+    # tag: 3.0.0
   # -- Number of replicas to start of continuous test
   replicas: 1
   revisionHistoryLimit: null
