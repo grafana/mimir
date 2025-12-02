@@ -612,6 +612,11 @@ type Sample struct {
 	TimestampMs int64   `protobuf:"varint,2,opt,name=timestamp_ms,json=timestampMs,proto3" json:"timestamp_ms,omitempty"`
 	Value       float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
 	// Copy from remote write 2.0.
+	//
+	// start_timestamp represents an optional start timestamp for the sample,
+	// in ms format. This information is typically used for counter, histogram (cumulative)
+	// or delta type metrics.
+	//
 	// Note that the "optional" keyword is omitted due to
 	// https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
 	// Zero value means value not set. If you need to use exactly zero value for
