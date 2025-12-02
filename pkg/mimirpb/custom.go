@@ -33,6 +33,7 @@ func (cfg CustomCodecConfig) codec() *codecV2 {
 	c := &codecV2{}
 	if cfg.InstrumentRefLeaksPct > 0 {
 		c.instrumentRefLeaksOneIn = uint64(math.Trunc(100 / cfg.InstrumentRefLeaksPct))
+		c.waitBeforeReuse = cfg.WaitBeforeReuseInstrumentedBuffer
 	}
 	return c
 }
