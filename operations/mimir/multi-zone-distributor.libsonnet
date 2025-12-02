@@ -88,6 +88,14 @@
     deployment.mixin.spec.withReplicas(std.ceil($._config.multi_zone_distributor_replicas / std.length($._config.multi_zone_availability_zones))) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
 
+  // Ensure all configured addresses are zonal ones.
+  local distributorMultiZoneConfigError = $.validateMimirMultiZoneConfig([
+    'distributor_zone_a_deployment',
+    'distributor_zone_b_deployment',
+    'distributor_zone_c_deployment',
+  ]),
+  assert distributorMultiZoneConfigError == null : distributorMultiZoneConfigError,
+
   // Remove single-zone deployment when multi-zone is enabled.
   distributor_deployment: if !isSingleZoneEnabled then null else
     super.distributor_deployment + (if !isAutoscalingSingleZoneEnabled then {} else $.removeReplicasFromSpec),
