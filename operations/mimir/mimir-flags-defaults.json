@@ -1486,7 +1486,7 @@
   "common.storage.filesystem.dir": "",
   "common.client-cluster-validation.label": "",
   "common.instrument-reference-leaks-percentage": 0,
-  "common.instrument-reference-leaks-after-free-period": 120000000000,
+  "common.instrument-reference-leaks-before-reuse-period": 120000000000,
   "timeseries-unmarshal-caching-optimization-enabled": true,
   "cost-attribution.eviction-interval": 1200000000000,
   "cost-attribution.registry-path": "",
