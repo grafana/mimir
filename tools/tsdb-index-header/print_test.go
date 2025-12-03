@@ -16,8 +16,8 @@ func TestPrintTOCInfo(t *testing.T) {
 		IndexHeaderSize:         1048576, // 1 MB
 		IndexHeaderVersion:      1,
 		TSDBIndexVersion:        2,
-		SymbolsSize:             524288,  // 0.5 MB
-		PostingsOffsetTableSize: 262144,  // 0.25 MB
+		SymbolsSize:             524288, // 0.5 MB
+		PostingsOffsetTableSize: 262144, // 0.25 MB
 	}
 
 	var buf bytes.Buffer

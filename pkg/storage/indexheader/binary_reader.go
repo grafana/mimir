@@ -31,8 +31,8 @@ const (
 	// BinaryFormatV1 represents first version of index-header file.
 	BinaryFormatV1 = 1
 
-	indexTOCLen   = 6*8 + crc32.Size
-	BinaryTOCLen  = 2*8 + crc32.Size // 16 (2 x uint64) + 4 (CRC32)
+	indexTOCLen  = 6*8 + crc32.Size
+	BinaryTOCLen = 2*8 + crc32.Size // 16 (2 x uint64) + 4 (CRC32)
 	// HeaderLen represents number of bytes reserved of index header for header.
 	// At present, it is:
 	// - 4 bytes for MagicIndex
