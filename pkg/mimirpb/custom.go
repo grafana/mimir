@@ -268,6 +268,10 @@ func (b *instrumentLeaksBuf) Free() {
 		ptr := unsafe.SliceData(buf)
 		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
 		if b.waitBeforeReuse > 0 {
+			err := syscall.Mprotect(allPages, syscall.PROT_NONE)
+			if err != nil {
+				panic(fmt.Errorf("mprotect: %w", err))
+			}
 			select {
 			case unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse)}:
 				return
