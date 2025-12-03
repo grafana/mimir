@@ -251,7 +251,7 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 func (c *Client) Metadata(ctx context.Context, metricName string) (v1.Metadata, error) {
 	result, err := c.readClient.Metadata(ctx, metricName, "1")
 	if err != nil {
-		return v1.Metadata{}, nil
+		return v1.Metadata{}, err
 	}
 	m := result[metricName]
 	if len(m) == 0 {
