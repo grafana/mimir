@@ -5227,6 +5227,122 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			expectedNextCalls: 2,
 			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
 			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
+		}, {
+			name:            "mixed series from multiple primary replicas in single request",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// Both replicas are primary for their respective clusters
+				r1 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+				r2 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica1, cluster2), nil, nil)
+				r1.Timeseries = append(r1.Timeseries, r2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{r1}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+				c2 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster2), nil, nil)
+				c1.Timeseries = append(c1.Timeseries, c2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1,
+			expectErrs:        []*status.Status{nil},
+		}, {
+			name:            "mixed series with and without cluster labels in single request",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				r1 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+				// Series without cluster/replica labels
+				r2 := makeWriteRequestForGenerators(2, labelSetGenForStringPairs(t, "__name__", "metric_%d", "label", "value"), nil, nil)
+				r1.Timeseries = append(r1.Timeseries, r2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{r1}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+				c2 := makeWriteRequestForGenerators(2, labelSetGenForStringPairs(t, "__name__", "metric_%d", "label", "value"), nil, nil)
+				c1.Timeseries = append(c1.Timeseries, c2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1,
+			expectErrs:        []*status.Status{nil},
+		}, {
+			name:            "mixed primary and non-primary replicas with non-HA series in single request",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// First establish replica1 as primary for cluster1
+				r1 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+
+				// Then send mixed request: primary replica, non-primary replica, and non-HA series
+				r2 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+				r3 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+				r4 := makeWriteRequestForGenerators(1, labelSetGenForStringPairs(t, "__name__", "no_ha_metric", "label", "value"), nil, nil)
+				r2.Timeseries = append(r2.Timeseries, r3.Timeseries...)
+				r2.Timeseries = append(r2.Timeseries, r4.Timeseries...)
+
+				return []*mimirpb.WriteRequest{r1, r2}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(1, labelSetGenWithCluster(cluster1), nil, nil)
+				c2 := makeWriteRequestForGenerators(1, labelSetGenWithCluster(cluster1), nil, nil)
+				c3 := makeWriteRequestForGenerators(1, labelSetGenForStringPairs(t, "__name__", "no_ha_metric", "label", "value"), nil, nil)
+				c2.Timeseries = append(c2.Timeseries, c3.Timeseries...)
+
+				return []*mimirpb.WriteRequest{c1, c2}
+			}(),
+			expectedNextCalls: 2,
+			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
+			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
+		}, {
+			name:            "series with only cluster label (no replica label)",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// Series with cluster but no replica - should be treated as non-HA
+				r1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{r1}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1,
+			expectErrs:        []*status.Status{nil},
+		}, {
+			name:            "empty timeseries after deduplication - all samples from non-primary replica",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// First establish replica1 as primary
+				r1 := makeWriteRequestForGenerators(3, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+
+				// Then send request with only non-primary replica - all should be deduplicated
+				r2 := makeWriteRequestForGenerators(3, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{r1, r2}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(3, labelSetGenWithCluster(cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1, // next() should not be called for the second request since all samples are deduplicated
+			expectErrs: []*status.Status{
+				nil,
+				status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error()),
+			},
+			expectDetails: []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
 		},
 	}
 
