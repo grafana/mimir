@@ -743,7 +743,11 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	}
 
 	if req.httpResponse == nil {
-		return nil, errUnexpectedHTTPResponse
+		if req.httpRequest != nil {
+			return nil, fmt.Errorf("%w: QueryResult called for HTTP %v to %v, but httpResponse channel is nil (this is a bug)", errUnexpectedHTTPResponse, req.httpRequest.Method, req.httpRequest.Url)
+		}
+
+		return nil, fmt.Errorf("%w: QueryResult called for Protobuf request of type %T (this is a bug)", errUnexpectedHTTPResponse, req.protobufRequest)
 	}
 
 	select {
@@ -811,7 +815,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	switch d := firstMessage.Data.(type) {
 	case *frontendv2pb.QueryResultStreamRequest_Metadata:
 		if req.httpResponse == nil {
-			return errUnexpectedHTTPResponse
+			return fmt.Errorf("%w: QueryResultStream called with data of type %T, but httpResponse channel is nil (this is a bug)", errUnexpectedHTTPResponse, d)
 		}
 
 		return f.receiveResultForHTTPRequest(req, firstMessage, d, stream)

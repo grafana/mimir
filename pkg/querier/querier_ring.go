@@ -147,7 +147,7 @@ func NewRingQueryPlanVersionProvider(ring ring.ReadRing, reg prometheus.Register
 	}, func() float64 {
 		version, err := provider.GetMaximumSupportedQueryPlanVersion(context.Background())
 		if err != nil {
-			level.Warn(logger).Log("msg", "failed to compute maximum supported query plan version", "err", err)
+			level.Warn(logger).Log("msg", "failed to compute maximum supported query plan version for metric", "err", err)
 			return -1
 		}
 

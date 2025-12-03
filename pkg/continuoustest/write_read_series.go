@@ -134,19 +134,19 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 	errs := new(multierror.MultiError)
 
 	if t.cfg.WithFloats {
-		t.RunInner(ctx, now, writeLimiter, errs, floatMetricName, floatTypeLabel, querySumFloat, generateSineWaveSeries, generateSineWaveValue, nil, &t.floatMetric)
+		t.RunInner(ctx, now, writeLimiter, errs, floatMetricName, floatTypeLabel, floatMetricMetadata, querySumFloat, generateSineWaveSeries, generateSineWaveValue, nil, &t.floatMetric)
 	}
 
 	if t.cfg.WithHistograms {
 		for i, histProfile := range histogramProfiles {
-			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, querySumHist, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
+			t.RunInner(ctx, now, writeLimiter, errs, histProfile.metricName, histProfile.typeLabel, nil, querySumHist, histProfile.generateSeries, histProfile.generateValue, histProfile.generateSampleHistogram, &t.histMetrics[i])
 		}
 	}
 
 	return errs.Err()
 }
 
-func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
+func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, metricMetadata []prompb.MetricMetadata, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now, records); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now, records) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
@@ -156,7 +156,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
-		if err := t.writeSamples(ctx, typeLabel, timestamp, series, records); err != nil {
+		if err := t.writeSamples(ctx, typeLabel, timestamp, series, metricMetadata, records); err != nil {
 			errs.Add(err)
 			break
 		}
@@ -182,13 +182,13 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 	}
 }
 
-func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metadata []prompb.MetricMetadata, records *MetricHistory) error {
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
 	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
 
 	start := time.Now()
-	statusCode, err := t.client.WriteSeries(ctx, series)
+	statusCode, err := t.client.WriteSeries(ctx, series, metadata)
 	t.metrics.writesLatency.WithLabelValues(typeLabel).Observe(time.Since(start).Seconds())
 	t.metrics.writesTotal.WithLabelValues(typeLabel).Inc()
 

@@ -78,7 +78,6 @@ validate_version_update() {
   fi
 }
 
-values_file=operations/helm/charts/mimir-distributed/values.yaml
 chart_file=operations/helm/charts/mimir-distributed/Chart.yaml
 
 latest_mimir_tag=$(find_latest_image_tag grafana/mimir)
@@ -87,8 +86,7 @@ new_chart_version=$(calculate_next_chart_version $current_chart_version $latest_
 
 validate_version_update $new_chart_version $current_chart_version
 
-update_yaml_node $values_file .image.tag $latest_mimir_tag
-update_yaml_node $chart_file .appVersion $(extract_r_version $latest_mimir_tag)
+update_yaml_node $chart_file .appVersion $latest_mimir_tag
 update_yaml_node $chart_file .version $new_chart_version
 
 make TTY='' doc

@@ -37,14 +37,35 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Set `minReadySeconds` for Memcached statefulsets to slow down rollouts. #13495
 * [ENHANCEMENT] Add support for KEDA ScaledObject fallback configuration. This allows configuring fallback behavior when the scaler fails to get metrics from the source. #13467
 * [ENHANCEMENT] Upgrade to Helm v4. #13661
+* [ENHANCEMENT] Default image tag to Chart.AppVersion. Use `image.tag` value to override the image tag. #13453
 * [BUGFIX] Fix missing newline for custom pod labels. #13325
 * [BUGFIX] Upgrade rollout-operator chart to 0.37.1, which fixes server-tls.self-signed-cert.dns-name to use the full release name instead of always being set to `rollout-operator.NAMESPACE.svc`. If upgrading from 6.0.0 or 6.0.1, delete the `certificate` secret created by the rollout-operator pod and recreate the rollout-operator pod. #13357
 * [BUGFIX] Delete gateway's serviceMonitor #13481
 * [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650
 
+## 6.0.5
+
+* [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650
+
+## 6.0.4
+
+* [CHANGE] Upgrade Mimir to [3.0.1](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#301). #13702
+
+## 6.0.3
+
+* [BUGFIX] Fix missing newline for custom pod labels. #13325
+
+## 6.0.2
+
+* [BUGFIX] Upgrade rollout-operator chart to 0.37.1, which fixes server-tls.self-signed-cert.dns-name to use the full release name instead of always being set to `rollout-operator.NAMESPACE.svc`. If upgrading from 6.0.0 or 6.0.1, delete the `certificate` secret created by the rollout-operator pod and recreate the rollout-operator pod. #13357
+
+## 6.0.1
+
+* [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13312
+
 ## 6.0.0
 
-* [CHANGE] Upgrade Mimir to [3.0.0](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13276
+* [CHANGE] Upgrade Mimir to [3.0.0-rc.2](https://github.com/grafana/mimir/blob/main/CHANGELOG.md#300). #13276
 * [CHANGE] Remove all remaining GEM (enterprise) references from test configurations, reference files, and values.yaml. #13005 #13006 #13007 #13008 #13009 #13010
 * [CHANGE] Minimum compatible Kubernetes version was updated to v1.29. #12527
 * [CHANGE] Mimir is deployed in the ingest storage architecture by default. #12459 #12495
@@ -67,6 +88,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [ENHANCEMENT] Add documentation for livenessProbe support in Chart. #12182
 * [ENHANCEMENT] Add support for `dnsConfig` for all components. #12618
 * [ENHANCEMENT] Added `trafficDistribution` configuration option to distributor, gateway, querier, query-frontend, query-scheduler, ingester, and store-gateway services to enable same-zone traffic routing. #12243
+* [ENHANCEMENT] Add Support to customize gossip ring k8s service annotations. #12718
 
 ## 5.8.0
 

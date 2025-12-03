@@ -930,10 +930,11 @@ func TestConcurrentFetchers(t *testing.T) {
 		t.Parallel()
 
 		const (
-			topicName        = "test-topic"
-			partitionID      = 1
-			concurrency      = 30
-			maxInflightBytes = 5_000_000
+			topicName          = "test-topic"
+			partitionID        = 1
+			concurrency        = 30
+			maxInflightBytes   = 5_000_000
+			perFetcherMaxBytes = maxInflightBytes / concurrency
 
 			largeRecordsCount = 100
 			largeRecordSize   = 100_000
@@ -969,7 +970,7 @@ func TestConcurrentFetchers(t *testing.T) {
 		consumedRecords := fetches.NumRecords()
 
 		pollFetchesAndAssertNoRecords(t, fetchers)
-		t.Log("Consumed all large records")
+		t.Logf("Consumed %d large records", fetches.NumRecords())
 
 		// Produce small records
 		smallValue := bytes.Repeat([]byte{'b'}, smallRecordSize)
@@ -982,19 +983,19 @@ func TestConcurrentFetchers(t *testing.T) {
 		// Consume half of the small records. This should be enough to stabilize the records size estimation.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
 		consumedRecords += fetches.NumRecords()
-		t.Log("Consumed half of the small records")
+		t.Logf("Consumed %d of the small records", fetches.NumRecords())
 
 		// Assert that the buffer is well utilized.
 		waitForStableBufferedRecords(t, fetchers)
 		t.Log("Buffered records stabilized")
 
 		assert.LessOrEqualf(t, fetchers.BufferedBytes(), int64(maxInflightBytes), "Should not buffer more than %d bytes of small records", maxInflightBytes)
-		assert.GreaterOrEqual(t, fetchers.BufferedBytes(), int64(maxInflightBytes/2), "Should still buffer a decent number of records")
+		assert.GreaterOrEqual(t, fetchers.BufferedBytes(), int64(perFetcherMaxBytes), "At least one fetcher's worth of bytes should be buffered")
 
 		// Consume the rest of the small records.
 		fetches = longPollFetches(fetchers, smallRecordsCount/2, 10*time.Second)
 		consumedRecords += fetches.NumRecords()
-		t.Log("Consumed rest of the small records")
+		t.Logf("Consumed %d more of the small records", fetches.NumRecords())
 
 		// Verify we received correct number of records
 		const totalProducedRecords = largeRecordsCount + smallRecordsCount
@@ -1077,7 +1078,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1097,7 +1098,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1116,7 +1117,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1148,7 +1149,7 @@ func TestConcurrentFetchers_fetchSingle(t *testing.T) {
 			startOffset:             1,
 			endOffset:               5,
 			estimatedBytesPerRecord: 100,
-			targetMaxBytes:          1000000,
+			maxBytesLimit:           1000000,
 		}
 		res := fetchers.fetchSingle(ctx, fw)
 
@@ -1348,34 +1349,33 @@ func longPollFetches(fetchers *ConcurrentFetchers, minRecords int, timeout time.
 // we may have to call it multiple times to process all buffered records that need to be
 // discarded.
 func pollFetchesAndAssertNoRecords(t *testing.T, fetchers *ConcurrentFetchers) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
 	// If there are no buffered records, we can skip the polling at all.
 	if fetchers.BufferedRecords() == 0 {
 		return
 	}
 
-	for {
+	// Poll with a short timeout for each call, but keep polling as long as there are buffered records.
+	// This handles the case where with high concurrency, some fetches contain only duplicate records
+	// and take time to be polled and discarded.
+	const pollTimeout = 100 * time.Millisecond
+	const maxAttempts = 50 // 50 * 100ms = 5s total
+
+	for attempt := 0; attempt < maxAttempts && fetchers.BufferedRecords() > 0; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), pollTimeout)
 		fetches, returnCtx := fetchers.PollFetches(ctx)
+		cancel()
+
+		// If context timed out and there are still buffered records, continue trying
 		if errors.Is(returnCtx.Err(), context.DeadlineExceeded) {
-			break
+			continue
 		}
 
 		// We always expect that PollFetches() returns zero records.
 		assert.Len(t, fetches.Records(), 0)
-
-		// If there are no buffered records, we're good. We can end the assertion.
-		if fetchers.BufferedRecords() == 0 {
-			return
-		}
 	}
 
-	// We stopped polling fetches. We have to make sure there are no buffered records.
-	if !assert.Zero(t, fetchers.BufferedRecords(), "expected there aren't any buffered records") {
-		fetches, _ := fetchers.PollFetches(ctx)
-		t.Logf("%#v", fetches)
-	}
+	// After all attempts, verify there are no buffered records remaining.
+	assert.Zero(t, fetchers.BufferedRecords(), "expected there aren't any buffered records after polling")
 }
 
 type waiterFunc func()
@@ -1396,6 +1396,7 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               10,
 				estimatedBytesPerRecord: 100,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: 1_000_000, // minimum fetch size
 		},
@@ -1404,6 +1405,7 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               1000,
 				estimatedBytesPerRecord: 1000,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: 1_050_000, // 1000 * 1000 * 1.05
 		},
@@ -1412,6 +1414,7 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               2 << 31,
 				estimatedBytesPerRecord: 2 << 30,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: math.MaxInt32,
 		},
@@ -1420,8 +1423,18 @@ func TestFetchWant_MaxBytes(t *testing.T) {
 				startOffset:             0,
 				endOffset:               math.MaxInt64,
 				estimatedBytesPerRecord: math.MaxInt32,
+				maxBytesLimit:           math.MaxInt32,
 			},
 			expected: math.MaxInt32,
+		},
+		"capped by maxBytesLimit": {
+			fw: fetchWant{
+				startOffset:             0,
+				endOffset:               1000,
+				estimatedBytesPerRecord: 10000,
+				maxBytesLimit:           5_000_000,
+			},
+			expected: 5_000_000, // capped by maxBytesLimit even though calculation would be 10_500_000
 		},
 	}
 

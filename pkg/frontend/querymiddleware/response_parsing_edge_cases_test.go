@@ -77,7 +77,7 @@ func TestCodec_ResponseParsingEdgeCases(t *testing.T) {
 			contentType:   "application/json",
 			statusCodes:   []int{200, 500, 503},
 			responseBody:  `{"status": "success", "data": {"resultType": "matrix"`,
-			expectedError: "object not ended with }",
+			expectedError: "expect }, but found",
 		},
 		{
 			name:          "malformed JSON - trailing comma",

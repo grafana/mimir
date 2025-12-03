@@ -76,19 +76,19 @@ type fetchWant struct {
 	startOffset             int64 // inclusive
 	endOffset               int64 // exclusive
 	estimatedBytesPerRecord int
-	targetMaxBytes          int
+	maxBytesLimit           int32
 
 	// result should be closed when there are no more fetches for this partition. It is ok to send multiple times on the channel.
 	result chan fetchResult
 }
 
-func fetchWantFrom(offset int64, targetMaxBytes, estimatedBytesPerRecord int) fetchWant {
+func fetchWantFrom(offset int64, maxBytesLimit int32, estimatedBytesPerRecord int) fetchWant {
 	estimatedBytesPerRecord = max(estimatedBytesPerRecord, 1)
-	estimatedNumberOfRecords := max(1, targetMaxBytes/estimatedBytesPerRecord)
+	estimatedNumberOfRecords := max(1, int(maxBytesLimit)/estimatedBytesPerRecord)
 	return fetchWant{
 		startOffset:             offset,
 		endOffset:               offset + int64(estimatedNumberOfRecords),
-		targetMaxBytes:          targetMaxBytes,
+		maxBytesLimit:           maxBytesLimit,
 		estimatedBytesPerRecord: estimatedBytesPerRecord,
 		result:                  make(chan fetchResult),
 	}
@@ -96,7 +96,7 @@ func fetchWantFrom(offset int64, targetMaxBytes, estimatedBytesPerRecord int) fe
 
 // Next returns the fetchWant for the next numRecords starting from the last known offset.
 func (w fetchWant) Next() fetchWant {
-	n := fetchWantFrom(w.endOffset, w.targetMaxBytes, w.estimatedBytesPerRecord)
+	n := fetchWantFrom(w.endOffset, w.maxBytesLimit, w.estimatedBytesPerRecord)
 	n.estimatedBytesPerRecord = w.estimatedBytesPerRecord
 	return n
 }
@@ -108,10 +108,11 @@ func (w fetchWant) MaxBytes() int32 {
 	if fetchBytes > math.MaxInt32 || fetchBytes < 0 {
 		// This shouldn't happen because w should have been trimmed before sending the request.
 		// But we definitely don't want to request negative bytes by casting to int32, so add this safeguard.
-		return math.MaxInt32
+		fetchBytes = math.MaxInt32
 	}
-	fetchBytes = max(forcedMinValueForMaxBytes, fetchBytes)
-	return int32(fetchBytes)
+	maxBytes := max(forcedMinValueForMaxBytes, int32(fetchBytes))
+	maxBytes = min(w.maxBytesLimit, maxBytes)
+	return maxBytes
 }
 
 // UpdateBytesPerRecord updates the expected bytes per record based on the results of the last fetch and trims the fetchWant if MaxBytes() would now exceed math.MaxInt32.
@@ -843,8 +844,8 @@ func (w *inflightFetchWants) removeNextResult() {
 }
 
 func (r *ConcurrentFetchers) start(ctx context.Context, startOffset int64, concurrency int) {
-	targetBytesPerFetcher := int(r.maxBufferedBytesLimit) / concurrency
-	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "bytes_per_fetch_request", targetBytesPerFetcher)
+	maxBytesPerFetcher := r.maxBufferedBytesLimit / int32(concurrency)
+	level.Info(r.logger).Log("msg", "starting concurrent fetchers", "start_offset", startOffset, "concurrency", concurrency, "max_bytes_per_fetch_request", maxBytesPerFetcher)
 
 	// HWM is updated by the fetchers. A value of 0 is the same as there not being any produced records.
 	// A value of 0 doesn't prevent progress because we ensure there is at least one inflight fetchWant.
@@ -864,7 +865,7 @@ func (r *ConcurrentFetchers) start(ctx context.Context, startOffset int64, concu
 	var (
 		// nextFetch is the next records fetch operation we want to issue to one of the running workers.
 		// It contains the offset range to fetch and a channel where the result should be written to.
-		nextFetch = fetchWantFrom(startOffset, targetBytesPerFetcher, initialBytesPerRecord)
+		nextFetch = fetchWantFrom(startOffset, maxBytesPerFetcher, initialBytesPerRecord)
 
 		// inflight is the list of all fetchWants that are currently in flight.
 		inflight = inflightFetchWants{bytes: r.bufferedFetchedBytes}

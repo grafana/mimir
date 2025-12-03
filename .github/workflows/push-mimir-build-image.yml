@@ -191,7 +191,7 @@ jobs:
             echo "Built tag is different from the one in Makefile"
             echo "isDifferent=true" >> $GITHUB_OUTPUT
           fi
-          
+
       # Tokens expire after 1h. Since building the image can take a long time, we create a fresh App Token for the last
       # step of the build. (https://github.com/actions/create-github-app-token/issues/121#issuecomment-2027574184)
       - name: Generate GitHub App Token

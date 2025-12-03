@@ -130,7 +130,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # Other options are documented in https://docs.docker.com/engine/reference/commandline/buildx_build/#output.
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
-PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
@@ -225,7 +224,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr13661-d739e63a97
+LATEST_BUILD_IMAGE_TAG ?= pr13691-c4949618e0
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.

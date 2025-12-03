@@ -908,7 +908,7 @@ Usage of ./cmd/mimir/mimir:
   -tests.write-endpoint string
     	The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.
   -tests.write-protocol string
-    	The protocol to use to write series data. Supported values are: prometheus, otlp-http (default "prometheus")
+    	The protocol to use to write series data. Supported values are: prometheus, prometheus2, otlp-http (default "prometheus")
   -tests.write-read-series-test.float-samples-enabled
     	Set to true to use float samples (default true)
   -tests.write-read-series-test.histogram-samples-enabled

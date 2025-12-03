@@ -2319,7 +2319,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "received a series whose label value length exceeds the limit",
+			expectedErr: "received a series whose label value length of 204 exceeds the limit of 200",
 		},
 		"timestamp too new": {
 			prepareConfig: func(limits *validation.Limits) {

@@ -82,7 +82,6 @@ spec:
             name: gateway-nginx-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"

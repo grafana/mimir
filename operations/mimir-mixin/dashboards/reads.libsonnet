@@ -324,15 +324,10 @@ local filename = 'mimir-reads.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency (getmulti)') +
-        $.latencyPanel(
+        $.ncLatencyPanel(
           'thanos_cache_operation_duration_seconds',
           |||
-            {
-              %s,
-              operation="getmulti",
-              component="store-gateway",
-              name="index-cache"
-            }
+            %s, operation="getmulti", component="store-gateway", name="index-cache"
           ||| % $.jobMatcher($._config.job_names.store_gateway)
         )
       )

@@ -28,6 +28,13 @@ const (
 	hashFactor = 2689
 )
 
+var floatMetricMetadata = []prompb.MetricMetadata{{
+	Type:             prompb.MetricMetadata_GAUGE,
+	MetricFamilyName: floatMetricName,
+	Help:             "A neverending sine wave.",
+	Unit:             "u",
+}}
+
 type generateHistogramFunc func(t time.Time) prompb.Histogram
 type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
 type generateValueFunc func(t time.Time) float64

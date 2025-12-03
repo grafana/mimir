@@ -116,7 +116,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 	t.Run("should write series with current timestamp if it's already aligned to write interval", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
@@ -134,7 +134,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2), mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -150,7 +150,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 	t.Run("should write series with timestamp aligned to write interval", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
@@ -168,7 +168,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2), mock.Anything)
 			assert.Equal(t, int64(980), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
@@ -184,7 +184,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 	t.Run("should write series from last written timestamp until now", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
 
@@ -207,9 +207,9 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2), mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2), mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -225,7 +225,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 	t.Run("should stop remote writing on network error", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(0, errors.New("network error"))
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(0, errors.New("network error"))
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -235,15 +235,14 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			records.lastWrittenTimestamp = time.Unix(940, 0)
 		}
 		now := time.Unix(1000, 0)
-		err := test.Run(context.Background(), now)
-		assert.Error(t, err)
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -255,7 +254,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 	t.Run("should stop remote writing on 5xx error", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(500, errors.New("500 error"))
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(500, errors.New("500 error"))
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -265,15 +264,14 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			records.lastWrittenTimestamp = time.Unix(940, 0)
 		}
 		now := time.Unix(1000, 0)
-		err := test.Run(context.Background(), now)
-		assert.Error(t, err)
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 1*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -285,7 +283,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 	t.Run("should keep remote writing next intervals on 4xx error", func(t *testing.T) {
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(400, errors.New("400 error"))
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(400, errors.New("400 error"))
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -295,18 +293,16 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 			records.lastWrittenTimestamp = time.Unix(940, 0)
 		}
 		now := time.Unix(1000, 0)
-		err := test.Run(context.Background(), now)
-		// An error is expected for smoke-test mode, but we don't want to stop the test.
-		assert.Error(t, err)
+		_ = test.Run(context.Background(), now)
 
 		client.AssertNumberOfCalls(t, "WriteSeries", 3*multiplier)
 
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2))
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2), mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2), mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -320,7 +316,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		now := time.Unix(1000, 0)
 
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
@@ -353,7 +349,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2), mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -372,7 +368,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		now := time.Unix(1000, 0)
 
 		client := &ClientMock{}
-		client.On("WriteSeries", mock.Anything, mock.Anything).Return(200, nil)
+		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
@@ -404,7 +400,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2))
+			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2), mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)

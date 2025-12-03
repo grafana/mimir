@@ -516,62 +516,6 @@ func TestDistributorIngestionArtificialDelay(t *testing.T) {
 			},
 			expectedDelay: time.Second,
 		},
-		"should apply delay based on 'max series less than' condition if tenant max series is < the threshold": {
-			tenantID: "tenant-a",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
-				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
-				l.MaxGlobalSeriesPerUser = 15000
-			},
-			expectedDelay: time.Second,
-		},
-		"should not apply delay based on 'max series less than' condition if tenant max series is >= the threshold": {
-			tenantID: "tenant-a",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
-				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(time.Second)
-				l.MaxGlobalSeriesPerUser = 15001
-			},
-			expectedDelay: 0,
-		},
-		"should apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and > the condition": {
-			tenantID: "12346",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
-			},
-			expectedDelay: time.Second,
-		},
-		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is numeric and <= the condition": {
-			tenantID: "12345",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
-			},
-			expectedDelay: 0,
-		},
-		"should not apply delay based on 'tenant ID greater than' condition if tenant ID is not numeric": {
-			tenantID: "tenant-123456",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(time.Second)
-			},
-			expectedDelay: 0,
-		},
-		"should apply the highest delay among matching conditions": {
-			tenantID: "12346",
-			tenantLimits: func(l *Limits) {
-				l.IngestionArtificialDelay = model.Duration(300 * time.Millisecond)
-
-				l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries = 15001
-				l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries = model.Duration(200 * time.Millisecond)
-				l.MaxGlobalSeriesPerUser = 15000
-
-				l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan = 12345
-				l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan = model.Duration(100 * time.Millisecond)
-			},
-			expectedDelay: 300 * time.Millisecond,
-		},
 	}
 
 	for testName, testData := range tests {
