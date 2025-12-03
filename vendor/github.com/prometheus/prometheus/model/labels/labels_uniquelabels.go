@@ -17,7 +17,6 @@ package labels
 
 import (
 	"bytes"
-	"encoding/binary"
 	"slices"
 	"strings"
 	"unique"
@@ -118,23 +117,6 @@ func (ls Labels) Hash() uint64 {
 		b = append(b, sep)
 	}
 	return xxhash.Sum64(b)
-}
-
-type UnstableHash uint64
-
-// UnstableHash returns a hash value for the label set.
-// Note: the result is only guaranteed to be stable for as long as all symbols in the label set remain referenced in memory.
-func (ls Labels) UnstableHash() UnstableHash {
-	b := make([]byte, 0, len(ls)*8*2)
-
-	for _, l := range ls {
-		// unsafe.StringData will return the same unique value for each symbol as unique.Make will clone the string
-		// before storing it (so we couldn't have two symbols pointing to a single string and therefore return the same value for both).
-		b = binary.LittleEndian.AppendUint64(b, uint64(uintptr(unsafe.Pointer(unsafe.StringData(l.Name.String())))))
-		b = binary.LittleEndian.AppendUint64(b, uint64(uintptr(unsafe.Pointer(unsafe.StringData(l.Value.String())))))
-	}
-
-	return UnstableHash(xxhash.Sum64(b))
 }
 
 // HashForLabels returns a hash value for the labels matching the provided names.

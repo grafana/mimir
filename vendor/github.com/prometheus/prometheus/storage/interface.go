@@ -304,7 +304,7 @@ type GetRef interface {
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
 	// hash should be a hash of lset.
-	GetRef(lset labels.Labels, hash labels.UnstableHash) (SeriesRef, labels.Labels)
+	GetRef(lset labels.Labels, hash uint64) (SeriesRef, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which

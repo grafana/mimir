@@ -124,7 +124,7 @@ func (h *Head) initTime(t int64) {
 	h.maxTime.CompareAndSwap(math.MinInt64, t)
 }
 
-func (a *initAppender) GetRef(lset labels.Labels, hash labels.UnstableHash) (storage.SeriesRef, labels.Labels) {
+func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.app.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
 	}
@@ -534,7 +534,7 @@ func (a *headAppender) getOrCreate(lset labels.Labels) (s *memSeries, created bo
 	if l, dup := lset.HasDuplicateLabelNames(); dup {
 		return nil, false, fmt.Errorf(`label name "%s" is not unique: %w`, l, ErrInvalidSample)
 	}
-	s, created, err = a.head.getOrCreate(lset.UnstableHash(), lset, true)
+	s, created, err = a.head.getOrCreate(lset.Hash(), lset, true)
 	if err != nil {
 		return nil, false, err
 	}
@@ -773,7 +773,7 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	// Get Series
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		s = a.head.series.getByHash(lset.UnstableHash(), lset)
+		s = a.head.series.getByHash(lset.Hash(), lset)
 		if s != nil {
 			ref = storage.SeriesRef(s.ref)
 		}
@@ -1018,7 +1018,7 @@ func (a *headAppender) AppendHistogramSTZeroSample(ref storage.SeriesRef, lset l
 func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
-		s = a.head.series.getByHash(lset.UnstableHash(), lset)
+		s = a.head.series.getByHash(lset.Hash(), lset)
 		if s != nil {
 			ref = storage.SeriesRef(s.ref)
 		}
@@ -1047,7 +1047,7 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 var _ storage.GetRef = &headAppender{}
 
-func (a *headAppender) GetRef(lset labels.Labels, hash labels.UnstableHash) (storage.SeriesRef, labels.Labels) {
+func (a *headAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	s := a.head.series.getByHash(hash, lset)
 	if s == nil {
 		return 0, labels.EmptyLabels()

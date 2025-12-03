@@ -255,7 +255,7 @@ Outer:
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
-				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.UnstableHash(), walSeries.Labels, false)
+				mSeries, created, err := h.getOrCreateWithOptionalID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels, false)
 				if err != nil {
 					seriesCreationErr = err
 					break Outer
@@ -1461,7 +1461,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 			}
 		}
 
-		ms := h.series.getByHash(seriesLabels.UnstableHash(), seriesLabels)
+		ms := h.series.getByHash(seriesLabels.Hash(), seriesLabels)
 		if ms == nil {
 			// It is possible that exemplar refers to some old series. We discard such exemplars.
 			return nil
@@ -1655,7 +1655,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 			localRefSeries := shardedRefSeries[idx]
 
 			for csr := range rc {
-				series, _, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.UnstableHash(), csr.lset, false)
+				series, _, err := h.getOrCreateWithOptionalID(csr.ref, csr.lset.Hash(), csr.lset, false)
 				if err != nil {
 					errChan <- err
 					return

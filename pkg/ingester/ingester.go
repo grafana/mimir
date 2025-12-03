@@ -1590,8 +1590,8 @@ func (i *Ingester) pushSamplesToAppender(
 			nonCopiedLabels = ts.LabelsInstanceFromSymbols
 		}
 
-		hash := nonCopiedLabels.UnstableHash()
-		// Look up a reference for this series. The hash passed should be the output of Labels.UnstableHash()
+		hash := nonCopiedLabels.Hash()
+		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
