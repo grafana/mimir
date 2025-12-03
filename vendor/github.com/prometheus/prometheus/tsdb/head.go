@@ -1896,6 +1896,21 @@ func (m *seriesHashmap) get(hash uint64, lset labels.Labels) *memSeries {
 	return nil
 }
 
+// Fetch a series from the map, given a function which says whether it's the right Labels.
+func (m *seriesHashmap) getByFunc(hash uint64, cmp func(labels.Labels) bool) *memSeries {
+	if s, found := m.unique[hash]; found {
+		if cmp(s.lset) {
+			return s
+		}
+	}
+	for _, s := range m.conflicts[hash] {
+		if cmp(s.lset) {
+			return s
+		}
+	}
+	return nil
+}
+
 func (m *seriesHashmap) set(hash uint64, s *memSeries) {
 	if existing, found := m.unique[hash]; !found || labels.Equal(existing.labels(), s.labels()) {
 		m.unique[hash] = s
@@ -2118,6 +2133,16 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 
 	s.locks[i].RLock()
 	series := s.hashes[i].get(hash, lset)
+	s.locks[i].RUnlock()
+
+	return series
+}
+
+func (s *stripeSeries) getByHashFunc(hash uint64, cmp func(labels.Labels) bool) *memSeries {
+	i := hash & uint64(s.size-1)
+
+	s.locks[i].RLock()
+	series := s.hashes[i].getByFunc(hash, cmp)
 	s.locks[i].RUnlock()
 
 	return series

@@ -1393,11 +1393,21 @@ type dbAppender struct {
 	db *DB
 }
 
-var _ storage.GetRef = dbAppender{}
+var (
+	_ storage.GetRef     = dbAppender{}
+	_ storage.GetRefFunc = dbAppender{}
+)
 
 func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
+	}
+	return 0, labels.EmptyLabels()
+}
+
+func (a dbAppender) GetRefFunc(hash uint64, cmp func(labels.Labels) bool) (storage.SeriesRef, labels.Labels) {
+	if g, ok := a.Appender.(storage.GetRefFunc); ok {
+		return g.GetRefFunc(hash, cmp)
 	}
 	return 0, labels.EmptyLabels()
 }

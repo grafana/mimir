@@ -131,6 +131,13 @@ func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRe
 	return 0, labels.EmptyLabels()
 }
 
+func (a *initAppender) GetRefFunc(hash uint64, cmp func(labels.Labels) bool) (storage.SeriesRef, labels.Labels) {
+	if g, ok := a.app.(storage.GetRefFunc); ok {
+		return g.GetRefFunc(hash, cmp)
+	}
+	return 0, labels.EmptyLabels()
+}
+
 func (a *initAppender) Commit() error {
 	if a.app == nil {
 		a.head.metrics.activeAppenders.Dec()
@@ -1054,6 +1061,15 @@ func (a *headAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRe
 	}
 	// returned labels must be suitable to pass to Append()
 	return storage.SeriesRef(s.ref), s.labels()
+}
+
+func (a *headAppender) GetRefFunc(hash uint64, cmp func(labels.Labels) bool) (storage.SeriesRef, labels.Labels) {
+	s := a.head.series.getByHashFunc(hash, cmp)
+	if s == nil {
+		return 0, labels.EmptyLabels()
+	}
+	// returned labels must be suitable to pass to Append()
+	return storage.SeriesRef(s.ref), s.lset
 }
 
 // log writes all headAppender's data to the WAL.
