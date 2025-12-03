@@ -89,6 +89,15 @@ func main() {
 	}
 	defer reader.Close()
 
+	// Check TSDB index version - only V2 is supported for symbol iteration.
+	indexVersion, err := reader.IndexVersion(ctx)
+	if err != nil {
+		log.Fatalf("Failed to get index version: %v\n", err)
+	}
+	if indexVersion == 1 {
+		log.Fatalln("TSDB index V1 format is not supported")
+	}
+
 	tocInfo := analyzeTOC(ctx, reader, indexHeaderSize)
 	printTOCInfo(ctx, os.Stdout, tocInfo)
 
