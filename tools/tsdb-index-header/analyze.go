@@ -179,7 +179,6 @@ func analyzeLabelCardinality(ctx context.Context, reader *indexheader.StreamBina
 	}
 
 	stats := &LabelStats{
-		TotalLabels:     len(labelNames),
 		Labels:          make([]LabelCardinality, 0, len(labelNames)),
 		CardinalityHist: make(map[string]int),
 	}
@@ -191,6 +190,7 @@ func analyzeLabelCardinality(ctx context.Context, reader *indexheader.StreamBina
 			continue
 		}
 
+		stats.TotalLabels++
 		cardinality := len(values)
 		stats.TotalLabelValues += cardinality
 
