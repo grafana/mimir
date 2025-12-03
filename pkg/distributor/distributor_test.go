@@ -2416,30 +2416,9 @@ func BenchmarkDistributor_Push(b *testing.B) {
 					for i := 0; i < 10; i++ {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
-					cluster := "c1"
-					replica := "r1"
-					switch i % 8 {
-					case 0:
-						cluster, replica = "c1", "r1"
-					case 1:
-						cluster, replica = "c1", "r2"
-					case 2:
-						cluster, replica = "c2", "r1"
-					case 3:
-						cluster, replica = "c2", "r2"
-					case 4:
-						cluster, replica = "c3", "r1"
-					case 5:
-						cluster, replica = "c3", "r2"
-					case 6:
-						cluster, replica = "c4", "r1"
-					case 7:
-						cluster, replica = "c4", "r2"
-					default:
-						panic("in the disco")
-					}
-					lbls.Set("cluster", cluster)
-					lbls.Set("__replica__", replica)
+					cluster, replica := i/2+1, i%2+1
+					lbls.Set("cluster", strconv.Itoa(cluster))
+					lbls.Set("__replica__", strconv.Itoa(replica))
 
 					metrics[i] = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
 					samples[i] = mimirpb.Sample{
