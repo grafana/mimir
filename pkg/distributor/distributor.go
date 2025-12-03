@@ -1223,10 +1223,6 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
 
 		span := trace.SpanFromContext(ctx)
-		span.SetAttributes(
-			attribute.String("cluster", cluster),
-			attribute.String("replica", replica),
-		)
 
 		numSamples := 0
 		now := time.Now()
@@ -1294,6 +1290,18 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 				info.sampleCount += len(ts.Samples) + len(ts.Histograms)
 			}
 		}
+
+		var clusters []string
+		var replicas []string
+		for replicaKey := range replicaInfos {
+			clusters = append(clusters, replicaKey.cluster)
+			replicas = append(replicas, replicaKey.replica)
+		}
+		span.SetAttributes(
+			attribute.StringSlice("clusters", clusters),
+			attribute.StringSlice("replicas", replicas),
+		)
+
 		for replicaKey, info := range replicaInfos {
 			if info.state == replicaRejectedUnknown {
 				state, replicaErr := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
