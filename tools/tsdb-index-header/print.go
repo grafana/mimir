@@ -58,7 +58,10 @@ func printSymbolStats(_ context.Context, w io.Writer, stats *SymbolStats) {
 		if count > 0 {
 			size := stats.LengthSizes[bucket]
 			pct := float64(count) / float64(stats.Count) * 100
-			sizePct := float64(size) / float64(stats.TotalLength) * 100
+			var sizePct float64
+			if stats.TotalLength > 0 {
+				sizePct = float64(size) / float64(stats.TotalLength) * 100
+			}
 			fmt.Fprintf(w, "  %8s: %10d symbols (%5.2f%%)  %12d bytes (%5.2f%%, %.2f MB)\n", bucket, count, pct, size, sizePct, bytesToMB(size))
 		}
 	}
@@ -118,7 +121,10 @@ func printLabelValueStats(_ context.Context, w io.Writer, stats *LabelValueStats
 		b := stats.LengthHistogram[bucket]
 		if b != nil && b.Count > 0 {
 			pct := float64(b.Count) / float64(stats.TotalValues) * 100
-			sizePct := float64(b.TotalBytes) / float64(stats.TotalBytes) * 100
+			var sizePct float64
+			if stats.TotalBytes > 0 {
+				sizePct = float64(b.TotalBytes) / float64(stats.TotalBytes) * 100
+			}
 			fmt.Fprintf(w, "  %8s: %10d values (%5.2f%%)  %12d bytes (%5.2f%%, %.2f MB)\n",
 				bucket, b.Count, pct, b.TotalBytes, sizePct, bytesToMB(b.TotalBytes))
 
