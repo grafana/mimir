@@ -26,7 +26,6 @@ func AddFloatSeries(
 	metricType promRW2.Metadata_MetricType,
 	help string,
 	unit string,
-	createdTimestamp int64,
 	exemplars []exemplar.Exemplar,
 ) *promRW2.Request {
 	if req == nil {
@@ -63,8 +62,7 @@ func AddFloatSeries(
 			HelpRef: symBuilder.GetSymbol(help),
 			UnitRef: symBuilder.GetSymbol(unit),
 		},
-		Exemplars:        exemplarsRefs,
-		CreatedTimestamp: createdTimestamp,
+		Exemplars: exemplarsRefs,
 	}
 	req.Timeseries = append(req.Timeseries, ts)
 	req.Symbols = symBuilder.GetSymbols()
@@ -80,7 +78,6 @@ func AddHistogramSeries(
 	histograms []promRW2.Histogram,
 	help string,
 	unit string,
-	createdTimestamp int64,
 	exemplars []exemplar.Exemplar) *promRW2.Request {
 	if req == nil {
 		req = NewWriteRequest()
@@ -121,8 +118,7 @@ func AddHistogramSeries(
 			HelpRef: symBuilder.GetSymbol(help),
 			UnitRef: symBuilder.GetSymbol(unit),
 		},
-		Exemplars:        exemplarsRefs,
-		CreatedTimestamp: createdTimestamp,
+		Exemplars: exemplarsRefs,
 	}
 	req.Timeseries = append(req.Timeseries, ts)
 	req.Symbols = symBuilder.GetSymbols()
@@ -218,10 +214,10 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 
 		samples := make([]promRW2.Sample, 0, len(ts.Samples))
 		for _, s := range ts.Samples {
-			samples = append(samples, promRW2.Sample(s))
+			samples = append(samples, promRW2.Sample{Value: s.Value, Timestamp: s.Timestamp, StartTimestamp: 0})
 		}
 		if len(samples) > 0 {
-			rw2 = AddFloatSeries(rw2, labels, samples, metricType, help, unit, 0, exemplars)
+			rw2 = AddFloatSeries(rw2, labels, samples, metricType, help, unit, exemplars)
 		}
 
 		histograms := make([]promRW2.Histogram, 0, len(ts.Histograms))
@@ -229,7 +225,7 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 			histograms = append(histograms, histogramFromPrompbToRW2(&h))
 		}
 		if len(histograms) > 0 {
-			rw2 = AddHistogramSeries(rw2, labels, histograms, help, unit, 0, exemplars)
+			rw2 = AddHistogramSeries(rw2, labels, histograms, help, unit, exemplars)
 		}
 	}
 
