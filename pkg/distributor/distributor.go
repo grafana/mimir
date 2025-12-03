@@ -1148,10 +1148,15 @@ func (d *Distributor) wrapPushWithMiddlewares(next PushFunc) PushFunc {
 type replicaState int
 
 const (
+	// replicaRejectedUnknown sample is rejected due to an unknown error.
 	replicaRejectedUnknown replicaState = 0
-	replicaIsPrimary       replicaState = 1 << iota
+	// replicaIsPrimary sample is from the elected primary replica and should be accepted.
+	replicaIsPrimary replicaState = 1 << iota
+	// replicaNotHA sample doesn't have both HA labels and should be accepted.
 	replicaNotHA
+	// replicaDeduped sample is from a non-primary replica and should be deduplicated.
 	replicaDeduped
+	// replicaRejectedTooManyClusters sample is rejected because the tenant has too many HA clusters.
 	replicaRejectedTooManyClusters
 
 	replicaAccepted = replicaIsPrimary | replicaNotHA
@@ -1167,13 +1172,6 @@ type replicaInfo struct {
 }
 
 // replicaObserved checks if a sample from a given replica should be accepted for ingestion based on HA deduplication rules.
-//
-// Returns a replicaState indicating the acceptance status and classification of the replica:
-//   - replicaIsPrimary: sample is from the elected primary replica and should be accepted
-//   - replicaNotHA: sample doesn't have both HA labels and should be accepted
-//   - replicaDeduped: sample is from a non-primary replica and should be deduplicated
-//   - replicaRejectedTooManyClusters: sample is rejected because the tenant has too many HA clusters
-//   - replicaRejectedUnknown: sample is rejected due to an unknown error
 func (d *Distributor) replicaObserved(ctx context.Context, userID string, replica haReplica, ts int64) (replicaState, error) {
 	span := trace.SpanFromContext(ctx)
 	span.SetAttributes(
