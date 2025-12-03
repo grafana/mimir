@@ -90,7 +90,7 @@ std.manifestYamlDoc({
     ['store-gateway-zone-a-%d' % id]: mimirService({
       name: 'store-gateway-zone-a-' + id,
       target: 'store-gateway',
-      publishedHttpPort: 8020 + id,
+      publishedHttpPort: 8025 + id,
       jaegerApp: 'store-gateway-zone-a-%d' % id,
       extraArguments: ['-store-gateway.sharding-ring.instance-availability-zone=zone-a'],
     })

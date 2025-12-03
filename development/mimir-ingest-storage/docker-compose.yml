@@ -436,8 +436,8 @@
     "hostname": "store-gateway-zone-a-1"
     "image": "mimir"
     "ports":
-      - "8021:8080"
-      - "11021:11021"
+      - "8026:8080"
+      - "11026:11026"
     "volumes":
       - "./config:/mimir/config"
       - "./activity:/activity"
