@@ -1307,10 +1307,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		lastAccepted := sortByAccepted(req, replicaInfos, getReplicaForSample)
 		var getReplicaState func(haReplica) replicaState
 		if isOneReplica {
-			var s replicaState
-			for _, info := range replicaInfos {
-				s = info.state
-			}
+			s := replicaInfos[firstReplica].state
 			getReplicaState = func(replica haReplica) replicaState {
 				return s
 			}
