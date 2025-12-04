@@ -139,6 +139,9 @@ func newStreamReader(rc io.ReadCloser, length int) *streamReader {
 	return r
 }
 
+// maxSkippableBytes is the max number of bytes, the reader will skip ahead on resetAt. Larger values will reset the underlying readCloser.
+const maxSkippableBytes = 1 << 20
+
 // resetAt moves the cursor position to the given offset in the data segment.
 // Attempting to resetAt to the end of the file segment is valid. Attempting to resetAt _beyond_ the end of the file
 // segment will return an error.
@@ -147,7 +150,7 @@ func (r *streamReader) resetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	if dist := off - r.pos; dist > 0 {
+	if dist := off - r.pos; dist > 0 && dist < maxSkippableBytes {
 		// skip ahead by discarding the distance bytes
 		// TODO(v): there is a tradeoff between consuming dist bytes from the existing stream, or recreating the stream, via a new GetObject call.
 		return r.skip(dist)
@@ -170,6 +173,7 @@ func (r *streamReader) skip(l int) error {
 		return ErrInvalidSize
 	}
 
+	// TODO(v): how to make sure we don't trash the cache when skipping
 	n, err := r.buf.Discard(l)
 	if n > 0 {
 		r.pos += n
