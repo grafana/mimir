@@ -147,10 +147,10 @@ func (r *streamReader) resetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	if l := off - r.pos; l > 0 {
+	if dist := off - r.pos; dist > 0 {
 		// skip ahead by discarding the distance bytes
-		// TODO(v): there is a tradeoff between consuming l bytes from the existing stream, or recreating the stream, via a new GetObject call.
-		return r.skip(l)
+		// TODO(v): there is a tradeoff between consuming dist bytes from the existing stream, or recreating the stream, via a new GetObject call.
+		return r.skip(dist)
 	}
 
 	// Otherwise we must close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state.
