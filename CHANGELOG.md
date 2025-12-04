@@ -391,6 +391,7 @@
 
 ### Jsonnet
 
+* [CHANGE] Allow tenant configuration in ScaledObject spec for metric queries. #13750
 * [CHANGE] Removed etcd-operator from the Jsonnet configuration. Users can still use etcd as a KV store for rings, but need to deploy and manage etcd themselves rather than via the operator. #13049
 * [CHANGE] Distributor: Reduce calculated `GOMAXPROCS` to be closer to the requested number of CPUs. #12150
 * [CHANGE] Query-scheduler: The query-scheduler is now a required component that is always used by queriers and query-frontends. #12187
