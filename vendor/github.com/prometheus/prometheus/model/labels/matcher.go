@@ -168,3 +168,13 @@ func (m *Matcher) IsRegexOptimized() bool {
 	}
 	return m.re.IsOptimized()
 }
+
+func (m *Matcher) matchesN(values []string) int {
+    count := 0
+    for _, v := range values {
+        if m.Matches(v) {
+            count++
+        }
+    }
+    return count
+}

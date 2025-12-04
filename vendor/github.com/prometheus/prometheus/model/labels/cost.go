@@ -56,7 +56,7 @@ func (m *Matcher) SingleMatchCost() float64 {
 // * namespace!="" will match all values, so its selectivity is 1;
 // * namespace=~"foo" will match only a single value, so its selectivity across 100 values is 0.01;
 // * namespace=~"foo|bar" will match two values, so its selectivity across 100 values is 0.02.
-func (m *Matcher) EstimateSelectivity(totalLabelValues uint64) float64 {
+func (m *Matcher) EstimateSelectivity(totalLabelValues uint64, sampleValues []string) float64 {
 	if totalLabelValues == 0 {
 		return 1.0
 	}
@@ -80,13 +80,11 @@ func (m *Matcher) EstimateSelectivity(totalLabelValues uint64) float64 {
 		case m.Value == "":
 			selectivity = 0
 		case m.re.prefix != "":
-			// For prefix matches, estimate we'll match ~10% of values.
-			selectivity = 0.1
+			selectivity = float64(m.matchesN(sampleValues)) / float64(len(sampleValues))
 		case m.Value == ".+" || m.Value == ".*":
 			selectivity = 1.0
 		default:
-			// For unoptimized regex, assume we'll match ~10% of values
-			selectivity = 0.1
+			selectivity = float64(m.matchesN(sampleValues)) / float64(len(sampleValues))
 		}
 	}
 	selectivity = max(0.0, min(selectivity, 1.0))

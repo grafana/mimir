@@ -5,6 +5,7 @@ package lookupplan
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"time"
 	"unsafe"
 
@@ -107,7 +108,22 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 
 		// Add each value to the sketch
 		// For each value, we need to count how many series have that value
+		const (
+			sampleProbability    = 0.01
+			maxSampledValues     = 1024
+			maxSampledValuesSize = maxSampledValues * 64
+		)
+		// Make a deterministic sampler based on the number of values
+		valuesSampler := rand.New(rand.NewPCG(uint64(len(values)), 0))
+		expectedNumSampledValues := min(maxSampledValues, sampleProbability*float64(len(values)))
+		sampledValues := make([]string, 0, int(expectedNumSampledValues))
+		sampledValueSize := 0
+
 		for _, value := range values {
+			if valuesSampler.Float64() < sampleProbability && len(sampledValues) < maxSampledValues && sampledValueSize < maxSampledValuesSize {
+				sampledValues = append(sampledValues, value)
+				sampledValueSize += len(value)
+			}
 			// Get postings for this label name/value pair
 			postings, err := r.Postings(ctx, labelName, value)
 			if err != nil {
@@ -124,6 +140,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 			valBytes := yoloBytes(value)
 			sketch.s.AddN(valBytes, seriesCountForValue)
 		}
+		sketch.sampledValues = sampledValues
 
 		labelSketches[labelName] = sketch
 	}
@@ -146,11 +163,20 @@ type BlockStatistics struct {
 type LabelValuesSketch struct {
 	s              *boom.CountMinSketch
 	distinctValues uint64
+	sampledValues  []string
 }
 
 // TotalSeries returns the number of series in the TSDB block.
 func (s *BlockStatistics) TotalSeries() uint64 {
 	return s.totalSeries
+}
+
+func (s *BlockStatistics) SampleValues(_ context.Context, name string) []string {
+	sketch, ok := s.labelNames[name]
+	if !ok {
+		return nil
+	}
+	return sketch.sampledValues
 }
 
 // LabelValuesCount returns the number of values for a label name. If the given label name does not exist,

@@ -59,6 +59,19 @@ func (m *mockStatistics) TotalSeries() uint64 {
 	return m.totalSeries
 }
 
+// SampleValues(ctx context.Context, name string) []string
+func (m *mockStatistics) SampleValues(_ context.Context, name string) []string {
+	valuesMap, exists := m.seriesPerValue[name]
+	if !exists {
+		return nil
+	}
+	values := make([]string, 0, len(valuesMap))
+	for value := range valuesMap {
+		values = append(values, value)
+	}
+	return values
+}
+
 func (m *mockStatistics) LabelValuesCount(_ context.Context, name string) uint64 {
 	values := m.seriesPerValue[name]
 
