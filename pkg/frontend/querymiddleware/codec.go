@@ -51,6 +51,7 @@ var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	errRequestNoQuery = apierror.New(apierror.TypeBadData, "the request has no query")
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
@@ -100,8 +101,12 @@ type MetricsQueryRequest interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
-	// GetParsedQuery returns the query, parsed into an AST.
-	GetParsedQuery() parser.Expr
+	// GetClonedParsedQuery returns the query, parsed into an AST. The returned query is a clone, so
+	// it's safe to manipulate the returned expression without affecting the expression stored in the
+	// request itself.
+	//
+	// This function returns an error if the query is invalid or the request has no query.
+	GetClonedParsedQuery() (parser.Expr, error)
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
 	GetMinT() int64
