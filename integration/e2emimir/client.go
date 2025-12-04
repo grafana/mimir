@@ -506,7 +506,16 @@ func (c *Client) LabelNames(start, end time.Time, matches []string, opts ...prom
 	defer cancel()
 
 	result, _, err := c.querierClient.LabelNames(ctx, matches, start, end, opts...)
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert model.LabelNames to []string
+	names := make([]string, len(result))
+	for i, name := range result {
+		names[i] = string(name)
+	}
+	return names, nil
 }
 
 // LabelNamesAndValues returns distinct label values per label name.
