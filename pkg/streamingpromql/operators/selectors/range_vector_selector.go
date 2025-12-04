@@ -105,7 +105,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	rangeEnd = rangeEnd - m.Selector.Offset
 	rangeStart := rangeEnd - m.rangeMilliseconds
 
-	// Take a copy of the original range - the smoothed/anchored modifiers will change these
+	// Take a copy of the original range since the smoothed/anchored modifiers will change these
 	originalRangeStart := rangeStart
 	originalRangeEnd := rangeEnd
 
@@ -149,9 +149,21 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 		// If we only find points prior to the start of the original range then no points are returned.
 		if hasLastPoint && lastInView.T > originalRangeStart {
-			buff, m.stepData.SmoothedBasisForHeadPointSet, m.stepData.SmoothedBasisForTailPointSet, err = extendRangeVectorPoints(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.smoothed, &m.stepData.SmoothedBasisForHeadPoint, &m.stepData.SmoothedBasisForTailPoint, m.memoryConsumptionTracker)
-			if err != nil {
-				return nil, err
+			if m.smoothed {
+				extendedPoints, err := NewExtendedPointsForSmoothed(m.extendedRangeView, originalRangeStart, originalRangeEnd, &m.stepData.SmoothedBasisForHeadPoint, &m.stepData.SmoothedBasisForTailPoint, m.memoryConsumptionTracker)
+				if err != nil {
+					return nil, err
+				}
+				m.stepData.SmoothedBasisForHeadPointSet = extendedPoints.smoothedHeadSet
+				m.stepData.SmoothedBasisForTailPointSet = extendedPoints.smoothedTailSet
+				buff = extendedPoints.points
+
+			} else {
+				extendedPoints, err := NewExtendedPointsForAnchored(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.memoryConsumptionTracker)
+				if err != nil {
+					return nil, err
+				}
+				buff = extendedPoints.points
 			}
 			if err := m.extendedRangeFloats.Use(buff); err != nil {
 				return nil, err

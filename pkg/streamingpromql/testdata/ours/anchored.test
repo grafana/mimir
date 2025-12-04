@@ -1,5 +1,5 @@
 load 15s
-  metric 1+1x4 9+1x4
+  metric 1 2 3 4 5 9 10 11 12 13
 
 eval instant at 5s increase(metric[1m])
 
@@ -55,6 +55,8 @@ eval instant at 110s increase(metric[1m] anchored)
 eval instant at 125s increase(metric[1m] anchored)
   {} 7
 
+# These tests verify how the anchored modifier applies extended ranges when samples are missing.
+# The non-anchored queries are included as a reference to highlight the differences in behaviour
 clear
 load 15s
   metric 1+1x2 _ _ 9+1x4

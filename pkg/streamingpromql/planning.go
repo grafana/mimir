@@ -32,12 +32,22 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-var smoothedIncompatibleFunctionPrefix string
-var anchoredIncompatibleFunctionPrefix string
+type ErrAnchoredIncompatibleFunction struct {
+	functionName string
+}
 
-func init() {
-	smoothedIncompatibleFunctionPrefix = fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
-	anchoredIncompatibleFunctionPrefix = fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
+func (e ErrAnchoredIncompatibleFunction) Error() string {
+	anchoredIncompatibleFunctionPrefix := fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
+	return fmt.Sprintf("%s%s", anchoredIncompatibleFunctionPrefix, e.functionName)
+}
+
+type ErrSmoothedIncompatibleFunction struct {
+	functionName string
+}
+
+func (e ErrSmoothedIncompatibleFunction) Error() string {
+	smoothedIncompatibleFunctionPrefix := fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
+	return fmt.Sprintf("%s%s", smoothedIncompatibleFunctionPrefix, e.functionName)
 }
 
 type QueryPlanner struct {
@@ -519,13 +529,13 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			if ok && matrixSelector.Anchored {
 				_, supported := promql.AnchoredSafeFunctions[expr.Func.Name]
 				if !supported {
-					return nil, getAnchoredIncompatibleFunctionError(expr.Func.Name)
+					return nil, ErrAnchoredIncompatibleFunction{functionName: expr.Func.Name}
 				}
 			}
 			if ok && matrixSelector.Smoothed {
 				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]
 				if !supported {
-					return nil, getSmoothedIncompatibleFunctionError(expr.Func.Name)
+					return nil, ErrSmoothedIncompatibleFunction{functionName: expr.Func.Name}
 				}
 			}
 
@@ -843,14 +853,6 @@ type staticQueryPlanVersionProvider struct {
 
 func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	return s.version, nil
-}
-
-func getSmoothedIncompatibleFunctionError(fncName string) error {
-	return fmt.Errorf("%s%s", smoothedIncompatibleFunctionPrefix, fncName)
-}
-
-func getAnchoredIncompatibleFunctionError(fncName string) error {
-	return fmt.Errorf("%s%s", anchoredIncompatibleFunctionPrefix, fncName)
 }
 
 func sortImplode(m map[string]struct{}) string {
