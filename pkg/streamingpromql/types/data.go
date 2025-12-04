@@ -168,7 +168,7 @@ type RangeVectorStepData struct {
 	//
 	// When the smoothed range is used by a rate/increase function the points on the range boundaries
 	// are calculated differently to accommodate counter arithmetic for the derived values spanning the boundary.
-	// To avoid needing to re-calculate these alternate points they are included here for the rate/increate function
+	// To avoid needing to re-calculate these alternate points they are included here for the rate/increase function
 	// handler to substitute in.
 	SmoothedBasisForHeadPoint    promql.FPoint
 	SmoothedBasisForTailPoint    promql.FPoint
