@@ -102,6 +102,34 @@ func TestCases(metricSizes []int) []BenchCase {
 			Expr:  "rate(nh_X[1m])",
 			Steps: 10000,
 		},
+		{
+			Expr: "rate(a_X[1m] smoothed)",
+		},
+		{
+			Expr:  "rate(a_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(a_X[2h] smoothed)",
+		},
+		{
+			Expr:  "rate(a_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(a_X[1m] anchored)",
+		},
+		{
+			Expr:  "rate(a_X[1m] anchored)",
+			Steps: 10000,
+		},
+		{
+			Expr: "rate(a_X[2h] anchored)",
+		},
+		{
+			Expr:  "rate(a_X[2h] anchored)",
+			Steps: 10000,
+		},
 		//// Holt-Winters and long ranges.
 		//{
 		//	Expr: "holt_winters(a_X[1d], 0.3, 0.3)",

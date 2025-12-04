@@ -1010,10 +1010,12 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExperimentalFunctions = true
+	parser.EnableExtendedRangeSelectors = true
 	t.Cleanup(func() {
 		types.EnableManglingReturnedSlices = false
 		parser.ExperimentalDurationExpr = false
 		parser.EnableExperimentalFunctions = false
+		parser.EnableExtendedRangeSelectors = false
 	})
 
 	testdataFS := os.DirFS("../../testdata")

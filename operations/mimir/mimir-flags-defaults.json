@@ -395,6 +395,7 @@
   "query-frontend.results-cache-ttl-for-errors": 300000000000,
   "query-frontend.max-query-expression-size-bytes": 0,
   "query-frontend.enabled-promql-experimental-functions": "",
+  "query-frontend.enabled-promql-extended-range-selectors": "",
   "query-frontend.labels-query-optimizer-enabled": true,
   "querier.label-names-and-values-results-max-size-bytes": 419430400,
   "querier.label-values-max-cardinality-label-names-per-request": 100,

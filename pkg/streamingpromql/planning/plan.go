@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV2
+var MaximumSupportedQueryPlanVersion = QueryPlanV3
 
 const QueryPlanVersionZero = QueryPlanVersion(0)
 
@@ -40,6 +40,9 @@ const QueryPlanV1 = QueryPlanVersion(1)
 
 // This version introduces support for limitk and limit_ratio PromQL aggregates
 const QueryPlanV2 = QueryPlanVersion(2)
+
+// This version introduces the anchored & smoothed range selector modifiers
+const QueryPlanV3 = QueryPlanVersion(3)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange

@@ -6,6 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -28,6 +31,24 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
+
+type ErrAnchoredIncompatibleFunction struct {
+	functionName string
+}
+
+func (e ErrAnchoredIncompatibleFunction) Error() string {
+	anchoredIncompatibleFunctionPrefix := fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
+	return fmt.Sprintf("%s%s", anchoredIncompatibleFunctionPrefix, e.functionName)
+}
+
+type ErrSmoothedIncompatibleFunction struct {
+	functionName string
+}
+
+func (e ErrSmoothedIncompatibleFunction) Error() string {
+	smoothedIncompatibleFunctionPrefix := fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
+	return fmt.Sprintf("%s%s", smoothedIncompatibleFunctionPrefix, e.functionName)
+}
 
 type QueryPlanner struct {
 	activeQueryTracker       QueryTracker
@@ -377,6 +398,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Smoothed:           expr.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here.
 				// This is done in the skip histogram buckets optimization pass, after common subexpression elimination is applied,
 				// to simplify the logic in the common subexpression elimination optimization pass. Otherwise it would have to deal
@@ -397,6 +419,8 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Offset:             vs.OriginalOffset,
 				Range:              expr.Range,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
+				Anchored:           vs.Anchored,
+				Smoothed:           vs.Smoothed,
 				// Note that we deliberately do not propagate SkipHistogramBuckets from the expression here. See the explanation above.
 			},
 		}, nil
@@ -500,6 +524,19 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			node, err := p.nodeFromExpr(arg)
 			if err != nil {
 				return nil, err
+			}
+			matrixSelector, ok := node.(*core.MatrixSelector)
+			if ok && matrixSelector.Anchored {
+				_, supported := promql.AnchoredSafeFunctions[expr.Func.Name]
+				if !supported {
+					return nil, ErrAnchoredIncompatibleFunction{functionName: expr.Func.Name}
+				}
+			}
+			if ok && matrixSelector.Smoothed {
+				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]
+				if !supported {
+					return nil, ErrSmoothedIncompatibleFunction{functionName: expr.Func.Name}
+				}
 			}
 
 			args = append(args, node)
@@ -816,4 +853,9 @@ type staticQueryPlanVersionProvider struct {
 
 func (s *staticQueryPlanVersionProvider) GetMaximumSupportedQueryPlanVersion(ctx context.Context) (planning.QueryPlanVersion, error) {
 	return s.version, nil
+}
+
+func sortImplode(m map[string]struct{}) string {
+	tmp := slices.Sorted(maps.Keys(m))
+	return strings.Join(tmp, ", ")
 }

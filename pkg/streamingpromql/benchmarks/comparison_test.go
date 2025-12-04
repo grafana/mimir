@@ -39,9 +39,12 @@ import (
 
 // This is based on the benchmarks from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func BenchmarkQuery(b *testing.B) {
+	extendedRangeSelectors := parser.EnableExtendedRangeSelectors
 	enableExperimentalFunctions := parser.EnableExperimentalFunctions
+	parser.EnableExtendedRangeSelectors = true
 	parser.EnableExperimentalFunctions = true
 	defer func() {
+		parser.EnableExtendedRangeSelectors = extendedRangeSelectors
 		parser.EnableExperimentalFunctions = enableExperimentalFunctions
 	}()
 
@@ -99,9 +102,12 @@ func BenchmarkQuery(b *testing.B) {
 }
 
 func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
+	extendedRangeSelectors := parser.EnableExtendedRangeSelectors
 	enableExperimentalFunctions := parser.EnableExperimentalFunctions
+	parser.EnableExtendedRangeSelectors = true
 	parser.EnableExperimentalFunctions = true
 	defer func() {
+		parser.EnableExtendedRangeSelectors = extendedRangeSelectors
 		parser.EnableExperimentalFunctions = enableExperimentalFunctions
 	}()
 
