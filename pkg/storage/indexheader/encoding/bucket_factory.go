@@ -3,12 +3,14 @@
 package encoding
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash/crc32"
 	"io"
+	"sync"
 
 	"github.com/thanos-io/objstore"
 )
@@ -35,28 +37,35 @@ func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, obje
 // by the contents and the expected checksum. This method checks the CRC of the content and will
 // return an error Decbuf if it does not match the expected CRC.
 func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
-	// Read the 4-byte length prefix
-	lengthBytes, err := bf.fetchRange(int64(offset), 4)
+	// At this point we don't know the length of the section (length is -1).
+	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset), -1)
 	if err != nil {
-		return Decbuf{E: fmt.Errorf("fetch length prefix: %w", err)}
+		return Decbuf{E: fmt.Errorf("get range at offset %d: %w", offset, err)}
+	}
+
+	closeReader := true
+	defer func() {
+		if closeReader {
+			rc.Close()
+		}
+	}()
+
+	// Consume 4-byte length prefix of the section.
+	lengthBytes := make([]byte, 4)
+	n, err := io.ReadFull(rc, lengthBytes)
+	if err != nil {
+		return Decbuf{E: fmt.Errorf("read section length at offset %d: %w", offset, err)}
+	}
+	if n != 4 {
+		return Decbuf{E: fmt.Errorf("insufficient bytes read for size at offset %d (got %d, wanted %d): %w", offset, n, 4, ErrInvalidSize)}
 	}
 
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
-	bufLength := 4 + contentLength + crc32.Size
+	bufLength := len(lengthBytes) + contentLength + crc32.Size
 
-	// Fetch the entire section
-	// TODO(v): this must return a ReadCloser, not an in-mem buffer.
-	data, err := bf.fetchRange(int64(offset), int64(bufLength))
-	if err != nil {
-		return Decbuf{E: fmt.Errorf("fetch section: %w", err)}
-	}
-
-	r := newBufReader(data)
+	r := newStreamReader(rc, offset, len(lengthBytes), bufLength)
 	d := Decbuf{r: r}
-
-	if d.ResetAt(4); d.Err() != nil {
-		return d
-	}
+	closeReader = false
 
 	if table != nil {
 		if d.CheckCrc32(table); d.Err() != nil {
@@ -91,22 +100,143 @@ func (bf *BucketDecbufFactory) Stop() {
 	// Nothing to do for bucket-based implementation
 }
 
-// fetchRange fetches a range of bytes from the object storage.
-func (bf *BucketDecbufFactory) fetchRange(offset, length int64) ([]byte, error) {
-	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, length)
+// streamReader wraps an io.ReadCloser and provides the reader interface for streaming data.
+type streamReader struct {
+	rc     io.ReadCloser
+	buf    *bufio.Reader
+	base   int
+	pos    int
+	length int
+}
+
+var netbufPool = sync.Pool{
+	New: func() any {
+		return bufio.NewReaderSize(nil, 1<<20) // 1MB buffer to reduce number of network IO
+	},
+}
+
+// newStreamReader creates a new streamReader that wraps the given io.ReadCloser.
+func newStreamReader(rc io.ReadCloser, base, pos, length int) *streamReader {
+	r := &streamReader{
+		rc:     rc,
+		buf:    netbufPool.Get().(*bufio.Reader),
+		base:   base,
+		pos:    pos,
+		length: length,
+	}
+	r.buf.Reset(r.rc)
+	return r
+}
+
+// resetAt moves the cursor position to the given offset in the data segment.
+// Attempting to resetAt to the end of the file segment is valid. Attempting to resetAt _beyond_ the end of the file
+// segment will return an error.
+func (r *streamReader) resetAt(off int) error {
+	if off > r.length {
+		return ErrInvalidSize
+	}
+
+	if l := off - r.pos; l > 0 {
+		// skip ahead by discarding the distance bytes
+		return r.skip(l)
+	}
+
+	// Otherwise we must close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state
+	// FIXME(v): naively converting ReadCloser to Seeker; this works for some objectstore implementations
+	rs, ok := r.rc.(objstore.ObjectSizerReadCloser).ReadCloser.(io.ReadSeeker)
+	if !ok {
+		return fmt.Errorf("resetAt not supported: readCloser doesn't implement io.Seeker: %w", errors.ErrUnsupported)
+	}
+	_, err := rs.Seek(int64(r.base+off), io.SeekStart)
 	if err != nil {
-		return nil, fmt.Errorf("get range [%d, %d): %w", offset, offset+length, err)
+		return err
 	}
-	defer rc.Close()
 
-	data, err := io.ReadAll(rc)
+	r.buf.Reset(r.rc)
+	r.pos = off
+
+	return nil
+}
+
+// skip advances the cursor position by the given number of bytes.
+func (r *streamReader) skip(l int) error {
+	if l > r.len() {
+		return ErrInvalidSize
+	}
+
+	n, err := r.buf.Discard(l)
+	if n > 0 {
+		r.pos += n
+	}
+
+	return err
+}
+
+// peek returns at most the given number of bytes without consuming them.
+func (r *streamReader) peek(n int) ([]byte, error) {
+	b, err := r.buf.Peek(n)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return nil, err
+	}
+
+	if len(b) > 0 {
+		return b, nil
+	}
+
+	return nil, nil
+}
+
+// read returns the given number of bytes, consuming them.
+func (r *streamReader) read(n int) ([]byte, error) {
+	b := make([]byte, n)
+
+	err := r.readInto(b)
 	if err != nil {
-		return nil, fmt.Errorf("read range data: %w", err)
+		return nil, err
 	}
 
-	if int64(len(data)) != length {
-		return nil, fmt.Errorf("expected %d bytes, got %d", length, len(data))
+	return b, nil
+}
+
+// readInto reads len(b) bytes into b, consuming them.
+func (r *streamReader) readInto(b []byte) error {
+	n, err := io.ReadFull(r.buf, b)
+	if n > 0 {
+		r.pos += n
 	}
 
-	return data, nil
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return fmt.Errorf("%w reading %d bytes: %s", ErrInvalidSize, len(b), err)
+	} else if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// size returns the length of the underlying buffer in bytes.
+func (r *streamReader) size() int {
+	return r.buf.Size()
+}
+
+// len returns the remaining number of bytes in the stream.
+func (r *streamReader) len() int {
+	return r.length - r.pos
+}
+
+// position returns the current position.
+func (r *streamReader) position() int {
+	return r.pos
+}
+
+// buffered returns the number of bytes that can be read without I/O.
+func (r *streamReader) buffered() int {
+	return r.buf.Buffered()
+}
+
+// close cleans up the underlying resources.
+func (r *streamReader) close() error {
+	err := r.rc.Close()
+	netbufPool.Put(r.buf)
+	return err
 }

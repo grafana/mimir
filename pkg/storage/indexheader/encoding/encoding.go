@@ -21,7 +21,6 @@ var (
 
 // reader is the interface that both fileReader and bufReader implement.
 type reader interface {
-	reset() error
 	resetAt(off int) error
 	skip(l int) error
 	peek(n int) ([]byte, error)
