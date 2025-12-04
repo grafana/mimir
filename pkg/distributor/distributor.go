@@ -1218,22 +1218,19 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
 		haClusterLabel := d.limits.HAClusterLabel(userID)
-		cluster, replica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[0].Labels)
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		cluster, replica = strings.Clone(cluster), strings.Clone(replica)
+
+		replicas := make([]haReplica, len(req.Timeseries))
+		for i, ts := range req.Timeseries {
+			// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+			replicas[i] = findHALabels(haReplicaLabel, haClusterLabel, ts.Labels)
+			replicas[i].cluster = strings.Clone(replicas[i].cluster)
+			replicas[i].replica = strings.Clone(replicas[i].replica)
+		}
 
 		span := trace.SpanFromContext(ctx)
 
 		numSamples := 0
 		now := time.Now()
-
-		getReplicaForSample := func(i int) haReplica {
-			cluster, replica := findHALabels(haReplicaLabel, haClusterLabel, req.Timeseries[i].Labels)
-			return haReplica{
-				cluster: strings.Clone(cluster),
-				replica: strings.Clone(replica),
-			}
-		}
 
 		group := d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
 		sampleTimestamp := timestamp.FromTime(now)
@@ -1263,10 +1260,10 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		replicaInfos := make(map[haReplica]*replicaInfo)
 		samplesPerState := make(map[replicaState]int)
 		// Check if all timeseries belong to the same replica
-		firstReplica := getReplicaForSample(0)
+		firstReplica := replicas[0]
 		isOneReplica := true
 		for i := 1; i < len(req.Timeseries); i++ {
-			if getReplicaForSample(i) != firstReplica {
+			if replicas[i] != firstReplica {
 				isOneReplica = false
 				break
 			}
@@ -1275,13 +1272,9 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		// Count samples per replica
 		if isOneReplica {
 			replicaInfos[firstReplica] = &replicaInfo{sampleCount: numSamples}
-			// Optimize getReplicaForSample to return the single replica directly
-			getReplicaForSample = func(i int) haReplica {
-				return firstReplica
-			}
 		} else {
 			for i, ts := range req.Timeseries {
-				r := getReplicaForSample(i)
+				r := replicas[i]
 				info := replicaInfos[r]
 				if info == nil {
 					info = &replicaInfo{}
@@ -1292,14 +1285,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		var clusters []string
-		var replicas []string
+		var replicasAsStrings []string
 		for replicaKey := range replicaInfos {
 			clusters = append(clusters, replicaKey.cluster)
-			replicas = append(replicas, replicaKey.replica)
+			replicasAsStrings = append(replicasAsStrings, replicaKey.replica)
 		}
 		span.SetAttributes(
 			attribute.StringSlice("clusters", clusters),
-			attribute.StringSlice("replicas", replicas),
+			attribute.StringSlice("replicas", replicasAsStrings),
 		)
 
 		for replicaKey, info := range replicaInfos {
@@ -1312,21 +1305,10 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 			}
 			samplesPerState[info.state] += info.sampleCount
 		}
-		lastAccepted := sortByAccepted(req, replicaInfos, getReplicaForSample)
-		var getReplicaState func(haReplica) replicaState
-		if isOneReplica {
-			s := replicaInfos[firstReplica].state
-			getReplicaState = func(replica haReplica) replicaState {
-				return s
-			}
-		} else {
-			getReplicaState = func(replica haReplica) replicaState {
-				return replicaInfos[replica].state
-			}
-		}
+		lastAccepted := sortByAccepted(req, replicaInfos, replicas)
 		for i := 0; i <= lastAccepted; i++ {
-			r := getReplicaForSample(i)
-			s := getReplicaState(r)
+			r := replicas[i]
+			s := replicaInfos[r].state
 			if s&replicaIsPrimary == 0 {
 				continue
 			}
@@ -1381,7 +1363,7 @@ func (d *Distributor) updateHADedupeMetrics(userID, group string, replicaInfos m
 }
 
 // sortByAccepted returns the index of the last accepted timeseries in the write request based on the ha dedup states of the replicas
-func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*replicaInfo, getReplicaForSample func(int) haReplica) int {
+func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*replicaInfo, replicas []haReplica) int {
 	numAcceptedReplicas := 0
 	for _, info := range replicaInfos {
 		if info.state&replicaAccepted != 0 {
@@ -1391,9 +1373,12 @@ func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*repli
 	if numAcceptedReplicas == len(replicaInfos) {
 		return len(req.Timeseries) - 1
 	}
+	if numAcceptedReplicas == 0 {
+		return -1
+	}
 	findPreviousAccepted := func(i int) int {
 		for i > 0 {
-			state := replicaInfos[getReplicaForSample(i)].state
+			state := replicaInfos[replicas[i]].state
 			if state&replicaAccepted != 0 {
 				break
 			}
@@ -1407,9 +1392,10 @@ func sortByAccepted(req *mimirpb.WriteRequest, replicaInfos map[haReplica]*repli
 		if i > lastAccepted {
 			break
 		}
-		state := replicaInfos[getReplicaForSample(i)].state
+		state := replicaInfos[replicas[i]].state
 		if state&replicaAccepted == 0 {
 			req.Timeseries[i], req.Timeseries[lastAccepted] = req.Timeseries[lastAccepted], req.Timeseries[i]
+			replicas[i], replicas[lastAccepted] = replicas[lastAccepted], replicas[i]
 			lastAccepted--
 			lastAccepted = findPreviousAccepted(lastAccepted)
 		}
