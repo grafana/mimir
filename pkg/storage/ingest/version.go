@@ -188,6 +188,7 @@ func deserializeRecordContentV1(content []byte, wr *mimirpb.PreallocWriteRequest
 func deserializeRecordContentV2(content []byte, wr *mimirpb.PreallocWriteRequest) error {
 	wr.UnmarshalFromRW2 = true
 	wr.RW2SymbolOffset = V2RecordSymbolOffset
+	wr.RW2CommonStrings = V2CommonSymbols.GetSlice()
 	wr.RW2CommonSymbols = V2CommonSymbols.GetSymbols()
 	wr.SkipNormalizeMetadataMetricName = true
 	wr.SkipDeduplicateMetadata = true

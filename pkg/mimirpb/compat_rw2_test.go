@@ -75,8 +75,12 @@ func TestRW2Unmarshal(t *testing.T) {
 									Name:  "job",
 									Value: "test_job",
 								},
+								{
+									Name:  "other_job",
+									Value: "test_job",
+								},
 							},
-							LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total", "job", "test_job"),
+							LabelSymbols: []uint32{1, 2, 3, 4, 5, 4},
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -111,12 +115,30 @@ func TestRW2Unmarshal(t *testing.T) {
 					},
 				},
 				unmarshalFromRW2: true,
+				rw2symbols: rw2PagedSymbols{
+					count: 10,
+					stringPages: []*[]string{
+						{
+							"",
+							"__name__",
+							"test_metric_total",
+							"job",
+							"test_job",
+							"other_job",
+							"traceID",
+							"1234567890abcdef",
+							"test_metric_help",
+							"test_metric_unit",
+						},
+					},
+				},
 			},
 			UnmarshalFromRW2: true,
 		}
 
 		// Check that the unmarshalled data matches the original data.
 		require.Equal(t, expected, &received)
+		requireLabelsMatch(t, received)
 	})
 
 	t.Run("metadata for all metric types map to expected values", func(t *testing.T) {
@@ -171,9 +193,9 @@ func TestRW2Unmarshal(t *testing.T) {
 											Value: "test_metric_total",
 										},
 									},
-									LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total"),
-									Samples:                   []Sample{},
-									Exemplars:                 []Exemplar{},
+									LabelSymbols: []uint32{1, 2},
+									Samples:      []Sample{},
+									Exemplars:    []Exemplar{},
 								},
 							},
 						},
@@ -186,11 +208,24 @@ func TestRW2Unmarshal(t *testing.T) {
 							},
 						},
 						unmarshalFromRW2: true,
+						rw2symbols: rw2PagedSymbols{
+							count: 5,
+							stringPages: []*[]string{
+								{
+									"",
+									"__name__",
+									"test_metric_total",
+									"test_metric_help",
+									"test_metric_unit",
+								},
+							},
+						},
 					},
 					UnmarshalFromRW2: true,
 				}
 				// Check that the unmarshalled data matches the original data.
 				require.Equal(t, expected, &received)
+				requireLabelsMatch(t, received)
 			})
 		}
 	})
@@ -465,8 +500,12 @@ func TestRW2Unmarshal(t *testing.T) {
 									Name:  "job",
 									Value: "test_job",
 								},
+								{
+									Name:  "other_job",
+									Value: "test_job",
+								},
 							},
-							LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total", "job", "test_job"),
+							LabelSymbols: []uint32{257, 258, 259, 260, 261, 260},
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -501,7 +540,24 @@ func TestRW2Unmarshal(t *testing.T) {
 					},
 				},
 				unmarshalFromRW2: true,
-				rw2symbols:       rw2PagedSymbols{offset: 256},
+				rw2symbols: rw2PagedSymbols{
+					offset: 256,
+					count:  10,
+					stringPages: []*[]string{
+						{
+							"",
+							"__name__",
+							"test_metric_total",
+							"job",
+							"test_job",
+							"other_job",
+							"traceID",
+							"1234567890abcdef",
+							"test_metric_help",
+							"test_metric_unit",
+						},
+					},
+				},
 			},
 			UnmarshalFromRW2: true,
 			RW2SymbolOffset:  256,
@@ -509,6 +565,7 @@ func TestRW2Unmarshal(t *testing.T) {
 
 		// Check that the unmarshalled data matches the original data.
 		require.Equal(t, expected, &received)
+		requireLabelsMatch(t, received)
 	})
 
 	t.Run("wrong offset fails to unmarshal", func(t *testing.T) {
@@ -551,6 +608,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		received.UnmarshalFromRW2 = true
 		received.RW2SymbolOffset = uint32(len(commonSymbols))
 		received.RW2CommonSymbols = symbolisedCommonSymbols
+		received.RW2CommonStrings = commonSymbols
 		err = received.Unmarshal(data)
 		require.NoError(t, err)
 
@@ -568,8 +626,12 @@ func TestRW2Unmarshal(t *testing.T) {
 									Name:  "job",
 									Value: "test_job",
 								},
+								{
+									Name:  "other_job",
+									Value: "test_job",
+								},
 							},
-							LabelsInstanceFromSymbols: labels.FromStrings("__name__", "test_metric_total", "job", "test_job"),
+							LabelSymbols: []uint32{1, 4, 2, 5, 6, 5},
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -604,15 +666,34 @@ func TestRW2Unmarshal(t *testing.T) {
 					},
 				},
 				unmarshalFromRW2: true,
-				rw2symbols:       rw2PagedSymbols{offset: 3, commonSymbols: symbolisedCommonSymbols},
+				rw2symbols: rw2PagedSymbols{
+					offset:        3,
+					commonSymbols: symbolisedCommonSymbols,
+					commonStrings: commonSymbols,
+					count:         8,
+					stringPages: []*[]string{
+						{
+							"",
+							"test_metric_total",
+							"test_job",
+							"other_job",
+							"traceID",
+							"1234567890abcdef",
+							"test_metric_help",
+							"test_metric_unit",
+						},
+					},
+				},
 			},
 			UnmarshalFromRW2: true,
 			RW2SymbolOffset:  3,
 			RW2CommonSymbols: symbolisedCommonSymbols,
+			RW2CommonStrings: commonSymbols,
 		}
 
 		// Check that the unmarshalled data matches the original data.
 		require.Equal(t, expected, &received)
+		requireLabelsMatch(t, received)
 	})
 
 	t.Run("common symbol received but none defined", func(t *testing.T) {
@@ -854,7 +935,7 @@ func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *WriteRequest {
 	req := &WriteRequest{
 		TimeseriesRW2: []TimeSeriesRW2{
 			{
-				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
+				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job"), syms.GetSymbol("other_job"), syms.GetSymbol("test_job")},
 				Samples: []Sample{
 					{
 						Value:       123.456,
@@ -879,4 +960,13 @@ func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *WriteRequest {
 	req.SymbolsRW2 = syms.GetSymbols()
 
 	return req
+}
+
+func requireLabelsMatch(t *testing.T, received PreallocWriteRequest) {
+	for tsIdx, ts := range received.Timeseries {
+		expected := FromLabelAdaptersToLabels(ts.Labels)
+		actual, err := received.GetLabels(ts)
+		require.NoError(t, err)
+		require.Equalf(t, expected, actual, "labels for timeseries %d don't match expected value", tsIdx)
+	}
 }

@@ -18,7 +18,6 @@ import (
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	github_com_prometheus_prometheus_model_histogram "github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -496,8 +495,7 @@ type TimeSeries struct {
 
 	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
-
-	LabelsInstanceFromSymbols labels.Labels
+	LabelSymbols              []uint32
 }
 
 func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
@@ -7554,7 +7552,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			}
 			seenFirstSymbol = true
 			// No need to take a copy of the string here: NewSymbol will clone the string if it hasn't seen it before.
-			m.rw2symbols.append(labels.NewSymbol(yoloString(dAtA[iNdEx:postIndex])))
+			m.rw2symbols.append(yoloString(dAtA[iNdEx:postIndex]))
 			iNdEx = postIndex
 		case 5:
 			if !m.unmarshalFromRW2 {
@@ -7659,7 +7657,6 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 
 	if m.unmarshalFromRW2 {
 		m.Metadata = metadata.slice()
-		m.rw2symbols.releasePages()
 	}
 
 	return nil
@@ -11314,10 +11311,16 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 				if elementCount%2 != 0 {
 					return errorOddNumberOfLabelRefs
 				}
-				if elementCount != 0 && len(m.LabelsInstanceFromSymbols) == 0 {
+				if elementCount != 0 && len(m.Labels) == 0 {
 					desiredCap := elementCount / 2
-					if cap(m.LabelsInstanceFromSymbols) < desiredCap {
-						m.LabelsInstanceFromSymbols = make(labels.Labels, 0, desiredCap)
+					if cap(m.Labels) < desiredCap {
+						m.Labels = make([]LabelAdapter, 0, desiredCap)
+					}
+				}
+				if elementCount != 0 && len(m.LabelSymbols) == 0 {
+					desiredCap := elementCount / 2
+					if cap(m.LabelSymbols) < desiredCap {
+						m.LabelSymbols = make([]uint32, 0, desiredCap)
 					}
 				}
 				idx := 0
@@ -11343,8 +11346,8 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 						if err != nil {
 							return errorInvalidLabelRef
 						}
-						m.LabelsInstanceFromSymbols = append(m.LabelsInstanceFromSymbols, labels.SymbolisedLabel{Name: labelName})
-						if labelName == labels.MetricNameSymbol {
+						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
+						if labelName == "__name__" {
 							metricNameLabel = true
 						}
 					} else {
@@ -11352,12 +11355,13 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 						if err != nil {
 							return errorInvalidLabelRef
 						}
-						m.LabelsInstanceFromSymbols[len(m.LabelsInstanceFromSymbols)-1].Value = labelValue
+						m.Labels[len(m.Labels)-1].Value = labelValue
 						if metricNameLabel {
-							metricName = labelValue.String()
+							metricName = labelValue
 							metricNameLabel = false
 						}
 					}
+					m.LabelSymbols = append(m.LabelSymbols, v)
 					idx++
 				}
 			} else {
@@ -11633,19 +11637,18 @@ func (m *Exemplar) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols) error {
 							break
 						}
 					}
-					// FIXME: use symbolised labels here
 					if idx%2 == 0 {
 						labelName, err := symbols.get(v)
 						if err != nil {
 							return errorInvalidExemplarLabelRef
 						}
-						m.Labels = append(m.Labels, LabelAdapter{Name: labelName.String()})
+						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
 					} else {
 						labelValue, err := symbols.get(v)
 						if err != nil {
 							return errorInvalidExemplarLabelRef
 						}
-						m.Labels[len(m.Labels)-1].Value = labelValue.String()
+						m.Labels[len(m.Labels)-1].Value = labelValue
 					}
 					idx++
 				}
@@ -11708,6 +11711,7 @@ func (m *MetadataRW2) Unmarshal(dAtA []byte) error {
 }
 func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, metricName string, skipNormalizeMetricName bool) error {
 	var (
+		err                  error
 		help                 string
 		metricType           MetadataRW2_MetricType
 		normalizedMetricName string
@@ -11779,11 +11783,10 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 					break
 				}
 			}
-			helpSym, err := symbols.get(helpRef)
+			help, err = symbols.get(helpRef)
 			if err != nil {
 				return errorInvalidHelpRef
 			}
-			help = helpSym.String()
 		case 4:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field UnitRef", wireType)
@@ -11803,11 +11806,10 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 					break
 				}
 			}
-			unitSym, err := symbols.get(unitRef)
+			unit, err = symbols.get(unitRef)
 			if err != nil {
 				return errorInvalidUnitRef
 			}
-			unit = unitSym.String()
 		default:
 			iNdEx = preIndex
 			skippy, err := skipMimir(dAtA[iNdEx:])

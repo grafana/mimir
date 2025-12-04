@@ -842,3 +842,21 @@ func makeSeries(n int) [][]LabelAdapter {
 
 	return series
 }
+
+func TestHashLabelAdaptors(t *testing.T) {
+	testCases := []labels.Labels{
+		labels.EmptyLabels(),
+		labels.FromStrings("a", "b"),
+		labels.FromStrings("a", "b", "c", "d"),
+		labels.FromStrings("a", "b", "c", "e"),
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.String(), func(t *testing.T) {
+			expectedHash := testCase.Hash()
+			adapters := FromLabelsToLabelAdapters(testCase)
+			actualHash := HashLabelAdaptors(adapters)
+			require.Equal(t, expectedHash, actualHash)
+		})
+	}
+}

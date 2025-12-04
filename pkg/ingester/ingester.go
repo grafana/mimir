@@ -1042,7 +1042,7 @@ func (i *Ingester) updateLimitMetrics() {
 // GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
-	storage.GetRef
+	storage.GetRefFunc
 }
 
 type pushStats struct {
@@ -1401,6 +1401,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 	if pushSamplesToAppenderErr := i.pushSamplesToAppender(
 		userID,
+		req,
 		req.Timeseries,
 		app,
 		startAppend,
@@ -1507,6 +1508,7 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 // must be of type softError.
 func (i *Ingester) pushSamplesToAppender(
 	userID string,
+	req *mimirpb.WriteRequest,
 	timeseries []mimirpb.PreallocTimeseries,
 	app extendedAppender,
 	startAppend time.Time,
@@ -1528,9 +1530,6 @@ func (i *Ingester) pushSamplesToAppender(
 	if i.limits.PastGracePeriod(userID) > 0 {
 		minTimestampMs = startAppend.Add(-i.limits.PastGracePeriod(userID)).Add(-i.limits.OutOfOrderTimeWindow(userID)).UnixMilli()
 	}
-
-	var builder labels.ScratchBuilder
-	var nonCopiedLabels labels.Labels
 
 	// idx is used to decrease active series count in case of error for cost attribution.
 	idx := i.getTSDB(userID).Head().MustIndex()
@@ -1582,18 +1581,26 @@ func (i *Ingester) pushSamplesToAppender(
 			}
 		}
 
-		if ts.LabelsInstanceFromSymbols.IsEmpty() {
-			// MUST BE COPIED before being retained.
-			mimirpb.FromLabelAdaptersOverwriteLabels(&builder, ts.Labels, &nonCopiedLabels)
-		} else {
-			// FIXME: we should be able to avoid this copying with uniquelabels given that we're using a labels.Labels instance that doesn't refer to the gRPC buffer
-			nonCopiedLabels = ts.LabelsInstanceFromSymbols
-		}
-
-		hash := nonCopiedLabels.Hash()
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
-		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
+		hash := mimirpb.HashLabelAdaptors(ts.Labels)
+		ref, copiedLabels := app.GetRefFunc(hash, func(other labels.Labels) bool {
+			if len(other) != len(ts.Labels) {
+				return false
+			}
+
+			for idx := range ts.Labels {
+				if ts.Labels[idx].Name != other[idx].Name.String() {
+					return false
+				}
+
+				if ts.Labels[idx].Value != other[idx].Value.String() {
+					return false
+				}
+			}
+
+			return true
+		})
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
@@ -1617,7 +1624,10 @@ func (i *Ingester) pushSamplesToAppender(
 					_, err = app.AppendSTZeroSample(ref, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					copiedLabels, err = req.GetLabels(ts)
+					if err != nil {
+						return err
+					}
 					ref, err = app.AppendSTZeroSample(0, copiedLabels, s.TimestampMs, ts.CreatedTimestamp)
 				}
 				if err == nil {
@@ -1642,7 +1652,10 @@ func (i *Ingester) pushSamplesToAppender(
 				}
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+				copiedLabels, err = req.GetLabels(ts)
+				if err != nil {
+					return err
+				}
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -1688,7 +1701,10 @@ func (i *Ingester) pushSamplesToAppender(
 						_, err = app.AppendHistogramSTZeroSample(ref, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 					} else {
 						// Copy the label set because both TSDB and the active series tracker may retain it.
-						copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+						copiedLabels, err = req.GetLabels(ts)
+						if err != nil {
+							return err
+						}
 						ref, err = app.AppendHistogramSTZeroSample(0, copiedLabels, h.Timestamp, ts.CreatedTimestamp, ih, fh)
 					}
 					if err == nil {
@@ -1713,7 +1729,10 @@ func (i *Ingester) pushSamplesToAppender(
 					}
 				} else {
 					// Copy the label set because both TSDB and the active series tracker may retain it.
-					copiedLabels = mimirpb.CopyLabels(nonCopiedLabels)
+					copiedLabels, err = req.GetLabels(ts)
+					if err != nil {
+						return err
+					}
 
 					// Retain the reference in case there are multiple samples for the series.
 					if ref, err = app.AppendHistogram(0, copiedLabels, h.Timestamp, ih, fh); err == nil {
@@ -1739,7 +1758,8 @@ func (i *Ingester) pushSamplesToAppender(
 		}
 
 		if activeSeries != nil && stats.succeededSamplesCount > oldSucceededSamplesCount {
-			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
+			// In every case where we increment succeededSamplesCount, we'll have a valid copiedLabels instance to pass below.
+			activeSeries.UpdateSeries(copiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
 		}
 
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
@@ -1810,8 +1830,8 @@ func (i *Ingester) pushSamplesToAppender(
 // StartReadRequest implements ingesterReceiver and is called by a gRPC tap Handle when a request is first received to
 // determine if a request should be permitted. When permitted, StartReadRequest returns a context with a function that
 // should be called to finish the started read request once the request is completed. If it wasn't successful, the
-// causing error is returned and a nil context is returned.
 func (i *Ingester) StartReadRequest(ctx context.Context) (resultCtx context.Context, err error) {
+	// causing error is returned and a nil context is returned.
 	defer func() { err = i.mapReadErrorToErrorWithStatus(err) }()
 
 	if err := i.checkAvailableForRead(); err != nil {
@@ -4012,6 +4032,7 @@ func (i *Ingester) PushToStorageAndReleaseRequest(ctx context.Context, req *mimi
 	err := i.PushWithCleanup(ctx, req, func() {
 		req.FreeBuffer()
 		mimirpb.ReuseSlice(req.Timeseries)
+		req.FreeSymbols()
 	})
 	if err != nil {
 		return mapPushErrorToErrorWithStatus(err)

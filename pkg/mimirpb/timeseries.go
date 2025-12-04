@@ -72,6 +72,7 @@ type PreallocWriteRequest struct {
 	RW2SymbolOffset uint32
 	// RW2CommonSymbols optionally allows the sender and receiver to understand a common set of reserved symbols.
 	// These symbols are never sent in the request to begin with.
+	RW2CommonStrings []string
 	RW2CommonSymbols []labels.Symbol
 	// SkipNormalizeMetadataMetricName skips normalization of metric name in metadata on unmarshal. E.g., don't remove `_count` suffixes from histograms.
 	// Has no effect on marshalled or existing structs; must be set prior to Unmarshal calls.
@@ -93,6 +94,7 @@ func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
 	p.skipDeduplicateMetadata = p.SkipDeduplicateMetadata
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
+	p.rw2symbols.commonStrings = p.RW2CommonStrings
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
 	return p.WriteRequest.Unmarshal(dAtA)
 }
@@ -292,10 +294,6 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 		if err := p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName); err != nil {
 			return err
 		}
-
-		// FIXME: this is a quick way to avoid changing all the places that refer to p.Labels.
-		// FIXME: only do this if Labels is needed
-		p.Labels = FromLabelsToLabelAdaptersWithReuse(p.LabelsInstanceFromSymbols, p.Labels)
 		return nil
 	}
 	return p.TimeSeries.Unmarshal(dAtA)
@@ -593,11 +591,11 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels = ts.Labels[:0]
 	}
 
-	if cap(ts.LabelsInstanceFromSymbols) > maxPreallocatedLabels {
-		ts.LabelsInstanceFromSymbols = nil
+	if cap(ts.LabelSymbols) > maxPreallocatedLabels {
+		ts.LabelSymbols = nil
 	} else {
-		clear(ts.LabelsInstanceFromSymbols)
-		ts.LabelsInstanceFromSymbols = ts.LabelsInstanceFromSymbols[:0]
+		clear(ts.LabelSymbols)
+		ts.LabelSymbols = ts.LabelSymbols[:0]
 	}
 
 	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {

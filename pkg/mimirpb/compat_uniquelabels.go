@@ -2,6 +2,9 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/cortexpb/compat.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/model/labels/labels_slicelabels.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 //go:build uniquelabels
 
@@ -10,6 +13,7 @@ package mimirpb
 import (
 	"unsafe"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -74,4 +78,37 @@ func FromLabelsToLabelAdaptersWithReuse(ls labels.Labels, reuse []LabelAdapter) 
 // CompareLabelAdapters returns 0 if a==b, <0 if a < b, and >0 if a > b.
 func CompareLabelAdapters(a, b []LabelAdapter) int {
 	return labels.Compare(FromLabelAdaptersToLabels(a), FromLabelAdaptersToLabels(b))
+}
+
+const sep = '\xff'
+
+var seps = []byte{sep}
+
+// HashLabelAdaptors returns the same value as FromLabelAdaptersToLabels(lbls).Hash(),
+// but without allocating a labels.Labels instance.
+func HashLabelAdaptors(lbls []LabelAdapter) uint64 {
+	// Copied from labels.Labels.Hash().
+
+	// Use xxhash.Sum64(b) for fast path as it's faster.
+	b := make([]byte, 0, 1024)
+	for i, v := range lbls {
+		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+			// If labels entry is 1KB+ do not allocate whole entry.
+			h := xxhash.New()
+			_, _ = h.Write(b)
+			for _, v := range lbls[i:] {
+				_, _ = h.WriteString(v.Name)
+				_, _ = h.Write(seps)
+				_, _ = h.WriteString(v.Value)
+				_, _ = h.Write(seps)
+			}
+			return h.Sum64()
+		}
+
+		b = append(b, v.Name...)
+		b = append(b, sep)
+		b = append(b, v.Value...)
+		b = append(b, sep)
+	}
+	return xxhash.Sum64(b)
 }
