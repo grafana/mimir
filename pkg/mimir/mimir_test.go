@@ -342,7 +342,7 @@ func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
 		assert.Contains(t, string(body), "go_info")
 		assert.Contains(t, string(body), "deprecated_flags_inuse_total")
 		assert.NotContains(t, string(body), "go_gc_duration_seconds")
-		require.Equal(t, 1, strings.Count(string(body), "2"))
+		require.Equal(t, 2, strings.Count(string(body), "HELP"))
 	}
 }
 
