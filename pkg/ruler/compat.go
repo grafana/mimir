@@ -222,6 +222,7 @@ type RulesLimits interface {
 	RulerEvaluationConsistencyMaxDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID, namespace string) int
+	RulerMaxRuleGroupsPerTenantByNamespaceConfigured(userID, namespace string) bool
 	RulerMaxRulesPerRuleGroup(userID, namespace string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool

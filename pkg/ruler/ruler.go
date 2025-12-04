@@ -1379,6 +1379,12 @@ func (r *Ruler) IsMaxRuleGroupsLimited(userID, namespace string) bool {
 	return r.limits.RulerMaxRuleGroupsPerTenant(userID, namespace) > 0
 }
 
+// IsNamespaceSpecificRuleGroupLimitConfigured returns true if a namespace-specific
+// limit is configured for the given namespace.
+func (r *Ruler) IsNamespaceSpecificRuleGroupLimitConfigured(userID, namespace string) bool {
+	return r.limits.RulerMaxRuleGroupsPerTenantByNamespaceConfigured(userID, namespace)
+}
+
 // NameValidationScheme returns the validation scheme to use for a particular tenant.
 func (r *Ruler) NameValidationScheme(userID string) model.ValidationScheme {
 	return r.limits.NameValidationScheme(userID)
