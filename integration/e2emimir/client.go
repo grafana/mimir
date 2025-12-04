@@ -258,7 +258,7 @@ func (c *Client) PushRW2rc3(writeRequest *rc3.Request) (*http.Response, error) {
 
 // pushRW2Variant pushes arbitrary data to the Push endpoint, tagged appropriately for RW2.0.
 func (c *Client) pushRW2Variant(data []byte) (*http.Response, error) {
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(compressed))
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
