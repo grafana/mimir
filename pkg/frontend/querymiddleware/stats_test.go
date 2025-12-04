@@ -21,6 +21,30 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
+func Test_queryStatsMiddleware_trackRegexpMatchers_NilExpr(t *testing.T) {
+	// This test verifies that trackRegexpMatchers does not panic when
+	// GetParsedQuery() returns nil (e.g., when query parsing failed).
+	reg := prometheus.NewPedanticRegistry()
+	mw := newQueryStatsMiddleware(reg, promql.EngineOpts{})
+
+	// Create a request with a nil queryExpr to simulate a failed parse.
+	req := &PrometheusRangeQueryRequest{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: nil, // Simulates a query that failed to parse
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	_, ctx = ContextWithEmptyDetails(ctx)
+
+	// This should not panic.
+	require.NotPanics(t, func() {
+		_, _ = mw.Wrap(mockHandlerWith(nil, nil)).Do(ctx, req)
+	})
+}
+
 func Test_queryStatsMiddleware_Do(t *testing.T) {
 	const tenantID = "test"
 	type args struct {
