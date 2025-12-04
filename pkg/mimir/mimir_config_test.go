@@ -25,8 +25,9 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 		args := []string{
 			"-common.storage.backend", "s3",
 			"-common.client-cluster-validation.label", "client-cluster",
-			"-common.instrument-reference-leaks-percentage", "13.37",
-			"-common.instrument-reference-leaks-before-reuse-period", "20h",
+			"-common.instrument-reference-leaks.percentage", "13.37",
+			"-common.instrument-reference-leaks.before-reuse-period", "20h",
+			"-common.instrument-reference-leaks.max-inflight-instrumented-bytes", "1048576",
 		}
 		require.NoError(t, fs.Parse(args))
 
@@ -40,8 +41,9 @@ func TestCommonConfigCanBeExtended(t *testing.T) {
 		checkAllClusterValidationLabels(t, cfg, "client-cluster")
 
 		// Non-inherited flags still work.
-		require.Equal(t, 13.37, cfg.MimirConfig.Common.InstrumentRefLeaksPercentage)
-		require.Equal(t, 20*time.Hour, cfg.MimirConfig.Common.InstrumentRefLeaksBeforeReusePeriod)
+		require.Equal(t, 13.37, cfg.MimirConfig.Common.InstrumentRefLeaks.Percentage)
+		require.Equal(t, 20*time.Hour, cfg.MimirConfig.Common.InstrumentRefLeaks.BeforeReusePeriod)
+		require.Equal(t, uint64(1048576), cfg.MimirConfig.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes)
 	})
 
 	t.Run("yaml inheritance", func(t *testing.T) {
@@ -51,8 +53,10 @@ common:
     backend: s3
   client_cluster_validation:
     label: client-cluster
-  instrument_ref_leaks_percentage: 13.37
-  instrument_ref_leaks_before_reuse_period: 20h
+  instrument_ref_leaks:
+    percentage: 13.37
+    before_reuse_period: 20h
+    max_inflight_instrumented_bytes: 2097152
 `
 
 		var cfg customExtendedConfig
@@ -70,8 +74,9 @@ common:
 		checkAllClusterValidationLabels(t, cfg, "client-cluster")
 
 		// Non-inherited flags should still work.
-		require.Equal(t, 13.37, cfg.MimirConfig.Common.InstrumentRefLeaksPercentage)
-		require.Equal(t, 20*time.Hour, cfg.MimirConfig.Common.InstrumentRefLeaksBeforeReusePeriod)
+		require.Equal(t, 13.37, cfg.MimirConfig.Common.InstrumentRefLeaks.Percentage)
+		require.Equal(t, 20*time.Hour, cfg.MimirConfig.Common.InstrumentRefLeaks.BeforeReusePeriod)
+		require.Equal(t, uint64(2097152), cfg.MimirConfig.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes)
 	})
 }
 
