@@ -101,6 +101,7 @@
 * [BUGFIX] Rename `cortex_bucket_store_cached_postings_compression_time_seconds`, `cortex_query_frontend_regexp_matcher_count`, and `cortex_query_frontend_regexp_matcher_optimized_count` to follow naming conventions. #13599
 * [BUGFIX] Query-frontend: Fix incorrect query results when running sharding inside MQE is enabled and the query contains a subquery eligible for subquery spin-off wrapped in a shardable aggregation. #13619
 * [BUGFIX] Memberlist: Fix occasional nil pointer dereference panics. #13635
+* [BUGFIX] Query-frontend: Fix silence panic when executing a remote read API request if the request has no matchers. #13745
 
 ### Mixin
 
