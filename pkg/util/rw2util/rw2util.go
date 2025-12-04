@@ -231,7 +231,7 @@ func FromWriteRequest(req *prompb.WriteRequest) *promRW2.Request {
 
 	for _, metadata := range metadataByMetricName {
 		metricType, help, unit := metadataFromPrompb(metadata)
-		rw2 = AddFloatSeries(rw2, labels.New(labels.Label{Name: "__name__", Value: metadata.MetricFamilyName}), nil, metricType, help, unit, 0, nil)
+		rw2 = AddFloatSeries(rw2, labels.New(labels.Label{Name: "__name__", Value: metadata.MetricFamilyName}), nil, metricType, help, unit, nil)
 	}
 
 	return rw2
