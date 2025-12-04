@@ -1535,6 +1535,26 @@ func (i *Ingester) pushSamplesToAppender(
 	idx := i.getTSDB(userID).Head().MustIndex()
 	defer idx.Close()
 
+	// This slightly awkward construction allows us to avoid allocating a function pointer on every call to GetRefFunc below.
+	var lbls []mimirpb.LabelAdapter
+	labelsEqual := func(other labels.Labels) bool {
+		if len(other) != len(lbls) {
+			return false
+		}
+
+		for idx := range lbls {
+			if lbls[idx].Name != other[idx].Name.String() {
+				return false
+			}
+
+			if lbls[idx].Value != other[idx].Value.String() {
+				return false
+			}
+		}
+
+		return true
+	}
+
 	for _, ts := range timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -1584,23 +1604,9 @@ func (i *Ingester) pushSamplesToAppender(
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
 		hash := mimirpb.HashLabelAdaptors(ts.Labels)
-		ref, copiedLabels := app.GetRefFunc(hash, func(other labels.Labels) bool {
-			if len(other) != len(ts.Labels) {
-				return false
-			}
-
-			for idx := range ts.Labels {
-				if ts.Labels[idx].Name != other[idx].Name.String() {
-					return false
-				}
-
-				if ts.Labels[idx].Value != other[idx].Value.String() {
-					return false
-				}
-			}
-
-			return true
-		})
+		lbls = ts.Labels
+		ref, copiedLabels := app.GetRefFunc(hash, labelsEqual)
+		lbls = nil
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
