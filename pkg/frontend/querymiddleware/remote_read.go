@@ -282,14 +282,12 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
 }
 
-func (r *remoteReadQueryRequest) GetParsedQuery() parser.Expr {
-	if r.promQuery != "" {
-		expr, err := parser.ParseExpr(r.promQuery)
-		if err == nil {
-			return expr
-		}
+func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
+	if r.promQuery == "" {
+		return nil, errRequestNoQuery
 	}
-	return nil
+
+	return parser.ParseExpr(r.promQuery)
 }
 
 func (r *remoteReadQueryRequest) GetHeaders() []*PrometheusHeader {
