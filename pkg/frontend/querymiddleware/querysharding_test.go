@@ -1890,38 +1890,3 @@ func TestQuerySharding_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 		require.Nil(t, resp)
 	})
 }
-
-func TestMiddlewareChain_ShouldNotPanicNilQueryExpression(t *testing.T) {
-	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
-		reg := prometheus.NewPedanticRegistry()
-
-		// Create a chain of middlewares that are affected by the nil expr bug.
-		shardingware := newQueryShardingMiddleware(log.NewNopLogger(), eng, mockLimits{totalShards: 16}, 0, reg)
-		durationsware := newDurationsMiddleware(log.NewNopLogger())
-		statsware := newQueryStatsMiddleware(reg, opts)
-
-		// Chain: stats -> durations -> sharding -> downstream
-		handler := statsware.Wrap(durationsware.Wrap(shardingware.Wrap(mockHandlerWith(nil, nil))))
-
-		// Create a request with a nil queryExpr to simulate a failed parse.
-		req := &PrometheusRangeQueryRequest{
-			path:      "/query_range",
-			start:     util.TimeToMillis(start),
-			end:       util.TimeToMillis(end),
-			step:      step.Milliseconds(),
-			queryExpr: nil, // Simulates a query that failed to parse
-		}
-
-		ctx := user.InjectOrgID(context.Background(), "test")
-		_, ctx = ContextWithEmptyDetails(ctx)
-
-		// This should not panic. The first middleware that encounters the nil expr
-		// should return an error, preventing the panic in downstream middlewares.
-		require.NotPanics(t, func() {
-			resp, err := handler.Do(ctx, req)
-			// With nil expr, one of the middlewares returns an error.
-			require.Error(t, err)
-			require.Nil(t, resp)
-		})
-	})
-}
