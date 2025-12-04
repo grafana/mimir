@@ -38,6 +38,10 @@ DEFAULT_PROFILES=(
     "--profile" "prometheusRW2"
     "--profile" "grafana-agent-static"
     "--profile" "grafana-agent-flow"
+    "--profile" "grafana-alloy"
+    "--profile" "grafana-alloy-remote-write"
+    "--profile" "grafana-alloy-otlp-push"
+    "--profile" "otel-collector"
     "--profile" "otel-collector-remote-write"
     "--profile" "otel-collector-otlp-push"
 )
