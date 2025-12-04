@@ -63,10 +63,9 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
 	bufLength := len(lengthBytes) + contentLength + crc32.Size
 
-	r := newStreamReader(rc, bufLength)
-	r.pos = len(lengthBytes)
-	r.resetReader = func(off int) error {
-		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset+off), -1)
+	r := newStreamReader(rc, len(lengthBytes), bufLength)
+	r.seekReader = func(off, length int) error {
+		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset+off), int64(length))
 		if err != nil {
 			return err
 		}
@@ -118,21 +117,21 @@ type streamReader struct {
 	pos    int
 	length int
 
-	resetReader func(off int) error
+	seekReader func(off, length int) error
 }
 
 var netbufPool = sync.Pool{
 	New: func() any {
-		return bufio.NewReaderSize(nil, 1<<18) // 256KB buffer to reduce number of network IO
+		return bufio.NewReaderSize(nil, 1<<20) // 1MiB buffer to reduce number of network IO
 	},
 }
 
 // newStreamReader creates a new streamReader that wraps the given io.ReadCloser.
-func newStreamReader(rc io.ReadCloser, length int) *streamReader {
+func newStreamReader(rc io.ReadCloser, pos, length int) *streamReader {
 	r := &streamReader{
 		rc:     rc,
 		buf:    netbufPool.Get().(*bufio.Reader),
-		pos:    0,
+		pos:    pos,
 		length: length,
 	}
 	r.buf.Reset(r.rc)
@@ -147,14 +146,16 @@ func (r *streamReader) resetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	if dist := off - r.pos; dist > 0 {
+	dist := off - r.pos
+	if dist > 0 && dist < r.buffered() {
 		// skip ahead by discarding the distance bytes
 		// TODO(v): there is a tradeoff between consuming dist bytes from the existing stream, or recreating the stream, via a new GetObject call.
 		return r.skip(dist)
 	}
 
-	// Otherwise we must close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state.
-	if err := r.resetReader(off); err != nil {
+	// Objstore hides the io.ReadSeekCloser, that the underlying bucket clients may implement.
+	// So we reimplement it ourselves: close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state.
+	if err := r.seekReader(off, r.len()-dist); err != nil {
 		return err
 	}
 
@@ -170,6 +171,7 @@ func (r *streamReader) skip(l int) error {
 		return ErrInvalidSize
 	}
 
+	// TODO(v): how to make sure we don't trash the cache when skipping
 	n, err := r.buf.Discard(l)
 	if n > 0 {
 		r.pos += n
