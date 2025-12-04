@@ -123,7 +123,7 @@ type streamReader struct {
 
 var netbufPool = sync.Pool{
 	New: func() any {
-		return bufio.NewReaderSize(nil, 1<<20) // 1MB buffer to reduce number of network IO
+		return bufio.NewReaderSize(nil, 1<<18) // 256KB buffer to reduce number of network IO
 	},
 }
 
