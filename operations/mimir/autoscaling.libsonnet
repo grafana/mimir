@@ -1,6 +1,7 @@
 {
   _config+:: {
     autoscaling_prometheus_url: 'http://prometheus.default:9090/prometheus',
+    autoscaling_prometheus_tenant: '',
 
     // If true, compute the scaling metric using irate(), otherwise, use rate()
     autoscaling_cpu_hpa_use_irate: false,
@@ -128,6 +129,7 @@
           type: 'prometheus',
           metadata: {
             serverAddress: $._config.autoscaling_prometheus_url,
+            [if $._config.autoscaling_prometheus_tenant != '' then 'customHeaders']: 'X-Scope-OrgID=%s' % $._config.autoscaling_prometheus_tenant,
             query: trigger.query,
 
             // The metric name uniquely identifies a metric in the KEDA metrics server.
