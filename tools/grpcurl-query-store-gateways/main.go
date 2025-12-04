@@ -42,7 +42,10 @@ func parseFile(file string) (*SeriesResponse, error) {
 		return nil, err
 	}
 
-	consolidated := SeriesResponse{}
+	consolidated := SeriesResponse{
+		StreamingSeries: &StreamingSeriesResponse{Series: []*Series{}},
+		StreamingChunks: &StreamingChunksResponse{Series: []*Series{}},
+	}
 
 	// Decode file.
 	decoder := json.NewDecoder(bytes.NewReader(fileData))
@@ -70,15 +73,11 @@ func parseFile(file string) (*SeriesResponse, error) {
 		}
 
 		if res.StreamingSeries != nil && len(res.StreamingSeries.Series) > 0 {
-			consolidated.StreamingSeries = res.StreamingSeries
+			consolidated.StreamingSeries.Series = append(consolidated.StreamingSeries.Series, res.StreamingSeries.Series...)
 		}
 
 		if res.StreamingChunks != nil && len(res.StreamingChunks.Series) > 0 {
-			consolidated.StreamingChunks = res.StreamingChunks
-		}
-
-		if len(res.StreamingChunksEstimate) > 0 {
-			consolidated.StreamingChunksEstimate = res.StreamingChunksEstimate
+			consolidated.StreamingChunks.Series = append(consolidated.StreamingChunks.Series, res.StreamingChunks.Series...)
 		}
 	}
 
@@ -98,6 +97,11 @@ func dumpResponse(res *SeriesResponse, file string) {
 	fmt.Printf("---- %s ----\n", file)
 
 	for i, series := range res.StreamingSeries.Series {
+
+		if series == nil || res.StreamingChunks.Series[i] == nil {
+			continue
+		}
+
 		chunks := res.StreamingChunks.Series[i].Chunks
 		fmt.Println(series.LabelSet().String())
 		var (

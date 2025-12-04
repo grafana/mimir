@@ -18,14 +18,12 @@ type SeriesResponse struct {
 	Stats                   *Stats                   `json:"stats,omitempty"`
 	StreamingSeries         *StreamingSeriesResponse `json:"streamingSeries,omitempty"`
 	StreamingChunks         *StreamingChunksResponse `json:"streamingChunks,omitempty"`
-	//Series          *Series                  `json:"series,omitempty"`
-	Warning string `json:"warning,omitempty"`
+	Warning                 string                   `json:"warning,omitempty"`
 }
 
 type StreamingSeriesResponse struct {
-	Series []*Series `json:"series,omitempty"`
-	// Indicates the end of the streaming series section.
-	IsEndOfSeriesStream bool `json:"isEndOfSeriesStream,omitempty"`
+	Series              []*Series `json:"series,omitempty"`
+	IsEndOfSeriesStream bool      `json:"isEndOfSeriesStream,omitempty"`
 }
 
 type StreamingChunksResponse struct {
