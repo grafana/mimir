@@ -91,7 +91,7 @@ func dumpResponse(res *SeriesResponse, file string) {
 		return
 	}
 
-	if res.StreamingChunks == nil {
+	if res.StreamingSeries == nil || res.StreamingChunks == nil || len(res.StreamingSeries.Series) != len(res.StreamingChunks.Series) {
 		return
 	}
 
