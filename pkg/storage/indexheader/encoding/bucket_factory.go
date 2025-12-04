@@ -63,7 +63,18 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
 	bufLength := len(lengthBytes) + contentLength + crc32.Size
 
-	r := newStreamReader(rc, offset, len(lengthBytes), bufLength)
+	r := newStreamReader(rc, bufLength)
+	r.pos = len(lengthBytes)
+	r.resetReader = func(off int) error {
+		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset+off), -1)
+		if err != nil {
+			return err
+		}
+		r.rc.Close()
+		r.rc = rc
+		return nil
+	}
+
 	d := Decbuf{r: r}
 	closeReader = false
 
@@ -104,9 +115,10 @@ func (bf *BucketDecbufFactory) Stop() {
 type streamReader struct {
 	rc     io.ReadCloser
 	buf    *bufio.Reader
-	base   int
 	pos    int
 	length int
+
+	resetReader func(off int) error
 }
 
 var netbufPool = sync.Pool{
@@ -116,12 +128,11 @@ var netbufPool = sync.Pool{
 }
 
 // newStreamReader creates a new streamReader that wraps the given io.ReadCloser.
-func newStreamReader(rc io.ReadCloser, base, pos, length int) *streamReader {
+func newStreamReader(rc io.ReadCloser, length int) *streamReader {
 	r := &streamReader{
 		rc:     rc,
 		buf:    netbufPool.Get().(*bufio.Reader),
-		base:   base,
-		pos:    pos,
+		pos:    0,
 		length: length,
 	}
 	r.buf.Reset(r.rc)
@@ -138,17 +149,12 @@ func (r *streamReader) resetAt(off int) error {
 
 	if l := off - r.pos; l > 0 {
 		// skip ahead by discarding the distance bytes
+		// TODO(v): there is a tradeoff between consuming l bytes from the existing stream, or recreating the stream, via a new GetObject call.
 		return r.skip(l)
 	}
 
-	// Otherwise we must close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state
-	// FIXME(v): naively converting ReadCloser to Seeker; this works for some objectstore implementations
-	rs, ok := r.rc.(objstore.ObjectSizerReadCloser).ReadCloser.(io.ReadSeeker)
-	if !ok {
-		return fmt.Errorf("resetAt not supported: readCloser doesn't implement io.Seeker: %w", errors.ErrUnsupported)
-	}
-	_, err := rs.Seek(int64(r.base+off), io.SeekStart)
-	if err != nil {
+	// Otherwise we must close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state.
+	if err := r.resetReader(off); err != nil {
 		return err
 	}
 
