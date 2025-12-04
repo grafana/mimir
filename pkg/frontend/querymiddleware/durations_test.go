@@ -144,3 +144,20 @@ func (c *captureMiddleware) Do(_ context.Context, req MetricsQueryRequest) (Resp
 	c.query = req.GetQuery()
 	return &PrometheusResponse{}, nil
 }
+
+func TestDurationsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	capture := &captureMiddleware{}
+	middleware := newDurationsMiddleware(log.NewNopLogger())
+	handler := middleware.Wrap(capture)
+
+	// Create a request with a nil queryExpr to simulate a failed parse.
+	req := NewPrometheusInstantQueryRequest("", nil, 1000, 0, nil, Options{}, nil, "")
+
+	// This should not panic, should pass through to the next handler.
+	require.NotPanics(t, func() {
+		resp, err := handler.Do(context.Background(), req)
+		// With nil expr, the middleware falls through to the next handler.
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+	})
+}
