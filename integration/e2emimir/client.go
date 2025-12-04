@@ -241,29 +241,7 @@ func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) 
 		return nil, err
 	}
 
-	// Create HTTP request
-	compressed := snappy.Encode(nil, data)
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(compressed))
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Encoding", "snappy")
-	req.Header.Set("Content-Type", "application/x-protobuf;proto=io.prometheus.write.v2.Request")
-	req.Header.Set("X-Prometheus-Remote-Write-Version", "2.0.0")
-	req.Header.Set("X-Scope-OrgID", c.orgID)
-
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
-
-	// Execute HTTP request
-	res, err := c.httpClient.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, err
-	}
-
-	defer res.Body.Close()
-	return res, nil
+	return c.pushRW2Variant(snappy.Encode(nil, data))
 }
 
 // PushRW2rc3 sends a push request compatible with RW2.0-rc3.
@@ -275,8 +253,11 @@ func (c *Client) PushRW2rc3(writeRequest *rc3.Request) (*http.Response, error) {
 		return nil, err
 	}
 
-	// Create HTTP request
-	compressed := snappy.Encode(nil, data)
+	return c.pushRW2Variant(snappy.Encode(nil, data))
+}
+
+// pushRW2Variant pushes arbitrary data to the Push endpoint, tagged appropriately for RW2.0.
+func (c *Client) pushRW2Variant(data []byte) (*http.Response, error) {
 	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(compressed))
 	if err != nil {
 		return nil, err
