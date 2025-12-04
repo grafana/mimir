@@ -1205,8 +1205,6 @@ func getReplicasFromRequest(req *mimirpb.WriteRequest, haReplicaLabel, haCluster
 	for i, ts := range req.Timeseries {
 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
 		replicas[i] = findHALabels(haReplicaLabel, haClusterLabel, ts.Labels)
-		replicas[i].cluster = strings.Clone(replicas[i].cluster)
-		replicas[i].replica = strings.Clone(replicas[i].replica)
 	}
 	return replicas
 }
@@ -1236,10 +1234,10 @@ func (d *Distributor) processHaReplicas(ctx context.Context, userID string, samp
 	for replicaKey, info := range replicaInfos {
 		if info.state == replicaRejectedUnknown {
 			state, replicaErr := d.replicaObserved(ctx, userID, replicaKey, sampleTimestamp)
-			info.state = state
 			if replicaErr != nil {
 				errs.Add(replicaErr)
 			}
+			info.state = state
 		}
 		samplesPerState[info.state] += info.sampleCount
 	}
@@ -1264,12 +1262,23 @@ func getReplicaInfos(req *mimirpb.WriteRequest, replicas []haReplica) map[haRepl
 		for _, ts := range req.Timeseries {
 			numSamples += len(ts.Samples) + len(ts.Histograms)
 		}
+		// The replica info is stored in a map where the key is the replica itself.
+		// The replica labels are references to the request buffer, which will be reused.
+		// To safely use the replica as map key, we need to clone its labels.
+		firstReplica.cluster = strings.Clone(firstReplica.cluster)
+		firstReplica.replica = strings.Clone(firstReplica.replica)
 		replicaInfos[firstReplica] = &replicaInfo{sampleCount: numSamples}
 	} else {
 		for i, ts := range req.Timeseries {
 			r := replicas[i]
 			info := replicaInfos[r]
 			if info == nil {
+				// The replica info is stored in a map where the key is the replica itself.
+				// The replica labels are references to the request buffer, which will be reused.
+				// To safely use the replica as map key, we need to clone its labels.
+				r.cluster = strings.Clone(r.cluster)
+				r.replica = strings.Clone(r.replica)
+
 				info = &replicaInfo{}
 				replicaInfos[r] = info
 			}
