@@ -32,7 +32,7 @@
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058 #13685
 * [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [FEATURE] Continuous test: Add `prometheus2` option `-tests.write-protocol` flag to select Prometheus Remote-Write 2.0 as a protocol. #13659
 * [FEATURE] Continuous test: Write metrics metadata along with samples. #13659
@@ -102,6 +102,7 @@
 * [BUGFIX] Query-frontend: Fix incorrect query results when running sharding inside MQE is enabled and the query contains a subquery eligible for subquery spin-off wrapped in a shardable aggregation. #13619
 * [BUGFIX] Memberlist: Fix occasional nil pointer dereference panics. #13635
 * [BUGFIX] Query-scheduler: Fix issue where queries executed with remote execution could time out rather than fail immediately if the querier evaluating the request crashes after receiving the query from the query-scheduler. #13742
+* [BUGFIX] Query-frontend: Fix silent panic when executing a remote read API request if the request has no matchers. #13745
 
 ### Mixin
 
