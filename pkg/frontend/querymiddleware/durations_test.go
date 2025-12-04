@@ -145,8 +145,7 @@ func (c *captureMiddleware) Do(_ context.Context, req MetricsQueryRequest) (Resp
 	return &PrometheusResponse{}, nil
 }
 
-// Test that the middleware does not panic when GetParsedQuery() returns nil.
-func TestDurationsMiddleware_NilExpr(t *testing.T) {
+func TestDurationsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 	capture := &captureMiddleware{}
 	middleware := newDurationsMiddleware(log.NewNopLogger())
 	handler := middleware.Wrap(capture)

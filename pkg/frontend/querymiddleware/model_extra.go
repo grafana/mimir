@@ -23,6 +23,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -142,12 +143,12 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 	return ""
 }
 
-func (r *PrometheusRangeQueryRequest) GetParsedQuery() (parser.Expr, error) {
+func (r *PrometheusRangeQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
 	if r.queryExpr == nil {
 		return nil, errRequestNoQuery
 	}
 
-	return r.queryExpr, nil
+	return astmapper.CloneExpr(r.queryExpr)
 }
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
@@ -351,12 +352,12 @@ func (r *PrometheusInstantQueryRequest) GetQuery() string {
 	return ""
 }
 
-func (r *PrometheusInstantQueryRequest) GetParsedQuery() (parser.Expr, error) {
+func (r *PrometheusInstantQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
 	if r.queryExpr == nil {
 		return nil, errRequestNoQuery
 	}
 
-	return r.queryExpr, nil
+	return astmapper.CloneExpr(r.queryExpr)
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {

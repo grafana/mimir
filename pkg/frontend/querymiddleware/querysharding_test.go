@@ -1866,8 +1866,7 @@ func TestMapEngineError(t *testing.T) {
 	}
 }
 
-// Test that the middleware does not panic when GetParsedQuery() returns nil.
-func TestQuerySharding_NilExpr(t *testing.T) {
+func TestQuerySharding_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 	_, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	reg := prometheus.NewPedanticRegistry()
 
@@ -1885,17 +1884,14 @@ func TestQuerySharding_NilExpr(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	// This should not panic, should return an error (bad data).
 	require.NotPanics(t, func() {
 		resp, err := handler.Do(ctx, req)
-		// With nil expr, the middleware returns an error.
-		require.Error(t, err)
+		require.ErrorContains(t, err, errRequestNoQuery.Error())
 		require.Nil(t, resp)
 	})
 }
 
-// Test that a chain of middlewares does not panic when GetParsedQuery() returns nil.
-func TestMiddlewareChain_NilExpr(t *testing.T) {
+func TestMiddlewareChain_ShouldNotPanicNilQueryExpression(t *testing.T) {
 	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
 		reg := prometheus.NewPedanticRegistry()
 

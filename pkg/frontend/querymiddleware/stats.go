@@ -71,7 +71,7 @@ func (s queryStatsMiddleware) Do(ctx context.Context, req MetricsQueryRequest) (
 }
 
 func (s queryStatsMiddleware) trackRegexpMatchers(req MetricsQueryRequest) {
-	expr, err := cloneParsedQuery(req.GetParsedQuery())
+	expr, err := req.GetClonedParsedQuery()
 	if err != nil {
 		return
 	}

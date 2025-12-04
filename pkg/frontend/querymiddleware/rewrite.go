@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -70,12 +69,7 @@ func newRewriteMiddleware(
 func (m *rewriteMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log := spanlogger.FromContext(ctx, m.logger)
 
-	parsedQuery, err := r.GetParsedQuery()
-	if err != nil {
-		return nil, err
-	}
-
-	rewrittenQuery, success, err := m.rewriteQuery(ctx, parsedQuery)
+	rewrittenQuery, success, err := m.rewriteRequestQuery(ctx, r)
 	if err != nil {
 		return nil, err
 	}
@@ -95,11 +89,12 @@ func (m *rewriteMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Resp
 	return m.next.Do(ctx, updatedReq)
 }
 
-func (m *rewriteMiddleware) rewriteQuery(ctx context.Context, expr parser.Expr) (parser.Expr, bool, error) {
-	rewrittenQuery, err := astmapper.CloneExpr(expr)
+func (m *rewriteMiddleware) rewriteRequestQuery(ctx context.Context, r MetricsQueryRequest) (parser.Expr, bool, error) {
+	rewrittenQuery, err := r.GetClonedParsedQuery()
 	if err != nil {
 		return nil, false, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
+
 	changed := false
 
 	if m.cfg.RewriteQueriesHistogram {

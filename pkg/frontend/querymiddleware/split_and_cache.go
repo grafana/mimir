@@ -642,7 +642,7 @@ func doRequests(ctx context.Context, downstream MetricsQueryHandler, reqs []Metr
 func splitQueryByInterval(req MetricsQueryRequest, interval time.Duration) ([]MetricsQueryRequest, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
-	query, err := cloneParsedQuery(req.GetParsedQuery())
+	query, err := req.GetClonedParsedQuery()
 	if err != nil {
 		return nil, err
 	}

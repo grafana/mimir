@@ -282,7 +282,7 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 	return r.promQuery
 }
 
-func (r *remoteReadQueryRequest) GetParsedQuery() (parser.Expr, error) {
+func (r *remoteReadQueryRequest) GetClonedParsedQuery() (parser.Expr, error) {
 	if r.promQuery == "" {
 		return nil, errRequestNoQuery
 	}

@@ -68,8 +68,7 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 	}
 }
 
-// Test that the middleware does not panic when GetParsedQuery() returns nil.
-func TestExperimentalFunctionsMiddleware_NilExpr(t *testing.T) {
+func TestExperimentalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 	inner := mockHandlerWith(nil, nil)
 	middleware := newExperimentalFunctionsMiddleware(mockLimits{}, log.NewNopLogger())
 	handler := middleware.Wrap(inner)
@@ -79,11 +78,9 @@ func TestExperimentalFunctionsMiddleware_NilExpr(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "test")
 
-	// This should not panic, should return an error (bad data).
 	require.NotPanics(t, func() {
 		resp, err := handler.Do(ctx, req)
-		// With nil expr, the middleware returns an error.
-		require.Error(t, err)
+		require.ErrorContains(t, err, errRequestNoQuery.Error())
 		require.Nil(t, resp)
 	})
 }

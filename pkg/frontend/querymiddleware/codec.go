@@ -36,7 +36,6 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -102,11 +101,12 @@ type MetricsQueryRequest interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
-	// GetParsedQuery returns the query, parsed into an AST. This function returns an error if the query
-	// is invalid or the request has no query.
+	// GetClonedParsedQuery returns the query, parsed into an AST. The returned query is a clone, so
+	// it's safe to manipulate the returned expression without affecting the expression stored in the
+	// request itself.
 	//
-	// Do not directly manipulate this expression. If you need to manipulate it, clone it first by using cloneParsedQuery().
-	GetParsedQuery() (parser.Expr, error)
+	// This function returns an error if the query is invalid or the request has no query.
+	GetClonedParsedQuery() (parser.Expr, error)
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
 	GetMinT() int64
@@ -1340,16 +1340,4 @@ func HeadersToPropagateFromContext(ctx context.Context) map[string][]string {
 	}
 
 	return nil
-}
-
-// cloneParsedQuery returns a clone of the input parser.Expr. If an error is provided in input, it returns
-// the provided error as is, without even trying to clone the expression.
-//
-// This utility function is intended to be used to easily clone expressions returned by GetParsedQuery(), e.g.:
-// cloneParsedQuery(req.GetParsedQuer())
-func cloneParsedQuery(expr parser.Expr, err error) (parser.Expr, error) {
-	if err != nil {
-		return nil, err
-	}
-	return astmapper.CloneExpr(expr)
 }

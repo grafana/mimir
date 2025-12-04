@@ -99,7 +99,7 @@ func (s *querySharding) Do(ctx context.Context, r MetricsQueryRequest) (Response
 		return s.next.Do(ctx, r)
 	}
 
-	queryExpr, err := cloneParsedQuery(r.GetParsedQuery())
+	queryExpr, err := r.GetClonedParsedQuery()
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
 	}
