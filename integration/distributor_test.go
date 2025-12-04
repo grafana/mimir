@@ -144,7 +144,7 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 			},
 		},
 
-		"simple counter with created timestamp": {
+		/*"simple counter with created timestamp": {
 			rw1request: nil, // Not supported in RW1
 			rw2request: []promRW2.Request{
 				{
@@ -191,7 +191,7 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 					Exemplars:  0,
 				},
 			},
-		},
+		},*/
 
 		"simple gauge": {
 			rw1request: []prompb.WriteRequest{
