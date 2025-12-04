@@ -36,6 +36,7 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/cardinality"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -51,6 +52,7 @@ var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	errNoQuery        = apierror.New(apierror.TypeBadData, "the request has no query or the provided query is invalid")
 	allFormats        = []string{formatJSON, formatProtobuf}
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
@@ -100,8 +102,11 @@ type MetricsQueryRequest interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
-	// GetParsedQuery returns the query, parsed into an AST.
-	GetParsedQuery() parser.Expr
+	// GetParsedQuery returns the query, parsed into an AST. This function returns an error if the query
+	// is invalid or the request has no query.
+	//
+	// Do not directly manipulate this expression. If you need to manipulate it, clone it first by using cloneParsedQuery().
+	GetParsedQuery() (parser.Expr, error)
 	// GetMinT returns the minimum timestamp in milliseconds of data to be queried,
 	// as determined from the start timestamp and any range vector or offset in the query.
 	GetMinT() int64
@@ -1335,4 +1340,16 @@ func HeadersToPropagateFromContext(ctx context.Context) map[string][]string {
 	}
 
 	return nil
+}
+
+// cloneParsedQuery returns a clone of the input parser.Expr. If an error is provided in input, it returns
+// the provided error as is, without even trying to clone the expression.
+//
+// This utility function is intended to be used to easily clone expressions returned by GetParsedQuery(), e.g.:
+// cloneParsedQuery(req.GetParsedQuer())
+func cloneParsedQuery(expr parser.Expr, err error) (parser.Expr, error) {
+	if err != nil {
+		return nil, err
+	}
+	return astmapper.CloneExpr(expr)
 }

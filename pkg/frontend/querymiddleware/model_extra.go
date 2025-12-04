@@ -142,8 +142,12 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 	return ""
 }
 
-func (r *PrometheusRangeQueryRequest) GetParsedQuery() parser.Expr {
-	return r.queryExpr
+func (r *PrometheusRangeQueryRequest) GetParsedQuery() (parser.Expr, error) {
+	if r.queryExpr == nil {
+		return nil, errNoQuery
+	}
+
+	return r.queryExpr, nil
 }
 
 // GetMinT returns the minimum timestamp in milliseconds of data to be queried,
@@ -347,8 +351,12 @@ func (r *PrometheusInstantQueryRequest) GetQuery() string {
 	return ""
 }
 
-func (r *PrometheusInstantQueryRequest) GetParsedQuery() parser.Expr {
-	return r.queryExpr
+func (r *PrometheusInstantQueryRequest) GetParsedQuery() (parser.Expr, error) {
+	if r.queryExpr == nil {
+		return nil, errNoQuery
+	}
+
+	return r.queryExpr, nil
 }
 
 func (r *PrometheusInstantQueryRequest) GetStart() int64 {

@@ -70,7 +70,12 @@ func newRewriteMiddleware(
 func (m *rewriteMiddleware) Do(ctx context.Context, r MetricsQueryRequest) (Response, error) {
 	log := spanlogger.FromContext(ctx, m.logger)
 
-	rewrittenQuery, success, err := m.rewriteQuery(ctx, r.GetParsedQuery())
+	parsedQuery, err := r.GetParsedQuery()
+	if err != nil {
+		return nil, err
+	}
+
+	rewrittenQuery, success, err := m.rewriteQuery(ctx, parsedQuery)
 	if err != nil {
 		return nil, err
 	}
