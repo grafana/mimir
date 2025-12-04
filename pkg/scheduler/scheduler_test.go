@@ -8,6 +8,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -35,6 +36,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
@@ -143,7 +146,7 @@ func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
-func TestSchedulerBasicEnqueue_GRPCPayload(t *testing.T) {
+func TestSchedulerBasicEnqueue_ProtobufPayload(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
@@ -467,30 +470,9 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	require.Greater(t, len(spans), 0, "expected at least one span even if rejected by queue full")
 }
 
-func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
+func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
-
-	fm := &frontendMock{resp: map[uint64]*httpgrpc.HTTPResponse{}}
-	frontendAddress := ""
-
-	// Setup frontend grpc server
-	{
-		frontendGrpcServer := grpc.NewServer()
-		frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, fm)
-
-		l, err := net.Listen("tcp", "localhost:0")
-		require.NoError(t, err)
-
-		frontendAddress = l.Addr().String()
-
-		go func() {
-			_ = frontendGrpcServer.Serve(l)
-		}()
-
-		t.Cleanup(func() {
-			_ = l.Close()
-		})
-	}
+	fm, frontendAddress := newFrontendMock(t)
 
 	// After preparations, start frontend and querier.
 	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
@@ -517,14 +499,70 @@ func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
 
 	// Verify that frontend was notified about request.
 	test.Poll(t, 2*time.Second, true, func() interface{} {
-		resp := fm.getRequest(100)
-		if resp == nil {
+		httpResp, grpcResp := fm.getRequest(100)
+		require.Nil(t, grpcResp, "should not get a gRPC-style response for a HTTP payload")
+		if httpResp == nil {
 			return false
 		}
 
-		require.Equal(t, int32(http.StatusInternalServerError), resp.Code)
+		require.Equal(t, int32(http.StatusInternalServerError), httpResp.Code)
 		return true
 	})
+	verifyQueryComponentUtilizationLeft(t, scheduler)
+}
+
+func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+	fm, frontendAddress := newFrontendMock(t)
+
+	// After preparations, start frontend and querier.
+	frontendLoop := initFrontendLoop(t, frontendClient, frontendAddress)
+	request := &schedulerpb.ProtobufRequest{Payload: &types.Any{TypeUrl: "http://my.types/some_request", Value: []byte("hello world")}}
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 100,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_ProtobufRequest{ProtobufRequest: request},
+	})
+
+	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
+	// This will make scheduler to report error back to frontend.
+
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue first query.
+	_, err = querierLoop.Recv()
+	require.NoError(t, err)
+
+	// Querier now disconnects, without sending empty message back.
+	require.NoError(t, util.CloseAndExhaust[*schedulerpb.SchedulerToQuerier](querierLoop))
+
+	// Verify that frontend was notified about request.
+	test.Poll(t, 2*time.Second, true, func() interface{} {
+		httpResp, grpcResp := fm.getRequest(100)
+		require.Nil(t, httpResp, "should not get a HTTP-style response for a gRPC payload")
+		if grpcResp == nil {
+			return false
+		}
+
+		expected := []*frontendv2pb.QueryResultStreamRequest{
+			{
+				QueryID: 100,
+				Data: &frontendv2pb.QueryResultStreamRequest_Error{
+					Error: &querierpb.Error{
+						Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+						Message: "failed to receive response from querier 'querier-1': EOF",
+					},
+				},
+			},
+		}
+
+		require.Equal(t, expected, grpcResp)
+		return true
+	})
+
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
@@ -686,26 +724,75 @@ func (l limits) MaxQueriersPerUser(_ string) int {
 }
 
 type frontendMock struct {
-	mu   sync.Mutex
-	resp map[uint64]*httpgrpc.HTTPResponse
+	mu            sync.Mutex
+	httpResponses map[uint64]*httpgrpc.HTTPResponse
+	grpcResponses map[uint64][]*frontendv2pb.QueryResultStreamRequest
+}
+
+func newFrontendMock(t *testing.T) (*frontendMock, string) {
+	mock := &frontendMock{
+		httpResponses: map[uint64]*httpgrpc.HTTPResponse{},
+		grpcResponses: map[uint64][]*frontendv2pb.QueryResultStreamRequest{},
+	}
+
+	frontendGrpcServer := grpc.NewServer()
+	frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, mock)
+
+	l, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+
+	address := l.Addr().String()
+
+	go func() {
+		_ = frontendGrpcServer.Serve(l)
+	}()
+
+	t.Cleanup(func() {
+		_ = l.Close()
+	})
+
+	return mock, address
 }
 
 func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	f.resp[request.QueryID] = request.HttpResponse
+	f.httpResponses[request.QueryID] = request.HttpResponse
 	return &frontendv2pb.QueryResultResponse{}, nil
 }
 
-// satisfy frontendv2pb.FrontendForQuerierServer interface
-func (f *frontendMock) QueryResultStream(_ frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
-	panic("unexpected call to QueryResultStream")
+func (f *frontendMock) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
+	defer stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
+	var msgs []*frontendv2pb.QueryResultStreamRequest
+	var queryID uint64
+
+	for {
+		msg, err := stream.Recv()
+		if err != nil {
+			if err == io.EOF {
+				if len(msgs) == 0 {
+					panic("expected at least one message")
+				}
+
+				f.mu.Lock()
+				f.grpcResponses[queryID] = msgs
+				f.mu.Unlock()
+				return nil
+			}
+
+			return err
+		}
+
+		queryID = msg.QueryID
+		msg.BufferHolder = mimirpb.BufferHolder{} // Clear the reference to the underlying buffer to make assertions easier.
+		msgs = append(msgs, msg)
+	}
 }
 
-func (f *frontendMock) getRequest(queryID uint64) *httpgrpc.HTTPResponse {
+func (f *frontendMock) getRequest(queryID uint64) (*httpgrpc.HTTPResponse, []*frontendv2pb.QueryResultStreamRequest) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	return f.resp[queryID]
+	return f.httpResponses[queryID], f.grpcResponses[queryID]
 }

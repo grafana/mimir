@@ -38,6 +38,8 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerdiscovery"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -626,17 +628,46 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 	client := frontendv2pb.NewFrontendForQuerierClient(conn)
 
 	userCtx := user.InjectOrgID(ctx, req.UserID)
-	_, err = client.QueryResult(userCtx, &frontendv2pb.QueryResultRequest{
-		QueryID: req.QueryID,
-		HttpResponse: &httpgrpc.HTTPResponse{
-			Code: http.StatusInternalServerError,
-			Body: []byte(requestErr.Error()),
-		},
-	})
 
-	if err != nil {
-		level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
-		return
+	if req.HttpRequest != nil {
+		_, err = client.QueryResult(userCtx, &frontendv2pb.QueryResultRequest{
+			QueryID: req.QueryID,
+			HttpResponse: &httpgrpc.HTTPResponse{
+				Code: http.StatusInternalServerError,
+				Body: []byte(requestErr.Error()),
+			},
+		})
+
+		if err != nil {
+			level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
+	} else {
+		stream, err := client.QueryResultStream(ctx)
+		if err != nil {
+			level.Warn(s.log).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
+
+		msg := frontendv2pb.QueryResultStreamRequest{
+			QueryID: req.QueryID,
+			Data: &frontendv2pb.QueryResultStreamRequest_Error{
+				Error: &querierpb.Error{
+					Type:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+					Message: requestErr.Error(),
+				},
+			},
+		}
+
+		if err := stream.Send(&msg); err != nil {
+			level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
+
+		if _, err = stream.CloseAndRecv(); err != nil {
+			level.Warn(s.log).Log("msg", "failed to close stream to frontend after forwarding error", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
+			return
+		}
 	}
 }
 
