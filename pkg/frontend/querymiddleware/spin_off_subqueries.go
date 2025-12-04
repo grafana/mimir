@@ -140,7 +140,7 @@ func (s *spinOffSubqueriesMiddleware) Do(ctx context.Context, req MetricsQueryRe
 	defer cancel()
 	mapper := astmapper.NewSubquerySpinOffMapper(s.defaultStepFunc, spanLog, mapperStats)
 
-	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
+	expr, err := req.GetClonedParsedQuery()
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to parse query", "err", err)
 		s.metrics.spinOffSkipped.WithLabelValues(subquerySpinoffSkippedReasonParsingFailed).Inc()

@@ -364,3 +364,41 @@ cortex_frontend_subquery_spinoff_successes_total %d
 		})
 	}
 }
+
+func TestSpinOffSubqueries_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		reg := prometheus.NewPedanticRegistry()
+
+		fakeMiddleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return next
+		})
+
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+			mockLimits{subquerySpinOffEnabled: true},
+			log.NewNopLogger(),
+			eng,
+			reg,
+			fakeMiddleware,
+			defaultStepFunc,
+		)
+
+		handler := spinoffMiddleware.Wrap(mockHandlerWith(nil, nil))
+
+		// Create a request with a nil queryExpr to simulate a failed parse.
+		req := &PrometheusRangeQueryRequest{
+			path:      "/query_range",
+			start:     util.TimeToMillis(start),
+			end:       util.TimeToMillis(end),
+			step:      step.Milliseconds(),
+			queryExpr: nil, // Simulates a query that failed to parse
+		}
+
+		ctx := user.InjectOrgID(context.Background(), "test")
+
+		require.NotPanics(t, func() {
+			resp, err := handler.Do(ctx, req)
+			require.ErrorContains(t, err, errRequestNoQuery.Error())
+			require.Nil(t, resp)
+		})
+	})
+}
