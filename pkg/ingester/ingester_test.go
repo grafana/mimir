@@ -72,6 +72,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/rw2util"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -9174,7 +9175,7 @@ func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
 	require.NoError(t, err)
 	startAndWaitHealthy(t, ing, r)
 
-	syms := util_test.NewSymbolTableBuilder(nil)
+	syms := rw2util.NewSymbolTableBuilder(nil)
 	orig := makeTestRW2WriteRequest(syms)
 	buf, err := orig.Marshal()
 	require.NoError(t, err)
@@ -12323,7 +12324,7 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
 }
 
-func makeTestRW2WriteRequest(syms *util_test.SymbolTableBuilder) *mimirpb.WriteRequest {
+func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteRequest {
 	req := &mimirpb.WriteRequest{
 		TimeseriesRW2: []mimirpb.TimeSeriesRW2{
 			{
