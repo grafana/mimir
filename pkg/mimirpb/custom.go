@@ -296,7 +296,7 @@ func (b *instrumentLeaksBuf) Free() {
 				panic(fmt.Errorf("mprotect: %w", err))
 			}
 			select {
-			case unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse)}:
+			case unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse), inflightInstrumentedBytes: b.inflightInstrumentedBytes}:
 				return
 			default:
 				// Queue is full, munmap right away.
