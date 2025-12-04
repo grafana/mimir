@@ -761,7 +761,21 @@ func TestTripperware_RemoteRead(t *testing.T) {
 		expectAPIError      bool
 		expectErrorContains string
 	}{
-		"valid query": {
+		"request without matchers": {
+			makeRequest: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         nil,
+							StartTimestampMs: 0,
+							EndTimestampMs:   42,
+						},
+					},
+				})
+			},
+			limits: mockLimits{},
+		},
+		"request with matchers": {
 			makeRequest: func() *http.Request {
 				return makeTestHTTPRequestFromRemoteRead(makeTestRemoteReadRequest())
 			},
