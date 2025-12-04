@@ -325,7 +325,7 @@ func (r *BucketBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, 
 	if r.indexVersion == index.FormatV1 {
 		// For v1, refs are actual offset inside index, not index-header.
 		// Adjust for the header length difference.
-		o += headerLen - index.HeaderLen
+		o += HeaderLen - index.HeaderLen
 	}
 
 	if s, ok := r.nameSymbols[o]; ok {
