@@ -13,18 +13,34 @@ import (
 )
 
 type SeriesResponse struct {
-	Series  *Series `json:"series,omitempty"`
-	Warning string  `json:"warning,omitempty"`
-	Stats   *Stats  `json:"stats,omitempty"`
+	Hints                   map[string]any           `json:"hints"`
+	StreamingChunksEstimate map[string]any           `json:"streamingChunksEstimate,omitempty"`
+	Stats                   *Stats                   `json:"stats,omitempty"`
+	StreamingSeries         *StreamingSeriesResponse `json:"streamingSeries,omitempty"`
+	StreamingChunks         *StreamingChunksResponse `json:"streamingChunks,omitempty"`
+	//Series          *Series                  `json:"series,omitempty"`
+	Warning string `json:"warning,omitempty"`
+}
+
+type StreamingSeriesResponse struct {
+	Series []*Series `json:"series,omitempty"`
+	// Indicates the end of the streaming series section.
+	IsEndOfSeriesStream bool `json:"isEndOfSeriesStream,omitempty"`
+}
+
+type StreamingChunksResponse struct {
+	Series []*Series `json:"series,omitempty"`
 }
 
 type Stats struct {
-	FetchedIndexBytes int `json:"fetched_index_bytes,omitempty"`
+	// Encode/decode as a JSON string to match external format.
+	FetchedIndexBytes int `json:"fetchedIndexBytes,string,omitempty"`
 }
 
 type Series struct {
-	Labels []Label     `json:"labels"`
-	Chunks []AggrChunk `json:"chunks"`
+	Labels      []Label     `json:"labels,omitempty"`
+	Chunks      []AggrChunk `json:"chunks,omitempty"`
+	SeriesIndex string      `json:"seriesIndex,omitempty"`
 }
 
 func (s Series) LabelSet() labels.Labels {
@@ -65,7 +81,7 @@ type AggrChunk struct {
 }
 
 type Chunk struct {
-	Type string `json:"type"`
+	Type string `json:"type,omitempty"`
 	Data string `json:"data"`
 }
 

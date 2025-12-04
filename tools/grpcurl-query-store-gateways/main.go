@@ -8,14 +8,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"io"
 	"os"
 	"slices"
 	"time"
-
-	"github.com/grafana/dskit/flagext"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func main() {
@@ -26,25 +25,23 @@ func main() {
 	}
 
 	for _, arg := range args {
-		resps, err := parseFile(arg)
+		response, err := parseFile(arg)
 		if err != nil {
 			fmt.Println("Failed to parse file:", err.Error())
 			os.Exit(1)
 		}
 
-		for _, res := range resps {
-			dumpResponse(res)
-		}
+		dumpResponse(response, arg)
 	}
 }
 
-func parseFile(file string) ([]SeriesResponse, error) {
-	resps := []SeriesResponse{}
-
+func parseFile(file string) (*SeriesResponse, error) {
 	fileData, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
+
+	consolidated := SeriesResponse{}
 
 	// Decode file.
 	decoder := json.NewDecoder(bytes.NewReader(fileData))
@@ -57,62 +54,91 @@ func parseFile(file string) ([]SeriesResponse, error) {
 			return nil, err
 		}
 
-		resps = append(resps, res)
+		// merge all the elements back into the single object
+		// the raw file has unique blocks for each element
+		// { ... }
+		// { ... }
+		// this is deserialized into a collection of SeriesResponse
+		// and each element has one section set.
+		if len(res.Hints) > 0 {
+			consolidated.Hints = res.Hints
+		}
+
+		if len(res.Warning) > 0 {
+			consolidated.Warning = res.Warning
+		}
+
+		if res.StreamingSeries != nil && len(res.StreamingSeries.Series) > 0 {
+			consolidated.StreamingSeries = res.StreamingSeries
+		}
+
+		if res.StreamingChunks != nil && len(res.StreamingChunks.Series) > 0 {
+			consolidated.StreamingChunks = res.StreamingChunks
+		}
+
+		if len(res.StreamingChunksEstimate) > 0 {
+			consolidated.StreamingChunksEstimate = res.StreamingChunksEstimate
+		}
 	}
 
-	return resps, nil
+	return &consolidated, nil
 }
 
-func dumpResponse(res SeriesResponse) {
+func dumpResponse(res *SeriesResponse, file string) {
 	if res.Warning != "" {
 		fmt.Printf("Warning: %s\n", res.Warning)
 		return
 	}
 
-	if res.Series == nil {
+	if res.StreamingChunks == nil {
 		return
 	}
 
-	fmt.Println(res.Series.LabelSet().String())
-	var (
-		h  *histogram.Histogram
-		fh *histogram.FloatHistogram
-		ts int64
-	)
+	fmt.Printf("---- %s ----\n", file)
 
-	slices.SortFunc(res.Series.Chunks, func(a, b AggrChunk) int {
-		return int(a.StartTimestamp() - b.StartTimestamp())
-	})
+	for i, series := range res.StreamingSeries.Series {
+		chunks := res.StreamingChunks.Series[i].Chunks
+		fmt.Println(series.LabelSet().String())
+		var (
+			h  *histogram.Histogram
+			fh *histogram.FloatHistogram
+			ts int64
+		)
 
-	for _, chunk := range res.Series.Chunks {
-		fmt.Printf(
-			"- Chunk: %s - %s\n",
-			chunk.StartTime().Format(time.RFC3339),
-			chunk.EndTime().Format(time.RFC3339))
+		slices.SortFunc(chunks, func(a, b AggrChunk) int {
+			return int(a.StartTimestamp() - b.StartTimestamp())
+		})
 
-		chunkIterator := chunk.EncodedChunk().NewIterator(nil)
-		for {
-			sampleType := chunkIterator.Scan()
-			if sampleType == chunkenc.ValNone {
-				break
+		for _, chunk := range chunks {
+			fmt.Printf(
+				"- Chunk: %s - %s\n",
+				chunk.StartTime().Format(time.RFC3339),
+				chunk.EndTime().Format(time.RFC3339))
+
+			chunkIterator := chunk.EncodedChunk().NewIterator(nil)
+			for {
+				sampleType := chunkIterator.Scan()
+				if sampleType == chunkenc.ValNone {
+					break
+				}
+
+				switch sampleType {
+				case chunkenc.ValFloat:
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "value:", chunkIterator.Value().Value)
+				case chunkenc.ValHistogram:
+					ts, h = chunkIterator.AtHistogram(h)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h, "hint:", counterResetHintString(h.CounterResetHint))
+				case chunkenc.ValFloatHistogram:
+					ts, fh = chunkIterator.AtFloatHistogram(fh)
+					fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", fh, "hint:", counterResetHintString(fh.CounterResetHint))
+				default:
+					panic(fmt.Errorf("unknown sample type %s", sampleType.String()))
+				}
 			}
 
-			switch sampleType {
-			case chunkenc.ValFloat:
-				fmt.Println("  - Sample:", sampleType.String(), "ts:", chunkIterator.Timestamp(), "value:", chunkIterator.Value().Value)
-			case chunkenc.ValHistogram:
-				ts, h = chunkIterator.AtHistogram(h)
-				fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", h, "hint:", counterResetHintString(h.CounterResetHint))
-			case chunkenc.ValFloatHistogram:
-				ts, fh = chunkIterator.AtFloatHistogram(fh)
-				fmt.Println("  - Sample:", sampleType.String(), "ts:", ts, "value:", fh, "hint:", counterResetHintString(fh.CounterResetHint))
-			default:
-				panic(fmt.Errorf("unknown sample type %s", sampleType.String()))
+			if chunkIterator.Err() != nil {
+				panic(chunkIterator.Err())
 			}
-		}
-
-		if chunkIterator.Err() != nil {
-			panic(chunkIterator.Err())
 		}
 	}
 }
