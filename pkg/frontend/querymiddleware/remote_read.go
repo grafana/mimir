@@ -284,7 +284,7 @@ func (r *remoteReadQueryRequest) GetQuery() string {
 
 func (r *remoteReadQueryRequest) GetParsedQuery() (parser.Expr, error) {
 	if r.promQuery == "" {
-		return nil, errNoQuery
+		return nil, errRequestNoQuery
 	}
 
 	return parser.ParseExpr(r.promQuery)

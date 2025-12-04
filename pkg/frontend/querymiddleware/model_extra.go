@@ -144,7 +144,7 @@ func (r *PrometheusRangeQueryRequest) GetQuery() string {
 
 func (r *PrometheusRangeQueryRequest) GetParsedQuery() (parser.Expr, error) {
 	if r.queryExpr == nil {
-		return nil, errNoQuery
+		return nil, errRequestNoQuery
 	}
 
 	return r.queryExpr, nil
@@ -353,7 +353,7 @@ func (r *PrometheusInstantQueryRequest) GetQuery() string {
 
 func (r *PrometheusInstantQueryRequest) GetParsedQuery() (parser.Expr, error) {
 	if r.queryExpr == nil {
-		return nil, errNoQuery
+		return nil, errRequestNoQuery
 	}
 
 	return r.queryExpr, nil
