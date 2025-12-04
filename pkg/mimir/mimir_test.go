@@ -12,10 +12,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -280,6 +283,66 @@ func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
 		require.Fail(t, "Mimir didn't stop in time")
 	case err := <-errCh:
 		require.NoError(t, err)
+	}
+}
+
+func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
+	// This test checks that our /metrics endpoint handler supports metric filtering through the usage of name[] query param.
+	// This is added to prometheus/client_golang in https://github.com/prometheus/client_golang/pull/1925,
+	// but not merged yet so we use a replace directive on the module to bring this functionality.
+	// This test check that we haven't lost that replace directive (and functionality).
+	//
+	// We target OverridesExporter because it's the target with least dependencies and easier to set up.
+	args := []string{
+		"-target=" + OverridesExporter,
+		"-server.http-listen-port=0",
+		"-server.grpc-listen-port=0",
+	}
+	var cfg Config
+	fs := flag.NewFlagSet("test", flag.PanicOnError)
+	cfg.RegisterFlags(fs, log.NewNopLogger())
+	require.NoError(t, fs.Parse(args))
+	require.NoError(t, cfg.Validate(log.NewNopLogger()))
+
+	c, err := New(cfg, prometheus.NewPedanticRegistry())
+	require.NoError(t, err)
+
+	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
+	require.NoError(t, err)
+	require.NotNil(t, serviceMap)
+
+	servs := slices.Collect(maps.Values(serviceMap))
+	sm, err := services.NewManager(servs...)
+	require.NoError(t, err)
+
+	assert.NoError(t, sm.StartAsync(t.Context()))
+	t.Cleanup(sm.StopAsync)
+
+	{
+		// One metric
+		res, err := http.Get(fmt.Sprintf("http://%s/metrics?name[]=go_info", c.Server.HTTPListenAddr()))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+		body, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), "go_info")
+		assert.NotContains(t, string(body), "deprecated_flags_inuse_total")
+		require.Equal(t, 1, strings.Count(string(body), "HELP"))
+	}
+
+	{
+		// Two metrics
+		res, err := http.Get(fmt.Sprintf("http://%s/metrics?name[]=go_info&name[]=deprecated_flags_inuse_total", c.Server.HTTPListenAddr()))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		assert.Equal(t, http.StatusOK, res.StatusCode)
+		body, err := ioutil.ReadAll(res.Body)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), "go_info")
+		assert.Contains(t, string(body), "deprecated_flags_inuse_total")
+		assert.NotContains(t, string(body), "go_gc_duration_seconds")
+		require.Equal(t, 1, strings.Count(string(body), "2"))
 	}
 }
 
