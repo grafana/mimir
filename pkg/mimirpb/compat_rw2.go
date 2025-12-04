@@ -83,17 +83,17 @@ func (ps *rw2PagedSymbols) get(ref uint32) (string, error) {
 
 	if ref < ps.offset {
 		if len(ps.commonStrings) == 0 {
-			return "", fmt.Errorf("symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
+			return "", fmt.Errorf("get: symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
 		}
 		if ref >= uint32(len(ps.commonStrings)) {
-			return "", fmt.Errorf("common symbol reference %d is out of bounds", ref)
+			return "", fmt.Errorf("get: common symbol reference %d is out of bounds", ref)
 		}
 		return ps.commonStrings[ref], nil
 	}
 
 	ref = ref - ps.offset
 	if ref >= ps.count {
-		return "", fmt.Errorf("symbol reference %d (offset %d) is out of bounds", ref, ps.offset)
+		return "", fmt.Errorf("get: symbol reference %d (offset %d) is out of bounds", ref, ps.offset)
 	}
 
 	return ps.lookupString(ref), nil
@@ -112,17 +112,17 @@ func (ps *rw2PagedSymbols) getSymbol(ref uint32) (labels.Symbol, error) {
 
 	if ref < ps.offset {
 		if len(ps.commonStrings) == 0 {
-			return labels.EmptySymbol, fmt.Errorf("symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
+			return labels.EmptySymbol, fmt.Errorf("getSymbol: symbol %d is under the offset %d, but no common symbols table was registered", ref, ps.offset)
 		}
 		if ref >= uint32(len(ps.commonStrings)) {
-			return labels.EmptySymbol, fmt.Errorf("common symbol reference %d is out of bounds", ref)
+			return labels.EmptySymbol, fmt.Errorf("getSymbol: common symbol reference %d is out of bounds", ref)
 		}
 		return ps.commonSymbols[ref], nil
 	}
 
 	ref = ref - ps.offset
 	if ref >= ps.count {
-		return labels.EmptySymbol, fmt.Errorf("symbol reference %d (offset %d) is out of bounds", ref, ps.offset)
+		return labels.EmptySymbol, fmt.Errorf("getSymbol: symbol reference %d (offset %d) is out of bounds", ref, ps.offset)
 	}
 
 	pageIdx := ref >> rw2SymbolPageSize
