@@ -21,8 +21,10 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
+	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -736,7 +738,11 @@ func newFrontendMock(t *testing.T) (*frontendMock, string) {
 		grpcResponses: map[uint64][]*frontendv2pb.QueryResultStreamRequest{},
 	}
 
-	frontendGrpcServer := grpc.NewServer()
+	frontendGrpcServer := grpc.NewServer(
+		grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor),
+		grpc.UnaryInterceptor(middleware.ServerUserHeaderInterceptor),
+	)
+
 	frontendv2pb.RegisterFrontendForQuerierServer(frontendGrpcServer, mock)
 
 	l, err := net.Listen("tcp", "localhost:0")
@@ -755,9 +761,14 @@ func newFrontendMock(t *testing.T) (*frontendMock, string) {
 	return mock, address
 }
 
-func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
+func (f *frontendMock) QueryResult(ctx context.Context, request *frontendv2pb.QueryResultRequest) (*frontendv2pb.QueryResultResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	_, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		panic(err)
+	}
 
 	f.httpResponses[request.QueryID] = request.HttpResponse
 	return &frontendv2pb.QueryResultResponse{}, nil
@@ -765,6 +776,12 @@ func (f *frontendMock) QueryResult(_ context.Context, request *frontendv2pb.Quer
 
 func (f *frontendMock) QueryResultStream(stream frontendv2pb.FrontendForQuerier_QueryResultStreamServer) error {
 	defer stream.SendAndClose(&frontendv2pb.QueryResultResponse{})
+
+	_, err := user.ExtractOrgID(stream.Context())
+	if err != nil {
+		panic(err)
+	}
+
 	var msgs []*frontendv2pb.QueryResultStreamRequest
 	var queryID uint64
 

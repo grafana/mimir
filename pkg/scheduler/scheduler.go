@@ -606,7 +606,9 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 		[]grpc.UnaryClientInterceptor{
 			middleware.ClientUserHeaderInterceptor,
 		},
-		nil,
+		[]grpc.StreamClientInterceptor{
+			middleware.StreamClientUserHeaderInterceptor,
+		},
 		util.NewInvalidClusterValidationReporter(s.cfg.GRPCClientConfig.ClusterValidation.Label, s.invalidClusterValidation, s.log),
 	)
 	if err != nil {
@@ -643,7 +645,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 			return
 		}
 	} else {
-		stream, err := client.QueryResultStream(ctx)
+		stream, err := client.QueryResultStream(userCtx)
 		if err != nil {
 			level.Warn(s.log).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 			return
