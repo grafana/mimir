@@ -4,9 +4,7 @@ package lookupplan
 
 import (
 	"context"
-	"math"
 	"slices"
-	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -45,42 +43,7 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
 
-	// Compute sqrtSelectivity for all predicates.
-	// Sort predicates by series selectivity (cardinality / totalSeries) and apply progressively
-	// higher roots to account for correlation between predicates.
-	computeSqrtSelectivities(p.predicates, p.totalSeries)
-
 	return p
-}
-
-// computeSqrtSelectivities computes the sqrtSelectivity for each predicate.
-// It sorts predicates by their series selectivity and applies progressively higher roots
-// (1, sqrt, 4th root, 8th root, ...) to account for correlation between predicates.
-func computeSqrtSelectivities(predicates []planPredicate, totalSeries uint64) {
-	if len(predicates) == 0 || totalSeries == 0 {
-		return
-	}
-
-	// Create indices sorted by series selectivity (cardinality / totalSeries)
-	indices := make([]int, len(predicates))
-	for i := range indices {
-		indices[i] = i
-	}
-	sort.Slice(indices, func(i, j int) bool {
-		// Sort by selectivity (lower selectivity = more selective = applied first)
-		selI := float64(predicates[indices[i]].cardinality) / float64(totalSeries)
-		selJ := float64(predicates[indices[j]].cardinality) / float64(totalSeries)
-		return selI < selJ
-	})
-
-	// Assign sqrtSelectivity based on sorted position
-	for pos, idx := range indices {
-		sel := float64(predicates[idx].cardinality) / float64(totalSeries)
-		// Apply progressively higher roots: 1, sqrt, 4th root, 8th root, ...
-		// power = 1/2^pos: pos=0 -> 1, pos=1 -> 0.5, pos=2 -> 0.25, ...
-		power := 1.0 / float64(int(1)<<pos)
-		predicates[idx].sqrtSelectivity = math.Pow(sel, power)
-	}
 }
 
 func (p plan) IndexMatchers() []*labels.Matcher {
@@ -181,12 +144,13 @@ func (p plan) intersectionSize() uint64 {
 			continue
 		}
 
-		// We use sqrtSelectivity which accounts for correlation between predicates.
-		// The sqrtSelectivity is computed once when the plan is created by sorting all predicates
-		// by series selectivity and applying progressively higher roots to less selective predicates.
-		// This approach assumes that more selective predicates are applied first during intersection,
-		// so less selective ones have diminishing impact on the result size.
-		finalSelectivity *= pred.sqrtSelectivity
+		// We use the selectivity across all series instead of the selectivity across label values.
+		// For example, if {protocol=~.*} matches all values, it doesn't mean it won't reduce the result set after intersection.
+		//
+		// We also assume independence between the predicates. This is a simplification.
+		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
+		// While finalSelectivity is neither an upper bound nor a lower bound, assuming independence allows us to come up with cost estimates comparable between plans.
+		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
