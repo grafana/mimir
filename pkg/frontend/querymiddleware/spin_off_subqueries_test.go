@@ -364,3 +364,44 @@ cortex_frontend_subquery_spinoff_successes_total %d
 		})
 	}
 }
+
+// Test that the middleware does not panic when GetParsedQuery() returns nil.
+func TestSpinOffSubqueries_NilExpr(t *testing.T) {
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		reg := prometheus.NewPedanticRegistry()
+
+		fakeMiddleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return next
+		})
+
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+			mockLimits{subquerySpinOffEnabled: true},
+			log.NewNopLogger(),
+			eng,
+			reg,
+			fakeMiddleware,
+			defaultStepFunc,
+		)
+
+		handler := spinoffMiddleware.Wrap(mockHandlerWith(nil, nil))
+
+		// Create a request with a nil queryExpr to simulate a failed parse.
+		req := &PrometheusRangeQueryRequest{
+			path:      "/query_range",
+			start:     util.TimeToMillis(start),
+			end:       util.TimeToMillis(end),
+			step:      step.Milliseconds(),
+			queryExpr: nil, // Simulates a query that failed to parse
+		}
+
+		ctx := user.InjectOrgID(context.Background(), "test")
+
+		// This should not panic, should return an error (bad data).
+		require.NotPanics(t, func() {
+			resp, err := handler.Do(ctx, req)
+			// With nil expr, the middleware returns an error.
+			require.Error(t, err)
+			require.Nil(t, resp)
+		})
+	})
+}
