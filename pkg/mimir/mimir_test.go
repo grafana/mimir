@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"maps"
 	"net"
 	"net/http"
@@ -324,7 +323,7 @@ func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
 		require.NoError(t, err)
 		defer res.Body.Close()
 		assert.Equal(t, http.StatusOK, res.StatusCode)
-		body, err := ioutil.ReadAll(res.Body)
+		body, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		assert.Contains(t, string(body), "go_info")
 		assert.NotContains(t, string(body), "deprecated_flags_inuse_total")
@@ -337,7 +336,7 @@ func TestMetricsEndpointSupportsMetricFiltering(t *testing.T) {
 		require.NoError(t, err)
 		defer res.Body.Close()
 		assert.Equal(t, http.StatusOK, res.StatusCode)
-		body, err := ioutil.ReadAll(res.Body)
+		body, err := io.ReadAll(res.Body)
 		require.NoError(t, err)
 		assert.Contains(t, string(body), "go_info")
 		assert.Contains(t, string(body), "deprecated_flags_inuse_total")
