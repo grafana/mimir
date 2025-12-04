@@ -8,13 +8,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/grafana/dskit/flagext"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"io"
 	"os"
 	"slices"
 	"time"
+
+	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func main() {
