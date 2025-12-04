@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/integration/e2emimir"
+	"github.com/grafana/mimir/integration/e2emimir/rw2/rc3"
 	rw2util "github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -143,55 +144,6 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				},
 			},
 		},
-
-		/*"simple counter with created timestamp": {
-			rw1request: nil, // Not supported in RW1
-			rw2request: []promRW2.Request{
-				{
-					Timeseries: []promRW2.TimeSeries{
-						{
-							LabelsRefs: []uint32{1, 2},
-							Samples:    []promRW2.Sample{{Timestamp: queryStart.Add(1 * time.Second).UnixMilli(), Value: 100}},
-							Metadata: promRW2.Metadata{
-								Type:    promRW2.Metadata_METRIC_TYPE_COUNTER,
-								HelpRef: 3,
-								UnitRef: 4,
-							},
-							CreatedTimestamp: queryStart.UnixMilli(),
-						},
-					},
-					Symbols: []string{"", "__name__", "foobarC_CT_total", "some helpC_CT", "someunitC_CT"},
-				},
-			},
-			queries: map[string]model.Matrix{
-				"foobarC_CT_total": {{
-					Metric: model.Metric{"__name__": "foobarC_CT_total"},
-					Values: []model.SamplePair{
-						{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(0)},
-						{Timestamp: model.Time(queryStart.Add(5 * time.Minute).UnixMilli()), Value: model.SampleValue(100)},
-					},
-				}},
-			},
-			metadataQueries: map[string]metadataResponse{
-				"foobarC_CT_total": {
-					Status: "success",
-					Data: map[string][]metadataResponseItem{
-						"foobarC_CT_total": {{
-							Type: "counter",
-							Help: "some helpC_CT",
-							Unit: "someunitC_CT",
-						}},
-					},
-				},
-			},
-			expectedStats: []promRemote.WriteResponseStats{
-				{
-					Samples:    1,
-					Histograms: 0,
-					Exemplars:  0,
-				},
-			},
-		},*/
 
 		"simple gauge": {
 			rw1request: []prompb.WriteRequest{
@@ -1088,6 +1040,105 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 			testDistributorCases(t, cachingUnmarshalDataEnabled, rwVersion, queryStart, queryEnd, queryStep, testCases)
 		})
 	}
+}
+
+func TestDistributor_RW2_RC3_CreatedTimestamp(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	previousRuntimeConfig := ""
+	require.NoError(t, writeFileToSharedDir(s, "runtime.yaml", []byte(previousRuntimeConfig)))
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, blocksBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	baseFlags := map[string]string{
+		"-distributor.ingestion-tenant-shard-size":           "0",
+		"-ingester.ring.heartbeat-period":                    "1s",
+		"-distributor.ha-tracker.enable":                     "true",
+		"-distributor.ha-tracker.enable-for-all-users":       "true",
+		"-distributor.ha-tracker.store":                      "consul",
+		"-distributor.ha-tracker.consul.hostname":            consul.NetworkHTTPEndpoint(),
+		"-distributor.ha-tracker.prefix":                     "prom_ha/",
+		"-timeseries-unmarshal-caching-optimization-enabled": strconv.FormatBool(true),
+	}
+
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		BlocksStorageS3Flags(),
+		baseFlags,
+	)
+
+	// We want only distributor to be reloading runtime config.
+	distributorFlags := mergeFlags(flags, map[string]string{
+		"-runtime-config.file":          filepath.Join(e2e.ContainerSharedDir, "runtime.yaml"),
+		"-runtime-config.reload-period": "100ms",
+		// Set non-zero default for number of exemplars. That way our values used in the test (0 and 100) will show up in runtime config diff.
+		"-ingester.max-global-exemplars-per-user": "3",
+	})
+
+	// Ingester will not reload runtime config.
+	ingesterFlags := mergeFlags(flags, map[string]string{
+		// Ingester will always see exemplars enabled. We do this to avoid waiting for ingester to apply new setting to TSDB.
+		"-ingester.max-global-exemplars-per-user": "100",
+	})
+
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), distributorFlags)
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), ingesterFlags)
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags)
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, querier))
+
+	// Wait until distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	// Wait until querier has updated the ring.
+	require.NoError(t, querier.WaitSumMetricsWithOptions(e2e.Equals(1), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
+		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
+		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
+
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+	require.NoError(t, err)
+
+	queryEnd := time.Now().Round(time.Second)
+	queryStart := queryEnd.Add(-1 * time.Hour)
+	queryStep := 5 * time.Minute
+
+	rw2req := &rc3.Request{
+		Timeseries: []rc3.TimeSeries{
+			{
+				LabelsRefs: []uint32{1, 2},
+				Samples:    []rc3.Sample{{Timestamp: queryStart.Add(1 * time.Second).UnixMilli(), Value: 100}},
+				Metadata: rc3.Metadata{
+					Type:    rc3.Metadata_METRIC_TYPE_COUNTER,
+					HelpRef: 3,
+					UnitRef: 4,
+				},
+				CreatedTimestamp: queryStart.UnixMilli(),
+			},
+		},
+		Symbols: []string{"", "__name__", "foobarC_CT_total", "some helpC_CT", "someunitC_CT"},
+	}
+
+	writeRes, err := client.PushRW2rc3(rw2req)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, writeRes.StatusCode)
+
+	want := model.Matrix{{
+		Metric: model.Metric{"__name__": "foobarC_CT_total"},
+		Values: []model.SamplePair{
+			{Timestamp: model.Time(queryStart.UnixMilli()), Value: model.SampleValue(0)},
+			{Timestamp: model.Time(queryStart.Add(5 * time.Minute).UnixMilli()), Value: model.SampleValue(100)},
+		},
+	}}
+	got, err := client.QueryRange("foobarC_CT_total", queryStart, queryEnd, queryStep)
+	require.NoError(t, err)
+	require.Equal(t, want.String(), got.String())
 }
 
 func testDistributorCases(t *testing.T, cachingUnmarshalDataEnabled bool, rwVersion string, queryStart, queryEnd time.Time, queryStep time.Duration, testCases map[string]distributorTestCase) {
