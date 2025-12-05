@@ -1634,10 +1634,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) When set, the querier prioritizes querying data from ingesters
-# and store-gateways in this availability zone.
-# CLI flag: -querier.prefer-availability-zone
-[prefer_availability_zone: <string> | default = ""]
+# (experimental) Comma-separated list of availability zones to prefer when
+# querying ingesters and store-gateways. All zones in the list are given equal
+# priority.
+# CLI flag: -querier.prefer-availability-zones
+[prefer_availability_zones: <string> | default = ""]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.

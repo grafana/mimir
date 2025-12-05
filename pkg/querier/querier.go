@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/middleware"
@@ -58,11 +59,11 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferAvailabilityZone                         string        `yaml:"prefer_availability_zone" category:"experimental"`
-	StreamingChunksPerIngesterSeriesBufferSize     uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
-	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
-	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
-	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+	PreferAvailabilityZones                        flagext.StringSliceCSV `yaml:"prefer_availability_zones" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize     uint64                 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
+	StreamingChunksPerStoreGatewaySeriesBufferSize uint64                 `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
+	MinimizeIngesterRequests                       bool                   `yaml:"minimize_ingester_requests" category:"advanced"`
+	MinimiseIngesterRequestsHedgingDelay           time.Duration          `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
@@ -96,7 +97,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
-	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.")
+	f.Var(&cfg.PreferAvailabilityZones, "querier.prefer-availability-zones", "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.")
 
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
 	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
