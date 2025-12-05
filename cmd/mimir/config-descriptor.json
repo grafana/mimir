@@ -2297,12 +2297,12 @@
         },
         {
           "kind": "field",
-          "name": "prefer_availability_zone",
+          "name": "prefer_availability_zones",
           "required": false,
-          "desc": "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.",
+          "desc": "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "querier.prefer-availability-zone",
+          "fieldFlag": "querier.prefer-availability-zones",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },

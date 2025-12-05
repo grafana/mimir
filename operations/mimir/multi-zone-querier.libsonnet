@@ -24,7 +24,7 @@
 
   local querierZoneArgs(zone) = {
     // Prefer querying ingesters and store-gateways in the same zone, to reduce cross-AZ data transfer.
-    'querier.prefer-availability-zone': 'zone-%s' % zone,
+    'querier.prefer-availability-zones': 'zone-%s' % zone,
   },
 
   querierClientZoneArgs(zone):: {

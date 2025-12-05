@@ -265,7 +265,7 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
-	PreferAvailabilityZone                     string        `yaml:"-"`
+	PreferAvailabilityZones                    []string      `yaml:"-"`
 
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
@@ -2378,7 +2378,7 @@ func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, r
 	var zoneSorter ring.ZoneSorter
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZone)
+		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZones)
 	} else {
 		// We expect to always have exactly 1 replication set when ingest storage is disabled.
 		// To keep the code safer, we run with no zone sorter if that's not the case.
@@ -2419,22 +2419,25 @@ func queryIngestersRingZoneSorter(replicationSet ring.ReplicationSet) ring.ZoneS
 // queryIngesterPartitionsRingZoneSorter returns a ring.ZoneSorter that should be used to sort
 // ingester zones to attempt to query first, when ingest storage is enabled.
 //
-// The sorter gives preference to preferredZone if non empty, and then randomize the other zones.
-func queryIngesterPartitionsRingZoneSorter(preferredZone string) ring.ZoneSorter {
+// The sorter gives preference to preferredZones if non empty, and then randomizes the other zones.
+// All preferred zones are given equal priority.
+func queryIngesterPartitionsRingZoneSorter(preferredZones []string) ring.ZoneSorter {
 	return func(zones []string) []string {
 		// Shuffle the zones to distribute load evenly.
-		if len(zones) > 2 || (preferredZone == "" && len(zones) > 1) {
+		if len(zones) > 2 || (len(preferredZones) == 0 && len(zones) > 1) {
 			rand.Shuffle(len(zones), func(i, j int) {
 				zones[i], zones[j] = zones[j], zones[i]
 			})
 		}
 
-		if preferredZone != "" {
-			// Give priority to the preferred zone.
-			for i, z := range zones {
-				if z == preferredZone {
-					zones[0], zones[i] = zones[i], zones[0]
-					break
+		if len(preferredZones) > 0 {
+			// Move all preferred zones to the front.
+			// This gives equal priority to all preferred zones (since they were already shuffled).
+			nextPos := 0
+			for idx, zone := range zones {
+				if slices.Contains(preferredZones, zone) {
+					zones[nextPos], zones[idx] = zones[idx], zones[nextPos]
+					nextPos++
 				}
 			}
 		}

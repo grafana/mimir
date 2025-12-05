@@ -151,7 +151,7 @@
   "querier.store-gateway-client.connect-backoff-max-delay": 5000000000,
   "querier.store-gateway-client.cluster-validation.label": "",
   "querier.shuffle-sharding-ingesters-enabled": true,
-  "querier.prefer-availability-zone": "",
+  "querier.prefer-availability-zones": "",
   "querier.streaming-chunks-per-ingester-buffer-size": 256,
   "querier.streaming-chunks-per-store-gateway-buffer-size": 256,
   "querier.minimize-ingester-requests": true,

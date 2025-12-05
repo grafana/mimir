@@ -37,7 +37,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 		//   map[zone-a][1] -> ingester-zone-a-1 write request
 		ingesterDataByZone map[string][]*mimirpb.WriteRequest
 
-		preferZone               string
+		preferZone               []string
 		minimizeIngesterRequests bool
 		shuffleShardSize         int
 		matchers                 []*labels.Matcher
@@ -74,7 +74,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -109,7 +109,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: false,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -136,7 +136,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -163,7 +163,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{mustEqualMatcher("not", "found")},
 			expectedResponse:         expectedResponse(0, 0, false),
@@ -188,7 +188,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -213,7 +213,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo2"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -236,7 +236,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo2"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 0, false),
@@ -264,7 +264,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -292,7 +292,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			shuffleShardSize:         2, // shuffle-sharding chooses partitions 1 and 2 for this tenant
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo1", "foo2"),
@@ -320,7 +320,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				},
 			},
 			shuffleShardSize:         2, // shuffle-sharding chooses partitions 1 and 2 for this tenant
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo1", "foo2"),
@@ -347,7 +347,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -374,7 +374,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -401,7 +401,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedErr:              ring.ErrTooManyUnhealthyInstances,
@@ -427,7 +427,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedErr:              ring.ErrTooManyUnhealthyInstances,
@@ -453,7 +453,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -480,7 +480,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 					makeWriteRequest(0, 1, 0, false, false, "foo4"),
 				},
 			},
-			preferZone:               "zone-a",
+			preferZone:               []string{"zone-a"},
 			minimizeIngesterRequests: true,
 			matchers:                 []*labels.Matcher{selectAllSeriesMatcher},
 			expectedResponse:         expectedResponse(0, 1, false, "foo0", "foo1", "foo2", "foo3", "foo4"),
@@ -505,7 +505,7 @@ func TestDistributor_QueryStream_ShouldSupportIngestStorage(t *testing.T) {
 				replicationFactor:    1,                      // Ingest storage is not expected to use it.
 				limits:               limits,
 				configure: func(config *Config) {
-					config.PreferAvailabilityZone = testData.preferZone
+					config.PreferAvailabilityZones = testData.preferZone
 					config.MinimizeIngesterRequests = testData.minimizeIngesterRequests
 				},
 			}
