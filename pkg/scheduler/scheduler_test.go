@@ -487,7 +487,7 @@ func TestSchedulerForwardsErrorToFrontend_HTTPPayload(t *testing.T) {
 	})
 
 	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
-	// This will make scheduler to report error back to frontend.
+	// This will make scheduler report error back to frontend.
 
 	querierLoop, err := querierClient.QuerierLoop(context.Background())
 	require.NoError(t, err)
@@ -529,7 +529,7 @@ func TestSchedulerForwardsErrorToFrontend_ProtobufPayload(t *testing.T) {
 	})
 
 	// Scheduler now has 1 query. We now connect querier, fetch the request, and then close the connection.
-	// This will make scheduler to report error back to frontend.
+	// This will make scheduler report error back to frontend.
 
 	querierLoop, err := querierClient.QuerierLoop(context.Background())
 	require.NoError(t, err)
