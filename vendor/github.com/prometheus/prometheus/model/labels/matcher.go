@@ -176,5 +176,5 @@ func (m *Matcher) matchesN(values []string) int {
             count++
         }
     }
-    return count
+    return max(1, count)
 }
