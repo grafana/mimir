@@ -382,3 +382,7 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
+
+// Use a fork of client_golang with changes from:
+// - https://github.com/prometheus/client_golang/pull/1925
+replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
