@@ -2716,7 +2716,7 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 
 	if i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled {
 		plannerFactory := lookupplan.NewPlannerFactory(i.lookupPlanMetrics.ForUser(userID), userLogger, lookupplan.NewStatisticsGenerator(userLogger), i.cfg.BlocksStorageConfig.TSDB.IndexLookupPlanning.CostConfig)
-		userDB.plannerProvider = newPlannerProvider(plannerFactory)
+		userDB.plannerProvider = newPlannerProvider(plannerFactory, i.headPostingsForMatchersCacheFactory.NewPostingsForMatchersCache(nil), i.blockPostingsForMatchersCacheFactory.NewPostingsForMatchersCache(nil))
 		// Generate initial statistics only after the TSDB has been opened and initialized.
 		defer func() {
 			if err := userDB.generateHeadStatistics(); err != nil {

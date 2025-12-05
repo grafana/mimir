@@ -107,6 +107,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 		config.BlocksStorageConfig.TSDB.IndexLookupPlanning.Enabled = true
 		config.BlocksStorageConfig.TSDB.HeadPostingsForMatchersCacheForce = true
 		config.BlocksStorageConfig.TSDB.BlockPostingsForMatchersCacheForce = true
+		config.BlocksStorageConfig.TSDB.SharedPostingsForMatchersCache = true
 	})
 	require.NoError(b, err)
 	b.Cleanup(cleanupFunc)

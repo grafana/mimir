@@ -14,6 +14,7 @@ import (
 
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -76,13 +77,15 @@ type CostBasedPlanner struct {
 	config  CostConfig
 	stats   index.Statistics
 	metrics Metrics
+	cache   *tsdb.PostingsForMatchersCache
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config CostConfig) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config CostConfig, cache *tsdb.PostingsForMatchersCache) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		config:  config,
 		metrics: metrics,
 		stats:   statistics,
+		cache:   cache,
 	}
 }
 
@@ -146,7 +149,7 @@ func (p CostBasedPlanner) PlanIndexLookup(ctx context.Context, inPlan index.Look
 var errTooManyMatchers = errors.New("too many matchers to generate plans")
 
 func (p CostBasedPlanner) generatePlans(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools) []plan {
-	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool)
+	noopPlan := newScanOnlyPlan(ctx, statistics, p.config, matchers, pools.indexPredicatesPool, p.cache)
 	allPlans := pools.plansPool.Get(1 << uint(len(matchers)))[:0]
 
 	return generatePredicateCombinations(allPlans, noopPlan, 0)

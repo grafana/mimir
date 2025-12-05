@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -26,18 +27,23 @@ type plan struct {
 	// totalSeries is the total number of series in the index.
 	totalSeries uint64
 
+	ctx                 context.Context
 	config              CostConfig
 	indexPredicatesPool *pool.SlabPool[bool]
+	pfmCache            *tsdb.PostingsForMatchersCache
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool]) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], cache *tsdb.PostingsForMatchersCache) plan {
 	p := plan{
-		predicates:          make([]planPredicate, 0, len(matchers)),
-		indexPredicate:      make([]bool, 0, len(matchers)),
-		totalSeries:         stats.TotalSeries(),
+		predicates:     make([]planPredicate, 0, len(matchers)),
+		indexPredicate: make([]bool, 0, len(matchers)),
+		totalSeries:    stats.TotalSeries(),
+
+		ctx:                 ctx,
 		config:              config,
 		indexPredicatesPool: predicatesPool,
+		pfmCache:            cache,
 	}
 	for _, m := range matchers {
 		pred := newPlanPredicate(ctx, m, stats, config)
@@ -136,6 +142,9 @@ func (p plan) indexLookupCost() float64 {
 			cost += pr.indexLookupCost()
 		}
 	}
+	//if p.pfmCache != nil && p.pfmCache.IsCached(p.ctx, true, ulid.MustParse("01KAYTVA7QGPA0VMAV98ASRAAA"), p.IndexMatchers()...) {
+	//	return 10
+	//}
 	return cost
 }
 

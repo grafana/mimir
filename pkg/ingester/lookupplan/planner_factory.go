@@ -30,7 +30,7 @@ func NewPlannerFactory(metrics Metrics, logger log.Logger, statsGenerator *Stati
 // For very small blocks (< 10,000 series), it returns NoopPlanner to avoid planning overhead.
 // For larger blocks, it generates statistics and returns a CostBasedPlanner.
 // If statistics generation fails, it falls back to NoopPlanner.
-func (p *PlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
+func (p *PlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader, cache *tsdb.PostingsForMatchersCache) index.LookupPlanner {
 	logger := log.With(p.logger, "block", meta.ULID.String(), "block_series", meta.Stats.NumSeries)
 
 	if meta.Stats.NumSeries < p.config.MinSeriesPerBlockForQueryPlanning {
@@ -46,5 +46,5 @@ func (p *PlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexRea
 		return NoopPlanner{}
 	}
 
-	return index.ChainLookupPlanners(MatcherReducerPlanner{}, NewCostBasedPlanner(p.metrics, stats, p.config))
+	return index.ChainLookupPlanners(MatcherReducerPlanner{}, NewCostBasedPlanner(p.metrics, stats, p.config, cache))
 }

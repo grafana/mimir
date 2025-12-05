@@ -239,6 +239,27 @@ type PostingsForMatchersCache struct {
 	evictHeadBeforeHook              func() // allows to hook before calls to evictHead().
 }
 
+// IsCached returns true if the postings for the given matchers are present in the cache.
+// It does not execute the query or wait for in-flight requests.
+func (c *PostingsForMatchersCache) IsCached(ctx context.Context, concurrent bool, blockID ulid.ULID, ms ...*labels.Matcher) bool {
+	metricVersion, cacheKey, sharedKeyOk := c.sharedKeyForMatchers(ctx, blockID, ms...)
+
+	// Same eligibility check as PostingsForMatchers
+	if !concurrent && !c.force || !sharedKeyOk {
+		return false
+	}
+
+	var key string
+	if !c.shared {
+		key = cacheKeyForMatchers(ms)
+	} else {
+		key = sharedCacheKey(metricVersion, cacheKey, blockID, ms)
+	}
+
+	_, found := c.calls.Load(key)
+	return found
+}
+
 func (c *PostingsForMatchersCache) PostingsForMatchers(ctx context.Context, ix IndexPostingsReader, concurrent bool, blockID ulid.ULID, ms ...*labels.Matcher) (index.Postings, error) {
 	c.metrics.requests.Inc()
 
