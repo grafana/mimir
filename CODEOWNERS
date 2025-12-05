@@ -25,6 +25,7 @@
 
 # No owners - allows sub-maintainers to merge changes.
 CHANGELOG.md
+/operations/helm/charts/
 
 # Dependencies
 go.mod @stevesg @grafana/mimir-maintainers
