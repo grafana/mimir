@@ -1547,7 +1547,7 @@ func (i *Ingester) pushSamplesToAppender(
 				return false
 			}
 
-			if lbls[idx].Value != other[idx].Value.String() {
+			if lbls[idx].Value != other[idx].Value {
 				return false
 			}
 		}

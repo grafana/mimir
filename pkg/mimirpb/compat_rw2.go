@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -185,31 +186,37 @@ func (m *WriteRequest) ProtocolVersion() string {
 }
 
 func (m *WriteRequest) GetLabels(ts PreallocTimeseries) (labels.Labels, error) {
-	if len(ts.LabelSymbols) == 0 {
-		return FromLabelAdaptersToLabels(ts.Labels), nil
+	if len(ts.LabelNameSymbols) == 0 {
+		return FromLabelAdaptersToLabelsWithCopy(ts.Labels), nil
 	}
 
-	if len(ts.LabelSymbols)%2 != 0 {
-		return labels.EmptyLabels(), errorOddNumberOfLabelRefs
+	if len(ts.LabelNameSymbols) != len(ts.Labels) {
+		return labels.EmptyLabels(), errors.New("number of labels and label name symbols does not match")
 	}
 
-	labelCount := len(ts.LabelSymbols) / 2
+	labelCount := len(ts.Labels)
 	lbls := make(labels.Labels, 0, labelCount)
 
-	for i := range labelCount {
-		name, err := m.rw2symbols.getSymbol(ts.LabelSymbols[2*i])
+	//// Make a single block of bytes to hold all strings, to save memory compared to Go rounding up the allocations.
+	//// (This is borrowed from compat_slice.go's CopyLabels.)
+	//size := 0
+	//for _, l := range ts.Labels {
+	//	size += len(l.Value)
+	//}
+	//var b strings.Builder
+	//b.Grow(size)
+
+	for i, l := range ts.Labels {
+		name, err := m.rw2symbols.getSymbol(ts.LabelNameSymbols[i])
 		if err != nil {
 			return labels.EmptyLabels(), err
 		}
 
-		value, err := m.rw2symbols.getSymbol(ts.LabelSymbols[2*i+1])
-		if err != nil {
-			return labels.EmptyLabels(), err
-		}
+		//b.WriteString(l.Value)
 
 		lbls = append(lbls, labels.SymbolisedLabel{
 			Name:  name,
-			Value: value,
+			Value: strings.Clone(l.Value), // b.String()[b.Len()-len(l.Value):],
 		})
 	}
 

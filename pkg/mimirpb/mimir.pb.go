@@ -495,7 +495,7 @@ type TimeSeries struct {
 
 	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
-	LabelSymbols              []uint32
+	LabelNameSymbols          []uint32
 }
 
 func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
@@ -11317,10 +11317,10 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 						m.Labels = make([]LabelAdapter, 0, desiredCap)
 					}
 				}
-				if elementCount != 0 && len(m.LabelSymbols) == 0 {
+				if elementCount != 0 && len(m.LabelNameSymbols) == 0 {
 					desiredCap := elementCount / 2
-					if cap(m.LabelSymbols) < desiredCap {
-						m.LabelSymbols = make([]uint32, 0, desiredCap)
+					if cap(m.LabelNameSymbols) < desiredCap {
+						m.LabelNameSymbols = make([]uint32, 0, desiredCap)
 					}
 				}
 				idx := 0
@@ -11347,6 +11347,7 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 							return errorInvalidLabelRef
 						}
 						m.Labels = append(m.Labels, LabelAdapter{Name: labelName})
+						m.LabelNameSymbols = append(m.LabelNameSymbols, v)
 						if labelName == "__name__" {
 							metricNameLabel = true
 						}
@@ -11361,7 +11362,6 @@ func (m *TimeSeries) UnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadat
 							metricNameLabel = false
 						}
 					}
-					m.LabelSymbols = append(m.LabelSymbols, v)
 					idx++
 				}
 			} else {

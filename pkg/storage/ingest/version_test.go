@@ -334,17 +334,17 @@ func TestRecordSerializer(t *testing.T) {
 
 		expectedTimeseries := []mimirpb.PreallocTimeseries{
 			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1", "pod", "test-application-123456")),
-				LabelSymbols: []uint32{1, 65, 18, 66},
-				Samples:      []mimirpb.Sample{{TimestampMs: 20}},
-				Exemplars:    []mimirpb.Exemplar{{TimestampMs: 30}},
-				Histograms:   []mimirpb.Histogram{{Timestamp: 10}},
+				Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_1", "pod", "test-application-123456")),
+				LabelNameSymbols: []uint32{1, 18},
+				Samples:          []mimirpb.Sample{{TimestampMs: 20}},
+				Exemplars:        []mimirpb.Exemplar{{TimestampMs: 30}},
+				Histograms:       []mimirpb.Histogram{{Timestamp: 10}},
 			}},
 			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2", "pod", "test-application-123456")),
-				LabelSymbols: []uint32{1, 68, 18, 66},
-				Samples:      []mimirpb.Sample{{TimestampMs: 30}},
-				Exemplars:    []mimirpb.Exemplar{},
+				Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_2", "pod", "test-application-123456")),
+				LabelNameSymbols: []uint32{1, 18},
+				Samples:          []mimirpb.Sample{{TimestampMs: 30}},
+				Exemplars:        []mimirpb.Exemplar{},
 			}},
 		}
 		require.Equal(t, expectedTimeseries, resultReq.Timeseries[0:2])
@@ -353,10 +353,10 @@ func TestRecordSerializer(t *testing.T) {
 		// Metadata not attached to any series in the request must fabricate extra timeseries to house it.
 		expMetadataSeries := []mimirpb.PreallocTimeseries{
 			{TimeSeries: &mimirpb.TimeSeries{
-				Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_3")),
-				LabelSymbols: []uint32{1, 70},
-				Samples:      []mimirpb.Sample{},
-				Exemplars:    []mimirpb.Exemplar{},
+				Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "series_3")),
+				LabelNameSymbols: []uint32{1},
+				Samples:          []mimirpb.Sample{},
+				Exemplars:        []mimirpb.Exemplar{},
 			}},
 		}
 		require.Equal(t, expMetadataSeries, resultReq.Timeseries[2:])

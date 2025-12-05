@@ -591,11 +591,11 @@ func ReuseTimeseries(ts *TimeSeries) {
 		ts.Labels = ts.Labels[:0]
 	}
 
-	if cap(ts.LabelSymbols) > maxPreallocatedLabels {
-		ts.LabelSymbols = nil
+	if cap(ts.LabelNameSymbols) > maxPreallocatedLabels {
+		ts.LabelNameSymbols = nil
 	} else {
-		clear(ts.LabelSymbols)
-		ts.LabelSymbols = ts.LabelSymbols[:0]
+		clear(ts.LabelNameSymbols)
+		ts.LabelNameSymbols = ts.LabelNameSymbols[:0]
 	}
 
 	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {

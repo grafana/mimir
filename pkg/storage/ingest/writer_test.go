@@ -965,26 +965,26 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 		expTimeseries := []mimirpb.PreallocTimeseries{
 			{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
-					LabelSymbols: []uint32{1, 65},
-					Samples:      []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-					Exemplars:    []mimirpb.Exemplar{},
+					Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
+					LabelNameSymbols: []uint32{1},
+					Samples:          []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+					Exemplars:        []mimirpb.Exemplar{},
 				},
 			},
 			{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
-					LabelSymbols: []uint32{1, 67},
-					Samples:      []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-					Exemplars:    []mimirpb.Exemplar{},
+					Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
+					LabelNameSymbols: []uint32{1},
+					Samples:          []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+					Exemplars:        []mimirpb.Exemplar{},
 				},
 			},
 			{
 				TimeSeries: &mimirpb.TimeSeries{
-					Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
-					LabelSymbols: []uint32{1, 69},
-					Samples:      []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-					Exemplars:    []mimirpb.Exemplar{},
+					Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
+					LabelNameSymbols: []uint32{1},
+					Samples:          []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+					Exemplars:        []mimirpb.Exemplar{},
 				},
 			},
 		}
@@ -1070,10 +1070,10 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 				Timeseries: []mimirpb.PreallocTimeseries{
 					{
 						TimeSeries: &mimirpb.TimeSeries{
-							Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
-							LabelSymbols: []uint32{1, 65},
-							Samples:      []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars:    []mimirpb.Exemplar{},
+							Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_1")),
+							LabelNameSymbols: []uint32{1},
+							Samples:          []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars:        []mimirpb.Exemplar{},
 						},
 					},
 				},
@@ -1090,10 +1090,10 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 				Timeseries: []mimirpb.PreallocTimeseries{
 					{
 						TimeSeries: &mimirpb.TimeSeries{
-							Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
-							LabelSymbols: []uint32{1, 65},
-							Samples:      []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars:    []mimirpb.Exemplar{},
+							Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_2")),
+							LabelNameSymbols: []uint32{1},
+							Samples:          []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars:        []mimirpb.Exemplar{},
 						},
 					},
 				},
@@ -1110,10 +1110,10 @@ func TestMarshalWriteRequestToRecords(t *testing.T) {
 				Timeseries: []mimirpb.PreallocTimeseries{
 					{
 						TimeSeries: &mimirpb.TimeSeries{
-							Labels:       mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
-							LabelSymbols: []uint32{1, 65},
-							Samples:      []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
-							Exemplars:    []mimirpb.Exemplar{},
+							Labels:           mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("__name__", "series_3")),
+							LabelNameSymbols: []uint32{1},
+							Samples:          []mimirpb.Sample{{TimestampMs: 1, Value: 2.0}},
+							Exemplars:        []mimirpb.Exemplar{},
 						},
 					},
 				},

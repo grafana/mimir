@@ -655,7 +655,7 @@ func (*ScratchBuilder) SetSymbolTable(*SymbolTable) {
 //
 // SliceLabels will clone all added strings when this option is true.
 func (b *ScratchBuilder) SetUnsafeAdd(unsafeAdd bool) {
-	// Not required for uniquelabels: unique.Make will clone the provided value if the value has not already been interned.
+	b.unsafeAdd = unsafeAdd
 }
 
 func (b *ScratchBuilder) Reset() {
@@ -666,6 +666,11 @@ func (b *ScratchBuilder) Reset() {
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
 // If SetUnsafeAdd was set to false, the values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
+	if b.unsafeAdd {
+		// Underlying data structure for uniquelabels assumes that values are not reused.
+		value = unique.Make(value).Value()
+	}
+
 	b.add = append(b.add, SymbolisedLabel{Name: NewSymbol(name), Value: value})
 }
 

@@ -80,7 +80,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									Value: "test_job",
 								},
 							},
-							LabelSymbols: []uint32{1, 2, 3, 4, 5, 4},
+							LabelNameSymbols: []uint32{1, 3, 5},
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -193,9 +193,9 @@ func TestRW2Unmarshal(t *testing.T) {
 											Value: "test_metric_total",
 										},
 									},
-									LabelSymbols: []uint32{1, 2},
-									Samples:      []Sample{},
-									Exemplars:    []Exemplar{},
+									LabelNameSymbols: []uint32{1},
+									Samples:          []Sample{},
+									Exemplars:        []Exemplar{},
 								},
 							},
 						},
@@ -505,7 +505,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									Value: "test_job",
 								},
 							},
-							LabelSymbols: []uint32{257, 258, 259, 260, 261, 260},
+							LabelNameSymbols: []uint32{257, 259, 261},
 							Samples: []Sample{
 								{
 									Value:       123.456,
@@ -631,7 +631,7 @@ func TestRW2Unmarshal(t *testing.T) {
 									Value: "test_job",
 								},
 							},
-							LabelSymbols: []uint32{1, 4, 2, 5, 6, 5},
+							LabelNameSymbols: []uint32{1, 2, 6},
 							Samples: []Sample{
 								{
 									Value:       123.456,

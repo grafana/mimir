@@ -11,6 +11,7 @@
 package mimirpb
 
 import (
+	"strings"
 	"unsafe"
 
 	"github.com/cespare/xxhash/v2"
@@ -36,9 +37,16 @@ func FromLabelAdaptersOverwriteLabels(_ *labels.ScratchBuilder, ls []LabelAdapte
 // Do NOT use unsafe to convert between data types because this function may
 // get input labels whose data structure is reused.
 func FromLabelAdaptersToLabelsWithCopy(input []LabelAdapter) labels.Labels {
-	// We can safely use FromLabelAdaptersToLabels because that calls labels.New, which clones
-	// any label symbols not previously seen.
-	return FromLabelAdaptersToLabels(input)
+	lbls := make([]labels.SymbolisedLabel, 0, len(input))
+
+	for _, l := range input {
+		lbls = append(lbls, labels.SymbolisedLabel{
+			Name:  labels.NewSymbol(l.Name),
+			Value: strings.Clone(l.Value),
+		})
+	}
+
+	return lbls
 }
 
 // Copy data in Labels, such that any future Overwrite of input won't modify the returned value.
