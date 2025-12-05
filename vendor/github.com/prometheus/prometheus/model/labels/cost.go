@@ -72,6 +72,12 @@ func (m *Matcher) EstimateSelectivity(totalLabelValues uint64, sampleValues []st
 		}
 
 	case MatchRegexp, MatchNotRegexp:
+		if m.re.estimatedSelectivity != nil {
+			cachedSelectivity := m.re.estimatedSelectivity.Load()
+			if cachedSelectivity >= 0 {
+				return cachedSelectivity
+			}
+		}
 		// If we have optimized set matches, we know exactly how many values we'll match.
 		// We assume that all of them will be present in the corpus we're testing against.
 		switch setMatchesSize := len(m.re.setMatches); {
@@ -86,6 +92,9 @@ func (m *Matcher) EstimateSelectivity(totalLabelValues uint64, sampleValues []st
 		default:
 			selectivity = float64(m.matchesN(sampleValues)) / float64(len(sampleValues))
 		}
+		if m.re.estimatedSelectivity != nil {
+			m.re.estimatedSelectivity.Store(selectivity)
+		}
 	}
 	selectivity = max(0.0, min(selectivity, 1.0))
 
@@ -98,11 +107,15 @@ func (m *Matcher) EstimateSelectivity(totalLabelValues uint64, sampleValues []st
 }
 
 func (m *FastRegexMatcher) SingleMatchCost() float64 {
-	parsed, err := syntax.Parse(m.reString, syntax.Perl|syntax.DotNL)
-	if err != nil {
-		return 0
+	parsed := m.parsed
+	if parsed == nil {
+		var err error
+		parsed, err = syntax.Parse(m.reString, syntax.Perl|syntax.DotNL)
+		if err != nil {
+			return estimatedStringEqualityCost
+		}
 	}
-	return costEstimate(parsed)
+	return max(estimatedStringEqualityCost, costEstimate(parsed))
 }
 
 // TODO this doesn't account for backtracking, which can come with a large cost.

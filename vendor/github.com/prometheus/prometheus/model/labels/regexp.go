@@ -16,6 +16,7 @@ package labels
 import (
 	"slices"
 	"strings"
+    "go.uber.org/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -54,19 +55,21 @@ func init() {
 }
 
 type FastRegexMatcher struct {
-	// Under some conditions, re is nil because the expression is never parsed.
-	// We store the original string to be able to return it in GetRegexString().
-	reString string
-	re       *regexp.Regexp
+    // Under some conditions, re is nil because the expression is never parsed.
+    // We store the original string to be able to return it in GetRegexString().
+    reString string
+    re       *regexp.Regexp
 
-	setMatches    []string
-	stringMatcher StringMatcher
-	prefix        string
-	suffix        string
-	contains      []string
+    setMatches    []string
+    stringMatcher StringMatcher
+    prefix        string
+    suffix        string
+    contains      []string
 
-	// matchString is the "compiled" function to run by MatchString().
-	matchString func(string) bool
+    // matchString is the "compiled" function to run by MatchString().
+    matchString          func(string) bool
+    parsed               *syntax.Regexp
+    estimatedSelectivity *atomic.Float64
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
@@ -90,6 +93,7 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 	m := &FastRegexMatcher{
 		reString: v,
+        estimatedSelectivity: atomic.NewFloat64(-1.0),
 	}
 
 	m.stringMatcher, m.setMatches = optimizeAlternatingLiterals(v)
@@ -115,6 +119,7 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 			m.setMatches = matches
 		}
 		m.stringMatcher = stringMatcherFromRegexp(parsed)
+        m.parsed = parsed
 		m.matchString = m.compileMatchStringFunction()
 	}
 
