@@ -6014,7 +6014,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # CLI flag: -<prefix>.gcs.max-retries
 [max_retries: <int> | default = 20]
 
-# (advanced) Enable rate limiting for GCS uploads. When enabled, uploads will
+# (advanced) Enable rate limiting for GCS uploads. When enabled, uploads
 # gradually ramp up following Google Cloud Storage best practices.
 # CLI flag: -<prefix>.gcs.upload-rate-limit-enabled
 [upload_rate_limit_enabled: <boolean> | default = false]
@@ -6028,13 +6028,13 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # CLI flag: -<prefix>.gcs.upload-max-qps
 [upload_max_qps: <int> | default = 3200]
 
-# (advanced) Time period over which the upload rate doubles, following Google's
-# recommendation.
+# (advanced) Time period over which the upload rate doubles, following the
+# Google recommendation.
 # CLI flag: -<prefix>.gcs.upload-ramp-period
 [upload_ramp_period: <duration> | default = 20m]
 
-# (advanced) Enable rate limiting for GCS reads. When enabled, reads will
-# gradually ramp up following Google Cloud Storage best practices.
+# (advanced) Enable rate limiting for GCS reads. When enabled, reads gradually
+# ramp up following Google Cloud Storage best practices.
 # CLI flag: -<prefix>.gcs.read-rate-limit-enabled
 [read_rate_limit_enabled: <boolean> | default = false]
 
@@ -6047,7 +6047,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # CLI flag: -<prefix>.gcs.read-max-qps
 [read_max_qps: <int> | default = 16000]
 
-# (advanced) Time period over which the read rate doubles, following Google's
+# (advanced) Time period over which the read rate doubles, following the Google
 # recommendation.
 # CLI flag: -<prefix>.gcs.read-ramp-period
 [read_ramp_period: <duration> | default = 20m]

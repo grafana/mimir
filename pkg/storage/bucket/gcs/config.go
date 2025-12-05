@@ -41,7 +41,7 @@ type Config struct {
 	MaxRetries int `yaml:"max_retries" category:"advanced"`
 
 	// UploadRateLimitEnabled enables rate limiting for GCS uploads.
-	// When enabled, uploads will gradually ramp up to UploadMaxQPS following
+	// When enabled, uploads gradually ramp up to UploadMaxQPS following
 	// Google Cloud Storage best practices for request rate ramping.
 	UploadRateLimitEnabled bool `yaml:"upload_rate_limit_enabled" category:"advanced"`
 
@@ -54,11 +54,11 @@ type Config struct {
 	UploadMaxQPS int `yaml:"upload_max_qps" category:"advanced"`
 
 	// UploadRampPeriod is the time period over which the upload rate doubles.
-	// Following Google's recommendation, this defaults to 20 minutes.
+	// Following the Google recommendation, this defaults to 20 minutes.
 	UploadRampPeriod time.Duration `yaml:"upload_ramp_period" category:"advanced"`
 
 	// ReadRateLimitEnabled enables rate limiting for GCS reads.
-	// When enabled, reads will gradually ramp up to ReadMaxQPS following
+	// When enabled, reads gradually ramp up to ReadMaxQPS following
 	// Google Cloud Storage best practices for request rate ramping.
 	ReadRateLimitEnabled bool `yaml:"read_rate_limit_enabled" category:"advanced"`
 
@@ -71,7 +71,7 @@ type Config struct {
 	ReadMaxQPS int `yaml:"read_max_qps" category:"advanced"`
 
 	// ReadRampPeriod is the time period over which the read rate doubles.
-	// Following Google's recommendation, this defaults to 20 minutes.
+	// Following the Google recommendation, this defaults to 20 minutes.
 	ReadRampPeriod time.Duration `yaml:"read_ramp_period" category:"advanced"`
 
 	HTTP common.HTTPConfig `yaml:"http"`
@@ -89,14 +89,14 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.Var(&cfg.ServiceAccount, prefix+"gcs.service-account", cfg.GCSServiceAccountShortDescription())
 	f.BoolVar(&cfg.EnableUploadRetries, prefix+"gcs.enable-upload-retries", false, "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.")
 	f.IntVar(&cfg.MaxRetries, prefix+"gcs.max-retries", 20, "Maximum number of attempts for GCS operations (0 = unlimited, 1 = no retries). Applies to both regular and upload retry modes.")
-	f.BoolVar(&cfg.UploadRateLimitEnabled, prefix+"gcs.upload-rate-limit-enabled", false, "Enable rate limiting for GCS uploads. When enabled, uploads will gradually ramp up following Google Cloud Storage best practices.")
+	f.BoolVar(&cfg.UploadRateLimitEnabled, prefix+"gcs.upload-rate-limit-enabled", false, "Enable rate limiting for GCS uploads. When enabled, uploads gradually ramp up following Google Cloud Storage best practices.")
 	f.IntVar(&cfg.UploadInitialQPS, prefix+"gcs.upload-initial-qps", 1000, "Initial queries per second limit for GCS uploads. The rate doubles every ramp period until it reaches the maximum.")
 	f.IntVar(&cfg.UploadMaxQPS, prefix+"gcs.upload-max-qps", 3200, "Maximum queries per second limit for GCS uploads.")
-	f.DurationVar(&cfg.UploadRampPeriod, prefix+"gcs.upload-ramp-period", 20*time.Minute, "Time period over which the upload rate doubles, following Google's recommendation.")
-	f.BoolVar(&cfg.ReadRateLimitEnabled, prefix+"gcs.read-rate-limit-enabled", false, "Enable rate limiting for GCS reads. When enabled, reads will gradually ramp up following Google Cloud Storage best practices.")
+	f.DurationVar(&cfg.UploadRampPeriod, prefix+"gcs.upload-ramp-period", 20*time.Minute, "Time period over which the upload rate doubles, following the Google recommendation.")
+	f.BoolVar(&cfg.ReadRateLimitEnabled, prefix+"gcs.read-rate-limit-enabled", false, "Enable rate limiting for GCS reads. When enabled, reads gradually ramp up following Google Cloud Storage best practices.")
 	f.IntVar(&cfg.ReadInitialQPS, prefix+"gcs.read-initial-qps", 5000, "Initial queries per second limit for GCS reads. The rate doubles every ramp period until it reaches the maximum.")
 	f.IntVar(&cfg.ReadMaxQPS, prefix+"gcs.read-max-qps", 16000, "Maximum queries per second limit for GCS reads.")
-	f.DurationVar(&cfg.ReadRampPeriod, prefix+"gcs.read-ramp-period", 20*time.Minute, "Time period over which the read rate doubles, following Google's recommendation.")
+	f.DurationVar(&cfg.ReadRampPeriod, prefix+"gcs.read-ramp-period", 20*time.Minute, "Time period over which the read rate doubles, following the Google recommendation.")
 	cfg.HTTP.RegisterFlagsWithPrefix(prefix+"gcs.", f)
 }
 
