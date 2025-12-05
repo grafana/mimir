@@ -240,7 +240,7 @@ func TestQuerier(t *testing.T) {
 
 			// No samples returned by ingesters.
 			distributor := &mockDistributor{}
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
 
@@ -275,7 +275,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 		memoryConsumptionTracker: memoryTracker,
 	}
 
-	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
@@ -424,7 +424,7 @@ func TestBatchMergeChunks(t *testing.T) {
 	distributor := &mockDistributor{
 		memoryConsumptionTracker: memoryTracker,
 	}
-	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
 		client.CombinedQueryStreamResponse{
 			StreamingSeries: []client.StreamingSeries{
 				{
@@ -669,7 +669,7 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 				memoryConsumptionTracker: memoryTracker,
 			}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			overrides := validation.NewOverrides(defaultLimitsConfig(), nil)
 
@@ -749,7 +749,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 			distributor := &mockDistributor{
 				memoryConsumptionTracker: memoryTracker,
 			}
-			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
@@ -877,7 +877,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					memoryConsumptionTracker: memoryTracker,
 				}
 				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
-				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
+				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(client.CombinedQueryStreamResponse{}, nil)
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
@@ -1464,7 +1464,7 @@ func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matc
 
 var errDistributorError = fmt.Errorf("errDistributorError")
 
-func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
+func (m *errDistributor) QueryStream(context.Context, *stats.QueryMetrics, model.Time, model.Time, []string, ...*labels.Matcher) (client.CombinedQueryStreamResponse, error) {
 	return client.CombinedQueryStreamResponse{}, errDistributorError
 }
 func (m *errDistributor) QueryExemplars(context.Context, model.Time, model.Time, ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error) {

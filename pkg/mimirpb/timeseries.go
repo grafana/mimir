@@ -7,6 +7,8 @@ package mimirpb
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"slices"
@@ -198,6 +200,54 @@ func (p *PreallocTimeseries) RemoveEmptyLabelValues() {
 	if modified {
 		p.clearUnmarshalData()
 	}
+}
+
+// It's terribly inefficien, but here just to get labels projections moving.
+// Problems:
+// 1. Is it ok to append a new label to the slice?
+// 2. Sorts the labels slice.
+// 3. Non-optimized hash computation (buffering, hash function itself)
+// TODO: labels projection poc
+func (p *PreallocTimeseries) AddSeriesHashLabel() {
+	h := sha256.New()
+	for _, l := range p.Labels {
+		h.Write([]byte(l.Name))
+		h.Write([]byte{'\xff'}) // separator
+		h.Write([]byte(l.Value))
+		h.Write([]byte{'\xff'})
+	}
+	hash := hex.EncodeToString(h.Sum(nil))
+
+	p.Labels = append(p.Labels, LabelAdapter{
+		Name:  "__series_hash__",
+		Value: hash,
+	})
+	p.SortLabelsIfNeeded()
+}
+
+// FilterLabelsForProjection filters labels based on projectionLabels.
+// Keeps only specified labels plus __series_hash__ if it exists.
+// Labels that don't exist in the series are silently skipped.
+func FilterLabelsForProjection(originalLabels labels.Labels, projectionLabels []string) labels.Labels {
+	if len(projectionLabels) == 0 {
+		return originalLabels
+	}
+	projectionSet := make(map[string]struct{}, len(projectionLabels)+1)
+	for _, name := range projectionLabels {
+		projectionSet[name] = struct{}{}
+	}
+	// Always keep __series_hash__ if it exists
+	projectionSet["__series_hash__"] = struct{}{}
+
+	// Filter labels
+	builder := labels.NewBuilder(originalLabels)
+	originalLabels.Range(func(label labels.Label) {
+		if _, keep := projectionSet[label.Name]; !keep {
+			builder.Del(label.Name)
+		}
+	})
+
+	return builder.Labels()
 }
 
 // SortLabelsIfNeeded sorts labels if they were not sorted before.

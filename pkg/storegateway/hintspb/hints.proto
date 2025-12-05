@@ -23,6 +23,11 @@ message SeriesRequestHints {
   /// labels to filter which blocks get queried. If the list is empty, no per-block filtering
   /// is applied.
   repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
+  
+  /// projection_labels are the labels that should be returned for each series.
+  /// When set, only the specified labels should be returned.
+  /// When projection is used, a __series_hash__ label must be added with the hash of all original labels.
+  repeated string projection_labels = 2;
 }
 
 message SeriesResponseHints {
