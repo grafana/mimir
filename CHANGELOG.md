@@ -105,6 +105,7 @@
 * [BUGFIX] Memberlist: Fix occasional nil pointer dereference panics. #13635
 * [BUGFIX] Query-scheduler: Fix issue where queries executed with remote execution could time out rather than fail immediately if the querier evaluating the request crashes after receiving the query from the query-scheduler. #13742
 * [BUGFIX] Query-frontend: Fix silent panic when executing a remote read API request if the request has no matchers. #13745
+* [BUGFIX] Ruler: Fixed `-ruler.max-rule-groups-per-tenant-by-namespace` to only count rule groups in the specified namespace instead of all namespaces. #13743
 
 ### Mixin
 

@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/grafana/dskit/user"
@@ -2020,6 +2021,122 @@ rules:
 		t.Run(tt.name, func(t *testing.T) {
 			// POST
 			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/namespace", strings.NewReader(tt.input), "user1")
+			w := httptest.NewRecorder()
+
+			router.ServeHTTP(w, req)
+			require.Equal(t, tt.status, w.Code)
+			require.Equal(t, tt.output, w.Body.String())
+		})
+	}
+}
+
+func TestRuler_RulerGroupLimitsByNamespace(t *testing.T) {
+	cfg := defaultRulerConfig(t)
+
+	r := prepareRuler(t, cfg, newMockRuleStore(make(map[string]rulespb.RuleGroupList)), withStart(), withLimits(validation.MockOverrides(func(defaults *validation.Limits, _ map[string]*validation.Limits) {
+		defaults.RulerMaxRuleGroupsPerTenant = 10
+		defaults.RulerMaxRuleGroupsPerTenantByNamespace = flagext.NewLimitsMapWithData(map[string]int{
+			"namespace_a": 2,
+		}, nil)
+	})))
+
+	a := NewAPI(r, r.store, mimirtest.NewTestingLogger(t))
+
+	tc := []struct {
+		name      string
+		namespace string
+		input     string
+		output    string
+		status    int
+	}{
+		{
+			name:      "first group in namespace_a should succeed",
+			namespace: "namespace_a",
+			status:    202,
+			input: `
+name: test_group_1
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "second group in namespace_a should succeed",
+			namespace: "namespace_a",
+			status:    202,
+			input: `
+name: test_group_2
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "third group in namespace_a should fail (exceeds per-namespace limit of 2)",
+			namespace: "namespace_a",
+			status:    400,
+			input: `
+name: test_group_3
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "per-user rule groups limit (limit: 2 actual: 3) exceeded\n",
+		},
+		{
+			name:      "first group in namespace_b should succeed (global limit applies)",
+			namespace: "namespace_b",
+			status:    202,
+			input: `
+name: test_group_1
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "second group in namespace_b should succeed (only 3 total groups, under global limit of 10)",
+			namespace: "namespace_b",
+			status:    202,
+			input: `
+name: test_group_2
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+		{
+			name:      "third group in namespace_b should succeed (only 4 total groups, under global limit of 10)",
+			namespace: "namespace_b",
+			status:    202,
+			input: `
+name: test_group_3
+interval: 15s
+rules:
+- record: up_rule
+  expr: up{}
+`,
+			output: "{\"status\":\"success\",\"data\":null,\"errorType\":\"\",\"error\":\"\"}",
+		},
+	}
+
+	// Define once so the requests build on each other
+	router := mux.NewRouter()
+	router.Path("/prometheus/config/v1/rules/{namespace}").Methods("POST").HandlerFunc(a.CreateRuleGroup)
+
+	for _, tt := range tc {
+		t.Run(tt.name, func(t *testing.T) {
+			// POST
+			req := requestFor(t, http.MethodPost, "https://localhost:8080/prometheus/config/v1/rules/"+tt.namespace, strings.NewReader(tt.input), "user1")
 			w := httptest.NewRecorder()
 
 			router.ServeHTTP(w, req)

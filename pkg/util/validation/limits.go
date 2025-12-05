@@ -1218,6 +1218,14 @@ func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID, namespace string) int {
 	return u.RulerMaxRuleGroupsPerTenant
 }
 
+// RulerMaxRuleGroupsPerTenantByNamespaceConfigured returns true if a namespace-specific
+// limit is configured for the given namespace.
+func (o *Overrides) RulerMaxRuleGroupsPerTenantByNamespaceConfigured(userID, namespace string) bool {
+	u := o.getOverridesForUser(userID)
+	_, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.Read()[namespace]
+	return ok
+}
+
 // RulerProtectedNamespaces returns the list of namespaces that are protected from modification.
 func (o *Overrides) RulerProtectedNamespaces(userID string) []string {
 	return o.getOverridesForUser(userID).RulerProtectedNamespaces
