@@ -210,6 +210,17 @@ func maxTime(metas []*block.Meta) time.Time {
 	return time.Unix(0, maxT*int64(time.Millisecond)).UTC()
 }
 
+// traceID gets *one of* the traceIDs from the given block metas.
+// If the metas contain multiple conflicting trace IDs, we pick one arbitrarily to follow.
+func traceID(metas []*block.Meta) string {
+	for _, meta := range metas {
+		if meta.TraceID != "" {
+			return meta.TraceID
+		}
+	}
+	return ""
+}
+
 // Planner returns blocks to compact.
 type Planner interface {
 	// Plan returns a list of blocks that should be compacted into single one.
@@ -294,7 +305,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// with the min/max time between all blocks to compact.
 	toCompactMinTime := minTime(toCompact)
 	toCompactMaxTime := maxTime(toCompact)
-	jobLogger = log.With(jobLogger, "minTime", toCompactMinTime.String(), "maxTime", toCompactMaxTime.String())
+	// Pick a single block trace ID to follow through the job.
+	toCompactTraceID := traceID(toCompact)
+	jobLogger = log.With(jobLogger, "minTime", toCompactMinTime.String(), "maxTime", toCompactMaxTime.String(), "traceID", toCompactTraceID)
 
 	var sb strings.Builder
 	for i, meta := range toCompact {
@@ -416,6 +429,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			Source:       block.CompactorSource,
 			SegmentFiles: block.GetSegmentFiles(bdir),
 		}, nil)
+		newMeta.TraceID = toCompactTraceID
 
 		if err != nil {
 			return fmt.Errorf("failed to finalize the block %s: %w", bdir, err)
