@@ -1,0 +1,1349 @@
+GOROOT=/Users/dimitar/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.4.darwin-arm64 #gosetup
+GOPATH=/Users/dimitar/go #gosetup
+/Users/dimitar/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.4.darwin-arm64/bin/go test -c -o /Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkQueryExecution_ops_03.test github.com/grafana/mimir/pkg/ingester/lookupplan/benchmarks #gosetup
+/Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkQueryExecution_ops_03.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkQueryExecution\E$ -test.run ^$ -test.benchtime=0.5s -test.count=6 -data-dir=/Users/dimitar/proba/2025-10-ops-03-ingester-data/exported-ops-03-data/ -query-file=/Users/dimitar/proba/2025-10-ops-03-ingester-data/query-logs.json -query-sample=0.01 #gosetup
+goos: darwin
+goarch: arm64
+pkg: github.com/grafana/mimir/pkg/ingester/lookupplan/benchmarks
+cpu: Apple M1 Pro
+BenchmarkQueryExecution
+    benchmarks_test.go:103: Prepared 1400 queries (malformed: 24, sampled: 1.000000% of all queries)
+    benchmarks_test.go:115: Starting benchmark
+BenchmarkQueryExecution/query=1318/selector=0
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=0-10         	    3300	    170564 ns/op	  202459 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=0-10         	    2889	    185596 ns/op	  202549 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=0-10         	    3175	    181347 ns/op	  202540 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=0-10         	    3050	    183141 ns/op	  202544 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=0-10         	    3237	    181589 ns/op	  202693 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=0-10         	    3115	    183227 ns/op	  202544 B/op	    2608 allocs/op
+BenchmarkQueryExecution/query=1318/selector=1
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=1-10         	    3122	    182023 ns/op	  202552 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=1-10         	    3050	    183931 ns/op	  202546 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=1-10         	    3098	    182468 ns/op	  202627 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=1-10         	    3141	    182776 ns/op	  202542 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=1-10         	    3008	    183335 ns/op	  202546 B/op	    2608 allocs/op
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+    benchmarks_test.go:130: series=25 chunks=51
+BenchmarkQueryExecution/query=1318/selector=1-10         	    3224	    183381 ns/op	  202540 B/op	    2608 allocs/op
+BenchmarkQueryExecution/query=1318/selector=2
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1318/selector=2-10         	    4670	    126795 ns/op	  154635 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1318/selector=2-10         	    4467	    127691 ns/op	  154639 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1318/selector=2-10         	    4522	    126365 ns/op	  154638 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1318/selector=2-10         	    4626	    126620 ns/op	  154633 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1318/selector=2-10         	    4734	    126783 ns/op	  154686 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1318/selector=2-10         	    4674	    127055 ns/op	  154635 B/op	    2033 allocs/op
+BenchmarkQueryExecution/query=1319/selector=0
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+BenchmarkQueryExecution/query=1319/selector=0-10         	    2965	    194725 ns/op	  211606 B/op	    2709 allocs/op
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+BenchmarkQueryExecution/query=1319/selector=0-10         	    2934	    193705 ns/op	  211518 B/op	    2709 allocs/op
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+BenchmarkQueryExecution/query=1319/selector=0-10         	    2912	    192755 ns/op	  211607 B/op	    2709 allocs/op
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+BenchmarkQueryExecution/query=1319/selector=0-10         	    2695	    193428 ns/op	  211526 B/op	    2709 allocs/op
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+BenchmarkQueryExecution/query=1319/selector=0-10         	    2962	    192525 ns/op	  211517 B/op	    2709 allocs/op
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+    benchmarks_test.go:130: series=30 chunks=59
+BenchmarkQueryExecution/query=1319/selector=0-10         	    2893	    194468 ns/op	  211431 B/op	    2709 allocs/op
+BenchmarkQueryExecution/query=1319/selector=1
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1319/selector=1-10         	    4516	    128048 ns/op	  154636 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1319/selector=1-10         	    4416	    127813 ns/op	  154641 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1319/selector=1-10         	    4610	    127145 ns/op	  154693 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1319/selector=1-10         	    4501	    128010 ns/op	  154642 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1319/selector=1-10         	    4422	    127006 ns/op	  154642 B/op	    2033 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1319/selector=1-10         	    4441	    127689 ns/op	  154581 B/op	    2033 allocs/op
+BenchmarkQueryExecution/query=1320/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1320/selector=0-10         	    3691	    146371 ns/op	  142757 B/op	    2119 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1320/selector=0-10         	    4034	    144546 ns/op	  142685 B/op	    2119 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1320/selector=0-10         	    4201	    144279 ns/op	  142753 B/op	    2119 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1320/selector=0-10         	    4063	    145354 ns/op	  142753 B/op	    2119 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1320/selector=0-10         	    4143	    143772 ns/op	  142809 B/op	    2119 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1320/selector=0-10         	    4128	    144223 ns/op	  142747 B/op	    2119 allocs/op
+BenchmarkQueryExecution/query=1321/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1321/selector=0-10         	    2191	    271542 ns/op	  180717 B/op	    2593 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1321/selector=0-10         	    2152	    265393 ns/op	  180719 B/op	    2593 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1321/selector=0-10         	    2217	    261315 ns/op	  180715 B/op	    2593 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1321/selector=0-10         	    2298	    263880 ns/op	  180829 B/op	    2593 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1321/selector=0-10         	    2310	    263194 ns/op	  180710 B/op	    2593 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1321/selector=0-10         	    2266	    262418 ns/op	  180713 B/op	    2593 allocs/op
+BenchmarkQueryExecution/query=1322/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1322/selector=0-10         	    5114	    116247 ns/op	  127318 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1322/selector=0-10         	    4735	    115789 ns/op	  127272 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1322/selector=0-10         	    4920	    115932 ns/op	  127270 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1322/selector=0-10         	    4588	    121906 ns/op	  127341 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1322/selector=0-10         	    4846	    117289 ns/op	  127324 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1322/selector=0-10         	    5103	    116411 ns/op	  127268 B/op	    1967 allocs/op
+BenchmarkQueryExecution/query=1323/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1323/selector=0-10         	     956	    530690 ns/op	  289844 B/op	    4259 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1323/selector=0-10         	    1095	    539514 ns/op	  289791 B/op	    4259 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1323/selector=0-10         	    1080	    534910 ns/op	  289793 B/op	    4259 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1323/selector=0-10         	    1048	    535383 ns/op	  289802 B/op	    4259 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1323/selector=0-10         	    1011	    541994 ns/op	  289810 B/op	    4259 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1323/selector=0-10         	    1083	    536729 ns/op	  289793 B/op	    4259 allocs/op
+BenchmarkQueryExecution/query=1324/selector=0
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+BenchmarkQueryExecution/query=1324/selector=0-10         	    3230	    156514 ns/op	  156531 B/op	    2278 allocs/op
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+BenchmarkQueryExecution/query=1324/selector=0-10         	    3793	    150065 ns/op	  156520 B/op	    2278 allocs/op
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+BenchmarkQueryExecution/query=1324/selector=0-10         	    3762	    148759 ns/op	  156588 B/op	    2278 allocs/op
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+BenchmarkQueryExecution/query=1324/selector=0-10         	    3735	    150186 ns/op	  156523 B/op	    2278 allocs/op
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+BenchmarkQueryExecution/query=1324/selector=0-10         	    3650	    149687 ns/op	  156524 B/op	    2278 allocs/op
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+    benchmarks_test.go:130: series=2 chunks=12
+BenchmarkQueryExecution/query=1324/selector=0-10         	    3729	    149661 ns/op	  156521 B/op	    2278 allocs/op
+BenchmarkQueryExecution/query=1325/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1325/selector=0-10         	     400	   1336055 ns/op	  588156 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1325/selector=0-10         	     438	   1312941 ns/op	  588742 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1325/selector=0-10         	     456	   1304820 ns/op	  588714 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1325/selector=0-10         	     438	   1313709 ns/op	  588742 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1325/selector=0-10         	     428	   1343777 ns/op	  588753 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1325/selector=0-10         	     428	   1388705 ns/op	  588757 B/op	    8857 allocs/op
+BenchmarkQueryExecution/query=1326/selector=0
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+BenchmarkQueryExecution/query=1326/selector=0-10         	    3858	    144942 ns/op	  143901 B/op	    2149 allocs/op
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+BenchmarkQueryExecution/query=1326/selector=0-10         	    3777	    141172 ns/op	  143769 B/op	    2149 allocs/op
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+BenchmarkQueryExecution/query=1326/selector=0-10         	    3874	    141872 ns/op	  143835 B/op	    2149 allocs/op
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+BenchmarkQueryExecution/query=1326/selector=0-10         	    3988	    138386 ns/op	  143835 B/op	    2149 allocs/op
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+BenchmarkQueryExecution/query=1326/selector=0-10         	    3991	    139375 ns/op	  143764 B/op	    2149 allocs/op
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+    benchmarks_test.go:130: series=1 chunks=6
+BenchmarkQueryExecution/query=1326/selector=0-10         	    3800	    139690 ns/op	  143836 B/op	    2149 allocs/op
+BenchmarkQueryExecution/query=1327/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=0-10         	    2763	    197828 ns/op	  181698 B/op	    2611 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=0-10         	    2862	    196056 ns/op	  181694 B/op	    2611 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=0-10         	    2934	    195758 ns/op	  181691 B/op	    2611 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=0-10         	    2859	    195705 ns/op	  181789 B/op	    2611 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=0-10         	    2929	    196947 ns/op	  181692 B/op	    2611 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=0-10         	    2923	    195993 ns/op	  181691 B/op	    2611 allocs/op
+BenchmarkQueryExecution/query=1327/selector=1
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=1-10         	    4412	    119158 ns/op	  129060 B/op	    1987 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=1-10         	    4353	    119908 ns/op	  129002 B/op	    1987 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=1-10         	    4467	    118954 ns/op	  129058 B/op	    1987 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=1-10         	    4548	    119955 ns/op	  129060 B/op	    1987 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=1-10         	    4485	    118754 ns/op	  129056 B/op	    1987 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1327/selector=1-10         	    4593	    118968 ns/op	  129055 B/op	    1987 allocs/op
+BenchmarkQueryExecution/query=1328/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1328/selector=0-10         	    2164	    263023 ns/op	  180659 B/op	    2591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1328/selector=0-10         	    2145	    262107 ns/op	  180660 B/op	    2591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1328/selector=0-10         	    2220	    262735 ns/op	  180655 B/op	    2591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1328/selector=0-10         	    2215	    263014 ns/op	  180664 B/op	    2591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1328/selector=0-10         	    2197	    262801 ns/op	  180657 B/op	    2591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1328/selector=0-10         	    2208	    263183 ns/op	  180656 B/op	    2591 allocs/op
+BenchmarkQueryExecution/query=1329/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1329/selector=0-10         	    4453	    117338 ns/op	  128222 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1329/selector=0-10         	    4648	    117169 ns/op	  128218 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1329/selector=0-10         	    4507	    117909 ns/op	  128309 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1329/selector=0-10         	    4518	    118003 ns/op	  128227 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1329/selector=0-10         	    4364	    118544 ns/op	  128227 B/op	    1967 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1329/selector=0-10         	    4616	    117673 ns/op	  128223 B/op	    1967 allocs/op
+BenchmarkQueryExecution/query=1330/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1330/selector=0-10         	    4432	    121152 ns/op	  131580 B/op	    1964 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1330/selector=0-10         	    4282	    121116 ns/op	  131583 B/op	    1964 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1330/selector=0-10         	    4174	    120243 ns/op	  131586 B/op	    1964 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1330/selector=0-10         	    4555	    120389 ns/op	  131579 B/op	    1964 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1330/selector=0-10         	    4462	    121360 ns/op	  131580 B/op	    1964 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1330/selector=0-10         	    4578	    120902 ns/op	  131578 B/op	    1964 allocs/op
+BenchmarkQueryExecution/query=1330/selector=1
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+BenchmarkQueryExecution/query=1330/selector=1-10         	    1478	    362706 ns/op	  357458 B/op	    4635 allocs/op
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+BenchmarkQueryExecution/query=1330/selector=1-10         	    1362	    396406 ns/op	  357645 B/op	    4635 allocs/op
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+BenchmarkQueryExecution/query=1330/selector=1-10         	    1450	    383888 ns/op	  357453 B/op	    4635 allocs/op
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+BenchmarkQueryExecution/query=1330/selector=1-10         	    1310	    396209 ns/op	  357851 B/op	    4635 allocs/op
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+BenchmarkQueryExecution/query=1330/selector=1-10         	    1416	    392827 ns/op	  357635 B/op	    4635 allocs/op
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+    benchmarks_test.go:130: series=131 chunks=244
+BenchmarkQueryExecution/query=1330/selector=1-10         	    1405	    405335 ns/op	  357566 B/op	    4636 allocs/op
+BenchmarkQueryExecution/query=1331/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1331/selector=0-10         	     494	   1150324 ns/op	  522848 B/op	    7988 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1331/selector=0-10         	     475	   1169069 ns/op	  522867 B/op	    7988 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1331/selector=0-10         	     505	   1139122 ns/op	  522833 B/op	    7988 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1331/selector=0-10         	     488	   1152280 ns/op	  522851 B/op	    7988 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1331/selector=0-10         	     512	   1150038 ns/op	  522325 B/op	    7988 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=1331/selector=0-10         	     507	   1147466 ns/op	  522832 B/op	    7988 allocs/op
+BenchmarkQueryExecution/query=2127/selector=0
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2127/selector=0-10         	    1636	    338142 ns/op	  258108 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2127/selector=0-10         	    1674	    347080 ns/op	  258105 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2127/selector=0-10         	    1678	    346740 ns/op	  258105 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2127/selector=0-10         	    1654	    345048 ns/op	  258106 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2127/selector=0-10         	    1694	    346765 ns/op	  258104 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2127/selector=0-10         	    1654	    344067 ns/op	  257952 B/op	    3414 allocs/op
+BenchmarkQueryExecution/query=2128/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2128/selector=0-10         	    3320	    154911 ns/op	  169546 B/op	    2257 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2128/selector=0-10         	    3639	    152821 ns/op	  169471 B/op	    2257 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2128/selector=0-10         	    3734	    152549 ns/op	  169539 B/op	    2257 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2128/selector=0-10         	    3657	    152673 ns/op	  169548 B/op	    2257 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2128/selector=0-10         	    3619	    152497 ns/op	  169539 B/op	    2257 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2128/selector=0-10         	    3751	    153227 ns/op	  169538 B/op	    2257 allocs/op
+BenchmarkQueryExecution/query=2129/selector=0
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2129/selector=0-10         	    1611	    349529 ns/op	  257953 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2129/selector=0-10         	    1657	    350355 ns/op	  258107 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2129/selector=0-10         	    1680	    349764 ns/op	  258106 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2129/selector=0-10         	    1677	    347477 ns/op	  257961 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2129/selector=0-10         	    1680	    348216 ns/op	  257952 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2129/selector=0-10         	    1652	    351023 ns/op	  258407 B/op	    3414 allocs/op
+BenchmarkQueryExecution/query=2130/selector=0
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2130/selector=0-10         	    1672	    345287 ns/op	  258104 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2130/selector=0-10         	    1628	    343775 ns/op	  258109 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2130/selector=0-10         	    1629	    348295 ns/op	  258109 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2130/selector=0-10         	    1693	    344677 ns/op	  258104 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2130/selector=0-10         	    1693	    353159 ns/op	  258139 B/op	    3414 allocs/op
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+    benchmarks_test.go:130: series=8 chunks=109
+BenchmarkQueryExecution/query=2130/selector=0-10         	    1650	    345181 ns/op	  258108 B/op	    3414 allocs/op
+BenchmarkQueryExecution/query=2131/selector=0
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2131/selector=0-10         	    3050	    185006 ns/op	  162857 B/op	    2398 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2131/selector=0-10         	    3092	    185505 ns/op	  162856 B/op	    2398 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2131/selector=0-10         	    3090	    184283 ns/op	  163021 B/op	    2398 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2131/selector=0-10         	    3048	    184338 ns/op	  162947 B/op	    2398 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2131/selector=0-10         	    3066	    184320 ns/op	  162939 B/op	    2398 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2131/selector=0-10         	    3032	    184500 ns/op	  162941 B/op	    2398 allocs/op
+BenchmarkQueryExecution/query=2131/selector=1
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2131/selector=1-10         	    3153	    186637 ns/op	  160815 B/op	    2376 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2131/selector=1-10         	    3135	    180997 ns/op	  160896 B/op	    2376 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2131/selector=1-10         	    3202	    181746 ns/op	  160893 B/op	    2376 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2131/selector=1-10         	    3156	    180543 ns/op	  160899 B/op	    2376 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2131/selector=1-10         	    3104	    181913 ns/op	  160896 B/op	    2376 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2131/selector=1-10         	    3201	    180795 ns/op	  160813 B/op	    2376 allocs/op
+BenchmarkQueryExecution/query=2132/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=0-10         	   17482	     39674 ns/op	   68336 B/op	     591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=0-10         	   17918	     29642 ns/op	   68335 B/op	     591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=0-10         	   18490	     30474 ns/op	   68336 B/op	     591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=0-10         	   18679	     29381 ns/op	   68335 B/op	     591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=0-10         	   19266	     30124 ns/op	   68335 B/op	     591 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=0-10         	   18823	     29557 ns/op	   68336 B/op	     591 allocs/op
+BenchmarkQueryExecution/query=2132/selector=1
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=1-10         	   18457	     27615 ns/op	   53194 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=1-10         	   19972	     27530 ns/op	   53193 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=1-10         	   19996	     27458 ns/op	   53194 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=1-10         	   20090	     27435 ns/op	   53193 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=1-10         	   20085	     27397 ns/op	   53193 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=1-10         	   19820	     27657 ns/op	   53193 B/op	     588 allocs/op
+BenchmarkQueryExecution/query=2132/selector=2
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=2-10         	   19405	     29084 ns/op	   53194 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=2-10         	   19418	     28267 ns/op	   53193 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=2-10         	   19474	     28291 ns/op	   53193 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=2-10         	   19448	     28212 ns/op	   53193 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=2-10         	   18474	     28646 ns/op	   53194 B/op	     588 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2132/selector=2-10         	   19326	     28188 ns/op	   53194 B/op	     588 allocs/op
+BenchmarkQueryExecution/query=2133/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2133/selector=0-10         	    3132	    168843 ns/op	  179637 B/op	    2275 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2133/selector=0-10         	    3210	    173621 ns/op	  179635 B/op	    2275 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2133/selector=0-10         	    3241	    176486 ns/op	  179653 B/op	    2275 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2133/selector=0-10         	    3265	    174453 ns/op	  179556 B/op	    2275 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2133/selector=0-10         	    3128	    174001 ns/op	  179637 B/op	    2275 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2133/selector=0-10         	    3104	    180856 ns/op	  179728 B/op	    2275 allocs/op
+BenchmarkQueryExecution/query=2134/selector=0
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+BenchmarkQueryExecution/query=2134/selector=0-10         	     517	   1055878 ns/op	  763559 B/op	    8368 allocs/op
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+BenchmarkQueryExecution/query=2134/selector=0-10         	     559	   1043659 ns/op	  763518 B/op	    8368 allocs/op
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+BenchmarkQueryExecution/query=2134/selector=0-10         	     562	   1046321 ns/op	  763515 B/op	    8368 allocs/op
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+BenchmarkQueryExecution/query=2134/selector=0-10         	     584	   1092099 ns/op	  763502 B/op	    8368 allocs/op
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+BenchmarkQueryExecution/query=2134/selector=0-10         	     556	   1037579 ns/op	  763517 B/op	    8368 allocs/op
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+    benchmarks_test.go:130: series=55 chunks=614
+BenchmarkQueryExecution/query=2134/selector=0-10         	     554	   1049941 ns/op	  763520 B/op	    8368 allocs/op
+BenchmarkQueryExecution/query=2135/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2135/selector=0-10         	    4338	    117811 ns/op	  127255 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2135/selector=0-10         	    4666	    117253 ns/op	  127309 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2135/selector=0-10         	    4614	    117589 ns/op	  127251 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2135/selector=0-10         	    4626	    117184 ns/op	  127312 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2135/selector=0-10         	    4713	    119571 ns/op	  127202 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2135/selector=0-10         	    4389	    118587 ns/op	  127319 B/op	    1962 allocs/op
+BenchmarkQueryExecution/query=2136/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2136/selector=0-10         	    4353	    123454 ns/op	  133190 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2136/selector=0-10         	    4467	    122986 ns/op	  133192 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2136/selector=0-10         	    4454	    122475 ns/op	  133193 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2136/selector=0-10         	    4311	    123066 ns/op	  133195 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2136/selector=0-10         	    4249	    121612 ns/op	  133129 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2136/selector=0-10         	    4502	    122530 ns/op	  133246 B/op	    2062 allocs/op
+BenchmarkQueryExecution/query=2137/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2137/selector=0-10         	    4401	    122262 ns/op	  133131 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2137/selector=0-10         	    4522	    118692 ns/op	  133179 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2137/selector=0-10         	    4519	    118621 ns/op	  133123 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2137/selector=0-10         	    4573	    124265 ns/op	  133247 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2137/selector=0-10         	    4516	    120456 ns/op	  133186 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2137/selector=0-10         	    4513	    120717 ns/op	  133186 B/op	    2062 allocs/op
+BenchmarkQueryExecution/query=2138/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2138/selector=0-10         	    4519	    123151 ns/op	  128503 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2138/selector=0-10         	    4676	    119074 ns/op	  128442 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2138/selector=0-10         	    4530	    118695 ns/op	  128445 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2138/selector=0-10         	    4578	    120135 ns/op	  128390 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2138/selector=0-10         	    4636	    118055 ns/op	  128439 B/op	    1962 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2138/selector=0-10         	    4266	    119154 ns/op	  128447 B/op	    1962 allocs/op
+BenchmarkQueryExecution/query=2139/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2139/selector=0-10         	    4455	    121201 ns/op	  133215 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2139/selector=0-10         	    4279	    123448 ns/op	  133192 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2139/selector=0-10         	    4448	    120809 ns/op	  133188 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2139/selector=0-10         	    4323	    121503 ns/op	  133192 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2139/selector=0-10         	    4324	    123543 ns/op	  133194 B/op	    2062 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2139/selector=0-10         	    4308	    123220 ns/op	  133252 B/op	    2062 allocs/op
+BenchmarkQueryExecution/query=2140/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2140/selector=0-10         	     351	   1543435 ns/op	  589144 B/op	    8858 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2140/selector=0-10         	     415	   1367305 ns/op	  589479 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2140/selector=0-10         	     427	   1343598 ns/op	  588887 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2140/selector=0-10         	     415	   1352818 ns/op	  588902 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2140/selector=0-10         	     424	   1353085 ns/op	  588891 B/op	    8857 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2140/selector=0-10         	     421	   1350096 ns/op	  588284 B/op	    8857 allocs/op
+BenchmarkQueryExecution/query=2737/selector=0
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2737/selector=0-10         	    1136	    463197 ns/op	  368147 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2737/selector=0-10         	    1435	    401064 ns/op	  368122 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2737/selector=0-10         	    1466	    407730 ns/op	  368149 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2737/selector=0-10         	    1417	    398137 ns/op	  368207 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2737/selector=0-10         	    1431	    404406 ns/op	  368136 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2737/selector=0-10         	    1408	    402509 ns/op	  368136 B/op	    3983 allocs/op
+BenchmarkQueryExecution/query=2738/selector=0
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2738/selector=0-10         	    1425	    404087 ns/op	  368150 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2738/selector=0-10         	    1407	    402776 ns/op	  368136 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2738/selector=0-10         	    1410	    401439 ns/op	  368225 B/op	    3984 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2738/selector=0-10         	    1465	    418830 ns/op	  368148 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2738/selector=0-10         	    1422	    401337 ns/op	  368180 B/op	    3983 allocs/op
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+    benchmarks_test.go:130: series=9 chunks=54
+BenchmarkQueryExecution/query=2738/selector=0-10         	    1413	    400653 ns/op	  368151 B/op	    3983 allocs/op
+BenchmarkQueryExecution/query=2739/selector=0
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+BenchmarkQueryExecution/query=2739/selector=0-10         	    2046	    262003 ns/op	  279961 B/op	    3054 allocs/op
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+BenchmarkQueryExecution/query=2739/selector=0-10         	    2037	    278014 ns/op	  279962 B/op	    3054 allocs/op
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+BenchmarkQueryExecution/query=2739/selector=0-10         	    2097	    277247 ns/op	  279952 B/op	    3054 allocs/op
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+BenchmarkQueryExecution/query=2739/selector=0-10         	    2094	    273598 ns/op	  279942 B/op	    3054 allocs/op
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+BenchmarkQueryExecution/query=2739/selector=0-10         	    2092	    273567 ns/op	  279961 B/op	    3054 allocs/op
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+    benchmarks_test.go:130: series=3 chunks=11
+BenchmarkQueryExecution/query=2739/selector=0-10         	    2097	    277422 ns/op	  279943 B/op	    3054 allocs/op
+BenchmarkQueryExecution/query=2740/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2740/selector=0-10         	    1143	    492136 ns/op	  217679 B/op	    3152 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2740/selector=0-10         	    1230	    487639 ns/op	  217648 B/op	    3152 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2740/selector=0-10         	    1184	    485639 ns/op	  217889 B/op	    3152 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2740/selector=0-10         	    1198	    489443 ns/op	  217685 B/op	    3152 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2740/selector=0-10         	    1227	    491016 ns/op	  217873 B/op	    3152 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2740/selector=0-10         	    1209	    487024 ns/op	  217650 B/op	    3152 allocs/op
+BenchmarkQueryExecution/query=2741/selector=0
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2741/selector=0-10         	    1070	    535847 ns/op	  435025 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2741/selector=0-10         	    1159	    513083 ns/op	  435023 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2741/selector=0-10         	    1111	    514351 ns/op	  435007 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2741/selector=0-10         	    1143	    511255 ns/op	  435073 B/op	    4916 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2741/selector=0-10         	    1107	    508482 ns/op	  435023 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2741/selector=0-10         	    1116	    513208 ns/op	  435024 B/op	    4915 allocs/op
+BenchmarkQueryExecution/query=2742/selector=0
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2742/selector=0-10         	    1634	    339180 ns/op	  325068 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2742/selector=0-10         	    1620	    341458 ns/op	  325069 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2742/selector=0-10         	    1695	    341250 ns/op	  325069 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2742/selector=0-10         	    1699	    337957 ns/op	  325102 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2742/selector=0-10         	    1708	    343630 ns/op	  325094 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2742/selector=0-10         	    1689	    343749 ns/op	  325068 B/op	    3574 allocs/op
+BenchmarkQueryExecution/query=2743/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2743/selector=0-10         	      70	   7575526 ns/op	 2996024 B/op	   44442 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2743/selector=0-10         	      80	   7279206 ns/op	 2995539 B/op	   44442 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2743/selector=0-10         	      69	   7482987 ns/op	 2996072 B/op	   44442 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2743/selector=0-10         	      79	   7224706 ns/op	 2993586 B/op	   44447 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2743/selector=0-10         	      72	   7376903 ns/op	 2999220 B/op	   44442 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2743/selector=0-10         	      69	   7277851 ns/op	 2996068 B/op	   44442 allocs/op
+BenchmarkQueryExecution/query=2743/selector=1
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+BenchmarkQueryExecution/query=2743/selector=1-10         	      98	   5963907 ns/op	 2022442 B/op	   36424 allocs/op
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+BenchmarkQueryExecution/query=2743/selector=1-10         	      98	   6019395 ns/op	 2022479 B/op	   36425 allocs/op
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+BenchmarkQueryExecution/query=2743/selector=1-10         	      84	   6003752 ns/op	 2022901 B/op	   36424 allocs/op
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+BenchmarkQueryExecution/query=2743/selector=1-10         	     102	   5802411 ns/op	 2025300 B/op	   36427 allocs/op
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+BenchmarkQueryExecution/query=2743/selector=1-10         	      87	   5920773 ns/op	 2022777 B/op	   36424 allocs/op
+    benchmarks_test.go:130: series=1 chunks=2
+    benchmarks_test.go:130: series=1 chunks=2
+BenchmarkQueryExecution/query=2743/selector=1-10         	      86	   6059997 ns/op	 2025629 B/op	   36425 allocs/op
+BenchmarkQueryExecution/query=2744/selector=0
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2744/selector=0-10         	    1098	    517721 ns/op	  435025 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2744/selector=0-10         	    1141	    506442 ns/op	  435023 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2744/selector=0-10         	    1150	    508036 ns/op	  435029 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2744/selector=0-10         	    1158	    515484 ns/op	  435073 B/op	    4916 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2744/selector=0-10         	    1124	    509630 ns/op	  435023 B/op	    4915 allocs/op
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+    benchmarks_test.go:130: series=15 chunks=71
+BenchmarkQueryExecution/query=2744/selector=0-10         	    1092	    513978 ns/op	  435025 B/op	    4915 allocs/op
+BenchmarkQueryExecution/query=2745/selector=0
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2745/selector=0-10         	    1669	    339794 ns/op	  325069 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2745/selector=0-10         	    1702	    340128 ns/op	  325073 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2745/selector=0-10         	    1670	    340136 ns/op	  325080 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2745/selector=0-10         	    1699	    337930 ns/op	  325102 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2745/selector=0-10         	    1660	    337999 ns/op	  325080 B/op	    3574 allocs/op
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+    benchmarks_test.go:130: series=7 chunks=29
+BenchmarkQueryExecution/query=2745/selector=0-10         	    1609	    339924 ns/op	  325070 B/op	    3574 allocs/op
+BenchmarkQueryExecution/query=2746/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2746/selector=0-10         	    1166	    485774 ns/op	  276281 B/op	    2855 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2746/selector=0-10         	    1195	    484731 ns/op	  276293 B/op	    2855 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2746/selector=0-10         	    1192	    499780 ns/op	  276313 B/op	    2855 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2746/selector=0-10         	    1191	    530712 ns/op	  276278 B/op	    2855 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2746/selector=0-10         	    1087	    518638 ns/op	  276300 B/op	    2855 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2746/selector=0-10         	    1149	    513012 ns/op	  276297 B/op	    2855 allocs/op
+BenchmarkQueryExecution/query=2747/selector=0
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2747/selector=0-10         	     716	    774669 ns/op	  595193 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2747/selector=0-10         	     776	    776946 ns/op	  595190 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2747/selector=0-10         	     787	    751956 ns/op	  595323 B/op	    6681 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2747/selector=0-10         	     771	    759881 ns/op	  595212 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2747/selector=0-10         	     795	    754642 ns/op	  595188 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2747/selector=0-10         	     800	    739699 ns/op	  595190 B/op	    6680 allocs/op
+BenchmarkQueryExecution/query=2748/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2748/selector=0-10         	    2307	    254502 ns/op	  188746 B/op	    2531 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2748/selector=0-10         	    2221	    255486 ns/op	  188751 B/op	    2531 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2748/selector=0-10         	    2253	    254108 ns/op	  188635 B/op	    2531 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2748/selector=0-10         	    2185	    253771 ns/op	  188644 B/op	    2531 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2748/selector=0-10         	    2221	    257019 ns/op	  188751 B/op	    2531 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=2748/selector=0-10         	    2114	    253862 ns/op	  188758 B/op	    2531 allocs/op
+BenchmarkQueryExecution/query=2749/selector=0
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2749/selector=0-10         	    1148	    509652 ns/op	  226352 B/op	    3217 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2749/selector=0-10         	    1192	    493485 ns/op	  226341 B/op	    3217 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2749/selector=0-10         	    1160	    495762 ns/op	  226350 B/op	    3217 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2749/selector=0-10         	    1183	    493626 ns/op	  226358 B/op	    3217 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2749/selector=0-10         	    1208	    492359 ns/op	  226556 B/op	    3217 allocs/op
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+    benchmarks_test.go:130: series=1 chunks=1
+BenchmarkQueryExecution/query=2749/selector=0-10         	    1179	    494473 ns/op	  226346 B/op	    3217 allocs/op
+BenchmarkQueryExecution/query=2750/selector=0
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2750/selector=0-10         	     777	    741749 ns/op	  595189 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2750/selector=0-10         	     758	    746183 ns/op	  595190 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2750/selector=0-10         	     783	    742678 ns/op	  595190 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2750/selector=0-10         	     772	    740730 ns/op	  595272 B/op	    6681 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2750/selector=0-10         	     795	    742558 ns/op	  595222 B/op	    6680 allocs/op
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+    benchmarks_test.go:130: series=46 chunks=137
+BenchmarkQueryExecution/query=2750/selector=0-10         	     800	    743587 ns/op	  595186 B/op	    6680 allocs/op
+BenchmarkQueryExecution/query=4095/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4095/selector=0-10         	    4312	    126312 ns/op	  127454 B/op	    1975 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4095/selector=0-10         	    4712	    115388 ns/op	  127440 B/op	    1975 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4095/selector=0-10         	    4821	    143771 ns/op	  127452 B/op	    1975 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4095/selector=0-10         	    4558	    115211 ns/op	  127385 B/op	    1975 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4095/selector=0-10         	    4782	    190778 ns/op	  127577 B/op	    1975 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4095/selector=0-10         	    4879	    123052 ns/op	  127443 B/op	    1975 allocs/op
+BenchmarkQueryExecution/query=4096/selector=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4096/selector=0-10         	    4262	    124169 ns/op	  127174 B/op	    1947 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4096/selector=0-10         	    2625	    231692 ns/op	  127210 B/op	    1947 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+    benchmarks_test.go:130: series=0 chunks=0
+BenchmarkQueryExecution/query=4096/selector=0-10         	    4580	    134696 ns/op	  127117 B/op	    1947 allocs/op
+    benchmarks_test.go:130: series=0 chunks=0
