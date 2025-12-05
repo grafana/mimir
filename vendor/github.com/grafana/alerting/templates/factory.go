@@ -96,6 +96,8 @@ func NewFactory(t []TemplateDefinition, logger log.Logger, externalURL string, o
 		byType[def.Kind] = append(byType[def.Kind], def)
 		seen[seenKey{Name: def.Name, Type: def.Kind}] = struct{}{}
 	}
+	level.Info(logger).Log("msg", "template definitions loaded", "mimir", len(byType[MimirKind]), "grafana", len(byType[GrafanaKind]), "total", len(t))
+
 	provider := &Factory{
 		templates:   byType,
 		externalURL: extURL,
@@ -129,12 +131,12 @@ func (cf *CachedFactory) GetTemplate(kind Kind) (*Template, error) {
 	cf.mtx.Lock()
 	defer cf.mtx.Unlock()
 	if t, ok := cf.m[kind]; ok {
-		return t.Clone()
+		return t, nil
 	}
 	t, err := cf.factory.GetTemplate(kind)
 	if err != nil {
 		return nil, err
 	}
 	cf.m[kind] = t
-	return t.Clone()
+	return t, nil
 }
