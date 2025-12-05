@@ -73,8 +73,6 @@ type UtilizationBasedLimiter struct {
 	cpuLimit float64
 	// Last CPU utilization time counter.
 	lastCPUTime float64
-	// The time of the first CPU update.
-	firstCPUUpdate time.Time
 	// The time of the last CPU update.
 	lastCPUUpdate  time.Time
 	cpuMovingAvg   *math.EwmaRate
@@ -190,14 +188,10 @@ func (l *UtilizationBasedLimiter) compute(nowFn func() time.Time) (currCPUUtil f
 	}
 
 	// The CPU utilization moving average requires a warmup period before getting
-	// stable results. In this implementation we use a warmup period equal to the
-	// sliding window. During the warmup, the reported CPU utilization will be 0.
-	if l.firstCPUUpdate.IsZero() {
-		l.firstCPUUpdate = now
-	} else if now.Sub(l.firstCPUUpdate) >= resourceUtilizationSlidingWindow {
-		currCPUUtil = l.cpuMovingAvg.Rate() / 100
-		l.currCPUUtil.Store(currCPUUtil)
-	}
+	// stable results. The EWMA rate assumes a warmup period of N ticks (currently N=60).
+	// During the warmup, the reported CPU utilization will be 0.
+	currCPUUtil = l.cpuMovingAvg.Rate() / 100
+	l.currCPUUtil.Store(currCPUUtil)
 
 	var reason string
 	if l.memoryLimit > 0 && currHeapSize >= l.memoryLimit {
