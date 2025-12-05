@@ -42,6 +42,7 @@ Entries should include a reference to the Pull Request that introduced the chang
 * [BUGFIX] Upgrade rollout-operator chart to 0.37.1, which fixes server-tls.self-signed-cert.dns-name to use the full release name instead of always being set to `rollout-operator.NAMESPACE.svc`. If upgrading from 6.0.0 or 6.0.1, delete the `certificate` secret created by the rollout-operator pod and recreate the rollout-operator pod. #13357
 * [BUGFIX] Delete gateway's serviceMonitor #13481
 * [BUGFIX] Ensure Kafka can boostrap successfully by using parallel rollout and publishing not-ready addresses. #13650
+* [BUGFIX] Upgrade rollout-operator chart to 0.38.1, which fixes an issue with permissions preventing the rollout-operator from starting when webhooks are not enabled. #13754.
 
 ## 6.0.5
 
