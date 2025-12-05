@@ -644,7 +644,7 @@ func (s *Scheduler) forwardErrorToFrontend(ctx context.Context, req *queue.Sched
 			level.Warn(s.log).Log("msg", "failed to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
 			return
 		}
-	} else {
+	} else { // Protobuf request, so send a streaming response.
 		stream, err := client.QueryResultStream(userCtx)
 		if err != nil {
 			level.Warn(s.log).Log("msg", "failed to create stream to forward error to frontend", "frontend", req.FrontendAddr, "err", err, "requestErr", requestErr)
