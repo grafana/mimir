@@ -182,6 +182,23 @@
           },
         },
 
+        // Alert if ingester discards too many samples.
+        {
+          alert: $.alertName('IngesterTooManyDiscardedSamples'),
+          'for': '10m',
+          expr: |||
+            sum by (%(alert_aggregation_labels)s) (rate(cortex_discarded_samples_total{job=~".*/ingester.*"}[1m])) 
+            >
+            5 * max_over_time(sum by (%(alert_aggregation_labels)s) (rate(cortex_discarded_samples_total{job=~".*/ingester.*"}[1m] offset 24h))[30m:])
+          ||| % $._config,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s Ingester in %(alert_aggregation_variables)s is discarding too many samples.' % $._config,
+          },
+        },
+
         // Alert firing if Mimir is failing to enforce strong read consistency.
         {
           alert: $.alertName('StrongConsistencyEnforcementFailed'),
