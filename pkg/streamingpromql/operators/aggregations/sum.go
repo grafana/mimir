@@ -17,11 +17,12 @@ import (
 
 type SumAggregationGroup struct {
 	// Sum, presence, and histograms for each step.
-	floatSums               []float64
-	floatCompensatingValues []float64 // Compensation value for Kahan summation.
-	floatPresent            []bool
-	histogramSums           []*histogram.FloatHistogram
-	histogramPointCount     int
+	floatSums                    []float64
+	floatCompensatingValues      []float64 // Compensation value for Kahan summation.
+	floatPresent                 []bool
+	histogramSums                []*histogram.FloatHistogram
+	histogramPointCount          int
+	histogramCounterResetTracker *histogramCounterResetTracker
 }
 
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
@@ -86,6 +87,10 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			return err
 		}
 		g.histogramSums = g.histogramSums[:timeRange.StepCount]
+		g.histogramCounterResetTracker, err = newHistogramCounterResetTracker(timeRange.StepCount, memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
 	}
 
 	for inputIdx, p := range data.Histograms {
@@ -101,14 +106,20 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			g.histogramSums[outputIdx] = p.H
 			g.histogramPointCount++
 
+			g.histogramCounterResetTracker.init(outputIdx, p.H.CounterResetHint)
+
 			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
 			data.Histograms[inputIdx].H = nil
 
 			continue
 		}
 
-		var counterResetCollision, nhcbBoundsReconciled bool
-		g.histogramSums[outputIdx], counterResetCollision, nhcbBoundsReconciled, err = g.histogramSums[outputIdx].Add(p.H)
+		if g.histogramCounterResetTracker.checkCounterResetConflicts(outputIdx, p.H.CounterResetHint) {
+			emitAnnotation(newAggregationCounterResetCollisionWarning)
+		}
+
+		var nhcbBoundsReconciled bool
+		g.histogramSums[outputIdx], _, nhcbBoundsReconciled, err = g.histogramSums[outputIdx].Add(p.H)
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histogramSums[outputIdx] = invalidCombinationOfHistograms
@@ -119,9 +130,7 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 				return err
 			}
 		}
-		if counterResetCollision {
-			emitAnnotation(newAggregationCounterResetCollisionWarning)
-		}
+
 		if nhcbBoundsReconciled {
 			emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 		}
@@ -216,4 +225,8 @@ func (g *SumAggregationGroup) Close(memoryConsumptionTracker *limiter.MemoryCons
 	types.Float64SlicePool.Put(&g.floatCompensatingValues, memoryConsumptionTracker)
 	types.BoolSlicePool.Put(&g.floatPresent, memoryConsumptionTracker)
 	types.HistogramSlicePool.Put(&g.histogramSums, memoryConsumptionTracker)
+	if g.histogramCounterResetTracker != nil {
+		g.histogramCounterResetTracker.close()
+		g.histogramCounterResetTracker = nil
+	}
 }
