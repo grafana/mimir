@@ -19,6 +19,21 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
 
     // Toleration to add to all Mimir components when multi-zone deployment is enabled.
     multi_zone_schedule_toleration: 'secondary-az',
+
+    // CLI arguments to exclude from multi-zone config validation.
+    multi_zone_config_validation_excluded_args: [
+      // Memberlist is currently cross-AZ.
+      '-memberlist.join',
+      // Alertmanager is not deployed per-zone.
+      '-ruler.alertmanager-url',
+    ],
+
+    // Environment variables to exclude from multi-zone config validation.
+    multi_zone_config_validation_excluded_env_vars: [
+      // Alloy installation is currently centralised.
+      'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
+      'OTEL_TRACES_SAMPLER_ARG',
+    ],
   },
 
   assert !$._config.multi_zone_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
@@ -55,17 +70,8 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
   //   assert schedulerError == null: schedulerError,
   validateMimirMultiZoneConfig(deploymentNames)::
     local root = $;
-    local excludedArgs = [
-      // Memberlist is currently cross-AZ.
-      '-memberlist.join',
-      // Alertmanager is not deployed per-zone.
-      '-ruler.alertmanager-url',
-    ];
-    local excludedEnvVars = [
-      // Alloy installation is currently centralised.
-      'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT',
-      'OTEL_TRACES_SAMPLER_ARG',
-    ];
+    local excludedArgs = $._config.multi_zone_config_validation_excluded_args;
+    local excludedEnvVars = $._config.multi_zone_config_validation_excluded_env_vars;
 
     local isContainerArgExcluded(arg) =
       std.foldl(
@@ -127,7 +133,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
         if std.length(std.findSubstr(expectedZoneNotation, arg)) > 0 || std.length(std.findSubstr('-multi-zone', arg)) > 0 then
           null
         else
-          'The Deployment or StatefulSet "%s" contains the CLI flag "%s" with a non-matching zone. Use an address in the "%s" zone (based on deployment name) or a multi-zone address, or add this CLI flag to the exclusion list.' % [deploymentName, arg, expectedZoneNotation]
+          'The Deployment or StatefulSet "%s" contains the CLI flag "%s" with a non-matching zone. Use an address in the "%s" zone (based on deployment name) or a multi-zone address, or add this CLI flag to the "multi_zone_config_validation_excluded_args" config option.' % [deploymentName, arg, expectedZoneNotation]
       else
         null;
 
@@ -151,7 +157,7 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
           if std.length(std.findSubstr(expectedZoneNotation, value)) > 0 then
             null
           else
-            'The Deployment or StatefulSet "%s" contains the environment variable "%s" with value "%s" with a non-matching zone. Use an address in the "%s" zone (based on deployment name), or add this environment variable to the exclusion list.' % [deploymentName, env.name, value, expectedZoneNotation]
+            'The Deployment or StatefulSet "%s" contains the environment variable "%s" with value "%s" with a non-matching zone. Use an address in the "%s" zone (based on deployment name), or add this environment variable to the "multi_zone_config_validation_excluded_env_vars" config option.' % [deploymentName, env.name, value, expectedZoneNotation]
         else
           null
       else

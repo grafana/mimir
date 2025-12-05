@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"go.opentelemetry.io/otel/attribute"
@@ -33,6 +34,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/propagation"
@@ -43,6 +45,7 @@ var evaluateQueryRequestMessageName = proto.MessageName(&querierpb.EvaluateQuery
 
 var errMQENotEnabled = errors.New("MQE is not enabled on this querier")
 var errZeroBatchSize = errors.New("requested batch size cannot be 0 for an instant vector result")
+var errNoNodesInRequest = errors.New("request contains no nodes to evaluate")
 
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
@@ -124,22 +127,50 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	}
 
 	d.querierMetrics.PlansReceived.WithLabelValues(req.Plan.Version.String()).Inc()
+	d.querierMetrics.NodesPerQueryEvaluationRequest.Observe(float64(len(req.Nodes)))
 
-	if len(req.Nodes) != 1 {
-		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("this querier only supports evaluating exactly one node, got %d", len(req.Nodes)))
+	if len(req.Nodes) == 0 {
+		resp.WriteError(ctx, apierror.TypeBadData, errNoNodesInRequest)
 		return
 	}
 
-	evaluationNode := req.Nodes[0]
+	nodeIndices := make([]int64, 0, len(req.Nodes))
+	for _, node := range req.Nodes {
+		nodeIndices = append(nodeIndices, node.NodeIndex)
+	}
 
-	plan, nodes, err := req.Plan.ToDecodedPlan(evaluationNode.NodeIndex)
+	plan, nodes, err := req.Plan.ToDecodedPlan(nodeIndices...)
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not decode plan: %w", err))
 		return
 	}
 
+	nodeRequests := make([]streamingpromql.NodeEvaluationRequest, 0, len(nodes))
+	nodeToIndexMap := make(map[planning.Node]int64, len(nodes))
+	instantVectorNodeCount := 0
+	for idx, node := range nodes {
+		nodeRequests = append(nodeRequests, streamingpromql.NodeEvaluationRequest{
+			Node:      node,
+			TimeRange: req.Nodes[idx].TimeRange.ToDecodedTimeRange(),
+		})
+
+		nodeToIndexMap[node] = req.Nodes[idx].NodeIndex
+
+		if typ, err := node.ResultType(); err != nil {
+			resp.WriteError(ctx, apierror.TypeInternal, fmt.Errorf("could not get result type for node: %w", err))
+			return
+		} else if typ == parser.ValueTypeVector {
+			instantVectorNodeCount++
+		}
+	}
+
+	if len(nodeToIndexMap) != len(req.Nodes) {
+		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("request contains at least one node multiple times: have %v requested node(s), but only %v unique node(s)", len(req.Nodes), len(nodeToIndexMap)))
+		return
+	}
+
 	opts := promql.NewPrometheusQueryOpts(false, 0)
-	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodes[0], evaluationNode.TimeRange.ToDecodedTimeRange())
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodeRequests)
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
 		return
@@ -148,12 +179,13 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	defer e.Close()
 
 	observer := &evaluationObserver{
-		w:                  resp,
-		nodeIndex:          evaluationNode.NodeIndex,
-		startTime:          startTime,
-		timeNow:            d.timeNow,
-		originalExpression: req.Plan.OriginalExpression,
-		batchSize:          req.BatchSize,
+		w:                              resp,
+		nodeIndices:                    nodeToIndexMap,
+		startTime:                      startTime,
+		timeNow:                        d.timeNow,
+		originalExpression:             req.Plan.OriginalExpression,
+		batchSize:                      req.BatchSize,
+		instantVectorSeriesDataBatches: make(map[planning.Node]*instantVectorSeriesDataBatch, instantVectorNodeCount),
 	}
 
 	if err := e.Evaluate(ctx, observer); err != nil {
@@ -300,19 +332,37 @@ func (w *queryResponseWriter) write(ctx context.Context, resp *frontendv2pb.Quer
 }
 
 type evaluationObserver struct {
-	w         *queryResponseWriter
-	nodeIndex int64 // FIXME: remove this once Evaluator supports multiple nodes and passes the node index to the methods below
-	batchSize uint64
-	startTime time.Time
-	timeNow   func() time.Time
+	w           *queryResponseWriter
+	nodeIndices map[planning.Node]int64
+	batchSize   uint64
+	startTime   time.Time
+	timeNow     func() time.Time
 
-	currentInstantVectorSeriesDataBatch []types.InstantVectorSeriesData
+	instantVectorSeriesDataBatches map[planning.Node]*instantVectorSeriesDataBatch
 
 	originalExpression string
 }
 
-func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, series []types.SeriesMetadata) error {
+type instantVectorSeriesDataBatch struct {
+	unsentSeries []types.InstantVectorSeriesData
+	nodeIndex    int64
+}
+
+func (o *evaluationObserver) nodeToIndex(node planning.Node) (int64, error) {
+	if idx, ok := o.nodeIndices[node]; ok {
+		return idx, nil
+	}
+
+	return -1, fmt.Errorf("observer received data for unexpected node of type %[1]T: %[1]v", node)
+}
+
+func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, node planning.Node, series []types.SeriesMetadata) error {
 	defer types.SeriesMetadataSlicePool.Put(&series, evaluator.MemoryConsumptionTracker)
+
+	nodeIndex, err := o.nodeToIndex(node)
+	if err != nil {
+		return err
+	}
 
 	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
 
@@ -326,35 +376,47 @@ func (o *evaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evalua
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 			SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-				NodeIndex: o.nodeIndex,
+				NodeIndex: nodeIndex,
 				Series:    protoSeries,
 			},
 		},
 	})
 }
 
-func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (o *evaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error {
 	if o.batchSize == 0 {
 		return errZeroBatchSize
 	}
 
-	if cap(o.currentInstantVectorSeriesDataBatch) == 0 {
-		o.currentInstantVectorSeriesDataBatch = make([]types.InstantVectorSeriesData, 0, o.batchSize)
+	batch, ok := o.instantVectorSeriesDataBatches[node]
+	if !ok {
+		nodeIndex, err := o.nodeToIndex(node)
+		if err != nil {
+			return err
+		}
+
+		batch = &instantVectorSeriesDataBatch{
+			unsentSeries: make([]types.InstantVectorSeriesData, 0, o.batchSize),
+			nodeIndex:    nodeIndex,
+		}
+
+		o.instantVectorSeriesDataBatches[node] = batch
 	}
 
-	o.currentInstantVectorSeriesDataBatch = append(o.currentInstantVectorSeriesDataBatch, seriesData)
+	batch.unsentSeries = append(batch.unsentSeries, seriesData)
+	isLastSeries := seriesIndex == seriesCount-1
 
-	if len(o.currentInstantVectorSeriesDataBatch) < int(o.batchSize) {
+	if len(batch.unsentSeries) < int(o.batchSize) && !isLastSeries {
 		return nil
 	}
 
-	return o.sendInstantVectorSeriesDataBatch(ctx, evaluator)
+	return o.sendInstantVectorSeriesDataBatch(ctx, evaluator, batch)
 }
 
-func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Context, evaluator *streamingpromql.Evaluator) error {
-	series := make([]querierpb.InstantVectorSeriesData, 0, len(o.currentInstantVectorSeriesDataBatch))
+func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Context, evaluator *streamingpromql.Evaluator, batch *instantVectorSeriesDataBatch) error {
+	series := make([]querierpb.InstantVectorSeriesData, 0, len(batch.unsentSeries))
 
-	for _, d := range o.currentInstantVectorSeriesDataBatch {
+	for _, d := range batch.unsentSeries {
 		series = append(series, querierpb.InstantVectorSeriesData{
 			// The methods below do unsafe casts and do not copy the data from the slices, but this is OK as we're immediately
 			// serializing the message and sending it before the deferred return to the pool occurs above.
@@ -366,7 +428,7 @@ func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Contex
 	msg := querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 			InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
-				NodeIndex: o.nodeIndex,
+				NodeIndex: batch.nodeIndex,
 				Series:    series,
 			},
 		},
@@ -376,16 +438,20 @@ func (o *evaluationObserver) sendInstantVectorSeriesDataBatch(ctx context.Contex
 		return err
 	}
 
-	for _, d := range o.currentInstantVectorSeriesDataBatch {
+	for _, d := range batch.unsentSeries {
 		types.PutInstantVectorSeriesData(d, evaluator.MemoryConsumptionTracker)
 	}
 
-	o.currentInstantVectorSeriesDataBatch = o.currentInstantVectorSeriesDataBatch[:0]
+	batch.unsentSeries = batch.unsentSeries[:0]
 	return nil
 }
 
-func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, node planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	// We do not need to return anything to the pool here: the ring buffers in stepData are reused for subsequent steps, or returned to the pool elsewhere if not needed.
+	nodeIndex, err := o.nodeToIndex(node)
+	if err != nil {
+		return err
+	}
 
 	floatsHead, floatsTail := stepData.Floats.UnsafePoints()
 	floats, cleanup, err := combineSlices(floatsHead, floatsTail, types.FPointSlicePool, evaluator.MemoryConsumptionTracker)
@@ -410,7 +476,7 @@ func (o *evaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_RangeVectorStepData{
 			RangeVectorStepData: &querierpb.EvaluateQueryResponseRangeVectorStepData{
-				NodeIndex:   o.nodeIndex,
+				NodeIndex:   nodeIndex,
 				SeriesIndex: int64(seriesIndex),
 				StepT:       stepData.StepT,
 				RangeStart:  stepData.RangeStart,
@@ -448,13 +514,18 @@ func combineSlices[T any](head, tail []T, pool *types.LimitingBucketedPool[[]T, 
 	}, nil
 }
 
-func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, data types.ScalarData) error {
+func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, node planning.Node, data types.ScalarData) error {
 	defer types.FPointSlicePool.Put(&data.Samples, evaluator.MemoryConsumptionTracker)
+
+	nodeIndex, err := o.nodeToIndex(node)
+	if err != nil {
+		return err
+	}
 
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_ScalarValue{
 			ScalarValue: &querierpb.EvaluateQueryResponseScalarValue{
-				NodeIndex: o.nodeIndex,
+				NodeIndex: nodeIndex,
 
 				// The method below does and unsafe cast and does not copy the data from the slice, but this is OK as we're immediately
 				// serializing the message and sending it before the deferred return to the pool occurs above.
@@ -464,11 +535,16 @@ func (o *evaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *str
 	})
 }
 
-func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, data string) error {
+func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *streamingpromql.Evaluator, node planning.Node, data string) error {
+	nodeIndex, err := o.nodeToIndex(node)
+	if err != nil {
+		return err
+	}
+
 	return o.w.Write(ctx, querierpb.EvaluateQueryResponse{
 		Message: &querierpb.EvaluateQueryResponse_StringValue{
 			StringValue: &querierpb.EvaluateQueryResponseStringValue{
-				NodeIndex: o.nodeIndex,
+				NodeIndex: nodeIndex,
 				Value:     data,
 			},
 		},
@@ -476,10 +552,12 @@ func (o *evaluationObserver) StringEvaluated(ctx context.Context, evaluator *str
 }
 
 func (o *evaluationObserver) EvaluationCompleted(ctx context.Context, evaluator *streamingpromql.Evaluator, annotations *annotations.Annotations, evaluationStats *types.QueryStats) error {
-	if len(o.currentInstantVectorSeriesDataBatch) > 0 {
-		// Send any outstanding data now.
-		if err := o.sendInstantVectorSeriesDataBatch(ctx, evaluator); err != nil {
-			return err
+	for _, batch := range o.instantVectorSeriesDataBatches {
+		if len(batch.unsentSeries) > 0 {
+			// Send any outstanding data now.
+			if err := o.sendInstantVectorSeriesDataBatch(ctx, evaluator, batch); err != nil {
+				return err
+			}
 		}
 	}
 

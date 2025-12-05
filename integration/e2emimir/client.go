@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	yaml "gopkg.in/yaml.v3"
 
+	"github.com/grafana/mimir/integration/e2emimir/rw2/rc3"
 	"github.com/grafana/mimir/pkg/alertmanager"
 	mimirapi "github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/cardinality"
@@ -240,9 +241,24 @@ func (c *Client) PushRW2(writeRequest *promRW2.Request) (*http.Response, error) 
 		return nil, err
 	}
 
-	// Create HTTP request
-	compressed := snappy.Encode(nil, data)
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(compressed))
+	return c.pushRW2Variant(snappy.Encode(nil, data))
+}
+
+// PushRW2rc3 sends a push request compatible with RW2.0-rc3.
+// To be used for rc3-specific constructs such as CreatedTimestamp.
+func (c *Client) PushRW2rc3(writeRequest *rc3.Request) (*http.Response, error) {
+	// Create write request
+	data, err := proto.Marshal(writeRequest)
+	if err != nil {
+		return nil, err
+	}
+
+	return c.pushRW2Variant(snappy.Encode(nil, data))
+}
+
+// pushRW2Variant pushes arbitrary data to the Push endpoint, tagged appropriately for RW2.0.
+func (c *Client) pushRW2Variant(data []byte) (*http.Response, error) {
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/api/v1/push", c.distributorAddress), bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}

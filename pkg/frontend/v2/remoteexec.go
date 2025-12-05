@@ -84,7 +84,7 @@ func (r *RemoteExecutor) startExecution(
 		Version:            fullPlan.Version,
 	}
 
-	encodedPlan, err := subsetPlan.ToEncodedPlan(false, true)
+	encodedPlan, _, err := subsetPlan.ToEncodedPlan(false, true)
 	if err != nil {
 		return nil, err
 	}
