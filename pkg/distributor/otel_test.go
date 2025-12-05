@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1132,6 +1133,96 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+}
+
+func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
+	const numberOfMetrics = 150
+	const numberOfScopedMetrics = 1
+	const numberOfResourceMetrics = 300
+	const stepDuration time.Duration = 10 * time.Second
+	const defaultDuration time.Duration = 60 * time.Second
+	now := time.Date(2020, time.October, 30, 23, 0, 0, 0, time.UTC)
+
+	createMetrics := func(mts pmetric.MetricSlice, startTime time.Time, duration time.Duration) {
+		mts.EnsureCapacity(numberOfMetrics)
+		for idx := range numberOfMetrics {
+			mt := mts.AppendEmpty()
+			mt.SetName(fmt.Sprintf("metric-%d", idx))
+			datapoints := mt.SetEmptyGauge().DataPoints()
+
+			nDatapoints := int((int64(duration) + (int64(stepDuration) - 1)) / int64(stepDuration))
+			datapoints.EnsureCapacity(nDatapoints)
+
+			sampleTime := startTime
+			for range nDatapoints {
+				datapoint := datapoints.AppendEmpty()
+				datapoint.SetTimestamp(pcommon.NewTimestampFromTime(sampleTime))
+				attrs := datapoint.Attributes()
+				attrs.PutStr("route", "/hello")
+				attrs.PutStr("status", "200")
+				sampleTime = sampleTime.Add(stepDuration)
+			}
+		}
+	}
+
+	createManyScopedMetrics := func(rm pmetric.ResourceMetrics) {
+		sms := rm.ScopeMetrics()
+		sms.EnsureCapacity(numberOfScopedMetrics)
+		for idx := range numberOfScopedMetrics {
+			scopeName := fmt.Sprintf("scope-%d", idx)
+
+			sm := sms.AppendEmpty()
+			scope := sm.Scope()
+			scope.SetName(scopeName)
+			attrs := scope.Attributes()
+			attrs.PutStr("package", scopeName)
+
+			metrics := sm.Metrics()
+			createMetrics(metrics, now, defaultDuration)
+		}
+	}
+
+	createResourceMetrics := func(md pmetric.Metrics) {
+		rms := md.ResourceMetrics()
+		rms.EnsureCapacity(numberOfResourceMetrics)
+		for idx := range numberOfResourceMetrics {
+			rm := rms.AppendEmpty()
+			attrs := rm.Resource().Attributes()
+			attrs.PutStr("env", "dev")
+			attrs.PutStr("region", "us-east-1")
+			attrs.PutStr("pod", fmt.Sprintf("pod-%d", idx))
+			createManyScopedMetrics(rm)
+		}
+	}
+
+	pushFunc := func(_ context.Context, pushReq *Request) error {
+		if _, err := pushReq.WriteRequest(); err != nil {
+			return err
+		}
+
+		pushReq.CleanUp()
+		return nil
+	}
+	limits := validation.MockDefaultOverrides()
+	handler := OTLPHandler(
+		200000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+	)
+
+	b.Run("protobuf", func(b *testing.B) {
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+
+		b.ResetTimer()
+		for range b.N {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
