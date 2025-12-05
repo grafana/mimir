@@ -197,14 +197,14 @@ func (m *WriteRequest) GetLabels(ts PreallocTimeseries) (labels.Labels, error) {
 	labelCount := len(ts.Labels)
 	lbls := make(labels.Labels, 0, labelCount)
 
-	//// Make a single block of bytes to hold all strings, to save memory compared to Go rounding up the allocations.
-	//// (This is borrowed from compat_slice.go's CopyLabels.)
-	//size := 0
-	//for _, l := range ts.Labels {
-	//	size += len(l.Value)
-	//}
-	//var b strings.Builder
-	//b.Grow(size)
+	// Make a single block of bytes to hold all strings, to save memory compared to Go rounding up the allocations.
+	// (This is borrowed from compat_slice.go's CopyLabels.)
+	size := 0
+	for _, l := range ts.Labels {
+		size += len(l.Value)
+	}
+	var b strings.Builder
+	b.Grow(size)
 
 	for i, l := range ts.Labels {
 		name, err := m.rw2symbols.getSymbol(ts.LabelNameSymbols[i])
@@ -212,11 +212,11 @@ func (m *WriteRequest) GetLabels(ts PreallocTimeseries) (labels.Labels, error) {
 			return labels.EmptyLabels(), err
 		}
 
-		//b.WriteString(l.Value)
+		b.WriteString(l.Value)
 
 		lbls = append(lbls, labels.SymbolisedLabel{
 			Name:  name,
-			Value: strings.Clone(l.Value), // b.String()[b.Len()-len(l.Value):],
+			Value: b.String()[b.Len()-len(l.Value):],
 		})
 	}
 
