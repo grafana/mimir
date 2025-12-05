@@ -713,11 +713,16 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.ClientClusterValidation {
 			specificClusterValidationLocations[name] = loc
 		}
+		specificInstrumentRefLeaksLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.InstrumentRefLeaksConfig {
+			specificInstrumentRefLeaksLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
 				Storage:                 &specificStorageLocations,
 				ClientClusterValidation: &specificClusterValidationLocations,
+				InstrumentRefLeaks:      &specificInstrumentRefLeaksLocations,
 			},
 		}
 
@@ -787,17 +792,32 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	InstrumentRefLeaks      InstrumentRefLeaksConfig            `yaml:"instrument_ref_leaks" category:"experimental"`
+}
+
+type InstrumentRefLeaksConfig struct {
+	Percentage                   float64       `yaml:"percentage" category:"experimental"`
+	BeforeReusePeriod            time.Duration `yaml:"before_reuse_period" category:"experimental"`
+	MaxInflightInstrumentedBytes uint64        `yaml:"max_inflight_instrumented_bytes" category:"experimental"`
+}
+
+func (c *InstrumentRefLeaksConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Float64Var(&c.Percentage, prefix+"percentage", 0, `Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.`)
+	f.DurationVar(&c.BeforeReusePeriod, prefix+"before-reuse-period", 2*time.Minute, `Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection.`)
+	f.Uint64Var(&c.MaxInflightInstrumentedBytes, prefix+"max-inflight-instrumented-bytes", 0, `Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.`)
 }
 
 type CommonConfigInheritance struct {
-	Storage                 map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
+	Storage                  map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
+	InstrumentRefLeaksConfig map[string]*InstrumentRefLeaksConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
+	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("common.instrument-reference-leaks.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -814,6 +834,7 @@ type configWithCustomCommonUnmarshaler struct {
 type commonConfigUnmarshaler struct {
 	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
 	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
+	InstrumentRefLeaks      *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -908,6 +929,12 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	setUpGoRuntimeMetrics(cfg, reg)
+
+	mimirpb.CustomCodecConfig{
+		InstrumentRefLeaksPct:             cfg.Common.InstrumentRefLeaks.Percentage,
+		WaitBeforeReuseInstrumentedBuffer: cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
+		MaxInflightInstrumentedBytes:      cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
+	}.RegisterGlobally()
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")

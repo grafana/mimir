@@ -80,6 +80,7 @@ func NewTSDBBuilder(logger log.Logger, dataDir string, partitionID int32, blocks
 // PushToStorageAndReleaseRequest implements ingest.Pusher.
 // It puts the samples in the TSDB. Some parts taken from (*Ingester).pushSamplesToAppender.
 func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *mimirpb.WriteRequest) error {
+	defer req.FreeBuffer()
 	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	tenantID, err := dskittenant.TenantID(ctx)
