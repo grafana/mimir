@@ -1977,8 +1977,9 @@ func TestConflictingCounterResets(t *testing.T) {
 			})
 		})
 	}
+}
 
-  func TestQuerySharding_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+func TestQuerySharding_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
 	_, engine := newEngineForTesting(t, querier.PrometheusEngine)
 	reg := prometheus.NewPedanticRegistry()
 
