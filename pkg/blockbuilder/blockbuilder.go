@@ -23,6 +23,7 @@ import (
 	"github.com/twmb/franz-go/plugin/kprom"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/blockbuilder/schedulerpb"
@@ -469,7 +470,9 @@ func (b *BlockBuilder) uploadBlocks(ctx context.Context, tenantID, dbDir string,
 			return nil
 		}
 
-		meta := &block.Meta{BlockMeta: m}
+		sc := trace.SpanContextFromContext(ctx)
+		traceID := sc.TraceID().String()
+		meta := &block.Meta{BlockMeta: m, TraceID: traceID}
 		blockDir := path.Join(dbDir, meta.ULID.String())
 
 		meta.Thanos.Source = block.BlockBuilderSource
