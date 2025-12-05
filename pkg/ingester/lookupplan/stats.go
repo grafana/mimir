@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -121,7 +122,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 
 		for _, value := range values {
 			if valuesSampler.Float64() < sampleProbability && len(sampledValues) < maxSampledValues && sampledValueSize < maxSampledValuesSize {
-				sampledValues = append(sampledValues, value)
+				sampledValues = append(sampledValues, strings.Clone(value))
 				sampledValueSize += len(value)
 			}
 			// Get postings for this label name/value pair
