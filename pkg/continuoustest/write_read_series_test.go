@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -119,6 +121,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -144,7 +147,9 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -153,6 +158,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -178,7 +184,9 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -187,6 +195,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
 		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -219,13 +228,16 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 3))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
 	t.Run("should stop remote writing on network error", func(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(0, errors.New("network error"))
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -255,6 +267,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 	t.Run("should stop remote writing on 5xx error", func(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(500, errors.New("500 error"))
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -284,6 +297,9 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 	t.Run("should keep remote writing next intervals on 4xx error", func(t *testing.T) {
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(400, errors.New("400 error"))
+		client.On("QueryRange", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
+		client.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Vector{}, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 
 		reg := prometheus.NewPedanticRegistry()
 		test := NewWriteReadSeriesTest(cfg, client, logger, reg)
@@ -309,6 +325,12 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 3))
 		em.AddMultiple("mimir_continuous_test_writes_failed_total", makeExpectedMetricsMap(testTuples, `status_code="400",test="write-read-series",type="%s"`, 3))
+		// When all writes fail with 4xx, query times are reset to zero, so no queries are executed
+		// except metadata queries which are independent of query times
+		queriesMap := map[string]int{
+			`test="write-read-series",type="metadata"`: 1 * multiplier,
+		}
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -317,6 +339,26 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+
+		// Set up metadata mocks for each test tuple
+		if cfg.WithFloats {
+			md := floatMetricMetadata[0]
+			client.On("Metadata", mock.Anything, floatMetricName).Return(v1.Metadata{
+				Type: v1.MetricType(strings.ToLower(md.Type.String())),
+				Help: md.Help,
+				Unit: md.Unit,
+			}, nil)
+		}
+		if cfg.WithHistograms {
+			for _, histProfile := range histogramProfiles {
+				md := histProfile.metadata[0]
+				client.On("Metadata", mock.Anything, histProfile.metricName).Return(v1.Metadata{
+					Type: v1.MetricType(strings.ToLower(md.Type.String())),
+					Help: md.Help,
+					Unit: md.Unit,
+				}, nil)
+			}
+		}
 
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
@@ -359,8 +401,12 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		em.AddMultiple("mimir_continuous_test_query_result_checks_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
+		checksMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		checksMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_query_result_checks_total", checksMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 
@@ -369,6 +415,7 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		client := &ClientMock{}
 		client.On("WriteSeries", mock.Anything, mock.Anything, mock.Anything).Return(200, nil)
+		client.On("Metadata", mock.Anything, mock.Anything).Return(v1.Metadata{}, nil)
 		for _, tt := range testTuples {
 			if tt.querySum("") == querySumFloat("") {
 				client.On("QueryRange", mock.Anything, tt.querySum(tt.metricName), mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{
@@ -410,9 +457,15 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 
 		em := util_test.ExpectedMetrics{Context: emCtx}
 		em.AddMultiple("mimir_continuous_test_writes_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 1))
-		em.AddMultiple("mimir_continuous_test_queries_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		em.AddMultiple("mimir_continuous_test_query_result_checks_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
-		em.AddMultiple("mimir_continuous_test_query_result_checks_failed_total", makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8))
+		queriesMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		queriesMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_queries_total", queriesMap)
+		checksMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		checksMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_query_result_checks_total", checksMap)
+		checksFailedMap := makeExpectedMetricsMap(testTuples, `test="write-read-series",type="%s"`, 8)
+		checksFailedMap[`test="write-read-series",type="metadata"`] = 1 * multiplier
+		em.AddMultiple("mimir_continuous_test_query_result_checks_failed_total", checksFailedMap)
 		assert.NoError(t, testutil.GatherAndCompare(reg, em.GetOutput(), em.GetNames()...))
 	})
 }

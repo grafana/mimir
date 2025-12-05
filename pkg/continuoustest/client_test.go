@@ -19,6 +19,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/grafana/dskit/flagext"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
@@ -630,4 +631,9 @@ func (m *ClientMock) QueryRange(ctx context.Context, query string, start, end ti
 func (m *ClientMock) Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error) {
 	args := m.Called(ctx, query, ts, options)
 	return args.Get(0).(model.Vector), args.Error(1)
+}
+
+func (m *ClientMock) Metadata(ctx context.Context, metricName string) (v1.Metadata, error) {
+	args := m.Called(ctx, metricName)
+	return args.Get(0).(v1.Metadata), args.Error(1)
 }

@@ -43,6 +43,7 @@ type generateSampleHistogramFunc func(t time.Time, numSeries int) *model.SampleH
 type histogramProfile struct {
 	metricName              string
 	typeLabel               string
+	metadata                []prompb.MetricMetadata
 	generateHistogram       generateHistogramFunc
 	generateSampleHistogram generateSampleHistogramFunc
 	generateValue           generateValueFunc
@@ -54,6 +55,12 @@ var (
 		{
 			metricName: "mimir_continuous_test_histogram_int_counter_v2",
 			typeLabel:  "histogram_int_counter",
+			metadata: []prompb.MetricMetadata{{
+				Type:             prompb.MetricMetadata_HISTOGRAM,
+				MetricFamilyName: "mimir_continuous_test_histogram_int_counter_v2",
+				Help:             "A native histogram with integer buckets (counter).",
+				Unit:             "u",
+			}},
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
 				return prompb.FromIntHistogram(ts, generateIntHistogram(generateHistogramIntValue(t, false), 1, false))
@@ -65,6 +72,12 @@ var (
 		{
 			metricName: "mimir_continuous_test_histogram_float_counter_v2",
 			typeLabel:  "histogram_float_counter",
+			metadata: []prompb.MetricMetadata{{
+				Type:             prompb.MetricMetadata_HISTOGRAM,
+				MetricFamilyName: "mimir_continuous_test_histogram_float_counter_v2",
+				Help:             "A native histogram with float buckets (counter).",
+				Unit:             "u",
+			}},
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
 				return prompb.FromFloatHistogram(ts, generateFloatHistogram(generateHistogramFloatValue(t, false), 1, false))
@@ -76,6 +89,12 @@ var (
 		{
 			metricName: "mimir_continuous_test_histogram_int_gauge_v2",
 			typeLabel:  "histogram_int_gauge",
+			metadata: []prompb.MetricMetadata{{
+				Type:             prompb.MetricMetadata_GAUGEHISTOGRAM,
+				MetricFamilyName: "mimir_continuous_test_histogram_int_gauge_v2",
+				Help:             "A native histogram with integer buckets (gauge).",
+				Unit:             "u",
+			}},
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
 				return prompb.FromIntHistogram(ts, generateIntHistogram(generateHistogramIntValue(t, true), 1, true))
@@ -87,6 +106,12 @@ var (
 		{
 			metricName: "mimir_continuous_test_histogram_float_gauge_v2",
 			typeLabel:  "histogram_float_gauge",
+			metadata: []prompb.MetricMetadata{{
+				Type:             prompb.MetricMetadata_GAUGEHISTOGRAM,
+				MetricFamilyName: "mimir_continuous_test_histogram_float_gauge_v2",
+				Help:             "A native histogram with float buckets (gauge).",
+				Unit:             "u",
+			}},
 			generateHistogram: func(t time.Time) prompb.Histogram {
 				ts := t.UnixMilli()
 				return prompb.FromFloatHistogram(ts, generateFloatHistogram(generateHistogramFloatValue(t, true), 1, true))
