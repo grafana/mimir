@@ -1865,3 +1865,141 @@ func TestMapEngineError(t *testing.T) {
 		})
 	}
 }
+
+// TestConflictingCounterResets verifies the expected handling of sharded histogram aggregates
+// when counter-reset hints conflict.
+//
+// When PromQL evaluates sum() or avg() over histograms, it inspects the histogram counter reset
+// hints for each series in the aggregation group. If both histogram.CounterReset and
+// histogram.NotCounterReset appear within the same group, PromQL emits a
+// "conflicting counter resets during histogram aggregation" warning.
+//
+// Whenever histogram_count() is used, the PromQL engine enables the histogram_stats_iterator.
+// This iterator inflates histogram samples and updates their CounterResetHint values.
+//
+// When a query like:
+//
+//	histogram_count(sum(rate(<hist>)))
+//
+// is sharded in the Mimir query-frontend, the inner `sum(rate(...))` portion runs once per shard,
+// and the results are merged back together. Because the outer expression is `histogram_count(...)`,
+// the histogram_stats_iterator is applied over the *already rate-adjusted* histograms.
+//
+// This is incorrect: rate() has already compensated for all counter resets, and the histograms
+// produced by rate() must *not* have their CounterResetHint rewritten. Instead, the histograms
+// returned by rate() must have their CounterResetHint explicitly set to histogram.GaugeType.
+// This prevents the outer sum() or avg() from detecting false counter-reset conflicts.
+//
+// This test sets up a scenario where the query is intentionally sharded by the query-frontend
+// to validate that the correct (GaugeType) hints prevent spurious reset-conflict warnings.
+//
+// Note that this test will fail until these are vendored in.
+// https://github.com/prometheus/prometheus/pull/17608 and https://github.com/grafana/mimir/pull/13676
+func TestConflictingCounterResets(t *testing.T) {
+
+	queries := []string{
+		`histogram_count(sum(rate(metric[1m1s])) by (foo))`,
+		`histogram_count(avg(rate(metric[1m1s])) by (foo))`,
+	}
+
+	// create 2 histogram series. One has counter resets
+	series := make([]storage.Series, 0, 2)
+	values1 := []float64{0, 5, 12, 15, 20, 25}
+	values2 := []float64{0, 10, 0, 1, 3, 5}
+	gen1 := func(ts int64) float64 {
+		return values1[ts/60000]
+	}
+
+	gen2 := func(ts int64) float64 {
+		return values2[ts/60000]
+	}
+
+	series = append(series, testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "metric", "sample", "3", "foo", "x"), time.UnixMilli(0), time.UnixMilli(1000*60*5), time.Minute, gen1))
+	series = append(series, testdatagen.NewNativeHistogramSeries(labels.FromStrings("__name__", "metric", "sample", "2", "foo", "x"), time.UnixMilli(0), time.UnixMilli(1000*60*5), time.Minute, gen2))
+
+	shardingAwareQueryable := testdatagen.StorageSeriesQueryable(series)
+
+	for _, query := range queries {
+		t.Run(query, func(t *testing.T) {
+			runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+
+				downstream := &downstreamHandler{
+					engine:    eng,
+					queryable: shardingAwareQueryable,
+				}
+
+				req := &PrometheusRangeQueryRequest{
+					path:      "/query_range",
+					start:     0,
+					end:       60 * 6 * 1000,
+					step:      1000,
+					queryExpr: parseQuery(t, query),
+				}
+
+				// Run the query without sharding.
+				expectedRes, err := downstream.Do(context.Background(), req)
+				require.Nil(t, err)
+
+				expectedPrometheusRes, ok := expectedRes.GetPrometheusResponse()
+				require.True(t, ok)
+				sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+
+				// Ensure the query produces some results.
+				require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+				requireValidSamples(t, expectedPrometheusRes.Data.Result)
+
+				require.Len(t, expectedPrometheusRes.GetWarnings(), 0)
+
+				for _, numShards := range []int{8, 16} {
+					t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+						reg := prometheus.NewPedanticRegistry()
+						shardingware := newQueryShardingMiddleware(
+							log.NewNopLogger(),
+							eng,
+							mockLimits{totalShards: numShards},
+							0,
+							reg,
+						)
+
+						// Run the query with sharding.
+						shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "anonymous"), req)
+						require.Nil(t, err)
+
+						shardedPrometheusRes, ok := shardedRes.GetPrometheusResponse()
+						require.True(t, ok)
+
+						sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+						approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
+
+						require.Len(t, shardedPrometheusRes.GetWarnings(), 0)
+					})
+				}
+			})
+		})
+	}
+}
+
+func TestQuerySharding_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	_, engine := newEngineForTesting(t, querier.PrometheusEngine)
+	reg := prometheus.NewPedanticRegistry()
+
+	middleware := newQueryShardingMiddleware(log.NewNopLogger(), engine, mockLimits{totalShards: 16}, 0, reg)
+	handler := middleware.Wrap(mockHandlerWith(nil, nil))
+
+	// Create a request with a nil queryExpr to simulate a failed parse.
+	req := &PrometheusRangeQueryRequest{
+		path:      "/query_range",
+		start:     util.TimeToMillis(start),
+		end:       util.TimeToMillis(end),
+		step:      step.Milliseconds(),
+		queryExpr: nil, // Simulates a query that failed to parse
+	}
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	require.NotPanics(t, func() {
+		resp, err := handler.Do(ctx, req)
+		require.ErrorContains(t, err, errRequestNoQuery.Error())
+		require.Nil(t, resp)
+	})
+}

@@ -2518,6 +2518,39 @@ func (h *Head) ForEachSecondaryHash(fn func(ref []chunks.HeadSeriesRef, secondar
 	}
 }
 
+// ForEachShardHash iterates over all series in the Head, and passes references and shard hashes of the series
+// to fn. fn is called with batch of refs and hashes, in no specific order. The order of the refs
+// in the same as the order of the hashes. Each series in the head is included exactly once.
+// Series may be deleted while the function is running, and series inserted while this function runs may be reported or ignored.
+//
+// No locks are held when fn is called.
+//
+// Slices passed to fn are reused between calls.
+func (h *Head) ForEachShardHash(fn func(ref []storage.SeriesRef, shardHash []uint64)) {
+	slices := newPairOfSlices[storage.SeriesRef, uint64](512)
+
+	for i := 0; i < h.series.size; i++ {
+		slices = slices.reset()
+
+		h.series.locks[i].RLock()
+		for _, s := range h.series.hashes[i].unique {
+			// No need to lock series lock, as we're only accessing its immutable shard hash.
+			slices = slices.append(storage.SeriesRef(s.ref), s.shardHash)
+		}
+		for _, all := range h.series.hashes[i].conflicts {
+			for _, s := range all {
+				// No need to lock series lock, as we're only accessing its immutable shard hash.
+				slices = slices.append(storage.SeriesRef(s.ref), s.shardHash)
+			}
+		}
+		h.series.locks[i].RUnlock()
+
+		if slices.len() > 0 {
+			fn(slices.slice1, slices.slice2)
+		}
+	}
+}
+
 type pairOfSlices[T1, T2 any] struct {
 	slice1 []T1
 	slice2 []T2

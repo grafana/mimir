@@ -3,8 +3,13 @@
 package querymiddleware
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/user"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 )
@@ -61,4 +66,21 @@ func TestContainedExperimentalFunctions(t *testing.T) {
 			require.ElementsMatch(t, tc.expect, enabled)
 		})
 	}
+}
+
+func TestExperimentalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	inner := mockHandlerWith(nil, nil)
+	middleware := newExperimentalFunctionsMiddleware(mockLimits{}, log.NewNopLogger())
+	handler := middleware.Wrap(inner)
+
+	// Create a request with a nil queryExpr to simulate a failed parse.
+	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, Options{}, nil, "")
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	require.NotPanics(t, func() {
+		resp, err := handler.Do(ctx, req)
+		require.ErrorContains(t, err, errRequestNoQuery.Error())
+		require.Nil(t, resp)
+	})
 }

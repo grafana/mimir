@@ -44,6 +44,16 @@ func TestRW2TypesCompatible(t *testing.T) {
 	rootNode.Nodes[1].Nodes[1].Nodes[0].Value = secondValue
 	rootNode.Nodes[1].Nodes[1].Nodes[1].Value = strings.ReplaceAll(firstValue, "TimestampMs", "Timestamp")
 
+	// We are freezing our API at RW2.0-rc3. That means we do not yet support StartTimestamp on samples nor histograms, and we retain CreatedTimestamp on TimeSeries.
+	rootNode, _ = expectedTree.(*treeprint.Node)
+	rootNode.Nodes[1].AddNode("+0 CreatedTimestamp: int64 protobuf:varint,6")
+	// TimeSeries is node 1 of the request, Sample is node 1 of TimeSeries, StartTimestamp is node 2 of Sample.
+	require.Contains(t, rootNode.Nodes[1].Nodes[1].Nodes[2].String(), " StartTimestamp:")
+	rootNode.Nodes[1].Nodes[1].Nodes = rootNode.Nodes[1].Nodes[1].Nodes[0:2]
+	require.Contains(t, rootNode.Nodes[1].Nodes[2].Nodes[14].String(), " StartTimestamp:")
+	// TimeSeries is node 1 of the request, Histogram is node 2 of TimeSeries, StartTimestamp is node 14 of Histogram.
+	rootNode.Nodes[1].Nodes[2].Nodes = rootNode.Nodes[1].Nodes[2].Nodes[0:14]
+
 	require.Equal(t, expectedTree.String(), actualTree.String(), "Proto types are not compatible")
 }
 
