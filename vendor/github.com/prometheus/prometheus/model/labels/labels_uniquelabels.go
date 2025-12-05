@@ -31,11 +31,11 @@ type Labels []SymbolisedLabel
 
 type SymbolisedLabel struct {
 	Name  Symbol
-	Value Symbol
+	Value string
 }
 
 func (s SymbolisedLabel) ToLabel() Label {
-	return Label{Name: s.Name.String(), Value: s.Value.String()}
+	return Label{Name: s.Name.String(), Value: s.Value}
 }
 
 type Symbol unique.Handle[string]
@@ -67,7 +67,7 @@ func (ls Labels) Bytes(buf []byte) []byte {
 		}
 		b.WriteString(l.Name.String())
 		b.WriteByte(sep)
-		b.WriteString(l.Value.String())
+		b.WriteString(l.Value)
 	}
 	return b.Bytes()
 }
@@ -98,14 +98,14 @@ func (ls Labels) Hash() uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
 	for i, v := range ls {
-		if len(b)+len(v.Name.String())+len(v.Value.String())+2 >= cap(b) {
+		if len(b)+len(v.Name.String())+len(v.Value)+2 >= cap(b) {
 			// If labels entry is 1KB+ do not allocate whole entry.
 			h := xxhash.New()
 			_, _ = h.Write(b)
 			for _, v := range ls[i:] {
 				_, _ = h.WriteString(v.Name.String())
 				_, _ = h.Write(seps)
-				_, _ = h.WriteString(v.Value.String())
+				_, _ = h.WriteString(v.Value)
 				_, _ = h.Write(seps)
 			}
 			return h.Sum64()
@@ -113,7 +113,7 @@ func (ls Labels) Hash() uint64 {
 
 		b = append(b, v.Name.String()...)
 		b = append(b, sep)
-		b = append(b, v.Value.String()...)
+		b = append(b, v.Value...)
 		b = append(b, sep)
 	}
 	return xxhash.Sum64(b)
@@ -133,7 +133,7 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 		default:
 			b = append(b, ls[i].Name.String()...)
 			b = append(b, sep)
-			b = append(b, ls[i].Value.String()...)
+			b = append(b, ls[i].Value...)
 			b = append(b, sep)
 			i++
 			j++
@@ -157,7 +157,7 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 		}
 		b = append(b, ls[i].Name.String()...)
 		b = append(b, sep)
-		b = append(b, ls[i].Value.String()...)
+		b = append(b, ls[i].Value...)
 		b = append(b, sep)
 	}
 	return xxhash.Sum64(b), b
@@ -181,7 +181,7 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 			}
 			b.WriteString(ls[i].Name.String())
 			b.WriteByte(sep)
-			b.WriteString(ls[i].Value.String())
+			b.WriteString(ls[i].Value)
 			i++
 			j++
 		}
@@ -207,7 +207,7 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 		}
 		b.WriteString(ls[i].Name.String())
 		b.WriteByte(sep)
-		b.WriteString(ls[i].Value.String())
+		b.WriteString(ls[i].Value)
 	}
 	return b.Bytes()
 }
@@ -224,7 +224,7 @@ func (ls Labels) Copy() Labels {
 func (ls Labels) Get(name string) string {
 	for _, l := range ls {
 		if l.Name.String() == name {
-			return l.Value.String()
+			return l.Value
 		}
 	}
 	return ""
@@ -232,13 +232,13 @@ func (ls Labels) Get(name string) string {
 
 // getSymbol returns the value for the label with the given name.
 // Returns an empty symbol if the label doesn't exist.
-func (ls Labels) getSymbol(name Symbol) Symbol {
+func (ls Labels) getSymbol(name Symbol) string {
 	for _, l := range ls {
 		if l.Name == name {
 			return l.Value
 		}
 	}
-	return EmptySymbol
+	return ""
 }
 
 // Has returns true if the label with the given name is present.
@@ -269,13 +269,13 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {
 	for _, v := range ls {
-		if v.Value != EmptySymbol {
+		if v.Value != "" {
 			continue
 		}
 		// Do not copy the slice until it's necessary.
 		els := make(Labels, 0, len(ls)-1)
 		for _, v := range ls {
-			if v.Value != EmptySymbol {
+			if v.Value != "" {
 				els = append(els, v)
 			}
 		}
@@ -290,7 +290,7 @@ func (ls Labels) WithoutEmpty() Labels {
 func (ls Labels) ByteSize() uint64 {
 	var size uint64
 	for _, l := range ls {
-		size += uint64(len(l.Name.String())+len(l.Value.String())) + 2*uint64(unsafe.Sizeof(""))
+		size += uint64(len(l.Name.String())+len(l.Value)) + 2*uint64(unsafe.Sizeof(""))
 	}
 	return size
 }
@@ -313,7 +313,7 @@ func New(ls ...Label) Labels {
 	for _, l := range ls {
 		res = append(res, SymbolisedLabel{
 			Name:  NewSymbol(l.Name),
-			Value: NewSymbol(l.Value),
+			Value: l.Value,
 		})
 	}
 
@@ -330,7 +330,7 @@ func FromStrings(ss ...string) Labels {
 	for i := 0; i < len(ss); i += 2 {
 		res = append(res, SymbolisedLabel{
 			Name:  NewSymbol(ss[i]),
-			Value: NewSymbol(ss[i+1]),
+			Value: ss[i+1],
 		})
 	}
 
@@ -338,16 +338,16 @@ func FromStrings(ss ...string) Labels {
 	return res
 }
 
-// FromSymbols creates new labels from pairs of symbols.
-func FromSymbols(ss ...Symbol) Labels {
-	if len(ss)%2 != 0 {
-		panic("invalid number of symbols")
+// FromSymbols creates new labels from pairs of symbols and strings.
+func FromSymbols(names []Symbol, values []string) Labels {
+	if len(names) != len(values) {
+		panic("invalid number of names or values")
 	}
-	res := make(Labels, 0, len(ss)/2)
-	for i := 0; i < len(ss); i += 2 {
+	res := make(Labels, 0, len(names))
+	for i := range len(names) {
 		res = append(res, SymbolisedLabel{
-			Name:  ss[i],
-			Value: ss[i+1],
+			Name:  names[i],
+			Value: values[i],
 		})
 	}
 
@@ -376,7 +376,7 @@ func Compare(a, b Labels) int {
 			return 1
 		}
 		if a[i].Value != b[i].Value {
-			if a[i].Value.String() < b[i].Value.String() {
+			if a[i].Value < b[i].Value {
 				return -1
 			}
 			return 1
@@ -405,7 +405,7 @@ func (ls Labels) Range(f func(l Label)) {
 }
 
 // rangeSymbols calls f on each label.
-func (ls Labels) rangeSymbols(f func(name, value Symbol)) {
+func (ls Labels) rangeSymbols(f func(name Symbol, value string)) {
 	for _, l := range ls {
 		f(l.Name, l.Value)
 	}
@@ -460,7 +460,7 @@ func (ls Labels) dropReservedSymbols(shouldDropFn func(name Symbol) bool) Labels
 func (ls *Labels) InternStrings(intern func(string) string) {
 	for i, l := range *ls {
 		(*ls)[i].Name = NewSymbol(intern(l.Name.String()))
-		(*ls)[i].Value = NewSymbol(intern(l.Value.String()))
+		(*ls)[i].Value = intern(l.Value)
 	}
 }
 
@@ -468,7 +468,7 @@ func (ls *Labels) InternStrings(intern func(string) string) {
 func (ls Labels) ReleaseStrings(release func(string)) {
 	for _, l := range ls {
 		release(l.Name.String())
-		release(l.Value.String())
+		release(l.Value)
 	}
 }
 
@@ -506,7 +506,7 @@ func (b *Builder) Del(ns ...string) *Builder {
 
 // Keep removes all labels from the base except those with the given names.
 func (b *Builder) Keep(ns ...string) *Builder {
-	b.base.rangeSymbols(func(n, v Symbol) {
+	b.base.rangeSymbols(func(n Symbol, v string) {
 		if slices.Contains(ns, n.String()) {
 			return
 		}
@@ -524,17 +524,15 @@ func (b *Builder) Set(n, v string) *Builder {
 		return b.Del(n)
 	}
 
-	vSymbol := NewSymbol(v)
-
 	for i, a := range b.add {
 		if a.Name.String() == n {
-			b.add[i].Value = vSymbol
+			b.add[i].Value = v
 			return b
 		}
 	}
 
 	nSymbol := NewSymbol(n)
-	b.add = append(b.add, SymbolisedLabel{Name: nSymbol, Value: vSymbol})
+	b.add = append(b.add, SymbolisedLabel{Name: nSymbol, Value: v})
 
 	return b
 }
@@ -545,14 +543,14 @@ func (b *Builder) Get(n string) string {
 	// Del() removes entries from .add but Set() does not remove from .del, so check .add first.
 	for _, a := range b.add {
 		if a.Name == nSymbol {
-			return a.Value.String()
+			return a.Value
 		}
 	}
 	if slices.Contains(b.del, nSymbol) {
 		return ""
 	}
 
-	return b.base.getSymbol(nSymbol).String()
+	return b.base.getSymbol(nSymbol)
 }
 
 // Range calls f on each label in the Builder.
@@ -562,9 +560,9 @@ func (b *Builder) Range(f func(l Label)) {
 	var delStack [128]Symbol
 	// Take a copy of add and del, so they are unaffected by calls to Set() or Del().
 	origAdd, origDel := append(addStack[:0], b.add...), append(delStack[:0], b.del...)
-	b.base.rangeSymbols(func(n, v Symbol) {
+	b.base.rangeSymbols(func(n Symbol, v string) {
 		if !slices.Contains(origDel, n) && !contains(origAdd, n) {
-			f(Label{Name: n.String(), Value: v.String()})
+			f(Label{Name: n.String(), Value: v})
 		}
 	})
 	for _, a := range origAdd {
@@ -587,8 +585,8 @@ func (b *Builder) Reset(base Labels) {
 	b.del = b.del[:0]
 	b.add = b.add[:0]
 
-	b.base.rangeSymbols(func(n, v Symbol) {
-		if v == EmptySymbol {
+	b.base.rangeSymbols(func(n Symbol, v string) {
+		if v == "" {
 			b.del = append(b.del, n)
 		}
 	})
@@ -668,7 +666,7 @@ func (b *ScratchBuilder) Reset() {
 // Note if you Add the same name twice you will get a duplicate label, which is invalid.
 // If SetUnsafeAdd was set to false, the values must remain live until Labels() is called.
 func (b *ScratchBuilder) Add(name, value string) {
-	b.add = append(b.add, SymbolisedLabel{Name: NewSymbol(name), Value: NewSymbol(value)})
+	b.add = append(b.add, SymbolisedLabel{Name: NewSymbol(name), Value: value})
 }
 
 // Sort the labels added so far by name.
