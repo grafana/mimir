@@ -210,3 +210,60 @@ func (s *mockActiveSeriesServer) Send(resp *client.ActiveSeriesResponse) error {
 func (s *mockActiveSeriesServer) Context() context.Context {
 	return s.ctx
 }
+
+func TestMatchAllSeries(t *testing.T) {
+	tests := []struct {
+		name     string
+		matchers []*labels.Matcher
+		expected bool
+	}{
+		{
+			name:     "empty matchers",
+			matchers: []*labels.Matcher{},
+			expected: false,
+		},
+		{
+			name: "single matcher with regexp .*",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+			},
+			expected: true,
+		},
+		{
+			name: "single matcher on __name__ with regexp .+",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, ".+"),
+			},
+			expected: true,
+		},
+		{
+			name: "single matcher on __name__ with not-equal to empty string",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, model.MetricNameLabel, ""),
+			},
+			expected: true,
+		},
+		{
+			name: "single matcher with different regexp pattern",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar"),
+			},
+			expected: false,
+		},
+		{
+			name: "multiple matchers with regexp .*",
+			matchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"),
+				labels.MustNewMatcher(labels.MatchEqual, "bar", "baz"),
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := matchAllSeries(tc.matchers)
+			assert.Equal(t, tc.expected, result)
+		})
+	}
+}
