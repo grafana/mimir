@@ -149,7 +149,7 @@ func (w *CorrelationWindow) Reset() {
 	w.corrSumXY = 0
 }
 
-// BucketedWindow is a time based bucketed sliding buckets.
+// BucketedWindow is a time based bucketed sliding window.
 // T is the bucket type.
 //
 // This type is not concurrency safe.
