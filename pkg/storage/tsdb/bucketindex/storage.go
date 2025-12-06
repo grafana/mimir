@@ -10,6 +10,8 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"github.com/go-kit/log/level"
+	"math/rand"
 	"time"
 
 	"github.com/go-kit/log"
@@ -32,6 +34,73 @@ func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvi
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
+	const maxRetries = 5
+	const baseDelay = 500 * time.Millisecond
+
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Exponential backoff with jitter: 500ms, 1s, 2s
+			delay := baseDelay * time.Duration(1<<uint(attempt-1))
+			jitter := time.Duration(rand.Int63n(int64(delay / 2)))
+
+			level.Warn(logger).Log(
+				"msg", "retrying bucket index read after corruption",
+				"user", userID,
+				"attempt", attempt+1,
+				"max_retries", maxRetries,
+				"delay", delay+jitter,
+			)
+
+			select {
+			case <-time.After(delay + jitter):
+				// Continue to retry
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+
+		idx, err := readIndexAttempt(ctx, bkt, userID, cfgProvider, logger)
+		if err == nil {
+			if attempt > 0 {
+				level.Info(logger).Log(
+					"msg", "successfully read bucket index after retry",
+					"user", userID,
+					"attempt", attempt+1,
+				)
+			}
+			return idx, nil
+		}
+
+		lastErr = err
+
+		// Only retry on corruption errors (transient due to concurrent writes)
+		if !errors.Is(err, ErrIndexCorrupted) {
+			// Not corrupted, fail immediately (e.g., ErrIndexNotFound, network errors)
+			return nil, err
+		}
+
+		// Log corruption and retry
+		level.Warn(logger).Log(
+			"msg", "bucket index corrupted, will retry",
+			"user", userID,
+			"attempt", attempt+1,
+			"err", err,
+		)
+	}
+
+	// All retries exhausted
+	level.Error(logger).Log(
+		"msg", "bucket index still corrupted after all retries",
+		"user", userID,
+		"max_retries", maxRetries,
+		"err", lastErr,
+	)
+	return nil, lastErr
+}
+
+// readIndexAttempt performs a single attempt to read the bucket index
+func readIndexAttempt(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvider bucket.TenantConfigProvider, logger log.Logger) (*Index, error) {
 	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
 	// Get the bucket index.
