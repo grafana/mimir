@@ -319,7 +319,7 @@ github.com/benbjohnson/clock
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
-# github.com/bits-and-blooms/bitset v1.24.0
+# github.com/bits-and-blooms/bitset v1.24.4
 ## explicit; go 1.16
 github.com/bits-and-blooms/bitset
 # github.com/cenkalti/backoff/v4 v4.3.0
@@ -439,7 +439,7 @@ github.com/envoyproxy/protoc-gen-validate/validate
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
-# github.com/failsafe-go/failsafe-go v0.9.2
+# github.com/failsafe-go/failsafe-go v0.9.3
 ## explicit; go 1.21
 github.com/failsafe-go/failsafe-go
 github.com/failsafe-go/failsafe-go/adaptivelimiter

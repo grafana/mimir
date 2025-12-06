@@ -7,7 +7,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20240927000941-0f3dac36c52b
 	github.com/dustin/go-humanize v1.0.1
 	github.com/edsrzf/mmap-go v1.2.0
-	github.com/failsafe-go/failsafe-go v0.9.2
+	github.com/failsafe-go/failsafe-go v0.9.3
 	github.com/go-kit/log v0.2.1
 	github.com/go-openapi/strfmt v0.25.0
 	github.com/go-openapi/swag v0.25.1 // indirect
@@ -245,7 +245,7 @@ require (
 	github.com/aws/smithy-go v1.23.2 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.24.0 // indirect
+	github.com/bits-and-blooms/bitset v1.24.4 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/coreos/go-semver v0.3.1 // indirect
