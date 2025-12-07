@@ -668,7 +668,7 @@ func (b *ScratchBuilder) Reset() {
 func (b *ScratchBuilder) Add(name, value string) {
 	if b.unsafeAdd {
 		// Underlying data structure for uniquelabels assumes that values are not reused.
-		value = unique.Make(value).Value()
+		value = strings.Clone(value)
 	}
 
 	b.add = append(b.add, SymbolisedLabel{Name: NewSymbol(name), Value: value})
