@@ -3,6 +3,7 @@
 package lookupplan
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -112,6 +113,7 @@ func TestStringsSamplerMaxCount(t *testing.T) {
 func TestStringsSamplerMaxBytes(t *testing.T) {
 	numValues := 1000
 	maxBytes := 100
+	valueLen := 10
 
 	cfg := CostConfig{
 		SampleValuesProbability: 1.0,    // Always sample
@@ -121,8 +123,9 @@ func TestStringsSamplerMaxBytes(t *testing.T) {
 
 	sampler := NewStringsSampler(numValues, cfg)
 	for i := 0; i < numValues; i++ {
-		// Each value is ~4 bytes ("0000" to "0999")
-		sampler.MaybeSample(strconv.Itoa(i))
+		// Each value is exactly valueLen bytes with zero-padding
+		value := fmt.Sprintf("%0*d", valueLen, i)
+		sampler.MaybeSample(value)
 	}
 
 	samples := sampler.Sampled()
@@ -133,9 +136,8 @@ func TestStringsSamplerMaxBytes(t *testing.T) {
 		totalBytes += len(s)
 	}
 
-	// Should have stopped around maxBytes
-	require.Less(t, totalBytes, maxBytes+10, // allow small overshoot for the last sample
-		"total bytes %d should be close to maxBytes %d", totalBytes, maxBytes)
+	// Should have stopped around maxBytes (last sample may push slightly over)
+	require.Less(t, totalBytes, maxBytes+valueLen, "total bytes %d should be close to maxBytes %d", totalBytes, maxBytes)
 }
 
 // TestStringsSamplerDisabled verifies that sampling can be disabled via different config options.
