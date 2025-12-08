@@ -120,6 +120,12 @@ func (cfg *StorageBackendConfig) Validate() error {
 		}
 	}
 
+	if cfg.Backend == GCS {
+		if err := cfg.GCS.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -170,7 +176,7 @@ func NewClient(ctx context.Context, cfg Config, name string, logger log.Logger, 
 	case S3:
 		backendClient, err = s3.NewBucketClient(cfg.S3, name, logger)
 	case GCS:
-		backendClient, err = gcs.NewBucketClient(ctx, cfg.GCS, name, logger)
+		backendClient, err = gcs.NewBucketClient(ctx, cfg.GCS, name, logger, reg)
 	case Azure:
 		backendClient, err = azure.NewBucketClient(cfg.Azure, name, logger)
 	case Swift:
