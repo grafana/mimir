@@ -5,8 +5,6 @@ package lookupplan
 import (
 	"context"
 	"fmt"
-	"math/rand/v2"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -110,22 +108,12 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, cfg 
 		}
 
 		// Sample values for selectivity estimation.
-		// Use deterministic seed based on number of values for reproducibility.
-		valuesSampler := rand.New(rand.NewPCG(uint64(len(values)), 0))
-		expectedNumSampledValues := min(cfg.SampleValuesMaxCount, int(cfg.SampleValuesProbability*float64(len(values))))
-		sampledValues := make([]string, 0, max(1, expectedNumSampledValues))
-		sampledValuesBytes := 0
+		valuesSampler := NewStringsSampler(len(values), cfg)
 
 		// Add each value to the sketch
 		// For each value, we need to count how many series have that value
 		for _, value := range values {
-			// Sample values with configured probability, respecting max count and size limits
-			if valuesSampler.Float64() < cfg.SampleValuesProbability &&
-				len(sampledValues) < cfg.SampleValuesMaxCount &&
-				sampledValuesBytes < cfg.SampleValuesMaxBytes {
-				sampledValues = append(sampledValues, strings.Clone(value))
-				sampledValuesBytes += len(value)
-			}
+			valuesSampler.MaybeSample(value)
 
 			// Get postings for this label name/value pair
 			postings, err := r.Postings(ctx, labelName, value)
@@ -143,7 +131,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, cfg 
 			valBytes := yoloBytes(value)
 			sketch.s.AddN(valBytes, seriesCountForValue)
 		}
-		sketch.sampledValues = sampledValues
+		sketch.sampledValues = valuesSampler.Sampled()
 
 		labelSketches[labelName] = sketch
 	}
