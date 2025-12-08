@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
@@ -171,6 +172,7 @@ func getShardedAllPostings(ctx context.Context, idx tsdb.IndexReader, shardIndex
 			}
 		}
 	})
+	slices.Sort(out) // We don't really need this for usage inside this module, but it's safer to conform to Postings norms.
 	return index.NewListPostings(out)
 }
 
