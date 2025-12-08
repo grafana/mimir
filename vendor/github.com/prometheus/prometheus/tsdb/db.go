@@ -325,6 +325,10 @@ type Options struct {
 	IndexLookupPlannerFunc IndexLookupPlannerFunc
 
 	PostingsClonerFactory PostingsClonerFactory
+
+	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
+	// It's passed down to the TSDB compactor.
+	BlockCompactionExcludeFunc BlockExcludeFilterFunc
 }
 
 type NewCompactorFunc func(ctx context.Context, r prometheus.Registerer, l *slog.Logger, ranges []int64, pool chunkenc.Pool, opts *Options) (Compactor, error)
@@ -1033,6 +1037,7 @@ func open(dir string, l *slog.Logger, r prometheus.Registerer, opts *Options, rn
 			EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
 			PD:                          opts.PostingsDecoderFactory,
 			UseUncachedIO:               opts.UseUncachedIO,
+			BlockExcludeFilter:          opts.BlockCompactionExcludeFunc,
 		})
 	}
 	if err != nil {
@@ -2190,6 +2195,13 @@ func (db *DB) Head() *Head {
 
 // Close the partition.
 func (db *DB) Close() error {
+	// Allow close-after-close operation for simpler use (e.g. tests).
+	select {
+	case <-db.donec:
+		return nil
+	default:
+	}
+
 	close(db.stopc)
 	if db.compactCancel != nil {
 		db.compactCancel()
