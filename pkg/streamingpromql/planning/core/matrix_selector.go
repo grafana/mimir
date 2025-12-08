@@ -127,7 +127,7 @@ func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
 
 func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	if m.Anchored || m.Smoothed {
-		return planning.QueryPlanV3
+		return planning.QueryPlanV4
 	}
 	return planning.QueryPlanVersionZero
 }

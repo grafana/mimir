@@ -1372,6 +1372,56 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+		"matrix anchored selector": {
+			expr:      `some_metric[1m] anchored`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  0,
+				Version:   planning.QueryPlanV4,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Range:              60 * time.Second,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
+							Anchored:           true,
+						}),
+						Type:        "MatrixSelector",
+						Description: `{__name__="some_metric"}[1m0s]`,
+					},
+				},
+			},
+		},
+		"matrix smoothed selector": {
+			expr:      `some_metric[1m] smoothed`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  0,
+				Version:   planning.QueryPlanV4,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Range:              60 * time.Second,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
+							Smoothed:           true,
+						}),
+						Type:        "MatrixSelector",
+						Description: `{__name__="some_metric"}[1m0s]`,
+					},
+				},
+			},
+		},
 	}
 
 	ctx := context.Background()

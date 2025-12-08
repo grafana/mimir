@@ -121,7 +121,7 @@ func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
 
 func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	if v.Smoothed {
-		return planning.QueryPlanV3
+		return planning.QueryPlanV4
 	}
 	return planning.QueryPlanVersionZero
 }
