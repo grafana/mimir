@@ -11356,6 +11356,39 @@
                 },
                 {
                   "kind": "field",
+                  "name": "sample_values_probability",
+                  "required": false,
+                  "desc": "Probability of sampling a label value for regex selectivity estimation (0.0-1.0). Sampled values are held in memory in addition to series. Set to 0 to disable; regexes will be estimated to select 10% of values.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 0.01,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.sample-values-probability",
+                  "fieldType": "float",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "sample_values_max_count",
+                  "required": false,
+                  "desc": "Maximum number of sampled values to store per label name. Set to 0 to disable; regexes will be estimated to select 10% of values.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 1024,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.sample-values-max-count",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
+                  "name": "sample_values_max_bytes",
+                  "required": false,
+                  "desc": "Maximum total size in bytes of sampled values per label name. Set to 0 to disable; regexes will be estimated to select 10% of values.",
+                  "fieldValue": null,
+                  "fieldDefaultValue": 65536,
+                  "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.sample-values-max-bytes",
+                  "fieldType": "int",
+                  "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "field",
                   "name": "index_lookup_planning_enabled",
                   "required": false,
                   "desc": "Controls the collection of statistics and whether to defer some vector selector matchers to sequential scans. This leads to better performance.",

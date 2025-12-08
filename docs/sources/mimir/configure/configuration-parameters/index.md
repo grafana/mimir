@@ -5257,6 +5257,23 @@ tsdb:
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.label-cardinality-for-smaller-sketch
     [label_cardinality_for_smaller_sketch: <int> | default = 1000]
 
+    # (advanced) Probability of sampling a label value for regex selectivity
+    # estimation (0.0-1.0). Sampled values are held in memory in addition to
+    # series. Set to 0 to disable; regexes will be estimated to select 10% of
+    # values.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.sample-values-probability
+    [sample_values_probability: <float> | default = 0.01]
+
+    # (advanced) Maximum number of sampled values to store per label name. Set
+    # to 0 to disable; regexes will be estimated to select 10% of values.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.sample-values-max-count
+    [sample_values_max_count: <int> | default = 1024]
+
+    # (advanced) Maximum total size in bytes of sampled values per label name.
+    # Set to 0 to disable; regexes will be estimated to select 10% of values.
+    # CLI flag: -blocks-storage.tsdb.index-lookup-planning.sample-values-max-bytes
+    [sample_values_max_bytes: <int> | default = 65536]
+
     # (experimental) Controls the collection of statistics and whether to defer
     # some vector selector matchers to sequential scans. This leads to better
     # performance.

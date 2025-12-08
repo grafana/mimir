@@ -829,6 +829,12 @@ Usage of ./cmd/mimir/mimir:
     	Cost for retrieving the posting list from disk or from memory. (default 10)
   -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost float
     	Cost for retrieving series from the index and checking if a series belongs to the query's shard. (default 15)
+  -blocks-storage.tsdb.index-lookup-planning.sample-values-max-bytes int
+    	Maximum total size in bytes of sampled values per label name. Set to 0 to disable; regexes will be estimated to select 10% of values. (default 65536)
+  -blocks-storage.tsdb.index-lookup-planning.sample-values-max-count int
+    	Maximum number of sampled values to store per label name. Set to 0 to disable; regexes will be estimated to select 10% of values. (default 1024)
+  -blocks-storage.tsdb.index-lookup-planning.sample-values-probability float
+    	Probability of sampling a label value for regex selectivity estimation (0.0-1.0). Sampled values are held in memory in addition to series. Set to 0 to disable; regexes will be estimated to select 10% of values. (default 0.01)
   -blocks-storage.tsdb.index-lookup-planning.statistics-collection-frequency duration
     	[experimental] How frequently to collect block statistics, which are used in query execution optimization. 0 to disable. (default 1h0m0s)
   -blocks-storage.tsdb.memory-snapshot-on-shutdown

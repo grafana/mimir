@@ -51,12 +51,16 @@ type CostConfig struct {
 	LabelCardinalityForSmallerSketch uint64 `yaml:"label_cardinality_for_smaller_sketch" category:"advanced"`
 
 	// SampleValuesProbability is the probability of sampling a label value for selectivity estimation.
+	// Sampled values are held in memory in addition to the in-memory storage of series.
+	// Set to 0 to disable sampling; regular expressions will be estimated to select 10% of all values of a label.
 	SampleValuesProbability float64 `yaml:"sample_values_probability" category:"advanced"`
 
 	// SampleValuesMaxCount is the maximum number of sampled values to store per label name.
+	// Set to 0 to disable sampling; regular expressions will be estimated to select 10% of all values of a label.
 	SampleValuesMaxCount int `yaml:"sample_values_max_count" category:"advanced"`
 
 	// SampleValuesMaxBytes is the maximum total size in bytes of sampled values per label name.
+	// Set to 0 to disable sampling; regular expressions will be estimated to select 10% of all values of a label.
 	SampleValuesMaxBytes int `yaml:"sample_values_max_bytes" category:"advanced"`
 }
 
@@ -67,9 +71,9 @@ func (cfg *CostConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
 	f.Uint64Var(&cfg.MinSeriesPerBlockForQueryPlanning, prefix+"min-series-per-block-for-query-planning", DefaultMinSeriesPerBlockForQueryPlanning, "Minimum number of series a block must have for query planning to be used.")
 	f.Uint64Var(&cfg.LabelCardinalityForLargerSketch, prefix+"label-cardinality-for-larger-sketch", DefaultLabelCardinalityForLargerSketch, "Number of series for a label name above which larger count-min sketches are used for that label.")
 	f.Uint64Var(&cfg.LabelCardinalityForSmallerSketch, prefix+"label-cardinality-for-smaller-sketch", DefaultLabelCardinalityForSmallerSketch, "Number of series for a label name above which smaller count-min sketches are used for that label.")
-	f.Float64Var(&cfg.SampleValuesProbability, prefix+"sample-values-probability", DefaultSampleValuesProbability, "Probability of sampling a label value for regex selectivity estimation (0.0-1.0).")
-	f.IntVar(&cfg.SampleValuesMaxCount, prefix+"sample-values-max-count", DefaultSampleValuesMaxCount, "Maximum number of sampled values to store per label name.")
-	f.IntVar(&cfg.SampleValuesMaxBytes, prefix+"sample-values-max-bytes", DefaultSampleValuesMaxBytes, "Maximum total size in bytes of sampled values per label name.")
+	f.Float64Var(&cfg.SampleValuesProbability, prefix+"sample-values-probability", DefaultSampleValuesProbability, "Probability of sampling a label value for regex selectivity estimation (0.0-1.0). Sampled values are held in memory in addition to series. Set to 0 to disable; regexes will be estimated to select 10% of values.")
+	f.IntVar(&cfg.SampleValuesMaxCount, prefix+"sample-values-max-count", DefaultSampleValuesMaxCount, "Maximum number of sampled values to store per label name. Set to 0 to disable; regexes will be estimated to select 10% of values.")
+	f.IntVar(&cfg.SampleValuesMaxBytes, prefix+"sample-values-max-bytes", DefaultSampleValuesMaxBytes, "Maximum total size in bytes of sampled values per label name. Set to 0 to disable; regexes will be estimated to select 10% of values.")
 }
 
 func (cfg *CostConfig) Validate() error {
