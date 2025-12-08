@@ -129,7 +129,7 @@ func TestStepRange(t *testing.T) {
 				end := timestamp.Time(tr.StartT)
 
 				// Iterate through all the steps, validating that we increment at the given step value
-				for i := 0; i < tc.steps; i++ {
+				for i := range tc.steps {
 					stepData, err := rv.NextStepSamples(ctx)
 					require.NoError(t, err)
 					require.NotNil(t, stepData)
