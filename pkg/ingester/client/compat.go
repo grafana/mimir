@@ -16,28 +16,32 @@ import (
 )
 
 // ToQueryRequest builds a QueryRequest proto.
-func ToQueryRequest(from, to model.Time, matchers []*labels.Matcher) (*QueryRequest, error) {
+func ToQueryRequest(from, to model.Time, projectionLabels []string, matchers []*labels.Matcher) (*QueryRequest, error) {
 	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
 
-	return &QueryRequest{
+	req := &QueryRequest{
 		StartTimestampMs: int64(from),
 		EndTimestampMs:   int64(to),
 		Matchers:         ms,
-	}, nil
+		ProjectionLabels: projectionLabels,
+	}
+
+	return req, nil
 }
 
 // FromQueryRequest unpacks a QueryRequest proto.
-func FromQueryRequest(req *QueryRequest) (model.Time, model.Time, []*labels.Matcher, error) {
+func FromQueryRequest(req *QueryRequest) (model.Time, model.Time, []string, []*labels.Matcher, error) {
 	matchers, err := FromLabelMatchers(req.Matchers)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, nil, nil, err
 	}
 	from := model.Time(req.StartTimestampMs)
 	to := model.Time(req.EndTimestampMs)
-	return from, to, matchers, nil
+
+	return from, to, req.ProjectionLabels, matchers, nil
 }
 
 // ToExemplarQueryRequest builds an ExemplarQueryRequest proto.

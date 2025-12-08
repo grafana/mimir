@@ -53,7 +53,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context
 	// nodes is a list of DeduplicateAndMerge nodes in the order of their appearance in the plan.
 	var nodes []dedupNodeInfo
 	e.collect(plan.Root, nil, -1, &nodes)
-	newRoot, err := e.eliminate(nodes)
+	newRoot, err := e.eliminate(plan, nodes)
 	if err != nil {
 		return nil, err
 	}
@@ -130,13 +130,17 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 	}
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) eliminate(dedupNodes []dedupNodeInfo) (planning.Node, error) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) eliminate(plan *planning.QueryPlan, dedupNodes []dedupNodeInfo) (planning.Node, error) {
 	var newRoot planning.Node
+	// allRemoved is true only if we had dedup nodes and removed all of them.
+	// If dedupNodes is empty (e.g., due to binary operations), allRemoved should be false.
+	var removedCount int
 
 	for _, dedupInfo := range dedupNodes {
 		if dedupInfo.keep {
 			continue
 		}
+		removedCount++
 		if dedupInfo.parent == nil {
 			newRoot = dedupInfo.node.Inner
 			continue
@@ -145,6 +149,11 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) eliminate(dedupNodes []de
 			return nil, err
 		}
 	}
+
+	if removedCount == len(dedupNodes) {
+		plan.NoDeduplicateAndMergeNodes = true
+	}
+
 	return newRoot, nil
 }
 

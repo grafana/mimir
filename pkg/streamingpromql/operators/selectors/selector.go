@@ -38,6 +38,10 @@ type Selector struct {
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
+	// Projection hints for label pushdown optimization
+	ProjectionLabels  []string
+	ProjectionInclude bool
+
 	querier   storage.Querier
 	seriesSet storage.SeriesSet
 	series    *seriesList
@@ -135,6 +139,10 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		// Mimir does use ShardCount, ShardIndex and DisableTrimming, but not at this level:
 		// ShardCount and ShardIndex are set by ingesters and store-gateways when a sharding
 		// label matcher is present, and ingesters set DisableTrimming to true.
+
+		// Projection hints for label pushdown optimization
+		ProjectionLabels:  s.ProjectionLabels,
+		ProjectionInclude: s.ProjectionInclude,
 	}
 
 	// Convert our operator type matchers to Prometheus matchers. This parses any regular

@@ -9003,7 +9003,7 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := client.ToQueryRequest(start, end, []*labels.Matcher{matcher})
+	req, err := client.ToQueryRequest(start, end, nil, []*labels.Matcher{matcher})
 	if err != nil {
 		return nil, nil, err
 	}

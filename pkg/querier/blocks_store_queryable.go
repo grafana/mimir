@@ -809,8 +809,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 			// and let the TSDB return us data with no chunks as in prometheus#8050.
 			// But this is an acceptable workaround for now.
 			skipChunks := sp != nil && sp.Func == "series"
+			var projectionLabels []string
+			if sp != nil {
+				projectionLabels = sp.ProjectionLabels
+			}
 
-			req, err := createSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
+			req, err := createSeriesRequest(minT, maxT, convertedMatchers, skipChunks, blockIDs, projectionLabels, q.streamingChunksBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
@@ -1208,7 +1212,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	return valueSets, warnings, queriedBlocks, nil
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, projectionLabels []string, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	hints := &hintspb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1218,6 +1222,7 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
 			},
 		},
+		ProjectionLabels: projectionLabels,
 	}
 
 	anyHints, err := types.MarshalAny(hints)

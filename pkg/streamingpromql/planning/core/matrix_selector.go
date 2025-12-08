@@ -93,6 +93,8 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
 		ExpressionPosition:       m.ExpressionPosition(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		ProjectionLabels:         params.Plan.ProjectionLabels,
+		ProjectionInclude:        params.Plan.ProjectionInclude,
 	}
 
 	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
