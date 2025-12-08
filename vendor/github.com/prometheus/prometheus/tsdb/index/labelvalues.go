@@ -289,10 +289,7 @@ func intersect(p1, p2 Postings) bool {
 		return false
 	}
 
-	cur := p1.At()
-	if p2.At() > cur {
-		cur = p2.At()
-	}
+	cur := max(p2.At(), p1.At())
 
 	for p1.Seek(cur) {
 		if p1.At() > cur {
