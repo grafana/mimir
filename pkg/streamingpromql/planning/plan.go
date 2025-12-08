@@ -50,7 +50,7 @@ const QueryPlanV2 = QueryPlanVersion(2)
 const QueryPlanV3 = QueryPlanVersion(3)
 
 // QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
-const QueryPlanV4 = QueryPlanVersion(3)
+const QueryPlanV4 = QueryPlanVersion(4)
 
 type QueryPlan struct {
 	TimeRange types.QueryTimeRange
