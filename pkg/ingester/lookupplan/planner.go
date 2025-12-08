@@ -70,11 +70,11 @@ func (p *costBasedPlannerPools) Release() {
 
 type CostBasedPlanner struct {
 	config  CostConfig
-	stats   index.Statistics
+	stats   Statistics
 	metrics Metrics
 }
 
-func NewCostBasedPlanner(metrics Metrics, statistics index.Statistics, config CostConfig) *CostBasedPlanner {
+func NewCostBasedPlanner(metrics Metrics, statistics Statistics, config CostConfig) *CostBasedPlanner {
 	return &CostBasedPlanner{
 		config:  config,
 		metrics: metrics,

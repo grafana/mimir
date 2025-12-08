@@ -50,7 +50,7 @@ func setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThr
 }
 
 // Stats creates statistics using count-min sketches
-func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) (retStats index.Statistics, retErr error) {
+func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) (retStats Statistics, retErr error) {
 	ctx := context.Background()
 
 	defer func(startTime time.Time) {
@@ -136,7 +136,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 }
 
 // BlockStatistics contains count-min sketches of the values for each label name in a TSDB block.
-// It implements index.Statistics, which can be used to inform query plan generation.
+// It implements Statistics, which can be used to inform query plan generation.
 type BlockStatistics struct {
 	totalSeries uint64
 	labelNames  map[string]*LabelValuesSketch
