@@ -18,15 +18,6 @@ import (
 	"github.com/tylertreat/BoomFilters"
 )
 
-const (
-	// sampleValuesProbability is the probability of sampling a label value for selectivity estimation.
-	sampleValuesProbability = 0.01 // 1% sample rate
-	// sampleValuesMaxCount is the maximum number of sampled values to store per label name.
-	sampleValuesMaxCount = 1024
-	// sampleValuesMaxBytes is the maximum total size in bytes of sampled values per label name.
-	sampleValuesMaxBytes = 64 * 1024 // 64KB
-)
-
 // countPostings counts the number of series in the given postings
 func countPostings(postings index.Postings) (uint64, error) {
 	var count uint64
@@ -46,7 +37,9 @@ func NewStatisticsGenerator(l log.Logger) *StatisticsGenerator {
 	}
 }
 
-func setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) func(numValues uint64) float64 {
+func setCountMinEpsilon(cfg CostConfig) func(numValues uint64) float64 {
+	smallLabelCardinalityThreshold := cfg.LabelCardinalityForSmallerSketch
+	largeLabelCardinalityThreshold := cfg.LabelCardinalityForLargerSketch
 	// The more label values for a label name, the larger the sketch, ideally the more accurate the count per label value.
 	return func(numSeries uint64) float64 {
 		switch {
@@ -61,7 +54,7 @@ func setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThr
 }
 
 // Stats creates statistics using count-min sketches
-func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smallLabelCardinalityThreshold, largeLabelCardinalityThreshold uint64) (retStats Statistics, retErr error) {
+func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, cfg CostConfig) (retStats Statistics, retErr error) {
 	ctx := context.Background()
 
 	defer func(startTime time.Time) {
@@ -95,7 +88,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 
 	// Build count-min sketches for each label
 	labelSketches := make(map[string]*LabelValuesSketch)
-	selectEpsilon := setCountMinEpsilon(smallLabelCardinalityThreshold, largeLabelCardinalityThreshold)
+	selectEpsilon := setCountMinEpsilon(cfg)
 
 	for _, labelName := range labelNames {
 		// Get all values for this label
@@ -119,7 +112,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 		// Sample values for selectivity estimation.
 		// Use deterministic seed based on number of values for reproducibility.
 		valuesSampler := rand.New(rand.NewPCG(uint64(len(values)), 0))
-		expectedNumSampledValues := min(sampleValuesMaxCount, int(sampleValuesProbability*float64(len(values))))
+		expectedNumSampledValues := min(cfg.SampleValuesMaxCount, int(cfg.SampleValuesProbability*float64(len(values))))
 		sampledValues := make([]string, 0, max(1, expectedNumSampledValues))
 		sampledValuesBytes := 0
 
@@ -127,9 +120,9 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 		// For each value, we need to count how many series have that value
 		for _, value := range values {
 			// Sample values with configured probability, respecting max count and size limits
-			if valuesSampler.Float64() < sampleValuesProbability &&
-				len(sampledValues) < sampleValuesMaxCount &&
-				sampledValuesBytes < sampleValuesMaxBytes {
+			if valuesSampler.Float64() < cfg.SampleValuesProbability &&
+				len(sampledValues) < cfg.SampleValuesMaxCount &&
+				sampledValuesBytes < cfg.SampleValuesMaxBytes {
 				sampledValues = append(sampledValues, strings.Clone(value))
 				sampledValuesBytes += len(value)
 			}

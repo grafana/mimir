@@ -286,7 +286,7 @@ func TestLabelsValuesSketches_LabelName(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+			sketches, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -368,7 +368,7 @@ func TestLabelsValuesSketches_LabelValue(t *testing.T) {
 				p.add(seriesRef, ls)
 			}
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			sketches, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+			sketches, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 			require.NoError(t, err)
 			ctx := context.Background()
 
@@ -445,7 +445,9 @@ func TestLabelName_ComparisonAcrossLabelNames(t *testing.T) {
 
 			ctx := context.Background()
 			gen := NewStatisticsGenerator(log.NewNopLogger())
-			s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, tt.largerSketchThreshold)
+			cfg := defaultCostConfig
+			cfg.LabelCardinalityForLargerSketch = tt.largerSketchThreshold
+			s, err := gen.Stats(p.Meta(), p, cfg)
 			require.NoError(t, err)
 
 			lowCard := s.LabelValuesCardinality(ctx, lowCardLabel)
@@ -476,7 +478,7 @@ func TestLabelName_ManySeries(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	s, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 	require.NoError(t, err)
 
 	require.Equal(t, uint64(numLabelValues), s.LabelValuesCount(ctx, labelName))
@@ -509,7 +511,7 @@ func TestSampleValuesCollection(t *testing.T) {
 	}
 
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	stats, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	stats, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -546,10 +548,10 @@ func TestSampleValuesAreDeterministic(t *testing.T) {
 	gen := NewStatisticsGenerator(log.NewNopLogger())
 
 	// Generate stats twice
-	stats1, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	stats1, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 	require.NoError(t, err)
 
-	stats2, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	stats2, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -566,7 +568,7 @@ func TestSampleValuesNonExistentLabel(t *testing.T) {
 	p.add(storage.SeriesRef(1), ls)
 
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	stats, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	stats, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -586,7 +588,7 @@ func TestSampleValuesSmallDataset(t *testing.T) {
 	}
 
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	stats, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	stats, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 	require.NoError(t, err)
 
 	ctx := context.Background()
@@ -623,7 +625,7 @@ func TestLabelName_NonUniformValueDistribution(t *testing.T) {
 
 	ctx := context.Background()
 	gen := NewStatisticsGenerator(log.NewNopLogger())
-	s, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	s, err := gen.Stats(p.Meta(), p, defaultCostConfig)
 	require.NoError(t, err)
 
 	lowValCard := s.LabelValuesCardinality(ctx, labelName, lowCardValue)

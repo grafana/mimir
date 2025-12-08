@@ -158,12 +158,15 @@ func BenchmarkStatisticsGeneration(b *testing.B) {
 			require.NoError(b, err)
 
 			// Benchmark the Stats method
+			cfg := lookupplan.CostConfig{
+				LabelCardinalityForSmallerSketch: lookupplan.DefaultLabelCardinalityForSmallerSketch,
+				LabelCardinalityForLargerSketch:  lookupplan.DefaultLabelCardinalityForLargerSketch,
+				SampleValuesProbability:          lookupplan.DefaultSampleValuesProbability,
+				SampleValuesMaxCount:             lookupplan.DefaultSampleValuesMaxCount,
+				SampleValuesMaxBytes:             lookupplan.DefaultSampleValuesMaxBytes,
+			}
 			for i := 0; i < b.N; i++ {
-				stats, err := statsGen.Stats(
-					block.Meta(), indexReader,
-					lookupplan.DefaultLabelCardinalityForSmallerSketch,
-					lookupplan.DefaultLabelCardinalityForLargerSketch,
-				)
+				stats, err := statsGen.Stats(block.Meta(), indexReader, cfg)
 				if err != nil {
 					b.Fatalf("Failed to generate statistics: %v", err)
 				}

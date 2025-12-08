@@ -99,8 +99,8 @@ func (m *mockStatistics) SampleValues(_ context.Context, name string) []string {
 		return nil
 	}
 
-	// Return sampleValuesProbability of all values
-	numSamples := max(1, int(sampleValuesProbability*float64(len(labelValues))))
+	// Return DefaultSampleValuesProbability of all values
+	numSamples := max(1, int(DefaultSampleValuesProbability*float64(len(labelValues))))
 	samples := make([]string, 0, numSamples)
 	for value := range labelValues {
 		if len(samples) >= numSamples {
