@@ -277,8 +277,8 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			require.NotNil(t, step)
 
 			head, tail := step.Floats.UnsafePoints()
-			points := append([]promql.FPoint{}, toFPoints(head)...)
-			points = append(points, toFPoints(tail)...)
+			points := append([]promql.FPoint{}, head...)
+			points = append(points, tail...)
 
 			require.Len(t, points, len(tc.expected))
 
