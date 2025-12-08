@@ -89,7 +89,7 @@ func TestStepRange(t *testing.T) {
 			anchored:      true,
 			steps:         7,
 		},
-		"smoothed - range gt step": {
+		"smoothed - range > step": {
 			step:          time.Second * 30,
 			rangeDuration: time.Minute,
 			anchored:      false,
