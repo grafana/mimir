@@ -20,11 +20,12 @@ type StringsSampler struct {
 }
 
 // NewStringsSampler creates a sampler for a label with the given number of values.
-// The seed is derived from numValues for deterministic sampling.
-func NewStringsSampler(numValues int, cfg CostConfig) *StringsSampler {
-	expectedNumSamples := min(cfg.SampleValuesMaxCount, int(cfg.SampleValuesProbability*float64(numValues)))
+// The seed is derived from expectedTotalValues for deterministic sampling.
+// expectedTotalValues doesn't need to be exact.
+func NewStringsSampler(expectedTotalValues int, cfg CostConfig) *StringsSampler {
+	expectedNumSamples := min(cfg.SampleValuesMaxCount, int(cfg.SampleValuesProbability*float64(expectedTotalValues)))
 	return &StringsSampler{
-		rng:         rand.New(rand.NewPCG(uint64(numValues), 0)),
+		rng:         rand.New(rand.NewPCG(uint64(expectedTotalValues), 0)),
 		probability: cfg.SampleValuesProbability,
 		maxCount:    cfg.SampleValuesMaxCount,
 		maxBytes:    cfg.SampleValuesMaxBytes,
