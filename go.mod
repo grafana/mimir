@@ -96,7 +96,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.9.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.37.0
-	google.golang.org/api v0.256.0
+	google.golang.org/api v0.257.0
 	google.golang.org/protobuf v1.36.10
 	sigs.k8s.io/kustomize/kyaml v0.21.0
 )
