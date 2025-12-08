@@ -1,7 +1,7 @@
 GOROOT=/Users/dimitar/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.5.darwin-arm64 #gosetup
 GOPATH=/Users/dimitar/go #gosetup
 /Users/dimitar/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.5.darwin-arm64/bin/go test -c -o /Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkQueryExecution_ded_17_query_171.test github.com/grafana/mimir/pkg/ingester/lookupplan/benchmarks #gosetup
-/Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkQueryExecution_ded_17_query_171.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkQueryExecution\E$ -test.run ^$ -data-dir=/Users/dimitar/proba/2025-10-ded-17-ingester-data/exported-ded-17-data -query-file=/Users/dimitar/proba/2025-10-ded-17-ingester-data/logs.json -query-ids=171 -test.benchtime=0.5s -test.count=6 #gosetup
+/Users/dimitar/Library/Caches/JetBrains/GoLand2025.2/tmp/GoLand/___BenchmarkQueryExecution_ded_17_query_171.test -test.v -test.paniconexit0 -test.bench ^\QBenchmarkQueryExecution\E$ -test.run ^$ -data-dir=/Users/dimitar/proba/2025-10-ded-17-ingester-data/only-blocks -query-file=/Users/dimitar/proba/2025-10-ded-17-ingester-data/logs.json -query-ids=171 -test.benchtime=0.5s -test.count=6 #gosetup
 goos: darwin
 goarch: arm64
 pkg: github.com/grafana/mimir/pkg/ingester/lookupplan/benchmarks
@@ -13,52 +13,52 @@ BenchmarkQueryExecution/query=171/selector=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=0-10         	     559	   1031900 ns/op	  410836 B/op	    6233 allocs/op
+BenchmarkQueryExecution/query=171/selector=0-10         	     542	    986796 ns/op	  411953 B/op	    6233 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=0-10         	     577	   1153917 ns/op	  412337 B/op	    6233 allocs/op
+BenchmarkQueryExecution/query=171/selector=0-10         	     598	    975013 ns/op	  411703 B/op	    6233 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=0-10         	     591	    999199 ns/op	  411736 B/op	    6233 allocs/op
+BenchmarkQueryExecution/query=171/selector=0-10         	     620	    973584 ns/op	  412125 B/op	    6233 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=0-10         	     601	   1025784 ns/op	  411199 B/op	    6233 allocs/op
+BenchmarkQueryExecution/query=171/selector=0-10         	     615	    973696 ns/op	  411238 B/op	    6233 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=0-10         	     576	   1039603 ns/op	  412298 B/op	    6233 allocs/op
+BenchmarkQueryExecution/query=171/selector=0-10         	     618	    972428 ns/op	  411668 B/op	    6233 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=0-10         	     595	   1016707 ns/op	  411727 B/op	    6233 allocs/op
+BenchmarkQueryExecution/query=171/selector=0-10         	     591	   1010156 ns/op	  411226 B/op	    6233 allocs/op
 BenchmarkQueryExecution/query=171/selector=1
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=1-10         	     313	   1691536 ns/op	  650655 B/op	    9498 allocs/op
+BenchmarkQueryExecution/query=171/selector=1-10         	     355	   1613198 ns/op	  654791 B/op	    9498 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=1-10         	     357	   1627612 ns/op	  653162 B/op	    9498 allocs/op
+BenchmarkQueryExecution/query=171/selector=1-10         	     367	   1585263 ns/op	  652252 B/op	    9498 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=1-10         	     363	   1646655 ns/op	  652278 B/op	    9498 allocs/op
+BenchmarkQueryExecution/query=171/selector=1-10         	     381	   1574709 ns/op	  652233 B/op	    9498 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=1-10         	     372	   1619378 ns/op	  653831 B/op	    9498 allocs/op
+BenchmarkQueryExecution/query=171/selector=1-10         	     366	   1594854 ns/op	  653929 B/op	    9498 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=1-10         	     352	   1734361 ns/op	  650680 B/op	    9498 allocs/op
+BenchmarkQueryExecution/query=171/selector=1-10         	     363	   1626716 ns/op	  653119 B/op	    9498 allocs/op
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
     benchmarks_test.go:135: series=0 chunks=0
-BenchmarkQueryExecution/query=171/selector=1-10         	     355	   1845291 ns/op	  653906 B/op	    9498 allocs/op
+BenchmarkQueryExecution/query=171/selector=1-10         	     380	   1608333 ns/op	  652193 B/op	    9498 allocs/op
 PASS
 
 Process finished with the exit code 0
