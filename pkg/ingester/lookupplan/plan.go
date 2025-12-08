@@ -9,11 +9,11 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
@@ -30,11 +30,10 @@ type plan struct {
 	ctx                 context.Context
 	config              CostConfig
 	indexPredicatesPool *pool.SlabPool[bool]
-	pfmCache            *tsdb.PostingsForMatchersCache
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], cache *tsdb.PostingsForMatchersCache) plan {
+func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool]) plan {
 	p := plan{
 		predicates:     make([]planPredicate, 0, len(matchers)),
 		indexPredicate: make([]bool, 0, len(matchers)),
@@ -43,7 +42,6 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 		ctx:                 ctx,
 		config:              config,
 		indexPredicatesPool: predicatesPool,
-		pfmCache:            cache,
 	}
 	for _, m := range matchers {
 		pred := newPlanPredicate(ctx, m, stats, config)
@@ -142,9 +140,6 @@ func (p plan) indexLookupCost() float64 {
 			cost += pr.indexLookupCost()
 		}
 	}
-	//if p.pfmCache != nil && p.pfmCache.IsCached(p.ctx, true, ulid.MustParse("01KAYTVA7QGPA0VMAV98ASRAAA"), p.IndexMatchers()...) {
-	//	return 10
-	//}
 	return cost
 }
 
@@ -229,43 +224,21 @@ func (p plan) addPredicatesToSpan(span trace.Span) {
 			attribute.Float64("index_scan_cost", pred.indexScanCost),
 			attribute.Float64("index_lookup_cost", pred.indexLookupCost()),
 		}
-		//fmt.Println("lookup_plan_predicate",
-		//	"matcher", pred.matcher,
-		//	"selectivity", pred.selectivity,
-		//	"cardinality", int64(pred.cardinality),
-		//	"label_name_unique_values", int64(pred.labelNameUniqueVals),
-		//	"single_match_cost", pred.singleMatchCost,
-		//	"index_scan_cost", pred.indexScanCost,
-		//	"index_lookup_cost", pred.indexLookupCost(),
-		//)
 		attributes = append(attributes, predAttr[:]...)
 	}
-	//fmt.Println("lookup_plan_predicate", trace.WithAttributes(attributes...))
+	span.AddEvent("lookup_plan_predicate", trace.WithAttributes(attributes...))
 }
 
 func (p plan) addSpanEvent(span trace.Span, planName string) {
-	//fmt.Println("lookup plan", trace.WithAttributes(
-	//	attribute.String("plan_name", planName),
-	//	attribute.Float64("total_cost", p.totalCost()),
-	//	attribute.Float64("index_lookup_cost", p.indexLookupCost()),
-	//	attribute.Float64("filter_cost", p.filterCost()),
-	//	attribute.Float64("intersection_cost", p.intersectionCost()),
-	//	attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
-	//	attribute.Int64("cardinality", int64(p.cardinality())),
-	//	attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
-	//	attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
-	//))
-	//fmt.Println("lookup plan",
-	//	"plan_name", planName,
-	//	"total_series", p.totalSeries,
-	//	"total_cost", p.totalCost(),
-	//	"index_lookup_cost", p.indexLookupCost(),
-	//	"filter_cost", p.filterCost(),
-	//	"intersection_cost", p.intersectionCost(),
-	//	"intersection_size", p.intersectionSize(),
-	//	"series_retrieval_cost", p.seriesRetrievalCost(),
-	//	"cardinality", int64(p.cardinality()),
-	//	"index_matchers", util.MatchersStringer(p.IndexMatchers()),
-	//	"scan_matchers", util.MatchersStringer(p.ScanMatchers()),
-	//)
+	span.AddEvent("lookup plan", trace.WithAttributes(
+		attribute.String("plan_name", planName),
+		attribute.Float64("total_cost", p.totalCost()),
+		attribute.Float64("index_lookup_cost", p.indexLookupCost()),
+		attribute.Float64("filter_cost", p.filterCost()),
+		attribute.Float64("intersection_cost", p.intersectionCost()),
+		attribute.Float64("series_retrieval_cost", p.seriesRetrievalCost()),
+		attribute.Int64("cardinality", int64(p.cardinality())),
+		attribute.Stringer("index_matchers", util.MatchersStringer(p.IndexMatchers())),
+		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers())),
+	))
 }

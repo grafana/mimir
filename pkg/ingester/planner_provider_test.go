@@ -19,7 +19,7 @@ type mockPlannerFactory struct {
 	createPlannerFunc func(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner
 }
 
-func (m *mockPlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader, cache *tsdb.PostingsForMatchersCache) index.LookupPlanner {
+func (m *mockPlannerFactory) CreatePlanner(meta tsdb.BlockMeta, reader tsdb.IndexReader) index.LookupPlanner {
 	return m.createPlannerFunc(meta, reader)
 }
 
@@ -42,7 +42,7 @@ func TestPlannerProvider_getPlanner_DoesNotCachePlanners(t *testing.T) {
 		},
 	}
 
-	provider := newPlannerProvider(mockFactory, nil, nil)
+	provider := newPlannerProvider(mockFactory)
 	resultPlanner := provider.getPlanner(blockMeta, &mockIndex{})
 	require.NotNil(t, resultPlanner, "should return a planner")
 	assert.Equal(t, expectedPlanner, resultPlanner, "should return planner from factory")
@@ -73,7 +73,7 @@ func TestPlannerProvider_generateAndStorePlanner_CachesPlanners(t *testing.T) {
 		},
 	}
 
-	provider := newPlannerProvider(mockFactory, nil, nil)
+	provider := newPlannerProvider(mockFactory)
 	provider.generateAndStorePlanner(blockMeta, &mockIndex{})
 	resultPlanner := provider.getPlanner(blockMeta, &mockIndex{})
 

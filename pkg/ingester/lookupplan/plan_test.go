@@ -80,7 +80,7 @@ func TestPlanCosts(t *testing.T) {
 			allMatchers = append(allMatchers, tc.scanMatchers...)
 
 			// Create a scan-only plan with all matchers
-			p := newScanOnlyPlan(ctx, stats, defaultCostConfig, allMatchers, nil, nil)
+			p := newScanOnlyPlan(ctx, stats, defaultCostConfig, allMatchers, nil)
 
 			// Use index for the first N predicates (corresponding to index matchers)
 			for i := 0; i < len(tc.indexMatchers); i++ {

@@ -50,7 +50,7 @@ func TestCostBasedPlannerPlanIndexLookup(t *testing.T) {
 
 	stats := newHighCardinalityMockStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig, nil)
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	const writeOutNewResults = false
 	if writeOutNewResults {
@@ -111,7 +111,7 @@ func BenchmarkCostBasedPlannerPlanIndexLookup(b *testing.B) {
 
 	stats := newHighCardinalityMockStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig, nil)
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
@@ -144,7 +144,7 @@ func TestCostBasedPlannerTooManyMatchers(t *testing.T) {
 	ctx := context.Background()
 	stats := newMockStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig, nil)
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	// Create more than 10 matchers to trigger the limit
 	var matchers []*labels.Matcher
@@ -184,7 +184,7 @@ func TestCostBasedPlannerPreservesAllMatchers(t *testing.T) {
 	ctx := context.Background()
 	stats := newHighCardinalityMockStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig, nil)
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	t.Run("mixed_index_and_scan_matchers", func(t *testing.T) {
 		// Create a plan that already has both index and scan matchers
@@ -251,7 +251,7 @@ func TestCostBasedPlannerPrefersIndexMatchersOverCheapestPlan(t *testing.T) {
 	ctx := context.Background()
 	stats := newSingleValueStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig, nil)
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	matchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "label", "value"),
@@ -271,7 +271,7 @@ func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 	ctx := context.Background()
 	stats := newMockStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig, nil)
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	result, err := planner.PlanIndexLookup(ctx, &basicLookupPlan{}, 0, 0)
 	assert.ErrorContains(t, err, "no plan with index matchers found out of 1 plans")
@@ -281,7 +281,7 @@ func TestCostBasedPlannerDoesntAllowNoMatcherLookups(t *testing.T) {
 func TestCostBasedPlannerWithDisabledPlanning(t *testing.T) {
 	stats := newHighCardinalityMockStatistics()
 	metrics := NewMetrics(nil).ForUser("test-user")
-	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig, nil)
+	planner := NewCostBasedPlanner(metrics, stats, defaultCostConfig)
 
 	inputPlan := &basicLookupPlan{
 		indexMatchers: []*labels.Matcher{
