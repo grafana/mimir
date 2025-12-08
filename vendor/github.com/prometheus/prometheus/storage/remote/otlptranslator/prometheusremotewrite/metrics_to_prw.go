@@ -142,6 +142,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 	for i := 0; i < resourceMetricsSlice.Len(); i++ {
 		resourceMetrics := resourceMetricsSlice.At(i)
+
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
@@ -150,6 +151,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		latestTimestamp := pcommon.Timestamp(0)
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
 			scopeMetrics := scopeMetricsSlice.At(j)
+
 			scope := newScopeFromScopeMetrics(scopeMetrics)
 			metricSlice := scopeMetrics.Metrics()
 
@@ -160,7 +162,12 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					return annots, errs
 				}
 
-				metric := metricSlice.At(k)
+				metric, err := metricSlice.Get(k)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					continue
+				}
+
 				earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
 				temporality, hasTemporality, err := aggregationTemporality(metric)
 				if err != nil {

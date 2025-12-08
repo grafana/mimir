@@ -54,6 +54,10 @@ func (es ExemplarSlice) At(i int) Exemplar {
 	return newExemplar(&(*es.orig)[i], es.state)
 }
 
+func (es ExemplarSlice) Get(i int) (Exemplar, error) {
+	return newExemplar(&(*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -98,7 +102,7 @@ func (es ExemplarSlice) EnsureCapacity(newCap int) {
 func (es ExemplarSlice) AppendEmpty() Exemplar {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.Exemplar{})
-	return es.At(es.Len() - 1)
+	return newExemplar(&(*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

@@ -55,6 +55,10 @@ func (es ResourceSpansSlice) At(i int) ResourceSpans {
 	return newResourceSpans((*es.orig)[i], es.state)
 }
 
+func (es ResourceSpansSlice) Get(i int) (ResourceSpans, error) {
+	return newResourceSpans((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es ResourceSpansSlice) EnsureCapacity(newCap int) {
 func (es ResourceSpansSlice) AppendEmpty() ResourceSpans {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewResourceSpans())
-	return es.At(es.Len() - 1)
+	return newResourceSpans((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

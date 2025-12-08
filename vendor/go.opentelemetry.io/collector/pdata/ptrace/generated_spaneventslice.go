@@ -55,6 +55,10 @@ func (es SpanEventSlice) At(i int) SpanEvent {
 	return newSpanEvent((*es.orig)[i], es.state)
 }
 
+func (es SpanEventSlice) Get(i int) (SpanEvent, error) {
+	return newSpanEvent((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es SpanEventSlice) EnsureCapacity(newCap int) {
 func (es SpanEventSlice) AppendEmpty() SpanEvent {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewSpanEvent())
-	return es.At(es.Len() - 1)
+	return newSpanEvent((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

@@ -55,6 +55,10 @@ func (es SummaryDataPointSlice) At(i int) SummaryDataPoint {
 	return newSummaryDataPoint((*es.orig)[i], es.state)
 }
 
+func (es SummaryDataPointSlice) Get(i int) (SummaryDataPoint, error) {
+	return newSummaryDataPoint((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es SummaryDataPointSlice) EnsureCapacity(newCap int) {
 func (es SummaryDataPointSlice) AppendEmpty() SummaryDataPoint {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewSummaryDataPoint())
-	return es.At(es.Len() - 1)
+	return newSummaryDataPoint((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

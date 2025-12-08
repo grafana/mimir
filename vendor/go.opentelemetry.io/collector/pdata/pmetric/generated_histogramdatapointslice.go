@@ -55,6 +55,10 @@ func (es HistogramDataPointSlice) At(i int) HistogramDataPoint {
 	return newHistogramDataPoint((*es.orig)[i], es.state)
 }
 
+func (es HistogramDataPointSlice) Get(i int) (HistogramDataPoint, error) {
+	return newHistogramDataPoint((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es HistogramDataPointSlice) EnsureCapacity(newCap int) {
 func (es HistogramDataPointSlice) AppendEmpty() HistogramDataPoint {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewHistogramDataPoint())
-	return es.At(es.Len() - 1)
+	return newHistogramDataPoint((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

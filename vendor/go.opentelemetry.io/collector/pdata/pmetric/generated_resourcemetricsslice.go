@@ -55,6 +55,10 @@ func (es ResourceMetricsSlice) At(i int) ResourceMetrics {
 	return newResourceMetrics((*es.orig)[i], es.state)
 }
 
+func (es ResourceMetricsSlice) Get(i int) (ResourceMetrics, error) {
+	return newResourceMetrics((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es ResourceMetricsSlice) EnsureCapacity(newCap int) {
 func (es ResourceMetricsSlice) AppendEmpty() ResourceMetrics {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewResourceMetrics())
-	return es.At(es.Len() - 1)
+	return newResourceMetrics((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

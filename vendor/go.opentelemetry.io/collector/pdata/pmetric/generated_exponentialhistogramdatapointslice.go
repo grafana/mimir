@@ -55,6 +55,10 @@ func (es ExponentialHistogramDataPointSlice) At(i int) ExponentialHistogramDataP
 	return newExponentialHistogramDataPoint((*es.orig)[i], es.state)
 }
 
+func (es ExponentialHistogramDataPointSlice) Get(i int) (ExponentialHistogramDataPoint, error) {
+	return newExponentialHistogramDataPoint((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es ExponentialHistogramDataPointSlice) EnsureCapacity(newCap int) {
 func (es ExponentialHistogramDataPointSlice) AppendEmpty() ExponentialHistogramDataPoint {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewExponentialHistogramDataPoint())
-	return es.At(es.Len() - 1)
+	return newExponentialHistogramDataPoint((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

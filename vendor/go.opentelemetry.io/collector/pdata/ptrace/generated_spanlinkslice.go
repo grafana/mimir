@@ -55,6 +55,10 @@ func (es SpanLinkSlice) At(i int) SpanLink {
 	return newSpanLink((*es.orig)[i], es.state)
 }
 
+func (es SpanLinkSlice) Get(i int) (SpanLink, error) {
+	return newSpanLink((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es SpanLinkSlice) EnsureCapacity(newCap int) {
 func (es SpanLinkSlice) AppendEmpty() SpanLink {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewSpanLink())
-	return es.At(es.Len() - 1)
+	return newSpanLink((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

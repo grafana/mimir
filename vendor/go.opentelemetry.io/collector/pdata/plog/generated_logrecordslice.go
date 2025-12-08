@@ -55,6 +55,10 @@ func (es LogRecordSlice) At(i int) LogRecord {
 	return newLogRecord((*es.orig)[i], es.state)
 }
 
+func (es LogRecordSlice) Get(i int) (LogRecord, error) {
+	return newLogRecord((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es LogRecordSlice) EnsureCapacity(newCap int) {
 func (es LogRecordSlice) AppendEmpty() LogRecord {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewLogRecord())
-	return es.At(es.Len() - 1)
+	return newLogRecord((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

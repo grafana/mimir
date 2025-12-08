@@ -55,6 +55,10 @@ func (es SummaryDataPointValueAtQuantileSlice) At(i int) SummaryDataPointValueAt
 	return newSummaryDataPointValueAtQuantile((*es.orig)[i], es.state)
 }
 
+func (es SummaryDataPointValueAtQuantileSlice) Get(i int) (SummaryDataPointValueAtQuantile, error) {
+	return newSummaryDataPointValueAtQuantile((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es SummaryDataPointValueAtQuantileSlice) EnsureCapacity(newCap int) {
 func (es SummaryDataPointValueAtQuantileSlice) AppendEmpty() SummaryDataPointValueAtQuantile {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewSummaryDataPointValueAtQuantile())
-	return es.At(es.Len() - 1)
+	return newSummaryDataPointValueAtQuantile((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

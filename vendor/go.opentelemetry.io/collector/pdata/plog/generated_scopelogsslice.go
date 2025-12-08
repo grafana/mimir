@@ -55,6 +55,10 @@ func (es ScopeLogsSlice) At(i int) ScopeLogs {
 	return newScopeLogs((*es.orig)[i], es.state)
 }
 
+func (es ScopeLogsSlice) Get(i int) (ScopeLogs, error) {
+	return newScopeLogs((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es ScopeLogsSlice) EnsureCapacity(newCap int) {
 func (es ScopeLogsSlice) AppendEmpty() ScopeLogs {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewScopeLogs())
-	return es.At(es.Len() - 1)
+	return newScopeLogs((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.

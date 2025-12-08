@@ -55,6 +55,10 @@ func (es ScopeSpansSlice) At(i int) ScopeSpans {
 	return newScopeSpans((*es.orig)[i], es.state)
 }
 
+func (es ScopeSpansSlice) Get(i int) (ScopeSpans, error) {
+	return newScopeSpans((*es.orig)[i], es.state), nil
+}
+
 // All returns an iterator over index-value pairs in the slice.
 //
 //	for i, v := range es.All() {
@@ -99,7 +103,7 @@ func (es ScopeSpansSlice) EnsureCapacity(newCap int) {
 func (es ScopeSpansSlice) AppendEmpty() ScopeSpans {
 	es.state.AssertMutable()
 	*es.orig = append(*es.orig, internal.NewScopeSpans())
-	return es.At(es.Len() - 1)
+	return newScopeSpans((*es.orig)[es.Len()-1], es.state)
 }
 
 // MoveAndAppendTo moves all elements from the current slice and appends them to the dest.
