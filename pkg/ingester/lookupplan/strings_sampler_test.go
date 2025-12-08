@@ -14,7 +14,12 @@ import (
 func TestStringsSamplerCollection(t *testing.T) {
 	numValues := 10000
 
-	sampler := NewStringsSampler(numValues, defaultCostConfig)
+	cfg := CostConfig{
+		SampleValuesProbability: 0.01,      // 1% sample rate
+		SampleValuesMaxCount:    1024,      // High enough to not be a factor
+		SampleValuesMaxBytes:    64 * 1024, // High enough to not be a factor
+	}
+	sampler := NewStringsSampler(numValues, cfg)
 
 	for i := 0; i < numValues; i++ {
 		value := strconv.Itoa(i) // 1-5 bytes each
@@ -25,10 +30,8 @@ func TestStringsSamplerCollection(t *testing.T) {
 
 	// With 1% probability and 10000 values, we expect ~100 samples (with some variance)
 	// Allow for statistical variance: expect between 50 and 150 samples
-	require.GreaterOrEqual(t, len(samples), 50,
-		"expected at least 50 samples, got %d", len(samples))
-	require.LessOrEqual(t, len(samples), 150,
-		"expected at most 150 samples, got %d", len(samples))
+	require.GreaterOrEqual(t, len(samples), 50, "expected at least 50 samples, got %d", len(samples))
+	require.LessOrEqual(t, len(samples), 150, "expected at most 150 samples, got %d", len(samples))
 
 	// Verify all sampled values are valid (exist in the original set)
 	for _, s := range samples {
@@ -44,8 +47,13 @@ func TestStringsSamplerCollection(t *testing.T) {
 func TestStringsSamplerAreDeterministic(t *testing.T) {
 	numValues := 1000
 
-	sampler1 := NewStringsSampler(numValues, defaultCostConfig)
-	sampler2 := NewStringsSampler(numValues, defaultCostConfig)
+	cfg := CostConfig{
+		SampleValuesProbability: 0.01,
+		SampleValuesMaxCount:    1024,
+		SampleValuesMaxBytes:    64 * 1024,
+	}
+	sampler1 := NewStringsSampler(numValues, cfg)
+	sampler2 := NewStringsSampler(numValues, cfg)
 
 	for i := 0; i < numValues; i++ {
 		value := strconv.Itoa(i)
@@ -63,7 +71,12 @@ func TestStringsSamplerAreDeterministic(t *testing.T) {
 func TestStringsSamplerSmallDataset(t *testing.T) {
 	numValues := 5 // Very small, less than 1% sample would give
 
-	sampler := NewStringsSampler(numValues, defaultCostConfig)
+	cfg := CostConfig{
+		SampleValuesProbability: 0.01,
+		SampleValuesMaxCount:    1024,
+		SampleValuesMaxBytes:    64 * 1024,
+	}
+	sampler := NewStringsSampler(numValues, cfg)
 	for i := 0; i < numValues; i++ {
 		sampler.MaybeSample(strconv.Itoa(i))
 	}
