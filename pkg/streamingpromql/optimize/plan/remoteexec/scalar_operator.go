@@ -14,7 +14,7 @@ import (
 )
 
 type ScalarRemoteExec struct {
-	RootPlan                 *planning.QueryPlan
+	QueryParameters          *planning.QueryParameters
 	Node                     planning.Node
 	TimeRange                types.QueryTimeRange
 	RemoteExecutor           RemoteExecutor
@@ -31,7 +31,7 @@ var _ types.ScalarOperator = &ScalarRemoteExec{}
 
 func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.RootPlan, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.EagerLoad)
+	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.QueryParameters, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.EagerLoad)
 	return err
 }
 
