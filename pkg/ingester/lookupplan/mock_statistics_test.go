@@ -93,8 +93,22 @@ func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, 
 	return total
 }
 
-func (m *mockStatistics) SampleValues(_ context.Context, _ string) []string {
-	return nil // Tests don't need sample values
+func (m *mockStatistics) SampleValues(_ context.Context, name string) []string {
+	labelValues := m.seriesPerValue[name]
+	if len(labelValues) == 0 {
+		return nil
+	}
+
+	// Return sampleValuesProbability of all values
+	numSamples := max(1, int(sampleValuesProbability*float64(len(labelValues))))
+	samples := make([]string, 0, numSamples)
+	for value := range labelValues {
+		if len(samples) >= numSamples {
+			break
+		}
+		samples = append(samples, value)
+	}
+	return samples
 }
 
 // newHighCardinalityMockStatistics creates a mockStatistics with higher cardinality
