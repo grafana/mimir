@@ -553,7 +553,7 @@ func (o otlpProtoUnmarshaler) String() string {
 }
 
 func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
-	return o.request.UnmarshalProto(data)
+	return o.request.UnmarshalProtoLazy(data)
 }
 
 type conversionOptions struct {
