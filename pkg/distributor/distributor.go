@@ -302,6 +302,9 @@ type Config struct {
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
 
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
+
+	// Enable lazy deserializing of OTLP protobuf messages
+	EnableOTLPLazyDeserializing bool `yaml:"enable_otlp_lazy_deserializing" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -353,6 +356,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.BoolVar(&cfg.EnableOTLPLazyDeserializing, "distributor.enable-otlp-lazy-deserializing", false, "Enable the lazy deserializing of OTel protobuf messages")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
