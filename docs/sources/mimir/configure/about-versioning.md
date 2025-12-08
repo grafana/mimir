@@ -252,8 +252,8 @@ The following features are currently experimental:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
-- Preferred available zone for querying ingesters and store-gateways
-  - `-querier.prefer-availability-zone`
+- Preferred available zones for querying ingesters and store-gateways
+  - `-querier.prefer-availability-zones`
 - Memberlist zone-aware routing
   - `-memberlist.zone-aware-routing.enabled`
   - `-memberlist.zone-aware-routing.instance-availability-zone`

@@ -36,14 +36,14 @@ func TestNewActiveTracker(t *testing.T) {
 		},
 		"incorrect label name causes an error single label": {
 			costAttributionLabels: costattributionmodel.Labels{{Input: "__bad_label__", Output: "__bad_label__"}},
-			expectedErr:           fmt.Errorf(`failed to create an active series tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_ingester_attributed_active_series", help: "The total number of active series per user and attribution.", constLabels: {}, variableLabels: {__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
+			expectedErr:           fmt.Errorf(`failed to create an active series tracker for tenant tenant-1: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
 		},
 		"incorrect label name causes an error multiple labels": {
 			costAttributionLabels: costattributionmodel.Labels{
 				{Input: "good_label", Output: "good_label"},
 				{Input: "__bad_label__", Output: "__bad_label__"},
 			},
-			expectedErr: fmt.Errorf(`failed to create an active series tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_ingester_attributed_active_series", help: "The total number of active series per user and attribution.", constLabels: {}, variableLabels: {good_label,__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
+			expectedErr: fmt.Errorf(`failed to create an active series tracker for tenant tenant-1: "__bad_label__" is not a valid label name for metric "cortex_ingester_attributed_active_series"`),
 		},
 	}
 

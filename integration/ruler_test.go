@@ -1381,35 +1381,60 @@ func TestRulerRemoteEvaluationErrorClassification(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name       string
-		expression string
-		expectUser bool // true = user error, false = operator error
-		comment    string
+		name        string
+		expression  string
+		expectUser  bool // true = user error, false = operator error
+		comment     string
+		isAlertRule bool
+		alertLabels map[string]string
+		queryFail   bool
 	}{
 		{
 			name:       "invalid_regex_user_error",
 			expression: `label_replace(metric, "foo", "$1", "service", "[")`,
 			expectUser: true,
 			comment:    "Invalid regex should be classified as user error",
+			queryFail:  true,
 		},
 		{
 			name:       "series_limit_user_error",
 			expression: `sum(metric)`,
 			expectUser: true,
 			comment:    "Exceeding series limit should be user error",
+			queryFail:  true,
 		},
 		{
 			name:       "chunk_limit_user_error",
 			expression: `sum(rate(metric[1h]))`,
 			expectUser: true,
 			comment:    "Exceeding chunk limit should be user error",
+			queryFail:  true,
+		},
+		{
+			name:        "duplicate_labelset_alerting_rule",
+			expression:  `vector(0) or label_replace(vector(0),"test","x","","")`,
+			expectUser:  true,
+			comment:     "Alerting rule with duplicate labelsets after applying alert labels should be user error",
+			isAlertRule: true,
+			alertLabels: map[string]string{"test": "test"},
+			queryFail:   false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Create rule
-			require.NoError(t, c.SetRuleGroup(ruleGroupWithRecordingRule(tc.name, "rule", tc.expression), namespace))
+			var ruleGroup rulefmt.RuleGroup
+			if tc.isAlertRule {
+				alertRule := rulefmt.Rule{
+					Alert:  "rule",
+					Expr:   tc.expression,
+					Labels: tc.alertLabels,
+				}
+				ruleGroup = ruleGroupWithRules(tc.name, 10, alertRule)
+			} else {
+				ruleGroup = ruleGroupWithRecordingRule(tc.name, "rule", tc.expression)
+			}
+			require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
 			m := ruleGroupMatcher(user, namespace, tc.name)
 
 			// Wait for rule to load and evaluate
@@ -1440,21 +1465,38 @@ func TestRulerRemoteEvaluationErrorClassification(t *testing.T) {
 				require.Greater(t, operatorErrors[0], float64(0), "Expected operator errors for %s: %s", tc.name, tc.comment)
 			}
 
-			// Verify cortex_ruler_queries_failed_total has correct reason
+			// Verify cortex_ruler_queries_failed_total based on queryFail
 			userMatcher := labels.MustNewMatcher(labels.MatchEqual, "user", user)
-			expectedReason := "server_error"
-			if tc.expectUser {
-				expectedReason = "client_error"
-			}
-			reasonMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", expectedReason)
-
-			failedQueries, err := ruler.SumMetrics(
+			failedQueriesBefore, err := ruler.SumMetrics(
 				[]string{"cortex_ruler_queries_failed_total"},
-				e2e.WithLabelMatchers(userMatcher, reasonMatcher),
+				e2e.WithLabelMatchers(userMatcher),
 				e2e.SkipMissingMetrics,
 			)
 			require.NoError(t, err)
-			require.Greater(t, failedQueries[0], float64(0), "Expected failed queries metric to increase for %s", tc.name)
+
+			if tc.queryFail {
+				expectedReason := "server_error"
+				if tc.expectUser {
+					expectedReason = "client_error"
+				}
+				reasonMatcher := labels.MustNewMatcher(labels.MatchEqual, "reason", expectedReason)
+
+				failedQueries, err := ruler.SumMetrics(
+					[]string{"cortex_ruler_queries_failed_total"},
+					e2e.WithLabelMatchers(userMatcher, reasonMatcher),
+					e2e.SkipMissingMetrics,
+				)
+				require.NoError(t, err)
+				require.Greater(t, failedQueries[0], float64(0), "Expected failed queries metric to increase for %s", tc.name)
+			} else {
+				failedQueriesAfter, err := ruler.SumMetrics(
+					[]string{"cortex_ruler_queries_failed_total"},
+					e2e.WithLabelMatchers(userMatcher),
+					e2e.SkipMissingMetrics,
+				)
+				require.NoError(t, err)
+				require.Equal(t, failedQueriesBefore[0], failedQueriesAfter[0], "Expected no new failed queries for %s (query succeeded, evaluation failed)", tc.name)
+			}
 
 			// Cleanup
 			require.NoError(t, c.DeleteRuleGroup(namespace, tc.name))

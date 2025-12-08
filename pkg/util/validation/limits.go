@@ -14,7 +14,6 @@ import (
 	"math"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -57,6 +56,8 @@ const (
 	PastGracePeriodFlag                       = "validation.past-grace-period"
 	MaxPartialQueryLengthFlag                 = "querier.max-partial-query-length"
 	MaxSeriesQueryLimitFlag                   = "querier.max-series-query-limit"
+	MaxLabelNamesLimitFlag                    = "querier.max-label-names-limit"
+	MaxLabelValuesLimitFlag                   = "querier.max-label-values-limit"
 	MaxTotalQueryLengthFlag                   = "query-frontend.max-total-query-length"
 	MaxQueryExpressionSizeBytesFlag           = "query-frontend.max-query-expression-size-bytes"
 	MaxActiveSeriesPerUserFlag                = "distributor.max-active-series-per-user"
@@ -161,11 +162,7 @@ type Limits struct {
 	IngestionTenantShardSize            int                               `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs                []*relabel.Config                 `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs. Labels available during the relabeling phase and cleaned afterwards: __meta_tenant_id" category:"experimental"`
 
-	IngestionArtificialDelay                                         model.Duration `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
-	IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_condition_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
-	IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries  model.Duration `yaml:"ingestion_artificial_delay_duration_for_tenants_with_less_than_max_series" json:"ingestion_artificial_delay_duration_for_tenants_with_less_than_max_series" category:"experimental" doc:"hidden"`
-	IngestionArtificialDelayConditionForTenantsWithIDGreaterThan     int            `yaml:"ingestion_artificial_delay_condition_for_tenants_with_id_greater_than" json:"ingestion_artificial_delay_condition_for_tenants_with_id_greater_than" category:"experimental" doc:"hidden"`
-	IngestionArtificialDelayDurationForTenantsWithIDGreaterThan      model.Duration `yaml:"ingestion_artificial_delay_duration_for_tenants_with_id_greater_than" json:"ingestion_artificial_delay_duration_for_tenants_with_id_greater_than" category:"experimental" doc:"hidden"`
+	IngestionArtificialDelay model.Duration `yaml:"ingestion_artificial_delay" json:"ingestion_artificial_delay" category:"experimental" doc:"hidden"`
 
 	// Ingester enforced limits.
 	// Series
@@ -203,6 +200,8 @@ type Limits struct {
 	MaxQueryParallelism                   int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength                  model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
 	MaxSeriesQueryLimit                   int            `yaml:"max_series_query_limit" json:"max_series_query_limit"`
+	MaxLabelNamesLimit                    int            `yaml:"max_label_names_limit" json:"max_label_names_limit"`
+	MaxLabelValuesLimit                   int            `yaml:"max_label_values_limit" json:"max_label_values_limit"`
 	MaxCacheFreshness                     model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness" category:"advanced"`
 	MaxQueriersPerTenant                  int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards              int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
@@ -371,10 +370,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.OTelLabelNamePreserveMultipleUnderscores, "distributor.otel-label-name-preserve-underscores", true, "If enabled, keeps multiple consecutive underscores in label names when translating OTel attribute names. Defaults to true.")
 
 	f.Var(&l.IngestionArtificialDelay, "distributor.ingestion-artificial-delay", "Target ingestion delay to apply to all tenants. If set to a non-zero value, the distributor will artificially delay ingestion time-frame by the specified duration by computing the difference between actual ingestion and the target. There is no delay on actual ingestion of samples, it is only the response back to the client.")
-	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series should be applied.")
-	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries, "distributor.ingestion-artificial-delay-duration-for-tenants-with-less-than-max-series", "Target ingestion delay to apply to tenants with configured max global series to a value lower than -distributor.ingestion-artificial-delay-condition-for-tenants-with-less-than-max-series.")
-	f.IntVar(&l.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than", 0, "Condition to select tenants for which -distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than should be applied.")
-	f.Var(&l.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan, "distributor.ingestion-artificial-delay-duration-for-tenants-with-id-greater-than", "Target ingestion delay to apply to tenants with a numeric ID whose value is greater than -distributor.ingestion-artificial-delay-condition-for-tenants-with-id-greater-than.")
 
 	_ = l.NameValidationScheme.Set(model.LegacyValidation.String())
 	f.Var(&l.NameValidationScheme, "validation.name-validation-scheme", fmt.Sprintf("Validation scheme to use for metric and label names. Distributors reject time series that do not adhere to this scheme. Rulers reject rules with unsupported metric or label names. Supported values: %s.", strings.Join([]string{model.LegacyValidation.String(), model.UTF8Validation.String()}, ", ")))
@@ -405,7 +400,11 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler for instant, range and remote read queries. For metadata queries like series, label names, label values queries the limit is enforced in the querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split (by time) or partial (by shard) queries that will be scheduled in parallel by the query-frontend for a single input query. This limit is introduced to have a fairer query scheduling and avoid a single query over a large time range saturating all available queriers.")
 	f.Var(&l.MaxLabelsQueryLength, "store.max-labels-query-length", "Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
+
 	f.IntVar(&l.MaxSeriesQueryLimit, MaxSeriesQueryLimitFlag, 0, "Maximum number of series, the series endpoint queries. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
+	f.IntVar(&l.MaxLabelNamesLimit, MaxLabelNamesLimitFlag, 0, "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
+	f.IntVar(&l.MaxLabelValuesLimit, MaxLabelValuesLimitFlag, 0, "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.")
+
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
 	f.IntVar(&l.ActiveSeriesResultsMaxSizeBytes, "querier.active-series-results-max-size-bytes", 400*1024*1024, "Maximum size of an active series or active native histogram series request result shard in bytes. 0 to disable.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
@@ -951,6 +950,16 @@ func (o *Overrides) MaxSeriesQueryLimit(userID string) int {
 	return o.getOverridesForUser(userID).MaxSeriesQueryLimit
 }
 
+// MaxLabelNamesLimit returns the query limit of a label names request.
+func (o *Overrides) MaxLabelNamesLimit(userID string) int {
+	return o.getOverridesForUser(userID).MaxLabelNamesLimit
+}
+
+// MaxLabelValuesLimit returns the query limit of a label values request.
+func (o *Overrides) MaxLabelValuesLimit(userID string) int {
+	return o.getOverridesForUser(userID).MaxLabelValuesLimit
+}
+
 // MaxCacheFreshness returns the period after which results are cacheable,
 // to prevent caching of very recent results.
 func (o *Overrides) MaxCacheFreshness(userID string) time.Duration {
@@ -1209,6 +1218,14 @@ func (o *Overrides) RulerMaxRuleGroupsPerTenant(userID, namespace string) int {
 	}
 
 	return u.RulerMaxRuleGroupsPerTenant
+}
+
+// RulerMaxRuleGroupsPerTenantByNamespaceConfigured returns true if a namespace-specific
+// limit is configured for the given namespace.
+func (o *Overrides) RulerMaxRuleGroupsPerTenantByNamespaceConfigured(userID, namespace string) bool {
+	u := o.getOverridesForUser(userID)
+	_, ok := u.RulerMaxRuleGroupsPerTenantByNamespace.Read()[namespace]
+	return ok
 }
 
 // RulerProtectedNamespaces returns the list of namespaces that are protected from modification.
@@ -1521,27 +1538,7 @@ func (o *Overrides) OTelLabelNamePreserveMultipleUnderscores(tenantID string) bo
 
 // DistributorIngestionArtificialDelay returns the artificial ingestion latency for a given user.
 func (o *Overrides) DistributorIngestionArtificialDelay(tenantID string) time.Duration {
-	overrides := o.getOverridesForUser(tenantID)
-
-	// Default delay to apply to all tenants.
-	delay := overrides.IngestionArtificialDelay
-
-	// Check if the "max series" condition applies to this tenant.
-	maxSeriesCondition := overrides.IngestionArtificialDelayConditionForTenantsWithLessThanMaxSeries
-	maxSeriesDelay := overrides.IngestionArtificialDelayDurationForTenantsWithLessThanMaxSeries
-	if maxSeriesCondition > 0 && maxSeriesDelay > delay && o.MaxGlobalSeriesPerUser(tenantID) < maxSeriesCondition {
-		delay = maxSeriesDelay
-	}
-
-	// Check if the "tenant ID" condition applies to this tenant.
-	idCondition := overrides.IngestionArtificialDelayConditionForTenantsWithIDGreaterThan
-	idDelay := overrides.IngestionArtificialDelayDurationForTenantsWithIDGreaterThan
-	idNumber, idNumberErr := strconv.ParseInt(tenantID, 10, 32)
-	if idCondition > 0 && idDelay > delay && idNumberErr == nil && int(idNumber) > idCondition {
-		delay = idDelay
-	}
-
-	return time.Duration(delay)
+	return time.Duration(o.getOverridesForUser(tenantID).IngestionArtificialDelay)
 }
 
 func (o *Overrides) AlignQueriesWithStep(userID string) bool {

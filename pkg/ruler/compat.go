@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -41,6 +42,12 @@ import (
 const (
 	failureReasonServerError = "server_error"
 	failureReasonClientError = "client_error"
+)
+
+// TODO: remove this once these errors are populated as sentinels at mimir-prometheus
+const (
+	prometheusDuplicateLabelsetAlertingRuleError  = "vector contains metrics with the same labelset after applying alert labels"
+	prometheusDuplicateLabelsetRecordingRuleError = "vector contains metrics with the same labelset after applying rule labels"
 )
 
 // Pusher is an ingester server that accepts pushes.
@@ -215,6 +222,7 @@ type RulesLimits interface {
 	RulerEvaluationConsistencyMaxDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID, namespace string) int
+	RulerMaxRuleGroupsPerTenantByNamespaceConfigured(userID, namespace string) bool
 	RulerMaxRulesPerRuleGroup(userID, namespace string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
@@ -485,6 +493,11 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		return false
 	}
 
+	// Check for rule evaluation failures (errors that occur after query succeeds)
+	if isUserRuleEvalFailure(err) {
+		return false
+	}
+
 	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
 		if code >= 400 && code < 500 {
 			return code == http.StatusTooManyRequests
@@ -498,6 +511,7 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
 			}
 		}
+		return true
 	}
 
 	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -515,4 +529,10 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 
 	// Unknown errors
 	return true
+}
+
+func isUserRuleEvalFailure(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, prometheusDuplicateLabelsetAlertingRuleError) ||
+		strings.Contains(errStr, prometheusDuplicateLabelsetRecordingRuleError)
 }

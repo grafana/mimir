@@ -2297,12 +2297,12 @@
         },
         {
           "kind": "field",
-          "name": "prefer_availability_zone",
+          "name": "prefer_availability_zones",
           "required": false,
-          "desc": "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.",
+          "desc": "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "querier.prefer-availability-zone",
+          "fieldFlag": "querier.prefer-availability-zones",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
@@ -5431,6 +5431,26 @@
           "fieldValue": null,
           "fieldDefaultValue": 0,
           "fieldFlag": "querier.max-series-query-limit",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "max_label_names_limit",
+          "required": false,
+          "desc": "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-label-names-limit",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "max_label_values_limit",
+          "required": false,
+          "desc": "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-label-values-limit",
           "fieldType": "int"
         },
         {

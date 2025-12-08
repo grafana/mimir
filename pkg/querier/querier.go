@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/instrument"
 	"github.com/grafana/dskit/middleware"
@@ -58,11 +59,11 @@ type Config struct {
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
-	PreferAvailabilityZone                         string        `yaml:"prefer_availability_zone" category:"experimental"`
-	StreamingChunksPerIngesterSeriesBufferSize     uint64        `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
-	StreamingChunksPerStoreGatewaySeriesBufferSize uint64        `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
-	MinimizeIngesterRequests                       bool          `yaml:"minimize_ingester_requests" category:"advanced"`
-	MinimiseIngesterRequestsHedgingDelay           time.Duration `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
+	PreferAvailabilityZones                        flagext.StringSliceCSV `yaml:"prefer_availability_zones" category:"experimental"`
+	StreamingChunksPerIngesterSeriesBufferSize     uint64                 `yaml:"streaming_chunks_per_ingester_series_buffer_size" category:"advanced"`
+	StreamingChunksPerStoreGatewaySeriesBufferSize uint64                 `yaml:"streaming_chunks_per_store_gateway_series_buffer_size" category:"advanced"`
+	MinimizeIngesterRequests                       bool                   `yaml:"minimize_ingester_requests" category:"advanced"`
+	MinimiseIngesterRequestsHedgingDelay           time.Duration          `yaml:"minimize_ingester_requests_hedging_delay" category:"advanced"`
 
 	QueryEngine               string `yaml:"query_engine" category:"experimental"`
 	EnableQueryEngineFallback bool   `yaml:"enable_query_engine_fallback" category:"experimental"`
@@ -96,7 +97,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 
 	f.DurationVar(&cfg.QueryStoreAfter, queryStoreAfterFlag, 12*time.Hour, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
 	f.BoolVar(&cfg.ShuffleShardingIngestersEnabled, "querier.shuffle-sharding-ingesters-enabled", true, fmt.Sprintf("Fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since -%s. If this setting is false or -%s is '0', queriers always query all ingesters (ingesters shuffle sharding on read path is disabled).", validation.QueryIngestersWithinFlag, validation.QueryIngestersWithinFlag))
-	f.StringVar(&cfg.PreferAvailabilityZone, "querier.prefer-availability-zone", "", "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.")
+	f.Var(&cfg.PreferAvailabilityZones, "querier.prefer-availability-zones", "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.")
 
 	f.BoolVar(&cfg.MinimizeIngesterRequests, minimiseIngesterRequestsFlag, true, "If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path.")
 	f.DurationVar(&cfg.MinimiseIngesterRequestsHedgingDelay, minimiseIngesterRequestsFlag+"-hedging-delay", 3*time.Second, "Delay before initiating requests to further ingesters when request minimization is enabled and the initially selected set of ingesters have not all responded. Ignored if -"+minimiseIngesterRequestsFlag+" is not enabled.")
@@ -367,7 +368,7 @@ func (mq *multiQuerier) getQueriers(ctx context.Context, minT, maxT int64, match
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series are always sorted.
 func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) (set storage.SeriesSet) {
-	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "querier.Select")
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.Select")
 	defer spanLog.Finish()
 
 	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
@@ -418,7 +419,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		// Clamp max time range for series-only queries, before we check max length.
 		startMs = clampToMaxLabelQueryLength(spanLog, startMs, endMs, now.UnixMilli(), mq.limits.MaxLabelsQueryLength(userID).Milliseconds())
 		// Clamp the limit for series-only queries.
-		limit = clampToMaxSeriesQueryLimit(spanLog, limit, mq.limits.MaxSeriesQueryLimit(userID))
+		limit = clampToMaxLimit(spanLog, limit, mq.limits.MaxSeriesQueryLimit(userID), validation.MaxSeriesQueryLimitFlag)
 	}
 
 	// The query parameters may have been manipulated during the validation, so we make sure changes are reflected back to hints.
@@ -438,7 +439,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		origLimit := sp.Limit
 		defer func() {
 			var warning annotations.Annotations
-			warning.Add(NewMaxSeriesQueryLimitError(origLimit, limit))
+			warning.Add(NewMaxLimitError(origLimit, limit, validation.MaxSeriesQueryLimitFlag))
 			set = series.NewSeriesSetWithWarnings(set, warning)
 		}()
 	}
@@ -511,17 +512,17 @@ func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, 
 	return startMs
 }
 
-func clampToMaxSeriesQueryLimit(spanLog *spanlogger.SpanLogger, limit, maxSeriesQueryLimit int) int {
-	if maxSeriesQueryLimit == 0 {
+func clampToMaxLimit(spanLog *spanlogger.SpanLogger, limit, maxLimit int, settingName string) int {
+	if maxLimit == 0 {
 		// No request limit is enforced.
 		return limit
 	}
 
 	// Request limit is enforced.
-	newLimit := min(cmp.Or(limit, maxSeriesQueryLimit), maxSeriesQueryLimit)
+	newLimit := min(cmp.Or(limit, maxLimit), maxLimit)
 	if newLimit != limit {
 		spanLog.DebugLog(
-			"msg", "the request limit of the query has been manipulated because of the 'max-series-query-limit' setting",
+			"msg", fmt.Sprintf("the request limit of the query has been manipulated because of the '%s' setting", settingName),
 			"original", limit,
 			"updated", newLimit,
 		)
@@ -531,6 +532,9 @@ func clampToMaxSeriesQueryLimit(spanLog *spanlogger.SpanLogger, limit, maxSeries
 
 // LabelValues implements storage.Querier.
 func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.LabelValues")
+	defer spanLog.Finish()
+
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -539,15 +543,34 @@ func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *sto
 		return nil, nil, err
 	}
 
+	if hints == nil {
+		hints = &storage.LabelHints{}
+	} else {
+		hintsCopy := *hints
+		hints = &hintsCopy
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var warnings annotations.Annotations
+	limit := clampToMaxLimit(spanLog, hints.Limit, mq.limits.MaxLabelValuesLimit(userID), validation.MaxLabelValuesLimitFlag)
+	if limit > 0 && hints.Limit != limit {
+		warnings.Add(NewMaxLimitError(hints.Limit, limit, validation.MaxLabelValuesLimitFlag))
+	}
+	hints.Limit = limit
+
+	// If there's only a single querier, merge any warnings generated and return early.
 	if len(queriers) == 1 {
-		return queriers[0].LabelValues(ctx, name, hints, matchers...)
+		myValues, myWarnings, err := queriers[0].LabelValues(ctx, name, hints, matchers...)
+		return myValues, warnings.Merge(myWarnings), err
 	}
 
 	var (
-		g, _     = errgroup.WithContext(ctx)
-		sets     = [][]string{}
-		warnings annotations.Annotations
-
+		g, _   = errgroup.WithContext(ctx)
+		sets   = [][]string{}
 		resMtx sync.Mutex
 	)
 
@@ -576,6 +599,9 @@ func (mq *multiQuerier) LabelValues(ctx context.Context, name string, hints *sto
 }
 
 func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.LabelNames")
+	defer spanLog.Finish()
+
 	ctx, queriers, _, _, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return nil, nil, nil
@@ -584,15 +610,34 @@ func (mq *multiQuerier) LabelNames(ctx context.Context, hints *storage.LabelHint
 		return nil, nil, err
 	}
 
+	if hints == nil {
+		hints = &storage.LabelHints{}
+	} else {
+		hintsCopy := *hints
+		hints = &hintsCopy
+	}
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var warnings annotations.Annotations
+	limit := clampToMaxLimit(spanLog, hints.Limit, mq.limits.MaxLabelNamesLimit(userID), validation.MaxLabelNamesLimitFlag)
+	if limit > 0 && hints.Limit != limit {
+		warnings.Add(NewMaxLimitError(hints.Limit, limit, validation.MaxLabelNamesLimitFlag))
+	}
+	hints.Limit = limit
+
+	// If there's only a single querier, merge any warnings generated and return early.
 	if len(queriers) == 1 {
-		return queriers[0].LabelNames(ctx, hints, matchers...)
+		myValues, myWarnings, err := queriers[0].LabelNames(ctx, hints, matchers...)
+		return myValues, warnings.Merge(myWarnings), err
 	}
 
 	var (
-		g, _     = errgroup.WithContext(ctx)
-		sets     = [][]string{}
-		warnings annotations.Annotations
-
+		g, _   = errgroup.WithContext(ctx)
+		sets   = [][]string{}
 		resMtx sync.Mutex
 	)
 
@@ -815,11 +860,12 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 }
 
 type RequestMetrics struct {
-	RequestDuration     *prometheus.HistogramVec
-	ReceivedMessageSize *prometheus.HistogramVec
-	SentMessageSize     *prometheus.HistogramVec
-	InflightRequests    *prometheus.GaugeVec
-	PlansReceived       *prometheus.CounterVec
+	RequestDuration                *prometheus.HistogramVec
+	ReceivedMessageSize            *prometheus.HistogramVec
+	SentMessageSize                *prometheus.HistogramVec
+	InflightRequests               *prometheus.GaugeVec
+	PlansReceived                  *prometheus.CounterVec
+	NodesPerQueryEvaluationRequest prometheus.Histogram
 }
 
 func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
@@ -851,5 +897,11 @@ func NewRequestMetrics(reg prometheus.Registerer) *RequestMetrics {
 			Name: "cortex_querier_received_query_plans_total",
 			Help: "Total number of query plans received by the querier.",
 		}, []string{"version"}),
+
+		NodesPerQueryEvaluationRequest: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Name:                        "cortex_querier_nodes_per_query_evaluation_request",
+			Help:                        "Number of nodes requested to be evaluated per query evaluation request.",
+			NativeHistogramBucketFactor: 1.1,
+		}),
 	}
 }

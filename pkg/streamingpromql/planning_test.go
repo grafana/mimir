@@ -1407,9 +1407,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
-			encoded, err := originalPlan.ToEncodedPlan(true, true)
+			encoded, nodes, err := originalPlan.ToEncodedPlan(true, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedPlan, encoded)
+			require.Equal(t, []int64{testCase.expectedPlan.RootNode}, nodes)
 
 			// Decode plan, confirm it matches the original plan
 			decodedPlan, _, err := encoded.ToDecodedPlan()
@@ -1417,6 +1418,46 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.Equal(t, originalPlan, decodedPlan)
 		})
 	}
+}
+
+func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `topk(5, foo)`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	aggregationNode := plan.Root.(*core.AggregateExpression)
+	numberLiteralNode := aggregationNode.Param
+	vectorSelectorNode := aggregationNode.Inner
+
+	encoded, nodes, err := plan.ToEncodedPlan(false, true, numberLiteralNode, vectorSelectorNode)
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+	require.Len(t, encoded.Nodes, 2)
+	require.Equal(t, planning.NODE_TYPE_NUMBER_LITERAL, encoded.Nodes[nodes[0]].NodeType)
+	require.Equal(t, planning.NODE_TYPE_VECTOR_SELECTOR, encoded.Nodes[nodes[1]].NodeType)
+}
+
+func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `sum(foo)`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
+	require.NoError(t, err)
+	require.Len(t, encoded.Nodes, 2)
+	require.Equal(t, []int64{1, 1}, nodes)
+	require.Equal(t, planning.NODE_TYPE_VECTOR_SELECTOR, encoded.Nodes[0].NodeType)
+	require.Equal(t, planning.NODE_TYPE_AGGREGATE_EXPRESSION, encoded.Nodes[1].NodeType)
 }
 
 func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
@@ -1461,7 +1502,7 @@ func TestPlanVersioning(t *testing.T) {
 	err := plan.DeterminePlanVersion()
 	require.NoError(t, err)
 
-	encoded, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
 	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
@@ -1635,7 +1676,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 				var marshalled []byte
 
 				for b.Loop() {
-					encoded, err := plan.ToEncodedPlan(false, true)
+					encoded, _, err := plan.ToEncodedPlan(false, true)
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1650,7 +1691,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 			})
 
 			b.Run("decode", func(b *testing.B) {
-				encoded, err := plan.ToEncodedPlan(false, true)
+				encoded, _, err := plan.ToEncodedPlan(false, true)
 				require.NoError(b, err)
 
 				marshalled, err := encoded.Marshal()

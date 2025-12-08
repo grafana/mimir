@@ -37,14 +37,14 @@ func TestNewSampleTracker(t *testing.T) {
 		},
 		"incorrect label name causes an error single label": {
 			costAttributionLabels: costattributionmodel.Labels{{Input: "__bad_label__", Output: "__bad_label__"}},
-			expectedErr:           fmt.Errorf(`failed to create a sample tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_distributor_received_attributed_samples_total", help: "The total number of samples that were received per attribution.", constLabels: {}, variableLabels: {__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
+			expectedErr:           fmt.Errorf(`failed to create a sample tracker for tenant tenant-1: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
 		},
 		"incorrect label name causes an error multiple labels": {
 			costAttributionLabels: costattributionmodel.Labels{
 				{Input: "good_label", Output: "good_label"},
 				{Input: "__bad_label__", Output: "__bad_label__"},
 			},
-			expectedErr: fmt.Errorf(`failed to create a sample tracker for tenant tenant-1: descriptor Desc{fqName: "cortex_distributor_received_attributed_samples_total", help: "The total number of samples that were received per attribution.", constLabels: {}, variableLabels: {good_label,__bad_label__,tenant}} is invalid: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
+			expectedErr: fmt.Errorf(`failed to create a sample tracker for tenant tenant-1: "__bad_label__" is not a valid label name for metric "cortex_distributor_received_attributed_samples_total"`),
 		},
 	}
 

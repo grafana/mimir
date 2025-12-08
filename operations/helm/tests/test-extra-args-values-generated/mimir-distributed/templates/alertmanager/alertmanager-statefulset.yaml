@@ -82,7 +82,6 @@ spec:
             name: test-extra-args-values-mimir-alertmanager-fallback-config
       containers:
         - name: alertmanager
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=alertmanager"
@@ -93,7 +92,6 @@ spec:
             # needs to be higher to avoid connections being closed abruptly.
             - "-server.http-idle-timeout=6m"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

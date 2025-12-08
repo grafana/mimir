@@ -215,7 +215,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	defer spanLogger.Finish()
 	spanLogger.SetTag("query", qs)
 
-	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", timeRange)
+	queryID, err := p.activeQueryTracker.InsertWithDetails(ctx, qs, "planning", true, timeRange)
 	if err != nil {
 		return nil, err
 	}

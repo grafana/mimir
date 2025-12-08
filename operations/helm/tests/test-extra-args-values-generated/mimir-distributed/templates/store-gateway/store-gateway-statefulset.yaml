@@ -90,7 +90,6 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -99,7 +98,6 @@ spec:
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-a"
             - "-server.grpc-max-send-msg-size-bytes=209715200"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}
@@ -239,7 +237,6 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -248,7 +245,6 @@ spec:
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-b"
             - "-server.grpc-max-send-msg-size-bytes=209715200"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}
@@ -388,7 +384,6 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -397,7 +392,6 @@ spec:
             - "-store-gateway.sharding-ring.instance-availability-zone=zone-c"
             - "-server.grpc-max-send-msg-size-bytes=209715200"
             - -flag-bool=false
-            - -flag-empty=
             - -flag-float=1.23
             - -flag-json1={"foo":"bar"}
             - -flag-json2={"foo":"bar"}

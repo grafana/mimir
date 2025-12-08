@@ -524,6 +524,7 @@ var arithmeticAndComparisonOperationFuncs = map[parser.ItemType]binaryOperationF
 				})
 			}
 
+			res.CounterResetHint = histogram.GaugeType
 			return 0, res.Compact(0), true, true, nil
 		}
 

@@ -32,14 +32,14 @@ const (
 	BinaryFormatV1 = 1
 
 	indexTOCLen  = 6*8 + crc32.Size
-	binaryTOCLen = 2*8 + crc32.Size
-	// headerLen represents number of bytes reserved of index header for header.
+	BinaryTOCLen = 2*8 + crc32.Size // 16 (2 x uint64) + 4 (CRC32)
+	// HeaderLen represents number of bytes reserved of index header for header.
 	// At present, it is:
 	// - 4 bytes for MagicIndex
 	// - 1 byte for index header version
 	// - 1 byte for TSDB index version
 	// - 8 bytes for an offset in the TSDB index after the last posting list.
-	headerLen = 4 + 1 + 1 + 8
+	HeaderLen = 4 + 1 + 1 + 8
 
 	// MagicIndex are 4 bytes at the head of an index-header file.
 	MagicIndex = 0xBAAAD792

@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/xlab/treeprint"
 
+	"github.com/grafana/mimir/pkg/util/rw2util"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -43,12 +44,22 @@ func TestRW2TypesCompatible(t *testing.T) {
 	rootNode.Nodes[1].Nodes[1].Nodes[0].Value = secondValue
 	rootNode.Nodes[1].Nodes[1].Nodes[1].Value = strings.ReplaceAll(firstValue, "TimestampMs", "Timestamp")
 
+	// We are freezing our API at RW2.0-rc3. That means we do not yet support StartTimestamp on samples nor histograms, and we retain CreatedTimestamp on TimeSeries.
+	rootNode, _ = expectedTree.(*treeprint.Node)
+	rootNode.Nodes[1].AddNode("+0 CreatedTimestamp: int64 protobuf:varint,6")
+	// TimeSeries is node 1 of the request, Sample is node 1 of TimeSeries, StartTimestamp is node 2 of Sample.
+	require.Contains(t, rootNode.Nodes[1].Nodes[1].Nodes[2].String(), " StartTimestamp:")
+	rootNode.Nodes[1].Nodes[1].Nodes = rootNode.Nodes[1].Nodes[1].Nodes[0:2]
+	require.Contains(t, rootNode.Nodes[1].Nodes[2].Nodes[14].String(), " StartTimestamp:")
+	// TimeSeries is node 1 of the request, Histogram is node 2 of TimeSeries, StartTimestamp is node 14 of Histogram.
+	rootNode.Nodes[1].Nodes[2].Nodes = rootNode.Nodes[1].Nodes[2].Nodes[0:14]
+
 	require.Equal(t, expectedTree.String(), actualTree.String(), "Proto types are not compatible")
 }
 
 func TestRW2Unmarshal(t *testing.T) {
 	t.Run("rw2 compatible produces expected WriteRequest", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilder(nil)
+		syms := rw2util.NewSymbolTableBuilder(nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		data, err := writeRequest.Marshal()
@@ -135,7 +146,7 @@ func TestRW2Unmarshal(t *testing.T) {
 
 		for _, tt := range tc {
 			t.Run(tt.name, func(t *testing.T) {
-				syms := test.NewSymbolTableBuilder(nil)
+				syms := rw2util.NewSymbolTableBuilder(nil)
 				writeRequest := &WriteRequest{
 					TimeseriesRW2: []TimeSeriesRW2{
 						{
@@ -193,7 +204,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("metadata metric family name is normalized based on type", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilder(nil)
+		syms := rw2util.NewSymbolTableBuilder(nil)
 		writeRequest := &WriteRequest{
 			TimeseriesRW2: []TimeSeriesRW2{
 				{
@@ -298,7 +309,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("metadata metric family name is not normalized if SkipNormalizeMetricName is set", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilder(nil)
+		syms := rw2util.NewSymbolTableBuilder(nil)
 		writeRequest := &WriteRequest{
 			TimeseriesRW2: []TimeSeriesRW2{
 				{
@@ -435,7 +446,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("rw2 with offset produces expected WriteRequest", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		data, err := writeRequest.Marshal()
@@ -508,7 +519,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("wrong offset fails to unmarshal", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		data, err := writeRequest.Marshal()
@@ -535,7 +546,7 @@ func TestRW2Unmarshal(t *testing.T) {
 
 	t.Run("offset and shared symbols produces expected write request", func(t *testing.T) {
 		commonSymbols := []string{"", "__name__", "job"}
-		syms := test.NewSymbolTableBuilderWithCommon(nil, uint32(len(commonSymbols)), commonSymbols)
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, uint32(len(commonSymbols)), commonSymbols)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		data, err := writeRequest.Marshal()
@@ -610,7 +621,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("common symbol received but none defined", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		writeRequest.TimeseriesRW2[0].LabelsRefs[0] = 128 // In the reserved space
@@ -627,7 +638,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 
 	t.Run("zero refs translate to empty string despite offset", func(t *testing.T) {
-		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		writeRequest := &rw2.Request{
 			Timeseries: []rw2.TimeSeries{
 				{
@@ -667,7 +678,7 @@ func TestRW2Unmarshal(t *testing.T) {
 
 	t.Run("common symbol out of bounds", func(t *testing.T) {
 		commonSyms := []string{"__name__"}
-		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, commonSyms)
+		syms := rw2util.NewSymbolTableBuilderWithCommon(nil, 256, commonSyms)
 		// Create a new WriteRequest with some sample data.
 		writeRequest := makeTestRW2WriteRequest(syms)
 		writeRequest.TimeseriesRW2[0].LabelsRefs[0] = 1 // Out of bounds common symbol.
@@ -712,7 +723,7 @@ func TestRW2Unmarshal(t *testing.T) {
 		const numRuns = 1000
 
 		for range numRuns {
-			syms := test.NewSymbolTableBuilder(nil)
+			syms := rw2util.NewSymbolTableBuilder(nil)
 			// Create a new WriteRequest with some sample data.
 			writeRequest := makeTestRW2WriteRequest(syms)
 			writeRequest.TimeseriesRW2 = []TimeSeriesRW2{
@@ -843,7 +854,7 @@ func TestRW2Unmarshal(t *testing.T) {
 	})
 }
 
-func makeTestRW2WriteRequest(syms *test.SymbolTableBuilder) *WriteRequest {
+func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *WriteRequest {
 	req := &WriteRequest{
 		TimeseriesRW2: []TimeSeriesRW2{
 			{

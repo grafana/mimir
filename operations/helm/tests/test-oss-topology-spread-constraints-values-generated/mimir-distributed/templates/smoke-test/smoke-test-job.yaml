@@ -38,7 +38,6 @@ spec:
         []
       containers:
         - name: smoke-test
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=continuous-test"

@@ -694,9 +694,15 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	// Only list rule groups when enforcing a max number of groups for this tenant and namespace.
 	if a.ruler.IsMaxRuleGroupsLimited(userID, namespace) {
-		// Disable any caching when getting list of all rule groups since listing results
+		// Disable any caching when getting list of rule groups since listing results
 		// are cached and not invalidated and we need the most up-to-date number.
-		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, "", rulestore.WithCacheDisabled())
+		// If a namespace-specific limit is configured, count only rule groups in that namespace.
+		// Otherwise, use the global limit and count all rule groups across all namespaces.
+		namespaceToQuery := ""
+		if a.ruler.IsNamespaceSpecificRuleGroupLimitConfigured(userID, namespace) {
+			namespaceToQuery = namespace
+		}
+		rgs, err := a.store.ListRuleGroupsForUserAndNamespace(ctx, userID, namespaceToQuery, rulestore.WithCacheDisabled())
 		if err != nil {
 			level.Error(logger).Log("msg", "unable to fetch current rule groups for validation", "err", err.Error(), "user", userID)
 			http.Error(w, err.Error(), http.StatusInternalServerError)

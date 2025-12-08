@@ -45,7 +45,6 @@ spec:
           type: RuntimeDefault
       containers:
         - name: query-frontend
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=query-frontend"
@@ -78,7 +77,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

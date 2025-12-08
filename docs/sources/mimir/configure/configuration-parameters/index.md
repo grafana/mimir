@@ -1634,10 +1634,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) When set, the querier prioritizes querying data from ingesters
-# and store-gateways in this availability zone.
-# CLI flag: -querier.prefer-availability-zone
-[prefer_availability_zone: <string> | default = ""]
+# (experimental) Comma-separated list of availability zones to prefer when
+# querying ingesters and store-gateways. All zones in the list are given equal
+# priority.
+# CLI flag: -querier.prefer-availability-zones
+[prefer_availability_zones: <string> | default = ""]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
@@ -3840,6 +3841,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # limit. Set to 0 to disable.
 # CLI flag: -querier.max-series-query-limit
 [max_series_query_limit: <int> | default = 0]
+
+# Maximum number of names the label names endpoint returns. This limit is
+# enforced in the querier. If the requested limit is outside of the allowed
+# value, the request doesn't fail, but is manipulated to only query data up to
+# the allowed limit. Set to 0 to disable.
+# CLI flag: -querier.max-label-names-limit
+[max_label_names_limit: <int> | default = 0]
+
+# Maximum number of values the label values endpoint returns. This limit is
+# enforced in the querier. If the requested limit is outside of the allowed
+# value, the request doesn't fail, but is manipulated to only query data up to
+# the allowed limit. Set to 0 to disable.
+# CLI flag: -querier.max-label-values-limit
+[max_label_values_limit: <int> | default = 0]
 
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.

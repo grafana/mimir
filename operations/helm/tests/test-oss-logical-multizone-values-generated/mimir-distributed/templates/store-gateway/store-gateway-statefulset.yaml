@@ -82,7 +82,6 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -117,7 +116,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -211,7 +210,6 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -246,7 +244,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -340,7 +338,6 @@ spec:
           emptyDir: {}
       containers:
         - name: store-gateway
-          image: docker.io/grafana/mimir:r368-547a06a0
           imagePullPolicy: IfNotPresent
           args:
             - "-target=store-gateway"
@@ -375,7 +372,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 60
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

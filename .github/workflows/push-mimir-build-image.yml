@@ -20,7 +20,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
         with:
           persist-credentials: false
 
@@ -51,9 +51,9 @@ jobs:
             APP_ID=mimir-github-bot:app_id
             PRIVATE_KEY=mimir-github-bot:private_key
 
-      - name: Generate GitHub App Token
+      - name: Generate GitHub App Token for Membership
         if: steps.check_dockerfile.outputs.modified == 'true'
-        id: app-token
+        id: app-token-for-membership
         uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2
         with:
           app-id: ${{ env.APP_ID }}
@@ -81,7 +81,7 @@ jobs:
             echo "✗ User ${PR_AUTHOR} is not a Grafana organization member (HTTP $status_code)"
           fi
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token-for-membership.outputs.token }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
 
       # We want to allow running github actions for all contributors, but don't want all contributors to be able to
@@ -192,6 +192,17 @@ jobs:
             echo "isDifferent=true" >> $GITHUB_OUTPUT
           fi
 
+      # Tokens expire after 1h. Since building the image can take a long time, we create a fresh App Token for the last
+      # step of the build. (https://github.com/actions/create-github-app-token/issues/121#issuecomment-2027574184)
+      - name: Generate GitHub App Token
+        if: steps.check_dockerfile.outputs.modified == 'true'
+        id: app-token-for-commit
+        uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       # This step uses "Mimir bot" token (generated at the start of the workflow) instead of
       # "github-actions bot" (secrets.GITHUB_TOKEN) because any events triggered by the latter
       # don't spawn GitHub actions.
@@ -215,7 +226,7 @@ jobs:
             git push origin HEAD
           fi
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ steps.app-token-for-commit.outputs.token }}
           GITHUB_LOGIN: ${{ github.event.pull_request.user.login }}
           TAG: ${{ steps.compute_hash.outputs.tag }}
           MAIN_TAG: ${{ steps.prepare.outputs.main_image_tag }}
