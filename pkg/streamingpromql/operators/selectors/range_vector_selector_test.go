@@ -38,12 +38,14 @@ func TestStepRange(t *testing.T) {
 		smoothed      bool
 		steps         int
 	}{
+		// anchored - set the step duration lt range duration
 		"anchored - 2 minute range": {
 			step:          time.Minute,
 			rangeDuration: time.Minute * 2,
 			anchored:      true,
 			steps:         4,
 		},
+		// smoothed - set the step duration lt range duration
 		"smoothed - 2 minute range": {
 			step:          time.Minute,
 			rangeDuration: time.Minute * 2,
@@ -57,12 +59,14 @@ func TestStepRange(t *testing.T) {
 			anchored:      false,
 			steps:         4,
 		},
+		// anchored - set the step duration lt range duration
 		"anchored - 30 sec range": {
 			step:          time.Minute,
 			rangeDuration: time.Second * 30,
 			anchored:      true,
 			steps:         4,
 		},
+		// smoothed - set the step duration lt range duration
 		"smoothed - 30 sec range": {
 			step:          time.Minute,
 			rangeDuration: time.Second * 30,
@@ -70,28 +74,17 @@ func TestStepRange(t *testing.T) {
 			smoothed:      true,
 			steps:         4,
 		},
+		// anchored - set the step duration eq range duration
 		"anchored - 30 sec step": {
 			step:          time.Second * 30,
 			rangeDuration: time.Second * 30,
 			anchored:      true,
 			steps:         7,
 		},
+		// smoothed - set the step duration eq range duration
 		"smoothed - 30 sec step": {
 			step:          time.Second * 30,
 			rangeDuration: time.Second * 30,
-			anchored:      false,
-			smoothed:      true,
-			steps:         7,
-		},
-		"anchored - range gt step": {
-			step:          time.Second * 30,
-			rangeDuration: time.Minute,
-			anchored:      true,
-			steps:         7,
-		},
-		"smoothed - range gt step": {
-			step:          time.Second * 30,
-			rangeDuration: time.Minute,
 			anchored:      false,
 			smoothed:      true,
 			steps:         7,
@@ -141,8 +134,8 @@ func TestStepRange(t *testing.T) {
 					end = end.Add(tc.step)
 				}
 
-				_, err = rv.NextStepSamples(ctx)
-				require.Errorf(t, err, "operator stream exhausted")
+				_, err := rv.NextStepSamples(ctx)
+				require.Equal(t, types.EOS, err)
 			}
 		})
 	}
@@ -163,28 +156,32 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 	}{
 		// no points are within the range boundary
 		"anchored - no points": {
-			data:     "load 1m\n\t\t\tmetric _ _ 2",
+			data: `load 1m
+					metric _ _ 2`,
 			ts:       timeZero.Add(1 * time.Minute),
 			expected: []promql.FPoint{},
 			anchored: true,
 		},
 		// no synthetic points are needed since the points fall on the boundaries
 		"anchored - no synthetic points": {
-			data:     "load 1m\n\t\t\tmetric 1 10 2 30",
+			data: `load 1m
+					metric 1 10 2 30`,
 			ts:       timeZero.Add(2 * time.Minute),
 			expected: []promql.FPoint{{T: 0, F: 1}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 2}},
 			anchored: true,
 		},
 		// synthetic points are created from points within the range
 		"anchored - synthetic head and tail - first.T > rangeStart, last.T < rangeEnd": {
-			data:     "load 1m\n\t\t\tmetric _ 10 _ 30",
+			data: `load 1m
+					metric _ 10 _ 30`,
 			ts:       timeZero.Add(2 * time.Minute),
 			expected: []promql.FPoint{{T: 0, F: 10}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 10}},
 			anchored: true,
 		},
 		// synthetic points are created from the extended look-back window
 		"anchored - synthetic head and tail first.T < rangeStart, last.T < rangeEnd": {
-			data:     "load 1m\n\t\t\tmetric 1 2 3 4",
+			data: `load 1m
+					metric 1 2 3 4`,
 			ts:       timeZero.Add(2 * time.Second * 61),
 			expected: []promql.FPoint{{T: 2000, F: 1}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3}},
 			anchored: true,
@@ -193,21 +190,24 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 
 		// no points are within the range boundary
 		"smoothed - no points": {
-			data:     "load 1m\n\t\t\tmetric _ _ _",
+			data: `load 1m
+					metric _ _ _`,
 			ts:       timeZero.Add(1 * time.Minute),
 			expected: []promql.FPoint{},
 			smoothed: true,
 		},
 		// no synthetic points as they are already on the boundary
 		"smoothed - no synthetic points": {
-			data:     "load 1m\n\t\t\tmetric 1 10 2 30",
+			data: `load 1m
+					metric 1 10 2 30`,
 			ts:       timeZero.Add(2 * time.Minute),
 			expected: []promql.FPoint{{T: 0, F: 1}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 2}},
 			smoothed: true,
 		},
 		// smoothed has an extended end range. The synthetic points are taken from within the range and the extended end of the range
 		"smoothed - synthetic head and tail - first.T > rangeStart, last.T > rangeEnd": {
-			data:            "load 1m\n\t\t\tmetric _ 10 _ 30",
+			data: `load 1m
+					metric _ 10 _ 30`,
 			ts:              timeZero.Add(2 * time.Minute),
 			expected:        []promql.FPoint{{T: 0, F: 10}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 20}},
 			hasSmoothedHead: false,
@@ -216,7 +216,8 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		},
 		// the synthetic points are taken from the extended range
 		"smoothed - synthetic head and tail first.T < rangeStart, last.T > rangeEnd": {
-			data:            "load 1m\n\t\t\tmetric 1 2 3 4",
+			data: `load 1m
+					metric 1 2 3 4`,
 			ts:              timeZero.Add(2 * time.Second * 61),
 			expected:        []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
 			hasSmoothedHead: true,
@@ -225,14 +226,16 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		},
 		// the synthetic points are taken from within the original range
 		"smoothed - synthetic head and tail first.T > rangeStart, last.T < rangeEnd": {
-			data:     "load 1m\n\t\t\tmetric _ 3 _ _ _",
+			data: `load 1m
+					metric _ 3 _ _ _`,
 			ts:       timeZero.Add(time.Minute * 2),
 			expected: []promql.FPoint{{T: 0, F: 3}, {T: 60000, F: 3}, {T: 120000, F: 3}},
 			smoothed: true,
 		},
 		// the synthetic points are taken from the extended start range
 		"smoothed - synthetic head and tail first.T < rangeStart, last.T < rangeEnd": {
-			data:            "load 1m\n\t\t\tmetric 1 2 3 4 _ _",
+			data: `load 1m
+					metric 1 2 3 4 _ _`,
 			ts:              timeZero.Add(time.Second * 64 * 4),
 			expected:        []promql.FPoint{{T: 136000, F: 3.2666666666666666}, {T: 180000, F: 4}, {T: 256000, F: 4}},
 			hasSmoothedHead: true,
@@ -266,7 +269,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			require.NoError(t, err)
 
 			if len(tc.expected) == 0 {
-				require.Errorf(t, rv.NextSeries(ctx), "operator stream exhausted")
+				require.Equal(t, types.EOS, rv.NextSeries(ctx))
 				return
 			}
 
