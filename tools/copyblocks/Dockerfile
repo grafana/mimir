@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-ARG        BASEIMG=gcr.io/distroless/static-debian12@sha256:87bce11be0af225e4ca761c40babb06d6d559f5767fbf7dc3c47f0f1a466b92c
+ARG        BASEIMG=gcr.io/distroless/static-debian12@sha256:4b2a093ef4649bccd586625090a3c668b254cfe180dee54f4c94f3e9bd7e381e
 # TODO(rwwiv): Remove once CA bundle is updated upstream.
 FROM debian:testing AS updated-ca-bundle
 RUN apt update && apt install -y ca-certificates && update-ca-certificates && apt clean
