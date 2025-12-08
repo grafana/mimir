@@ -17,6 +17,7 @@ import (
 	"flag"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -77,6 +78,10 @@ func (m *mockQueryStreamServer) Context() context.Context {
 func BenchmarkQueryExecution(b *testing.B) {
 	require.NotEmpty(b, *dataDirFlag, "-data-dir flag is required")
 	require.NotEmpty(b, *queryFileFlag, "-query-file flag is required")
+	if *tenantIDFlag != "" {
+		_, err := regexp.Compile(*tenantIDFlag)
+		require.NoError(b, err, "-tenant-id flag must be a valid regular expression")
+	}
 
 	// Validate mutual exclusivity of query-ids and query-sample
 	if *queryIDsFlag != "" && *querySampleFlag < 1.0 {
@@ -93,7 +98,7 @@ func BenchmarkQueryExecution(b *testing.B) {
 
 	queries, stats, err := queryLoader.PrepareQueries(bench.QueryLoaderConfig{
 		Filepath:       *queryFileFlag,
-		TenantID:       *tenantIDFlag,
+		TenantID:       regexp.MustCompile(*tenantIDFlag),
 		QueryIDs:       queryIDs,
 		SampleFraction: *querySampleFlag,
 		Seed:           *querySampleSeed,

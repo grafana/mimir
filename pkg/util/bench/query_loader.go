@@ -9,6 +9,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -68,7 +69,7 @@ type QueryLoaderConfig struct {
 	// Filepath is the path to the Loki log file in JSONL format.
 	Filepath string
 	// TenantID is the tenant ID to filter queries by. If empty, all queries are used.
-	TenantID string
+	TenantID *regexp.Regexp
 	// QueryIDs is a list of query IDs (line numbers) to load.
 	// Mutually exclusive with sampling (SampleFraction < 1.0).
 	QueryIDs []int
@@ -92,7 +93,7 @@ func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, Parsin
 	}
 
 	// Create cache key from parameters
-	cacheKey := fmt.Sprintf("%s|%s|%v|%f|%d", config.Filepath, config.TenantID, config.QueryIDs, config.SampleFraction, config.Seed)
+	cacheKey := fmt.Sprintf("%s|%s|%v|%f|%d", config.Filepath, config.TenantID.String(), config.QueryIDs, config.SampleFraction, config.Seed)
 
 	// Check cache first
 	if cached, ok := qc.cache.Load(cacheKey); ok {
@@ -106,10 +107,10 @@ func (qc *QueryLoader) PrepareQueries(config QueryLoaderConfig) ([]Query, Parsin
 	}
 
 	// Filter by tenant ID if specified
-	if config.TenantID != "" {
+	if config.TenantID.String() != "" {
 		filtered := queries[:0]
 		for i := range queries {
-			if queries[i].User == config.TenantID {
+			if config.TenantID.MatchString(queries[i].User) {
 				filtered = append(filtered, queries[i])
 			}
 		}
