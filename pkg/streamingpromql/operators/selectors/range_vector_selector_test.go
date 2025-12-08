@@ -38,15 +38,15 @@ func TestStepRange(t *testing.T) {
 		smoothed      bool
 		steps         int
 	}{
-		// anchored - set the step duration lt range duration
-		"anchored - step lt range": {
+		// anchored - set the step duration < range duration
+		"anchored - step < range": {
 			step:          time.Minute,
 			rangeDuration: time.Minute * 2,
 			anchored:      true,
 			steps:         4,
 		},
-		// smoothed - set the step duration lt range duration
-		"smoothed - step lt range": {
+		// smoothed - set the step duration < range duration
+		"smoothed - step < range": {
 			step:          time.Minute,
 			rangeDuration: time.Minute * 2,
 			anchored:      false,
@@ -59,30 +59,30 @@ func TestStepRange(t *testing.T) {
 			anchored:      false,
 			steps:         4,
 		},
-		// anchored - set the step duration gt range duration
-		"anchored - step gt range": {
+		// anchored - set the step duration > range duration
+		"anchored - step > range": {
 			step:          time.Minute,
 			rangeDuration: time.Second * 30,
 			anchored:      true,
 			steps:         4,
 		},
-		// smoothed - set the step duration gt range duration
-		"smoothed - step gt range": {
+		// smoothed - set the step duration > range duration
+		"smoothed - step > range": {
 			step:          time.Minute,
 			rangeDuration: time.Second * 30,
 			anchored:      false,
 			smoothed:      true,
 			steps:         4,
 		},
-		// anchored - set the step duration eq range duration
-		"anchored - step eq range": {
+		// anchored - set the step duration = range duration
+		"anchored - step = range": {
 			step:          time.Second * 30,
 			rangeDuration: time.Second * 30,
 			anchored:      true,
 			steps:         7,
 		},
-		// smoothed - set the step duration eq range duration
-		"smoothed - step eq range": {
+		// smoothed - set the step duration = range duration
+		"smoothed - step = range": {
 			step:          time.Second * 30,
 			rangeDuration: time.Second * 30,
 			anchored:      false,
@@ -171,7 +171,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			anchored: true,
 		},
 		// synthetic points are created from points within the range
-		"anchored - synthetic head and tail - first.T gt rangeStart, last.T lt rangeEnd": {
+		"anchored - synthetic head and tail - first.T > rangeStart, last.T < rangeEnd": {
 			data: `load 1m
 					metric _ 10 _ 30`,
 			ts:       timeZero.Add(2 * time.Minute),
@@ -179,7 +179,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			anchored: true,
 		},
 		// synthetic points are created from the extended look-back window
-		"anchored - synthetic head and tail first.T lt rangeStart, last.T lt rangeEnd": {
+		"anchored - synthetic head and tail first.T < rangeStart, last.T < rangeEnd": {
 			data: `load 1m
 					metric 1 2 3 4`,
 			ts:       timeZero.Add(2 * time.Second * 61),
@@ -205,7 +205,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			smoothed: true,
 		},
 		// smoothed has an extended end range. The synthetic points are taken from within the range and the extended end of the range
-		"smoothed - synthetic head and tail - first.T gt rangeStart, last.T gt rangeEnd": {
+		"smoothed - synthetic head and tail - first.T > rangeStart, last.T > rangeEnd": {
 			data: `load 1m
 					metric _ 10 _ 30`,
 			ts:              timeZero.Add(2 * time.Minute),
@@ -215,7 +215,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			smoothed:        true,
 		},
 		// the synthetic points are taken from the extended range
-		"smoothed - synthetic head and tail first.T lt rangeStart, last.T gt rangeEnd": {
+		"smoothed - synthetic head and tail first.T < rangeStart, last.T > rangeEnd": {
 			data: `load 1m
 					metric 1 2 3 4`,
 			ts:              timeZero.Add(2 * time.Second * 61),
@@ -225,7 +225,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			smoothed:        true,
 		},
 		// the synthetic points are taken from within the original range
-		"smoothed - synthetic head and tail first.T gt rangeStart, last.T lt rangeEnd": {
+		"smoothed - synthetic head and tail first.T > rangeStart, last.T < rangeEnd": {
 			data: `load 1m
 					metric _ 3 _ _ _`,
 			ts:       timeZero.Add(time.Minute * 2),
@@ -233,7 +233,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			smoothed: true,
 		},
 		// the synthetic points are taken from the extended start range
-		"smoothed - synthetic head and tail first.T lt rangeStart, last.T lt rangeEnd": {
+		"smoothed - synthetic head and tail first.T < rangeStart, last.T < rangeEnd": {
 			data: `load 1m
 					metric 1 2 3 4 _ _`,
 			ts:              timeZero.Add(time.Second * 64 * 4),
@@ -294,10 +294,4 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			require.Equal(t, tc.hasSmoothedTail, step.SmoothedBasisForTailPointSet)
 		})
 	}
-}
-
-func toFPoints(in []promql.FPoint) []promql.FPoint {
-	out := make([]promql.FPoint, len(in))
-	copy(out, in)
-	return out
 }
