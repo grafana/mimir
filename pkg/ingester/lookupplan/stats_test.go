@@ -493,6 +493,110 @@ func TestLabelName_ManySeries(t *testing.T) {
 	}
 }
 
+// TestSampleValuesCollection verifies that sample values are collected correctly
+// during statistics generation, respecting the configured limits.
+func TestSampleValuesCollection(t *testing.T) {
+	labelName := "test_label"
+	numValues := 10000
+
+	p := newMockIndexReader()
+
+	// Add series with predictable value lengths
+	for i := 0; i < numValues; i++ {
+		value := strconv.Itoa(i) // 1-5 bytes each
+		ls := labels.FromStrings(labelName, value)
+		p.add(storage.SeriesRef(i), ls)
+	}
+
+	gen := NewStatisticsGenerator(log.NewNopLogger())
+	stats, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	samples := stats.SampleValues(ctx, labelName)
+
+	// With 1% probability and 10000 values, we expect ~100 samples (with some variance)
+	// Allow for statistical variance: expect between 50 and 150 samples
+	require.GreaterOrEqual(t, len(samples), 50,
+		"expected at least 50 samples, got %d", len(samples))
+	require.LessOrEqual(t, len(samples), 150,
+		"expected at most 150 samples, got %d", len(samples))
+
+	// Verify all sampled values are valid (exist in the original set)
+	for _, s := range samples {
+		val, err := strconv.Atoi(s)
+		require.NoError(t, err, "sample %q should be a valid integer", s)
+		require.GreaterOrEqual(t, val, 0)
+		require.Less(t, val, numValues)
+	}
+}
+
+// TestSampleValuesAreDeterministic verifies that sampling is deterministic
+// (same input produces same samples) for reproducibility.
+func TestSampleValuesAreDeterministic(t *testing.T) {
+	labelName := "test_label"
+	numValues := 1000
+
+	p := newMockIndexReader()
+	for i := 0; i < numValues; i++ {
+		ls := labels.FromStrings(labelName, strconv.Itoa(i))
+		p.add(storage.SeriesRef(i), ls)
+	}
+
+	gen := NewStatisticsGenerator(log.NewNopLogger())
+
+	// Generate stats twice
+	stats1, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	require.NoError(t, err)
+
+	stats2, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	samples1 := stats1.SampleValues(ctx, labelName)
+	samples2 := stats2.SampleValues(ctx, labelName)
+
+	require.Equal(t, samples1, samples2, "samples should be deterministic")
+}
+
+// TestSampleValuesNonExistentLabel verifies SampleValues returns nil for non-existent labels.
+func TestSampleValuesNonExistentLabel(t *testing.T) {
+	p := newMockIndexReader()
+	ls := labels.FromStrings("existing_label", "value")
+	p.add(storage.SeriesRef(1), ls)
+
+	gen := NewStatisticsGenerator(log.NewNopLogger())
+	stats, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	samples := stats.SampleValues(ctx, "nonexistent_label")
+	require.Nil(t, samples)
+}
+
+// TestSampleValuesSmallDataset verifies behavior with few values (less than expected samples).
+func TestSampleValuesSmallDataset(t *testing.T) {
+	labelName := "test_label"
+	numValues := 5 // Very small, less than 1% sample would give
+
+	p := newMockIndexReader()
+	for i := 0; i < numValues; i++ {
+		ls := labels.FromStrings(labelName, strconv.Itoa(i))
+		p.add(storage.SeriesRef(i), ls)
+	}
+
+	gen := NewStatisticsGenerator(log.NewNopLogger())
+	stats, err := gen.Stats(p.Meta(), p, DefaultLabelCardinalityForSmallerSketch, DefaultLabelCardinalityForLargerSketch)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	samples := stats.SampleValues(ctx, labelName)
+
+	// With only 5 values and 1% probability, we might get 0 samples
+	// but the capacity is pre-allocated to at least 1
+	require.LessOrEqual(t, len(samples), numValues)
+}
+
 // TestLabelName_NonUniformValueDistribution tests that for a given label, if one value is much lower-cardinality
 // than all others, the resulting count-min sketch reflects that difference in order of magnitude against all
 // higher-cardinality label values.
