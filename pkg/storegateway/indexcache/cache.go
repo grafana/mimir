@@ -8,7 +8,7 @@ package indexcache
 import (
 	"context"
 	"encoding/base64"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 	"unsafe"
@@ -169,7 +169,15 @@ func CanonicalLabelMatchersKey(ms []*labels.Matcher) LabelMatchersKey {
 	for i := range ms {
 		sorted[i] = labels.Matcher{Type: ms[i].Type, Name: ms[i].Name, Value: ms[i].Value}
 	}
-	sort.Sort(sortedLabelMatchers(sorted))
+	slices.SortFunc(sorted, func(a, b labels.Matcher) int {
+		if a.Name != b.Name {
+			return strings.Compare(a.Name, b.Name)
+		}
+		if a.Type != b.Type {
+			return int(a.Type - b.Type)
+		}
+		return strings.Compare(a.Value, b.Value)
+	})
 
 	const (
 		typeLen = 2
@@ -189,21 +197,6 @@ func CanonicalLabelMatchersKey(ms []*labels.Matcher) LabelMatchersKey {
 	}
 	return LabelMatchersKey(sb.String())
 }
-
-type sortedLabelMatchers []labels.Matcher
-
-func (c sortedLabelMatchers) Less(i, j int) bool {
-	if c[i].Name != c[j].Name {
-		return c[i].Name < c[j].Name
-	}
-	if c[i].Type != c[j].Type {
-		return c[i].Type < c[j].Type
-	}
-	return c[i].Value < c[j].Value
-}
-
-func (c sortedLabelMatchers) Len() int      { return len(c) }
-func (c sortedLabelMatchers) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
 
 func initLabelValuesForAllCacheTypes(vec *prometheus.MetricVec) {
 	for _, typ := range allCacheTypes {
