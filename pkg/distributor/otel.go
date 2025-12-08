@@ -81,6 +81,7 @@ func OTLPHandler(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
+	enableOTLPLazyDeserializing bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -103,7 +104,7 @@ func OTLPHandler(
 		parser := newOTLPParser(
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
-			OTLPPushMiddlewares,
+			OTLPPushMiddlewares, enableOTLPLazyDeserializing,
 		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
@@ -230,6 +231,7 @@ func newOTLPParser(
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
+	enableOTLPLazyDeserializing bool,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
 		resourceAttributePromotionConfig = limits
@@ -261,6 +263,7 @@ func newOTLPParser(
 				exportReq := pmetricotlp.NewExportRequest()
 				unmarshaler := otlpProtoUnmarshaler{
 					request: &exportReq,
+					lazyDeserialize: enableOTLPLazyDeserializing,
 				}
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
@@ -548,7 +551,8 @@ func marshal(payload proto.Message, contentType string) ([]byte, string, error) 
 
 // otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest.
 type otlpProtoUnmarshaler struct {
-	request *pmetricotlp.ExportRequest
+	request         *pmetricotlp.ExportRequest
+	lazyDeserialize bool
 }
 
 func (o otlpProtoUnmarshaler) ProtoMessage() {}
@@ -560,6 +564,10 @@ func (o otlpProtoUnmarshaler) String() string {
 }
 
 func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
+	if o.lazyDeserialize {
+		return o.request.UnmarshalProtoLazy(data)
+	}
+
 	return o.request.UnmarshalProto(data)
 }
 
