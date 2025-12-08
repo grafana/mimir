@@ -138,21 +138,49 @@ func TestStringsSamplerMaxBytes(t *testing.T) {
 		"total bytes %d should be close to maxBytes %d", totalBytes, maxBytes)
 }
 
-// TestStringsSamplerDisabled verifies that zero probability results in no samples.
+// TestStringsSamplerDisabled verifies that sampling can be disabled via different config options.
 func TestStringsSamplerDisabled(t *testing.T) {
 	numValues := 1000
 
-	cfg := CostConfig{
-		SampleValuesProbability: 0, // Disabled
-		SampleValuesMaxCount:    1000,
-		SampleValuesMaxBytes:    10000,
+	tests := []struct {
+		name string
+		cfg  CostConfig
+	}{
+		{
+			name: "zero probability",
+			cfg: CostConfig{
+				SampleValuesProbability: 0,
+				SampleValuesMaxCount:    1000,
+				SampleValuesMaxBytes:    10000,
+			},
+		},
+		{
+			name: "zero max count",
+			cfg: CostConfig{
+				SampleValuesProbability: 1.0,
+				SampleValuesMaxCount:    0,
+				SampleValuesMaxBytes:    10000,
+			},
+		},
+		{
+			name: "zero max bytes",
+			cfg: CostConfig{
+				SampleValuesProbability: 1.0,
+				SampleValuesMaxCount:    1000,
+				SampleValuesMaxBytes:    0,
+			},
+		},
 	}
 
-	sampler := NewStringsSampler(numValues, cfg)
-	for i := 0; i < numValues; i++ {
-		sampler.MaybeSample(strconv.Itoa(i))
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sampler := NewStringsSampler(numValues, tt.cfg)
+			for i := 0; i < numValues; i++ {
+				sampler.MaybeSample(strconv.Itoa(i))
+			}
 
-	samples := sampler.Sampled()
-	require.Empty(t, samples)
+			samples := sampler.Sampled()
+			require.Empty(t, samples)
+		})
+	}
 }
