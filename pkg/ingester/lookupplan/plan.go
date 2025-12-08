@@ -4,7 +4,9 @@ package lookupplan
 
 import (
 	"context"
+	"math"
 	"slices"
+	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -53,9 +55,43 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
 
+	// Compute normalizedSelectivity for all predicates to account for correlation
+	computeNormalizedSelectivities(p.predicates, p.totalSeries)
+
 	// All predicates are decided for this plan
 	p.numDecidedPredicates = len(p.predicates)
 	return p
+}
+
+// computeNormalizedSelectivities computes the normalizedSelectivity for each predicate.
+// It sorts predicates by their series selectivity and applies progressively higher roots
+// (1, sqrt, 4th root, 8th root, ...) to account for correlation between predicates.
+// The most selective predicate gets full selectivity; less selective ones get dampened.
+func computeNormalizedSelectivities(predicates []planPredicate, totalSeries uint64) {
+	if len(predicates) == 0 || totalSeries == 0 {
+		return
+	}
+
+	// Create indices sorted by series selectivity (cardinality / totalSeries)
+	indices := make([]int, len(predicates))
+	for i := range indices {
+		indices[i] = i
+	}
+	sort.Slice(indices, func(i, j int) bool {
+		// Sort by selectivity (lower selectivity = more selective = applied first)
+		selI := float64(predicates[indices[i]].cardinality) / float64(totalSeries)
+		selJ := float64(predicates[indices[j]].cardinality) / float64(totalSeries)
+		return selI < selJ
+	})
+
+	// Assign normalizedSelectivity based on sorted position
+	for pos, idx := range indices {
+		sel := float64(predicates[idx].cardinality) / float64(totalSeries)
+		// Apply progressively higher roots: 1, sqrt, 4th root, 8th root, ...
+		// power = 1/2^pos: pos=0 -> 1, pos=1 -> 0.5, pos=2 -> 0.25, ...
+		power := 1.0 / float64(int(1)<<pos)
+		predicates[idx].normalizedSelectivity = math.Pow(sel, power)
+	}
 }
 
 func newIndexOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
@@ -85,6 +121,8 @@ func (p plan) virtualPredicate(idx int) (planPredicate, bool) {
 	virtualPred.labelNameUniqueVals = 1
 	// We don't want selectivity of 0 because then the cost of the rest of the predicates might not matter.
 	virtualPred.selectivity = 1
+	// normalizedSelectivity should also be 1 to match selectivity behavior for virtual predicates.
+	virtualPred.normalizedSelectivity = 1
 	// Assume extremely cheap index scan cost.
 	virtualPred.indexScanCost = 1
 
@@ -212,13 +250,10 @@ func (p plan) NumSelectedPostings() uint64 {
 			continue
 		}
 
-		// We use the selectivity across all series instead of the selectivity across label values.
-		// For example, if {protocol=~.*} matches all values, it doesn't mean it won't reduce the result set after intersection.
-		//
-		// We also assume independence between the predicates. This is a simplification.
-		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
-		// While finalSelectivity is neither an upper bound nor a lower bound, assuming independence allows us to come up with cost estimates comparable between plans.
-		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
+		// Use normalizedSelectivity which accounts for correlation between predicates.
+		// This dampens the effect of less selective predicates since they tend to
+		// overlap with more selective ones (e.g., namespace=X and pod=~X-.*).
+		finalSelectivity *= pred.normalizedSelectivity
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
@@ -228,12 +263,10 @@ func (p plan) NumSelectedPostings() uint64 {
 func (p plan) nonShardedCardinality() uint64 {
 	finalSelectivity := 1.0
 	for _, pred := range p.predicates {
-		// We use the selectivity across all series instead of the selectivity across label values.
-		// For example, if {protocol=~.*} matches all values, it could still reduce the result set after intersection.
-		//
-		// We also assume independence between the predicates. This is a simplification.
-		// For example, the selectivity of {pod=~prometheus.*} doesn't depend on if we have already applied {statefulset=prometheus}.
-		finalSelectivity *= float64(pred.cardinality) / float64(p.totalSeries)
+		// Use normalizedSelectivity which accounts for correlation between predicates.
+		// This dampens the effect of less selective predicates since they tend to
+		// overlap with more selective ones (e.g., namespace=X and pod=~X-.*).
+		finalSelectivity *= pred.normalizedSelectivity
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
@@ -259,13 +292,14 @@ func shardedCardinality(cardinality uint64, shard *sharding.ShardSelector) uint6
 
 func (p plan) AddPredicatesToSpan(span trace.Span) {
 	// Preallocate the attributes. Use an array to ensure the capacity is correct at compile time.
-	const numAttributesPerPredicate = 7
+	const numAttributesPerPredicate = 8
 	attributes := make([]attribute.KeyValue, 0, len(p.predicates)*numAttributesPerPredicate)
 
 	for _, pred := range p.predicates {
 		predAttr := [numAttributesPerPredicate]attribute.KeyValue{
 			attribute.Stringer("matcher", pred.matcher),
 			attribute.Float64("selectivity", pred.selectivity),
+			attribute.Float64("sqrt_selectivity", pred.normalizedSelectivity),
 			attribute.Int64("cardinality", int64(pred.cardinality)),
 			attribute.Int64("label_name_unique_values", int64(pred.labelNameUniqueVals)),
 			attribute.Float64("single_match_cost", pred.singleMatchCost),

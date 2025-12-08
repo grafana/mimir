@@ -15,6 +15,10 @@ type planPredicate struct {
 
 	// selectivity is between 0 and 1. 1 indicates that the matcher will match all label values, 0 indicates it will match no values. NB: label values, not series
 	selectivity float64
+	// normalizedSelectivity is the selectivity adjusted for correlation with other predicates.
+	// Computed by sorting predicates by series selectivity and applying progressively
+	// higher roots (1, sqrt, 4th root, 8th root, ...) to account for correlation.
+	normalizedSelectivity float64
 	// cardinality is the estimation of how many series this matcher matches on its own. NB: series, not label values
 	cardinality         uint64
 	labelNameUniqueVals uint64
