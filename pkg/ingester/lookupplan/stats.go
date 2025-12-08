@@ -5,6 +5,8 @@ package lookupplan
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -14,6 +16,15 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/tylertreat/BoomFilters"
+)
+
+const (
+	// sampleValuesProbability is the probability of sampling a label value for selectivity estimation.
+	sampleValuesProbability = 0.01 // 1% sample rate
+	// sampleValuesMaxCount is the maximum number of sampled values to store per label name.
+	sampleValuesMaxCount = 1024
+	// sampleValuesMaxBytes is the maximum total size in bytes of sampled values per label name.
+	sampleValuesMaxBytes = 64 * 1024 // 64KB
 )
 
 // countPostings counts the number of series in the given postings
@@ -105,9 +116,24 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 			distinctValues: uint64(len(values)),
 		}
 
+		// Sample values for selectivity estimation.
+		// Use deterministic seed based on number of values for reproducibility.
+		valuesSampler := rand.New(rand.NewPCG(uint64(len(values)), 0))
+		expectedNumSampledValues := min(sampleValuesMaxCount, int(sampleValuesProbability*float64(len(values))))
+		sampledValues := make([]string, 0, max(1, expectedNumSampledValues))
+		sampledValuesBytes := 0
+
 		// Add each value to the sketch
 		// For each value, we need to count how many series have that value
 		for _, value := range values {
+			// Sample values with configured probability, respecting max count and size limits
+			if valuesSampler.Float64() < sampleValuesProbability &&
+				len(sampledValues) < sampleValuesMaxCount &&
+				sampledValuesBytes < sampleValuesMaxBytes {
+				sampledValues = append(sampledValues, strings.Clone(value))
+				sampledValuesBytes += len(value)
+			}
+
 			// Get postings for this label name/value pair
 			postings, err := r.Postings(ctx, labelName, value)
 			if err != nil {
@@ -124,6 +150,7 @@ func (g StatisticsGenerator) Stats(meta tsdb.BlockMeta, r tsdb.IndexReader, smal
 			valBytes := yoloBytes(value)
 			sketch.s.AddN(valBytes, seriesCountForValue)
 		}
+		sketch.sampledValues = sampledValues
 
 		labelSketches[labelName] = sketch
 	}
@@ -146,6 +173,7 @@ type BlockStatistics struct {
 type LabelValuesSketch struct {
 	s              *boom.CountMinSketch
 	distinctValues uint64
+	sampledValues  []string // sample of values for selectivity estimation
 }
 
 // TotalSeries returns the number of series in the TSDB block.
@@ -186,6 +214,16 @@ func (s *BlockStatistics) LabelValuesCardinality(_ context.Context, name string,
 		totalCount += sketch.s.Count(valBytes)
 	}
 	return totalCount
+}
+
+// SampleValues returns a representative sample of label values for the given label name.
+// Returns nil if the label name doesn't exist.
+func (s *BlockStatistics) SampleValues(_ context.Context, name string) []string {
+	sketch, ok := s.labelNames[name]
+	if !ok {
+		return nil
+	}
+	return sketch.sampledValues
 }
 
 // yoloBytes converts a string to a byte slice without allocation.

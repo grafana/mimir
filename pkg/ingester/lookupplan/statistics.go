@@ -18,4 +18,9 @@ type Statistics interface {
 	// otherwise, it returns the total cardinality across all values for the label name. If the label name does not exist,
 	// it returns 0.
 	LabelValuesCardinality(ctx context.Context, name string, values ...string) uint64
+
+	// SampleValues returns a representative sample of label values for the given label name.
+	// This is used for selectivity estimation of regex matchers.
+	// Returns nil if no sample is available.
+	SampleValues(ctx context.Context, name string) []string
 }

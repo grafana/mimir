@@ -93,6 +93,10 @@ func (m *mockStatistics) LabelValuesCardinality(_ context.Context, name string, 
 	return total
 }
 
+func (m *mockStatistics) SampleValues(_ context.Context, _ string) []string {
+	return nil // Tests don't need sample values
+}
+
 // newHighCardinalityMockStatistics creates a mockStatistics with higher cardinality
 // to test the planner's behavior with realistic scale data
 func newHighCardinalityMockStatistics() *mockStatistics {
