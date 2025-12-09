@@ -149,8 +149,8 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		data            string
 		ts              time.Time
 		expected        []promql.FPoint
-		hasSmoothedHead bool
-		hasSmoothedTail bool
+		expectedHasSmoothedHead bool
+		expectedHasSmoothedTail bool
 		smoothed        bool
 		anchored        bool
 	}{
