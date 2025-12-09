@@ -13,10 +13,13 @@ import (
 
 // OptimizationPass identifies subplans of the provided query plan that can be executed remotely.
 type OptimizationPass struct {
+	enableMultipleNodeRequests bool
 }
 
-func NewOptimizationPass() *OptimizationPass {
-	return &OptimizationPass{}
+func NewOptimizationPass(enableMultipleNodeRequests bool) *OptimizationPass {
+	return &OptimizationPass{
+		enableMultipleNodeRequests: enableMultipleNodeRequests,
+	}
 }
 
 func (o *OptimizationPass) Name() string {

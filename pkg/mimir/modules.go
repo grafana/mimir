@@ -1034,7 +1034,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+		t.QueryFrontendQueryPlanner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(t.Cfg.Frontend.QueryMiddleware.EnableMultipleNodeRemoteExecutionRequests))
 	}
 
 	if t.Cfg.Frontend.QueryMiddleware.UseMQEForSharding {
