@@ -197,7 +197,7 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 
 	if smoothedOrAnchored {
 		// We only need to consider samples exactly within the range as the pre-calculated smoothedBasisForHeadPoint & smoothedBasisForTailPoint have already handled the resets at boundaries.
-		// For smoothed rate/increase range queries, the interpolated points at the range boundaries are calculated differently to compensate for counter values.
+		// For smoothed rate/increase range queries, the interpolated points at the range boundaries are treated differently to not incorrectly introduce counter resets.
 		// These alternate boundary points have been pre-calculated by the range vector selector.
 		// Note that the rate() which calls this floatRate() has already tested that fCount >= 2, so we should not have issues pruning the head and tail of these slices.
 
