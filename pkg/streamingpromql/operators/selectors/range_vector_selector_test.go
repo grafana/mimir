@@ -112,7 +112,7 @@ func TestStepRange(t *testing.T) {
 
 			metadata, err := rv.SeriesMetadata(ctx, nil)
 			require.NoError(t, err)
-			assert.Len(t, metadata, 2)
+			require.Len(t, metadata, 2)
 
 			for range metadata {
 				require.NoError(t, rv.NextSeries(ctx))
