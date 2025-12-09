@@ -265,6 +265,10 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			return err
 		}
 
+		if s.State() != services.Running {
+			break // break out of the loop, and send SHUTTING_DOWN message.
+		}
+
 		var resp *schedulerpb.SchedulerToFrontend
 
 		switch msg.GetType() {
