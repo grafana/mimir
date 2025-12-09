@@ -139,13 +139,13 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 	timeZero := time.Unix(0, 0)
 
 	tests := map[string]struct {
-		data            string
-		ts              time.Time
-		expected        []promql.FPoint
+		data                    string
+		ts                      time.Time
+		expected                []promql.FPoint
 		expectedHasSmoothedHead bool
 		expectedHasSmoothedTail bool
-		smoothed        bool
-		anchored        bool
+		smoothed                bool
+		anchored                bool
 	}{
 		// no points are within the range boundary
 		"anchored - no points": {
@@ -201,21 +201,21 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		"smoothed - synthetic head and tail - first.T > rangeStart, last.T > rangeEnd": {
 			data: `load 1m
 					metric 5 _ 10 _ 30`,
-			ts:              timeZero.Add(3 * time.Minute),
-			expected:        []promql.FPoint{{T: 60 * 1000, F: 10}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 20}},
-			hasSmoothedHead: false,
-			hasSmoothedTail: true,
-			smoothed:        true,
+			ts:                      timeZero.Add(3 * time.Minute),
+			expected:                []promql.FPoint{{T: 60 * 1000, F: 10}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 20}},
+			expectedHasSmoothedHead: false,
+			expectedHasSmoothedTail: true,
+			smoothed:                true,
 		},
 		// the synthetic points are taken from the extended range
 		"smoothed - synthetic head and tail first.T < rangeStart, last.T > rangeEnd": {
 			data: `load 1m
 					metric 1 2 3 4`,
-			ts:              timeZero.Add(2 * time.Second * 61),
-			expected:        []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
-			hasSmoothedHead: true,
-			hasSmoothedTail: true,
-			smoothed:        true,
+			ts:                      timeZero.Add(2 * time.Second * 61),
+			expected:                []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
+			expectedHasSmoothedHead: true,
+			expectedHasSmoothedTail: true,
+			smoothed:                true,
 		},
 		// the synthetic points are taken from within the original range
 		"smoothed - synthetic head and tail first.T > rangeStart, last.T < rangeEnd": {
@@ -229,10 +229,10 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		"smoothed - synthetic head and tail first.T < rangeStart, last.T < rangeEnd": {
 			data: `load 1m
 					metric 1 2 3 4 _ _`,
-			ts:              timeZero.Add(time.Second * 64 * 4),
-			expected:        []promql.FPoint{{T: 136000, F: 3.2666666666666666}, {T: 180000, F: 4}, {T: 256000, F: 4}},
-			hasSmoothedHead: true,
-			smoothed:        true,
+			ts:                      timeZero.Add(time.Second * 64 * 4),
+			expected:                []promql.FPoint{{T: 136000, F: 3.2666666666666666}, {T: 180000, F: 4}, {T: 256000, F: 4}},
+			expectedHasSmoothedHead: true,
+			smoothed:                true,
 		},
 	}
 
@@ -283,8 +283,8 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 				require.Equal(t, expected.F, points[i].F)
 			}
 
-			require.Equal(t, tc.hasSmoothedHead, step.SmoothedBasisForHeadPointSet)
-			require.Equal(t, tc.hasSmoothedTail, step.SmoothedBasisForTailPointSet)
+			require.Equal(t, tc.expectedHasSmoothedHead, step.SmoothedBasisForHeadPointSet)
+			require.Equal(t, tc.expectedHasSmoothedTail, step.SmoothedBasisForTailPointSet)
 		})
 	}
 }
