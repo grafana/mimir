@@ -170,11 +170,14 @@ func CanonicalLabelMatchersKey(ms []*labels.Matcher) LabelMatchersKey {
 		sorted[i] = labels.Matcher{Type: ms[i].Type, Name: ms[i].Name, Value: ms[i].Value}
 	}
 	slices.SortFunc(sorted, func(a, b labels.Matcher) int {
-		if a.Name != b.Name {
-			return strings.Compare(a.Name, b.Name)
+		var res int
+		res = strings.Compare(a.Name, b.Name)
+		if res != 0 {
+			return res
 		}
-		if a.Type != b.Type {
-			return int(a.Type - b.Type)
+		res = int(a.Type - b.Type)
+		if res != 0 {
+			return res
 		}
 		return strings.Compare(a.Value, b.Value)
 	})
