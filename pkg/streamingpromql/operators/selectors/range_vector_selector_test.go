@@ -53,7 +53,7 @@ func TestStepRange(t *testing.T) {
 			smoothed:      true,
 			steps:         4,
 		},
-		"not-anchored - 2 minute range": {
+		"neither anchored nor smoothed - 2 minute range": {
 			step:          time.Minute,
 			rangeDuration: time.Minute * 2,
 			anchored:      false,
