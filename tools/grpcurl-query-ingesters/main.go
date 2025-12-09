@@ -15,14 +15,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/alecthomas/kingpin/v2"
+	"github.com/prometheus/prometheus/model/labels"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/alecthomas/kingpin/v2"
-	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 const (
@@ -153,8 +153,8 @@ func queryAndDumpIngester(k8sContext, k8sNamespace, podName, tenantID string, qu
 
 	defer func() {
 		if portForwardCmd.Process != nil {
-			portForwardCmd.Process.Kill()
-			portForwardCmd.Wait()
+			_ = portForwardCmd.Process.Kill()
+			_ = portForwardCmd.Wait()
 		}
 	}()
 
@@ -164,7 +164,7 @@ func queryAndDumpIngester(k8sContext, k8sNamespace, podName, tenantID string, qu
 	}
 
 	// Connect to ingester
-	conn, err := grpc.DialContext(ctx, fmt.Sprintf("localhost:%d", localPort),
+	conn, err := grpc.NewClient(fmt.Sprintf("localhost:%d", localPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("failed to connect to ingester: %w", err)
@@ -183,6 +183,7 @@ func queryAndDumpIngester(k8sContext, k8sNamespace, podName, tenantID string, qu
 	}
 
 	// Process responses and dump immediately
+	agg := &responseAggregator{}
 	for {
 		resp, err := stream.Recv()
 		if err != nil {
@@ -192,7 +193,7 @@ func queryAndDumpIngester(k8sContext, k8sNamespace, podName, tenantID string, qu
 			return fmt.Errorf("failed to receive response: %w", err)
 		}
 
-		dumpQueryStreamResponse(resp)
+		agg.addResponse(resp)
 	}
 
 	return nil
@@ -211,24 +212,27 @@ func waitForPortForward(port int, timeout time.Duration) error {
 	return fmt.Errorf("port-forward not ready after %v", timeout)
 }
 
-func dumpQueryStreamResponse(resp *client.QueryStreamResponse) {
-	for _, series := range resp.Chunkseries {
-		// Build labels from the protobuf LabelPairs
-		var lblPairs []labels.Label
-		for _, lbl := range series.Labels {
-			lblPairs = append(lblPairs, labels.Label{
-				Name:  lbl.Name,
-				Value: lbl.Value,
-			})
-		}
-		lbls := labels.New(lblPairs...)
-		slices.SortFunc(lblPairs, func(a, b labels.Label) int {
-			return strings.Compare(a.Name, b.Name)
-		})
+// responseAggregator collects streaming series and their chunks across multiple responses.
+type responseAggregator struct {
+	series []client.QueryStreamSeries
+}
 
+func (a *responseAggregator) addResponse(resp *client.QueryStreamResponse) {
+	// Collect series metadata
+	a.series = append(a.series, resp.StreamingSeries...)
+
+	// Dump chunks as they arrive
+	for _, seriesChunks := range resp.StreamingSeriesChunks {
+		if int(seriesChunks.SeriesIndex) >= len(a.series) {
+			fmt.Printf("Warning: chunk references unknown series index %d\n", seriesChunks.SeriesIndex)
+			continue
+		}
+
+		series := a.series[seriesChunks.SeriesIndex]
+		lbls := labelsFromAdapter(series.Labels)
 		fmt.Printf("%s\n", lbls.String())
 
-		for _, chunk := range series.Chunks {
+		for _, chunk := range seriesChunks.Chunks {
 			startTime := time.UnixMilli(chunk.StartTimestampMs).UTC()
 			endTime := time.UnixMilli(chunk.EndTimestampMs).UTC()
 
@@ -244,7 +248,21 @@ func dumpQueryStreamResponse(resp *client.QueryStreamResponse) {
 	}
 }
 
-func dumpChunkSamples(data []byte, encoding int) error {
+func labelsFromAdapter(adapters []mimirpb.LabelAdapter) labels.Labels {
+	lblPairs := make([]labels.Label, 0, len(adapters))
+	for _, lbl := range adapters {
+		lblPairs = append(lblPairs, labels.Label{
+			Name:  lbl.Name,
+			Value: lbl.Value,
+		})
+	}
+	slices.SortFunc(lblPairs, func(a, b labels.Label) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	return labels.New(lblPairs...)
+}
+
+func dumpChunkSamples(data mimirpb.UnsafeByteSlice, encoding int) error {
 	// This is a simplified version - you might need to implement proper chunk decoding
 	// based on the encoding type from the Mimir chunk package
 	fmt.Printf("  - Chunk data: %d bytes (encoding: %d)\n", len(data), encoding)
