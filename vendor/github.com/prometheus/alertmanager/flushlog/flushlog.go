@@ -230,7 +230,8 @@ func New(o Options) (*FlushLog, error) {
 	}
 
 	l := &FlushLog{
-		retention: time.Hour * 2,
+		clock:     clock.New(),
+		retention: o.Retention,
 		logger:    log.NewNopLogger(),
 		st:        state{},
 		broadcast: func([]byte) {},
