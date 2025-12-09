@@ -197,7 +197,7 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 
 	if smoothedOrAnchored {
 		// We only need to consider samples exactly within the range as the pre-calculated smoothedBasisForHeadPoint & smoothedBasisForTailPoint have already handled the resets at boundaries.
-		// For smoothed rate/increase range queries, the interpolated points at the range boundaries are calculated differently to compensate for counter values.
+		// For smoothed rate/increase range queries, the interpolated points at the range boundaries are treated differently to not incorrectly introduce counter resets.
 		// These alternate boundary points have been pre-calculated by the range vector selector.
 		// Note that the rate() which calls this floatRate() has already tested that fCount >= 2, so we should not have issues pruning the head and tail of these slices.
 
@@ -209,11 +209,11 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 			lastPoint = smoothedBasisForTailPoint
 		}
 
-		// We are essentially replacing the last point in the slices with the smoothed tail point
+		// We are essentially replacing the last point in the slices with the basis for the smoothed tail point
 		// We could achieve the same thing by setting the last value.F in the slice to the smoothedBasisForTailPoint.F,
 		// and not pruning the slice. This would then avoid the need for the extra delta addition after the accumulations.
-		// However, we probably do not want to edit values in these slices.
-		// We still do this even of the smoothedBasisForTailPoint is not set, as this last point still handled in the same manner.
+		// However, we do not want to edit values in these slices.
+		// We still do this even if the smoothedBasisForTailPoint is not set, as this last point still handled in the same manner.
 		if len(fTail) > 0 {
 			fTail = fTail[:len(fTail)-1]
 		} else {
