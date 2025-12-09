@@ -68,7 +68,7 @@
 * [ENHANCEMENT] Usage tracker: `loadSnapshot()` checks shard emptiness instead of using explicit `first` parameter. #13534
 * [ENHANCEMENT] OTLP: Add metric `cortex_distributor_otlp_requests_by_content_type_total` to track content type (json or proto) of OTLP packets. #13525
 * [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13603
-* [ENHANCEMENT] Query-scheduler: Gracefully handle shutdown by draining queue before exiting. #12605
+* [ENHANCEMENT] Query-scheduler: Gracefully handle shutdown by draining the queue before exiting. #12605
 * [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13525
 * [ENHANCEMENT] Ruler: gRPC errors without details are classified as `operator` errors, and rule evaluation failures (such as duplicate labelsets) are classified as `user` errors. #13586
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053

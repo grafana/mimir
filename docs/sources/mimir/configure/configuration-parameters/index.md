@@ -2140,10 +2140,10 @@ ring:
 # CLI flag: -query-scheduler.max-used-instances
 [max_used_instances: <int> | default = 0]
 
-# Maximum time that the scheduler will wait for the queue to be drained on
-# shutdown.
+# Maximum time that the scheduler waits for the queue to drain on shutdown.
+# (default 2m15s)
 # CLI flag: -query-scheduler.graceful-shutdown-timeout
-[graceful_shutdown_timeout: <duration> | default = 30s]
+[graceful_shutdown_timeout: <duration> | default = 2m15s]
 ```
 
 ### ruler
