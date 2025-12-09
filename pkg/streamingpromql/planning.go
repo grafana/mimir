@@ -32,13 +32,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+var (
+	anchoredIncompatibleFunctionPrefix := fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
+	smoothedIncompatibleFunctionPrefix := fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
+)
+
 type ErrAnchoredIncompatibleFunction struct {
 	functionName string
 }
 
 func (e ErrAnchoredIncompatibleFunction) Error() string {
-	anchoredIncompatibleFunctionPrefix := fmt.Sprintf("anchored modifier can only be used with: %s - not with ", sortImplode(promql.AnchoredSafeFunctions))
-	return fmt.Sprintf("%s%s", anchoredIncompatibleFunctionPrefix, e.functionName)
+	return anchoredIncompatibleFunctionPrefix + e.functionName
 }
 
 type ErrSmoothedIncompatibleFunction struct {
@@ -46,8 +50,7 @@ type ErrSmoothedIncompatibleFunction struct {
 }
 
 func (e ErrSmoothedIncompatibleFunction) Error() string {
-	smoothedIncompatibleFunctionPrefix := fmt.Sprintf("smoothed modifier can only be used with: %s - not with ", sortImplode(promql.SmoothedSafeFunctions))
-	return fmt.Sprintf("%s%s", smoothedIncompatibleFunctionPrefix, e.functionName)
+	return smoothedIncompatibleFunctionPrefix + e.functionName
 }
 
 type QueryPlanner struct {
