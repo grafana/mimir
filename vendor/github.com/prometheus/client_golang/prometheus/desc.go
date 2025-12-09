@@ -95,8 +95,7 @@ func (v2) NewDesc(fqName, help string, variableLabels ConstrainableLabels, const
 		help:           help,
 		variableLabels: variableLabels.compile(),
 	}
-	//nolint:staticcheck // TODO: Don't use deprecated model.NameValidationScheme.
-	if !model.NameValidationScheme.IsValidMetricName(fqName) {
+	if !model.IsValidMetricName(model.LabelValue(fqName)) {
 		d.err = fmt.Errorf("%q is not a valid metric name", fqName)
 		return d
 	}
@@ -182,15 +181,6 @@ func NewInvalidDesc(err error) *Desc {
 	}
 }
 
-// Err returns an error that occurred during construction, if any.
-//
-// Calling this method is optional. It can be used to detect construction
-// errors early, before invoking other methods on the Desc. If an error is
-// present, later operations may not behave as expected.
-func (d *Desc) Err() error {
-	return d.err
-}
-
 func (d *Desc) String() string {
 	lpStrings := make([]string, 0, len(d.constLabelPairs))
 	for _, lp := range d.constLabelPairs {
@@ -199,15 +189,12 @@ func (d *Desc) String() string {
 			fmt.Sprintf("%s=%q", lp.GetName(), lp.GetValue()),
 		)
 	}
-	vlStrings := []string{}
-	if d.variableLabels != nil {
-		vlStrings = make([]string, 0, len(d.variableLabels.names))
-		for _, vl := range d.variableLabels.names {
-			if fn, ok := d.variableLabels.labelConstraints[vl]; ok && fn != nil {
-				vlStrings = append(vlStrings, fmt.Sprintf("c(%s)", vl))
-			} else {
-				vlStrings = append(vlStrings, vl)
-			}
+	vlStrings := make([]string, 0, len(d.variableLabels.names))
+	for _, vl := range d.variableLabels.names {
+		if fn, ok := d.variableLabels.labelConstraints[vl]; ok && fn != nil {
+			vlStrings = append(vlStrings, fmt.Sprintf("c(%s)", vl))
+		} else {
+			vlStrings = append(vlStrings, vl)
 		}
 	}
 	return fmt.Sprintf(

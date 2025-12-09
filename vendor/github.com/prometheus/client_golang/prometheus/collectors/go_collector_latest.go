@@ -37,9 +37,6 @@ var (
 	// MetricsScheduler allows only scheduler metrics to be collected from Go runtime.
 	// e.g. go_sched_goroutines_goroutines
 	MetricsScheduler = GoRuntimeMetricsRule{regexp.MustCompile(`^/sched/.*`)}
-	// MetricsDebug allows only debug metrics to be collected from Go runtime.
-	// e.g. go_godebug_non_default_behavior_gocachetest_events_total
-	MetricsDebug = GoRuntimeMetricsRule{regexp.MustCompile(`^/godebug/.*`)}
 )
 
 // WithGoCollectorMemStatsMetricsDisabled disables metrics that is gathered in runtime.MemStats structure such as:
@@ -47,6 +44,7 @@ var (
 // go_memstats_alloc_bytes
 // go_memstats_alloc_bytes_total
 // go_memstats_sys_bytes
+// go_memstats_lookups_total
 // go_memstats_mallocs_total
 // go_memstats_frees_total
 // go_memstats_heap_alloc_bytes
@@ -90,13 +88,13 @@ func WithGoCollectorMemStatsMetricsDisabled() func(options *internal.GoCollector
 // GoRuntimeMetricsRule allow enabling and configuring particular group of runtime/metrics.
 // TODO(bwplotka): Consider adding ability to adjust buckets.
 type GoRuntimeMetricsRule struct {
-	// Matcher represents RE2 expression will match the runtime/metrics from https://pkg.go.dev/runtime/metrics
+	// Matcher represents RE2 expression will match the runtime/metrics from https://golang.bg/src/runtime/metrics/description.go
 	// Use `regexp.MustCompile` or `regexp.Compile` to create this field.
 	Matcher *regexp.Regexp
 }
 
 // WithGoCollectorRuntimeMetrics allows enabling and configuring particular group of runtime/metrics.
-// See the list of metrics https://pkg.go.dev/runtime/metrics (pick the Go version you use there!).
+// See the list of metrics https://golang.bg/src/runtime/metrics/description.go (pick the Go version you use there!).
 // You can use this option in repeated manner, which will add new rules. The order of rules is important, the last rule
 // that matches particular metrics is applied.
 func WithGoCollectorRuntimeMetrics(rules ...GoRuntimeMetricsRule) func(options *internal.GoCollectorOptions) {
