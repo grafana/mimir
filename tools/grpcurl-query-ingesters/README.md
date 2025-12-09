@@ -10,11 +10,13 @@ A tool to query chunks from ingesters and immediately dump their content. This t
 ## Examples
 
 Query ingesters and dump chunk content:
+
 ```bash
 go run . my-k8s-context mimir-namespace my-tenant-id download-chunks-from-ingesters-query.json
 ```
 
 Get help:
+
 ```bash
 go run . --help
 ```
