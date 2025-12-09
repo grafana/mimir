@@ -12,26 +12,18 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type ExtendedPoints struct {
-	points []promql.FPoint
-}
-
-type ExtendedSmoothedPoints struct {
-	ExtendedPoints
+type SmoothedPoints struct {
+	points          []promql.FPoint
 	smoothedHeadSet bool
 	smoothedTailSet bool
+	smoothedHead    promql.FPoint
+	smoothedTail    promql.FPoint
 }
 
-type ExtendedRangeVectorPoints struct {
-	points ExtendedPoints
+type ExtendedPoints struct {
+	points []promql.FPoint
 	first  promql.FPoint
 	last   promql.FPoint
-}
-
-type ExtendedSmoothedRangeVectorPoints struct {
-	ExtendedRangeVectorPoints
-	smoothedHead *promql.FPoint
-	smoothedTail *promql.FPoint
 }
 
 // NewExtendedPointsForAnchored returns a slice of points adjusted to include
@@ -44,17 +36,21 @@ type ExtendedSmoothedRangeVectorPoints struct {
 //   - End value:   taken from the first point with T >= rangeEnd,
 //     or, if none exists, the last point with T < rangeEnd.
 //
-// The provided view may contain points outside [rangeStart, rangeEnd]. The
-// returned slice includes all points within the range, along with the added
-// boundary points.
+// The provided view has already prepared the input range to include a point before the rangeStart,
+// and a point after the rangeEnd (smoothed only).
+//
+// Note that these points outside the original range are only provided if there is no existing point
+// already on the range boundary and the points are within a defined lookback/lookahead window.
+//
+// The returned slice includes all points within the range, along with the added/modified boundary points.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
 func NewExtendedPointsForAnchored(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ExtendedPoints, error) {
-	e := ExtendedRangeVectorPoints{}
-	if err := e.extend(view, rangeStart, rangeEnd, memoryConsumptionTracker); err != nil {
+	extendedPoints, err := buildExtendedPoints(view, rangeStart, rangeEnd, memoryConsumptionTracker)
+	if err != nil {
 		return ExtendedPoints{}, err
 	}
-	return e.points, nil
+	return extendedPoints, nil
 }
 
 // NewExtendedPointsForSmoothed returns a slice of points adjusted to include
@@ -81,24 +77,16 @@ func NewExtendedPointsForAnchored(view *types.FPointRingBufferView, rangeStart, 
 // with the added (interpolated or direct) boundary points.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
-func NewExtendedPointsForSmoothed(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, smoothedHead, smoothedTail *promql.FPoint, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ExtendedSmoothedPoints, error) {
-	e := ExtendedSmoothedRangeVectorPoints{
-		smoothedHead: smoothedHead,
-		smoothedTail: smoothedTail,
-	}
-	smoothedHeadSet, smoothedTailSet, err := e.extendSmoothed(view, rangeStart, rangeEnd, memoryConsumptionTracker)
+func NewExtendedPointsForSmoothed(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (SmoothedPoints, error) {
+	smoothedPoints, err := buildExtendedSmoothedPoints(view, rangeStart, rangeEnd, memoryConsumptionTracker)
 	if err != nil {
-		return ExtendedSmoothedPoints{}, err
+		return SmoothedPoints{}, err
 	}
-
-	ret := ExtendedSmoothedPoints{smoothedHeadSet: smoothedHeadSet, smoothedTailSet: smoothedTailSet}
-	ret.points = e.points.points
-
-	return ret, nil
+	return smoothedPoints, nil
 }
 
-// extend  is an internal function and should not be called from outside this object
-func (e *ExtendedRangeVectorPoints) extend(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) error {
+// buildExtendedPoints is an internal function and should not be called from outside this object
+func buildExtendedPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ExtendedPoints, error) {
 	head, tail := view.UnsafePoints()
 	count := len(head) + len(tail)
 
@@ -106,9 +94,10 @@ func (e *ExtendedRangeVectorPoints) extend(view *types.FPointRingBufferView, ran
 	// The caller is responsible for releasing this slice back to the slices pool
 	buff, err := types.FPointSlicePool.Get(count+2, memoryConsumptionTracker)
 	if err != nil {
-		return err
+		return ExtendedPoints{}, err
 	}
 
+	e := ExtendedPoints{}
 	e.first = head[0]
 
 	// Add synthetic or clamp start boundary
@@ -133,42 +122,48 @@ func (e *ExtendedRangeVectorPoints) extend(view *types.FPointRingBufferView, ran
 		buff[lastIdx].T = rangeEnd
 	}
 
-	e.points = ExtendedPoints{points: buff}
-	return nil
+	e.points = buff
+
+	return e, nil
 }
 
-// extendSmoothed is an internal function and should not be called from outside this object
-func (e *ExtendedSmoothedRangeVectorPoints) extendSmoothed(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (bool, bool, error) {
-	if err := e.extend(view, rangeStart, rangeEnd, memoryConsumptionTracker); err != nil {
-		return false, false, err
+// buildExtendedSmoothedPoints is an internal function and should not be called from outside this object
+func buildExtendedSmoothedPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (SmoothedPoints, error) {
+	extendedPoints, err := buildExtendedPoints(view, rangeStart, rangeEnd, memoryConsumptionTracker)
+	if err != nil {
+		return SmoothedPoints{}, err
+	}
+
+	smoothedPoints := SmoothedPoints{
+		points: extendedPoints.points,
 	}
 
 	// Smoothing has 2 special cases.
-	// Firstly, the values on the boundaries are replaced with an interpolated values - there by smoothing the value to reflect the time of the point before/after the boundary
-	// Secondly, if vector will be used in a rate/increase function then the boundary points must be calculated differently to consider the value as a counter.
-	// These alternate points will be stored alongside the resulting vector so that the rate/increase function handler can utilise these values.
-
-	smoothedHeadSet := false
-	smoothedTailSet := false
-
-	if len(e.points.points) > 1 {
-		if e.first.T < rangeStart {
-			e.points.points[0].F, e.smoothedHead.F = interpolateCombined(e.first, e.points.points[1], rangeStart, true)
-			e.smoothedHead.T = rangeStart
-			smoothedHeadSet = true
+	// Firstly, the values on the boundaries are replaced with an interpolated values - thereby smoothing the value to reflect the values of the points before/after the boundary
+	//
+	// Secondly, to ensure rate/increase return the correct values, we need to calculate and store alternate points in addition to the interpolated points.
+	// These alternate points ensure that rate/increase don't incorrectly detect counter resets at the beginning and end of the range, and will be stored
+	// alongside the resulting vector so that the rate/increase function handler can utilise these values.
+	//
+	// This is done regardless of this selector being wrapped in rate/increase.
+	if len(extendedPoints.points) > 1 {
+		if extendedPoints.first.T < rangeStart {
+			extendedPoints.points[0].F, smoothedPoints.smoothedHead.F = interpolateCombined(extendedPoints.first, extendedPoints.points[1], rangeStart, true)
+			smoothedPoints.smoothedHead.T = rangeStart
+			smoothedPoints.smoothedHeadSet = true
 		}
 
-		if e.last.T > rangeEnd {
-			e.points.points[len(e.points.points)-1].F, e.smoothedTail.F = interpolateCombined(e.points.points[len(e.points.points)-2], e.last, rangeEnd, false)
-			e.smoothedTail.T = rangeEnd
-			smoothedTailSet = true
+		if extendedPoints.last.T > rangeEnd {
+			extendedPoints.points[len(extendedPoints.points)-1].F, smoothedPoints.smoothedTail.F = interpolateCombined(extendedPoints.points[len(extendedPoints.points)-2], extendedPoints.last, rangeEnd, false)
+			smoothedPoints.smoothedTail.T = rangeEnd
+			smoothedPoints.smoothedTailSet = true
 		}
 	}
 
-	return smoothedHeadSet, smoothedTailSet, nil
+	return smoothedPoints, nil
 }
 
-// interpolate performs linear interpolation between two points.
+// interpolateCombined performs linear interpolation between two points.
 // 2 floats are returned. The first is treating the points as not being counters,
 // and the second assumes the points are counters and adjusts for a counter reset.
 // This has been adapted from interpolate() in promql/functions.go

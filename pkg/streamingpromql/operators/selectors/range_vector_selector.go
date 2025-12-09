@@ -123,8 +123,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	m.stepData.SmoothedBasisForHeadPointSet = false
 	m.stepData.SmoothedBasisForTailPointSet = false
 
-	// When smoothed/anchored is used, the buffer is filled for the user requested time range.
-	// In addition, the buffer may include points immediately outside the range boundaries if they are within the extended time windows.
+	// When smoothed/anchored is used, the buffer is filled for the user requested time range,
+	// and it may include points immediately outside the range boundaries if they are within the extended time windows.
 	histogramObserved, err := m.fillBuffer(m.floats, m.histograms, originalRangeStart, originalRangeEnd, rangeStart)
 	if err != nil {
 		return nil, err
@@ -150,13 +150,21 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		// If we only find points prior to the start of the original range then no points are returned.
 		if hasLastPoint && lastInView.T > originalRangeStart {
 			if m.smoothed {
-				extendedPoints, err := NewExtendedPointsForSmoothed(m.extendedRangeView, originalRangeStart, originalRangeEnd, &m.stepData.SmoothedBasisForHeadPoint, &m.stepData.SmoothedBasisForTailPoint, m.memoryConsumptionTracker)
+				smoothedPoints, err := NewExtendedPointsForSmoothed(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.memoryConsumptionTracker)
 				if err != nil {
 					return nil, err
 				}
-				m.stepData.SmoothedBasisForHeadPointSet = extendedPoints.smoothedHeadSet
-				m.stepData.SmoothedBasisForTailPointSet = extendedPoints.smoothedTailSet
-				buff = extendedPoints.points
+				m.stepData.SmoothedBasisForHeadPointSet = smoothedPoints.smoothedHeadSet
+				m.stepData.SmoothedBasisForTailPointSet = smoothedPoints.smoothedTailSet
+				if smoothedPoints.smoothedHeadSet {
+					m.stepData.SmoothedBasisForHeadPoint.T = smoothedPoints.smoothedHead.T
+					m.stepData.SmoothedBasisForHeadPoint.F = smoothedPoints.smoothedHead.F
+				}
+				if smoothedPoints.smoothedTailSet {
+					m.stepData.SmoothedBasisForTailPoint.T = smoothedPoints.smoothedTail.T
+					m.stepData.SmoothedBasisForTailPoint.F = smoothedPoints.smoothedTail.F
+				}
+				buff = smoothedPoints.points
 
 			} else {
 				extendedPoints, err := NewExtendedPointsForAnchored(m.extendedRangeView, originalRangeStart, originalRangeEnd, m.memoryConsumptionTracker)
