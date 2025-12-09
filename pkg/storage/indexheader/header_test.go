@@ -415,7 +415,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *bloc
 }
 
 func TestReadersLabelValuesOffsets(t *testing.T) {
-	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(t))
+	tests, blockID, blockDir, _ := labelValuesTestCases(test.NewTB(t))
 	for _, impl := range implementations {
 		t.Run(impl.name, func(t *testing.T) {
 			r := impl.factory(t, context.Background(), blockDir, blockID)
@@ -473,7 +473,7 @@ type labelValuesTestCase struct {
 	expected int
 }
 
-func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, blockID ulid.ULID, bucketDir string) {
+func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, blockID ulid.ULID, bucketDir string, bkt objstore.Bucket) {
 	const testLabelCount = 32
 	const testSeriesCount = 512
 
@@ -566,7 +566,7 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 		)
 	}
 
-	return tests, id, tmpDir
+	return tests, id, tmpDir, bkt
 }
 
 func BenchmarkBinaryWrite(t *testing.B) {
