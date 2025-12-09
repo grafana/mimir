@@ -209,7 +209,7 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 			lastPoint = smoothedBasisForTailPoint
 		}
 
-		// We are essentially replacing the last point in the slices with the smoothed tail point
+		// We are essentially replacing the last point in the slices with the basis for the smoothed tail point
 		// We could achieve the same thing by setting the last value.F in the slice to the smoothedBasisForTailPoint.F,
 		// and not pruning the slice. This would then avoid the need for the extra delta addition after the accumulations.
 		// However, we probably do not want to edit values in these slices.
