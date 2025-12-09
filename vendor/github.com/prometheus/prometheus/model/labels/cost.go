@@ -100,11 +100,15 @@ func (m *Matcher) EstimateSelectivity(totalLabelValues uint64) float64 {
 }
 
 func (m *FastRegexMatcher) SingleMatchCost() float64 {
-	parsed, err := syntax.Parse(m.reString, syntax.Perl|syntax.DotNL)
-	if err != nil {
-		return 0
+	parsed := m.parsedRe
+	if parsed == nil {
+		var err error
+		parsed, err = syntax.Parse(m.reString, syntax.Perl|syntax.DotNL)
+		if err != nil {
+			return estimatedStringEqualityCost
+		}
 	}
-	return costEstimate(parsed)
+	return max(estimatedStringEqualityCost, costEstimate(parsed))
 }
 
 // TODO this doesn't account for backtracking, which can come with a large cost.
