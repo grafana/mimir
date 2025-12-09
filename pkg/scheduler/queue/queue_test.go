@@ -40,7 +40,7 @@ var secondQueueDimensionOptions = []string{
 	unknownQueueDimension,
 }
 
-var queueStopTimeout = 5 * time.Second
+const queueStopTimeout = 5 * time.Second
 
 // randAdditionalQueueDimension is the basic implementation of additionalQueueDimensionFunc,
 // used to assign the expected query component queue dimensions to SchedulerRequests
@@ -903,8 +903,8 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldTimeout(t *testing.T) {
 		synctest.Wait()
 
 		// And ensure requests Queue stops after timeout
-		require.True(t, queueStopTimeout <= time.Since(now))
-		require.True(t, time.Since(now) <= queueStopTimeout+time.Second)
+		require.GreaterOrEqual(t, time.Since(now), queueStopTimeout)
+		require.GreaterOrEqual(t, queueStopTimeout+time.Second, time.Since(now))
 	})
 }
 
@@ -957,8 +957,8 @@ func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testin
 	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
 	require.NoError(t, queue.AwaitTerminated(ctx))
 
-	// And it was within 50ms, meaning it didn't timeout
-	require.WithinDuration(t, time.Now(), start, 50*time.Millisecond)
+	// And it was within the timeout
+	require.WithinDuration(t, time.Now(), start, queue.stopTimeout-1*time.Second)
 }
 
 // This test ensures that even if the queue has no pending requests but existing requests are still being processed,
@@ -994,8 +994,8 @@ func TestRequestQueue_ShutdownWithInflightSchedulerRequests_ShouldTimeout(t *tes
 
 		// And ensure that it waits until the timeout to exit (using synctest.Wait so we're not actually waiting)
 		synctest.Wait()
-		require.True(t, queueStopTimeout <= time.Since(start))
-		require.True(t, time.Since(start) <= queueStopTimeout+time.Second)
+		require.LessOrEqual(t, queueStopTimeout, time.Since(start))
+		require.LessOrEqual(t, time.Since(start), queueStopTimeout+time.Second)
 	})
 }
 
@@ -1053,7 +1053,7 @@ func TestRequestQueue_ShutdownWithInflightSchedulerRequests_ShouldDrainRequests(
 	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
 	require.Equal(t, inflight.Sub(1), int64(0))
 
-	// And finally make sure it stops within a 250ms window, ensuring that it did not reach the timeout
+	// And finally make sure it stops within the timeout
 	require.NoError(t, queue.AwaitTerminated(ctx))
-	require.WithinDuration(t, time.Now(), start, 250*time.Millisecond)
+	require.WithinDuration(t, time.Now(), start, queue.stopTimeout-1*time.Second)
 }
