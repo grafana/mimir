@@ -21,7 +21,7 @@ http_put_instance_regex_prefix_all_index;{__name__="http_requests_total",method=
 negative_exact_regex_in_scan;{method="DELETE"};{job!~"prometheus"};30;11.00;0.50;750.00;55.00;816.50
 existing_labels_smaller_cardinality;{__name__="cpu_usage_percent",job="grafana"};{instance="prod-server-1"};20;22.00;11.00;2130.00;142.00;2305.00
 existing_labels_slightly_higher_cardinality;{__name__="disk_io_operations"};{method="GET"};57;11.00;2.00;3000.00;200.00;3213.00
-regex_index_and_scan;{__name__=~".*prometheus.*"};{instance=~"localhost.*"};13;155.00;2.15;3225.00;215.00;3597.15
+regex_index_and_scan;{__name__=~".*prometheus.*"};{instance=~"localhost.*"};13;55.00;2.15;3225.00;215.00;3497.15
 non_metric_name_index_empty_scan;{instance="localhost:9100"};{};80;11.00;0.80;1200.00;0.00;1211.80
 same_index_and_scan_matchers;{instance="localhost:9100"};{instance="localhost:9100"};3;11.00;0.80;1200.00;80.00;1291.80
 no_index_matchers;{};{instance="localhost:9100"};80;0.00;0.00;31500.00;2100.00;33600.00
@@ -43,4 +43,4 @@ moderately_wide_index_no_scan;{job=~"prometheus|grafana",status!="200"};{};866;4
 wide_index_no_scan;{job=~"prometheus|grafana"};{};1400;24.40;14.00;21000.00;0.00;21038.40
 index_set_matcher_no_scan;{job=~"prometheus|grafana|non-existent-value"};{};1400;39.90;14.00;21000.00;0.00;21053.90
 index_set_or_empty_matcher_no_scan;{job=~"prometheus|grafana|non-existent-value|.*"};{};210;188.00;2.10;3150.00;0.00;3340.10
-index_grouped_set_or_empty_matcher_no_scan;{job=~"(prometheus|grafana|non-existent-value).*"};{};210;188.00;2.10;3150.00;0.00;3340.10
+index_grouped_set_or_empty_matcher_no_scan;{job=~"(prometheus|grafana|non-existent-value).*"};{};210;148.00;2.10;3150.00;0.00;3300.10
