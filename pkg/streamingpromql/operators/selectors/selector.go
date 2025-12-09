@@ -35,7 +35,8 @@ type Selector struct {
 	// Set for range vector selectors, otherwise 0.
 	Range time.Duration
 
-	// When these range selector modifiers are used the start/end timestamps are adjusted to query for a larger range of points
+	// When these range selector modifiers are used the start/end timestamps are adjusted to query for a larger range of points.
+	// It's the responsibility of the caller to apply any modifications to the returned samples for these modifiers.
 	Anchored bool
 	Smoothed bool
 
