@@ -90,6 +90,10 @@ func TestOTLPHttpClient_WriteSeries(t *testing.T) {
 
 		require.Len(t, receivedRequests, 1)
 		assert.Equal(t, len(series), receivedRequests[0].Metrics().MetricCount())
+		receivedMetric := receivedRequests[0].Metrics().ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0)
+		assert.Equal(t, "test", receivedMetric.Name())
+		assert.Equal(t, "Test metric", receivedMetric.Description())
+		assert.Equal(t, "seconds", receivedMetric.Unit())
 	})
 
 	t.Run("write series in multiple batches", func(t *testing.T) {

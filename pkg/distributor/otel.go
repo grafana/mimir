@@ -668,9 +668,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
