@@ -90,6 +90,25 @@ func TestVectorSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}, skip histogram buckets`,
 		},
+		"one matcher, skip histogram buckets and smoothed enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:             singleMatcher,
+					SkipHistogramBuckets: true,
+					Smoothed:             true,
+				},
+			},
+			expected: `{__name__="foo"} smoothed, skip histogram buckets`,
+		},
+		"one matcher, smoothed enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: singleMatcher,
+					Smoothed: true,
+				},
+			},
+			expected: `{__name__="foo"} smoothed`,
+		},
 	}
 
 	for name, testCase := range testCases {

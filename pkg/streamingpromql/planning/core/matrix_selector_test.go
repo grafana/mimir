@@ -87,6 +87,37 @@ func TestMatrixSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}[1m0s], skip histogram buckets`,
 		},
+		"one matcher, skip histogram buckets and anchored enabled": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:             singleMatcher,
+					Range:                time.Minute,
+					SkipHistogramBuckets: true,
+					Anchored:             true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s] anchored, skip histogram buckets`,
+		},
+		"one matcher, anchored enabled": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+					Anchored: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s] anchored`,
+		},
+		"one matcher, smoothed enabled": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers: singleMatcher,
+					Range:    time.Minute,
+					Smoothed: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s] smoothed`,
+		},
 	}
 
 	for name, testCase := range testCases {

@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -38,14 +37,12 @@ func TestStepRange(t *testing.T) {
 		smoothed      bool
 		steps         int
 	}{
-		// anchored - set the step duration < range duration
 		"anchored - step < range": {
 			step:          time.Minute,
 			rangeDuration: time.Minute * 2,
 			anchored:      true,
 			steps:         4,
 		},
-		// smoothed - set the step duration < range duration
 		"smoothed - step < range": {
 			step:          time.Minute,
 			rangeDuration: time.Minute * 2,
@@ -59,14 +56,12 @@ func TestStepRange(t *testing.T) {
 			anchored:      false,
 			steps:         4,
 		},
-		// anchored - set the step duration > range duration
 		"anchored - step > range": {
 			step:          time.Minute,
 			rangeDuration: time.Second * 30,
 			anchored:      true,
 			steps:         4,
 		},
-		// smoothed - set the step duration > range duration
 		"smoothed - step > range": {
 			step:          time.Minute,
 			rangeDuration: time.Second * 30,
@@ -74,14 +69,12 @@ func TestStepRange(t *testing.T) {
 			smoothed:      true,
 			steps:         4,
 		},
-		// anchored - set the step duration = range duration
 		"anchored - step = range": {
 			step:          time.Second * 30,
 			rangeDuration: time.Second * 30,
 			anchored:      true,
 			steps:         7,
 		},
-		// smoothed - set the step duration = range duration
 		"smoothed - step = range": {
 			step:          time.Second * 30,
 			rangeDuration: time.Second * 30,
@@ -165,17 +158,17 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		// no synthetic points are needed since the points fall on the boundaries
 		"anchored - no synthetic points": {
 			data: `load 1m
-					metric 1 10 2 30`,
-			ts:       timeZero.Add(2 * time.Minute),
-			expected: []promql.FPoint{{T: 0, F: 1}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 2}},
+					metric 5 1 10 2 30`,
+			ts:       timeZero.Add(3 * time.Minute),
+			expected: []promql.FPoint{{T: 60 * 1000, F: 1}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 2}},
 			anchored: true,
 		},
 		// synthetic points are created from points within the range
 		"anchored - synthetic head and tail - first.T > rangeStart, last.T < rangeEnd": {
 			data: `load 1m
-					metric _ 10 _ 30`,
-			ts:       timeZero.Add(2 * time.Minute),
-			expected: []promql.FPoint{{T: 0, F: 10}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 10}},
+					metric 5 _ 10 _ 30`,
+			ts:       timeZero.Add(3 * time.Minute),
+			expected: []promql.FPoint{{T: 60 * 1000, F: 10}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 10}},
 			anchored: true,
 		},
 		// synthetic points are created from the extended look-back window
@@ -199,17 +192,17 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		// no synthetic points as they are already on the boundary
 		"smoothed - no synthetic points": {
 			data: `load 1m
-					metric 1 10 2 30`,
-			ts:       timeZero.Add(2 * time.Minute),
-			expected: []promql.FPoint{{T: 0, F: 1}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 2}},
+					metric 5 1 10 2 30`,
+			ts:       timeZero.Add(3 * time.Minute),
+			expected: []promql.FPoint{{T: 60 * 1000, F: 1}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 2}},
 			smoothed: true,
 		},
 		// smoothed has an extended end range. The synthetic points are taken from within the range and the extended end of the range
 		"smoothed - synthetic head and tail - first.T > rangeStart, last.T > rangeEnd": {
 			data: `load 1m
-					metric _ 10 _ 30`,
-			ts:              timeZero.Add(2 * time.Minute),
-			expected:        []promql.FPoint{{T: 0, F: 10}, {T: 60 * 1000, F: 10}, {T: 60 * 2 * 1000, F: 20}},
+					metric 5 _ 10 _ 30`,
+			ts:              timeZero.Add(3 * time.Minute),
+			expected:        []promql.FPoint{{T: 60 * 1000, F: 10}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 20}},
 			hasSmoothedHead: false,
 			hasSmoothedTail: true,
 			smoothed:        true,

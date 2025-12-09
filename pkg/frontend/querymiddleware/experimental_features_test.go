@@ -15,9 +15,11 @@ import (
 )
 
 func TestContainedExperimentalFunctions(t *testing.T) {
+	enableExperimentalFunctions := parser.EnableExperimentalFunctions
+	enableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
 	t.Cleanup(func() {
-		parser.EnableExperimentalFunctions = false
-		parser.EnableExtendedRangeSelectors = false
+		parser.EnableExperimentalFunctions = enableExperimentalFunctions
+		parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors
 	})
 	parser.EnableExperimentalFunctions = true
 	parser.EnableExtendedRangeSelectors = true
