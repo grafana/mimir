@@ -176,6 +176,131 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: ref#1 Duplicate ...
 			`,
 		},
+		"expression with common selector but aggregation is different": {
+			expr: `sum(foo) + max(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecution: eager load
+								- AggregateExpression: sum
+									- ref#1 Duplicate
+										- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+							- param 1: RemoteExecution: eager load
+								- AggregateExpression: sum
+									- ref#2 Duplicate
+										- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+					- RHS: AggregateExpression: max
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecution: eager load
+								- AggregateExpression: max
+									- ref#1 Duplicate ...
+							- param 1: RemoteExecution: eager load
+								- AggregateExpression: max
+									- ref#2 Duplicate ...
+			`,
+			expectedPlanWithMiddlewareSharding: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+					- RHS: AggregateExpression: max
+						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"max(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+			`,
+		},
+		"expression with common selectors and some common aggregations": {
+			expr: `sum(foo) + max(foo) + sum(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#3 Duplicate
+							- AggregateExpression: sum
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecution: eager load
+										- AggregateExpression: sum
+											- ref#1 Duplicate
+												- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+									- param 1: RemoteExecution: eager load
+										- AggregateExpression: sum
+											- ref#2 Duplicate
+												- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+						- RHS: AggregateExpression: max
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecution: eager load
+									- AggregateExpression: max
+										- ref#1 Duplicate ...
+								- param 1: RemoteExecution: eager load
+									- AggregateExpression: max
+										- ref#2 Duplicate ...
+					- RHS: ref#3 Duplicate ...
+			`,
+			expectedPlanWithMiddlewareSharding: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate
+							- AggregateExpression: sum
+								- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+						- RHS: AggregateExpression: max
+							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"max(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+					- RHS: ref#1 Duplicate ...
+			`,
+		},
+		"expression with multiple common selectors": {
+			expr: `(sum(foo) + max(foo)) * (sum(bar) - min(bar))`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: AggregateExpression: sum
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- ref#1 Duplicate
+											- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+								- param 1: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- ref#2 Duplicate
+											- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+						- RHS: AggregateExpression: max
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecution: eager load
+									- AggregateExpression: max
+										- ref#1 Duplicate ...
+								- param 1: RemoteExecution: eager load
+									- AggregateExpression: max
+										- ref#2 Duplicate ...
+					- RHS: BinaryExpression: LHS - RHS
+						- LHS: AggregateExpression: sum
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- ref#3 Duplicate
+											- VectorSelector: {__query_shard__="1_of_2", __name__="bar"}
+								- param 1: RemoteExecution: eager load
+									- AggregateExpression: sum
+										- ref#4 Duplicate
+											- VectorSelector: {__query_shard__="2_of_2", __name__="bar"}
+						- RHS: AggregateExpression: min
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecution: eager load
+									- AggregateExpression: min
+										- ref#3 Duplicate ...
+								- param 1: RemoteExecution: eager load
+									- AggregateExpression: min
+										- ref#4 Duplicate ...
+			`,
+			expectedPlanWithMiddlewareSharding: `
+				- BinaryExpression: LHS * RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: AggregateExpression: sum
+							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+						- RHS: AggregateExpression: max
+							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"max(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+					- RHS: BinaryExpression: LHS - RHS
+						- LHS: AggregateExpression: sum
+							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(bar{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(bar{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+						- RHS: AggregateExpression: min
+							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"min(bar{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"min(bar{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+			`,
+		},
 	}
 
 	ctx := user.InjectOrgID(context.Background(), "tenant-1")
