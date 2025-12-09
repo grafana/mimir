@@ -798,9 +798,9 @@ func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logg
 	}
 }
 
-func casHWM(highWwatermark *atomic.Int64, newHWM int64) {
-	for hwm := highWwatermark.Load(); hwm < newHWM; hwm = highWwatermark.Load() {
-		if highWwatermark.CompareAndSwap(hwm, newHWM) {
+func casHWM(highWatermark *atomic.Int64, newHWM int64) {
+	for hwm := highWatermark.Load(); hwm < newHWM; hwm = highWatermark.Load() {
+		if highWatermark.CompareAndSwap(hwm, newHWM) {
 			break
 		}
 	}
