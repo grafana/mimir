@@ -5,6 +5,8 @@ package commonsubexpressionelimination
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -209,6 +211,151 @@ func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	consumer1.Close()
 	consumer2.Close()
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
+}
+
+// equalsViaReflection uses reflection to perform a deep equals of the given records.
+// Note that the Floats and Histograms fields are not considered in this comparison.
+// This function compliments the TestRangeVectorOperator_StepDataStructure test and provides
+// a comparison using reflection. If additional fields are added to the RangeVectorStepData this
+// function may need to be updated. But this is intentional to ensure that the cloneStepData()
+// has been correctly updated.
+func equalsViaReflection(t *testing.T, d1, d2 *types.RangeVectorStepData) {
+	r1 := reflect.ValueOf(d1).Elem()
+	r2 := reflect.ValueOf(d2).Elem()
+	types := r1.Type()
+	require.Equal(t, r1.NumField(), r2.NumField())
+
+	for i := range r1.NumField() {
+		fieldVal := r1.Field(i)
+		f1 := r1.Field(i)
+		f2 := r2.Field(i)
+
+		if types.Field(i).Name == "Floats" || types.Field(i).Name == "Histograms" {
+			continue
+		}
+
+		if types.Field(i).Name == "SmoothedBasisForHeadPoint" {
+			require.Equal(t, d1.SmoothedBasisForHeadPoint, d2.SmoothedBasisForHeadPoint)
+			continue
+		}
+
+		if types.Field(i).Name == "SmoothedBasisForTailPoint" {
+			require.Equal(t, d1.SmoothedBasisForTailPoint, d2.SmoothedBasisForTailPoint)
+			continue
+		}
+
+		switch fieldVal.Kind() {
+		case reflect.Int64:
+			require.Equal(t, f1.Int(), f2.Int())
+		case reflect.Bool:
+			require.Equal(t, f1.Bool(), f2.Bool())
+		default:
+			require.Fail(t, "unexpected field. field=%s, kind=%v", types.Field(i).Name, fieldVal.Kind())
+		}
+	}
+}
+
+// TestRangeVectorOperator_StepDataStructure is a test to validate that no additional fields have been added to RangeVectorStepData
+// and not been considered in the cloneStepData().
+// This test uses reflection to populate values into all fields, clones the record and asserts that the values match.
+// The test will fail if the cloned record does not match, or there are fields found which this test does not consider.
+// Should this test fail, add the necessary field handling to this test and update range_vector_operator.go cloneStepData().
+func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
+	data := &types.RangeVectorStepData{}
+
+	// set explicitly to avoid reflection complexity in handling these
+	data.Floats = types.NewFPointRingBuffer(memoryConsumptionTracker).ViewAll(nil)
+	data.Histograms = types.NewHPointRingBuffer(memoryConsumptionTracker).ViewUntilSearchingBackwards(0, nil)
+	data.SmoothedBasisForHeadPoint = promql.FPoint{T: rand.Int64(), F: rand.Float64()}
+	data.SmoothedBasisForTailPoint = promql.FPoint{T: rand.Int64(), F: rand.Float64()}
+
+	v := reflect.ValueOf(data).Elem() // reflect on struct value
+	r := v.Type()                     // struct type
+
+	for i := 0; i < v.NumField(); i++ {
+		fieldVal := v.Field(i)
+		fieldType := r.Field(i)
+
+		// we have already poked in values for these
+		if fieldType.Name == "Floats" || fieldType.Name == "Histograms" || fieldType.Name == "SmoothedBasisForHeadPoint" || fieldType.Name == "SmoothedBasisForTailPoint" {
+			continue
+		}
+
+		switch fieldVal.Kind() {
+		case reflect.Int64:
+			fieldVal.SetInt(rand.Int64())
+		case reflect.Bool:
+			fieldVal.SetBool(true)
+		default:
+			require.Fail(t, "unexpected field. field=%s, kind=%v", fieldType.Name, fieldVal.Kind())
+		}
+	}
+
+	clonedStepData, err := cloneStepData(data, memoryConsumptionTracker)
+	require.NoError(t, err)
+	equalsViaReflection(t, data, clonedStepData.stepData)
+}
+
+func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {
+	testCases := map[string]struct {
+		stepData types.RangeVectorStepData
+	}{
+		"anchored": {
+			stepData: types.RangeVectorStepData{
+				Anchored: true,
+			},
+		},
+		"smoothed - no smoothed points": {
+			stepData: types.RangeVectorStepData{
+				Smoothed: true,
+			},
+		},
+		"smoothed - smoothed head": {
+			stepData: types.RangeVectorStepData{
+				Smoothed:                     true,
+				SmoothedBasisForHeadPointSet: true,
+				SmoothedBasisForHeadPoint:    promql.FPoint{T: 10, F: 50.5},
+			},
+		},
+		"smoothed - smoothed tail": {
+			stepData: types.RangeVectorStepData{
+				Smoothed:                     true,
+				SmoothedBasisForTailPointSet: true,
+				SmoothedBasisForTailPoint:    promql.FPoint{T: 20, F: 30.5},
+			},
+		},
+		"smoothed - smoothed head and tail": {
+			stepData: types.RangeVectorStepData{
+				Smoothed:                     true,
+				SmoothedBasisForHeadPointSet: true,
+				SmoothedBasisForTailPointSet: true,
+				SmoothedBasisForHeadPoint:    promql.FPoint{T: 10, F: 50.5},
+				SmoothedBasisForTailPoint:    promql.FPoint{T: 20, F: 30.5},
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+			tc.stepData.Floats = types.NewFPointRingBuffer(memoryConsumptionTracker).ViewAll(nil)
+			tc.stepData.Histograms = types.NewHPointRingBuffer(memoryConsumptionTracker).ViewUntilSearchingBackwards(0, nil)
+			clonedStepData, err := cloneStepData(&tc.stepData, memoryConsumptionTracker)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.stepData.Smoothed, clonedStepData.stepData.Smoothed)
+			require.Equal(t, tc.stepData.Anchored, clonedStepData.stepData.Anchored)
+			require.Equal(t, tc.stepData.SmoothedBasisForHeadPointSet, clonedStepData.stepData.SmoothedBasisForHeadPointSet)
+			require.Equal(t, tc.stepData.SmoothedBasisForTailPointSet, clonedStepData.stepData.SmoothedBasisForTailPointSet)
+			require.Equal(t, tc.stepData.SmoothedBasisForHeadPoint, clonedStepData.stepData.SmoothedBasisForHeadPoint)
+			require.Equal(t, tc.stepData.SmoothedBasisForTailPoint, clonedStepData.stepData.SmoothedBasisForTailPoint)
+		})
+	}
+
 }
 
 func TestRangeVectorOperator_Cloning(t *testing.T) {
