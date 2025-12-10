@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -1433,4 +1434,43 @@ func stringContainsAll(s string, parts []string) bool {
 		}
 	}
 	return true
+}
+
+// TestNewValidationConfigFieldCompleteness ensures that we don't forget to populate a new field we may add to validationConfig.
+func TestNewValidationConfigFieldCompleteness(t *testing.T) {
+	t.Parallel()
+
+	// 1. Create limits with prepareDefaultLimits()
+	limits := prepareDefaultLimits()
+
+	// 2. Set fields that default to zero to non-zero values
+	limits.PastGracePeriod = model.Duration(5 * time.Minute)
+	limits.MaxNativeHistogramBuckets = 100
+	limits.OutOfOrderTimeWindow = model.Duration(30 * time.Minute)
+	require.NoError(t, limits.LabelValueLengthOverLimitStrategy.Set("truncate"))
+
+	// 3. Create overrides
+	overrides := validation.NewOverrides(*limits, nil)
+
+	// 4. Call newValidationConfig
+	cfg := newValidationConfig("test-user", overrides)
+
+	// 5. Use reflection to verify all fields are non-zero
+	assertNoZeroFields(t, reflect.ValueOf(cfg), "validationConfig")
+}
+
+func assertNoZeroFields(t *testing.T, v reflect.Value, path string) {
+	t.Helper()
+
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Field(i)
+			fieldName := v.Type().Field(i).Name
+			fieldPath := path + "." + fieldName
+			assertNoZeroFields(t, field, fieldPath)
+		}
+	default:
+		require.False(t, v.IsZero(), "field %s is zero", path)
+	}
 }
