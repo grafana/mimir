@@ -307,24 +307,19 @@ func TestOptimizationPass(t *testing.T) {
 	observer := streamingpromql.NoopPlanningObserver{}
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
-	optsForMQESharding := streamingpromql.NewTestEngineOpts()
-	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsForMQESharding, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, optsForMQESharding.Logger))
-	plannerForMQESharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, optsForMQESharding.CommonOpts.Reg, optsForMQESharding.Logger))
-	plannerForMQESharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
+	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool) {
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
 
-	optsForMiddlewareSharding := streamingpromql.NewTestEngineOpts()
-	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsForMiddlewareSharding, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, optsForMiddlewareSharding.CommonOpts.Reg, optsForMiddlewareSharding.Logger))
-	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
-
-	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, planner *streamingpromql.QueryPlanner) {
 		if enableMiddlewareSharding {
 			// Rewrite the query in a shardable form.
 			expr, err = rewriteForQuerySharding(ctx, expr)
 			require.NoError(t, err)
+		} else {
+			planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts.Logger))
 		}
 
 		// And do the same for queries eligible for subquery spin-off.
@@ -344,11 +339,11 @@ func TestOptimizationPass(t *testing.T) {
 
 		t.Run(name, func(t *testing.T) {
 			t.Run("MQE sharding", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlan, false, plannerForMQESharding)
+				runTestCase(t, testCase.expr, testCase.expectedPlan, false)
 			})
 
 			t.Run("middleware sharding", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlanWithMiddlewareSharding, true, plannerForMiddlewareSharding)
+				runTestCase(t, testCase.expr, testCase.expectedPlanWithMiddlewareSharding, true)
 			})
 		})
 	}
