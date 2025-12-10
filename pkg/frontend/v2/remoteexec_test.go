@@ -1435,7 +1435,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	executor := NewRemoteExecutor(frontend, cfg)
-	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)))
+	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_GROUP, remoteexec.NewRemoteExecutionMaterializer(executor)))
 
 	expr, err := parser.ParseExpr("sum(foo)")
 	require.NoError(t, err)
