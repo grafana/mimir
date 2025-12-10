@@ -227,6 +227,7 @@ func newValidationConfig(userID string, overrides *validation.Overrides) validat
 	}
 }
 
+// sampleValidationConfig helps with getting required config to validate sample.
 type sampleValidationConfig struct {
 	creationGracePeriod                 time.Duration
 	pastGracePeriod                     time.Duration
