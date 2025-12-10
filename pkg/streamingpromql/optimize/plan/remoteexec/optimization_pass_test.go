@@ -17,15 +17,17 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func TestOptimizationPass(t *testing.T) {
 	testCases := map[string]struct {
-		expr                               string
-		expectedPlan                       string
-		expectedPlanWithMiddlewareSharding string
+		expr                                string
+		expectedPlan                        string
+		expectedPlanWithMultiNodeRemoteExec string
+		expectedPlanWithMiddlewareSharding  string
 	}{
 		"string expression": {
 			expr: `"the string"`,
@@ -199,6 +201,31 @@ func TestOptimizationPass(t *testing.T) {
 								- AggregateExpression: max
 									- ref#2 Duplicate ...
 			`,
+			expectedPlanWithMultiNodeRemoteExec: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecutionConsumer: node 0 
+								- ref#3 RemoteExecution: eager load
+									- node 0: AggregateExpression: sum
+										- ref#1 Duplicate
+											- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+									- node 1: AggregateExpression: max
+										- ref#1 Duplicate ...
+							- param 1: RemoteExecution: eager load
+								- ref#4 RemoteExecution: eager load
+									- node 0: AggregateExpression: sum
+										- ref#2 Duplicate
+											- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+									- node 1: AggregateExpression: max
+										- ref#2 Duplicate ...
+					- RHS: AggregateExpression: max
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecutionConsumer: node 1
+								- ref#3 RemoteExecution
+							- param 1: RemoteExecutionConsumer: node 1
+								- ref#4 RemoteExecution
+			`,
 			expectedPlanWithMiddlewareSharding: `
 				- BinaryExpression: LHS + RHS
 					- LHS: AggregateExpression: sum
@@ -231,6 +258,34 @@ func TestOptimizationPass(t *testing.T) {
 								- param 1: RemoteExecution: eager load
 									- AggregateExpression: max
 										- ref#2 Duplicate ...
+					- RHS: ref#3 Duplicate ...
+			`,
+			expectedPlanWithMultiNodeRemoteExec: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#3 Duplicate
+							- AggregateExpression: sum
+								- FunctionCall: __sharded_concat__(...)
+									- param 0: RemoteExecutionConsumer: node 0
+										- ref#3 RemoteExecution: eager load
+											- node 0: AggregateExpression: sum
+												- ref#1 Duplicate
+													- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+											- node 1: AggregateExpression: max
+												- ref#1 Duplicate ...
+									- param 1: RemoteExecutionConsumer: node 0
+										- ref#4 RemoteExecution: eager load
+											- node 0: AggregateExpression: sum
+												- ref#2 Duplicate
+													- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+											- node 1: AggregateExpression: max
+												- ref#1 Duplicate ...
+						- RHS: AggregateExpression: max
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecutionConsumer: node 1
+									- ref#3 RemoteExecution
+								- param 1: RemoteExecutionConsumer: node 1
+									- ref#4 RemoteExecution
 					- RHS: ref#3 Duplicate ...
 			`,
 			expectedPlanWithMiddlewareSharding: `
@@ -287,6 +342,55 @@ func TestOptimizationPass(t *testing.T) {
 									- AggregateExpression: min
 										- ref#4 Duplicate ...
 			`,
+			expectedPlanWithMultiNodeRemoteExec: `
+				- BinaryExpression: LHS * RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: AggregateExpression: sum
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecutionConsumer: node 0 
+									- ref#3 RemoteExecution: eager load
+										- node 0: AggregateExpression: sum
+											- ref#1 Duplicate
+												- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+										- node 1: AggregateExpression: max
+											- ref#1 Duplicate ...
+								- param 1: RemoteExecution: eager load
+									- ref#4 RemoteExecution: eager load
+										- node 0: AggregateExpression: sum
+											- ref#2 Duplicate
+												- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+										- node 1: AggregateExpression: max
+											- ref#2 Duplicate ...
+						- RHS: AggregateExpression: max
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecutionConsumer: node 1
+									- ref#3 RemoteExecution
+								- param 1: RemoteExecutionConsumer: node 1
+									- ref#4 RemoteExecution
+					- RHS: BinaryExpression: LHS - RHS
+						- LHS: AggregateExpression: sum
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecutionConsumer: node 0 
+									- ref#5 RemoteExecution: eager load
+										- node 0: AggregateExpression: sum
+											- ref#7 Duplicate
+												- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
+										- node 1: AggregateExpression: max
+											- ref#7 Duplicate ...
+								- param 1: RemoteExecution: eager load
+									- ref#6 RemoteExecution: eager load
+										- node 0: AggregateExpression: sum
+											- ref#8 Duplicate
+												- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
+										- node 1: AggregateExpression: max
+											- ref#8 Duplicate ...
+						- RHS: AggregateExpression: min
+							- FunctionCall: __sharded_concat__(...)
+								- param 0: RemoteExecutionConsumer: node 1
+									- ref#5 RemoteExecution
+								- param 1: RemoteExecutionConsumer: node 1
+									- ref#6 RemoteExecution
+			`,
 			expectedPlanWithMiddlewareSharding: `
 				- BinaryExpression: LHS * RHS
 					- LHS: BinaryExpression: LHS + RHS
@@ -307,12 +411,14 @@ func TestOptimizationPass(t *testing.T) {
 	observer := streamingpromql.NoopPlanningObserver{}
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
-	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool) {
+	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, enableMultiNodeRemoteExec bool, supportedQueryPlanVersion planning.QueryPlanVersion) {
+		require.False(t, enableMiddlewareSharding && enableMultiNodeRemoteExec, "invalid test case: cannot enable both middleware sharding and multi-node remote execution")
+
 		opts := streamingpromql.NewTestEngineOpts()
-		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(supportedQueryPlanVersion))
 		require.NoError(t, err)
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts.CommonOpts.Reg, opts.Logger))
-		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
+		planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(enableMultiNodeRemoteExec))
 
 		if enableMiddlewareSharding {
 			// Rewrite the query in a shardable form.
@@ -333,17 +439,29 @@ func TestOptimizationPass(t *testing.T) {
 	}
 
 	for name, testCase := range testCases {
+		if testCase.expectedPlanWithMultiNodeRemoteExec == "" {
+			testCase.expectedPlanWithMultiNodeRemoteExec = testCase.expectedPlan
+		}
+
 		if testCase.expectedPlanWithMiddlewareSharding == "" {
 			testCase.expectedPlanWithMiddlewareSharding = testCase.expectedPlan
 		}
 
 		t.Run(name, func(t *testing.T) {
-			t.Run("MQE sharding", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlan, false)
+			t.Run("MQE sharding: multi-node disabled", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.expectedPlan, false, false, planning.MaximumSupportedQueryPlanVersion)
+			})
+
+			t.Run("MQE sharding: multi-node enabled but not supported by querier", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.expectedPlan, false, true, planning.QueryPlanV2)
+			})
+
+			t.Run("MQE sharding: multi-node enabled and supported by querier", func(t *testing.T) {
+				runTestCase(t, testCase.expr, testCase.expectedPlanWithMultiNodeRemoteExec, false, true, planning.QueryPlanV3)
 			})
 
 			t.Run("middleware sharding", func(t *testing.T) {
-				runTestCase(t, testCase.expr, testCase.expectedPlanWithMiddlewareSharding, true)
+				runTestCase(t, testCase.expr, testCase.expectedPlanWithMiddlewareSharding, true, false, planning.MaximumSupportedQueryPlanVersion)
 			})
 		})
 	}
