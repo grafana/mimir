@@ -44,52 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type validateLabelsCfg struct {
-	maxLabelNamesPerSeries            int
-	maxLabelNamesPerInfoSeries        int
-	maxLabelNameLength                int
-	maxLabelValueLength               int
-	validationScheme                  model.ValidationScheme
-	labelValueLengthOverLimitStrategy validation.LabelValueLengthOverLimitStrategy
-}
-
-func (v validateLabelsCfg) MaxLabelNamesPerSeries(_ string) int {
-	return v.maxLabelNamesPerSeries
-}
-
-func (v validateLabelsCfg) MaxLabelNamesPerInfoSeries(_ string) int {
-	return v.maxLabelNamesPerInfoSeries
-}
-
-func (v validateLabelsCfg) MaxLabelNameLength(_ string) int {
-	return v.maxLabelNameLength
-}
-
-func (v validateLabelsCfg) MaxLabelValueLength(_ string) int {
-	return v.maxLabelValueLength
-}
-
-func (v validateLabelsCfg) NameValidationScheme(_ string) model.ValidationScheme {
-	return v.validationScheme
-}
-
-func (v validateLabelsCfg) LabelValueLengthOverLimitStrategy(_ string) validation.LabelValueLengthOverLimitStrategy {
-	return v.labelValueLengthOverLimitStrategy
-}
-
-type validateMetadataCfg struct {
-	enforceMetadataMetricName bool
-	maxMetadataLength         int
-}
-
-func (vm validateMetadataCfg) EnforceMetadataMetricName(_ string) bool {
-	return vm.enforceMetadataMetricName
-}
-
-func (vm validateMetadataCfg) MaxMetadataLength(_ string) int {
-	return vm.maxMetadataLength
-}
-
 func TestValidateLabels(t *testing.T) {
 	t.Parallel()
 
@@ -929,7 +883,7 @@ func TestValidateMetadata(t *testing.T) {
 	m := newMetadataValidationMetrics(reg)
 
 	userID := "testUser"
-	var cfg validateMetadataCfg
+	var cfg metadataValidationConfig
 	cfg.enforceMetadataMetricName = true
 	cfg.maxMetadataLength = 22
 
@@ -1014,11 +968,11 @@ func TestValidateMetadata(t *testing.T) {
 
 func TestValidateLabelDuplication(t *testing.T) {
 	ts := time.Now()
-	var cfg validateLabelsCfg
+	var cfg labelValidationConfig
 	cfg.maxLabelNameLength = 10
 	cfg.maxLabelNamesPerSeries = 10
 	cfg.maxLabelValueLength = 10
-	cfg.validationScheme = model.LegacyValidation
+	cfg.nameValidationScheme = model.LegacyValidation
 
 	userID := "testUser"
 	actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
@@ -1072,10 +1026,10 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 	require.NoError(t, err)
 
 	// Call validateLabels to get a LabelValueTooLongError.
-	cfg := validateLabelsCfg{
-		maxLabelNameLength:  25,
-		maxLabelValueLength: 5,
-		validationScheme:    model.UTF8Validation,
+	cfg := labelValidationConfig{
+		maxLabelNameLength:   25,
+		maxLabelValueLength:  5,
+		nameValidationScheme: model.UTF8Validation,
 	}
 	const userID = "testUser"
 	limits := testutils.NewMockCostAttributionLimits(0, []string{userID, "team"})
@@ -1102,31 +1056,6 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 
 	// Ensure the labelValueTooLongError isn't corrupted.
 	require.EqualError(t, lengthErr, "received a series whose label value length of 37 exceeds the limit of 5, label: '__name__', value: 'value_longer_than_maxLabelValueLength' (truncated) series: 'value_longer_than_maxLabelValueLength' (err-mimir-label-value-too-long). To adjust the related per-tenant limit, configure -validation.max-length-label-value, or contact your service administrator.")
-}
-
-type sampleValidationCfg struct {
-	maxNativeHistogramBuckets           int
-	reduceNativeHistogramOverMaxBuckets bool
-}
-
-func (c sampleValidationCfg) CreationGracePeriod(_ string) time.Duration {
-	return 0
-}
-
-func (c sampleValidationCfg) PastGracePeriod(_ string) time.Duration {
-	return 0
-}
-
-func (c sampleValidationCfg) OutOfOrderTimeWindow(_ string) time.Duration {
-	return 0
-}
-
-func (c sampleValidationCfg) MaxNativeHistogramBuckets(_ string) int {
-	return c.maxNativeHistogramBuckets
-}
-
-func (c sampleValidationCfg) ReduceNativeHistogramOverMaxBuckets(_ string) bool {
-	return c.reduceNativeHistogramOverMaxBuckets
 }
 
 func TestMaxNativeHistorgramBuckets(t *testing.T) {
@@ -1243,8 +1172,9 @@ func TestMaxNativeHistorgramBuckets(t *testing.T) {
 	for _, limit := range []int{0, 1, 2} {
 		for name, h := range testCases {
 			t.Run(fmt.Sprintf("limit-%d-%s", limit, name), func(t *testing.T) {
-				var cfg sampleValidationCfg
-				cfg.maxNativeHistogramBuckets = limit
+				cfg := sampleValidationConfig{
+					maxNativeHistogramBuckets: limit,
+				}
 				ls := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 
 				_, err := validateSampleHistogram(metrics, model.Now(), cfg, "user-1", "group-1", ls, &h, nil)
@@ -1292,7 +1222,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 
 	registry := prometheus.NewRegistry()
 	metrics := newSampleValidationMetrics(registry)
-	cfg := sampleValidationCfg{}
+	cfg := sampleValidationConfig{}
 	hist := &mimirpb.Histogram{}
 	labels := []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "a"}, {Name: "a", Value: "a"}}
 	for testName, testCase := range testCases {
@@ -1312,7 +1242,7 @@ func TestInvalidNativeHistogramSchema(t *testing.T) {
 
 func TestNativeHistogramDownScaling(t *testing.T) {
 	testCases := map[string]struct {
-		cfg            sampleValidationCfg
+		cfg            sampleValidationConfig
 		schema         int32
 		offset         int32
 		deltas         []int64 // We're just using consecutive positive deltas.
@@ -1327,13 +1257,13 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			expectedDeltas: []int64{1, 2, 3},
 		},
 		"downscaling not allowed": {
-			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2},
+			cfg:           sampleValidationConfig{maxNativeHistogramBuckets: 2},
 			schema:        3,
 			deltas:        []int64{1, 2, 3},
 			expectedError: fmt.Errorf("received a native histogram sample with too many buckets"),
 		},
 		"downscaling allowed": {
-			cfg:            sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			cfg:            sampleValidationConfig{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
 			schema:         3,
 			offset:         1,
 			deltas:         []int64{1, 2, 10},
@@ -1342,7 +1272,7 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			expectedUpdate: true,
 		},
 		"downscaling allowed but impossible": {
-			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			cfg:           sampleValidationConfig{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
 			schema:        3,
 			offset:        0, // This means we would have to join bucket around the boundary of 1.0, but that will never happen.
 			deltas:        []int64{1, 2, 10},
@@ -1355,14 +1285,14 @@ func TestNativeHistogramDownScaling(t *testing.T) {
 			expectedDeltas: []int64{1, 2, 3},
 		},
 		"valid nhcb and bucket limit is set": {
-			cfg:            sampleValidationCfg{maxNativeHistogramBuckets: 100, reduceNativeHistogramOverMaxBuckets: true},
+			cfg:            sampleValidationConfig{maxNativeHistogramBuckets: 100, reduceNativeHistogramOverMaxBuckets: true},
 			schema:         -53,
 			deltas:         []int64{1, 2, 3},
 			expectedError:  nil,
 			expectedDeltas: []int64{1, 2, 3},
 		},
 		"downscaling not possible for nhcb": {
-			cfg:           sampleValidationCfg{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
+			cfg:           sampleValidationConfig{maxNativeHistogramBuckets: 2, reduceNativeHistogramOverMaxBuckets: true},
 			schema:        -53,
 			offset:        1,
 			deltas:        []int64{1, 2, 3},
