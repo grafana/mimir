@@ -447,17 +447,28 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		select {
 		case <-freq.protobufResponseDone:
 			freq.spanLogger.DebugLog("msg", "finished receiving response")
-			return
 
 		default:
-			freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request, aborting", "cause", context.Cause(streamContext))
-
 			select {
-			case cancelCh <- freq.queryID:
-				// cancellation sent.
+			case <-freq.protobufResponseStream.responseStarted:
+				// If we've already received some of the response from the querier, close the stream from the querier to signal that
+				// the request has been cancelled.
+				// This avoids sending an unnecessary cancellation message to query-schedulers (which can trigger shuffling of
+				// queriers) if we've read the last response message from queriers but streamContext is canceled before
+				// receiveResultForProtobufRequest observes the end of the stream.
+				freq.spanLogger.DebugLog("msg", "request context cancelled after querier started sending response, cancelling by closing querier response stream", "cause", context.Cause(streamContext))
+				freq.protobufResponseStream.Close()
+
 			default:
-				// failed to cancel, ignore.
-				level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+				freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request but before querier started sending response, cancelling by sending notification to scheduler", "cause", context.Cause(streamContext))
+
+				select {
+				case cancelCh <- freq.queryID:
+					// cancellation sent.
+				default:
+					// failed to cancel, ignore.
+					level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+				}
 			}
 		}
 	}()

@@ -20,7 +20,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           persist-credentials: false
 
@@ -54,7 +54,7 @@ jobs:
       - name: Generate GitHub App Token for Membership
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: app-token-for-membership
-        uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
         with:
           app-id: ${{ env.APP_ID }}
           private-key: ${{ env.PRIVATE_KEY }}
@@ -197,7 +197,7 @@ jobs:
       - name: Generate GitHub App Token
         if: steps.check_dockerfile.outputs.modified == 'true'
         id: app-token-for-commit
-        uses: actions/create-github-app-token@7e473efe3cb98aa54f8d4bac15400b15fad77d94 # v2
+        uses: actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf # v2
         with:
           app-id: ${{ env.APP_ID }}
           private-key: ${{ env.PRIVATE_KEY }}

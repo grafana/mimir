@@ -98,7 +98,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
-		ExpressionPosition:       v.ExpressionPosition(),
+		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Smoothed:                 v.Smoothed,
 	}
@@ -110,13 +110,13 @@ func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
 }
 
-func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta, false, v.Smoothed)
-	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 
-func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
-	return v.GetExpressionPosition().ToPrometheusType()
+func (v *VectorSelector) ExpressionPosition() (posrange.PositionRange, error) {
+	return v.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

@@ -7,7 +7,6 @@ import (
 	"slices"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -38,7 +37,7 @@ type plan struct {
 }
 
 // newScanOnlyPlan returns a plan in which all predicates would be used to scan and none to reach from the index.
-func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
+func newScanOnlyPlan(ctx context.Context, stats Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
 	p := plan{
 		predicates:          make([]planPredicate, 0, len(matchers)),
 		indexPredicate:      make([]bool, 0, len(matchers)),
@@ -58,7 +57,7 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 	return p
 }
 
-func newIndexOnlyPlan(ctx context.Context, stats index.Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
+func newIndexOnlyPlan(ctx context.Context, stats Statistics, config CostConfig, matchers []*labels.Matcher, predicatesPool *pool.SlabPool[bool], shard *sharding.ShardSelector) plan {
 	p := newScanOnlyPlan(ctx, stats, config, matchers, predicatesPool, shard)
 	for i := range p.indexPredicate {
 		p.indexPredicate[i] = true

@@ -1457,15 +1457,18 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
-			encoded, nodes, err := originalPlan.ToEncodedPlan(true, true)
+			encoded, nodeIndices, err := originalPlan.ToEncodedPlan(true, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedPlan, encoded)
-			require.Equal(t, []int64{testCase.expectedPlan.RootNode}, nodes)
+			require.Equal(t, []int64{testCase.expectedPlan.RootNode}, nodeIndices)
 
-			// Decode plan, confirm it matches the original plan
-			decodedPlan, _, err := encoded.ToDecodedPlan()
+			// Decode plan tree from root node, confirm it matches the original plan
+			nodes, err := encoded.DecodeNodes(encoded.RootNode)
 			require.NoError(t, err)
-			require.Equal(t, originalPlan, decodedPlan)
+			require.Len(t, nodes, 1)
+			require.Equal(t, originalPlan.Root, nodes[0])
+
+			require.Equal(t, originalPlan.Parameters, encoded.DecodeParameters())
 		})
 	}
 }
@@ -1544,9 +1547,11 @@ func TestPlanVersioning(t *testing.T) {
 
 	// Plan has a node which has a min required plan version of 9000
 	plan := &planning.QueryPlan{
-		TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
-		Root:               newTestNode(9000),
-		OriginalExpression: "123",
+		Root: newTestNode(9000),
+		Parameters: &planning.QueryParameters{
+			TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
+			OriginalExpression: "123",
+		},
 	}
 
 	err := plan.DeterminePlanVersion()
@@ -1556,9 +1561,12 @@ func TestPlanVersioning(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
-	decoded, _, err := encoded.ToDecodedPlan()
+	nodes, err := encoded.DecodeNodes(encoded.RootNode)
 	require.NoError(t, err)
-	require.Equal(t, plan, decoded)
+	require.Len(t, nodes, 1)
+	require.Equal(t, plan.Root, nodes[0])
+
+	require.Equal(t, plan.Parameters, encoded.DecodeParameters())
 }
 
 func TestDeduplicateAndMergePlanning(t *testing.T) {
@@ -1754,7 +1762,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 						require.NoError(b, err)
 					}
 
-					_, _, err = unmarshalled.ToDecodedPlan()
+					_, err = unmarshalled.DecodeNodes(unmarshalled.RootNode)
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1814,7 +1822,7 @@ func TestDecodingInvalidPlan(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "root node index 1 out of range with 1 nodes in plan",
+			expectedError: "node index 1 out of range with 1 nodes in plan",
 		},
 		"negative root node index": {
 			input: &planning.EncodedQueryPlan{
@@ -1829,7 +1837,7 @@ func TestDecodingInvalidPlan(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "root node index -1 out of range with 1 nodes in plan",
+			expectedError: "node index -1 out of range with 1 nodes in plan",
 		},
 		"child node index out of range": {
 			input: &planning.EncodedQueryPlan{
@@ -1938,9 +1946,8 @@ func TestDecodingInvalidPlan(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			output, _, err := testCase.input.ToDecodedPlan()
+			_, err := testCase.input.DecodeNodes(testCase.input.RootNode)
 			require.EqualError(t, err, testCase.expectedError)
-			require.Nil(t, output)
 		})
 	}
 }
@@ -2054,12 +2061,12 @@ func (t *versioningTestNode) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
 }
 
-func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.NoDataQueried()
+func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
 }
 
-func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
-	return posrange.PositionRange{}
+func (t *versioningTestNode) ExpressionPosition() (posrange.PositionRange, error) {
+	return posrange.PositionRange{}, nil
 }
 
 func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

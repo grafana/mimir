@@ -254,11 +254,12 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 		}
 
 		plan := &planning.QueryPlan{
-			TimeRange: timeRange,
-			Root:      root,
-
-			OriginalExpression:       qs,
-			EnableDelayedNameRemoval: p.enableDelayedNameRemoval,
+			Root: root,
+			Parameters: &planning.QueryParameters{
+				TimeRange:                timeRange,
+				OriginalExpression:       qs,
+				EnableDelayedNameRemoval: p.enableDelayedNameRemoval,
+			},
 		}
 
 		return plan, nil

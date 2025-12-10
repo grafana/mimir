@@ -86,11 +86,11 @@ func (d *DeduplicateAndMerge) ResultType() (parser.ValueType, error) {
 	return d.Inner.ResultType()
 }
 
-func (d *DeduplicateAndMerge) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (d *DeduplicateAndMerge) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return d.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
+func (d *DeduplicateAndMerge) ExpressionPosition() (posrange.PositionRange, error) {
 	return d.Inner.ExpressionPosition()
 }
 

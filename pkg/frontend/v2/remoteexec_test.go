@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -1046,7 +1047,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *t
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, 1)
+	_, err := executor.startExecution(ctx, &planning.QueryParameters{}, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
@@ -1073,31 +1074,89 @@ func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	node := &nodeWithOverriddenVersion{
-		Node: &nodeWithOverriddenVersion{
-			Node:    &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
+		child: &nodeWithOverriddenVersion{
+			child:   &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
 			version: 55,
 		},
 		version: 44,
 	}
 
-	fullPlan := &planning.QueryPlan{Version: 66}
-
-	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, 1)
+	_, err := executor.startExecution(ctx, &planning.QueryParameters{}, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.NotNil(t, frontendMock.request)
 	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
 	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
-	require.Equal(t, planning.QueryPlanVersion(66), request.Plan.Version, "should set request plan version to match the original plan version")
+	require.Equal(t, planning.QueryPlanVersion(55), request.Plan.Version, "should set request plan version to match the highest version required by all nodes")
 }
 
 type nodeWithOverriddenVersion struct {
-	planning.Node
 	version planning.QueryPlanVersion
+	child   planning.Node
 }
 
 func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return n.version
+}
+
+func (n *nodeWithOverriddenVersion) Details() proto.Message {
+	return &core.StringLiteralDetails{Value: "nodeWithOverriddenVersion dummy value"}
+}
+
+func (n *nodeWithOverriddenVersion) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_TEST
+}
+
+func (n *nodeWithOverriddenVersion) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic("invalid child index")
+	}
+
+	return n.child
+}
+
+func (n *nodeWithOverriddenVersion) ChildCount() int {
+	return 1
+}
+
+func (n *nodeWithOverriddenVersion) SetChildren(children []planning.Node) error {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) ReplaceChild(idx int, child planning.Node) error {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) MergeHints(other planning.Node) error {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) Describe() string {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) ChildrenLabels() []string {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return n.child.ChildrenTimeRange(timeRange)
+}
+
+func (n *nodeWithOverriddenVersion) ResultType() (parser.ValueType, error) {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return n.child.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (n *nodeWithOverriddenVersion) ExpressionPosition() (posrange.PositionRange, error) {
+	panic("not supported")
 }
 
 type requestCapturingFrontendMock struct {

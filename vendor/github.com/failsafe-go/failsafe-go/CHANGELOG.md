@@ -1,5 +1,11 @@
 ## Upcoming Release
 
+## 0.9.3
+
+### Bug Fixes
+
+- Fixed #123 - `failsafegrpc` client should not cancel merged contexts until response Body is closed.
+
 ## 0.9.2
 
 ### Bug Fixes

@@ -498,7 +498,9 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta))
+			timeRange, err := testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, timeRange)
 		})
 	}
 }

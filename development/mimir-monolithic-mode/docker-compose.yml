@@ -21,7 +21,7 @@ services:
   prometheus:
     profiles:
       - prometheus
-    image: prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    image: prom/prometheus:v3.8.0@sha256:d936808bdea528155c0154a922cd42fd75716b8bb7ba302641350f9f3eaeba09
     command: ["--config.file=/etc/prometheus/prometheus.yaml", "--enable-feature=native-histograms"]
     volumes:
       - ./config:/etc/prometheus
@@ -31,7 +31,7 @@ services:
   prometheusRW2:
     profiles:
       - prometheusRW2
-    image: prom/prometheus:v3.7.3@sha256:49214755b6153f90a597adcbff0252cc61069f8ab69ce8411285cd4a560e8038
+    image: prom/prometheus:v3.8.0@sha256:d936808bdea528155c0154a922cd42fd75716b8bb7ba302641350f9f3eaeba09
     command:
       - "--config.file=/etc/prometheus/prometheusRW2.yaml"
       - "--enable-feature=native-histograms"
@@ -122,7 +122,7 @@ services:
       - .data-mimir-2:/data:delegated
 
   otel-remote-write:
-    image: otel/opentelemetry-collector-contrib:0.140.1@sha256:5901567d6f684547bafee53f02403869b5655e13a4e0af65aa6ae9f6301075d9
+    image: otel/opentelemetry-collector-contrib:0.141.0@sha256:b14234c4bc1b7364629af272e564913bb57bdc9736d45b8b6db5ab3417dc75f9
     command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-remote-write
@@ -138,7 +138,7 @@ services:
       - 55679:55679 # zpages extension
 
   otel-otlp:
-    image: otel/opentelemetry-collector-contrib:0.140.1@sha256:5901567d6f684547bafee53f02403869b5655e13a4e0af65aa6ae9f6301075d9
+    image: otel/opentelemetry-collector-contrib:0.141.0@sha256:b14234c4bc1b7364629af272e564913bb57bdc9736d45b8b6db5ab3417dc75f9
     command: ["--config=file:/etc/otelcol-contrib/config.yaml", "--feature-gates", "receiver.prometheusreceiver.EnableNativeHistograms,receiver.prometheusreceiver.RemoveStartTimeAdjustment"]
     profiles:
       - otel-collector-otlp-push

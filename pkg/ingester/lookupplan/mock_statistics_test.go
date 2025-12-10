@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-// mockStatistics implements the index.Statistics interface with hardcoded data for testing
+// mockStatistics implements the Statistics interface with hardcoded data for testing
 type mockStatistics struct {
 	// seriesPerValue maps label name -> label value -> number of series
 	seriesPerValue map[string]map[string]uint64

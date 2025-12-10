@@ -1877,7 +1877,7 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
 	require.NoError(t, err)
 
-	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan, []NodeEvaluationRequest{{Node: plan.Root, TimeRange: plan.TimeRange}})
+	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan.Parameters, []NodeEvaluationRequest{{Node: plan.Root, TimeRange: plan.Parameters.TimeRange}})
 	require.NoError(t, err)
 
 	err = evaluator.Evaluate(ctx, noopEvaluationObserver{})

@@ -6,7 +6,6 @@ import (
 	"context"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 type planPredicate struct {
@@ -25,7 +24,7 @@ type planPredicate struct {
 	indexScanCost float64
 }
 
-func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statistics, config CostConfig) planPredicate {
+func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats Statistics, config CostConfig) planPredicate {
 	pred := planPredicate{
 		matcher:         m,
 		singleMatchCost: m.SingleMatchCost(),
@@ -66,7 +65,7 @@ func estimatePredicateIndexScanCost(pred planPredicate, m *labels.Matcher) float
 	panic("estimatePredicateIndexScanCost called with unhandled matcher type: " + m.Type.String() + m.String())
 }
 
-func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) uint64 {
+func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) uint64 {
 	switch m.Type {
 	case labels.MatchEqual:
 		return estimateEqualMatcherCardinality(ctx, m, stats)
@@ -81,7 +80,7 @@ func estimatePredicateCardinality(ctx context.Context, m *labels.Matcher, stats 
 	}
 }
 
-func estimateEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics) uint64 {
+func estimateEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, stats Statistics) uint64 {
 	if m.Matches("") { // foo=""
 		return numSeriesWithoutLabel(ctx, m.Name, stats)
 	}
@@ -89,7 +88,7 @@ func estimateEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, sta
 	return stats.LabelValuesCardinality(ctx, m.Name, m.Value)
 }
 
-func estimateNotEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics) uint64 {
+func estimateNotEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, stats Statistics) uint64 {
 	if m.Value == "" { // foo!=""
 		return stats.LabelValuesCardinality(ctx, m.Name)
 	}
@@ -97,7 +96,7 @@ func estimateNotEqualMatcherCardinality(ctx context.Context, m *labels.Matcher, 
 	return stats.TotalSeries() - stats.LabelValuesCardinality(ctx, m.Name, m.Value)
 }
 
-func estimateRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) uint64 {
+func estimateRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) uint64 {
 	var matchedSeries uint64
 	if setMatches := m.SetMatches(); len(setMatches) > 0 { // foo=~"bar|baz", foo=~"|bar"
 		matchedSeries = stats.LabelValuesCardinality(ctx, m.Name, setMatches...)
@@ -113,7 +112,7 @@ func estimateRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, sta
 	return matchedSeries
 }
 
-func estimateNotRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, stats index.Statistics, selectivity float64) uint64 {
+func estimateNotRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, stats Statistics, selectivity float64) uint64 {
 	matchedSeries := uint64(0)
 
 	// Calculate how many series are matched by the regex as if the regex was positive.
@@ -135,7 +134,7 @@ func estimateNotRegexMatcherCardinality(ctx context.Context, m *labels.Matcher, 
 	return matchedSeries
 }
 
-func numSeriesWithoutLabel(ctx context.Context, labelName string, stats index.Statistics) uint64 {
+func numSeriesWithoutLabel(ctx context.Context, labelName string, stats Statistics) uint64 {
 	return stats.TotalSeries() - stats.LabelValuesCardinality(ctx, labelName)
 }
 

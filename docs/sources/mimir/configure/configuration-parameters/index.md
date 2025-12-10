@@ -5875,7 +5875,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING,
 # GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE,
-# FSX_OPENZFS
+# FSX_OPENZFS, FSX_ONTAP
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 

@@ -602,7 +602,9 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, 100*time.Minute))
+			timeRange, err := testCase.selector.QueriedTimeRange(queryTimeRange, 100*time.Minute)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, timeRange)
 		})
 	}
 }

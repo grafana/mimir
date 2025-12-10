@@ -129,10 +129,10 @@ func (s *StepInvariantExpression) ResultType() (parser.ValueType, error) {
 	return s.Inner.ResultType()
 }
 
-func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
 }
 
-func (s *StepInvariantExpression) ExpressionPosition() posrange.PositionRange {
+func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, error) {
 	return s.Inner.ExpressionPosition()
 }

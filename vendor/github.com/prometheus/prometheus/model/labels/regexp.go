@@ -67,6 +67,7 @@ type FastRegexMatcher struct {
 
 	// matchString is the "compiled" function to run by MatchString().
 	matchString func(string) bool
+	parsedRe    *syntax.Regexp
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
@@ -115,6 +116,7 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 			m.setMatches = matches
 		}
 		m.stringMatcher = stringMatcherFromRegexp(parsed)
+		m.parsedRe = parsed
 		m.matchString = m.compileMatchStringFunction()
 	}
 

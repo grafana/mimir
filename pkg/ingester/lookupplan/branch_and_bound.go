@@ -9,7 +9,6 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
@@ -64,7 +63,7 @@ func (pq plans) Iterator() iter.Seq[plan] {
 
 // generatePlansBranchAndBound uses branch-and-bound to explore the space of possible plans.
 // It prunes branches that cannot possibly lead to a better plan than the current best.
-func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, statistics index.Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) iter.Seq[plan] {
+func (p CostBasedPlanner) generatePlansBranchAndBound(ctx context.Context, statistics Statistics, matchers []*labels.Matcher, pools *costBasedPlannerPools, shard *sharding.ShardSelector) iter.Seq[plan] {
 	// Initialize priority queue with the root plan (all predicates undecided)
 	prospectPlans := pools.GetPlans(maxPlansForPlanning)
 

@@ -3,8 +3,8 @@ job="prometheus";100;100
 job!="prometheus";100;100
 job=~"prometheus";100;110.00000000000001
 job!~"prometheus";100;110.00000000000001
-job=~".*prometheus.*";100;3000
-job!~".*prometheus.*";100;3000
+job=~".*prometheus.*";100;1000
+job!~".*prometheus.*";100;1000
 job=~"prometheus.*";100;100
 job!~"prometheus.*";100;100
 job="";0;0

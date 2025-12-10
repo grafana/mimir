@@ -77,6 +77,7 @@
 * [ENHANCEMENT] OTLP: Add experimental metric `cortex_distributor_otlp_array_lengths` to better understand the layout of OTLP packets in practice. #13525
 * [ENHANCEMENT] Ruler: gRPC errors without details are classified as `operator` errors, and rule evaluation failures (such as duplicate labelsets) are classified as `user` errors. #13586
 * [ENHANCEMENT] Server: The `/metrics` endpoint now supports metrics filtering by providing one or more `name[]` query parameters. #13746
+* [ENHANCEMENT] Ingester: Make sharded active-series requests matching all series faster. #13491
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
@@ -110,6 +111,7 @@
 * [BUGFIX] Query-frontend: Fix silent panic when executing a remote read API request if the request has no matchers. #13745
 * [BUGFIX] Ruler: Fixed `-ruler.max-rule-groups-per-tenant-by-namespace` to only count rule groups in the specified namespace instead of all namespaces. #13743
 * [BUGFIX] Update to Go v1.25.5 to address [CVE-2025-61729](https://pkg.go.dev/vuln/GO-2025-4155). #13755
+* [BUGFIX] Query-frontend: Fix race condition that could sometimes cause unnecessary resharding of queriers if querier shuffle sharding and remote execution is enabled. #13794
 
 ### Mixin
 
@@ -164,7 +166,7 @@
   * `autoscaling_ruler_query_frontend_min_replicas` → `autoscaling_ruler_query_frontend_min_replicas_per_zone`
   * `autoscaling_ruler_query_frontend_max_replicas` → `autoscaling_ruler_query_frontend_max_replicas_per_zone`
 * [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
-* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317
+* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317 #13793
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
