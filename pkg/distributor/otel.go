@@ -646,7 +646,7 @@ func (c *otlpMimirConverter) Err() error {
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
-	for i, ts := range timeseries {
+	for _, ts := range timeseries {
 		name := ""
 		attributes := pcommon.NewMap()
 
@@ -668,9 +668,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
@@ -695,9 +697,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {

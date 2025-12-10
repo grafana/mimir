@@ -37,7 +37,7 @@
 * [FEATURE] MQE: Add support for experimental extended range selector modifiers `smoothed` and `anchored`. You can enable these modifiers with `-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored` #13398
 * [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [FEATURE] Continuous test: Add `prometheus2` option `-tests.write-protocol` flag to select Prometheus Remote-Write 2.0 as a protocol. #13659
-* [FEATURE] Continuous test: Write metrics metadata along with samples. #13659 #13732
+* [FEATURE] Continuous test: Write metrics metadata along with samples. #13659 #13732 #13796
 * [ENHANCEMENT] Compactor, Store-gateway: Change default value of `-compactor.upload-sparse-index-headers` to `true`. This improves lazy loading performance in the store-gateway. #13089
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
 * [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101

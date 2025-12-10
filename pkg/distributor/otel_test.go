@@ -1094,8 +1094,9 @@ func BenchmarkOTLPHandler(b *testing.B) {
 			})
 		}
 		sampleMetadata = append(sampleMetadata, mimirpb.MetricMetadata{
-			Help: "metric_help_" + strconv.Itoa(i),
-			Unit: "metric_unit_" + strconv.Itoa(i),
+			MetricFamilyName: "foo" + strconv.Itoa(i),
+			Help:             "metric_help_" + strconv.Itoa(i),
+			Unit:             "metric_unit_" + strconv.Itoa(i),
 		})
 	}
 
@@ -1235,8 +1236,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 	// Sample Metadata needs to contain metadata for every series in the sampleSeries
 	sampleMetadata := []mimirpb.MetricMetadata{
 		{
-			Help: "metric_help",
-			Unit: "metric_unit",
+			MetricFamilyName: "foo",
+			Help:             "metric_help",
+			Unit:             "metric_unit",
 		},
 	}
 
@@ -1484,8 +1486,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			metadata: []mimirpb.MetricMetadata{
 				{
-					Help: "metric_help",
-					Unit: "metric_unit",
+					MetricFamilyName: "foo",
+					Help:             "metric_help",
+					Unit:             "metric_unit",
 				},
 			},
 			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
@@ -1527,8 +1530,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			metadata: []mimirpb.MetricMetadata{
 				{
-					Help: "metric_help",
-					Unit: "metric_unit",
+					MetricFamilyName: "foo",
+					Help:             "metric_help",
+					Unit:             "metric_unit",
 				},
 			},
 			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
