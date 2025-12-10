@@ -257,27 +257,30 @@ func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion() planning.QueryPla
 	return planning.QueryPlanVersionZero
 }
 
-type RemoteExecutionMaterializer struct {
+type RemoteExecutionConsumerMaterializer struct {
 	executor RemoteExecutor
 }
 
-func NewRemoteExecutionMaterializer(executor RemoteExecutor) *RemoteExecutionMaterializer {
-	return &RemoteExecutionMaterializer{executor: executor}
+func NewRemoteExecutionConsumerMaterializer(executor RemoteExecutor) *RemoteExecutionConsumerMaterializer {
+	return &RemoteExecutionConsumerMaterializer{executor: executor}
 }
 
-var _ planning.NodeMaterializer = &RemoteExecutionMaterializer{}
+var _ planning.NodeMaterializer = &RemoteExecutionConsumerMaterializer{}
 
-func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	r, ok := n.(*RemoteExecutionGroup)
+func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	// For the time being, we assume all groups have a single node (the one that corresponds to this consumer).
+	// Once we implement support in query-frontends for evaluating multiple nodes in a single request, this will change.
+
+	c, ok := n.(*RemoteExecutionConsumer)
 	if !ok {
-		return nil, fmt.Errorf("expected node of type RemoteExecutionGroup, got %T", n)
+		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)
 	}
 
-	if len(r.Nodes) != 1 {
-		return nil, fmt.Errorf("attempted to materialize node of type RemoteExecutionGroup with %d nodes", len(r.Nodes))
+	if len(c.Group.Nodes) != 1 {
+		return nil, fmt.Errorf("attempted to materialize node of type RemoteExecutionConsumer in a group with %d nodes", len(c.Group.Nodes))
 	}
 
-	node := r.Nodes[0]
+	node := c.Group.Nodes[0]
 	expressionPosition, err := node.ExpressionPosition()
 	if err != nil {
 		return nil, err
@@ -298,7 +301,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
 			QueryStats:               params.QueryStats,
-			EagerLoad:                r.EagerLoad,
+			EagerLoad:                c.Group.EagerLoad,
 			expressionPosition:       expressionPosition,
 		}), nil
 
@@ -311,7 +314,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
 			QueryStats:               params.QueryStats,
-			EagerLoad:                r.EagerLoad,
+			EagerLoad:                c.Group.EagerLoad,
 			expressionPosition:       expressionPosition,
 		}), nil
 
@@ -324,7 +327,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
 			QueryStats:               params.QueryStats,
-			EagerLoad:                r.EagerLoad,
+			EagerLoad:                c.Group.EagerLoad,
 			expressionPosition:       expressionPosition,
 		}), nil
 

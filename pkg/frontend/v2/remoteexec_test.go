@@ -1395,7 +1395,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(false))
 
 	if enableMQESharding {
 		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
@@ -1435,7 +1435,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	executor := NewRemoteExecutor(frontend, cfg)
-	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_GROUP, remoteexec.NewRemoteExecutionMaterializer(executor)))
+	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_CONSUMER, remoteexec.NewRemoteExecutionConsumerMaterializer(executor)))
 
 	expr, err := parser.ParseExpr("sum(foo)")
 	require.NoError(t, err)
