@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV3
+var MaximumSupportedQueryPlanVersion = QueryPlanV4
 
 // IMPORTANT:
 // Do not change the value or meaning of these constants once they have been merged.
@@ -48,6 +48,9 @@ const QueryPlanV2 = QueryPlanVersion(2)
 
 // QueryPlanV3 introduces support for evaluating multiple query plan nodes in a single querier request.
 const QueryPlanV3 = QueryPlanVersion(3)
+
+// QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
+const QueryPlanV4 = QueryPlanVersion(4)
 
 type QueryPlan struct {
 	Root       Node

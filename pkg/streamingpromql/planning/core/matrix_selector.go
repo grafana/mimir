@@ -22,7 +22,7 @@ type MatrixSelector struct {
 }
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -64,7 +64,9 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
 		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
 		m.Offset == otherMatrixSelector.Offset &&
-		m.Range == otherMatrixSelector.Range
+		m.Range == otherMatrixSelector.Range &&
+		m.Anchored == otherMatrixSelector.Anchored &&
+		m.Smoothed == otherMatrixSelector.Smoothed
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {
@@ -93,9 +95,15 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
 		ExpressionPosition:       m.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		Anchored:                 m.Anchored,
+		Smoothed:                 m.Smoothed,
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
+	if m.Anchored || m.Smoothed {
+		selector.LookbackDelta = params.LookbackDelta
+	}
+
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, m.Anchored, m.Smoothed)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -104,10 +112,12 @@ func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
 }
 
-func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	// Matrix selectors do not use the lookback delta, so we don't pass it below.
-	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), 0)
-
+func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookback time.Duration) (planning.QueriedTimeRange, error) {
+	if !m.Anchored && !m.Smoothed {
+		// Normal matrix selectors do not use the lookback delta, so we don't pass it below.
+		lookback = 0
+	}
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), lookback, m.Anchored, m.Smoothed)
 	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 
@@ -116,5 +126,8 @@ func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
 }
 
 func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	if m.Anchored || m.Smoothed {
+		return planning.QueryPlanV4
+	}
 	return planning.QueryPlanVersionZero
 }
