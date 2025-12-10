@@ -23,7 +23,7 @@ func init() {
 
 type RemoteExecution struct {
 	*RemoteExecutionDetails
-	Inner planning.Node
+	Nodes []planning.Node
 }
 
 func (r *RemoteExecution) Details() proto.Message {
@@ -35,33 +35,33 @@ func (r *RemoteExecution) NodeType() planning.NodeType {
 }
 
 func (r *RemoteExecution) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type RemoteExecution supports 1 child, but attempted to get child at index %d", idx))
+	if idx >= len(r.Nodes) {
+		panic(fmt.Sprintf("this RemoteExecution node has %d children, but attempted to get child at index %d", len(r.Nodes), idx))
 	}
 
-	return r.Inner
+	return r.Nodes[idx]
 }
 
 func (r *RemoteExecution) ChildCount() int {
-	return 1
+	return len(r.Nodes)
 }
 
 func (r *RemoteExecution) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type RemoteExecution supports 1 child, but got %d", len(children))
+	if len(children) < 1 {
+		return fmt.Errorf("node of type RemoteExecution requires at least one child, but got %d", len(children))
 	}
 
-	r.Inner = children[0]
+	r.Nodes = children
 
 	return nil
 }
 
 func (r *RemoteExecution) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type RemoteExecution supports 1 child, but attempted to replace child at index %d", idx)
+	if idx >= len(r.Nodes) {
+		panic(fmt.Sprintf("this RemoteExecution node has %d children, but attempted to replace child at index %d", len(r.Nodes), idx))
 	}
 
-	r.Inner = node
+	r.Nodes[idx] = node
 	return nil
 }
 
@@ -93,7 +93,13 @@ func (r *RemoteExecution) Describe() string {
 }
 
 func (r *RemoteExecution) ChildrenLabels() []string {
-	return []string{""}
+	lbls := make([]string, 0, len(r.Nodes))
+
+	for idx := range r.Nodes {
+		lbls = append(lbls, fmt.Sprintf("node %d", idx))
+	}
+
+	return lbls
 }
 
 func (r *RemoteExecution) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -101,18 +107,22 @@ func (r *RemoteExecution) ChildrenTimeRange(parentTimeRange types.QueryTimeRange
 }
 
 func (r *RemoteExecution) ResultType() (parser.ValueType, error) {
-	return r.Inner.ResultType()
+	return parser.ValueTypeNone, errors.New("cannot call ResultType on RemoteExecution node directly, call ResultType on consumer node instead")
 }
 
 func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
-	return r.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	return planning.NoDataQueried(), errors.New("cannot call QueriedTimeRange on RemoteExecution node directly, call ResultType on consumer node instead")
 }
 
 func (r *RemoteExecution) ExpressionPosition() (posrange.PositionRange, error) {
-	return r.Inner.ExpressionPosition()
+	return posrange.PositionRange{}, errors.New("cannot call ExpressionPosition on RemoteExecution node directly, call ExpressionPosition on consumer node instead")
 }
 
 func (r *RemoteExecution) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	if len(r.Nodes) > 1 {
+		return planning.QueryPlanV3
+	}
+
 	return planning.QueryPlanVersionZero
 }
 
@@ -132,12 +142,17 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 		return nil, fmt.Errorf("expected node of type RemoteExecution, got %T", n)
 	}
 
-	expressionPosition, err := r.Inner.ExpressionPosition()
+	if len(r.Nodes) != 1 {
+		return nil, fmt.Errorf("attempted to materialize node of type RemoteExecution with %d nodes", len(r.Nodes))
+	}
+
+	node := r.Nodes[0]
+	expressionPosition, err := node.ExpressionPosition()
 	if err != nil {
 		return nil, err
 	}
 
-	resultType, err := r.Inner.ResultType()
+	resultType, err := node.ResultType()
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +161,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 	case parser.ValueTypeScalar:
 		return planning.NewSingleUseOperatorFactory(&ScalarRemoteExec{
 			QueryParameters:          params.QueryParameters,
-			Node:                     r.Inner,
+			Node:                     node,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
@@ -159,7 +174,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 	case parser.ValueTypeVector:
 		return planning.NewSingleUseOperatorFactory(&InstantVectorRemoteExec{
 			QueryParameters:          params.QueryParameters,
-			Node:                     r.Inner,
+			Node:                     node,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
@@ -172,7 +187,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 	case parser.ValueTypeMatrix:
 		return planning.NewSingleUseOperatorFactory(&RangeVectorRemoteExec{
 			QueryParameters:          params.QueryParameters,
-			Node:                     r.Inner,
+			Node:                     node,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
