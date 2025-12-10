@@ -8124,6 +8124,17 @@
         },
         {
           "kind": "field",
+          "name": "enable_multiple_node_remote_execution_requests",
+          "required": false,
+          "desc": "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.enable-multiple-node-remote-execution-requests",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "use_mimir_query_engine_for_sharding",
           "required": false,
           "desc": "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.",

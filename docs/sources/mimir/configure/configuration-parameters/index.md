@@ -1959,6 +1959,11 @@ results_cache:
 # CLI flag: -query-frontend.enable-remote-execution
 [enable_remote_execution: <boolean> | default = false]
 
+# (experimental) Set to true to allow evaluating multiple query plan nodes
+# within a single remote execution request to queriers.
+# CLI flag: -query-frontend.enable-multiple-node-remote-execution-requests
+[enable_multiple_node_remote_execution_requests: <boolean> | default = false]
+
 # (experimental) Set to true to enable performing query sharding inside the
 # Mimir query engine (MQE). This setting has no effect if sharding is disabled.
 # Requires remote execution and MQE to be enabled.
