@@ -20,10 +20,9 @@ option (gogoproto.unmarshaler_all) = true;
 message CachedSeries {
   // cacheKey contains the non-hashed cache key, to detect hash collision.
   string cacheKey = 1;
-  int64 version = 2;
-  int64 start = 3;
-  int64 end = 4;
-  repeated cortexpb.Metric series = 5 [(gogoproto.nullable) = false];
+  int64 start = 2;
+  int64 end = 3;
+  repeated cortexpb.Metric series = 4 [(gogoproto.nullable) = false];
   // results stores all marshaled intermediate results as a single byte blob.
-  bytes results = 6;
+  bytes results = 5;
 }

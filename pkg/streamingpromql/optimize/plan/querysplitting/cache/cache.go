@@ -6,10 +6,11 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"github.com/grafana/dskit/tenant"
-	"github.com/prometheus/client_golang/prometheus"
 	"hash/fnv"
 	"time"
+
+	"github.com/grafana/dskit/tenant"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -20,7 +21,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// Backend is the underlying storage backend (memcached, redis, etc.)
+// Backend is the underlying storage backend (memcached, etc.)
 type Backend interface {
 	GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte
 	SetMultiAsync(data map[string][]byte, ttl time.Duration)
@@ -65,7 +66,7 @@ type SplitReader[T any] interface {
 }
 
 type SplitCodec[T any] interface {
-	// TODO: if results are streamed instead, we should pass in a writer that can be updated incrementally.
+	// TODO: if results are streamed instead, we should return in a writer that can be updated incrementally.
 	NewWriter(setResultBytes func([]byte)) (SplitWriter[T], error)
 	// TODO: if results are streamed instead, we should pass in a reader that can be read incrementally
 	NewReader(bytes []byte) (SplitReader[T], error)
@@ -82,14 +83,12 @@ type WriteEntry[T any] interface {
 	Finalize() error
 }
 
-// NewReadEntry creates a typed read entry from cache.
-// Returns (entry, true, nil) on hit, (nil, false, nil) on miss, (nil, false, err) on error.
 func NewReadEntry[T any](
 	c *Cache,
 	codec SplitCodec[T],
 	ctx context.Context,
 	function int32,
-	selector string,
+	innerKey string,
 	start, end int64,
 ) (ReadEntry[T], bool, error) {
 	tenant, err := user.ExtractOrgID(ctx)
@@ -97,7 +96,7 @@ func NewReadEntry[T any](
 		return nil, false, err
 	}
 
-	cacheKey := generateCacheKey(tenant, function, selector, start, end)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 	hashedKey := cacheHashKey(cacheKey)
 
 	found := c.backend.GetMulti(ctx, []string{hashedKey})
@@ -115,17 +114,12 @@ func NewReadEntry[T any](
 		return nil, false, nil
 	}
 
-	if cached.Version != int64(resultsCacheVersion) {
-		level.Warn(c.logger).Log("msg", "cache version mismatch", "tenant", tenant, "function", function, "cached_version", cached.Version, "expected_version", resultsCacheVersion)
-		return nil, false, nil
-	}
-
 	reader, err := codec.NewReader(cached.Results)
 	if err != nil {
 		return nil, false, err
 	}
 
-	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "selector", selector, "start", start, "end", end)
+	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
 
 	return &bufferedReadEntry[T]{
 		cached: cached,
@@ -133,13 +127,12 @@ func NewReadEntry[T any](
 	}, true, nil
 }
 
-// NewWriteEntry creates a typed write entry for cache.
 func NewWriteEntry[T any](
 	c *Cache,
 	codec SplitCodec[T],
 	ctx context.Context,
 	function int32,
-	selector string,
+	innerKey string,
 	start, end int64,
 ) (WriteEntry[T], error) {
 	tenant, err := user.ExtractOrgID(ctx)
@@ -147,13 +140,12 @@ func NewWriteEntry[T any](
 		return nil, err
 	}
 
-	cacheKey := generateCacheKey(tenant, function, selector, start, end)
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 
 	entry := &bufferedWriteEntry[T]{
 		cache: c.backend,
 		cached: CachedSeries{
 			CacheKey: cacheKey,
-			Version:  int64(resultsCacheVersion),
 			Start:    start,
 			End:      end,
 		},
@@ -237,7 +229,7 @@ func (e *bufferedWriteEntry[T]) Finalize() error {
 	hashedKey := cacheHashKey(e.cached.CacheKey)
 	e.cache.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
 
-	level.Debug(e.logger).Log("msg", "cache entry written", "cache_key", e.cached.CacheKey, "series_count", len(e.cached.Series))
+	level.Debug(e.logger).Log("msg", "cache entry written", "cache_key", e.cached.CacheKey, "series_count", len(e.cached.Series), "entry_size", len(data))
 
 	e.finalized = true
 	return nil
