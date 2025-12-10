@@ -74,10 +74,10 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 }
 
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) validation.LimitError {
+func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (bool, validation.LimitError) {
 	// If the max series is unlimited just return without managing map
 	if ql.maxSeriesPerQuery == 0 {
-		return nil
+		return false, nil
 	}
 	fingerprint := seriesLabels.Hash()
 
@@ -85,6 +85,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) validation.LimitEr
 	defer ql.uniqueSeriesMx.Unlock()
 
 	uniqueSeriesBefore := len(ql.uniqueSeries)
+	_, duplicated := ql.uniqueSeries[fingerprint]
 	ql.uniqueSeries[fingerprint] = struct{}{}
 	uniqueSeriesAfter := len(ql.uniqueSeries)
 
@@ -94,9 +95,9 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) validation.LimitEr
 			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
 		}
 
-		return NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		return duplicated, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
-	return nil
+	return duplicated, nil
 }
 
 // uniqueSeriesCount returns the count of unique series seen by this query limiter.
