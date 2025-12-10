@@ -204,13 +204,21 @@ func (a *AggregateExpression) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
 }
 
-func (a *AggregateExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	innerRange := a.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+func (a *AggregateExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	innerRange, err := a.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
 	if a.Param == nil {
-		return innerRange
+		return innerRange, nil
 	}
 
-	return innerRange.Union(a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta))
+	paramRange, err := a.Param.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	return innerRange.Union(paramRange), nil
 }
 
 func (a *AggregateExpression) ExpressionPosition() posrange.PositionRange {

@@ -111,7 +111,7 @@ func (u *UnaryExpression) ResultType() (parser.ValueType, error) {
 	return u.Inner.ResultType()
 }
 
-func (u *UnaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (u *UnaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return u.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 

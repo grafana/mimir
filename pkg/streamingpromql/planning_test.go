@@ -2011,8 +2011,8 @@ func (t *versioningTestNode) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
 }
 
-func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.NoDataQueried()
+func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
 }
 
 func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {

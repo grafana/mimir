@@ -91,7 +91,7 @@ func (d *Duplicate) ResultType() (parser.ValueType, error) {
 	return d.Inner.ResultType()
 }
 
-func (d *Duplicate) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (d *Duplicate) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return d.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 

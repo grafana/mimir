@@ -295,10 +295,18 @@ func (b *BinaryExpression) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
 }
 
-func (b *BinaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	lhs := b.LHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
-	rhs := b.RHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
-	return lhs.Union(rhs)
+func (b *BinaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	lhs, err := b.LHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	rhs, err := b.RHS.QueriedTimeRange(queryTimeRange, lookbackDelta)
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	return lhs.Union(rhs), nil
 }
 
 func (b *BinaryExpression) ExpressionPosition() posrange.PositionRange {

@@ -104,7 +104,7 @@ func (r *RemoteExecution) ResultType() (parser.ValueType, error) {
 	return r.Inner.ResultType()
 }
 
-func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return r.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 

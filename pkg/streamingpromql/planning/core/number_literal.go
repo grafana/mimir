@@ -81,8 +81,8 @@ func (n *NumberLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
 }
 
-func (n *NumberLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.NoDataQueried()
+func (n *NumberLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
 }
 
 func (n *NumberLiteral) ExpressionPosition() posrange.PositionRange {

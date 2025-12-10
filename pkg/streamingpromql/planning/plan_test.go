@@ -130,7 +130,7 @@ func (t *testNode) ResultType() (parser.ValueType, error) {
 	panic("not supported")
 }
 
-func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange {
+func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (QueriedTimeRange, error) {
 	panic("not supported")
 }
 

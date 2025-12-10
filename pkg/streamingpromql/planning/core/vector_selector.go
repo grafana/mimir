@@ -108,10 +108,10 @@ func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
 }
 
-func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
 
-	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 
 func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {

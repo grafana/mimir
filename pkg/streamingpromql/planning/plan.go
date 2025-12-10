@@ -140,7 +140,7 @@ type Node interface {
 	// and its children.
 	//
 	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
-	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (QueriedTimeRange, error)
 
 	// ExpressionPosition returns the position of the subexpression this node represents in the original
 	// expression.

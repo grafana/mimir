@@ -160,7 +160,7 @@ func (s *Subquery) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
 }
 
-func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
 }
 
