@@ -213,48 +213,6 @@ func TestRangeVectorOperator_ClosedWithBufferedData(t *testing.T) {
 	requireNoMemoryConsumption(t, memoryConsumptionTracker)
 }
 
-// equalsViaReflection uses reflection to perform a deep equals of the given records.
-// Note that the Floats and Histograms fields are not considered in this comparison.
-// This function compliments the TestRangeVectorOperator_StepDataStructure test and provides
-// a comparison using reflection. If additional fields are added to the RangeVectorStepData this
-// function may need to be updated. But this is intentional to ensure that the cloneStepData()
-// has been correctly updated.
-func equalsViaReflection(t *testing.T, d1, d2 *types.RangeVectorStepData) {
-	r1 := reflect.ValueOf(d1).Elem()
-	r2 := reflect.ValueOf(d2).Elem()
-	types := r1.Type()
-	require.Equal(t, r1.NumField(), r2.NumField())
-
-	for i := range r1.NumField() {
-		fieldVal := r1.Field(i)
-		f1 := r1.Field(i)
-		f2 := r2.Field(i)
-
-		if types.Field(i).Name == "Floats" || types.Field(i).Name == "Histograms" {
-			continue
-		}
-
-		if types.Field(i).Name == "SmoothedBasisForHeadPoint" {
-			require.Equal(t, d1.SmoothedBasisForHeadPoint, d2.SmoothedBasisForHeadPoint)
-			continue
-		}
-
-		if types.Field(i).Name == "SmoothedBasisForTailPoint" {
-			require.Equal(t, d1.SmoothedBasisForTailPoint, d2.SmoothedBasisForTailPoint)
-			continue
-		}
-
-		switch fieldVal.Kind() {
-		case reflect.Int64:
-			require.Equal(t, f1.Int(), f2.Int())
-		case reflect.Bool:
-			require.Equal(t, f1.Bool(), f2.Bool())
-		default:
-			require.Fail(t, "unexpected field. field=%s, kind=%v", types.Field(i).Name, fieldVal.Kind())
-		}
-	}
-}
-
 // TestRangeVectorOperator_StepDataStructure is a test to validate that no additional fields have been added to RangeVectorStepData
 // and not been considered in the cloneStepData().
 // This test uses reflection to populate values into all fields, clones the record and asserts that the values match.
@@ -295,8 +253,13 @@ func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 	}
 
 	clonedStepData, err := cloneStepData(data, memoryConsumptionTracker)
+
+	// manually poke these in - the Equal() test below will fail on these empty views otherwise
+	clonedStepData.stepData.Floats = data.Floats
+	clonedStepData.stepData.Histograms = data.Histograms
+
 	require.NoError(t, err)
-	equalsViaReflection(t, data, clonedStepData.stepData)
+	require.Equal(t, data, clonedStepData.stepData)
 }
 
 func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {

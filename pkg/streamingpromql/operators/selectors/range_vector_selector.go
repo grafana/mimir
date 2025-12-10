@@ -156,9 +156,11 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 				}
 				if smoothedPoints.smoothedHeadSet {
 					m.stepData.SmoothedBasisForHeadPoint = smoothedPoints.smoothedHead
+					m.stepData.SmoothedBasisForHeadPointSet = true
 				}
 				if smoothedPoints.smoothedTailSet {
 					m.stepData.SmoothedBasisForTailPoint = smoothedPoints.smoothedTail
+					m.stepData.SmoothedBasisForTailPointSet = true
 				}
 				buff = smoothedPoints.points
 
