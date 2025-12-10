@@ -46,7 +46,8 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 
 	if anchored {
 		builder.WriteString(" anchored")
-	} else if smooothed {
+	}
+	if smooothed {
 		builder.WriteString(" smoothed")
 	}
 
