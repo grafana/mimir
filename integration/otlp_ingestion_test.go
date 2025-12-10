@@ -109,8 +109,9 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 	}
 	metadata := []mimirpb.MetricMetadata{
 		{
-			Help: "foo",
-			Unit: "bytes",
+			MetricFamilyName: "series.1",
+			Help:             "foo",
+			Unit:             "bytes",
 		},
 	}
 
@@ -176,7 +177,14 @@ func testOTLPIngestion(t *testing.T, opts testOTLPIngestionOpts) {
 
 	// Push series with histograms to Mimir
 	series, expectedVector, _ = generateHistogramSeries("series.histogram", now)
-	res, _, err = c.PushOTLP(series, metadata)
+	histogramMetadata := []mimirpb.MetricMetadata{
+		{
+			MetricFamilyName: "series.histogram",
+			Help:             "foo",
+			Unit:             "bytes",
+		},
+	}
+	res, _, err = c.PushOTLP(series, histogramMetadata)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 

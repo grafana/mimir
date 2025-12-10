@@ -805,8 +805,9 @@ func TestInvalidClusterValidationLabel(t *testing.T) {
 	}
 	metadata := []mimirpb.MetricMetadata{
 		{
-			Help: "foo",
-			Unit: "By",
+			MetricFamilyName: "not_foobar",
+			Help:             "foo",
+			Unit:             "By",
 		},
 	}
 
