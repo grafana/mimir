@@ -307,18 +307,18 @@ func TestOptimizationPass(t *testing.T) {
 	observer := streamingpromql.NoopPlanningObserver{}
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
-	opts1 := streamingpromql.NewTestEngineOpts()
-	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	optsForMQESharding := streamingpromql.NewTestEngineOpts()
+	plannerForMQESharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsForMQESharding, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, opts1.Logger))
-	plannerForMQESharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts1.CommonOpts.Reg, opts1.Logger))
-	plannerForMQESharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	plannerForMQESharding.RegisterASTOptimizationPass(sharding.NewOptimizationPass(&mockLimits{}, 0, nil, optsForMQESharding.Logger))
+	plannerForMQESharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, optsForMQESharding.CommonOpts.Reg, optsForMQESharding.Logger))
+	plannerForMQESharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
 
-	opts2 := streamingpromql.NewTestEngineOpts()
-	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	optsForMiddlewareSharding := streamingpromql.NewTestEngineOpts()
+	plannerForMiddlewareSharding, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsForMiddlewareSharding, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts2.CommonOpts.Reg, opts2.Logger))
-	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, optsForMiddlewareSharding.CommonOpts.Reg, optsForMiddlewareSharding.Logger))
+	plannerForMiddlewareSharding.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(true))
 
 	runTestCase := func(t *testing.T, expr string, expected string, enableMiddlewareSharding bool, planner *streamingpromql.QueryPlanner) {
 		if enableMiddlewareSharding {
