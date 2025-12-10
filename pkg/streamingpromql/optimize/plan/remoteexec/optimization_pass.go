@@ -48,12 +48,17 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 }
 
 func (o *OptimizationPass) wrapInRemoteExecutionNode(child planning.Node, eagerLoad bool) (planning.Node, error) {
-	n := &RemoteExecutionGroup{RemoteExecutionGroupDetails: &RemoteExecutionGroupDetails{EagerLoad: eagerLoad}}
-	if err := n.SetChildren([]planning.Node{child}); err != nil {
-		return nil, err
+	group := &RemoteExecutionGroup{
+		RemoteExecutionGroupDetails: &RemoteExecutionGroupDetails{EagerLoad: eagerLoad},
+		Nodes:                       []planning.Node{child},
 	}
 
-	return n, nil
+	consumer := &RemoteExecutionConsumer{
+		RemoteExecutionConsumerDetails: &RemoteExecutionConsumerDetails{NodeIndex: 0},
+		Group:                          group,
+	}
+
+	return consumer, nil
 }
 
 // wrapShardedExpressions wraps sharded legs in a RemoteExecutionGroup node.
@@ -90,7 +95,7 @@ func (o *OptimizationPass) wrapShardedConcat(functionCall *core.FunctionCall) er
 		return nil
 	}
 
-	if _, isRemoteExec := functionCall.Args[0].(*RemoteExecutionGroup); isRemoteExec {
+	if _, isRemoteExec := functionCall.Args[0].(*RemoteExecutionConsumer); isRemoteExec {
 		// We've already wrapped the first child, which means we've wrapped all of the children as well.
 		// This can happen if the sharded expression is duplicated, in which case we can visit it multiple times.
 		return nil
