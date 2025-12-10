@@ -37,16 +37,19 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	_, err := limiter.AddSeries(series1)
+	duplicated, err := limiter.AddSeries(series1)
 	assert.NoError(t, err)
-	_, err = limiter.AddSeries(series2)
+	assert.False(t, duplicated)
+	duplicated, err = limiter.AddSeries(series2)
 	assert.NoError(t, err)
+	assert.False(t, duplicated)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	_, err = limiter.AddSeries(series1)
+	duplicated, err = limiter.AddSeries(series1)
 	assert.NoError(t, err)
+	assert.True(t, duplicated)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 }
@@ -72,22 +75,26 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	_, err := limiter.AddSeries(series1)
+	duplicated, err := limiter.AddSeries(series1)
 	require.NoError(t, err)
+	require.False(t, duplicated)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	_, err = limiter.AddSeries(series2)
+	duplicated, err = limiter.AddSeries(series2)
 	require.Error(t, err)
+	require.False(t, duplicated)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
-	_, err = limiter.AddSeries(series2)
+	duplicated, err = limiter.AddSeries(series2)
 	require.Error(t, err)
+	require.True(t, duplicated)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
-	_, err = limiter.AddSeries(series3)
+	duplicated, err = limiter.AddSeries(series3)
 	require.Error(t, err)
+	require.False(t, duplicated)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
 
