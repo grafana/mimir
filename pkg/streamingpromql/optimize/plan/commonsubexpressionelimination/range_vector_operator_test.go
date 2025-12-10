@@ -224,9 +224,15 @@ func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 
 	data := &types.RangeVectorStepData{}
 
+	fpoints := types.NewFPointRingBuffer(memoryConsumptionTracker)
+	require.NoError(t, fpoints.Use([]promql.FPoint{{T: 10, F: 30.3}}))
+
+	hpoints := types.NewHPointRingBuffer(memoryConsumptionTracker)
+	require.NoError(t, hpoints.Use([]promql.HPoint{{T: 0, H: &histogram.FloatHistogram{Count: 10, Sum: 1}}}))
+
 	// set explicitly to avoid reflection complexity in handling these
-	data.Floats = types.NewFPointRingBuffer(memoryConsumptionTracker).ViewAll(nil)
-	data.Histograms = types.NewHPointRingBuffer(memoryConsumptionTracker).ViewUntilSearchingBackwards(0, nil)
+	data.Floats = fpoints.ViewAll(nil)
+	data.Histograms = hpoints.ViewUntilSearchingBackwards(0, nil)
 	data.SmoothedBasisForHeadPoint = promql.FPoint{T: rand.Int64(), F: rand.Float64()}
 	data.SmoothedBasisForTailPoint = promql.FPoint{T: rand.Int64(), F: rand.Float64()}
 
@@ -253,10 +259,6 @@ func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 	}
 
 	clonedStepData, err := cloneStepData(data, memoryConsumptionTracker)
-
-	// manually poke these in - the Equal() test below will fail on these empty views otherwise
-	clonedStepData.stepData.Floats = data.Floats
-	clonedStepData.stepData.Histograms = data.Histograms
 
 	require.NoError(t, err)
 	require.Equal(t, data, clonedStepData.stepData)
