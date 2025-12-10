@@ -683,118 +683,203 @@ func sumRecordLengths(records []*kgo.Record) (sum int) {
 	return sum
 }
 
+// shouldStop checks if we should stop processing and performs cleanup if needed.
+// Returns true if we should stop, false otherwise.
+func (r *ConcurrentFetchers) shouldStop(ctx context.Context, wantSpan, attemptSpan *spanlogger.SpanLogger, resultChan chan fetchResult) bool {
+	select {
+	case <-r.done:
+		if wantSpan != nil {
+			wantSpan.Finish()
+		}
+		if attemptSpan != nil {
+			attemptSpan.Finish()
+		}
+		if resultChan != nil {
+			close(resultChan)
+		}
+		return true
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// trySendResult attempts to send a result, checking for cancellation.
+// Returns (sent, shouldStop). If mustWait is true, blocks until sent or cancelled.
+func (r *ConcurrentFetchers) trySendResult(ctx context.Context, result fetchResult, resultChan chan fetchResult, wantSpan, attemptSpan *spanlogger.SpanLogger, mustWait bool) (sent bool, shouldStop bool) {
+	if mustWait {
+		select {
+		case <-r.done:
+			if wantSpan != nil {
+				wantSpan.Finish()
+			}
+			if attemptSpan != nil {
+				attemptSpan.Finish()
+			}
+			close(resultChan)
+			return false, true
+		case resultChan <- result:
+			return true, false
+		case <-ctx.Done():
+			return false, true
+		}
+	} else {
+		select {
+		case <-r.done:
+			if wantSpan != nil {
+				wantSpan.Finish()
+			}
+			if attemptSpan != nil {
+				attemptSpan.Finish()
+			}
+			close(resultChan)
+			return false, true
+		case resultChan <- result:
+			return true, false
+		case <-ctx.Done():
+			return false, true
+		default:
+			return false, false
+		}
+	}
+}
+
+// handleFetchError handles fetch errors and returns false if processing should stop.
+func (r *ConcurrentFetchers) handleFetchError(ctx context.Context, err error, w *fetchWant, errBackoff *backoff.Backoff, attemptSpan, wantSpan *spanlogger.SpanLogger, logger log.Logger) bool {
+	// We got an error. We handle it and then discard this fetch result content.
+	var handleErr error
+	*w, handleErr = handleKafkaFetchErr(err, *w, errBackoff, r.rangeErrorPolicy, r.startOffsetsReader, r.client, logger)
+	if handleErr == nil {
+		return true // Continue retrying
+	}
+
+	// An error returned from handleKafkaFetchErr is a fatal error.
+	// We produce an error result and abort further processing.
+	level.Warn(logger).Log("msg", "failed to handle Kafka fetch error", "error", handleErr)
+
+	// Try to send error result, but don't block if we can't
+	select {
+	case <-r.done:
+		wantSpan.Finish()
+		attemptSpan.Finish()
+		return false
+	case <-ctx.Done():
+		return false
+	case w.result <- newErrorFetchResult(ctx, r.partitionID, handleErr):
+		// Error sent successfully
+	}
+
+	return true // Break out of retry loop but continue servicing wants channel
+}
+
+// sendBufferedResult attempts to send the buffered result, handling the case where we must wait.
+// Returns (sent, shouldStop). If sent is true, the caller should clear bufferedResult.
+func (r *ConcurrentFetchers) sendBufferedResult(ctx context.Context, bufferedResult fetchResult, w *fetchWant, wantSpan, attemptSpan *spanlogger.SpanLogger) (sent bool, shouldStop bool) {
+	// Try non-blocking send first
+	sent, shouldStop = r.trySendResult(ctx, bufferedResult, w.result, wantSpan, attemptSpan, false)
+	if shouldStop {
+		return false, true
+	}
+	if sent {
+		return true, false
+	}
+
+	// If we couldn't send and we've fetched all we were asked for, we must wait
+	if w.startOffset >= w.endOffset {
+		bufferedResult.startWaitingForConsumption()
+		sent, shouldStop = r.trySendResult(ctx, bufferedResult, w.result, wantSpan, attemptSpan, true)
+		if shouldStop {
+			return false, true
+		}
+		return sent, false
+	}
+
+	return false, false
+}
+
+// processFetchWant processes a single fetchWant, handling retries and sending results.
+// Returns true if the run loop should continue, false if it should stop.
+func (r *ConcurrentFetchers) processFetchWant(ctx context.Context, w fetchWant, logger log.Logger, highWatermark *atomic.Int64, errBackoff *backoff.Backoff) bool {
+	// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
+	wantSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch")
+	wantSpan.SetTag("start_offset", w.startOffset)
+	wantSpan.SetTag("end_offset", w.endOffset)
+	defer wantSpan.Finish()
+	defer close(w.result)
+
+	// This current buffered fetchResult that has not been sent to the result channel yet.
+	// This is empty at the beginning, then we merge records as soon as we receive them
+	// from the Fetch response(s).
+	var bufferedResult fetchResult
+
+	for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
+		attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
+		attemptSpan.SetTag("attempt", attempt)
+
+		// Run a single Fetch request.
+		res := r.fetchSingle(ctx, w)
+		if res.Err != nil {
+			if !r.handleFetchError(ctx, res.Err, &w, errBackoff, attemptSpan, wantSpan, logger) {
+				return false // Should stop
+			}
+			attemptSpan.Finish()
+			continue
+		}
+
+		// Successfully fetched records
+		r.bufferedFetchedRecords.Add(int64(len(res.Records)))
+
+		// Update the high watermark.
+		if hwm := res.HighWatermark; hwm >= 0 {
+			casHWM(highWatermark, hwm)
+		}
+
+		// Merge the last fetch result if the previous buffered result (if any).
+		// Keep non-mergeable fields from res, because the last response is the most updated one.
+		bufferedResult = res.Merge(bufferedResult)
+
+		// If we have no buffered records, retry with another Fetch attempt.
+		if len(bufferedResult.Records) == 0 {
+			attemptSpan.Finish()
+			if r.shouldStop(ctx, wantSpan, nil, nil) {
+				return false
+			}
+			continue
+		}
+
+		// Next attempt will be from the last record onwards.
+		w.startOffset = bufferedResult.Records[len(bufferedResult.Records)-1].Offset + 1
+		w = w.UpdateBytesPerRecord(bufferedResult.fetchedBytes, len(bufferedResult.Records))
+
+		// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
+		// We don't want to slow down until we hit a larger error.
+		errBackoff.Reset()
+
+		// Try to send the result
+		sent, shouldStop := r.sendBufferedResult(ctx, bufferedResult, &w, wantSpan, attemptSpan)
+		if shouldStop {
+			return false // Should stop
+		}
+		if sent {
+			bufferedResult = fetchResult{}
+		}
+
+		attemptSpan.Finish()
+	}
+
+	return true // Continue processing
+}
+
 func (r *ConcurrentFetchers) run(ctx context.Context, wants chan fetchWant, logger log.Logger, highWatermark *atomic.Int64) {
 	defer r.wg.Done()
 
 	errBackoff := backoff.New(ctx, r.fetchBackoffConfig)
 
 	for w := range wants {
-		// Start new span for each fetchWant. We want to record the lifecycle of a single record from being fetched to being ingested.
-		wantSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch")
-		wantSpan.SetTag("start_offset", w.startOffset)
-		wantSpan.SetTag("end_offset", w.endOffset)
-
-		// This current buffered fetchResult that has not been sent to the result channel yet.
-		// This is empty at the beginning, then we merge records as soon as we receive them
-		// from the Fetch response(s).
-		var bufferedResult fetchResult
-
-		for attempt := 0; errBackoff.Ongoing() && w.endOffset > w.startOffset; attempt++ {
-			attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
-			attemptSpan.SetTag("attempt", attempt)
-
-			// Run a single Fetch request.
-			if res := r.fetchSingle(ctx, w); res.Err != nil {
-				// We got an error. We handle it and then discard this fetch result content.
-				var err error
-				w, err = handleKafkaFetchErr(res.Err, w, errBackoff, r.rangeErrorPolicy, r.startOffsetsReader, r.client, attemptSpan)
-				if err != nil {
-					// An error returned from handleKafkaFetchErr is a fatal
-					// error. We produce an error result and abort further
-					// processing.
-
-					level.Warn(logger).Log("msg", "failed to handle Kafka fetch error", "error", err)
-
-					select {
-					case <-r.done:
-						wantSpan.Finish()
-						attemptSpan.Finish()
-						close(w.result)
-						return
-					case <-ctx.Done():
-					case w.result <- newErrorFetchResult(ctx, r.partitionID, err):
-					}
-
-					// Break out of the retry loop, but continue servicing the `wants` channel.
-					break
-				}
-			} else {
-				// We increase the count of buffered records as soon as we fetch them.
-				r.bufferedFetchedRecords.Add(int64(len(res.Records)))
-
-				// Update the high watermark.
-				if hwm := res.HighWatermark; hwm >= 0 {
-					casHWM(highWatermark, hwm)
-				}
-
-				// Merge the last fetch result if the previous buffered result (if any).
-				// Keep non-mergeable fields from res, because the last response is the most updated one.
-				bufferedResult = res.Merge(bufferedResult)
-			}
-
-			if len(bufferedResult.Records) == 0 {
-				// If we have no buffered records to try to send to the result channel then we retry with another
-				// Fetch attempt. However, before doing it, we check if we've been told to stop (if so, we should honor it).
-				attemptSpan.Finish()
-
-				select {
-				case <-r.done:
-					wantSpan.Finish()
-					close(w.result)
-					return
-				default:
-				}
-
-				continue
-			}
-
-			// Next attempt will be from the last record onwards.
-			w.startOffset = bufferedResult.Records[len(bufferedResult.Records)-1].Offset + 1
-			w = w.UpdateBytesPerRecord(bufferedResult.fetchedBytes, len(bufferedResult.Records)) // This takes into account the previous fetch too. This should give us a better average than using just the records from the last attempt.
-
-			// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
-			// We don't want to slow down until we hit a larger error.
-			errBackoff.Reset()
-
-			select {
-			case <-r.done:
-				wantSpan.Finish()
-				attemptSpan.Finish()
-				close(w.result)
-				return
-			case w.result <- bufferedResult:
-				bufferedResult = fetchResult{}
-			case <-ctx.Done():
-			default:
-				if w.startOffset >= w.endOffset {
-					// We've fetched all we were asked for the whole batch is ready, and we definitely have to wait to send on the channel now.
-					bufferedResult.startWaitingForConsumption()
-					select {
-					case <-r.done:
-						wantSpan.Finish()
-						attemptSpan.Finish()
-						close(w.result)
-						return
-					case w.result <- bufferedResult:
-						bufferedResult = fetchResult{}
-					case <-ctx.Done():
-					}
-				}
-			}
-			attemptSpan.Finish()
+		if !r.processFetchWant(ctx, w, logger, highWatermark, errBackoff) {
+			return
 		}
-		wantSpan.Finish()
-		close(w.result)
 	}
 }
 
