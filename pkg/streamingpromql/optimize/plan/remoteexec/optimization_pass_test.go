@@ -192,7 +192,7 @@ func TestOptimizationPass(t *testing.T) {
 							- RHS: ref#1 Duplicate ...
 			`,
 		},
-		"expression with common selector but aggregation is different": {
+		"expression with common instant vector selector but aggregation is different": {
 			expr: `sum(foo) + max(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
@@ -223,14 +223,14 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: AggregateExpression: sum
 						- FunctionCall: __sharded_concat__(...)
-							- param 0: RemoteExecutionConsumer: node 0 
+							- param 0: RemoteExecutionConsumer: node 0
 								- ref#3 RemoteExecutionGroup: eager load
 									- node 0: AggregateExpression: sum
 										- ref#1 Duplicate
 											- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
 									- node 1: AggregateExpression: max
 										- ref#1 Duplicate ...
-							- param 1: RemoteExecutionGroup: eager load
+							- param 1: RemoteExecutionConsumer: node 0
 								- ref#4 RemoteExecutionGroup: eager load
 									- node 0: AggregateExpression: sum
 										- ref#2 Duplicate
@@ -240,9 +240,9 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: max
 						- FunctionCall: __sharded_concat__(...)
 							- param 0: RemoteExecutionConsumer: node 1
-								- ref#3 RemoteExecutionGroup
+								- ref#3 RemoteExecutionGroup ...
 							- param 1: RemoteExecutionConsumer: node 1
-								- ref#4 RemoteExecutionGroup
+								- ref#4 RemoteExecutionGroup ...
 			`,
 			expectedPlanWithMiddlewareSharding: `
 				- BinaryExpression: LHS + RHS
@@ -252,7 +252,7 @@ func TestOptimizationPass(t *testing.T) {
 						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(foo{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"max(foo{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 			`,
 		},
-		"expression with common selectors and some common aggregations": {
+		"expression with common instant vector selectors and some common aggregations": {
 			expr: `sum(foo) + max(foo) + sum(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
@@ -285,7 +285,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlanWithMultiNodeRemoteExec: `
 				- BinaryExpression: LHS + RHS
 					- LHS: BinaryExpression: LHS + RHS
-						- LHS: ref#3 Duplicate
+						- LHS: ref#5 Duplicate
 							- AggregateExpression: sum
 								- FunctionCall: __sharded_concat__(...)
 									- param 0: RemoteExecutionConsumer: node 0
@@ -301,14 +301,14 @@ func TestOptimizationPass(t *testing.T) {
 												- ref#2 Duplicate
 													- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
 											- node 1: AggregateExpression: max
-												- ref#1 Duplicate ...
+												- ref#2 Duplicate ...
 						- RHS: AggregateExpression: max
 							- FunctionCall: __sharded_concat__(...)
 								- param 0: RemoteExecutionConsumer: node 1
-									- ref#3 RemoteExecutionGroup
+									- ref#3 RemoteExecutionGroup ...
 								- param 1: RemoteExecutionConsumer: node 1
-									- ref#4 RemoteExecutionGroup
-					- RHS: ref#3 Duplicate ...
+									- ref#4 RemoteExecutionGroup ...
+					- RHS: ref#5 Duplicate ...
 			`,
 			expectedPlanWithMiddlewareSharding: `
 				- BinaryExpression: LHS + RHS
@@ -321,7 +321,7 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: ref#1 Duplicate ...
 			`,
 		},
-		"expression with multiple common selectors": {
+		"expression with multiple common instant vector selectors": {
 			expr: `(sum(foo) + max(foo)) * (sum(bar) - min(bar))`,
 			expectedPlan: `
 				- BinaryExpression: LHS * RHS
@@ -377,14 +377,14 @@ func TestOptimizationPass(t *testing.T) {
 					- LHS: BinaryExpression: LHS + RHS
 						- LHS: AggregateExpression: sum
 							- FunctionCall: __sharded_concat__(...)
-								- param 0: RemoteExecutionConsumer: node 0 
+								- param 0: RemoteExecutionConsumer: node 0
 									- ref#3 RemoteExecutionGroup: eager load
 										- node 0: AggregateExpression: sum
 											- ref#1 Duplicate
 												- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
 										- node 1: AggregateExpression: max
 											- ref#1 Duplicate ...
-								- param 1: RemoteExecutionConsumer: node 0 
+								- param 1: RemoteExecutionConsumer: node 0
 									- ref#4 RemoteExecutionGroup: eager load
 										- node 0: AggregateExpression: sum
 											- ref#2 Duplicate
@@ -394,32 +394,32 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: AggregateExpression: max
 							- FunctionCall: __sharded_concat__(...)
 								- param 0: RemoteExecutionConsumer: node 1
-									- ref#3 RemoteExecutionGroup
+									- ref#3 RemoteExecutionGroup ...
 								- param 1: RemoteExecutionConsumer: node 1
-									- ref#4 RemoteExecutionGroup
+									- ref#4 RemoteExecutionGroup ...
 					- RHS: BinaryExpression: LHS - RHS
 						- LHS: AggregateExpression: sum
 							- FunctionCall: __sharded_concat__(...)
-								- param 0: RemoteExecutionConsumer: node 0 
-									- ref#5 RemoteExecutionGroup: eager load
+								- param 0: RemoteExecutionConsumer: node 0
+									- ref#7 RemoteExecutionGroup: eager load
 										- node 0: AggregateExpression: sum
-											- ref#7 Duplicate
-												- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
-										- node 1: AggregateExpression: max
-											- ref#7 Duplicate ...
+											- ref#5 Duplicate
+												- VectorSelector: {__query_shard__="1_of_2", __name__="bar"}
+										- node 1: AggregateExpression: min
+											- ref#5 Duplicate ...
 								- param 1: RemoteExecutionConsumer: node 0
-									- ref#6 RemoteExecutionGroup: eager load
+									- ref#8 RemoteExecutionGroup: eager load
 										- node 0: AggregateExpression: sum
-											- ref#8 Duplicate
-												- VectorSelector: {__query_shard__="2_of_2", __name__="foo"}
-										- node 1: AggregateExpression: max
-											- ref#8 Duplicate ...
+											- ref#6 Duplicate
+												- VectorSelector: {__query_shard__="2_of_2", __name__="bar"}
+										- node 1: AggregateExpression: min
+											- ref#6 Duplicate ...
 						- RHS: AggregateExpression: min
 							- FunctionCall: __sharded_concat__(...)
 								- param 0: RemoteExecutionConsumer: node 1
-									- ref#5 RemoteExecutionGroup
+									- ref#7 RemoteExecutionGroup ...
 								- param 1: RemoteExecutionConsumer: node 1
-									- ref#6 RemoteExecutionGroup
+									- ref#8 RemoteExecutionGroup ...
 			`,
 			expectedPlanWithMiddlewareSharding: `
 				- BinaryExpression: LHS * RHS
@@ -433,6 +433,74 @@ func TestOptimizationPass(t *testing.T) {
 							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(bar{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"sum(bar{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
 						- RHS: AggregateExpression: min
 							- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"min(bar{__query_shard__=\\\"1_of_2\\\"})\"},{\"Expr\":\"min(bar{__query_shard__=\\\"2_of_2\\\"})\"}]}", __name__="__embedded_queries__"}
+			`,
+		},
+		"expression with common range vector selector but aggregation is different": {
+			expr: `sum(rate(foo[5m])) + max(rate(foo[5m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecutionConsumer: node 0
+								- RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: sum
+										- ref#1 Duplicate
+											- DeduplicateAndMerge
+												- FunctionCall: rate(...)
+													- MatrixSelector: {__query_shard__="1_of_2", __name__="foo"}[5m0s]
+							- param 1: RemoteExecutionConsumer: node 0
+								- RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: sum
+										- ref#2 Duplicate
+											- DeduplicateAndMerge
+												- FunctionCall: rate(...)
+													- MatrixSelector: {__query_shard__="2_of_2", __name__="foo"}[5m0s]
+					- RHS: AggregateExpression: max
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecutionConsumer: node 0
+								- RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: max
+										- ref#1 Duplicate ...
+							- param 1: RemoteExecutionConsumer: node 0
+								- RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: max
+										- ref#2 Duplicate ...
+			`,
+			expectedPlanWithMultiNodeRemoteExec: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecutionConsumer: node 0
+								- ref#3 RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: sum
+										- ref#1 Duplicate
+											- DeduplicateAndMerge
+												- FunctionCall: rate(...)
+													- MatrixSelector: {__query_shard__="1_of_2", __name__="foo"}[5m0s]
+									- node 1: AggregateExpression: max
+										- ref#1 Duplicate ...
+							- param 1: RemoteExecutionConsumer: node 0
+								- ref#4 RemoteExecutionGroup: eager load
+									- node 0: AggregateExpression: sum
+										- ref#2 Duplicate
+											- DeduplicateAndMerge
+												- FunctionCall: rate(...)
+													- MatrixSelector: {__query_shard__="2_of_2", __name__="foo"}[5m0s]
+									- node 1: AggregateExpression: max
+										- ref#2 Duplicate ...
+					- RHS: AggregateExpression: max
+						- FunctionCall: __sharded_concat__(...)
+							- param 0: RemoteExecutionConsumer: node 1
+								- ref#3 RemoteExecutionGroup ...
+							- param 1: RemoteExecutionConsumer: node 1
+								- ref#4 RemoteExecutionGroup ...
+			`,
+			expectedPlanWithMiddlewareSharding: `
+				- BinaryExpression: LHS + RHS
+					- LHS: AggregateExpression: sum
+						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"sum(rate(foo{__query_shard__=\\\"1_of_2\\\"}[5m]))\"},{\"Expr\":\"sum(rate(foo{__query_shard__=\\\"2_of_2\\\"}[5m]))\"}]}", __name__="__embedded_queries__"}
+					- RHS: AggregateExpression: max
+						- VectorSelector: {__queries__="{\"Concat\":[{\"Expr\":\"max(rate(foo{__query_shard__=\\\"1_of_2\\\"}[5m]))\"},{\"Expr\":\"max(rate(foo{__query_shard__=\\\"2_of_2\\\"}[5m]))\"}]}", __name__="__embedded_queries__"}
 			`,
 		},
 	}
