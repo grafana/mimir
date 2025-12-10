@@ -329,6 +329,46 @@ func (p plan) AddSpanEvent(span trace.Span, planName string) {
 		attribute.Stringer("scan_matchers", util.MatchersStringer(p.ScanMatchers()))))
 }
 
+// DebugString returns a human-readable representation of the plan for debugging purposes.
+// It includes the same information as the span events above.
+func (p plan) DebugString() string {
+	var sb strings.Builder
+
+	sb.WriteString("Plan:\n")
+	sb.WriteString(fmt.Sprintf("  Total series: %d\n", p.totalSeries))
+	if p.shard != nil {
+		sb.WriteString(fmt.Sprintf("  Shard: %d of %d\n", p.shard.ShardIndex, p.shard.ShardCount))
+	}
+	sb.WriteString(fmt.Sprintf("  Total cost: %.2f\n", p.TotalCost()))
+	sb.WriteString(fmt.Sprintf("    Index lookup cost: %.2f\n", p.indexLookupCost()))
+	sb.WriteString(fmt.Sprintf("    Intersection cost: %.2f\n", p.intersectionCost()))
+	sb.WriteString(fmt.Sprintf("    Series retrieval cost: %.2f\n", p.seriesRetrievalCost()))
+	sb.WriteString(fmt.Sprintf("    Filter cost: %.2f\n", p.filterCost()))
+	sb.WriteString(fmt.Sprintf("  Estimated retrieved series: %d\n", p.NumSelectedPostings()))
+	sb.WriteString(fmt.Sprintf("  Estimated series after sharding: %d\n", p.numSelectedPostingsInOurShard()))
+	sb.WriteString(fmt.Sprintf("  Estimated final cardinality: %d\n", p.FinalCardinality()))
+	sb.WriteString(fmt.Sprintf("  Index matchers: %s\n", util.MatchersStringer(p.IndexMatchers())))
+	sb.WriteString(fmt.Sprintf("  Scan matchers: %s\n", util.MatchersStringer(p.ScanMatchers())))
+
+	sb.WriteString("\nPredicates:\n")
+	for i, pred := range p.predicates {
+		useIndex := "scan"
+		if p.indexPredicate[i] {
+			useIndex = "index"
+		}
+		sb.WriteString(fmt.Sprintf("  [%d] %s (%s)\n", i, pred.matcher, useIndex))
+		sb.WriteString(fmt.Sprintf("      Values selectivity: %.6f\n", pred.valuesSelectivity))
+		sb.WriteString(fmt.Sprintf("      Series selectivity: %.6f\n", pred.seriesSelectivity))
+		sb.WriteString(fmt.Sprintf("      Cardinality: %d\n", pred.cardinality))
+		sb.WriteString(fmt.Sprintf("      Label unique values: %d\n", pred.labelNameUniqueVals))
+		sb.WriteString(fmt.Sprintf("      Single match cost: %.2f\n", pred.singleMatchCost))
+		sb.WriteString(fmt.Sprintf("      Index scan cost: %.2f\n", pred.indexScanCost))
+		sb.WriteString(fmt.Sprintf("      Index lookup cost: %.2f\n", pred.indexLookupCost()))
+	}
+
+	return sb.String()
+}
+
 func maybe[T any](ptr *T) T {
 	if ptr != nil {
 		return *ptr
