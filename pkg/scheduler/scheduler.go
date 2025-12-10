@@ -296,6 +296,9 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			case errors.Is(err, queue.ErrTooManyRequests):
 				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+			case errors.Is(err, queue.ErrStopped):
+				enqueueSpan.RecordError(err)
+				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 			default:
 				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
