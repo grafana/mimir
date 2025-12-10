@@ -46,47 +46,6 @@ type ExtendedPoints struct {
 //
 // This implementation is based on extendFloats() from promql/engine.go.
 func NewExtendedPointsForAnchored(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ExtendedPoints, error) {
-	extendedPoints, err := buildExtendedPoints(view, rangeStart, rangeEnd, memoryConsumptionTracker)
-	if err != nil {
-		return ExtendedPoints{}, err
-	}
-	return extendedPoints, nil
-}
-
-// NewExtendedPointsForSmoothed returns a slice of points adjusted to include
-// smoothed boundary points at the start and end of the specified range.
-//
-// As with NewExtendedPointsForAnchored, synthetic points are placed at both
-// rangeStart and rangeEnd. However, the boundary values are determined using
-// interpolation:
-//
-//   - Start value: interpolated between the last point with T < rangeStart and
-//     the first point with T > rangeStart, or taken directly from
-//     the first point with T >= rangeStart.
-//   - End value:   interpolated between the last point with T < rangeEnd and
-//     the first point with T >= rangeEnd, or taken directly from
-//     the last point with T <= rangeEnd.
-//
-// When an interpolated boundary point is used, an additional interpolated
-// value—applying counter-reset compensation—is written into the provided
-// smoothedHead or smoothedTail. If the returned range is later used by
-// rate() or increase(), these alternate compensated boundary points must be
-// substituted for the default smoothed ones.
-//
-// The returned slice includes all points within the specified range, along
-// with the added (interpolated or direct) boundary points.
-//
-// This implementation is based on extendFloats() from promql/engine.go.
-func NewExtendedPointsForSmoothed(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (SmoothedPoints, error) {
-	smoothedPoints, err := buildExtendedSmoothedPoints(view, rangeStart, rangeEnd, memoryConsumptionTracker)
-	if err != nil {
-		return SmoothedPoints{}, err
-	}
-	return smoothedPoints, nil
-}
-
-// buildExtendedPoints is an internal function and should not be called from outside this object
-func buildExtendedPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ExtendedPoints, error) {
 	head, tail := view.UnsafePoints()
 	count := len(head) + len(tail)
 
@@ -127,9 +86,32 @@ func buildExtendedPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd 
 	return e, nil
 }
 
-// buildExtendedSmoothedPoints is an internal function and should not be called from outside this object
-func buildExtendedSmoothedPoints(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (SmoothedPoints, error) {
-	extendedPoints, err := buildExtendedPoints(view, rangeStart, rangeEnd, memoryConsumptionTracker)
+// NewExtendedPointsForSmoothed returns a slice of points adjusted to include
+// smoothed boundary points at the start and end of the specified range.
+//
+// As with NewExtendedPointsForAnchored, synthetic points are placed at both
+// rangeStart and rangeEnd. However, the boundary values are determined using
+// interpolation:
+//
+//   - Start value: interpolated between the last point with T < rangeStart and
+//     the first point with T > rangeStart, or taken directly from
+//     the first point with T >= rangeStart.
+//   - End value:   interpolated between the last point with T < rangeEnd and
+//     the first point with T >= rangeEnd, or taken directly from
+//     the last point with T <= rangeEnd.
+//
+// When an interpolated boundary point is used, an additional interpolated
+// value—applying counter-reset compensation—is written into the provided
+// smoothedHead or smoothedTail. If the returned range is later used by
+// rate() or increase(), these alternate compensated boundary points must be
+// substituted for the default smoothed ones.
+//
+// The returned slice includes all points within the specified range, along
+// with the added (interpolated or direct) boundary points.
+//
+// This implementation is based on extendFloats() from promql/engine.go.
+func NewExtendedPointsForSmoothed(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (SmoothedPoints, error) {
+	extendedPoints, err := NewExtendedPointsForAnchored(view, rangeStart, rangeEnd, memoryConsumptionTracker)
 	if err != nil {
 		return SmoothedPoints{}, err
 	}
