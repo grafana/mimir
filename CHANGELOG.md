@@ -34,6 +34,7 @@
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
 * [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058 #13685 #13800
+* [FEATURE] MQE: Add support for experimental extended range selector modifiers `smoothed` and `anchored`. You can enable these modifiers with `-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored` #13398
 * [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [FEATURE] Continuous test: Add `prometheus2` option `-tests.write-protocol` flag to select Prometheus Remote-Write 2.0 as a protocol. #13659
 * [FEATURE] Continuous test: Write metrics metadata along with samples. #13659 #13732
@@ -62,6 +63,7 @@
   * `-common.storage.gcs.max-retries`
   * `-ruler-storage.gcs.max-retries`
 * [ENHANCEMENT] Usage-tracker: Improve first snapshot loading & rehash speed. #13284
+* [ENHANCEMENT] Query-frontend: Return different error messages when experimental functions, aggregations, or extended range selector modifiers are used but not enabled for a tenant. #13398
 * [ENHANCEMENT] Usage-tracker: Improved snapshot loading by doing it in parallel with GOMAXPROCS workers. #13608 #13622
 * [ENHANCEMENT] Usage-tracker, distributor: Make usage-tracker calls asynchronous for users who are far enough from the series limits. #13427
 * [ENHANCEMENT] Usage-tracker: Ensure tenant shards have enough capacity when loading a snapshot. #13607
@@ -164,7 +166,7 @@
   * `autoscaling_ruler_query_frontend_min_replicas` → `autoscaling_ruler_query_frontend_min_replicas_per_zone`
   * `autoscaling_ruler_query_frontend_max_replicas` → `autoscaling_ruler_query_frontend_max_replicas_per_zone`
 * [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
-* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317 #13793
+* [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317 #13793 #13799
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
 * [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017

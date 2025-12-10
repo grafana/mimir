@@ -2355,6 +2355,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
+  -query-frontend.enabled-promql-extended-range-selectors comma-separated-list-of-strings
+    	Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.
   -query-frontend.extra-propagated-headers comma-separated-list-of-strings
     	Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.
   -query-frontend.grpc-client-config.backoff-max-period duration

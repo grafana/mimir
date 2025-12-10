@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -23,6 +24,10 @@ import (
 )
 
 func TestOptimizationPass(t *testing.T) {
+	enableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
+	defer func() { parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors }()
+	parser.EnableExtendedRangeSelectors = true
+
 	testCases := map[string]struct {
 		expr                        string
 		rangeQuery                  bool
@@ -630,6 +635,26 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodes:      2,
 			expectedSelectorsEliminated: 2,
 			expectedSelectorsInspected:  5,
+		},
+		// In this case the foo[5m] smoothed provides step data with both a collection of points but also the alternate smoothed head and tail points.
+		// delta() will use the returned points, but rate() will substitute in the smoothed head/tail points to its calculation.
+		// It is important that if the matrix selector is shared between the functions, that the smoothed head/tail alternate points
+		// are not substituted into the points' collection.
+		"duplicate matrix selectors with smoothed head/tail points": {
+			expr:       `delta(foo[5m] smoothed) + rate(foo[5m] smoothed)`,
+			rangeQuery: true,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: delta(...)
+							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
+			`,
+			expectedDuplicateNodes:      0,
+			expectedSelectorsEliminated: 0,
+			expectedSelectorsInspected:  2,
 		},
 	}
 
