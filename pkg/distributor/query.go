@@ -347,11 +347,16 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
+			duplicated, err := queryLimiter.AddSeries(l)
+			if err != nil {
 				return nil, false, err
 			}
 
-			if err := queryLimiter.AddSeries(l); err != nil {
+			if duplicated {
+				continue
+			}
+
+			if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
 				return nil, false, err
 			}
 

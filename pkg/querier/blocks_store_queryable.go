@@ -1022,8 +1022,13 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 			}
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
-			if limitErr := queryLimiter.AddSeries(ls); limitErr != nil {
+			duplicated, limitErr := queryLimiter.AddSeries(ls)
+			if limitErr != nil {
 				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
+			}
+
+			if duplicated {
+				continue
 			}
 
 			myStreamingSeriesLabels = append(myStreamingSeriesLabels, ls)
