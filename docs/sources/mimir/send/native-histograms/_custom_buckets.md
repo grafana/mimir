@@ -46,12 +46,12 @@ There are advantages and disadvantages of using NHCBs compared to classic Promet
 
 ## Query result equivalence
 
-NHCBs contain the same information as classic histograms, however that doesn't mean that all queries return exactly the same result. Here are some edge cases when query results may be different.
+NHCBs contain the same information as classic histograms. However, this doesn't mean that all queries return exactly the same result. Here are some edge cases when query results may be different:
 
-- Classic histograms are stored in independent series which might be lost or delayed independently from each other, whereas NHCBs are stored in a single series. This means that a classic histogram might be inconsistent compared to an NHCB and query results will be different.
-- In a normal case when classic histograms series are not lot or delayed, the bucket counts, overall count and sum of observation will be equal between the classic histograms and NHCBs.
-- Rate, increase, and delta calculation results might differ even when both the classic histograms and NHCBs are in sync. This occurs when the rate interval overlaps with one or more buckets transitioning from being empty to being in use, which can happen if the series just came into existence or when buckets transition from 0 value to some positive value. The reason is that the PromQL function [`rate`](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) and related functions use extrapolation that is applied to classic histograms series independently resulting in potentially different 0 points and slope being calculated. For NHCBs the extrapolation is consistent across all buckets.
-- In general the PromQL warning "input to histogram_quantile needed to be fixed for monotonicity" that sometimes happens for classic histograms should not happen for NHCBs as NHCBs are atomic, self consistent and extrapolated consistently.
+- Classic histograms are stored in independent series which might be lost or delayed independently from each other, whereas NHCBs are stored in a single series. This means that a classic histogram might be inconsistent compared to an NHCB and query results might differ.
+- In a normal case when classic histograms series are not lost or delayed, the bucket counts, overall count, and sum of observations are equal between the classic histograms and NHCBs.
+- Rate, increase, and delta calculation results might differ, even when both the classic histograms and NHCBs are in sync. This occurs when the rate interval overlaps with one or more buckets transitioning from being empty to being in use. This can happen if the series just came into existence or when buckets transition from a value of `0` to a positive value. The reason is that the PromQL function [`rate`](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate) and related functions use extrapolation that is applied to classic histograms series independently resulting in potentially different calculations for `0` points and slopes. For NHCBs, the extrapolation is consistent across all buckets.
+- In general, the PromQL warning "input to histogram_quantile needed to be fixed for monotonicity" that sometimes happens for classic histograms should not happen for NHCBs, as NHCBs are atomic, self-consistent, and extrapolated consistently.
 
 ## Instrumentation
 
