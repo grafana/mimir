@@ -195,20 +195,20 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		},
 	}
 
-	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, nodeRequests, lookbackDelta)
+	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan.Parameters, nodeRequests, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
 
 	statement := &parser.EvalStmt{
 		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.
-		Start:         timestamp.Time(plan.TimeRange.StartT),
-		End:           timestamp.Time(plan.TimeRange.EndT),
-		Interval:      time.Duration(plan.TimeRange.IntervalMilliseconds) * time.Millisecond,
+		Start:         timestamp.Time(plan.Parameters.TimeRange.StartT),
+		End:           timestamp.Time(plan.Parameters.TimeRange.EndT),
+		Interval:      time.Duration(plan.Parameters.TimeRange.IntervalMilliseconds) * time.Millisecond,
 		LookbackDelta: lookbackDelta,
 	}
 
-	if plan.TimeRange.IsInstant {
+	if plan.Parameters.TimeRange.IsInstant {
 		statement.Interval = 0 // MQE uses an interval of 1ms in instant queries, but the Prometheus API contract expects this to be 0 in this case.
 	}
 
@@ -222,8 +222,8 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		engine:                   e,
 		statement:                statement,
 		memoryConsumptionTracker: evaluator.MemoryConsumptionTracker,
-		originalExpression:       plan.OriginalExpression,
-		topLevelQueryTimeRange:   plan.TimeRange,
+		originalExpression:       plan.Parameters.OriginalExpression,
+		topLevelQueryTimeRange:   plan.Parameters.TimeRange,
 		topLevelValueType:        topLevelValueType,
 	}, nil
 }
@@ -235,7 +235,7 @@ type NodeEvaluationRequest struct {
 	operator types.Operator
 }
 
-func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
+func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
@@ -245,14 +245,14 @@ func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, 
 		lookbackDelta = e.lookbackDelta
 	}
 
-	return e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, nodeRequests, lookbackDelta)
+	return e.materializeAndCreateEvaluator(ctx, queryable, opts, params, nodeRequests, lookbackDelta)
 }
 
-func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, nodeRequests []NodeEvaluationRequest, lookbackDelta time.Duration) (*Evaluator, error) {
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest, lookbackDelta time.Duration) (*Evaluator, error) {
 	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
 	defer span.Finish()
 
-	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", true, plan.TimeRange)
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, params.OriginalExpression, "materialization", true, params.TimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +268,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
 
 	operatorParams := &planning.OperatorParameters{
 		Queryable:                queryable,
@@ -277,8 +277,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		QueryStats:               types.NewQueryStats(),
 		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
-		Plan:                     plan,
-		EnableDelayedNameRemoval: plan.EnableDelayedNameRemoval,
+		QueryParameters:          params,
 		Logger:                   e.logger,
 	}
 
@@ -292,7 +291,7 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 		nodeRequests[idx].operator = op
 	}
 
-	return NewEvaluator(nodeRequests, operatorParams, e, plan.OriginalExpression)
+	return NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 }
 
 type QueryLimitsProvider interface {

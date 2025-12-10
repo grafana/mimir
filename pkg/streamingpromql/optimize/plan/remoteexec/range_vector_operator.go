@@ -14,7 +14,7 @@ import (
 )
 
 type RangeVectorRemoteExec struct {
-	RootPlan                 *planning.QueryPlan
+	QueryParameters          *planning.QueryParameters
 	Node                     planning.Node
 	TimeRange                types.QueryTimeRange
 	RemoteExecutor           RemoteExecutor
@@ -32,7 +32,7 @@ var _ types.RangeVectorOperator = &RangeVectorRemoteExec{}
 
 func (r *RangeVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	r.resp, err = r.RemoteExecutor.StartRangeVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
+	r.resp, err = r.RemoteExecutor.StartRangeVectorExecution(ctx, r.QueryParameters, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
 	return err
 }
 

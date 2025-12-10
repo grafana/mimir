@@ -14,7 +14,7 @@ import (
 )
 
 type InstantVectorRemoteExec struct {
-	RootPlan                 *planning.QueryPlan
+	QueryParameters          *planning.QueryParameters
 	Node                     planning.Node
 	TimeRange                types.QueryTimeRange
 	RemoteExecutor           RemoteExecutor
@@ -31,7 +31,7 @@ var _ types.InstantVectorOperator = &InstantVectorRemoteExec{}
 
 func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.RootPlan, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
+	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.QueryParameters, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
 	return err
 }
 

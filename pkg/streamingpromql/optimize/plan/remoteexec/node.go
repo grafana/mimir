@@ -140,7 +140,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 	switch resultType {
 	case parser.ValueTypeScalar:
 		return planning.NewSingleUseOperatorFactory(&ScalarRemoteExec{
-			RootPlan:                 params.Plan,
+			QueryParameters:          params.QueryParameters,
 			Node:                     r.Inner,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
@@ -152,7 +152,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 
 	case parser.ValueTypeVector:
 		return planning.NewSingleUseOperatorFactory(&InstantVectorRemoteExec{
-			RootPlan:                 params.Plan,
+			QueryParameters:          params.QueryParameters,
 			Node:                     r.Inner,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
@@ -164,7 +164,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 
 	case parser.ValueTypeMatrix:
 		return planning.NewSingleUseOperatorFactory(&RangeVectorRemoteExec{
-			RootPlan:                 params.Plan,
+			QueryParameters:          params.QueryParameters,
 			Node:                     r.Inner,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,

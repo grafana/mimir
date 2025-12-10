@@ -44,7 +44,7 @@ func SingleInputVectorFunctionOperatorFactory(name string, f FunctionOverInstant
 			return nil, fmt.Errorf("expected an instant vector argument for %s, got %T", name, args[0])
 		}
 
-		return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+		return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 	}
 }
 
@@ -87,7 +87,7 @@ func TimeTransformationFunctionOperatorFactory(name string, seriesDataFunc Insta
 			return nil, fmt.Errorf("expected 0 or 1 argument for %s, got %v", name, len(args))
 		}
 
-		return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+		return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 	}
 }
 
@@ -130,7 +130,7 @@ func FunctionOverRangeVectorOperatorFactory(
 			return nil, fmt.Errorf("expected a range vector argument for %s, got %T", name, args[0])
 		}
 
-		return NewFunctionOverRangeVector(inner, nil, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+		return NewFunctionOverRangeVector(inner, nil, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 	}
 }
 
@@ -154,7 +154,7 @@ func PredictLinearFactory(args []types.Operator, _ labels.Labels, opParams *plan
 		return nil, fmt.Errorf("expected second argument for predict_linear to be a scalar, got %T", args[1])
 	}
 
-	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{arg}, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval)
+	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{arg}, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval)
 
 	return o, nil
 }
@@ -179,7 +179,7 @@ func QuantileOverTimeFactory(args []types.Operator, _ labels.Labels, opParams *p
 		return nil, fmt.Errorf("expected second argument for quantile_over_time to be a range vector, got %T", args[0])
 	}
 
-	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{arg}, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval)
+	var o types.InstantVectorOperator = NewFunctionOverRangeVector(inner, []types.ScalarOperator{arg}, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval)
 
 	return o, nil
 }
@@ -241,7 +241,7 @@ func LabelJoinFunctionOperatorFactory(args []types.Operator, _ labels.Labels, op
 		},
 	}
 
-	return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -287,7 +287,7 @@ func LabelReplaceFunctionOperatorFactory(args []types.Operator, _ labels.Labels,
 		},
 	}
 
-	return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func AbsentOperatorFactory(args []types.Operator, labels labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -345,7 +345,7 @@ func ClampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opPara
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{min, max}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) FunctionOperatorFactory {
@@ -372,7 +372,7 @@ func ClampMinMaxFunctionOperatorFactory(functionName string, isMin bool) Functio
 			SeriesMetadataFunction: DropSeriesName,
 		}
 
-		return NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+		return NewFunctionOverInstantVector(inner, []types.ScalarOperator{clampTo}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 	}
 }
 
@@ -404,7 +404,7 @@ func RoundFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opPara
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewFunctionOverInstantVector(inner, []types.ScalarOperator{toNearest}, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -425,7 +425,7 @@ func HistogramQuantileFunctionOperatorFactory(args []types.Operator, _ labels.La
 		return nil, fmt.Errorf("expected an instant vector for 2nd argument for histogram_quantile, got %T", args[1])
 	}
 
-	return NewHistogramQuantileFunction(ph, inner, opParams.MemoryConsumptionTracker, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewHistogramQuantileFunction(ph, inner, opParams.MemoryConsumptionTracker, opParams.Annotations, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -452,7 +452,7 @@ func HistogramFractionFunctionOperatorFactory(args []types.Operator, _ labels.La
 		return nil, fmt.Errorf("expected an instant vector for 3rd argument for histogram_fraction, got %T", args[2])
 	}
 
-	return NewHistogramFractionFunction(lower, upper, inner, opParams.MemoryConsumptionTracker, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewHistogramFractionFunction(lower, upper, inner, opParams.MemoryConsumptionTracker, opParams.Annotations, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
@@ -475,7 +475,7 @@ func TimestampFunctionOperatorFactory(args []types.Operator, _ labels.Labels, op
 		f.SeriesDataFunc = PassthroughData
 	}
 
-	o := NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval)
+	o := NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval)
 	return o, nil
 }
 
@@ -541,7 +541,7 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 		if timeRange.StepCount != 1 {
 			// If this is a range query, sort / sort_desc does not reorder series, but does drop all histograms like it would for an instant query.
 			f := FunctionOverInstantVectorDefinition{SeriesDataFunc: DropHistograms}
-			return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+			return NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 		}
 
 		return NewSort(inner, descending, opParams.MemoryConsumptionTracker, expressionPosition), nil
@@ -618,7 +618,7 @@ func UnaryNegationOfInstantVectorOperatorFactory(inner types.InstantVectorOperat
 		SeriesMetadataFunction: DropSeriesName,
 	}
 
-	o := NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval)
+	o := NewFunctionOverInstantVector(inner, nil, opParams.MemoryConsumptionTracker, f, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval)
 	return o
 }
 
@@ -648,7 +648,7 @@ func DoubleExponentialSmoothingFunctionOperatorFactory(args []types.Operator, _ 
 		return nil, fmt.Errorf("expected third argument for %s to be a scalar, got %T", functionName, args[2])
 	}
 
-	return NewFunctionOverRangeVector(inner, []types.ScalarOperator{smoothingFactor, trendFactor}, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.EnableDelayedNameRemoval), nil
+	return NewFunctionOverRangeVector(inner, []types.ScalarOperator{smoothingFactor, trendFactor}, opParams.MemoryConsumptionTracker, f, opParams.Annotations, expressionPosition, timeRange, opParams.QueryParameters.EnableDelayedNameRemoval), nil
 }
 
 func init() {

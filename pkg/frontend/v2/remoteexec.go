@@ -42,8 +42,8 @@ func NewRemoteExecutor(frontend ProtobufFrontend, cfg Config) *RemoteExecutor {
 	return &RemoteExecutor{frontend: frontend, cfg: cfg}
 }
 
-func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, eagerLoad, 0)
+func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +51,8 @@ func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *pla
 	return &scalarExecutionResponse{stream, memoryConsumptionTracker}, nil
 }
 
-func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, eagerLoad, r.cfg.RemoteExecutionBatchSize)
+func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, r.cfg.RemoteExecutionBatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +60,8 @@ func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPl
 	return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, eagerLoad, 0)
+func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -71,30 +71,34 @@ func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan
 
 func (r *RemoteExecutor) startExecution(
 	ctx context.Context,
-	fullPlan *planning.QueryPlan,
+	params *planning.QueryParameters,
 	node planning.Node,
 	timeRange types.QueryTimeRange,
 	eagerLoad bool,
 	batchSize uint64,
 ) (responseStream, error) {
 	subsetPlan := &planning.QueryPlan{
-		TimeRange:          timeRange,
-		Root:               node,
-		OriginalExpression: fullPlan.OriginalExpression,
-		Version:            fullPlan.Version,
+		Root:       node,
+		Parameters: params,
 	}
 
-	encodedPlan, _, err := subsetPlan.ToEncodedPlan(false, true)
+	if err := subsetPlan.DeterminePlanVersion(); err != nil {
+		return nil, err
+	}
+
+	encodedPlan, nodeIndices, err := subsetPlan.ToEncodedPlan(false, true, node)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &querierpb.EvaluateQueryRequest{
-		Plan: *encodedPlan,
-		Nodes: []querierpb.EvaluationNode{
-			{NodeIndex: encodedPlan.RootNode, TimeRange: encodedPlan.TimeRange},
-		},
+		Plan:      *encodedPlan,
+		Nodes:     make([]querierpb.EvaluationNode, 0, len(nodeIndices)),
 		BatchSize: batchSize,
+	}
+
+	for _, nodeIdx := range nodeIndices {
+		req.Nodes = append(req.Nodes, querierpb.EvaluationNode{NodeIndex: nodeIdx, TimeRange: planning.ToEncodedTimeRange(timeRange)})
 	}
 
 	stats := stats.FromContext(ctx)
