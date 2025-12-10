@@ -107,7 +107,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheErrors, "query-frontend.cache-errors", false, "Cache non-transient errors from queries.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "True to enable query sharding.")
 	f.BoolVar(&cfg.EnableRemoteExecution, "query-frontend.enable-remote-execution", false, "If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.")
-	f.BoolVar(&cfg.EnableMultipleNodeRemoteExecutionRequests, "query-frontend.enable-multiple-node-remote-execution-requests", false, "Set to true to allow evaluating multiple query plan nodes in a single remote execution request to queriers.")
+	f.BoolVar(&cfg.EnableMultipleNodeRemoteExecutionRequests, "query-frontend.enable-multiple-node-remote-execution-requests", false, "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.")
 	f.BoolVar(&cfg.UseMQEForSharding, "query-frontend.use-mimir-query-engine-for-sharding", false, "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.")
 	f.BoolVar(&cfg.RewriteQueriesHistogram, "query-frontend.rewrite-histogram-queries", false, "Set to true to enable rewriting histogram queries for a more efficient order of execution.")
 	f.BoolVar(&cfg.RewriteQueriesPropagateMatchers, "query-frontend.rewrite-propagate-matchers", false, "Set to true to enable rewriting queries to propagate label matchers across binary expressions.")
