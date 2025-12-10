@@ -22,6 +22,7 @@ type RangeVectorRemoteExec struct {
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
 	EagerLoad                bool
+	expressionPosition       posrange.PositionRange
 
 	resp                      RangeVectorRemoteExecutionResponse
 	finalized                 bool
@@ -66,7 +67,7 @@ func (r *RangeVectorRemoteExec) Finalize(ctx context.Context) error {
 }
 
 func (r *RangeVectorRemoteExec) ExpressionPosition() posrange.PositionRange {
-	return r.Node.ExpressionPosition()
+	return r.expressionPosition
 }
 
 func (r *RangeVectorRemoteExec) Close() {

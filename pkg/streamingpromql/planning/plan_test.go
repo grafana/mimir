@@ -134,7 +134,7 @@ func (t *testNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbac
 	panic("not supported")
 }
 
-func (t *testNode) ExpressionPosition() posrange.PositionRange {
+func (t *testNode) ExpressionPosition() (posrange.PositionRange, error) {
 	panic("not supported")
 }
 

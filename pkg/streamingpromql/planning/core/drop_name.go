@@ -90,7 +90,7 @@ func (n *DropName) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbac
 	return n.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (n *DropName) ExpressionPosition() posrange.PositionRange {
+func (n *DropName) ExpressionPosition() (posrange.PositionRange, error) {
 	return n.Inner.ExpressionPosition()
 }
 

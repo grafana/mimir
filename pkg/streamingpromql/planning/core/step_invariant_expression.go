@@ -133,6 +133,6 @@ func (s *StepInvariantExpression) QueriedTimeRange(queryTimeRange types.QueryTim
 	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
 }
 
-func (s *StepInvariantExpression) ExpressionPosition() posrange.PositionRange {
+func (s *StepInvariantExpression) ExpressionPosition() (posrange.PositionRange, error) {
 	return s.Inner.ExpressionPosition()
 }

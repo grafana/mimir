@@ -147,7 +147,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+		o = topkbottomk.New(inner, param, timeRange, a.Grouping, a.Without, a.Op == AGGREGATION_TOPK, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMITK:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
@@ -155,7 +155,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = limitklimitratio.NewLimitK(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+		o = limitklimitratio.NewLimitK(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_LIMIT_RATIO:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
@@ -163,7 +163,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = limitklimitratio.NewLimitRatio(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+		o = limitklimitratio.NewLimitRatio(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
 
 	case AGGREGATION_QUANTILE:
 		param, err := materializer.ConvertNodeToScalarOperator(a.Param, timeRange)
@@ -171,7 +171,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o, err = aggregations.NewQuantileAggregation(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+		o, err = aggregations.NewQuantileAggregation(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}
@@ -182,7 +182,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 			return nil, fmt.Errorf("could not create parameter operator for AggregateExpression %s: %w", a.Op.String(), err)
 		}
 
-		o = aggregations.NewCountValues(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.ExpressionPosition())
+		o = aggregations.NewCountValues(inner, param, timeRange, a.Grouping, a.Without, params.MemoryConsumptionTracker, a.GetExpressionPosition().ToPrometheusType())
 
 	default:
 		itemType, ok := a.Op.ToItemType()
@@ -191,7 +191,7 @@ func MaterializeAggregateExpression(a *AggregateExpression, materializer *planni
 		}
 
 		var err error
-		o, err = aggregations.NewAggregation(inner, timeRange, a.Grouping, a.Without, itemType, params.MemoryConsumptionTracker, params.Annotations, a.ExpressionPosition())
+		o, err = aggregations.NewAggregation(inner, timeRange, a.Grouping, a.Without, itemType, params.MemoryConsumptionTracker, params.Annotations, a.GetExpressionPosition().ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}
@@ -221,8 +221,8 @@ func (a *AggregateExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRan
 	return innerRange.Union(paramRange), nil
 }
 
-func (a *AggregateExpression) ExpressionPosition() posrange.PositionRange {
-	return a.GetExpressionPosition().ToPrometheusType()
+func (a *AggregateExpression) ExpressionPosition() (posrange.PositionRange, error) {
+	return a.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (a *AggregateExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

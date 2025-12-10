@@ -148,7 +148,7 @@ func MaterializeSubquery(s *Subquery, materializer *planning.Materializer, timeR
 		return nil, fmt.Errorf("could not create inner operator for Subquery: %w", err)
 	}
 
-	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.ExpressionPosition(), params.MemoryConsumptionTracker)
+	o, err := operators.NewSubquery(inner, timeRange, innerTimeRange, TimestampFromTime(s.Timestamp), s.Offset, s.Range, s.GetExpressionPosition().ToPrometheusType(), params.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +164,8 @@ func (s *Subquery) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbac
 	return s.Inner.QueriedTimeRange(s.ChildrenTimeRange(queryTimeRange), lookbackDelta)
 }
 
-func (s *Subquery) ExpressionPosition() posrange.PositionRange {
-	return s.GetExpressionPosition().ToPrometheusType()
+func (s *Subquery) ExpressionPosition() (posrange.PositionRange, error) {
+	return s.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (s *Subquery) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

@@ -90,7 +90,7 @@ func (d *DeduplicateAndMerge) QueriedTimeRange(queryTimeRange types.QueryTimeRan
 	return d.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (d *DeduplicateAndMerge) ExpressionPosition() posrange.PositionRange {
+func (d *DeduplicateAndMerge) ExpressionPosition() (posrange.PositionRange, error) {
 	return d.Inner.ExpressionPosition()
 }
 

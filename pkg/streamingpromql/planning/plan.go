@@ -144,7 +144,7 @@ type Node interface {
 
 	// ExpressionPosition returns the position of the subexpression this node represents in the original
 	// expression.
-	ExpressionPosition() posrange.PositionRange
+	ExpressionPosition() (posrange.PositionRange, error)
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
 	MinimumRequiredPlanVersion() QueryPlanVersion

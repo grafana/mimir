@@ -22,6 +22,7 @@ type ScalarRemoteExec struct {
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
 	EagerLoad                bool
+	expressionPosition       posrange.PositionRange
 
 	resp      ScalarRemoteExecutionResponse
 	finalized bool
@@ -55,7 +56,7 @@ func (s *ScalarRemoteExec) Finalize(ctx context.Context) error {
 }
 
 func (s *ScalarRemoteExec) ExpressionPosition() posrange.PositionRange {
-	return s.Node.ExpressionPosition()
+	return s.expressionPosition
 }
 
 func (s *ScalarRemoteExec) Close() {

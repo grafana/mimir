@@ -197,7 +197,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 	}
 
 	if lhsScalar != nil && rhsScalar != nil {
-		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition())
+		o, err := binops.NewScalarScalarBinaryOperation(lhsScalar, rhsScalar, op, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType())
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +227,7 @@ func MaterializeBinaryExpression(b *BinaryExpression, materializer *planning.Mat
 		vector = lhsVector
 	}
 
-	o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, op, b.ReturnBool, timeRange, params, b.ExpressionPosition())
+	o, err := binops.NewVectorScalarBinaryOperation(scalar, vector, scalarIsLeftSide, op, b.ReturnBool, timeRange, params, b.GetExpressionPosition().ToPrometheusType())
 	if err != nil {
 		return nil, err
 	}
@@ -254,15 +254,15 @@ func (b *BinaryExpression) getChildOperator(node planning.Node, timeRange types.
 func (b *BinaryExpression) createVectorVectorOperator(lhs, rhs types.InstantVectorOperator, op parser.ItemType, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (types.InstantVectorOperator, error) {
 	switch op {
 	case parser.LAND, parser.LUNLESS:
-		return binops.NewAndUnlessBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), params.MemoryConsumptionTracker, op == parser.LUNLESS, timeRange, b.ExpressionPosition()), nil
+		return binops.NewAndUnlessBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), params.MemoryConsumptionTracker, op == parser.LUNLESS, timeRange, b.GetExpressionPosition().ToPrometheusType()), nil
 	case parser.LOR:
-		return binops.NewOrBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), params.MemoryConsumptionTracker, timeRange, b.ExpressionPosition()), nil
+		return binops.NewOrBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), params.MemoryConsumptionTracker, timeRange, b.GetExpressionPosition().ToPrometheusType()), nil
 	default:
 		switch b.VectorMatching.Card {
 		case parser.CardOneToMany, parser.CardManyToOne:
-			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition(), timeRange)
+			return binops.NewGroupedVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange)
 		case parser.CardOneToOne:
-			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.ExpressionPosition(), timeRange, b.Hints.ToOperatorType(), params.Logger)
+			return binops.NewOneToOneVectorVectorBinaryOperation(lhs, rhs, *b.VectorMatching.ToPrometheusType(), op, b.ReturnBool, params.MemoryConsumptionTracker, params.Annotations, b.GetExpressionPosition().ToPrometheusType(), timeRange, b.Hints.ToOperatorType(), params.Logger)
 		default:
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("binary expression with %v matching for '%v'", b.VectorMatching.Card, b.Op.String()))
 		}
@@ -309,8 +309,8 @@ func (b *BinaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange,
 	return lhs.Union(rhs), nil
 }
 
-func (b *BinaryExpression) ExpressionPosition() posrange.PositionRange {
-	return b.GetExpressionPosition().ToPrometheusType()
+func (b *BinaryExpression) ExpressionPosition() (posrange.PositionRange, error) {
+	return b.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (b *BinaryExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

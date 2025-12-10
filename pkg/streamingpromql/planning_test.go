@@ -2015,8 +2015,8 @@ func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRang
 	return planning.NoDataQueried(), nil
 }
 
-func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
-	return posrange.PositionRange{}
+func (t *versioningTestNode) ExpressionPosition() (posrange.PositionRange, error) {
+	return posrange.PositionRange{}, nil
 }
 
 func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

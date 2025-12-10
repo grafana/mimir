@@ -1155,7 +1155,7 @@ func (n *nodeWithOverriddenVersion) QueriedTimeRange(queryTimeRange types.QueryT
 	return n.child.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (n *nodeWithOverriddenVersion) ExpressionPosition() posrange.PositionRange {
+func (n *nodeWithOverriddenVersion) ExpressionPosition() (posrange.PositionRange, error) {
 	panic("not supported")
 }
 
