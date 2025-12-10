@@ -209,7 +209,7 @@ The following features are currently experimental:
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
-  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
+  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true` and `-query-frontend.enable-multiple-node-remote-execution-requests=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
   - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk` and `limit_ratio` (`-query-frontend.enabled-promql-experimental-functions=...`)
