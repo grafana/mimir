@@ -13,12 +13,12 @@ type planPredicate struct {
 	config  CostConfig
 	matcher *labels.Matcher
 
-	// selectivity is between 0 and 1. 1 indicates that the matcher will match all label values, 0 indicates it will match no values. NB: label values, not series
-	selectivity float64
-	// normalizedSelectivity is the selectivity adjusted for correlation with other predicates.
+	// valuesSelectivity is between 0 and 1. 1 indicates that the matcher will match all label values, 0 indicates it will match no values. NB: label values, not series
+	valuesSelectivity float64
+	// seriesSelectivity is the selectivity adjusted for correlation with other predicates.
 	// Computed by sorting predicates by series selectivity and applying progressively
 	// higher roots (1, sqrt, 4th root, 8th root, ...) to account for correlation.
-	normalizedSelectivity float64
+	seriesSelectivity float64
 	// cardinality is the estimation of how many series this matcher matches on its own. NB: series, not label values
 	cardinality         uint64
 	labelNameUniqueVals uint64
@@ -36,9 +36,9 @@ func newPlanPredicate(ctx context.Context, m *labels.Matcher, stats index.Statis
 		config:          config,
 	}
 	pred.labelNameUniqueVals = stats.LabelValuesCount(ctx, m.Name)
-	pred.selectivity = m.EstimateSelectivity(pred.labelNameUniqueVals)
+	pred.valuesSelectivity = m.EstimateSelectivity(pred.labelNameUniqueVals)
 
-	pred.cardinality = estimatePredicateCardinality(ctx, m, stats, pred.selectivity)
+	pred.cardinality = estimatePredicateCardinality(ctx, m, stats, pred.valuesSelectivity)
 	pred.indexScanCost = estimatePredicateIndexScanCost(pred, m)
 
 	return pred
@@ -149,7 +149,7 @@ func (pr planPredicate) indexLookupCost() float64 {
 	cost += pr.indexScanCost
 
 	// Retrieving each posting list (e.g. checksumming, disk seeking)
-	cost += pr.config.RetrievedPostingListCost * float64(pr.labelNameUniqueVals) * pr.selectivity
+	cost += pr.config.RetrievedPostingListCost * float64(pr.labelNameUniqueVals) * pr.valuesSelectivity
 
 	return cost
 }

@@ -4,9 +4,11 @@ package lookupplan
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"slices"
 	"sort"
+	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -55,7 +57,7 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 		p.indexPredicate = append(p.indexPredicate, false)
 	}
 
-	// Compute normalizedSelectivity for all predicates to account for correlation
+	// Compute seriesSelectivity for all predicates to account for correlation
 	computeNormalizedSelectivities(p.predicates, p.totalSeries)
 
 	// All predicates are decided for this plan
@@ -63,7 +65,7 @@ func newScanOnlyPlan(ctx context.Context, stats index.Statistics, config CostCon
 	return p
 }
 
-// computeNormalizedSelectivities computes the normalizedSelectivity for each predicate.
+// computeNormalizedSelectivities computes the seriesSelectivity for each predicate.
 // It sorts predicates by their series selectivity and applies progressively higher roots
 // (1, sqrt, 4th root, 8th root, ...) to account for correlation between predicates.
 // The most selective predicate gets full selectivity; less selective ones get dampened.
@@ -84,13 +86,13 @@ func computeNormalizedSelectivities(predicates []planPredicate, totalSeries uint
 		return selI < selJ
 	})
 
-	// Assign normalizedSelectivity based on sorted position
+	// Assign seriesSelectivity based on sorted position
 	for pos, idx := range indices {
 		sel := float64(predicates[idx].cardinality) / float64(totalSeries)
 		// Apply progressively higher roots: 1, sqrt, 4th root, 8th root, ...
 		// power = 1/2^pos: pos=0 -> 1, pos=1 -> 0.5, pos=2 -> 0.25, ...
 		power := 1.0 / float64(int(1)<<pos)
-		predicates[idx].normalizedSelectivity = math.Pow(sel, power)
+		predicates[idx].seriesSelectivity = math.Pow(sel, power)
 	}
 }
 
@@ -120,9 +122,9 @@ func (p plan) virtualPredicate(idx int) (planPredicate, bool) {
 	// Don't assume 0 unique label values because that might make the whole plan have 0 cardinality which is unrealistic.
 	virtualPred.labelNameUniqueVals = 1
 	// We don't want selectivity of 0 because then the cost of the rest of the predicates might not matter.
-	virtualPred.selectivity = 1
-	// normalizedSelectivity should also be 1 to match selectivity behavior for virtual predicates.
-	virtualPred.normalizedSelectivity = 1
+	virtualPred.valuesSelectivity = 1
+	// seriesSelectivity should also be 1 to match valuesSelectivity behavior for virtual predicates.
+	virtualPred.seriesSelectivity = 1
 	// Assume extremely cheap index scan cost.
 	virtualPred.indexScanCost = 1
 
@@ -250,10 +252,10 @@ func (p plan) NumSelectedPostings() uint64 {
 			continue
 		}
 
-		// Use normalizedSelectivity which accounts for correlation between predicates.
+		// Use seriesSelectivity which accounts for correlation between predicates.
 		// This dampens the effect of less selective predicates since they tend to
 		// overlap with more selective ones (e.g., namespace=X and pod=~X-.*).
-		finalSelectivity *= pred.normalizedSelectivity
+		finalSelectivity *= pred.seriesSelectivity
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
@@ -263,10 +265,10 @@ func (p plan) NumSelectedPostings() uint64 {
 func (p plan) nonShardedCardinality() uint64 {
 	finalSelectivity := 1.0
 	for _, pred := range p.predicates {
-		// Use normalizedSelectivity which accounts for correlation between predicates.
+		// Use seriesSelectivity which accounts for correlation between predicates.
 		// This dampens the effect of less selective predicates since they tend to
 		// overlap with more selective ones (e.g., namespace=X and pod=~X-.*).
-		finalSelectivity *= pred.normalizedSelectivity
+		finalSelectivity *= pred.seriesSelectivity
 	}
 	return uint64(finalSelectivity * float64(p.totalSeries))
 }
@@ -298,8 +300,8 @@ func (p plan) AddPredicatesToSpan(span trace.Span) {
 	for _, pred := range p.predicates {
 		predAttr := [numAttributesPerPredicate]attribute.KeyValue{
 			attribute.Stringer("matcher", pred.matcher),
-			attribute.Float64("selectivity", pred.selectivity),
-			attribute.Float64("sqrt_selectivity", pred.normalizedSelectivity),
+			attribute.Float64("values_selectivity", pred.valuesSelectivity),
+			attribute.Float64("series_selectivity", pred.seriesSelectivity),
 			attribute.Int64("cardinality", int64(pred.cardinality)),
 			attribute.Int64("label_name_unique_values", int64(pred.labelNameUniqueVals)),
 			attribute.Float64("single_match_cost", pred.singleMatchCost),
