@@ -3267,15 +3267,10 @@ respsLoop:
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
 
 	result := make([]labels.Labels, 0, len(metrics))
-	// ignore duplicated check because metrics map should already be unique
 	for _, m := range metrics {
-		duplicated, err := queryLimiter.AddSeries(m)
-		if err != nil {
+		// ignore duplicated check because metrics map should already be unique
+		if _, err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
-		}
-
-		if duplicated {
-			continue
 		}
 
 		result = append(result, m)
