@@ -37,15 +37,15 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	err := limiter.AddSeries(series1)
+	_, err := limiter.AddSeries(series1)
 	assert.NoError(t, err)
-	err = limiter.AddSeries(series2)
+	_, err = limiter.AddSeries(series2)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	err = limiter.AddSeries(series1)
+	_, err = limiter.AddSeries(series1)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
@@ -72,21 +72,21 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	err := limiter.AddSeries(series1)
+	_, err := limiter.AddSeries(series1)
 	require.NoError(t, err)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	err = limiter.AddSeries(series2)
+	_, err = limiter.AddSeries(series2)
 	require.Error(t, err)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
-	err = limiter.AddSeries(series2)
+	_, err = limiter.AddSeries(series2)
 	require.Error(t, err)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
-	err = limiter.AddSeries(series3)
+	_, err = limiter.AddSeries(series3)
 	require.Error(t, err)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
@@ -188,7 +188,7 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	for _, s := range series {
-		err := limiter.AddSeries(s)
+		_, err := limiter.AddSeries(s)
 		assert.NoError(b, err)
 	}
 }

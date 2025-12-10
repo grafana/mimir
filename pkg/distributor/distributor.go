@@ -3268,7 +3268,7 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		if err := queryLimiter.AddSeries(m); err != nil {
+		if _, err := queryLimiter.AddSeries(m); err != nil {
 			return nil, err
 		}
 		result = append(result, m)
