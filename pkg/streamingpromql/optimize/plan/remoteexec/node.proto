@@ -21,3 +21,8 @@ message RemoteExecutionGroupDetails {
   // for the outstanding requests to complete.
   bool eagerLoad = 1;
 }
+
+message RemoteExecutionConsumerDetails {
+  // Index of node on child RemoteExecutionGroup node that this consumer consumes from.
+  uint64 nodeIndex = 1;
+}

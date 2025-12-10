@@ -19,6 +19,9 @@ func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &RemoteExecutionGroup{RemoteExecutionGroupDetails: &RemoteExecutionGroupDetails{}}
 	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &RemoteExecutionConsumer{RemoteExecutionConsumerDetails: &RemoteExecutionConsumerDetails{}}
+	})
 }
 
 type RemoteExecutionGroup struct {
@@ -123,6 +126,134 @@ func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion() planning.QueryPlanVe
 		return planning.QueryPlanV3
 	}
 
+	return planning.QueryPlanVersionZero
+}
+
+type RemoteExecutionConsumer struct {
+	*RemoteExecutionConsumerDetails
+	Group *RemoteExecutionGroup
+}
+
+func (c *RemoteExecutionConsumer) Details() proto.Message {
+	return c.RemoteExecutionConsumerDetails
+}
+
+func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
+}
+
+func (c *RemoteExecutionConsumer) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type RemoteExecutionConsumer supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return c.Group
+}
+
+func (c *RemoteExecutionConsumer) ChildCount() int {
+	return 1
+}
+
+func (c *RemoteExecutionConsumer) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type RemoteExecutionConsumer requires 1 child, but got %d", len(children))
+	}
+
+	group, ok := children[0].(*RemoteExecutionGroup)
+	if !ok {
+		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", children[0])
+	}
+
+	c.Group = group
+	return nil
+}
+
+func (c *RemoteExecutionConsumer) ReplaceChild(idx int, child planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type RemoteExecutionConsumer supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	group, ok := child.(*RemoteExecutionGroup)
+	if !ok {
+		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", child)
+	}
+
+	c.Group = group
+	return nil
+}
+
+func (c *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	otherConsumer, ok := other.(*RemoteExecutionConsumer)
+
+	return ok && c.NodeIndex == otherConsumer.NodeIndex
+}
+
+func (c *RemoteExecutionConsumer) MergeHints(other planning.Node) error {
+	otherConsumer, ok := other.(*RemoteExecutionConsumer)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, c)
+	}
+
+	if c.NodeIndex != otherConsumer.NodeIndex {
+		return errors.New("cannot merge RemoteExecutionConsumer nodes with different node indices")
+	}
+
+	return nil
+}
+
+func (c *RemoteExecutionConsumer) Describe() string {
+	return fmt.Sprintf("node %d", c.NodeIndex)
+}
+
+func (c *RemoteExecutionConsumer) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (c *RemoteExecutionConsumer) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
+	return parentTimeRange
+}
+
+func (c *RemoteExecutionConsumer) ResultType() (parser.ValueType, error) {
+	node, err := c.getEvaluatedNode()
+	if err != nil {
+		return parser.ValueTypeNone, err
+	}
+
+	return node.ResultType()
+}
+
+func (c *RemoteExecutionConsumer) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	node, err := c.getEvaluatedNode()
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	return node.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (c *RemoteExecutionConsumer) ExpressionPosition() (posrange.PositionRange, error) {
+	node, err := c.getEvaluatedNode()
+	if err != nil {
+		return posrange.PositionRange{}, err
+	}
+
+	return node.ExpressionPosition()
+}
+
+func (c *RemoteExecutionConsumer) getEvaluatedNode() (planning.Node, error) {
+	if c.NodeIndex >= uint64(len(c.Group.Nodes)) {
+		return nil, fmt.Errorf("remote execution group has %d nodes, but attempted to get node at index %d", len(c.Group.Nodes), c.NodeIndex)
+	}
+
+	return c.Group.Nodes[c.NodeIndex], nil
+}
+
+func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	// Even though this node type was introduced around the time of query plan v3, this node type is only
+	// ever used in query-frontends, and is needed to support remote execution of single nodes against
+	// queriers supporting v2 or earlier.
+	// So we return v0 here and rely on the RemoteExecutionGroup's MinimumRequiredPlanVersion() to
+	// return the correct version required based on whether one or many nodes are being evaluated.
 	return planning.QueryPlanVersionZero
 }
 
