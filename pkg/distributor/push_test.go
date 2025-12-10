@@ -1443,8 +1443,9 @@ func TestHandler_EnforceInflightBytesLimitOTLP(t *testing.T) {
 
 	sampleMetadata := []mimirpb.MetricMetadata{
 		{
-			Help: "metric_help",
-			Unit: "metric_unit",
+			MetricFamilyName: "foo",
+			Help:             "metric_help",
+			Unit:             "metric_unit",
 		},
 	}
 	exportReq := TimeseriesToOTLPRequest(sampleSeries, sampleMetadata)
