@@ -377,7 +377,7 @@ func TestOptimizationPass(t *testing.T) {
 												- VectorSelector: {__query_shard__="1_of_2", __name__="foo"}
 										- node 1: AggregateExpression: max
 											- ref#7 Duplicate ...
-								- param 1: RemoteExecutionGroup: eager load
+								- param 1: RemoteExecutionConsumer: node 0
 									- ref#6 RemoteExecutionGroup: eager load
 										- node 0: AggregateExpression: sum
 											- ref#8 Duplicate
