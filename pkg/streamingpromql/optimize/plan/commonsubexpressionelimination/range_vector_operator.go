@@ -295,17 +295,9 @@ func cloneStepData(stepData *types.RangeVectorStepData, memoryConsumptionTracker
 			Anchored:                     stepData.Anchored,
 			SmoothedBasisForTailPointSet: stepData.SmoothedBasisForTailPointSet,
 			SmoothedBasisForHeadPointSet: stepData.SmoothedBasisForHeadPointSet,
+			SmoothedBasisForTailPoint:    stepData.SmoothedBasisForTailPoint,
+			SmoothedBasisForHeadPoint:    stepData.SmoothedBasisForHeadPoint,
 		},
-	}
-
-	if stepData.SmoothedBasisForTailPointSet {
-		buffered.stepData.SmoothedBasisForTailPoint.T = stepData.SmoothedBasisForTailPoint.T
-		buffered.stepData.SmoothedBasisForTailPoint.F = stepData.SmoothedBasisForTailPoint.F
-	}
-
-	if stepData.SmoothedBasisForHeadPointSet {
-		buffered.stepData.SmoothedBasisForHeadPoint.T = stepData.SmoothedBasisForHeadPoint.T
-		buffered.stepData.SmoothedBasisForHeadPoint.F = stepData.SmoothedBasisForHeadPoint.F
 	}
 
 	var err error
