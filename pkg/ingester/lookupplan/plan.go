@@ -123,8 +123,8 @@ func (p plan) virtualPredicate(idx int) (planPredicate, bool) {
 	virtualPred.labelNameUniqueVals = 1
 	// We don't want selectivity of 0 because then the cost of the rest of the predicates might not matter.
 	virtualPred.valuesSelectivity = 1
-	// seriesSelectivity should also be 1 to match valuesSelectivity behavior for virtual predicates.
-	virtualPred.seriesSelectivity = 1
+	// The best case scenario is that this matcher selects just one series - this should make the rest of the plan very cheap.
+	virtualPred.seriesSelectivity = 1 / float64(p.totalSeries)
 	// Assume extremely cheap index scan cost.
 	virtualPred.indexScanCost = 1
 
