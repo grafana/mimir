@@ -97,10 +97,10 @@ func MaterializeUnaryExpression(u *UnaryExpression, materializer *planning.Mater
 
 	switch inner := inner.(type) {
 	case types.InstantVectorOperator:
-		o := functions.UnaryNegationOfInstantVectorOperatorFactory(inner, params, u.ExpressionPosition(), timeRange)
+		o := functions.UnaryNegationOfInstantVectorOperatorFactory(inner, params, u.GetExpressionPosition().ToPrometheusType(), timeRange)
 		return planning.NewSingleUseOperatorFactory(o), nil
 	case types.ScalarOperator:
-		o := scalars.NewUnaryNegationOfScalar(inner, u.ExpressionPosition())
+		o := scalars.NewUnaryNegationOfScalar(inner, u.GetExpressionPosition().ToPrometheusType())
 		return planning.NewSingleUseOperatorFactory(o), nil
 	default:
 		return nil, fmt.Errorf("expected InstantVectorOperator or ScalarOperator as child of UnaryExpression, got %T", inner)
@@ -111,12 +111,12 @@ func (u *UnaryExpression) ResultType() (parser.ValueType, error) {
 	return u.Inner.ResultType()
 }
 
-func (u *UnaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (u *UnaryExpression) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return u.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (u *UnaryExpression) ExpressionPosition() posrange.PositionRange {
-	return u.GetExpressionPosition().ToPrometheusType()
+func (u *UnaryExpression) ExpressionPosition() (posrange.PositionRange, error) {
+	return u.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (u *UnaryExpression) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

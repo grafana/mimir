@@ -91,7 +91,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Matchers:                 LabelMatchersToOperatorType(m.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     m.SkipHistogramBuckets,
-		ExpressionPosition:       m.ExpressionPosition(),
+		ExpressionPosition:       m.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 	}
 
@@ -104,15 +104,15 @@ func (m *MatrixSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeMatrix, nil
 }
 
-func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, _ time.Duration) planning.QueriedTimeRange {
+func (m *MatrixSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	// Matrix selectors do not use the lookback delta, so we don't pass it below.
 	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(m.Timestamp), m.Range, m.Offset.Milliseconds(), 0)
 
-	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 
-func (m *MatrixSelector) ExpressionPosition() posrange.PositionRange {
-	return m.GetExpressionPosition().ToPrometheusType()
+func (m *MatrixSelector) ExpressionPosition() (posrange.PositionRange, error) {
+	return m.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (m *MatrixSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

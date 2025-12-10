@@ -86,11 +86,11 @@ func (n *DropName) ResultType() (parser.ValueType, error) {
 	return n.Inner.ResultType()
 }
 
-func (n *DropName) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (n *DropName) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return n.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (n *DropName) ExpressionPosition() posrange.PositionRange {
+func (n *DropName) ExpressionPosition() (posrange.PositionRange, error) {
 	return n.Inner.ExpressionPosition()
 }
 

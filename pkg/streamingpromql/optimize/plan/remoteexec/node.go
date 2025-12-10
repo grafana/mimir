@@ -104,11 +104,11 @@ func (r *RemoteExecution) ResultType() (parser.ValueType, error) {
 	return r.Inner.ResultType()
 }
 
-func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return r.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (r *RemoteExecution) ExpressionPosition() posrange.PositionRange {
+func (r *RemoteExecution) ExpressionPosition() (posrange.PositionRange, error) {
 	return r.Inner.ExpressionPosition()
 }
 
@@ -132,6 +132,11 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 		return nil, fmt.Errorf("expected node of type RemoteExecution, got %T", n)
 	}
 
+	expressionPosition, err := r.Inner.ExpressionPosition()
+	if err != nil {
+		return nil, err
+	}
+
 	resultType, err := r.Inner.ResultType()
 	if err != nil {
 		return nil, err
@@ -148,6 +153,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			Annotations:              params.Annotations,
 			QueryStats:               params.QueryStats,
 			EagerLoad:                r.EagerLoad,
+			expressionPosition:       expressionPosition,
 		}), nil
 
 	case parser.ValueTypeVector:
@@ -160,6 +166,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			Annotations:              params.Annotations,
 			QueryStats:               params.QueryStats,
 			EagerLoad:                r.EagerLoad,
+			expressionPosition:       expressionPosition,
 		}), nil
 
 	case parser.ValueTypeMatrix:
@@ -172,6 +179,7 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, materializer 
 			Annotations:              params.Annotations,
 			QueryStats:               params.QueryStats,
 			EagerLoad:                r.EagerLoad,
+			expressionPosition:       expressionPosition,
 		}), nil
 
 	default:

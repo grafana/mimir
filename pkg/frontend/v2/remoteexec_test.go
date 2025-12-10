@@ -1151,11 +1151,11 @@ func (n *nodeWithOverriddenVersion) ResultType() (parser.ValueType, error) {
 	panic("not supported")
 }
 
-func (n *nodeWithOverriddenVersion) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (n *nodeWithOverriddenVersion) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return n.child.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (n *nodeWithOverriddenVersion) ExpressionPosition() posrange.PositionRange {
+func (n *nodeWithOverriddenVersion) ExpressionPosition() (posrange.PositionRange, error) {
 	panic("not supported")
 }
 

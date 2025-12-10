@@ -125,7 +125,7 @@ func MaterializeFunctionCall(f *FunctionCall, materializer *planning.Materialize
 		absentLabels = mimirpb.FromLabelAdaptersToLabels(f.AbsentLabels)
 	}
 
-	o, err := fnc.OperatorFactory(children, absentLabels, params, f.ExpressionPosition(), timeRange)
+	o, err := fnc.OperatorFactory(children, absentLabels, params, f.GetExpressionPosition().ToPrometheusType(), timeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -141,18 +141,23 @@ func (f *FunctionCall) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeNone, compat.NewNotSupportedError(fmt.Sprintf("'%v' function", f.Function.PromQLName()))
 }
 
-func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (f *FunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	timeRange := planning.NoDataQueried()
 
 	for _, arg := range f.Args {
-		timeRange = timeRange.Union(arg.QueriedTimeRange(queryTimeRange, lookbackDelta))
+		argTimeRange, err := arg.QueriedTimeRange(queryTimeRange, lookbackDelta)
+		if err != nil {
+			return planning.NoDataQueried(), err
+		}
+
+		timeRange = timeRange.Union(argTimeRange)
 	}
 
-	return timeRange
+	return timeRange, nil
 }
 
-func (f *FunctionCall) ExpressionPosition() posrange.PositionRange {
-	return f.GetExpressionPosition().ToPrometheusType()
+func (f *FunctionCall) ExpressionPosition() (posrange.PositionRange, error) {
+	return f.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (f *FunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
