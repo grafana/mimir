@@ -11,7 +11,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	promts "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -53,6 +56,9 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	// seriesToSplits is ordered the same way as SeriesMetadata
 	seriesToSplits   [][]SplitSeries
 	currentSeriesIdx int
+
+	logger     log.Logger
+	cacheStats *cache.CacheStats
 }
 
 var _ types.InstantVectorOperator = (*FunctionOverRangeVectorSplit[any])(nil)
@@ -73,6 +79,7 @@ func NewSplittingFunctionOverRangeVector[T any](
 	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
+	logger log.Logger,
 ) (*FunctionOverRangeVectorSplit[T], error) {
 	if !timeRange.IsInstant {
 		return nil, fmt.Errorf("FunctionOverRangeVectorSplit only supports instant queries")
@@ -95,6 +102,8 @@ func NewSplittingFunctionOverRangeVector[T any](
 		expressionPosition:       expressionPosition,
 		timeRange:                timeRange,
 		enableDelayedNameRemoval: enableDelayedNameRemoval,
+		logger:                   logger,
+		cacheStats:               &cache.CacheStats{},
 	}
 
 	if funcDef.SeriesValidationFuncFactory != nil {
@@ -141,7 +150,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 	for _, splitRange := range m.splitRanges {
 		// For cacheable (aligned) ranges, check the cache
 		if splitRange.Cacheable {
-			cacheEntry, found, err := cache.NewReadEntry[T](m.cache, m.codec, ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End)
+			cacheEntry, found, err := cache.NewReadEntry[T](m.cache, m.codec, ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
 			if err != nil {
 				return nil, err
 			}
@@ -375,11 +384,44 @@ func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.Annotat
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
+	logger := spanlogger.FromContext(ctx, m.logger)
+
+	// Count cached vs uncached splits
+	var cachedCount, uncachedCount int
+	for _, split := range m.splits {
+		if split.IsCached() {
+			cachedCount++
+		} else {
+			uncachedCount++
+		}
+	}
+
+	// Finalize all splits to ensure cache writes are complete
 	for _, split := range m.splits {
 		if err := split.Finalize(ctx); err != nil {
 			return err
 		}
 	}
+
+	// TODO: currently at info level while testing, may also modify and remove some stats post tests
+	level.Info(logger).Log(
+		"msg", "query splitting stats",
+		"function", m.FuncId.PromQLName(),
+		"inner_cache_key", m.innerCacheKey,
+		"query_start_ms", m.queryTimeRange.StartT,
+		"query_end_ms", m.queryTimeRange.EndT,
+		"splits_total", len(m.splits),
+		"splits_cached", cachedCount,
+		"splits_uncached", uncachedCount,
+		"cache_entries_cached", m.cacheStats.CachedEntries,
+		"cache_entries_uncached", m.cacheStats.UncachedEntries,
+		"max_series_per_entry", m.cacheStats.MaxSeries,
+		"min_series_per_entry", m.cacheStats.MinSeries,
+		"total_series", m.cacheStats.TotalSeries,
+		"max_bytes_per_entry", m.cacheStats.MaxBytes,
+		"min_bytes_per_entry", m.cacheStats.MinBytes,
+		"total_cache_bytes", m.cacheStats.TotalBytes,
+	)
 
 	return nil
 }
@@ -396,6 +438,7 @@ type Split[T any] interface {
 	ReadResultsAt(ctx context.Context, idx int) ([]T, error)
 	Finalize(ctx context.Context) error
 	Close()
+	IsCached() bool
 }
 
 type SplitSeries struct {
@@ -440,6 +483,10 @@ func (c *CachedSplit[T]) Finalize(ctx context.Context) error {
 func (c *CachedSplit[T]) Close() {
 }
 
+func (c *CachedSplit[T]) IsCached() bool {
+	return true
+}
+
 type UncachedSplit[T any] struct {
 	ranges   []Range
 	operator types.RangeVectorOperator
@@ -466,7 +513,7 @@ func NewUncachedSplit[T any](
 			continue
 		}
 
-		cacheEntries[i], err = cache.NewWriteEntry[T](parent.cache, parent.codec, ctx, int32(parent.FuncId), parent.innerCacheKey, splitRange.Start, splitRange.End)
+		cacheEntries[i], err = cache.NewWriteEntry[T](parent.cache, parent.codec, ctx, int32(parent.FuncId), parent.innerCacheKey, splitRange.Start, splitRange.End, parent.cacheStats)
 		if err != nil {
 			return nil, err
 		}
@@ -566,6 +613,10 @@ func (p *UncachedSplit[T]) Close() {
 	if p.operator != nil {
 		p.operator.Close()
 	}
+}
+
+func (p *UncachedSplit[T]) IsCached() bool {
+	return false
 }
 
 type ResultGetter[T any] struct {

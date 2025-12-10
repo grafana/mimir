@@ -183,6 +183,7 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		params.Annotations,
 		params.MemoryConsumptionTracker,
 		params.EnableDelayedNameRemoval,
+		params.Logger,
 	)
 	if err != nil {
 		return nil, err

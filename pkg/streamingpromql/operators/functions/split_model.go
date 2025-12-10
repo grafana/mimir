@@ -3,6 +3,7 @@
 package functions
 
 import (
+	"github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -49,6 +50,7 @@ type SplittableOperatorFactory func(
 	annotations *annotations.Annotations,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	enableDelayedNameRemoval bool,
+	logger log.Logger,
 ) (types.Operator, error)
 
 func NewSplitOperatorFactory[T any](
@@ -69,6 +71,7 @@ func NewSplitOperatorFactory[T any](
 		annotations *annotations.Annotations,
 		memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 		enableDelayedNameRemoval bool,
+		logger log.Logger,
 	) (types.Operator, error) {
 		return NewSplittingFunctionOverRangeVector[T](
 			innerNode,
@@ -86,6 +89,7 @@ func NewSplitOperatorFactory[T any](
 			annotations,
 			memoryConsumptionTracker,
 			enableDelayedNameRemoval,
+			logger,
 		)
 	}
 }

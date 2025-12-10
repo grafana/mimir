@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	dskitcache "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -668,7 +669,7 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 				}
 
 				backend := newTestCacheBackend()
-				irCache := cache.NewResultsCacheWithBackend(backend, log.NewNopLogger())
+				irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
 				innerEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, irCache)
 				require.NoError(t, err)
 
@@ -687,7 +688,7 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewResultsCacheWithBackend(backend, log.NewNopLogger())
+	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.InstantQuerySplitting.Enabled = true

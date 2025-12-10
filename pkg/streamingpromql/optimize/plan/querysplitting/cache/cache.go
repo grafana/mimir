@@ -11,6 +11,7 @@ import (
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -29,7 +30,26 @@ type Backend interface {
 
 type Cache struct {
 	backend Backend
+	metrics *resultsCacheMetrics
 	logger  log.Logger
+}
+
+type resultsCacheMetrics struct {
+	cacheRequests prometheus.Counter
+	cacheHits     prometheus.Counter
+}
+
+func newResultsCacheMetrics(reg prometheus.Registerer) *resultsCacheMetrics {
+	return &resultsCacheMetrics{
+		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_query_engine_intermediate_result_cache_requests_total",
+			Help: "Total number of requests (or partial requests) looked up in the results cache.",
+		}),
+		cacheHits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "mimir_query_engine_intermediate_result_cache_hits_total",
+			Help: "Total number of requests (or partial requests) fetched from the results cache.",
+		}),
+	}
 }
 
 func NewResultsCache(cfg Config, logger log.Logger, reg prometheus.Registerer) (*Cache, error) {
@@ -46,12 +66,13 @@ func NewResultsCache(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 	)
 
 	logger.Log("msg", "intermediate results cache initialized", "backend", cfg.Backend)
-	return NewResultsCacheWithBackend(backend, logger), nil
+	return NewResultsCacheWithBackend(backend, reg, logger), nil
 }
 
-func NewResultsCacheWithBackend(backend Backend, logger log.Logger) *Cache {
+func NewResultsCacheWithBackend(backend Backend, reg prometheus.Registerer, logger log.Logger) *Cache {
 	return &Cache{
 		backend: backend,
+		metrics: newResultsCacheMetrics(reg),
 		logger:  logger,
 	}
 }
@@ -90,12 +111,14 @@ func NewReadEntry[T any](
 	function int32,
 	innerKey string,
 	start, end int64,
+	stats *CacheStats,
 ) (ReadEntry[T], bool, error) {
 	tenant, err := user.ExtractOrgID(ctx)
 	if err != nil {
 		return nil, false, err
 	}
 
+	c.metrics.cacheRequests.Inc()
 	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 	hashedKey := cacheHashKey(cacheKey)
 
@@ -107,19 +130,25 @@ func NewReadEntry[T any](
 
 	var cached CachedSeries
 	if err := cached.Unmarshal(data); err != nil {
+		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
 		return nil, false, nil
 	}
 
 	if cached.CacheKey != cacheKey {
+		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey, "cache_key", cacheKey)
+
 		return nil, false, nil
 	}
+
+	c.metrics.cacheHits.Inc()
+	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
 
 	reader, err := codec.NewReader(cached.Results)
 	if err != nil {
 		return nil, false, err
 	}
 
-	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
+	stats.AddCachedEntryStat(len(cached.Series), len(data))
 
 	return &bufferedReadEntry[T]{
 		cached: cached,
@@ -134,6 +163,7 @@ func NewWriteEntry[T any](
 	function int32,
 	innerKey string,
 	start, end int64,
+	stats *CacheStats,
 ) (WriteEntry[T], error) {
 	tenant, err := user.ExtractOrgID(ctx)
 	if err != nil {
@@ -151,6 +181,7 @@ func NewWriteEntry[T any](
 		},
 		finalized: false,
 		logger:    c.logger,
+		stats:     stats,
 	}
 
 	writer, err := codec.NewWriter(func(data []byte) {
@@ -195,6 +226,7 @@ type bufferedWriteEntry[T any] struct {
 	cached    CachedSeries
 	writer    SplitWriter[T]
 	finalized bool
+	stats     *CacheStats
 	logger    log.Logger
 }
 
@@ -230,6 +262,8 @@ func (e *bufferedWriteEntry[T]) Finalize() error {
 	e.cache.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
 
 	level.Debug(e.logger).Log("msg", "cache entry written", "cache_key", e.cached.CacheKey, "series_count", len(e.cached.Series), "entry_size", len(data))
+
+	e.stats.AddUncachedEntryStat(len(e.cached.Series), len(data))
 
 	e.finalized = true
 	return nil
