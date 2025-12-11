@@ -1996,6 +1996,10 @@ results_cache:
 # CLI flag: -query-frontend.use-active-series-decoder
 [use_active_series_decoder: <boolean> | default = false]
 
+# (experimental) Maximum allowed response size for query responses, in bytes.
+# CLI flag: -query-frontend.max-response-size-bytes
+[max_response_size_bytes: <int> | default = 134217728]
+
 # (advanced) Comma-separated list of request header names to allow to pass
 # through to the rest of the query path. This is in addition to a list of
 # required headers that the read path needs.

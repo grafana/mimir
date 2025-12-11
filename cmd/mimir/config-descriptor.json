@@ -8201,6 +8201,17 @@
         },
         {
           "kind": "field",
+          "name": "max_response_size_bytes",
+          "required": false,
+          "desc": "Maximum allowed response size for query responses, in bytes.",
+          "fieldValue": null,
+          "fieldDefaultValue": 134217728,
+          "fieldFlag": "query-frontend.max-response-size-bytes",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "extra_propagated_headers",
           "required": false,
           "desc": "Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.",

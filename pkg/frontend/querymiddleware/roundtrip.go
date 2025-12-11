@@ -75,6 +75,7 @@ type Config struct {
 	TargetSeriesPerShard                      uint64             `yaml:"query_sharding_target_series_per_shard" category:"advanced"`
 	ShardActiveSeriesQueries                  bool               `yaml:"shard_active_series_queries" category:"experimental"`
 	UseActiveSeriesDecoder                    bool               `yaml:"use_active_series_decoder" category:"experimental"`
+	MaxResponseSizeBytes                      uint64             `yaml:"max_response_size_bytes" category:"experimental"`
 
 	// CacheKeyGenerator allows to inject a CacheKeyGenerator to use for generating cache keys.
 	// If nil, the querymiddleware package uses a DefaultCacheKeyGenerator with SplitQueriesByInterval.
@@ -117,6 +118,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ShardActiveSeriesQueries, "query-frontend.shard-active-series-queries", false, "True to enable sharding of active series queries.")
 	f.BoolVar(&cfg.UseActiveSeriesDecoder, "query-frontend.use-active-series-decoder", false, "Set to true to use the zero-allocation response decoder for active series queries.")
 	f.BoolVar(&cfg.CacheSamplesProcessedStats, "query-frontend.cache-samples-processed-stats", false, "Cache statistics of processed samples on results cache. Deprecated: has no effect.")
+	f.Uint64Var(&cfg.MaxResponseSizeBytes, "query-frontend.max-response-size-bytes", 128*1024*1024, "Maximum allowed response size for query responses, in bytes.")
 	cfg.ResultsCache.RegisterFlags(f)
 
 	// This field isn't user-configurable, but we still need to set a default value so that subsequent Add() calls don't panic due to a nil map.
