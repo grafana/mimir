@@ -48,7 +48,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       native: rate(errorQuery.native, totalQuery.native, comment),
     },
 
-  local requestErrorsAlert(histogram) =
+  local requestErrorsAlert(histogram_type) = {
     local query = requestErrorsQuery(
       selector='route!~"%s"' % std.join('|', ['ready'] + $._config.alert_excluded_routes),
       // Note if alert_aggregation_labels is "job", this will repeat the label. But
@@ -61,47 +61,35 @@ local utils = import 'mixin-utils/utils.libsonnet';
         # - 529: used by distributor rate limiting (using 529 instead of 429 to let the client retry)
         # - 598: used by GEM gateway when the client is very slow to send the request and the gateway times out reading the request body
       |||,
-    );
-    if histogram != 'classic' && histogram != 'native'
-    then {}
-    else {
-      alert: $.alertName('RequestErrors'),
-      expr: if histogram == 'classic' then query.classic else query.native,
-      'for': '15m',
-      labels: {
-        severity: 'critical',
-        histogram: histogram,
-      },
-      annotations: {
-        message: |||
-          The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
-        ||| % $._config,
-      },
+    ),
+    alert: $.alertName('RequestErrors'),
+    expr: query[histogram_type],
+    'for': '15m',
+    labels: $.histogramLabels({ severity: 'critical' }, histogram_type, nhcb=false),
+    annotations: {
+      message: |||
+        The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
+      ||| % $._config,
     },
+  },
 
-  local rulerRemoteEvaluationFailingAlert(histogram) =
+  local rulerRemoteEvaluationFailingAlert(histogram_type) = {
     local query = requestErrorsQuery(
       selector='route="/httpgrpc.HTTP/Handle", %s' % $.jobMatcher($._config.job_names.ruler_query_frontend),
       error_selector='status_code=~"5.."',
       rate_interval=$.alertRangeInterval(5),
       sum_by=[$._config.alert_aggregation_labels],
-    );
-    if histogram != 'classic' && histogram != 'native'
-    then {}
-    else {
-      alert: $.alertName('RulerRemoteEvaluationFailing'),
-      expr: if histogram == 'classic' then query.classic else query.native,
-      'for': '5m',
-      labels: {
-        severity: 'warning',
-        histogram: histogram,
-      },
-      annotations: {
-        message: |||
-          %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
-        ||| % $._config,
-      },
+    ),
+    alert: $.alertName('RulerRemoteEvaluationFailing'),
+    expr: query[histogram_type],
+    'for': '5m',
+    labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=false),
+    annotations: {
+      message: |||
+        %(product)s rulers in %(alert_aggregation_variables)s are failing to perform {{ printf "%%.2f" $value }}%% of remote evaluations through the ruler-query-frontend.
+      ||| % $._config,
     },
+  },
 
   local kvStoreFailure(histogram_type) = {
     alert: $.alertName('KVStoreFailure'),
@@ -153,7 +141,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           alert: $.alertName('RequestLatency'),
           expr: |||
             %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}
-               >
+              >
             %(cortex_p99_latency_threshold_seconds)s
           ||| % $._config {
             excluded_routes: std.join('|', [
