@@ -33,6 +33,10 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+var (
+	SupportedIndexFormats = []int{index.FormatV2}
+)
+
 // VerifyBlock does a full run over a block index and chunk data and verifies that they fulfill the order invariants.
 func VerifyBlock(ctx context.Context, logger log.Logger, blockDir string, minTime, maxTime int64, checkChunks bool) error {
 	stats, err := GatherBlockHealthStats(ctx, logger, blockDir, minTime, maxTime, checkChunks)
@@ -44,6 +48,9 @@ func VerifyBlock(ctx context.Context, logger log.Logger, blockDir string, minTim
 }
 
 type HealthStats struct {
+	// IndexFormat is the format version used by the TSDB index file.
+	IndexFormat int
+
 	// TotalSeries represents total number of series in block.
 	TotalSeries int64
 	// OutOfOrderSeries represents number of series that have out of order chunks.
@@ -66,6 +73,17 @@ type HealthStats struct {
 	// OutOfOrderLabels represents the number of postings that contained out
 	// of order labels, a bug present in Prometheus 2.8.0 and below.
 	OutOfOrderLabels int
+}
+
+// UnsupportedIndexFormat returns an error if the stats indicate this TSDB block uses
+// an index format that isn't supported by the read path (store-gateways use a custom
+// implementation of TSDB index parsing code, to avoid mmap, which only supports v2).
+func (i HealthStats) UnsupportedIndexFormat() error {
+	if !slices.Contains(SupportedIndexFormats, i.IndexFormat) {
+		return fmt.Errorf("index uses format %d which is not supported (%v are supported)", i.IndexFormat, SupportedIndexFormats)
+	}
+
+	return nil
 }
 
 // OutOfOrderLabelsErr returns an error if the HealthStats object indicates
@@ -129,6 +147,10 @@ func (i HealthStats) AnyErr() error {
 		errMsg = append(errMsg, err.Error())
 	}
 
+	if err := i.UnsupportedIndexFormat(); err != nil {
+		errMsg = append(errMsg, err.Error())
+	}
+
 	if err := i.Issue347OutsideChunksErr(); err != nil {
 		errMsg = append(errMsg, err.Error())
 	}
@@ -161,6 +183,8 @@ func GatherBlockHealthStats(ctx context.Context, logger log.Logger, blockDir str
 		return stats, errors.Wrap(err, "open index file")
 	}
 	defer runutil.CloseWithErrCapture(&err, r, "gather index issue file reader")
+
+	stats.IndexFormat = r.Version()
 
 	n, v := index.AllPostingsKey()
 	p, err := r.Postings(ctx, n, v)
