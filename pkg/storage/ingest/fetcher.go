@@ -707,18 +707,16 @@ func (r *ConcurrentFetchers) handleWant(ctx context.Context, logger log.Logger, 
 	// This is empty at the beginning, then we merge records as soon as we receive them
 	// from the Fetch response(s).
 	var bufferedResult fetchResult
+	continueAttempts := true
 
-	for attempt := 0; errBackoff.Ongoing() && !r.isDone() && w.endOffset > w.startOffset; attempt++ {
-		var continueAttempts bool
+	for attempt := 0; errBackoff.Ongoing() && continueAttempts && !r.isDone() && w.endOffset > w.startOffset; attempt++ {
 		w, bufferedResult, continueAttempts = r.performAttempt(ctx, logger, attempt, w, errBackoff, highWatermark, bufferedResult)
-		if !continueAttempts {
-			break
-		}
 	}
 }
 
-// performAttempt performs a single Fetch request and handles the result.
-// It returns the potentially modified fetchWant and a boolean indicating whether the attempt should be retried.
+// performAttempt performs a single Fetch request and handles the result. It
+// returns the potentially modified fetchWant, the potentially modified buffered
+// result, and a boolean indicating whether to proceed with the next attempt.
 func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logger, attempt int, w fetchWant, errBackoff *backoff.Backoff, highWatermark *atomic.Int64, bufferedResult fetchResult) (fetchWant, fetchResult, bool) {
 	attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
 	attemptSpan.SetTag("attempt", attempt)
@@ -743,7 +741,6 @@ func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logg
 			case w.result <- newErrorFetchResult(ctx, r.partitionID, err):
 			}
 
-			// Break out of the retry loop, but continue servicing the `wants` channel.
 			return fetchWant{}, fetchResult{}, false
 		}
 	} else {
@@ -766,11 +763,12 @@ func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logg
 		return w, bufferedResult, true
 	}
 
+	// Otherwise, there was at least one record fetched. We update the fetchWant and the buffered result.
+
 	w.startOffset = bufferedResult.Records[len(bufferedResult.Records)-1].Offset + 1
 	w = w.UpdateBytesPerRecord(bufferedResult.fetchedBytes, len(bufferedResult.Records)) // This takes into account the previous fetch too. This should give us a better average than using just the records from the last attempt.
 
-	// We reset the backoff if we received any records whatsoever. A received record means _some_ success.
-	// We don't want to slow down until we hit a larger error.
+	// We reset the backoff if we received any records whatsoever.
 	errBackoff.Reset()
 
 	select {
