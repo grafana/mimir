@@ -426,7 +426,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 	ctx := context.Background()
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher) {
+	setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher, *ring.PartitionRingEditor) {
 		// Start ingester.
 		ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
@@ -434,18 +434,20 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
 		})
 
+		editor := ring.NewPartitionRingEditor(PartitionRingKey, cfg.IngesterPartitionRing.KVStore.Mock)
+
 		// Wait until it's healthy
 		test.Poll(t, 5*time.Second, 1, func() interface{} {
 			return ingester.lifecycler.HealthyInstancesCount()
 		})
 
-		return ingester, watcher
+		return ingester, watcher, editor
 	}
 
 	t.Run("POST request should switch the partition state to INACTIVE", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, watcher := setup(t, defaultIngesterTestConfig(t))
+		ingester, watcher, _ := setup(t, defaultIngesterTestConfig(t))
 
 		// Pre-condition: the partition is ACTIVE.
 		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
@@ -465,7 +467,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 	t.Run("DELETE request after a POST request should switch the partition back to ACTIVE state", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, watcher := setup(t, defaultIngesterTestConfig(t))
+		ingester, watcher, _ := setup(t, defaultIngesterTestConfig(t))
 
 		// Pre-condition: the partition is ACTIVE.
 		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
@@ -499,7 +501,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		cfg := defaultIngesterTestConfig(t)
 		cfg.IngesterPartitionRing.MinOwnersCount = 2
 
-		ingester, watcher := setup(t, cfg)
+		ingester, watcher, _ := setup(t, cfg)
 
 		// Pre-condition: the partition is PENDING.
 		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
@@ -524,7 +526,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		cfg := defaultIngesterTestConfig(t)
 		cfg.IngesterPartitionRing.MinOwnersCount = 2
 
-		ingester, watcher := setup(t, cfg)
+		ingester, watcher, _ := setup(t, cfg)
 
 		// Pre-condition: the partition is PENDING.
 		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
@@ -538,6 +540,79 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 		// We expect the partition to be in PENDING state.
 		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
 			return watcher.PartitionRing().PendingPartitionIDs()
+		})
+	})
+
+	t.Run("POST request should be rejected if the partition state change is locked", func(t *testing.T) {
+		t.Parallel()
+
+		ingester, watcher, editor := setup(t, defaultIngesterTestConfig(t))
+
+		// Pre-condition: the partition is ACTIVE.
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().ActivePartitionIDs()
+		})
+
+		// Lock the partition state change.
+		require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 0, true))
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			for _, partition := range watcher.PartitionRing().Partitions() {
+				if partition.Id == 0 {
+					return partition.GetStateChangeLocked()
+				}
+			}
+
+			return false
+		})
+
+		res := httptest.NewRecorder()
+		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+		require.Equal(t, http.StatusConflict, res.Code)
+
+		// We expect the partition to be in the ACTIVE state.
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().ActivePartitionIDs()
+		})
+	})
+
+	t.Run("DELETE request should be rejected if the partition state change is locked", func(t *testing.T) {
+		t.Parallel()
+
+		ingester, watcher, editor := setup(t, defaultIngesterTestConfig(t))
+
+		// Pre-condition: the partition is ACTIVE.
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().ActivePartitionIDs()
+		})
+
+		res := httptest.NewRecorder()
+		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+		require.Equal(t, http.StatusOK, res.Code)
+
+		// We expect the partition to switch to INACTIVE.
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().InactivePartitionIDs()
+		})
+
+		// Lock the partition state change.
+		require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 0, true))
+		test.Poll(t, 5*time.Second, true, func() interface{} {
+			for _, partition := range watcher.PartitionRing().Partitions() {
+				if partition.Id == 0 {
+					return partition.GetStateChangeLocked()
+				}
+			}
+
+			return false
+		})
+
+		res = httptest.NewRecorder()
+		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
+		require.Equal(t, http.StatusConflict, res.Code)
+
+		// We expect the partition to be INACTIVE.
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().InactivePartitionIDs()
 		})
 	})
 }
