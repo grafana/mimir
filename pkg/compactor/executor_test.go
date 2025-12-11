@@ -46,7 +46,7 @@ var (
 func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
 	return Config{
 		PlanningMode:                        PlanningMode,
-		SchedulerAddress:                    schedulerAddress,
+		SchedulerEndpoint:                   schedulerAddress,
 		SchedulerUpdateInterval:             20 * time.Second,
 		CompactionJobsOrder:                 CompactionOrderOldestFirst,
 		SchedulerMinLeasingBackoff:          100 * time.Millisecond,
@@ -300,7 +300,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 			cfg.ShardingRing.Common.InstanceID = "compactor-1"
 			cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
 			cfg.ShardingRing.Common.KVStore.Mock = ringStore
-			cfg.SchedulerAddress = "localhost:9095"
+			cfg.SchedulerEndpoint = "localhost:9095"
 			cfg.PlanningMode = planningModeScheduler
 			// set cfg.SchedulerUpdateInterval long, only testing initial progress update
 			cfg.SchedulerUpdateInterval = 1 * time.Hour
@@ -353,7 +353,7 @@ func TestSchedulerExecutor_ServicesLifecycle(t *testing.T) {
 	cfg.ShardingRing.Common.InstanceID = "compactor-1"
 	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.Common.KVStore.Mock = ringStore
-	cfg.SchedulerAddress = "localhost:9095"
+	cfg.SchedulerEndpoint = "localhost:9095"
 	cfg.PlanningMode = planningModeScheduler
 	c, _, _, _, _ := prepare(t, cfg, inmem)
 
@@ -385,12 +385,12 @@ func TestSchedulerExecutor_UnreachableScheduler(t *testing.T) {
 	cfg.ShardingRing.Common.InstanceID = "compactor-1"
 	cfg.ShardingRing.Common.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.Common.KVStore.Mock = ringStore
-	cfg.SchedulerAddress = "unreachable-scheduler:9095"
+	cfg.SchedulerEndpoint = "unreachable-scheduler:9095"
 	cfg.PlanningMode = planningModeScheduler
 
 	c, _, _, _, _ := prepare(t, cfg, inmem)
 
-	// Starting should succeed if a valid cfg.SchedulerAddress string is passed, do not Dial w. block
+	// Starting should succeed if a valid cfg.SchedulerEndpoint string is passed, do not Dial w. block
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c), "compactor should start even when scheduler is unreachable")
 	assert.Equal(t, services.Running, c.State())
 

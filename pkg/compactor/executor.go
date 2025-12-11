@@ -116,7 +116,7 @@ func newSchedulerExecutor(cfg Config, logger log.Logger, invalidClusterValidatio
 
 func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) error {
 	workerID := fmt.Sprintf("compactor-%s", c.ringLifecycler.GetInstanceID())
-	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerAddress, "worker_id", workerID)
+	level.Info(e.logger).Log("msg", "compactor running in scheduler mode", "scheduler_endpoint", e.cfg.SchedulerEndpoint, "worker_id", workerID)
 
 	compactDir := filepath.Join(c.compactorCfg.DataDir, "compact")
 
@@ -264,7 +264,7 @@ func (e *schedulerExecutor) makeSchedulerClient() (compactorschedulerpb.Compacto
 
 	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler()))
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
-	conn, err := grpc.Dial(e.cfg.SchedulerAddress, opts...)
+	conn, err := grpc.Dial(e.cfg.SchedulerEndpoint, opts...)
 	if err != nil {
 		return nil, nil, err
 	}
