@@ -236,7 +236,7 @@ type sampleValidationConfig struct {
 	outOfOrderTimeWindow                time.Duration
 }
 
-// labelValidationConfigInterface helps with getting required config to validate labels.
+// labelValidationConfig helps with getting required config to validate labels.
 type labelValidationConfig struct {
 	maxLabelNamesPerSeries            int
 	maxLabelNamesPerInfoSeries        int
@@ -494,16 +494,6 @@ func validateExemplarTimestamp(m *exemplarValidationMetrics, userID string, minT
 	return true
 }
 
-// labelValidationConfigInterface helps with getting required config to validate labels.
-type labelValidationConfigInterface interface {
-	MaxLabelNamesPerSeries(userID string) int
-	MaxLabelNamesPerInfoSeries(userID string) int
-	MaxLabelNameLength(userID string) int
-	MaxLabelValueLength(userID string) int
-	LabelValueLengthOverLimitStrategy(userID string) validation.LabelValueLengthOverLimitStrategy
-	NameValidationScheme(userID string) model.ValidationScheme
-}
-
 func removeNonASCIIChars(in string) (out string) {
 	foundNonASCII := false
 
@@ -641,12 +631,6 @@ func newMetadataValidationMetrics(r prometheus.Registerer) *metadataValidationMe
 		metricNameTooLong: validation.DiscardedMetadataCounter(r, reasonMetadataMetricNameTooLong),
 		unitTooLong:       validation.DiscardedMetadataCounter(r, reasonMetadataUnitTooLong),
 	}
-}
-
-// metadataValidationConfigInterface helps with getting required config to validate metadata.
-type metadataValidationConfigInterface interface {
-	EnforceMetadataMetricName(userID string) bool
-	MaxMetadataLength(userID string) int
 }
 
 // cleanAndValidateMetadata returns an err if a metric metadata is invalid.
