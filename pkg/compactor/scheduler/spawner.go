@@ -64,7 +64,7 @@ func (s *Spawner) start(ctx context.Context) error {
 		err = s.discoverTenants(ctx)
 		if err == nil {
 			s.plan()
-			break
+			return nil
 		}
 		b.Wait()
 	}
