@@ -2091,7 +2091,7 @@ func TestQueryDecoding(t *testing.T) {
 }
 
 func newTestCodec() querymiddleware.Codec {
-	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyInjector{})
+	return querymiddleware.NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, "json", nil, &api.ConsistencyInjector{}, math.MaxUint64)
 }
 
 func BenchmarkProtobufResponseStreamShouldAbortReading(b *testing.B) {

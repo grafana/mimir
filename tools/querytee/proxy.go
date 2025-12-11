@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -390,7 +391,7 @@ func (p *Proxy) Start() error {
 
 	// Since we are only doing query requests decoding, we only care about the lookback delta for the Codec instance.
 	// The other config parameters are not relevant.
-	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{})
+	codec := querymiddleware.NewCodec(p.registerer, p.cfg.BackendsLookbackDelta, "json", nil, &propagation.NoopInjector{}, math.MaxUint64)
 
 	// register routes
 	for _, route := range p.routes {

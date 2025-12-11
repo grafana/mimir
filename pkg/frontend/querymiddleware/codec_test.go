@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -2131,7 +2132,7 @@ func newTestCodecWithHeaders(propagateHeaders []string) Codec {
 }
 
 func newTestCodecWithFormatAndHeaders(format string, propagateHeaders []string) Codec {
-	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, format, propagateHeaders, &api.ConsistencyInjector{})
+	return NewCodec(prometheus.NewPedanticRegistry(), 0*time.Minute, format, propagateHeaders, &api.ConsistencyInjector{}, math.MaxUint64)
 }
 
 func mustSucceed[T any](value T, err error) T {

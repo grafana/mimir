@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"net/http"
 	"testing"
 	"time"
@@ -634,7 +635,7 @@ func TestProtobufFormat_DecodeResponse(t *testing.T) {
 	for _, tc := range protobufCodecScenarios {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{})
+			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{}, math.MaxUint64)
 
 			body, err := tc.payload.Marshal()
 			require.NoError(t, err)
@@ -675,7 +676,7 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{})
+			codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{}, math.MaxUint64)
 
 			expectedBodyBytes, err := tc.payload.Marshal()
 			require.NoError(t, err)

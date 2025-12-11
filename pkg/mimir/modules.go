@@ -829,6 +829,7 @@ func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 		t.Cfg.Frontend.QueryMiddleware.QueryResultResponseFormat,
 		t.Cfg.Frontend.QueryMiddleware.ExtraPropagateHeaders,
 		&propagation.MultiInjector{Injectors: t.Injectors},
+		t.Cfg.Frontend.QueryMiddleware.MaxResponseSizeBytes,
 	)
 
 	return nil, nil

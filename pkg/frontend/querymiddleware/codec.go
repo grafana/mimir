@@ -226,6 +226,7 @@ type Codec struct {
 	lookbackDelta                                   time.Duration
 	preferredQueryResultResponseFormat              string
 	propagateHeadersMetrics, propagateHeadersLabels []string
+	formats                                         []formatter
 	injector                                        propagation.Injector
 }
 
@@ -240,21 +241,23 @@ type formatter interface {
 	ContentType() v1.MIMEType
 }
 
-var jsonFormatterInstance = jsonFormatter{}
-
-var knownFormats = []formatter{
-	jsonFormatterInstance,
-	ProtobufFormatter{},
-}
-
 func NewCodec(
 	registerer prometheus.Registerer,
 	lookbackDelta time.Duration,
 	queryResultResponseFormat string,
 	propagateHeaders []string,
 	injector propagation.Injector,
+	maxResponseSizeBytes uint64,
 ) Codec {
 	return Codec{
+		formats: []formatter{
+			jsonFormatter{
+				maxEncodedSize: maxResponseSizeBytes,
+			},
+			ProtobufFormatter{
+				maxEncodedSize: maxResponseSizeBytes,
+			},
+		},
 		metrics:                            newCodecMetrics(registerer),
 		lookbackDelta:                      lookbackDelta,
 		preferredQueryResultResponseFormat: queryResultResponseFormat,
@@ -929,7 +932,7 @@ func (c Codec) DecodeMetricsQueryResponse(ctx context.Context, r *http.Response,
 		}
 	}
 
-	formatter := findFormatter(contentType)
+	formatter := c.findFormatter(contentType)
 	if formatter == nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
 	}
@@ -990,7 +993,7 @@ func (c Codec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r *http.Resp
 		}
 	}
 
-	formatter := findFormatter(contentType)
+	formatter := c.findFormatter(contentType)
 	if formatter == nil {
 		return nil, apierror.Newf(apierror.TypeInternal, "unknown response content type '%v'", contentType)
 	}
@@ -1042,8 +1045,8 @@ func (c Codec) DecodeLabelsSeriesQueryResponse(ctx context.Context, r *http.Resp
 	return response, nil
 }
 
-func findFormatter(contentType string) formatter {
-	for _, f := range knownFormats {
+func (c Codec) findFormatter(contentType string) formatter {
+	for _, f := range c.formats {
 		if f.ContentType().String() == contentType {
 			return f
 		}
@@ -1172,13 +1175,13 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 	return &resp, nil
 }
 
-func (Codec) negotiateContentType(acceptHeader string) (string, formatter) {
+func (c Codec) negotiateContentType(acceptHeader string) (string, formatter) {
 	if acceptHeader == "" {
-		return jsonMimeType, jsonFormatterInstance
+		return c.formats[0].ContentType().String(), c.formats[0]
 	}
 
 	for _, clause := range goautoneg.ParseAccept(acceptHeader) {
-		for _, formatter := range knownFormats {
+		for _, formatter := range c.formats {
 			if formatter.ContentType().Satisfies(clause) {
 				return formatter.ContentType().String(), formatter
 			}

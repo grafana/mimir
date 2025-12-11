@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"math"
 	"net/http"
 	"reflect"
 	"testing"
@@ -167,7 +168,7 @@ func TestCodec_JSONResponse_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{})
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{}, math.MaxUint64)
 
 			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
@@ -479,7 +480,7 @@ func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{})
+			codec := NewCodec(reg, 0*time.Minute, formatJSON, nil, &propagation.NoopInjector{}, math.MaxUint64)
 			httpRequest := &http.Request{
 				Header: http.Header{"Accept": []string{jsonMimeType}},
 			}

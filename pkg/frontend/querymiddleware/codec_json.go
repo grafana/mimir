@@ -11,7 +11,9 @@ import (
 
 const jsonMimeType = "application/json"
 
-type jsonFormatter struct{}
+type jsonFormatter struct {
+	maxEncodedSize uint64
+}
 
 func (j jsonFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
 	return json.Marshal(resp)

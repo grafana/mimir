@@ -12,7 +12,9 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-type ProtobufFormatter struct{}
+type ProtobufFormatter struct {
+	maxEncodedSize uint64
+}
 
 func (f ProtobufFormatter) Name() string {
 	return formatProtobuf
