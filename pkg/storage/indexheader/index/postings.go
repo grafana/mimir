@@ -47,6 +47,8 @@ type PostingOffsetTable interface {
 	// PostingOffsetInMemSampling returns the inverse of the fraction of postings held in memory. A lower value indicates
 	// postings are sample more frequently.
 	PostingOffsetInMemSampling() int
+
+	BufReaderStats() *streamencoding.BufReaderStats
 }
 
 // PostingListOffset contains the start and end offset of a posting list.
@@ -60,7 +62,8 @@ type PostingListOffset struct {
 
 type PostingOffsetTableV1 struct {
 	// For the v1 format, labelname -> labelvalue -> offset.
-	postings map[string]map[string]index.Range
+	postings    map[string]map[string]index.Range
+	readerStats *streamencoding.BufReaderStats
 }
 
 // DecbufFactory is the interface for creating decoding buffers.
@@ -82,7 +85,8 @@ func NewPostingOffsetTable(factory DecbufFactory, tableOffset int, indexVersion 
 
 func newV1PostingOffsetTable(factory DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64) (*PostingOffsetTableV1, error) {
 	t := PostingOffsetTableV1{
-		postings: map[string]map[string]index.Range{},
+		postings:    map[string]map[string]index.Range{},
+		readerStats: &streamencoding.BufReaderStats{},
 	}
 
 	// Earlier V1 formats don't have a sorted postings offset table, so
@@ -123,6 +127,7 @@ func newV1PostingOffsetTable(factory DecbufFactory, tableOffset int, indexLastPo
 func newV2PostingOffsetTable(factory DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
+		readerStats:                 &streamencoding.BufReaderStats{},
 		tableOffset:                 tableOffset,
 		postings:                    map[string]*postingValueOffsets{},
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
@@ -134,7 +139,6 @@ func newV2PostingOffsetTable(factory DecbufFactory, tableOffset int, indexLastPo
 	} else {
 		d = factory.NewDecbufAtUnchecked(tableOffset)
 	}
-
 	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
 	remainingCount := d.Be32()
@@ -240,6 +244,7 @@ func newV2PostingOffsetTable(factory DecbufFactory, tableOffset int, indexLastPo
 func NewPostingOffsetTableFromSparseHeader(factory DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
+		readerStats:                 &streamencoding.BufReaderStats{},
 		tableOffset:                 tableOffset,
 		postings:                    make(map[string]*postingValueOffsets, len(postingsOffsetTable.Postings)),
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
@@ -314,6 +319,10 @@ func readOffsetTable(factory DecbufFactory, tableOffset int, f func(string, stri
 	return d.Err()
 }
 
+func (t *PostingOffsetTableV1) BufReaderStats() *streamencoding.BufReaderStats {
+	return t.readerStats
+}
+
 func (t *PostingOffsetTableV1) PostingsOffset(name string, value string) (index.Range, bool, error) {
 	e, ok := t.postings[name]
 	if !ok {
@@ -381,6 +390,7 @@ type PostingOffsetTableV2 struct {
 	postingOffsetsInMemSampling int
 
 	factory     DecbufFactory
+	readerStats *streamencoding.BufReaderStats
 	tableOffset int
 }
 
@@ -435,6 +445,10 @@ type postingOffset struct {
 	tableOff int
 }
 
+func (t *PostingOffsetTableV2) BufReaderStats() *streamencoding.BufReaderStats {
+	return t.readerStats
+}
+
 func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r index.Range, found bool, err error) {
 	e, ok := t.postings[name]
 	if !ok {
@@ -447,6 +461,7 @@ func (t *PostingOffsetTableV2) PostingsOffset(name string, value string) (r inde
 	}
 
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
+	defer t.readerStats.Merge(d.Stats())
 	defer runutil.CloseWithErrCapture(&err, &d, "get postings offsets")
 	if err := d.Err(); err != nil {
 		return index.Range{}, false, err
@@ -538,6 +553,10 @@ func (t *PostingOffsetTableV2) LabelValuesOffsets(ctx context.Context, name, pre
 	// Don't Crc32 the entire postings offset table, this is very slow
 	// so hope any issues were caught at startup.
 	d := t.factory.NewDecbufAtUnchecked(t.tableOffset)
+	defer func() {
+		stats := d.Stats()
+		t.readerStats.Merge(stats)
+	}()
 	defer runutil.CloseWithErrCapture(&err, &d, "get label values")
 
 	d.ResetAt(e.offsets[offsetsStart].tableOff)

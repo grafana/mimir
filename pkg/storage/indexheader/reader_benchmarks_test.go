@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"slices"
+	"sort"
 	"testing"
 	"time"
 
@@ -248,6 +249,10 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 
 				require.NoError(b, err)
 				require.NotEmpty(b, values)
+
+				bufStats := reader.BufReaderStats()
+				b.ReportMetric(float64(bufStats.BytesDiscarded.Load())/float64(b.N), "buffered-bytes-discarded/op")
+
 			}
 		})
 	}
@@ -281,16 +286,29 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 		"bucket": bucketReader,
 	}
 
+	sortedTestLbls := make([]string, 0, len(tests))
+	for k := range tests {
+		sortedTestLbls = append(sortedTestLbls, k)
+	}
+	sort.Strings(sortedTestLbls)
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	for readerName, reader := range readers {
-		for lbl, tcs := range tests {
+	for _, lbl := range sortedTestLbls {
+		tcs := tests[lbl]
+		for readerName, reader := range readers {
 			for _, tc := range tcs {
 				b.Run(fmt.Sprintf("Reader=%s/Label=%s/Prefix='%s'/Desc=%s", readerName, lbl, tc.prefix, tc.desc), func(b *testing.B) {
 					for i := 0; i < b.N; i++ {
+						startBytesDiscarded := reader.BufReaderStats().BytesDiscarded.Load()
 						values, err := reader.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 						require.NoError(b, err)
 						require.Equal(b, tc.expected, len(values))
+
+						endBytesDiscarded := reader.BufReaderStats().BytesDiscarded.Load()
+						diff := endBytesDiscarded - startBytesDiscarded
+						output := float64(diff)
+						b.ReportMetric(output, "buffered-bytes-discarded/op")
 					}
 				})
 			}

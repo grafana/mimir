@@ -43,8 +43,9 @@ func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReader
 }
 
 type StreamBinaryReader struct {
-	factory *streamencoding.DecbufFactory
-	toc     *BinaryTOC
+	factory        *streamencoding.DecbufFactory
+	bufReaderStats *streamencoding.BufReaderStats
+	toc            *BinaryTOC
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
 	// rest via seeking to offsets in the index-header.
@@ -108,7 +109,8 @@ func NewFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 	logger = log.With(logger, "id", id, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
 	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
+		factory:        streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
+		bufReaderStats: &streamencoding.BufReaderStats{},
 	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
@@ -467,6 +469,10 @@ func (r *StreamBinaryReader) LabelValuesOffsets(ctx context.Context, name string
 
 func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
+}
+
+func (r *StreamBinaryReader) BufReaderStats() *streamencoding.BufReaderStats {
+	return r.postingsOffsetTable.BufReaderStats()
 }
 
 func (r *StreamBinaryReader) Close() error {

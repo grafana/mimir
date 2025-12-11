@@ -29,8 +29,9 @@ import (
 
 // BucketBinaryReader reads index header data directly from object storage.
 type BucketBinaryReader struct {
-	bkt     objstore.BucketReader
-	factory *streamencoding.BucketDecbufFactory
+	bkt            objstore.BucketReader
+	factory        *streamencoding.BucketDecbufFactory
+	bufReaderStats *streamencoding.BufReaderStats
 
 	toc *index.TOC
 
@@ -82,7 +83,8 @@ func NewBucketBinaryReader(
 	r := &BucketBinaryReader{
 		bkt: bkt,
 
-		factory: streamencoding.NewBucketDecbufFactory(ctx, bkt, indexPath),
+		factory:        streamencoding.NewBucketDecbufFactory(ctx, bkt, indexPath),
+		bufReaderStats: &streamencoding.BufReaderStats{},
 	}
 
 	indexAttrs, err := bkt.Attributes(ctx, indexPath)
@@ -295,6 +297,10 @@ func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, 
 	}
 
 	return data, nil
+}
+
+func (r *BucketBinaryReader) BufReaderStats() *streamencoding.BufReaderStats {
+	return r.postingsOffsetTable.BufReaderStats()
 }
 
 // Close implements Reader.
