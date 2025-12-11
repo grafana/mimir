@@ -103,6 +103,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  local kvStoreFailure(histogram_type) = {
+    alert: $.alertName('KVStoreFailure'),
+    local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label, 'status_code', 'kv_name'],
+    local range_interval = $.alertRangeInterval(1),
+    local numerator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', 'status_code!~"2.+"', rate_interval=range_interval, from_recording=false), sum_by),
+    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_kv_request_duration_seconds', '', rate_interval=range_interval, from_recording=false), sum_by),
+    expr: |||
+      (
+        %(numerator)s
+        /
+        %(denominator)s
+      )
+      # We want to get alerted only in case there's a constant failure.
+      == 1
+    ||| % {
+      numerator: numerator[histogram_type],
+      denominator: denominator[histogram_type],
+    },
+    'for': '5m',
+    labels: $.histogramLabels({ severity: 'critical' }, histogram_type, nhcb=false),
+    annotations: {
+      message: |||
+        %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
+      ||| % $._config,
+    },
+  },
+
   local alertGroups = [
     {
       name: 'mimir_alerts',
@@ -254,29 +281,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s %(alert_instance_variable)s in %(alert_aggregation_variables)s has restarted {{ printf "%%.2f" $value }} times in the last 30 mins.' % $._config,
           },
         },
-        {
-          alert: $.alertName('KVStoreFailure'),
-          expr: |||
-            (
-              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[%(range_interval)s]))
-              /
-              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count[%(range_interval)s]))
-            )
-            # We want to get alerted only in case there's a constant failure.
-            == 1
-          ||| % $._config {
-            range_interval: $.alertRangeInterval(1),
-          },
-          'for': '5m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              %(product)s %(alert_instance_variable)s in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
-            ||| % $._config,
-          },
-        },
+        kvStoreFailure('classic'),
+        kvStoreFailure('native'),
         {
           alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||

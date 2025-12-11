@@ -53,4 +53,11 @@
 
   alertRangeInterval(multiple)::
     ($._config.base_alerts_range_interval_minutes * multiple) + 'm',
+
+  histogramLabels(labels, histogram_type, nhcb=false)::
+    assert histogram_type == 'native' || histogram_type == 'classic';
+    labels { histogram: histogram_type } +
+    (if histogram_type == 'native' && nhcb then {
+      buckets: 'custom',
+    } else {}),
 }
