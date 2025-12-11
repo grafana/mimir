@@ -12,25 +12,35 @@ import (
 
 	"github.com/dennwc/varint"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
 )
 
 var (
-	ErrInvalidSize     = errors.New("invalid size")
+	ErrInvalidSize     = errors.New("invalid Size")
 	ErrInvalidChecksum = errors.New("invalid checksum")
 )
 
-// reader is the interface that both fileReader and bufReader implement.
-type reader interface {
-	resetAt(off int) error
-	skip(l int) error
-	peek(n int) ([]byte, error)
-	read(n int) ([]byte, error)
-	readInto(b []byte) error
-	size() int
-	len() int
-	position() int
-	buffered() int
-	close() error
+// DecbufReader is the interface that both fileReader and bufReader implement.
+type DecbufReader interface {
+	ResetAt(off int) error
+	Skip(l int) error
+	Peek(n int) ([]byte, error)
+	Read(n int) ([]byte, error)
+	ReadInto(b []byte) error
+	Size() int
+	Len() int
+	Position() int
+	Buffered() int
+	Close() error
+	Stats() *BufReaderStats
+}
+
+type BufReaderStats struct {
+	BytesDiscarded atomic.Uint64
+}
+
+func (s *BufReaderStats) Merge(o *BufReaderStats) {
+	s.BytesDiscarded.Add(o.BytesDiscarded.Load())
 }
 
 // Decbuf provides safe methods to extract data from a binary reader. It does all
@@ -39,7 +49,7 @@ type reader interface {
 // Err() method must be checked.
 // New Decbuf instances must be created via DecbufFactory.
 type Decbuf struct {
-	r reader
+	r DecbufReader
 	E error
 }
 
@@ -50,13 +60,13 @@ func (d *Decbuf) Be32int() int { return int(d.Be32()) }
 // comparing the contents with the CRC32 checksum stored in the last four bytes.
 // CheckCrc32 consumes the contents of this Decbuf.
 func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
-	if d.r.len() <= 4 {
+	if d.r.Len() <= 4 {
 		d.E = ErrInvalidSize
 		return
 	}
 
 	hash := crc32.New(castagnoliTable)
-	bytesToRead := d.r.len() - 4
+	bytesToRead := d.r.Len() - 4
 	maxChunkSize := 1024 * 1024
 	rawBuf := make([]byte, maxChunkSize)
 
@@ -64,9 +74,9 @@ func (d *Decbuf) CheckCrc32(castagnoliTable *crc32.Table) {
 		chunkSize := min(bytesToRead, maxChunkSize)
 		chunkBuf := rawBuf[0:chunkSize]
 
-		err := d.r.readInto(chunkBuf)
+		err := d.r.ReadInto(chunkBuf)
 		if err != nil {
-			d.E = errors.Wrap(err, "read contents for CRC32 calculation")
+			d.E = errors.Wrap(err, "Read contents for CRC32 calculation")
 			return
 		}
 
@@ -98,7 +108,7 @@ func (d *Decbuf) Skip(l int) {
 		return
 	}
 
-	d.E = d.r.skip(l)
+	d.E = d.r.Skip(l)
 }
 
 // SkipUvarintBytes advances the pointer of the underlying fileReader past the
@@ -109,7 +119,7 @@ func (d *Decbuf) SkipUvarintBytes() {
 }
 
 // ResetAt sets the pointer of the underlying fileReader to the absolute
-// offset and discards any buffered data. If E is non-nil, this method has
+// offset and discards any Buffered data. If E is non-nil, this method has
 // no effect. ResetAt-ing beyond the end of the underlying fileReader will set
 // E to an error and not advance the pointer of fileReader.
 func (d *Decbuf) ResetAt(off int) {
@@ -117,14 +127,14 @@ func (d *Decbuf) ResetAt(off int) {
 		return
 	}
 
-	// If we are trying to reset at a position which is already buffered,
+	// If we are trying to reset at a position which is already Buffered,
 	// we can avoid resetting the fileReader and just discard some of the buffer instead.
-	if dist := off - d.Position(); dist >= 0 && dist < d.r.buffered() {
-		d.E = d.r.skip(dist)
+	if dist := off - d.Position(); dist >= 0 && dist < d.r.Buffered() {
+		d.E = d.r.Skip(dist)
 		return
 	}
 
-	d.E = d.r.resetAt(off)
+	d.E = d.r.ResetAt(off)
 }
 
 // UvarintStr reads varint prefixed bytes into a string and consumes them. The string
@@ -143,13 +153,13 @@ func (d *Decbuf) UnsafeUvarintBytes() []byte {
 		return nil
 	}
 
-	// If the length of this uvarint slice is greater than the size of buffer used
-	// by our file reader, we can't peek() it. Instead, we have to use the read() method
-	// which will allocate its own slice to hold the results. We prefer to use peek()
+	// If the length of this uvarint slice is greater than the Size of buffer used
+	// by our file reader, we can't Peek() it. Instead, we have to use the Read() method
+	// which will allocate its own slice to hold the results. We prefer to use Peek()
 	// when possible for performance but can't rely on slices always being less than
-	// the size of our buffer.
-	if l > uint64(d.r.size()) {
-		b, err := d.r.read(int(l))
+	// the Size of our buffer.
+	if l > uint64(d.r.Size()) {
+		b, err := d.r.Read(int(l))
 		if err != nil {
 			d.E = err
 			return nil
@@ -158,7 +168,7 @@ func (d *Decbuf) UnsafeUvarintBytes() []byte {
 		return b
 	}
 
-	b, err := d.r.peek(int(l))
+	b, err := d.r.Peek(int(l))
 	if err != nil {
 		d.E = err
 		return nil
@@ -173,7 +183,7 @@ func (d *Decbuf) UnsafeUvarintBytes() []byte {
 		return nil
 	}
 
-	err = d.r.skip(len(b))
+	err = d.r.Skip(len(b))
 	if err != nil {
 		d.E = err
 		return nil
@@ -186,7 +196,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 	if d.E != nil {
 		return 0
 	}
-	b, err := d.r.peek(10)
+	b, err := d.r.Peek(10)
 	if err != nil {
 		d.E = err
 		return 0
@@ -198,7 +208,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 		return 0
 	}
 
-	err = d.r.skip(n)
+	err = d.r.Skip(n)
 	if err != nil {
 		d.E = err
 		return 0
@@ -212,7 +222,7 @@ func (d *Decbuf) Be64() uint64 {
 		return 0
 	}
 
-	b, err := d.r.peek(8)
+	b, err := d.r.Peek(8)
 	if err != nil {
 		d.E = err
 		return 0
@@ -224,7 +234,7 @@ func (d *Decbuf) Be64() uint64 {
 	}
 
 	v := binary.BigEndian.Uint64(b)
-	err = d.r.skip(8)
+	err = d.r.Skip(8)
 	if err != nil {
 		d.E = err
 		return 0
@@ -238,7 +248,7 @@ func (d *Decbuf) Be32() uint32 {
 		return 0
 	}
 
-	b, err := d.r.peek(4)
+	b, err := d.r.Peek(4)
 	if err != nil {
 		d.E = err
 		return 0
@@ -250,7 +260,7 @@ func (d *Decbuf) Be32() uint32 {
 	}
 
 	v := binary.BigEndian.Uint32(b)
-	err = d.r.skip(4)
+	err = d.r.Skip(4)
 	if err != nil {
 		d.E = err
 		return 0
@@ -264,7 +274,7 @@ func (d *Decbuf) Byte() byte {
 		return 0
 	}
 
-	b, err := d.r.peek(1)
+	b, err := d.r.Peek(1)
 	if err != nil {
 		d.E = err
 		return 0
@@ -276,7 +286,7 @@ func (d *Decbuf) Byte() byte {
 	}
 
 	v := b[0]
-	err = d.r.skip(1)
+	err = d.r.Skip(1)
 	if err != nil {
 		d.E = err
 		return 0
@@ -288,15 +298,19 @@ func (d *Decbuf) Byte() byte {
 func (d *Decbuf) Err() error { return d.E }
 
 // Len returns the remaining number of bytes in the underlying fileReader.
-func (d *Decbuf) Len() int { return d.r.len() }
+func (d *Decbuf) Len() int { return d.r.Len() }
 
 // Position returns the current position of the underlying fileReader.
 // Calling d.ResetAt(d.Position()) is effectively a no-op.
-func (d *Decbuf) Position() int { return d.r.position() }
+func (d *Decbuf) Position() int { return d.r.Position() }
+
+func (d *Decbuf) Stats() *BufReaderStats {
+	return d.r.Stats()
+}
 
 func (d *Decbuf) Close() error {
 	if d.r != nil {
-		return d.r.close()
+		return d.r.Close()
 	}
 
 	return nil

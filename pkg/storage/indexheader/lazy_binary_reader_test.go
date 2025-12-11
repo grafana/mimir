@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/gate"
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -444,6 +445,10 @@ func (m mockReader) LabelValuesOffsets(context.Context, string, string, func(str
 }
 
 func (m mockReader) LabelNames(context.Context) ([]string, error) {
+	panic("not implemented")
+}
+
+func (m mockReader) BufReaderStats() *streamencoding.BufReaderStats {
 	panic("not implemented")
 }
 

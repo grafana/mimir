@@ -10,6 +10,7 @@ import (
 	"flag"
 	"time"
 
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel"
@@ -64,6 +65,8 @@ type Reader interface {
 
 	// LabelNames returns all label names in sorted order.
 	LabelNames(ctx context.Context) ([]string, error)
+
+	BufReaderStats() *streamencoding.BufReaderStats
 }
 
 type Config struct {
