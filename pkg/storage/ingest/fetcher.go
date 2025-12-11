@@ -718,7 +718,7 @@ func (r *ConcurrentFetchers) handleWant(ctx context.Context, logger log.Logger, 
 }
 
 // performAttempt performs a single Fetch request and handles the result.
-// It returns a boolean indicating whether the attempt should be retried.
+// It returns the potentially modified fetchWant and a boolean indicating whether the attempt should be retried.
 func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logger, attempt int, w fetchWant, errBackoff *backoff.Backoff, highWatermark *atomic.Int64, bufferedResult *fetchResult) (fetchWant, bool) {
 	attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
 	attemptSpan.SetTag("attempt", attempt)
