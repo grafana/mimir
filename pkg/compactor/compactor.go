@@ -68,7 +68,7 @@ var (
 	errInvalidSymbolFlushersConcurrency           = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
 	errInvalidMaxBlockUploadValidationConcurrency = fmt.Errorf("invalid max-block-upload-validation-concurrency value, can't be negative")
 	errInvalidPlanningMode                        = fmt.Errorf("invalid planning-mode, supported values: %s", strings.Join(compactionPlanningModes, ", "))
-	errInvalidSchedulerAddress                    = fmt.Errorf("invalid scheduler-address, required when compactor mode is %q", planningModeScheduler)
+	errInvalidSchedulerEndpoint                   = fmt.Errorf("invalid scheduler-endpoint, required when compactor mode is %q", planningModeScheduler)
 	errInvalidSchedulerUpdateInterval             = fmt.Errorf("invalid scheduler-update-interval, interval must be positive")
 	errInvalidSchedulerMinLeasingBackoff          = fmt.Errorf("invalid scheduler-min-backoff, must be positive")
 	errInvalidSchedulerMaxLeasingBackoff          = fmt.Errorf("invalid scheduler-max-backoff, must be greater than min backoff")
@@ -150,7 +150,7 @@ type Config struct {
 
 	// Scheduler mode options
 	PlanningMode                 string            `yaml:"planning_mode" category:"experimental"`
-	SchedulerAddress             string            `yaml:"scheduler_address" category:"experimental"`
+	SchedulerEndpoint            string            `yaml:"scheduler_endpoint" category:"experimental"`
 	SchedulerUpdateInterval      time.Duration     `yaml:"scheduler_update_interval" category:"experimental"`
 	SchedulerMinLeasingBackoff   time.Duration     `yaml:"scheduler_min_backoff" category:"experimental"`
 	SchedulerMaxLeasingBackoff   time.Duration     `yaml:"scheduler_max_backoff" category:"experimental"`
@@ -182,7 +182,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
 	f.StringVar(&cfg.PlanningMode, "compactor.planning-mode", planningModeStandalone, fmt.Sprintf("Compactor operation mode. Supported values are: %s (plan and execute compactions), %s (request jobs from a remote scheduler).", planningModeStandalone, planningModeScheduler))
-	f.StringVar(&cfg.SchedulerAddress, "compactor.scheduler-endpoint", "", "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.")
+	f.StringVar(&cfg.SchedulerEndpoint, "compactor.scheduler-endpoint", "", "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.")
 	f.DurationVar(&cfg.SchedulerUpdateInterval, "compactor.scheduler-update-interval", 15*time.Second, "Interval between scheduler job lease updates.")
 	f.DurationVar(&cfg.SchedulerMinLeasingBackoff, "compactor.scheduler-min-leasing-backoff", 100*time.Millisecond, "Minimum backoff time between scheduler job lease requests.")
 	f.DurationVar(&cfg.SchedulerMaxLeasingBackoff, "compactor.scheduler-max-leasing-backoff", 2*time.Minute, "Maximum backoff time between scheduler job lease requests.")
@@ -244,8 +244,8 @@ func (cfg *Config) Validate(logger log.Logger) error {
 	}
 
 	if cfg.PlanningMode == planningModeScheduler {
-		if strings.TrimSpace(cfg.SchedulerAddress) == "" {
-			return errInvalidSchedulerAddress
+		if strings.TrimSpace(cfg.SchedulerEndpoint) == "" {
+			return errInvalidSchedulerEndpoint
 		}
 		if cfg.SchedulerUpdateInterval <= 0 {
 			return errInvalidSchedulerUpdateInterval
@@ -539,7 +539,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	}
 
 	// Initialize the MultitenantCompactor's executor. If cfg.PlanningMode is set to 'scheduler', the compactor
-	// will periodically request to lease a job from a scheduler service at cfg.SchedulerAddress.
+	// will periodically request to lease a job from a scheduler service at cfg.SchedulerEndpoint.
 	if c.compactorCfg.PlanningMode == planningModeScheduler {
 		c.executor, err = newSchedulerExecutor(c.compactorCfg, c.logger, c.invalidClusterValidation)
 		if err != nil {
