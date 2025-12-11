@@ -3,7 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 (import 'alerts-utils.libsonnet') {
   local GEMFederationFrontendRemoteClusterErrors(histogram_type) = {
     alert: 'GEMFederationFrontendRemoteClusterErrors',  // We do not use the alertName function here because this alert only makes sense in the context of GEM.
-    local sum_by = ["remote_cluster"],
+    local sum_by = ['remote_cluster'],
     local range_interval = $.alertRangeInterval(1),
     local numerator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_federation_frontend_cluster_remote_latency_seconds', 'status="server_error"', rate_interval=range_interval, from_recording=false), sum_by),
     local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_federation_frontend_cluster_remote_latency_seconds', '', rate_interval=range_interval, from_recording=false), sum_by),
