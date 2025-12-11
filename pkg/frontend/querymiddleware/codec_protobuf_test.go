@@ -713,6 +713,62 @@ func TestProtobufFormat_EncodeResponse(t *testing.T) {
 	}
 }
 
+func TestProtobufFormat_EncodeResponse_SizeLimit(t *testing.T) {
+	for _, tc := range protobufCodecScenarios {
+		if tc.response == nil {
+			continue
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			encodeWithLimit := func(t *testing.T, limit uint64) ([]byte, error) {
+				reg := prometheus.NewPedanticRegistry()
+				codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{}, limit)
+
+				httpRequest := &http.Request{
+					Header: http.Header{"Accept": []string{mimirpb.QueryResponseMimeType}},
+				}
+
+				httpResponse, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, tc.response)
+				if err != nil {
+					return nil, err
+				}
+
+				require.Equal(t, http.StatusOK, httpResponse.StatusCode)
+				require.Equal(t, mimirpb.QueryResponseMimeType, httpResponse.Header.Get("Content-Type"))
+
+				body, err := io.ReadAll(httpResponse.Body)
+				require.NoError(t, err)
+
+				return body, nil
+			}
+
+			expectedPayload, err := tc.payload.Marshal()
+			require.NoError(t, err)
+
+			t.Run("payload too large for limit", func(t *testing.T) {
+				limit := uint64(len(expectedPayload) - 1)
+				body, err := encodeWithLimit(t, limit)
+				require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: Protobuf response (%d bytes) is larger than the maximum allowed (%d bytes)", len(expectedPayload), limit), err)
+				require.Nil(t, body)
+			})
+
+			t.Run("payload exactly same size as limit", func(t *testing.T) {
+				limit := uint64(len(expectedPayload))
+				body, err := encodeWithLimit(t, limit)
+				require.NoError(t, err)
+				require.Equal(t, expectedPayload, body)
+			})
+
+			t.Run("payload smaller than limit", func(t *testing.T) {
+				limit := uint64(len(expectedPayload) + 1)
+				body, err := encodeWithLimit(t, limit)
+				require.NoError(t, err)
+				require.Equal(t, expectedPayload, body)
+			})
+		})
+	}
+}
+
 func BenchmarkProtobufFormat_DecodeResponse(b *testing.B) {
 	headers := http.Header{"Content-Type": []string{mimirpb.QueryResponseMimeType}}
 	codec := newTestCodecWithFormat(formatProtobuf)

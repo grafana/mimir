@@ -878,10 +878,10 @@ func TestCodec_EncodeResponse_ContentNegotiation(t *testing.T) {
 		Error:     "something went wrong",
 	}
 
-	jsonBody, err := jsonFormatter{}.EncodeQueryResponse(testResponse)
+	jsonBody, err := jsonFormatter{maxEncodedSize: math.MaxUint64}.EncodeQueryResponse(testResponse)
 	require.NoError(t, err)
 
-	protobufBody, err := ProtobufFormatter{}.EncodeQueryResponse(testResponse)
+	protobufBody, err := ProtobufFormatter{maxEncodedSize: math.MaxUint64}.EncodeQueryResponse(testResponse)
 	require.NoError(t, err)
 
 	scenarios := map[string]struct {

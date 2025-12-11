@@ -1076,7 +1076,8 @@ func (c Codec) EncodeMetricsQueryResponse(ctx context.Context, req *http.Request
 	start := time.Now()
 	b, err := formatter.EncodeQueryResponse(a)
 	if err != nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
+		typ := apierror.TypeForError(err, apierror.TypeInternal)
+		return nil, apierror.Newf(typ, "error encoding response: %v", err)
 	}
 
 	encodeDuration := time.Since(start)
