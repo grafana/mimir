@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 // errNotApplied is a sentinel error returned by trySplitFunction when splitting cannot be applied
@@ -42,16 +43,16 @@ type OptimizationPass struct {
 func NewOptimizationPass(splitInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		splitInterval: splitInterval,
-		splitNodesIntroduced: prometheus.NewCounter(prometheus.CounterOpts{
+		splitNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_query_splitting_split_nodes_introduced_total",
 			Help: "Total number of query spltting nodes introduced by the query splitting optimization pass ",
 		}),
 		// TODO: narrow down what nodes count as "inspected"? e.g. some function might never be able to be split - need to be function over range vector, not point in adding. maybe should just include function nodes that can be split
-		functionNodesInspected: prometheus.NewCounter(prometheus.CounterOpts{
+		functionNodesInspected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_query_splitting_function_nodes_inspected_total",
 			Help: "Total number of function nodes inspected to decide whether to split",
 		}),
-		functionNodesUnsplit: prometheus.NewCounterVec(prometheus.CounterOpts{
+		functionNodesUnsplit: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_query_splitting_function_nodes_unsplit_total",
 			Help: "Total number of function nodes inspected but not split",
 		}, []string{"reason"}),
