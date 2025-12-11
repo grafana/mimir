@@ -137,16 +137,16 @@ func TestConfig_Validate(t *testing.T) {
 		"should pass with scheduler mode and valid address": {
 			setup: func(cfg *Config) {
 				cfg.PlanningMode = planningModeScheduler
-				cfg.SchedulerAddress = "localhost:9095"
+				cfg.SchedulerEndpoint = "localhost:9095"
 			},
 			expected: "",
 		},
 		"should fail with scheduler mode but no address": {
 			setup: func(cfg *Config) {
 				cfg.PlanningMode = planningModeScheduler
-				cfg.SchedulerAddress = ""
+				cfg.SchedulerEndpoint = ""
 			},
-			expected: errInvalidSchedulerAddress.Error(),
+			expected: errInvalidSchedulerEndpoint.Error(),
 		},
 		"should fail with invalid planning mode": {
 			setup: func(cfg *Config) {
@@ -157,7 +157,7 @@ func TestConfig_Validate(t *testing.T) {
 		"should fail with scheduler mode and zero update interval": {
 			setup: func(cfg *Config) {
 				cfg.PlanningMode = planningModeScheduler
-				cfg.SchedulerAddress = "localhost:9095"
+				cfg.SchedulerEndpoint = "localhost:9095"
 				cfg.SchedulerUpdateInterval = 0
 			},
 			expected: errInvalidSchedulerUpdateInterval.Error(),
