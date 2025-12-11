@@ -356,6 +356,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 				continue
 			}
 
+			// TODO move this inside AddSeries
 			if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
 				return nil, false, err
 			}
