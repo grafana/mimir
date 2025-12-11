@@ -791,7 +791,7 @@ func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logg
 			}
 		}
 	}
-	return w, false
+	return w, true
 }
 
 func (r *ConcurrentFetchers) isDone() bool {
