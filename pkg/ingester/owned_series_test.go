@@ -1761,7 +1761,8 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("inactive partition changed to active, change reported", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(3, ring.PartitionActive, time.Now())
+			_, err := partitionRing.UpdatePartitionState(3, ring.PartitionActive, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Active, 2: Active, 3: Active, 4: Pending
 		checkExpectedRingChange(true)
@@ -1771,7 +1772,8 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("active partition changed to inactive, change reported", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(1, ring.PartitionInactive, time.Now())
+			_, err := partitionRing.UpdatePartitionState(1, ring.PartitionInactive, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Inactive, 2: Active, 3: Active, 4: Pending
 		checkExpectedRingChange(true)
@@ -1781,7 +1783,8 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("inactive partition changed to pending, no change reported", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(1, ring.PartitionPending, time.Now())
+			_, err := partitionRing.UpdatePartitionState(1, ring.PartitionPending, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Pending, 2: Active, 3: Active, 4: Pending
 		checkExpectedRingChange(false)
@@ -1789,8 +1792,11 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 
 	t.Run("two partitions change at the same time", func(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
-			partitionRing.UpdatePartitionState(1, ring.PartitionActive, time.Now())
-			partitionRing.UpdatePartitionState(2, ring.PartitionInactive, time.Now())
+			_, err := partitionRing.UpdatePartitionState(1, ring.PartitionActive, time.Now())
+			require.NoError(t, err)
+
+			_, err = partitionRing.UpdatePartitionState(2, ring.PartitionInactive, time.Now())
+			require.NoError(t, err)
 		})
 		// State of the ring: 1: Active, 2: Inactive, 3: Active, 4: Pending
 		checkExpectedRingChange(true)

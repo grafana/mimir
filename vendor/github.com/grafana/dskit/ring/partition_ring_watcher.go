@@ -2,6 +2,7 @@ package ring
 
 import (
 	"context"
+	"strconv"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -105,6 +106,15 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 	// Update metrics.
 	for state, count := range desc.countPartitionsByState() {
 		w.numPartitionsGaugeVec.WithLabelValues(state.CleanName()).Set(float64(count))
+	}
+
+	// Check partitions whose state change is locked and log them.
+	for partitionID, partition := range desc.Partitions {
+		state := partition.GetState().CleanName()
+		partitionIDStr := strconv.Itoa(int(partitionID))
+		if partition.StateChangeLocked {
+			level.Warn(w.logger).Log("msg", "partition state change is locked", "partition_id", partitionIDStr, "partition_state", state)
+		}
 	}
 }
 
