@@ -710,7 +710,7 @@ func (r *ConcurrentFetchers) handleWant(ctx context.Context, logger log.Logger, 
 
 	for attempt := 0; errBackoff.Ongoing() && !r.isDone() && w.endOffset > w.startOffset; attempt++ {
 		var continueAttempts bool
-		w, continueAttempts = r.performAttempt(ctx, logger, attempt, w, errBackoff, highWatermark, bufferedResult)
+		w, continueAttempts = r.performAttempt(ctx, logger, attempt, w, errBackoff, highWatermark, &bufferedResult)
 		if !continueAttempts {
 			break
 		}
@@ -719,7 +719,7 @@ func (r *ConcurrentFetchers) handleWant(ctx context.Context, logger log.Logger, 
 
 // performAttempt performs a single Fetch request and handles the result.
 // It returns a boolean indicating whether the attempt should be retried.
-func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logger, attempt int, w fetchWant, errBackoff *backoff.Backoff, highWatermark *atomic.Int64, bufferedResult fetchResult) (fetchWant, bool) {
+func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logger, attempt int, w fetchWant, errBackoff *backoff.Backoff, highWatermark *atomic.Int64, bufferedResult *fetchResult) (fetchWant, bool) {
 	attemptSpan, ctx := spanlogger.New(ctx, logger, tracer, "concurrentFetcher.fetch.attempt")
 	attemptSpan.SetTag("attempt", attempt)
 
@@ -757,13 +757,14 @@ func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logg
 
 		// Merge the last fetch result if the previous buffered result (if any).
 		// Keep non-mergeable fields from res, because the last response is the most updated one.
-		bufferedResult = res.Merge(bufferedResult)
+		merged := res.Merge(*bufferedResult)
+		bufferedResult = &merged
 	}
 
 	if len(bufferedResult.Records) == 0 {
 		// If we have no buffered records to try to send to the result channel
 		// then we retry with another Fetch attempt.
-		return fetchWant{}, true
+		return w, true
 	}
 
 	w.startOffset = bufferedResult.Records[len(bufferedResult.Records)-1].Offset + 1
@@ -776,8 +777,8 @@ func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logg
 	select {
 	case <-r.done:
 	case <-ctx.Done():
-	case w.result <- bufferedResult:
-		bufferedResult = fetchResult{}
+	case w.result <- *bufferedResult:
+		bufferedResult = &fetchResult{}
 	default:
 		if w.startOffset >= w.endOffset {
 			// We've fetched all we were asked for the whole batch is ready, and we definitely have to wait to send on the channel now.
@@ -785,8 +786,8 @@ func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logg
 			select {
 			case <-r.done:
 			case <-ctx.Done():
-			case w.result <- bufferedResult:
-				bufferedResult = fetchResult{}
+			case w.result <- *bufferedResult:
+				bufferedResult = &fetchResult{}
 			}
 		}
 	}
