@@ -1794,7 +1794,7 @@ func TestOwnedSeriesPartitionsRingStrategyRingChanged(t *testing.T) {
 		updatePartitionRingAndWaitForWatcherToReadUpdate(t, wkv, func(partitionRing *ring.PartitionRingDesc) {
 			_, err := partitionRing.UpdatePartitionState(1, ring.PartitionActive, time.Now())
 			require.NoError(t, err)
-			
+
 			_, err = partitionRing.UpdatePartitionState(2, ring.PartitionInactive, time.Now())
 			require.NoError(t, err)
 		})
