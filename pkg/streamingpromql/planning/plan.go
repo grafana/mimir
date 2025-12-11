@@ -232,6 +232,10 @@ type OperatorParameters struct {
 type SplittableNode interface {
 	Node
 
+	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
+	// be split, there might be some edge cases where it's not possible or not implemented yet.
+	IsSplittable() bool
+
 	// QuerySplittingCacheKey returns a cache key for this node's intermediate results.
 	QuerySplittingCacheKey() string
 

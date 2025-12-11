@@ -150,7 +150,7 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 
 	// TODO: not all splittable functions will have the first child as the range vector operator
 	inner, ok := functionCall.Child(0).(planning.SplittableNode)
-	if !ok {
+	if !ok || !inner.IsSplittable() {
 		return nil, &errNotApplied{reason: "unsupported_inner_node"}
 	}
 

@@ -24,6 +24,11 @@ type MatrixSelector struct {
 	*MatrixSelectorDetails
 }
 
+func (m *MatrixSelector) IsSplittable() bool {
+	// TODO: it should be possible to add support for smoothed and anchored, but that will be left for later
+	return !(m.Smoothed || m.Anchored)
+}
+
 var _ planning.SplittableNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
