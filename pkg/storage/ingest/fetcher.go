@@ -752,7 +752,7 @@ func (r *ConcurrentFetchers) performAttempt(ctx context.Context, logger log.Logg
 			casHWM(highWatermark, hwm)
 		}
 
-		// Merge the last fetch result if the previous buffered result (if any).
+		// Merge the last fetch result with the previous buffered result (if any).
 		// Keep non-mergeable fields from res, because the last response is the most updated one.
 		bufferedResult = res.Merge(bufferedResult)
 	}
