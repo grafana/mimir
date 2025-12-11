@@ -15,6 +15,7 @@ metadata:
   namespace: {{ $.ctx.Release.Namespace | quote }}
 spec:
   podManagementPolicy: {{ .podManagementPolicy }}
+  minReadySeconds: {{ .minReadySeconds }}
   replicas: {{ .replicas }}
   selector:
     matchLabels:

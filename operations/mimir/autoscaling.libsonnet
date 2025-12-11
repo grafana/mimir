@@ -8,9 +8,12 @@
     // If true, compute the scaling metric as non-null only when container_memory_working_set_bytes is available
     autoscaling_memory_hpa_require_metrics: false,
 
+    // If true and there is no memory trigger, add OOM protection trigger to prevent premature scale-down when pods are being OOM-killed.
+    autoscaling_oom_protection_enabled: false,
+
     autoscaling_querier_enabled: false,
-    autoscaling_querier_min_replicas: error 'you must set autoscaling_querier_min_replicas in the _config',
-    autoscaling_querier_max_replicas: error 'you must set autoscaling_querier_max_replicas in the _config',
+    autoscaling_querier_min_replicas_per_zone: error 'you must set autoscaling_querier_min_replicas_per_zone in the _config',
+    autoscaling_querier_max_replicas_per_zone: error 'you must set autoscaling_querier_max_replicas_per_zone in the _config',
     autoscaling_querier_target_utilization: 0.75,  // Target to utilize 75% querier workers on peak traffic, so we have 25% room for higher peaks.
     autoscaling_querier_predictive_scaling_enabled: false,  // Use inflight queries from the past to predict the number of queriers needed.
     autoscaling_querier_predictive_scaling_period: '6d23h30m',  // The period to consider when considering scheduler metrics for predictive scaling. This is usually slightly lower than the period of the repeating query events to give scaling up lead time.
@@ -19,8 +22,8 @@
     autoscaling_querier_scaledown_percent_cap: 10,  // The maximum percent a querier deployment may scale down every 2m.
 
     autoscaling_ruler_querier_enabled: false,
-    autoscaling_ruler_querier_min_replicas: error 'you must set autoscaling_ruler_querier_min_replicas in the _config',
-    autoscaling_ruler_querier_max_replicas: error 'you must set autoscaling_ruler_querier_max_replicas in the _config',
+    autoscaling_ruler_querier_min_replicas_per_zone: error 'you must set autoscaling_ruler_querier_min_replicas_per_zone in the _config',
+    autoscaling_ruler_querier_max_replicas_per_zone: error 'you must set autoscaling_ruler_querier_max_replicas_per_zone in the _config',
     autoscaling_ruler_querier_cpu_target_utilization: 1,
     autoscaling_ruler_querier_memory_target_utilization: 1,
     autoscaling_ruler_querier_workers_target_utilization: 0.75,  // Target to utilize 75% ruler-querier workers on peak traffic, so we have 25% room for higher peaks.
@@ -32,20 +35,20 @@
     autoscaling_distributor_memory_target_utilization: 1,
 
     autoscaling_ruler_enabled: false,
-    autoscaling_ruler_min_replicas: error 'you must set autoscaling_ruler_min_replicas in the _config',
-    autoscaling_ruler_max_replicas: error 'you must set autoscaling_ruler_max_replicas in the _config',
+    autoscaling_ruler_min_replicas_per_zone: error 'you must set autoscaling_ruler_min_replicas_per_zone in the _config',
+    autoscaling_ruler_max_replicas_per_zone: error 'you must set autoscaling_ruler_max_replicas_per_zone in the _config',
     autoscaling_ruler_cpu_target_utilization: 1,
     autoscaling_ruler_memory_target_utilization: 1,
 
     autoscaling_query_frontend_enabled: false,
-    autoscaling_query_frontend_min_replicas: error 'you must set autoscaling_query_frontend_min_replicas in the _config',
-    autoscaling_query_frontend_max_replicas: error 'you must set autoscaling_query_frontend_max_replicas in the _config',
+    autoscaling_query_frontend_min_replicas_per_zone: error 'you must set autoscaling_query_frontend_min_replicas_per_zone in the _config',
+    autoscaling_query_frontend_max_replicas_per_zone: error 'you must set autoscaling_query_frontend_max_replicas_per_zone in the _config',
     autoscaling_query_frontend_cpu_target_utilization: 0.75,  // Query-frontend CPU utilization can be very spiky based on actual queries.
     autoscaling_query_frontend_memory_target_utilization: 1,
 
     autoscaling_ruler_query_frontend_enabled: false,
-    autoscaling_ruler_query_frontend_min_replicas: error 'you must set autoscaling_ruler_query_frontend_min_replicas in the _config',
-    autoscaling_ruler_query_frontend_max_replicas: error 'you must set autoscaling_ruler_query_frontend_max_replicas in the _config',
+    autoscaling_ruler_query_frontend_min_replicas_per_zone: error 'you must set autoscaling_ruler_query_frontend_min_replicas_per_zone in the _config',
+    autoscaling_ruler_query_frontend_max_replicas_per_zone: error 'you must set autoscaling_ruler_query_frontend_max_replicas_per_zone in the _config',
     autoscaling_ruler_query_frontend_cpu_target_utilization: 1,
     autoscaling_ruler_query_frontend_memory_target_utilization: 1,
 
@@ -480,6 +483,31 @@
                // up or down unexpectedly. See https://keda.sh/docs/2.13/scalers/prometheus/ for more info.
                ignore_null_values: false,
              },
+           ] else if $._config.autoscaling_oom_protection_enabled then [
+             {
+               // This trigger prevents premature scale-down when pods are being OOM-killed. If any pod has been
+               // OOM-killed in the last 15 minutes, the query returns 1, which with metric_type "Value" gets
+               // multiplied by the current pod count, ensuring HPA maintains at least the current replica count.
+               // When no OOM kills occur, it returns 0, making this trigger inactive (other triggers determine scaling).
+               metric_name: '%s%s_oom_protection_hpa_%s' %
+                            ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
+               query: queryWithWeight(|||
+                 # Return 1 if any pods OOM-ed within the last 15 minutes.
+                 group (
+                   max by (pod) (
+                     kube_pod_container_status_last_terminated_reason{container="%(container)s",namespace="%(namespace)s",reason="OOMKilled"%(extra_matchers)s}
+                   )
+                   and
+                   max by (pod) (
+                     changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0
+                   )
+                 ) or vector(0)
+               ||| % queryParameters, weight),
+               threshold: '1',
+               metric_type: 'Value',
+               // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
+               ignore_null_values: false,
+             },
            ] else []) + extra_triggers,
     },
   ),
@@ -529,8 +557,8 @@
       query_scheduler_container_name='query-scheduler',
       querier_container_name='querier',
       querier_max_concurrent=$.querier_args['querier.max-concurrent'],
-      min_replicas=$._config.autoscaling_querier_min_replicas,
-      max_replicas=$._config.autoscaling_querier_max_replicas,
+      min_replicas=$._config.autoscaling_querier_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_querier_max_replicas_per_zone,
       target_utilization=$._config.autoscaling_querier_target_utilization,
     ),
 
@@ -549,8 +577,8 @@
       container_name='query-frontend',
       cpu_requests=$.query_frontend_container.resources.requests.cpu,
       memory_requests=$.query_frontend_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_query_frontend_min_replicas,
-      max_replicas=$._config.autoscaling_query_frontend_max_replicas,
+      min_replicas=$._config.autoscaling_query_frontend_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_query_frontend_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_query_frontend_memory_target_utilization,
       extra_matchers=extra_matchers,
@@ -563,7 +591,7 @@
     'query_frontend_deployment',
     if $._config.autoscaling_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_querier_enabled) then
-        queryFrontendReplicas($._config.autoscaling_querier_max_replicas) else
+        queryFrontendReplicas($._config.autoscaling_querier_max_replicas_per_zone) else
         {}
   ),
 
@@ -577,8 +605,8 @@
       container_name='ruler-querier',
       cpu_requests=$.ruler_querier_container.resources.requests.cpu,
       memory_requests=$.ruler_querier_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_ruler_querier_min_replicas,
-      max_replicas=$._config.autoscaling_ruler_querier_max_replicas,
+      min_replicas=$._config.autoscaling_ruler_querier_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_ruler_querier_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_ruler_querier_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_querier_memory_target_utilization,
       extra_matchers=extra_matchers,
@@ -629,8 +657,8 @@
       container_name='ruler-query-frontend',
       cpu_requests=$.ruler_query_frontend_container.resources.requests.cpu,
       memory_requests=$.ruler_query_frontend_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas,
-      max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas,
+      min_replicas=$._config.autoscaling_ruler_query_frontend_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_ruler_query_frontend_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_ruler_query_frontend_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_query_frontend_memory_target_utilization,
       extra_matchers=extra_matchers,
@@ -643,7 +671,7 @@
     'ruler_query_frontend_deployment',
     if $._config.autoscaling_ruler_query_frontend_enabled then $.removeReplicasFromSpec else
       if ($._config.query_sharding_enabled && $._config.autoscaling_ruler_querier_enabled) then
-        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas) else
+        queryFrontendReplicas($._config.autoscaling_ruler_querier_max_replicas_per_zone) else
         {}
   ),
 
@@ -719,47 +747,21 @@
       }
     ),
 
-  local isDistributorSingleZoneEnabled = $._config.single_zone_distributor_enabled,
-  local isDistributorMultiZoneEnabled = $._config.multi_zone_distributor_enabled,
-  local isDistributorAutoscalingEnabled = $._config.autoscaling_distributor_enabled,
-  local isDistributorAutoscalingSingleZoneEnabled = isDistributorSingleZoneEnabled && isDistributorAutoscalingEnabled,
-  local isDistributorAutoscalingZoneAEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isDistributorAutoscalingZoneBEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
-  local isDistributorAutoscalingZoneCEnabled = isDistributorMultiZoneEnabled && isDistributorAutoscalingEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  //
+  // Distributors
+  //
 
-  distributor_scaled_object: if !isDistributorAutoscalingSingleZoneEnabled then null else
-    // When both single-zone and multi-zone coexists, the single-zone scaling metrics shouldn't
-    // match the multi-zone pods.
-    $.newDistributorScaledObject('distributor', extra_matchers=(if isDistributorMultiZoneEnabled then 'pod!~"distributor-zone.*"' else '')),
+  distributor_scaled_object: if !$._config.autoscaling_distributor_enabled then null else
+    $.newDistributorScaledObject('distributor'),
 
   distributor_deployment: overrideSuperIfExists(
     'distributor_deployment',
-    if !isDistributorAutoscalingSingleZoneEnabled then {} else $.removeReplicasFromSpec
+    if !$._config.autoscaling_distributor_enabled then {} else $.removeReplicasFromSpec
   ),
 
-  distributor_zone_a_scaled_object: if !isDistributorAutoscalingZoneAEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-a', 'pod=~"distributor-zone-a.*"'),
-
-  distributor_zone_a_deployment: overrideSuperIfExists(
-    'distributor_zone_a_deployment',
-    if !isDistributorAutoscalingZoneAEnabled then {} else $.removeReplicasFromSpec
-  ),
-
-  distributor_zone_b_scaled_object: if !isDistributorAutoscalingZoneBEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-b', 'pod=~"distributor-zone-b.*"'),
-
-  distributor_zone_b_deployment: overrideSuperIfExists(
-    'distributor_zone_b_deployment',
-    if !isDistributorAutoscalingZoneBEnabled then {} else $.removeReplicasFromSpec
-  ),
-
-  distributor_zone_c_scaled_object: if !isDistributorAutoscalingZoneCEnabled then null else
-    $.newDistributorScaledObject('distributor-zone-c', 'pod=~"distributor-zone-c.*"'),
-
-  distributor_zone_c_deployment: overrideSuperIfExists(
-    'distributor_zone_c_deployment',
-    if !isDistributorAutoscalingZoneCEnabled then {} else $.removeReplicasFromSpec
-  ),
+  //
+  // Rulers
+  //
 
   newRulerScaledObject(name, extra_matchers='')::
     $.newResourceScaledObject(
@@ -767,8 +769,8 @@
       container_name='ruler',
       cpu_requests=$.ruler_container.resources.requests.cpu,
       memory_requests=$.ruler_container.resources.requests.memory,
-      min_replicas=$._config.autoscaling_ruler_min_replicas,
-      max_replicas=$._config.autoscaling_ruler_max_replicas,
+      min_replicas=$._config.autoscaling_ruler_min_replicas_per_zone,
+      max_replicas=$._config.autoscaling_ruler_max_replicas_per_zone,
       cpu_target_utilization=$._config.autoscaling_ruler_cpu_target_utilization,
       memory_target_utilization=$._config.autoscaling_ruler_memory_target_utilization,
       // To guarantee rule evaluation without any omissions, it is imperative to avoid the frequent scaling up and

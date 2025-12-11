@@ -196,7 +196,9 @@ The following features are currently experimental:
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
   - Querier ring (all flags beginning with `-querier.ring`)
+  - Query-frontend health check grace period (`querier.frontend-health-check-grace-period`)
 - Query-frontend
+
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
   - Sharding of active series queries (`-query-frontend.shard-active-series-queries`)
   - Server-side write timeout for responses to active series requests (`-query-frontend.active-series-write-timeout`)
@@ -207,9 +209,12 @@ The following features are currently experimental:
   - Support for duration expressions in PromQL, which are simple arithmetics on numbers in offset and range specification.
   - Support for configuring the maximum series limit for cardinality API requests on a per-tenant basis via `cardinality_analysis_max_results`.
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-query-frontend.query-engine` and `-query-frontend.enable-query-engine-fallback`)
-  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true`
+  - Remote execution of queries in queriers: `-query-frontend.enable-remote-execution=true` and `-query-frontend.enable-multiple-node-remote-execution-requests=true`
   - Performing query sharding within MQE: `-query-frontend.use-mimir-query-engine-for-sharding=true`
   - Rewriting of queries to optimize processing: `-query-frontend.rewrite-histogram-queries` and `-query-frontend.rewrite-propagate-matchers`
+  - Enable experimental Prometheus extended range selector modifiers `smoothed` and `anchored` (`-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored`)
+  - Experimental PromQL functions and aggregations, including `mad_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_first_over_time`, `ts_of_last_over_time`, `sort_by_label`, `sort_by_label_desc`, `limitk` and `limit_ratio` (`-query-frontend.enabled-promql-experimental-functions=...`)
+
 - Query-scheduler
   - `-query-scheduler.querier-forget-delay`
 - Store-gateway
@@ -247,12 +252,14 @@ The following features are currently experimental:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
-- Preferred available zone for querying ingesters and store-gateways
-  - `-querier.prefer-availability-zone`
+- Preferred available zones for querying ingesters and store-gateways
+  - `-querier.prefer-availability-zones`
 - Memberlist zone-aware routing
   - `-memberlist.zone-aware-routing.enabled`
   - `-memberlist.zone-aware-routing.instance-availability-zone`
   - `-memberlist.zone-aware-routing.role`
+- Jsonnet
+  - `$._config.autoscaling_oom_protection_enabled` controls whether to add extra KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled
 
 ## Deprecated features
 
@@ -270,3 +277,7 @@ The following features or configuration parameters are currently deprecated and 
 - Postings for matchers cache size (number of entries) configuration:
   - `-blocks-storage.tsdb.head-postings-for-matchers-cache-size`
   - `-blocks-storage.tsdb.block-postings-for-matchers-cache-size`
+
+The following features or configuration parameters were deprecated in Mimir 3.1 and will be removed in Mimir 3.3:
+
+- Considering cached results when calculating the number of processed samples reported in query stats (`-query-frontend.cache-samples-processed-stats=true`).

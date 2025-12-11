@@ -216,7 +216,7 @@ func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan
 		return err
 	}
 
-	plan, err := updatedPlan.ToEncodedPlan(true, false)
+	plan, _, err := updatedPlan.ToEncodedPlan(true, false)
 	if err != nil {
 		return err
 	}
@@ -236,7 +236,7 @@ func (o *PlanningObserver) OnPlanningStageComplete(stageName string, updatedPlan
 }
 
 func (o *PlanningObserver) OnAllPlanningStagesComplete(finalPlan *planning.QueryPlan) error {
-	plan, err := finalPlan.ToEncodedPlan(true, false)
+	plan, _, err := finalPlan.ToEncodedPlan(true, false)
 	if err != nil {
 		return err
 	}

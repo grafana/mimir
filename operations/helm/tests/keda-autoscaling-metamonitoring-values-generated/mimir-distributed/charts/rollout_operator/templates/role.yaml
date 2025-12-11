@@ -6,7 +6,7 @@ metadata:
   name: keda-autoscaling-metamonitoring-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.37.1
+    helm.sh/chart: rollout-operator-0.38.1
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: keda-autoscaling-metamonitoring-values
     app.kubernetes.io/version: "v0.32.0"

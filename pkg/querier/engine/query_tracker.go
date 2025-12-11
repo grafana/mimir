@@ -43,9 +43,9 @@ func (q *queryTracker) Insert(ctx context.Context, query string) (int, error) {
 	return id, nil
 }
 
-func (q *queryTracker) InsertWithDetails(ctx context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error) {
+func (q *queryTracker) InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error) {
 	id := q.tracker.Insert(func() string {
-		return generateActivityDescription(ctx, query, stage, timeRange, true)
+		return generateActivityDescription(ctx, query, stage, timeRange, includeTimeRange)
 	})
 
 	return id, nil

@@ -20,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/testdatagen"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -229,34 +230,31 @@ func setupSubquerySpinOffTestSeries(t *testing.T, timeRange time.Duration) stora
 
 	// Add counter series.
 	for i := 0; i < numSeries; i++ {
-		gen := factor(float64(i) * 0.1)
+		gen := testdatagen.Factor(float64(i) * 0.1)
 		if i >= numSeries-numStaleSeries {
 			// Wrap the generator to inject the staleness marker between minute 10 and 20.
-			gen = stale(time.Now().Add(10*time.Minute), time.Now().Add(20*time.Minute), gen)
+			gen = testdatagen.Stale(time.Now().Add(10*time.Minute), time.Now().Add(20*time.Minute), gen)
 		}
 
-		series = append(series, newSeries(newTestCounterLabels(seriesID), samplesStart, samplesEnd, samplesStep, gen))
+		series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID), samplesStart, samplesEnd, samplesStep, gen))
 		seriesID++
 	}
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and has NO stale marker.
-	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		samplesStart, time.Now().Add(-5*time.Minute), samplesStep, factor(2)))
+	series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID), samplesStart, time.Now().Add(-5*time.Minute), samplesStep, testdatagen.Factor(2)))
 	seriesID++
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and HAS a stale marker at the end.
-	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		samplesStart, time.Now().Add(-5*time.Minute), samplesStep, stale(time.Now().Add(-6*time.Minute), time.Now().Add(-4*time.Minute), factor(2))))
+	series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID), samplesStart, time.Now().Add(-5*time.Minute), samplesStep, testdatagen.Stale(time.Now().Add(-6*time.Minute), time.Now().Add(-4*time.Minute), testdatagen.Factor(2))))
 	seriesID++
 
 	// Add a special series whose data points start later than the start of the queried time range.
-	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		time.Now().Add(5*time.Minute), samplesEnd, samplesStep, factor(2)))
+	series = append(series, testdatagen.NewSeries(testdatagen.NewTestCounterLabels(seriesID), time.Now().Add(5*time.Minute), samplesEnd, samplesStep, testdatagen.Factor(2)))
 
 	// Create a queryable on the fixtures.
-	queryable := storageSeriesQueryable(series)
+	queryable := testdatagen.StorageSeriesQueryable(series)
 
 	return queryable
 }
@@ -365,4 +363,42 @@ cortex_frontend_subquery_spinoff_successes_total %d
 			})
 		})
 	}
+}
+
+func TestSpinOffSubqueries_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	runForEngines(t, func(t *testing.T, opts promql.EngineOpts, eng promql.QueryEngine) {
+		reg := prometheus.NewPedanticRegistry()
+
+		fakeMiddleware := MetricsQueryMiddlewareFunc(func(next MetricsQueryHandler) MetricsQueryHandler {
+			return next
+		})
+
+		spinoffMiddleware := newSpinOffSubqueriesMiddleware(
+			mockLimits{subquerySpinOffEnabled: true},
+			log.NewNopLogger(),
+			eng,
+			reg,
+			fakeMiddleware,
+			defaultStepFunc,
+		)
+
+		handler := spinoffMiddleware.Wrap(mockHandlerWith(nil, nil))
+
+		// Create a request with a nil queryExpr to simulate a failed parse.
+		req := &PrometheusRangeQueryRequest{
+			path:      "/query_range",
+			start:     util.TimeToMillis(start),
+			end:       util.TimeToMillis(end),
+			step:      step.Milliseconds(),
+			queryExpr: nil, // Simulates a query that failed to parse
+		}
+
+		ctx := user.InjectOrgID(context.Background(), "test")
+
+		require.NotPanics(t, func() {
+			resp, err := handler.Do(ctx, req)
+			require.ErrorContains(t, err, errRequestNoQuery.Error())
+			require.Nil(t, resp)
+		})
+	})
 }

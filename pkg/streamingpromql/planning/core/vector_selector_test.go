@@ -90,6 +90,25 @@ func TestVectorSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}, skip histogram buckets`,
 		},
+		"one matcher, skip histogram buckets and smoothed enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers:             singleMatcher,
+					SkipHistogramBuckets: true,
+					Smoothed:             true,
+				},
+			},
+			expected: `{__name__="foo"} smoothed, skip histogram buckets`,
+		},
+		"one matcher, smoothed enabled": {
+			node: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: singleMatcher,
+					Smoothed: true,
+				},
+			},
+			expected: `{__name__="foo"} smoothed`,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -316,6 +335,69 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 			},
 			expectEquivalent: true,
 		},
+		"one with smoothed and one without": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: false,
+		},
+		"both smoothed": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           true,
+				},
+			},
+			expectEquivalent: true,
+		},
+		"both not smoothed": {
+			a: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			b: &VectorSelector{
+				VectorSelectorDetails: &VectorSelectorDetails{
+					Matchers: []*LabelMatcher{
+						{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
+					},
+					ExpressionPosition: PositionRange{Start: 1, End: 2},
+					Smoothed:           false,
+				},
+			},
+			expectEquivalent: true,
+		},
 	}
 
 	for name, testCase := range testCases {
@@ -416,7 +498,9 @@ func TestVectorSelector_QueriedTimeRange(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, testCase.expected, testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta))
+			timeRange, err := testCase.selector.QueriedTimeRange(queryTimeRange, lookbackDelta)
+			require.NoError(t, err)
+			require.Equal(t, testCase.expected, timeRange)
 		})
 	}
 }

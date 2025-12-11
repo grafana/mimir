@@ -122,7 +122,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -255,7 +255,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -388,7 +388,7 @@ spec:
               port: http-metrics
             initialDelaySeconds: 45
           resources:
-            limits: null
+            {}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

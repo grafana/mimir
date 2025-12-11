@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -23,6 +24,10 @@ import (
 )
 
 func TestOptimizationPass(t *testing.T) {
+	enableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
+	defer func() { parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors }()
+	parser.EnableExtendedRangeSelectors = true
+
 	testCases := map[string]struct {
 		expr                        string
 		rangeQuery                  bool
@@ -631,6 +636,26 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsEliminated: 2,
 			expectedSelectorsInspected:  5,
 		},
+		// In this case the foo[5m] smoothed provides step data with both a collection of points but also the alternate smoothed head and tail points.
+		// delta() will use the returned points, but rate() will substitute in the smoothed head/tail points to its calculation.
+		// It is important that if the matrix selector is shared between the functions, that the smoothed head/tail alternate points
+		// are not substituted into the points' collection.
+		"duplicate matrix selectors with smoothed head/tail points": {
+			expr:       `delta(foo[5m] smoothed) + rate(foo[5m] smoothed)`,
+			rangeQuery: true,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: delta(...)
+							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
+			`,
+			expectedDuplicateNodes:      0,
+			expectedSelectorsEliminated: 0,
+			expectedSelectorsInspected:  2,
+		},
 	}
 
 	ctx := context.Background()
@@ -638,16 +663,16 @@ func TestOptimizationPass(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			opts := streamingpromql.NewTestEngineOpts()
-			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			opts1 := streamingpromql.NewTestEngineOpts()
+			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
-			reg := prometheus.NewPedanticRegistry()
-			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			opts2 := streamingpromql.NewTestEngineOpts()
+			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg, opts.Logger))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, opts2.CommonOpts.Reg, opts2.Logger))
 
 			var timeRange types.QueryTimeRange
 
@@ -668,6 +693,8 @@ func TestOptimizationPass(t *testing.T) {
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 
+			// Type assertion since we need a Gatherer need to verify the metrics emitted by the optimization pass.
+			reg := opts2.CommonOpts.Reg.(*prometheus.Registry)
 			requireDuplicateNodeCount(t, reg, testCase.expectedDuplicateNodes)
 			requireSelectorCounts(t, reg, testCase.expectedSelectorsInspected, testCase.expectedSelectorsEliminated)
 		})

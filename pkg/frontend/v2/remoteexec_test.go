@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -39,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestScalarExecutionResponse(t *testing.T) {
@@ -1045,7 +1047,7 @@ func TestRemoteExecutor_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *t
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryPlan{}, node, timeRange, false, false, 1)
+	_, err := executor.startExecution(ctx, &planning.QueryParameters{}, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
@@ -1072,31 +1074,89 @@ func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
 	node := &nodeWithOverriddenVersion{
-		Node: &nodeWithOverriddenVersion{
-			Node:    &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
+		child: &nodeWithOverriddenVersion{
+			child:   &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
 			version: 55,
 		},
 		version: 44,
 	}
 
-	fullPlan := &planning.QueryPlan{Version: 66}
-
-	_, err := executor.startExecution(ctx, fullPlan, node, timeRange, false, false, 1)
+	_, err := executor.startExecution(ctx, &planning.QueryParameters{}, node, timeRange, false, 1)
 	require.NoError(t, err)
 
 	require.NotNil(t, frontendMock.request)
 	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
 	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
-	require.Equal(t, planning.QueryPlanVersion(66), request.Plan.Version, "should set request plan version to match the original plan version")
+	require.Equal(t, planning.QueryPlanVersion(55), request.Plan.Version, "should set request plan version to match the highest version required by all nodes")
 }
 
 type nodeWithOverriddenVersion struct {
-	planning.Node
 	version planning.QueryPlanVersion
+	child   planning.Node
 }
 
 func (n *nodeWithOverriddenVersion) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return n.version
+}
+
+func (n *nodeWithOverriddenVersion) Details() proto.Message {
+	return &core.StringLiteralDetails{Value: "nodeWithOverriddenVersion dummy value"}
+}
+
+func (n *nodeWithOverriddenVersion) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_TEST
+}
+
+func (n *nodeWithOverriddenVersion) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic("invalid child index")
+	}
+
+	return n.child
+}
+
+func (n *nodeWithOverriddenVersion) ChildCount() int {
+	return 1
+}
+
+func (n *nodeWithOverriddenVersion) SetChildren(children []planning.Node) error {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) ReplaceChild(idx int, child planning.Node) error {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) MergeHints(other planning.Node) error {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) Describe() string {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) ChildrenLabels() []string {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
+	return n.child.ChildrenTimeRange(timeRange)
+}
+
+func (n *nodeWithOverriddenVersion) ResultType() (parser.ValueType, error) {
+	panic("not supported")
+}
+
+func (n *nodeWithOverriddenVersion) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return n.child.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (n *nodeWithOverriddenVersion) ExpressionPosition() (posrange.PositionRange, error) {
+	panic("not supported")
 }
 
 type requestCapturingFrontendMock struct {
@@ -1207,10 +1267,15 @@ func TestEagerLoadingResponseStream_AbortsNextCallOnContextCancellation(t *testi
 }
 
 type mockResponseStreamThatNeverReturns struct {
-	release chan struct{}
+	release    chan struct{}
+	nextCalled chan struct{}
 }
 
 func (m *mockResponseStreamThatNeverReturns) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	if m.nextCalled != nil {
+		close(m.nextCalled)
+	}
+
 	<-m.release
 	return nil, errors.New("mock response stream closed")
 }
@@ -1224,6 +1289,29 @@ func TestEagerLoadingResponseStream_ClosesInnerStreamWhenClosed(t *testing.T) {
 	stream := newEagerLoadingResponseStream(context.Background(), inner)
 	stream.Close()
 	require.True(t, inner.closed)
+}
+
+func TestEagerLoadingResponseStream_ClosedWhileBuffering(t *testing.T) {
+	inner := &mockResponseStreamThatNeverReturns{
+		release:    make(chan struct{}),
+		nextCalled: make(chan struct{}),
+	}
+
+	stream := newEagerLoadingResponseStream(context.Background(), inner)
+
+	// Wait for the stream to start buffering.
+	<-inner.nextCalled
+
+	// Close the stream to trigger the inner Next() call returning.
+	stream.Close()
+
+	// Make sure the buffering goroutine has exited.
+	test.VerifyNoLeak(t)
+
+	// Make sure calling Next() fails with a sensible error.
+	msg, err := stream.Next(context.Background())
+	require.Nil(t, msg)
+	require.ErrorContains(t, err, "stream closed")
 }
 
 func TestResponseStreamBuffer(t *testing.T) {
@@ -1307,7 +1395,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass())
+	planner.RegisterQueryPlanOptimizationPass(remoteexec.NewOptimizationPass(false))
 
 	if enableMQESharding {
 		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
@@ -1326,13 +1414,19 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 			maxMtx.Lock()
 			maxConcurrent = max(current, maxConcurrent)
 			maxMtx.Unlock()
-			afterLastMessageSent := func() {
+
+			beforeLastMessageSent := func() {
+				// Ideally we'd decrement the count the moment the last message is received by the frontend, but that's not possible.
+				// If we decrement it later than that, the test might incorrectly fail because the frontend might have already received the last message,
+				// so the frontend sending another request is OK.
+				// If we decrement it slightly early like this, there's a small risk we won't catch a case where the frontend sends too many requests
+				// in parallel.
 				count.Dec()
 			}
 
 			// Simulate doing some work, then send an empty response.
 			time.Sleep(20 * time.Millisecond)
-			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, afterLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
 			require.NoError(t, err)
 		}()
 
@@ -1341,7 +1435,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	executor := NewRemoteExecutor(frontend, cfg)
-	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC, remoteexec.NewRemoteExecutionMaterializer(executor)))
+	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_CONSUMER, remoteexec.NewRemoteExecutionConsumerMaterializer(executor)))
 
 	expr, err := parser.ParseExpr("sum(foo)")
 	require.NoError(t, err)

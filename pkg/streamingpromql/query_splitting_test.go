@@ -670,7 +670,12 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 
 				backend := newTestCacheBackend()
 				irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
-				innerEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, irCache)
+
+				// Create a new registry for each engine to avoid duplicate metric registration
+				optsWithNewReg := opts
+				optsWithNewReg.CommonOpts.Reg = prometheus.NewRegistry()
+
+				innerEngine, err := newEngineWithCache(optsWithNewReg, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, irCache)
 				require.NoError(t, err)
 
 				engine := &engineWithOrgID{engine: innerEngine, orgID: "test-user"}

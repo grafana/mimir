@@ -223,6 +223,9 @@ func (p *partitionHandler) start(ctx context.Context) error {
 	if err := p.loadEvents(ctx, eventsOffset); err != nil {
 		return errors.Wrap(err, "unable to load events")
 	}
+	// Initial limits are lower than real limits, and we've just loaded the snapshots and processed events,
+	// so update the limits to let users track more series.
+	p.store.updateLimits()
 
 	// Register the tracker store only after loading snapshots & events.
 	if err := p.partitionRegisterer.Register(p.store); err != nil {
@@ -307,11 +310,9 @@ func (p *partitionHandler) loadAllSnapshotShards(ctx context.Context, files []st
 	go func() {
 		for snapshot := range downloaded {
 			snapshotT0 := time.Now()
-			for j, data := range snapshot.data {
-				if err := p.store.loadSnapshot(data, time.Now(), true); err != nil {
-					errs <- errors.Wrapf(err, "failed to load snapshot data shard %d from file %q", j, snapshot.filename)
-					return
-				}
+			if err := p.store.loadSnapshots(snapshot.data, time.Now()); err != nil {
+				errs <- errors.Wrapf(err, "failed to load snapshot data from file %q", snapshot.filename)
+				return
 			}
 			level.Info(p.logger).Log("msg", "loaded snapshot file", "filename", snapshot.filename, "shards", len(snapshot.data), "snapshot_load_time", time.Since(snapshotT0), "total_elapsed", time.Since(t0))
 		}
@@ -651,18 +652,10 @@ func (p *partitionHandler) loadSnapshot(ctx context.Context, r *usagetrackerpb.S
 		return
 	}
 
-	for i, data := range file.Data {
-		// Each one of the datas belongs to a different shard.
-		// Most of the write requests touch all shards.
-		// We're going to block each one of the requests with snapshot loading anyway,
-		// so let's use this opportunity to load all of them together.
-		ts := time.Now()
-		if err := p.store.loadSnapshot(data, time.Now(), false); err != nil {
-			p.snapshotEventsTotalErrors.WithLabelValues("load").Inc()
-			level.Error(p.logger).Log("msg", "failed to load snapshot data", "filename", r.Filename, "shard_index", i, "err", err)
-			return
-		}
-		level.Debug(p.logger).Log("msg", "loaded snapshot shard", "filename", r.Filename, "shard_index", i, "bytes", len(data), "elapsed_shard", time.Since(ts), "elapsed_load", time.Since(tl))
+	if err := p.store.loadSnapshots(file.Data, time.Now()); err != nil {
+		p.snapshotEventsTotalErrors.WithLabelValues("load").Inc()
+		level.Error(p.logger).Log("msg", "failed to load snapshot data", "filename", r.Filename, "err", err)
+		return
 	}
 
 	level.Info(p.logger).Log("msg", "loaded snapshot from events", "filename", r.Filename, "shards", len(file.Data), "bytes", n, "elapsed_total", time.Since(t0), "elapsed_load", time.Since(tl))

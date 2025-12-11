@@ -57,7 +57,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 
 		if fCount >= 2 {
 			// TODO: just pass step here? (and below)
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored, step.SmoothedBasisForHeadPointSet, step.SmoothedBasisForTailPointSet, step.SmoothedBasisForHeadPoint, step.SmoothedBasisForTailPoint)
 			return val, true, nil, nil
 		}
 
@@ -81,7 +81,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	}
 
 	val := calculateHistogramRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, hCount, fpHistCount)
-	return val, nil
+	return val, err
 }
 
 func calculateHistogramDelta(hHead, hTail []promql.HPoint, emitAnnotation types.EmitAnnotationFunc) (firstPoint, lastPoint promql.HPoint, delta *histogram.FloatHistogram, fpHistCount float64, err error) {
@@ -177,36 +177,65 @@ func calculateHistogramDelta(hHead, hTail []promql.HPoint, emitAnnotation types.
 	err = accumulate(hHead)
 	if err != nil {
 		return promql.HPoint{}, promql.HPoint{}, nil, 0, err
+
 	}
 	err = accumulate(hTail)
 	if err != nil {
 		return promql.HPoint{}, promql.HPoint{}, nil, 0, err
+
 	}
 
 	if delta.Schema != desiredSchema {
 		delta = delta.CopyToSchema(desiredSchema)
 	}
-
 	return firstPoint, lastPoint, delta, fpHistCount, nil
 }
 
-func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
-	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail)
-	val := calculateFloatRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothedOrAnchored bool, smoothedBasisForHeadPointSet, smoothedBasisForTailPointSet bool, smoothedBasisForHeadPoint, smoothedBasisForTailPoint promql.FPoint) float64 {
+	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail, smoothedOrAnchored, smoothedBasisForHeadPointSet, smoothedBasisForHeadPoint, smoothedBasisForTailPointSet, smoothedBasisForTailPoint)
+
+	val := calculateFloatRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, smoothedOrAnchored)
 	return val
 }
 
-func calculateFloatDelta(fHead, fTail []promql.FPoint) (firstPoint, lastPoint promql.FPoint, delta float64) {
-	firstPoint = fHead[0]
+func calculateFloatDelta(fHead []promql.FPoint, fTail []promql.FPoint, smoothedOrAnchored bool, smoothedBasisForHeadPointSet bool, smoothedBasisForHeadPoint promql.FPoint, smoothedBasisForTailPointSet bool, smoothedBasisForTailPoint promql.FPoint) (promql.FPoint, promql.FPoint, float64) {
+	firstPoint := fHead[0]
 	fHead = fHead[1:]
 
+	var lastPoint promql.FPoint
 	if len(fTail) > 0 {
 		lastPoint = fTail[len(fTail)-1]
 	} else {
 		lastPoint = fHead[len(fHead)-1]
 	}
 
-	delta = lastPoint.F - firstPoint.F
+	if smoothedOrAnchored {
+		// We only need to consider samples exactly within the range as the pre-calculated smoothedBasisForHeadPoint & smoothedBasisForTailPoint have already handled the resets at boundaries.
+		// For smoothed rate/increase range queries, the interpolated points at the range boundaries are treated differently to not incorrectly introduce counter resets.
+		// These alternate boundary points have been pre-calculated by the range vector selector.
+		// Note that the rate() which calls this floatRate() has already tested that fCount >= 2, so we should not have issues pruning the head and tail of these slices.
+
+		if smoothedBasisForHeadPointSet {
+			firstPoint = smoothedBasisForHeadPoint
+		}
+
+		if smoothedBasisForTailPointSet {
+			lastPoint = smoothedBasisForTailPoint
+		}
+
+		// We are essentially replacing the last point in the slices with the basis for the smoothed tail point
+		// We could achieve the same thing by setting the last value.F in the slice to the smoothedBasisForTailPoint.F,
+		// and not pruning the slice. This would then avoid the need for the extra delta addition after the accumulations.
+		// However, we do not want to edit values in these slices.
+		// We still do this even if the smoothedBasisForTailPoint is not set, as this last point still handled in the same manner.
+		if len(fTail) > 0 {
+			fTail = fTail[:len(fTail)-1]
+		} else {
+			fHead = fHead[:len(fHead)-1]
+		}
+	}
+
+	delta := lastPoint.F - firstPoint.F
 	previousValue := firstPoint.F
 
 	accumulate := func(points []promql.FPoint) {
@@ -223,6 +252,10 @@ func calculateFloatDelta(fHead, fTail []promql.FPoint) (firstPoint, lastPoint pr
 	accumulate(fHead)
 	accumulate(fTail)
 
+	// Compensate for the pruning of the last value above
+	if smoothedOrAnchored && lastPoint.F < previousValue {
+		delta += previousValue
+	}
 	return firstPoint, lastPoint, delta
 }
 
@@ -270,7 +303,17 @@ func calculateHistogramRate(isCounter, isRate bool, rangeStart, rangeEnd int64, 
 
 // This is based on extrapolatedRate from promql/functions.go.
 // https://github.com/prometheus/prometheus/pull/13725 has a good explanation of the intended behaviour here.
-func calculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.FPoint, delta float64, count int) float64 {
+func calculateFloatRate(isCounter, isRate bool, rangeStart, rangeEnd int64, rangeSeconds float64, firstPoint, lastPoint promql.FPoint, delta float64, count int, smoothedOrAnchored bool) float64 {
+
+	if smoothedOrAnchored {
+		// This is a special case where the points have already been aligned and interpolated (smoothed) to the range boundaries.
+		// Combined with the delta calculations in floatRate(), this is functionally equivalent to extendedRate() in promql/functions.go
+		if isRate {
+			return delta / rangeSeconds
+		}
+		return delta
+	}
+
 	durationToStart := float64(firstPoint.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-lastPoint.T) / 1000
 
@@ -346,7 +389,7 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	rangeSeconds := float64(step.RangeEnd-step.RangeStart) / 1000
 
 	if fCount >= 2 {
-		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds)
+		val := floatDelta(fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Anchored || step.Smoothed)
 		return val, true, nil, nil
 	}
 
@@ -362,7 +405,7 @@ func delta(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.QueryT
 	return 0, false, nil, nil
 }
 
-func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64) float64 {
+func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, anchoredOrSmoothed bool) float64 {
 	firstPoint := fHead[0]
 
 	var lastPoint promql.FPoint
@@ -373,7 +416,7 @@ func floatDelta(fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeS
 	}
 
 	delta := lastPoint.F - firstPoint.F
-	return calculateFloatRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount)
+	return calculateFloatRate(false, false, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, anchoredOrSmoothed)
 }
 
 func histogramDelta(hCount int, hHead []promql.HPoint, hTail []promql.HPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {

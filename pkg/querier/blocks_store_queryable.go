@@ -254,7 +254,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		)
 	}
 
-	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZone, limits, querierCfg.StoreGatewayClient, logger, reg)
+	stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, dynamicReplication, querierCfg.PreferAvailabilityZones, limits, querierCfg.StoreGatewayClient, logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create store set")
 	}
@@ -854,12 +854,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *stor
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
 					break
 				}
-				if err != nil {
-					return err
-				}
 				if shouldRetry {
 					level.Warn(clientSpanLog).Log("msg", "failed to receive series", "remote", c.RemoteAddress(), "err", err)
 					return nil
+				}
+				if err != nil {
+					return err
 				}
 
 				if isEOS {
@@ -980,7 +980,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		}
 
 		if shouldRetry(err) {
-			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, true, nil
+			return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, true, err
 		}
 
 		return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err

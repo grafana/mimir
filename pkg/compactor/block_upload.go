@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,7 +25,6 @@ import (
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/regexp"
 	"github.com/oklog/ulid/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/thanos-io/objstore"
@@ -518,10 +518,10 @@ func (c *MultitenantCompactor) uploadMeta(ctx context.Context, logger log.Logger
 	level.Debug(logger).Log("msg", fmt.Sprintf("uploading %s to bucket", name), "dst", dst)
 	buf := bytes.NewBuffer(nil)
 	if err := json.NewEncoder(buf).Encode(meta); err != nil {
-		return errors.Wrap(err, "failed to encode block metadata")
+		return fmt.Errorf("failed to encode block metadata: %w", err)
 	}
 	if err := userBkt.Upload(ctx, dst, bytes.NewReader(buf.Bytes())); err != nil {
-		return errors.Wrapf(err, "failed uploading %s to bucket", name)
+		return fmt.Errorf("failed uploading %s to bucket: %w", name, err)
 	}
 
 	return nil
@@ -556,7 +556,7 @@ func (c *MultitenantCompactor) prepareBlockForValidation(ctx context.Context, us
 	err = objstore.DownloadDir(ctx, c.logger, userBkt, blockID.String(), blockID.String(), blockDir)
 	if err != nil {
 		c.removeTemporaryBlockDirectory(blockDir)
-		return "", errors.Wrap(err, "failed to download block")
+		return "", fmt.Errorf("failed to download block: %w", err)
 	}
 
 	// rename the temporary meta file name to the expected one locally so that the block can be inspected
@@ -585,15 +585,15 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 	for _, f := range blockMetadata.Thanos.Files {
 		fi, err := os.Stat(filepath.Join(blockDir, filepath.FromSlash(f.RelPath)))
 		if err != nil {
-			return errors.Wrapf(err, "failed to stat %s", f.RelPath)
+			return fmt.Errorf("failed to stat %s: %w", f.RelPath, err)
 		}
 
 		if !fi.Mode().IsRegular() {
-			return errors.Errorf("not a file: %s", f.RelPath)
+			return fmt.Errorf("not a file: %s", f.RelPath)
 		}
 
 		if f.RelPath != block.MetaFilename && fi.Size() != f.SizeBytes {
-			return errors.Errorf("file size mismatch for %s", f.RelPath)
+			return fmt.Errorf("file size mismatch for %s", f.RelPath)
 		}
 	}
 
@@ -601,7 +601,7 @@ func (c *MultitenantCompactor) validateBlock(ctx context.Context, logger log.Log
 	checkChunks := c.cfgProvider.CompactorBlockUploadVerifyChunks(userID)
 	err = block.VerifyBlock(ctx, c.logger, blockDir, blockMetadata.MinTime, blockMetadata.MaxTime, checkChunks)
 	if err != nil {
-		return errors.Wrap(err, "error validating block")
+		return fmt.Errorf("error validating block: %w", err)
 	}
 
 	return nil
@@ -837,7 +837,7 @@ func (c *MultitenantCompactor) uploadValidationWithError(ctx context.Context, bl
 	}
 	dst := path.Join(blockID.String(), validationFilename)
 	if err := marshalAndUploadToBucket(ctx, userBkt, dst, val); err != nil {
-		return errors.Wrapf(err, "failed uploading %s to bucket", validationFilename)
+		return fmt.Errorf("failed uploading %s to bucket: %w", validationFilename, err)
 	}
 	return nil
 }

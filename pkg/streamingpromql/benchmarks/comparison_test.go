@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
@@ -38,12 +39,21 @@ import (
 
 // This is based on the benchmarks from https://github.com/prometheus/prometheus/blob/main/promql/bench_test.go.
 func BenchmarkQuery(b *testing.B) {
+	extendedRangeSelectors := parser.EnableExtendedRangeSelectors
+	enableExperimentalFunctions := parser.EnableExperimentalFunctions
+	parser.EnableExtendedRangeSelectors = true
+	parser.EnableExperimentalFunctions = true
+	defer func() {
+		parser.EnableExtendedRangeSelectors = extendedRangeSelectors
+		parser.EnableExperimentalFunctions = enableExperimentalFunctions
+	}()
+
 	// Important: the setup below must remain in sync with the setup done in tools/benchmark-query-engine.
 	q := createBenchmarkQueryable(b, MetricSizes)
 	cases := TestCases(MetricSizes)
 
 	opts := streamingpromql.NewTestEngineOpts()
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
+	prometheusEngine := limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts.CommonOpts))
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
 	mimirEngine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
@@ -92,6 +102,15 @@ func BenchmarkQuery(b *testing.B) {
 }
 
 func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
+	extendedRangeSelectors := parser.EnableExtendedRangeSelectors
+	enableExperimentalFunctions := parser.EnableExperimentalFunctions
+	parser.EnableExtendedRangeSelectors = true
+	parser.EnableExperimentalFunctions = true
+	defer func() {
+		parser.EnableExtendedRangeSelectors = extendedRangeSelectors
+		parser.EnableExperimentalFunctions = enableExperimentalFunctions
+	}()
+
 	metricSizes := []int{1, 100} // Don't bother with 2000 series test here: these test cases take a while and they're most interesting as benchmarks, not correctness tests.
 	q := createBenchmarkQueryable(t, metricSizes)
 	cases := TestCases(metricSizes)

@@ -22,7 +22,7 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed)
 
 	if v.ReturnSampleTimestamps {
 		return d + ", return sample timestamps"
@@ -70,7 +70,8 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		slices.EqualFunc(v.Matchers, otherVectorSelector.Matchers, matchersEqual) &&
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
-		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps
+		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
+		v.Smoothed == otherVectorSelector.Smoothed
 }
 
 func (v *VectorSelector) MergeHints(other planning.Node) error {
@@ -97,27 +98,30 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		Matchers:                 LabelMatchersToOperatorType(v.Matchers),
 		EagerLoad:                params.EagerLoadSelectors,
 		SkipHistogramBuckets:     v.SkipHistogramBuckets,
-		ExpressionPosition:       v.ExpressionPosition(),
+		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
+		Smoothed:                 v.Smoothed,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, v.ReturnSampleTimestamps)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeVector, nil
 }
 
-func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta)
-
-	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT))
+func (v *VectorSelector) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	minT, maxT := selectors.ComputeQueriedTimeRange(queryTimeRange, TimestampFromTime(v.Timestamp), 0, v.Offset.Milliseconds(), lookbackDelta, false, v.Smoothed)
+	return planning.NewQueriedTimeRange(timestamp.Time(minT), timestamp.Time(maxT)), nil
 }
 
-func (v *VectorSelector) ExpressionPosition() posrange.PositionRange {
-	return v.GetExpressionPosition().ToPrometheusType()
+func (v *VectorSelector) ExpressionPosition() (posrange.PositionRange, error) {
+	return v.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (v *VectorSelector) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	if v.Smoothed {
+		return planning.QueryPlanV4
+	}
 	return planning.QueryPlanVersionZero
 }

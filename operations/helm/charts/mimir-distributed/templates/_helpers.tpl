@@ -46,7 +46,10 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{/*
-Build mimir image reference. The component local values always take precedence.
+Build mimir image reference. The order of precedence:
+1. Component tag (e.g., .Values.ingester.image.tag)
+2. Global tag (.Values.image.tag)
+3. Chart AppVersion (.Chart.AppVersion)
 Params:
   ctx = . context
   component = component name
@@ -55,7 +58,7 @@ Params:
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
 {{- $image := $componentSection.image | default dict -}}
 {{- $image = mustMerge $image .ctx.Values.image -}}
-{{ $image.repository }}:{{ $image.tag }}
+{{ $image.repository }}:{{ $image.tag | default .ctx.Chart.AppVersion }}
 {{- end -}}
 
 {{/*
@@ -714,4 +717,22 @@ kubectl image reference
 */}}
 {{- define "mimir.kubectlImage" -}}
 {{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag }}
+{{- end -}}
+
+{{/*
+Render KEDA ScaledObject fallback configuration block.
+Params:
+  ctx: root context
+  componentFallback: component-specific fallback config (e.g. .Values.distributor.kedaAutoscaling.fallback)
+*/}}
+{{- define "mimir.kedaFallback" -}}
+{{- $fallback := .componentFallback | default .ctx.Values.kedaAutoscaling.fallback -}}
+{{- if and $fallback $fallback.enabled }}
+fallback:
+  failureThreshold: {{ required "kedaAutoscaling.fallback.failureThreshold is required when fallback is enabled" $fallback.failureThreshold }}
+  replicas: {{ required "kedaAutoscaling.fallback.replicas is required when fallback is enabled" $fallback.replicas }}
+  {{- with $fallback.behavior }}
+  behavior: {{ . | quote }}
+  {{- end -}}
+{{- end -}}
 {{- end -}}

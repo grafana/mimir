@@ -80,6 +80,11 @@ func MergeContexts(ctx1, ctx2 context.Context) (context.Context, context.CancelC
 		return ctx1, noop
 	}
 	ctx, cancel := context.WithCancelCause(context.Background())
+	merged := &mergedContext{
+		Context: ctx,
+		ctx1:    ctx1,
+		ctx2:    ctx2,
+	}
 	go func() {
 		select {
 		case <-ctx1.Done():
@@ -88,7 +93,41 @@ func MergeContexts(ctx1, ctx2 context.Context) (context.Context, context.CancelC
 			cancel(ctx2.Err())
 		}
 	}()
-	return ctx, cancel
+	return merged, cancel
+}
+
+// mergedContext wraps two parent contexts and checks both for values.
+type mergedContext struct {
+	context.Context // For Done(), Err()
+	ctx1, ctx2      context.Context
+}
+
+// Value checks ctx1 first, then ctx2.
+func (m *mergedContext) Value(key any) any {
+	if val := m.ctx1.Value(key); val != nil {
+		return val
+	}
+	return m.ctx2.Value(key)
+}
+
+// Deadline returns the earliest deadline from both parent contexts.
+func (m *mergedContext) Deadline() (deadline time.Time, ok bool) {
+	d1, ok1 := m.ctx1.Deadline()
+	d2, ok2 := m.ctx2.Deadline()
+
+	switch {
+	case ok1 && ok2:
+		if d1.Before(d2) {
+			return d1, true
+		}
+		return d2, true
+	case ok1:
+		return d1, true
+	case ok2:
+		return d2, true
+	default:
+		return time.Time{}, false
+	}
 }
 
 // AppliesToAny returns true if any of the biPredicates evaluate to true for the values.

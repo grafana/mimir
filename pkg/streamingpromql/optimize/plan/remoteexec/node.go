@@ -17,74 +17,77 @@ import (
 
 func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
-		return &RemoteExecution{RemoteExecutionDetails: &RemoteExecutionDetails{}}
+		return &RemoteExecutionGroup{RemoteExecutionGroupDetails: &RemoteExecutionGroupDetails{}}
+	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &RemoteExecutionConsumer{RemoteExecutionConsumerDetails: &RemoteExecutionConsumerDetails{}}
 	})
 }
 
-type RemoteExecution struct {
-	*RemoteExecutionDetails
-	Inner planning.Node
+type RemoteExecutionGroup struct {
+	*RemoteExecutionGroupDetails
+	Nodes []planning.Node
 }
 
-func (r *RemoteExecution) Details() proto.Message {
-	return r.RemoteExecutionDetails
+func (r *RemoteExecutionGroup) Details() proto.Message {
+	return r.RemoteExecutionGroupDetails
 }
 
-func (r *RemoteExecution) NodeType() planning.NodeType {
-	return planning.NODE_TYPE_REMOTE_EXEC
+func (r *RemoteExecutionGroup) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_REMOTE_EXEC_GROUP
 }
 
-func (r *RemoteExecution) Child(idx int) planning.Node {
-	if idx != 0 {
-		panic(fmt.Sprintf("node of type RemoteExecution supports 1 child, but attempted to get child at index %d", idx))
+func (r *RemoteExecutionGroup) Child(idx int) planning.Node {
+	if idx >= len(r.Nodes) {
+		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to get child at index %d", len(r.Nodes), idx))
 	}
 
-	return r.Inner
+	return r.Nodes[idx]
 }
 
-func (r *RemoteExecution) ChildCount() int {
-	return 1
+func (r *RemoteExecutionGroup) ChildCount() int {
+	return len(r.Nodes)
 }
 
-func (r *RemoteExecution) SetChildren(children []planning.Node) error {
-	if len(children) != 1 {
-		return fmt.Errorf("node of type RemoteExecution supports 1 child, but got %d", len(children))
+func (r *RemoteExecutionGroup) SetChildren(children []planning.Node) error {
+	if len(children) < 1 {
+		return fmt.Errorf("node of type RemoteExecutionGroup requires at least one child, but got %d", len(children))
 	}
 
-	r.Inner = children[0]
+	r.Nodes = children
 
 	return nil
 }
 
-func (r *RemoteExecution) ReplaceChild(idx int, node planning.Node) error {
-	if idx != 0 {
-		return fmt.Errorf("node of type RemoteExecution supports 1 child, but attempted to replace child at index %d", idx)
+func (r *RemoteExecutionGroup) ReplaceChild(idx int, node planning.Node) error {
+	if idx >= len(r.Nodes) {
+		panic(fmt.Sprintf("this RemoteExecutionGroup node has %d children, but attempted to replace child at index %d", len(r.Nodes), idx))
 	}
 
-	r.Inner = node
+	r.Nodes[idx] = node
 	return nil
 }
 
-func (r *RemoteExecution) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
-	_, ok := other.(*RemoteExecution)
+func (r *RemoteExecutionGroup) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	_, ok := other.(*RemoteExecutionGroup)
 
 	return ok
 }
 
-func (r *RemoteExecution) MergeHints(other planning.Node) error {
-	otherRemoteExec, ok := other.(*RemoteExecution)
+func (r *RemoteExecutionGroup) MergeHints(other planning.Node) error {
+	otherRemoteExec, ok := other.(*RemoteExecutionGroup)
 	if !ok {
 		return fmt.Errorf("cannot merge hints from %T into %T", other, r)
 	}
 
 	if r.EagerLoad != otherRemoteExec.EagerLoad {
-		return errors.New("cannot merge RemoteExecution nodes with different eager load values")
+		return errors.New("cannot merge RemoteExecutionGroup nodes with different eager load values")
 	}
 
 	return nil
 }
 
-func (r *RemoteExecution) Describe() string {
+func (r *RemoteExecutionGroup) Describe() string {
 	if r.EagerLoad {
 		return "eager load"
 	}
@@ -92,47 +95,198 @@ func (r *RemoteExecution) Describe() string {
 	return ""
 }
 
-func (r *RemoteExecution) ChildrenLabels() []string {
-	return []string{""}
+func (r *RemoteExecutionGroup) ChildrenLabels() []string {
+	lbls := make([]string, 0, len(r.Nodes))
+
+	for idx := range r.Nodes {
+		lbls = append(lbls, fmt.Sprintf("node %d", idx))
+	}
+
+	return lbls
 }
 
-func (r *RemoteExecution) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
+func (r *RemoteExecutionGroup) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
 	return parentTimeRange
 }
 
-func (r *RemoteExecution) ResultType() (parser.ValueType, error) {
-	return r.Inner.ResultType()
+func (r *RemoteExecutionGroup) ResultType() (parser.ValueType, error) {
+	return parser.ValueTypeNone, errors.New("cannot call ResultType on RemoteExecutionGroup node directly, call ResultType on consumer node instead")
 }
 
-func (r *RemoteExecution) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return r.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+func (r *RemoteExecutionGroup) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), errors.New("cannot call QueriedTimeRange on RemoteExecutionGroup node directly, call ResultType on consumer node instead")
 }
 
-func (r *RemoteExecution) ExpressionPosition() posrange.PositionRange {
-	return r.Inner.ExpressionPosition()
+func (r *RemoteExecutionGroup) ExpressionPosition() (posrange.PositionRange, error) {
+	return posrange.PositionRange{}, errors.New("cannot call ExpressionPosition on RemoteExecutionGroup node directly, call ExpressionPosition on consumer node instead")
 }
 
-func (r *RemoteExecution) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+func (r *RemoteExecutionGroup) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	if len(r.Nodes) > 1 {
+		return planning.QueryPlanV3
+	}
+
 	return planning.QueryPlanVersionZero
 }
 
-type RemoteExecutionMaterializer struct {
+type RemoteExecutionConsumer struct {
+	*RemoteExecutionConsumerDetails
+	Group *RemoteExecutionGroup
+}
+
+func (c *RemoteExecutionConsumer) Details() proto.Message {
+	return c.RemoteExecutionConsumerDetails
+}
+
+func (c *RemoteExecutionConsumer) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_REMOTE_EXEC_CONSUMER
+}
+
+func (c *RemoteExecutionConsumer) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type RemoteExecutionConsumer supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return c.Group
+}
+
+func (c *RemoteExecutionConsumer) ChildCount() int {
+	return 1
+}
+
+func (c *RemoteExecutionConsumer) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type RemoteExecutionConsumer requires 1 child, but got %d", len(children))
+	}
+
+	group, ok := children[0].(*RemoteExecutionGroup)
+	if !ok {
+		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", children[0])
+	}
+
+	c.Group = group
+	return nil
+}
+
+func (c *RemoteExecutionConsumer) ReplaceChild(idx int, child planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type RemoteExecutionConsumer supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	group, ok := child.(*RemoteExecutionGroup)
+	if !ok {
+		return fmt.Errorf("node of type RemoteExecutionConsumer requires child of type RemoteExecutionGroup, but got %T", child)
+	}
+
+	c.Group = group
+	return nil
+}
+
+func (c *RemoteExecutionConsumer) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	otherConsumer, ok := other.(*RemoteExecutionConsumer)
+
+	return ok && c.NodeIndex == otherConsumer.NodeIndex
+}
+
+func (c *RemoteExecutionConsumer) MergeHints(other planning.Node) error {
+	otherConsumer, ok := other.(*RemoteExecutionConsumer)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, c)
+	}
+
+	if c.NodeIndex != otherConsumer.NodeIndex {
+		return errors.New("cannot merge RemoteExecutionConsumer nodes with different node indices")
+	}
+
+	return nil
+}
+
+func (c *RemoteExecutionConsumer) Describe() string {
+	return fmt.Sprintf("node %d", c.NodeIndex)
+}
+
+func (c *RemoteExecutionConsumer) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (c *RemoteExecutionConsumer) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
+	return parentTimeRange
+}
+
+func (c *RemoteExecutionConsumer) ResultType() (parser.ValueType, error) {
+	node, err := c.getEvaluatedNode()
+	if err != nil {
+		return parser.ValueTypeNone, err
+	}
+
+	return node.ResultType()
+}
+
+func (c *RemoteExecutionConsumer) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	node, err := c.getEvaluatedNode()
+	if err != nil {
+		return planning.NoDataQueried(), err
+	}
+
+	return node.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (c *RemoteExecutionConsumer) ExpressionPosition() (posrange.PositionRange, error) {
+	node, err := c.getEvaluatedNode()
+	if err != nil {
+		return posrange.PositionRange{}, err
+	}
+
+	return node.ExpressionPosition()
+}
+
+func (c *RemoteExecutionConsumer) getEvaluatedNode() (planning.Node, error) {
+	if c.NodeIndex >= uint64(len(c.Group.Nodes)) {
+		return nil, fmt.Errorf("remote execution group has %d nodes, but attempted to get node at index %d", len(c.Group.Nodes), c.NodeIndex)
+	}
+
+	return c.Group.Nodes[c.NodeIndex], nil
+}
+
+func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	// Even though this node type was introduced around the time of query plan v3, this node type is only
+	// ever used in query-frontends, and is needed to support remote execution of single nodes against
+	// queriers supporting v2 or earlier.
+	// So we return v0 here and rely on the RemoteExecutionGroup's MinimumRequiredPlanVersion() to
+	// return the correct version required based on whether one or many nodes are being evaluated.
+	return planning.QueryPlanVersionZero
+}
+
+type RemoteExecutionConsumerMaterializer struct {
 	executor RemoteExecutor
 }
 
-func NewRemoteExecutionMaterializer(executor RemoteExecutor) *RemoteExecutionMaterializer {
-	return &RemoteExecutionMaterializer{executor: executor}
+func NewRemoteExecutionConsumerMaterializer(executor RemoteExecutor) *RemoteExecutionConsumerMaterializer {
+	return &RemoteExecutionConsumerMaterializer{executor: executor}
 }
 
-var _ planning.NodeMaterializer = &RemoteExecutionMaterializer{}
+var _ planning.NodeMaterializer = &RemoteExecutionConsumerMaterializer{}
 
-func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ types.TimeRangeParams) (planning.OperatorFactory, error) {
-	r, ok := n.(*RemoteExecution)
+func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ types.TimeRangeParams) (planning.OperatorFactory, error) {
+	// For the time being, we assume all groups have a single node (the one that corresponds to this consumer).
+	// Once we implement support in query-frontends for evaluating multiple nodes in a single request, this will change.
+
+	c, ok := n.(*RemoteExecutionConsumer)
 	if !ok {
-		return nil, fmt.Errorf("expected node of type RemoteExecution, got %T", n)
+		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)
 	}
 
-	resultType, err := r.Inner.ResultType()
+	if len(c.Group.Nodes) != 1 {
+		return nil, fmt.Errorf("attempted to materialize node of type RemoteExecutionConsumer in a group with %d nodes", len(c.Group.Nodes))
+	}
+
+	node := c.Group.Nodes[0]
+	expressionPosition, err := node.ExpressionPosition()
+	if err != nil {
+		return nil, err
+	}
+
+	resultType, err := node.ResultType()
 	if err != nil {
 		return nil, err
 	}
@@ -140,38 +294,44 @@ func (m *RemoteExecutionMaterializer) Materialize(n planning.Node, _ *planning.M
 	switch resultType {
 	case parser.ValueTypeScalar:
 		return planning.NewSingleUseOperatorFactory(&ScalarRemoteExec{
-			RootPlan:                 params.Plan,
-			Node:                     r.Inner,
+			QueryParameters:          params.QueryParameters,
+			Node:                     node,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
-			EagerLoad:                r.EagerLoad,
+			QueryStats:               params.QueryStats,
+			EagerLoad:                c.Group.EagerLoad,
+			expressionPosition:       expressionPosition,
 		}), nil
 
 	case parser.ValueTypeVector:
 		return planning.NewSingleUseOperatorFactory(&InstantVectorRemoteExec{
-			RootPlan:                 params.Plan,
-			Node:                     r.Inner,
+			QueryParameters:          params.QueryParameters,
+			Node:                     node,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
-			EagerLoad:                r.EagerLoad,
+			QueryStats:               params.QueryStats,
+			EagerLoad:                c.Group.EagerLoad,
+			expressionPosition:       expressionPosition,
 		}), nil
 
 	case parser.ValueTypeMatrix:
 		return planning.NewSingleUseOperatorFactory(&RangeVectorRemoteExec{
-			RootPlan:                 params.Plan,
-			Node:                     r.Inner,
+			QueryParameters:          params.QueryParameters,
+			Node:                     node,
 			TimeRange:                timeRange,
 			RemoteExecutor:           m.executor,
 			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 			Annotations:              params.Annotations,
-			EagerLoad:                r.EagerLoad,
+			QueryStats:               params.QueryStats,
+			EagerLoad:                c.Group.EagerLoad,
+			expressionPosition:       expressionPosition,
 		}), nil
 
 	default:
-		return nil, fmt.Errorf("unsupported child result type for RemoteExecution: got %v", resultType)
+		return nil, fmt.Errorf("unsupported child result type for RemoteExecutionGroup: got %v", resultType)
 	}
 }

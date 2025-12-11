@@ -41,6 +41,7 @@ func init() {
 }
 
 var tracer = otel.Tracer("pkg/streamingpromql")
+var errPerStepStatsNotSupported = errors.New("per-step stats are not supported by Mimir query engine")
 
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
@@ -64,6 +65,10 @@ func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, met
 
 	if !opts.CommonOpts.EnableNegativeOffset {
 		return nil, errors.New("disabling negative offsets not supported by Mimir query engine")
+	}
+
+	if opts.CommonOpts.EnablePerStepStats {
+		return nil, errPerStepStatsNotSupported
 	}
 
 	if planner == nil {
@@ -106,7 +111,6 @@ func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, met
 		limitsProvider:           limitsProvider,
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
-		enablePerStepStats:       opts.CommonOpts.EnablePerStepStats,
 
 		logger: opts.Logger,
 		estimatedPeakMemoryConsumption: promauto.With(opts.CommonOpts.Reg).NewHistogram(prometheus.HistogramOpts{
@@ -134,7 +138,7 @@ func DetermineLookbackDelta(opts promql.EngineOpts) time.Duration {
 
 // QueryTracker is like promql.QueryTracker, but includes more information about the query.
 type QueryTracker interface {
-	InsertWithDetails(ctx context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error)
+	InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error)
 
 	Delete(insertIndex int)
 }
@@ -144,7 +148,6 @@ type Engine struct {
 	timeout            time.Duration
 	limitsProvider     QueryLimitsProvider
 	activeQueryTracker QueryTracker
-	enablePerStepStats bool
 
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 
@@ -205,21 +208,33 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		lookbackDelta = e.lookbackDelta
 	}
 
-	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, plan.Root, plan.TimeRange, lookbackDelta)
+	nodeRequests := []NodeEvaluationRequest{
+		{
+			Node:      plan.Root,
+			TimeRange: timeRange,
+		},
+	}
+
+	evaluator, err := e.materializeAndCreateEvaluator(ctx, queryable, opts, plan.Parameters, nodeRequests, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
 
 	statement := &parser.EvalStmt{
 		Expr:          nil, // Nothing seems to use this, and we don't have a good expression to use here anyway, so don't bother setting this.
-		Start:         timestamp.Time(plan.TimeRange.StartT),
-		End:           timestamp.Time(plan.TimeRange.EndT),
-		Interval:      time.Duration(plan.TimeRange.IntervalMilliseconds) * time.Millisecond,
+		Start:         timestamp.Time(plan.Parameters.TimeRange.StartT),
+		End:           timestamp.Time(plan.Parameters.TimeRange.EndT),
+		Interval:      time.Duration(plan.Parameters.TimeRange.IntervalMilliseconds) * time.Millisecond,
 		LookbackDelta: lookbackDelta,
 	}
 
-	if plan.TimeRange.IsInstant {
+	if plan.Parameters.TimeRange.IsInstant {
 		statement.Interval = 0 // MQE uses an interval of 1ms in instant queries, but the Prometheus API contract expects this to be 0 in this case.
+	}
+
+	topLevelValueType, err := plan.Root.ResultType()
+	if err != nil {
+		return nil, err
 	}
 
 	return &Query{
@@ -227,12 +242,20 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		engine:                   e,
 		statement:                statement,
 		memoryConsumptionTracker: evaluator.MemoryConsumptionTracker,
-		originalExpression:       plan.OriginalExpression,
-		topLevelQueryTimeRange:   plan.TimeRange,
+		originalExpression:       plan.Parameters.OriginalExpression,
+		topLevelQueryTimeRange:   plan.Parameters.TimeRange,
+		topLevelValueType:        topLevelValueType,
 	}, nil
 }
 
-func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange) (*Evaluator, error) {
+type NodeEvaluationRequest struct {
+	Node      planning.Node
+	TimeRange types.QueryTimeRange
+
+	operator types.Operator
+}
+
+func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest) (*Evaluator, error) {
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
@@ -242,45 +265,53 @@ func (e *Engine) NewEvaluator(ctx context.Context, queryable storage.Queryable, 
 		lookbackDelta = e.lookbackDelta
 	}
 
-	return e.materializeAndCreateEvaluator(ctx, queryable, opts, plan, node, nodeTimeRange, lookbackDelta)
+	return e.materializeAndCreateEvaluator(ctx, queryable, opts, params, nodeRequests, lookbackDelta)
 }
 
-func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, plan *planning.QueryPlan, node planning.Node, nodeTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (*Evaluator, error) {
+func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, params *planning.QueryParameters, nodeRequests []NodeEvaluationRequest, lookbackDelta time.Duration) (*Evaluator, error) {
 	span, ctx := tracing.StartSpanFromContext(ctx, "Engine.materializeAndCreateEvaluator")
 	defer span.Finish()
 
-	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, plan.OriginalExpression, "materialization", plan.TimeRange)
+	queryID, err := e.activeQueryTracker.InsertWithDetails(ctx, params.OriginalExpression, "materialization", true, params.TimeRange)
 	if err != nil {
 		return nil, err
 	}
 
 	defer e.activeQueryTracker.Delete(queryID)
 
+	if opts.EnablePerStepStats() {
+		return nil, errPerStepStatsNotSupported
+	}
+
 	maxEstimatedMemoryConsumptionPerQuery, err := e.limitsProvider.GetMaxEstimatedMemoryConsumptionPerQuery(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get memory consumption limit for query: %w", err)
 	}
 
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, plan.OriginalExpression)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, maxEstimatedMemoryConsumptionPerQuery, e.queriesRejectedDueToPeakMemoryConsumption, params.OriginalExpression)
 
 	operatorParams := &planning.OperatorParameters{
 		Queryable:                queryable,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 		Annotations:              annotations.New(),
+		QueryStats:               types.NewQueryStats(),
 		LookbackDelta:            lookbackDelta,
 		EagerLoadSelectors:       e.eagerLoadSelectors,
-		Plan:                     plan,
-		EnableDelayedNameRemoval: plan.EnableDelayedNameRemoval,
+		QueryParameters:          params,
 		Logger:                   e.logger,
 	}
 
 	materializer := planning.NewMaterializer(operatorParams, e.nodeMaterializers)
-	op, err := materializer.ConvertNodeToOperator(node, nodeTimeRange)
-	if err != nil {
-		return nil, err
+	for idx, req := range nodeRequests {
+		op, err := materializer.ConvertNodeToOperator(req.Node, req.TimeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeRequests[idx].operator = op
 	}
 
-	return NewEvaluator(op, operatorParams, nodeTimeRange, e, opts, plan.OriginalExpression)
+	return NewEvaluator(nodeRequests, operatorParams, e, params.OriginalExpression)
 }
 
 type QueryLimitsProvider interface {
@@ -311,7 +342,7 @@ func (n *NoopQueryTracker) GetMaxConcurrent() int {
 	return math.MaxInt
 }
 
-func (n *NoopQueryTracker) InsertWithDetails(_ context.Context, _ string, _ string, _ types.QueryTimeRange) (int, error) {
+func (n *NoopQueryTracker) InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error) {
 	// Nothing to do.
 	return 0, nil
 }

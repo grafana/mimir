@@ -1634,10 +1634,11 @@ The `querier` block configures the querier.
 # CLI flag: -querier.shuffle-sharding-ingesters-enabled
 [shuffle_sharding_ingesters_enabled: <boolean> | default = true]
 
-# (experimental) When set, the querier prioritizes querying data from ingesters
-# and store-gateways in this availability zone.
-# CLI flag: -querier.prefer-availability-zone
-[prefer_availability_zone: <string> | default = ""]
+# (experimental) Comma-separated list of availability zones to prefer when
+# querying ingesters and store-gateways. All zones in the list are given equal
+# priority.
+# CLI flag: -querier.prefer-availability-zones
+[prefer_availability_zones: <string> | default = ""]
 
 # (advanced) Number of series to buffer per ingester when streaming chunks from
 # ingesters.
@@ -1958,6 +1959,11 @@ results_cache:
 # CLI flag: -query-frontend.enable-remote-execution
 [enable_remote_execution: <boolean> | default = false]
 
+# (experimental) Set to true to allow evaluating multiple query plan nodes
+# within a single remote execution request to queriers.
+# CLI flag: -query-frontend.enable-multiple-node-remote-execution-requests
+[enable_multiple_node_remote_execution_requests: <boolean> | default = false]
+
 # (experimental) Set to true to enable performing query sharding inside the
 # Mimir query engine (MQE). This setting has no effect if sharding is disabled.
 # Requires remote execution and MQE to be enabled.
@@ -2001,7 +2007,8 @@ results_cache:
 # CLI flag: -query-frontend.query-result-response-format
 [query_result_response_format: <string> | default = "protobuf"]
 
-# Cache statistics of processed samples on results cache.
+# (deprecated) Cache statistics of processed samples on results cache.
+# Deprecated: has no effect.
 # CLI flag: -query-frontend.cache-samples-processed-stats
 [cache_samples_processed_stats: <boolean> | default = false]
 
@@ -3110,6 +3117,15 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # do).
 # CLI flag: -querier.response-streaming-enabled
 [response_streaming_enabled: <boolean> | default = false]
+
+# (experimental) The grace period for query-frontend health checks. If a
+# query-frontend connection consistently fails health checks for this period,
+# any open connections are closed. The querier will attempt to reconnect to the
+# query-frontend if a subsequent request is received from it. Set to 0 to
+# immediately remove query-frontend connections on the first health check
+# failure.
+# CLI flag: -querier.frontend-health-check-grace-period
+[frontend_health_check_grace_period: <duration> | default = 0s]
 ```
 
 ### etcd
@@ -3831,6 +3847,20 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -querier.max-series-query-limit
 [max_series_query_limit: <int> | default = 0]
 
+# Maximum number of names the label names endpoint returns. This limit is
+# enforced in the querier. If the requested limit is outside of the allowed
+# value, the request doesn't fail, but is manipulated to only query data up to
+# the allowed limit. Set to 0 to disable.
+# CLI flag: -querier.max-label-names-limit
+[max_label_names_limit: <int> | default = 0]
+
+# Maximum number of values the label values endpoint returns. This limit is
+# enforced in the querier. If the requested limit is outside of the allowed
+# value, the request doesn't fail, but is manipulated to only query data up to
+# the allowed limit. Set to 0 to disable.
+# CLI flag: -querier.max-label-values-limit
+[max_label_values_limit: <int> | default = 0]
+
 # (advanced) Most recent allowed cacheable result per-tenant, to prevent caching
 # very recent results that might still be in flux.
 # CLI flag: -query-frontend.max-cache-freshness
@@ -3985,6 +4015,13 @@ blocked_requests:
 # experimental functions.
 # CLI flag: -query-frontend.enabled-promql-experimental-functions
 [enabled_promql_experimental_functions: <string> | default = ""]
+
+# Enable certain experimental PromQL extended range selector modifiers, which
+# are subject to being changed or removed at any time, on a per-tenant basis.
+# Defaults to empty which means all experimental modifiers are disabled. Set to
+# 'all' to enable all experimental modifiers.
+# CLI flag: -query-frontend.enabled-promql-extended-range-selectors
+[enabled_promql_extended_range_selectors: <string> | default = ""]
 
 # (experimental) Rewrite queries using the same range selector and resolution
 # [X:X] which don't work in Prometheus 3.0 to a nearly identical form that works
@@ -4695,16 +4732,10 @@ migration:
   # CLI flag: -ingest-storage.migration.ingest-storage-max-wait-time
   [ingest_storage_max_wait_time: <duration> | default = 0s]
 
-# (experimental) Enable fsyncing of WAL and WBL before Kafka offsets are
-# committed.
-# CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-enabled
-[write_logs_fsync_before_kafka_commit_enabled: <boolean> | default = true]
-
-# (experimental) Number of tenants to concurrently fsync WAL and WBL before
-# Kafka offsets are committed. Ignored if
-# -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false
+# (advanced) Number of tenants to concurrently fsync WAL and WBL before Kafka
+# offsets are committed, must be at least 1.
 # CLI flag: -ingest-storage.write-logs-fsync-before-kafka-commit-concurrency
-[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 1]
+[write_logs_fsync_before_kafka_commit_concurrency: <int> | default = 4]
 ```
 
 ### blocks_storage
@@ -5217,7 +5248,7 @@ tsdb:
     # (advanced) Cost for retrieving series from the index and checking if a
     # series belongs to the query's shard.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost
-    [retrieved_series_cost: <float> | default = 10]
+    [retrieved_series_cost: <float> | default = 15]
 
     # (advanced) Cost for retrieving the posting list from disk or from memory.
     # CLI flag: -blocks-storage.tsdb.index-lookup-planning.retrieved-posting-list-cost
@@ -5849,7 +5880,7 @@ The s3_backend block configures the connection to Amazon S3 object storage backe
 # found at https://aws.amazon.com/s3/storage-classes/. Supported values are:
 # STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING,
 # GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE,
-# FSX_OPENZFS
+# FSX_OPENZFS, FSX_ONTAP
 # CLI flag: -<prefix>.s3.storage-class
 [storage_class: <string> | default = ""]
 

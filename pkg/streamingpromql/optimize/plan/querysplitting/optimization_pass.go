@@ -65,7 +65,7 @@ func (o *OptimizationPass) Name() string {
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	var err error
-	plan.Root, err = o.wrapSplittableRangeVectorFunctions(plan.Root, plan.TimeRange)
+	plan.Root, err = o.wrapSplittableRangeVectorFunctions(plan.Root, plan.Parameters.TimeRange)
 	if err != nil {
 		return nil, err
 	}

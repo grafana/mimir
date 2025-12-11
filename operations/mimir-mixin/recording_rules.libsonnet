@@ -27,27 +27,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
       {
         name: 'mimir_querier_api',
         rules:
-          utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_querier_request_duration_seconds', $._config.job_labels + ['route'], $._config.recording_rules_range_interval),
+          utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true) +
+          utils.histogramRules('cortex_querier_request_duration_seconds', [$._config.per_cluster_label, 'job', 'route'], $._config.recording_rules_range_interval, record_native=true) +
+          utils.histogramRules('cortex_querier_request_duration_seconds', $._config.job_labels + ['route'], $._config.recording_rules_range_interval, record_native=true),
       },
       {
         name: 'mimir_storage',
         rules:
-          utils.histogramRules('cortex_kv_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval),
+          utils.histogramRules('cortex_kv_request_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
       },
       {
         name: 'mimir_queries',
         rules:
-          utils.histogramRules('cortex_query_frontend_retries', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_query_frontend_queue_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval),
+          utils.histogramRules('cortex_query_frontend_retries', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true) +
+          utils.histogramRules('cortex_query_frontend_queue_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
       },
       {
         name: 'mimir_ingester_queries',
         rules:
-          utils.histogramRules('cortex_ingester_queried_series', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_ingester_queried_samples', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval) +
-          utils.histogramRules('cortex_ingester_queried_exemplars', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval),
+          utils.histogramRules('cortex_ingester_queried_series', [$._config.per_cluster_label, 'job', 'stage'], $._config.recording_rules_range_interval, record_native=true) +
+          utils.histogramRules('cortex_ingester_queried_samples', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true) +
+          utils.histogramRules('cortex_ingester_queried_exemplars', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
       },
       {
         name: 'mimir_received_samples',
@@ -339,6 +339,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
             ||| % $._config,
           },
         ],
+      },
+      {
+        name: 'mimir_usage_tracker_rules',
+        rules:
+          utils.histogramRules('cortex_usage_tracker_client_track_series_duration_seconds', [$._config.per_cluster_label, 'job'], $._config.recording_rules_range_interval, record_native=true),
       },
     ],
   },

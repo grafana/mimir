@@ -2297,12 +2297,12 @@
         },
         {
           "kind": "field",
-          "name": "prefer_availability_zone",
+          "name": "prefer_availability_zones",
           "required": false,
-          "desc": "When set, the querier prioritizes querying data from ingesters and store-gateways in this availability zone.",
+          "desc": "Comma-separated list of availability zones to prefer when querying ingesters and store-gateways. All zones in the list are given equal priority.",
           "fieldValue": null,
           "fieldDefaultValue": "",
-          "fieldFlag": "querier.prefer-availability-zone",
+          "fieldFlag": "querier.prefer-availability-zones",
           "fieldType": "string",
           "fieldCategory": "experimental"
         },
@@ -5435,6 +5435,26 @@
         },
         {
           "kind": "field",
+          "name": "max_label_names_limit",
+          "required": false,
+          "desc": "Maximum number of names the label names endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-label-names-limit",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
+          "name": "max_label_values_limit",
+          "required": false,
+          "desc": "Maximum number of values the label values endpoint returns. This limit is enforced in the querier. If the requested limit is outside of the allowed value, the request doesn't fail, but is manipulated to only query data up to the allowed limit. Set to 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.max-label-values-limit",
+          "fieldType": "int"
+        },
+        {
+          "kind": "field",
           "name": "max_cache_freshness",
           "required": false,
           "desc": "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.",
@@ -5751,6 +5771,16 @@
           "fieldValue": null,
           "fieldDefaultValue": "",
           "fieldFlag": "query-frontend.enabled-promql-experimental-functions",
+          "fieldType": "string"
+        },
+        {
+          "kind": "field",
+          "name": "enabled_promql_extended_range_selectors",
+          "required": false,
+          "desc": "Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.",
+          "fieldValue": null,
+          "fieldDefaultValue": "",
+          "fieldFlag": "query-frontend.enabled-promql-extended-range-selectors",
           "fieldType": "string"
         },
         {
@@ -7326,6 +7356,17 @@
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "frontend_health_check_grace_period",
+          "required": false,
+          "desc": "The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "querier.frontend-health-check-grace-period",
+          "fieldType": "duration",
+          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -8083,6 +8124,17 @@
         },
         {
           "kind": "field",
+          "name": "enable_multiple_node_remote_execution_requests",
+          "required": false,
+          "desc": "Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "query-frontend.enable-multiple-node-remote-execution-requests",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "use_mimir_query_engine_for_sharding",
           "required": false,
           "desc": "Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.",
@@ -8172,11 +8224,12 @@
           "kind": "field",
           "name": "cache_samples_processed_stats",
           "required": false,
-          "desc": "Cache statistics of processed samples on results cache.",
+          "desc": "Cache statistics of processed samples on results cache. Deprecated: has no effect.",
           "fieldValue": null,
           "fieldDefaultValue": false,
           "fieldFlag": "query-frontend.cache-samples-processed-stats",
-          "fieldType": "boolean"
+          "fieldType": "boolean",
+          "fieldCategory": "deprecated"
         },
         {
           "kind": "block",
@@ -8604,25 +8657,14 @@
         },
         {
           "kind": "field",
-          "name": "write_logs_fsync_before_kafka_commit_enabled",
-          "required": false,
-          "desc": "Enable fsyncing of WAL and WBL before Kafka offsets are committed.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
           "name": "write_logs_fsync_before_kafka_commit_concurrency",
           "required": false,
-          "desc": "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed. Ignored if -ingest-storage.write-logs-fsync-before-kafka-commit-enabled=false",
+          "desc": "Number of tenants to concurrently fsync WAL and WBL before Kafka offsets are committed, must be at least 1.",
           "fieldValue": null,
-          "fieldDefaultValue": 1,
+          "fieldDefaultValue": 4,
           "fieldFlag": "ingest-storage.write-logs-fsync-before-kafka-commit-concurrency",
           "fieldType": "int",
-          "fieldCategory": "experimental"
+          "fieldCategory": "advanced"
         }
       ],
       "fieldValue": null,
@@ -8769,7 +8811,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS, FSX_ONTAP",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "blocks-storage.s3.storage-class",
@@ -11284,7 +11326,7 @@
                   "required": false,
                   "desc": "Cost for retrieving series from the index and checking if a series belongs to the query's shard.",
                   "fieldValue": null,
-                  "fieldDefaultValue": 10,
+                  "fieldDefaultValue": 15,
                   "fieldFlag": "blocks-storage.tsdb.index-lookup-planning.retrieved-series-cost",
                   "fieldType": "float",
                   "fieldCategory": "advanced"
@@ -14623,7 +14665,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS, FSX_ONTAP",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "ruler-storage.s3.storage-class",
@@ -16914,7 +16956,7 @@
               "kind": "field",
               "name": "storage_class",
               "required": false,
-              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
+              "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS, FSX_ONTAP",
               "fieldValue": null,
               "fieldDefaultValue": "",
               "fieldFlag": "alertmanager-storage.s3.storage-class",
@@ -19806,7 +19848,7 @@
                   "kind": "field",
                   "name": "storage_class",
                   "required": false,
-                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS",
+                  "desc": "The S3 storage class to use, not set by default. Details can be found at https://aws.amazon.com/s3/storage-classes/. Supported values are: STANDARD, REDUCED_REDUNDANCY, STANDARD_IA, ONEZONE_IA, INTELLIGENT_TIERING, GLACIER, DEEP_ARCHIVE, OUTPOSTS, GLACIER_IR, SNOW, EXPRESS_ONEZONE, FSX_OPENZFS, FSX_ONTAP",
                   "fieldValue": null,
                   "fieldDefaultValue": "",
                   "fieldFlag": "common.storage.s3.storage-class",

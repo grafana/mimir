@@ -47,9 +47,16 @@ type index [groupSize]prefix
 
 type keys [groupSize]uint64
 
-// data is a group of groupSize data/value entries.
-// Each entry is the keyMasked key and valueMasked value.
-type data [groupSize]clock.Minutes
+// data is a group of groupSize xorData entries.
+type data [groupSize]xorData
+
+// xorData is what we store in data, which is xor-ed clock.Minutes value.
+// By storing xor-ed values, our empty data represents an empty dataset.
+type xorData uint8
+
+func xor(v clock.Minutes) xorData { return xorData(^v) }
+
+func (x xorData) clockMinutes() clock.Minutes { return clock.Minutes(^x) }
 
 const (
 	prefixOffset        = 2
@@ -88,20 +95,20 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	for { // inlined find loop
-		matches := metaMatchH2(&m.index[i], pfx)
+		matches := m.index[i].match(pfx)
 		for matches != 0 {
 			j := nextMatch(&matches)
 			if key == m.keys[i][j] { // found
 				// Always update the value if we're tracking series, but only increment it when processing Load events.
-				if track || value.GreaterThan(^m.data[i][j]) {
-					m.data[i][j] = ^value
+				if track || value.GreaterThan(m.data[i][j].clockMinutes()) {
+					m.data[i][j] = xor(value)
 				}
 				return false, false
 			}
 		}
 		// |key| is not in group |i|,
 		// stop probing if we see an empty slot
-		matches = metaMatchEmpty(&m.index[i])
+		matches = m.index[i].matchEmpty()
 		if matches != 0 { // insert
 			// Only check limit if we're tracking series.
 			// We don't check limit for Load events.
@@ -111,7 +118,7 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 				}
 				series.Inc()
 			}
-			m.insert(key, pfx, value, i, matches)
+			m.insert(key, pfx, xor(value), i, matches)
 			return true, false
 		}
 		i++ // linear probing
@@ -121,11 +128,11 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 	}
 }
 
-func (m *Map) insert(key uint64, pfx prefix, value clock.Minutes, i uint32, matches bitset) {
+func (m *Map) insert(key uint64, pfx prefix, entry xorData, i uint32, matches bitset) {
 	s := nextMatch(&matches)
 	m.index[i][s] = pfx
 	m.keys[i][s] = key
-	m.data[i][s] = ^value
+	m.data[i][s] = entry
 	m.resident++
 }
 
@@ -141,22 +148,22 @@ func (m *Map) Load(key uint64, value clock.Minutes) {
 		panic("value is too large")
 	}
 
-	m.load(key, value)
+	m.load(key, xor(value))
 }
 
-// load inserts |key| and |value| into the map without checking if it already exists.
+// load inserts |key| and |entry| into the map without checking if it already exists.
 // No limits are checked, and series count should be incremented by the caller.
 // This also assumes that map has enough capacity to hold the new element, and that the element is valid.
 // This is only expected to be called from rehash().
-func (m *Map) load(key uint64, value clock.Minutes) {
+func (m *Map) load(key uint64, entry xorData) {
 	pfx, sfx := splitHash(key)
 	i := probeStart(sfx, len(m.index))
 	looped := false
 	for {
 		// Find an empty slot and insert without checking if it already exists.
-		matches := metaMatchEmpty(&m.index[i])
+		matches := m.index[i].matchEmpty()
 		if matches != 0 { // insert
-			m.insert(key, pfx, value, i, matches)
+			m.insert(key, pfx, entry, i, matches)
 			return
 		}
 		i++ // linear probing
@@ -170,29 +177,40 @@ func (m *Map) load(key uint64, value clock.Minutes) {
 	}
 }
 
-// count returns the number of alive elements in the Map.
-func (m *Map) count() int {
+// Count returns the number of alive elements in the Map.
+func (m *Map) Count() int {
 	return int(m.resident - m.dead)
 }
 
-func (m *Map) Cleanup(watermark clock.Minutes, series *atomic.Uint64) {
+func (m *Map) Cleanup(watermark clock.Minutes) int {
+	removed := 0
 	for i := range m.data {
-		for j, xor := range m.data[i] {
-			if xor == 0 {
+		for j, entry := range m.data[i] {
+			if entry == 0 {
 				// There's nothing here.
 				continue
 			}
-			if value := ^xor; watermark.GreaterOrEqualThan(value) {
+			if watermark.GreaterOrEqualThan(entry.clockMinutes()) {
 				m.index[i][j] = tombstone
 				m.keys[i][j] = 0
 				m.data[i][j] = 0
 				m.dead++
-				series.Dec()
+				removed++
 			}
 		}
 	}
 	if m.dead > m.limit/2 {
 		m.rehash(m.nextSize())
+	}
+	return removed
+}
+
+// EnsureCapacity ensure that the map has enough capacity to store |n| elements.
+// This does not mean that the map will have n empty slots, there might be already n elements in the map and 0 spare capacity.
+// If there's no enough capacity, the map is rehashed to accommodate at least |n| elements.
+func (m *Map) EnsureCapacity(n uint32) {
+	if groups := numGroups(n); len(m.index) < int(groups) {
+		m.rehash(groups)
 	}
 }
 
@@ -215,7 +233,7 @@ func (m *Map) rehash(n uint32) {
 		for s := range indices[g] {
 			c := indices[g][s]
 			if c != empty && c != tombstone {
-				m.load(ks[g][s], ^datas[g][s])
+				m.load(ks[g][s], datas[g][s])
 			}
 		}
 	}
@@ -267,7 +285,7 @@ func pooledClone[T any](input []T, pool *sync.Pool) *[]T {
 func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 	keysClone := pooledClone(m.keys, keysPool)
 	dataClone := pooledClone(m.data, dataPool)
-	count := m.count()
+	count := m.Count()
 
 	return count, func(yield func(uint64, clock.Minutes) bool) {
 		if count == 0 {
@@ -275,13 +293,12 @@ func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 		}
 
 		for i, g := range *dataClone {
-			for j, xor := range g {
-				if xor == 0 {
+			for j, entry := range g {
+				if entry == 0 {
 					// There's nothing here.
 					continue
 				}
-				value := ^xor
-				if !yield((*keysClone)[i][j], value) {
+				if !yield((*keysClone)[i][j], entry.clockMinutes()) {
 					return // stop iteration
 				}
 			}

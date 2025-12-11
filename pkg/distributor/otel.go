@@ -207,6 +207,21 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
+func observeOTLPFieldsCount(pushMetrics *PushMetrics, req pmetricotlp.ExportRequest) {
+	resourceMetricsSlice := req.Metrics().ResourceMetrics()
+	pushMetrics.ObserveOTLPArrayLengths("resource_metrics", resourceMetricsSlice.Len())
+	for i := 0; i < resourceMetricsSlice.Len(); i++ {
+		resourceMetrics := resourceMetricsSlice.At(i)
+		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+		pushMetrics.ObserveOTLPArrayLengths("scope_metrics", scopeMetricsSlice.Len())
+		for j := 0; j < scopeMetricsSlice.Len(); j++ {
+			scopeMetrics := scopeMetricsSlice.At(j)
+			metricSlice := scopeMetrics.Metrics()
+			pushMetrics.ObserveOTLPArrayLengths("metrics", metricSlice.Len())
+		}
+	}
+}
+
 func newOTLPParser(
 	limits OTLPHandlerLimits,
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
@@ -349,6 +364,8 @@ func newOTLPParser(
 
 		pushMetrics.IncOTLPRequest(tenantID)
 		pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
+		pushMetrics.IncOTLPContentType(contentType)
+		observeOTLPFieldsCount(pushMetrics, otlpReq)
 
 		convOpts := conversionOptions{
 			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
@@ -629,7 +646,7 @@ func (c *otlpMimirConverter) Err() error {
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
-	for i, ts := range timeseries {
+	for _, ts := range timeseries {
 		name := ""
 		attributes := pcommon.NewMap()
 
@@ -651,9 +668,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
@@ -678,9 +697,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {

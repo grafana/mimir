@@ -120,11 +120,11 @@ func (s *SplittableFunctionCall) ResultType() (parser.ValueType, error) {
 	return s.Inner.ResultType()
 }
 
-func (s *SplittableFunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
+func (s *SplittableFunctionCall) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
 	return s.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
 }
 
-func (s *SplittableFunctionCall) ExpressionPosition() posrange.PositionRange {
+func (s *SplittableFunctionCall) ExpressionPosition() (posrange.PositionRange, error) {
 	return s.Inner.ExpressionPosition()
 }
 
@@ -172,6 +172,11 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		}
 	}
 
+	expressionPos, err := innerFunctionCall.ExpressionPosition()
+	if err != nil {
+		return nil, err
+	}
+
 	splitOp, err := f.SplittableOperatorFactory(
 		s.Inner.Child(0),
 		materializer,
@@ -179,10 +184,10 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		ranges,
 		s.SplittableFunctionCallDetails.InnerNodeCacheKey,
 		m.cache,
-		innerFunctionCall.ExpressionPosition(),
+		expressionPos,
 		params.Annotations,
 		params.MemoryConsumptionTracker,
-		params.EnableDelayedNameRemoval,
+		params.QueryParameters.EnableDelayedNameRemoval,
 		params.Logger,
 	)
 	if err != nil {

@@ -50,6 +50,8 @@ enum AggregationOperation {
   AGGREGATION_BOTTOMK = 10;
   AGGREGATION_COUNT_VALUES = 11;
   AGGREGATION_QUANTILE = 12;
+  AGGREGATION_LIMITK = 13;
+  AGGREGATION_LIMIT_RATIO = 14;
 }
 
 message BinaryExpressionDetails {
@@ -139,6 +141,7 @@ message VectorSelectorDetails {
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
   bool returnSampleTimestamps = 5;
   bool skipHistogramBuckets = 6;
+  bool smoothed = 7;
 }
 
 message MatrixSelectorDetails {
@@ -154,6 +157,8 @@ message MatrixSelectorDetails {
   ];
   PositionRange expressionPosition = 5 [(gogoproto.nullable) = false];
   bool skipHistogramBuckets = 6;
+  bool smoothed = 7;
+  bool anchored = 8;
 }
 
 message SubqueryDetails {

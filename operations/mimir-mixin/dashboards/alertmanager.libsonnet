@@ -105,7 +105,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyPanel('cortex_alertmanager_notification_latency_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager))
+        $.ncLatencyPanel('cortex_alertmanager_notification_latency_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager))
       )
     )
     .addRowIf(
@@ -196,7 +196,7 @@ local filename = 'mimir-alertmanager.json';
       )
       .addPanel(
         $.timeseriesPanel('Initial sync duration') +
-        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.alertmanager)) + {
+        $.ncLatencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '%s' % $.jobMatcher($._config.job_names.alertmanager)) + {
           targets: [
             target {
               interval: '1m',

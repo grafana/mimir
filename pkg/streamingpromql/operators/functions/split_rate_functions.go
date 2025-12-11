@@ -68,7 +68,7 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int, rangeStart, ran
 		}, nil
 	}
 
-	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail)
+	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail, false, false, promql.FPoint{}, false, promql.FPoint{})
 
 	return RateIntermediate{
 		FirstSample: &mimirpb.Sample{
@@ -225,6 +225,7 @@ func rateCombineFloat(splits []RateIntermediate, isRate bool) (float64, bool, er
 		lastPoint,
 		totalDelta,
 		totalCount,
+		false,
 	)
 
 	return result, true, nil

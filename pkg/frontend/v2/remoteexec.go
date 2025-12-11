@@ -42,8 +42,8 @@ func NewRemoteExecutor(frontend ProtobufFrontend, cfg Config) *RemoteExecutor {
 	return &RemoteExecutor{frontend: frontend, cfg: cfg}
 }
 
-func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, 0)
+func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +51,8 @@ func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, fullPlan *pla
 	return &scalarExecutionResponse{stream, memoryConsumptionTracker}, nil
 }
 
-func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, r.cfg.RemoteExecutionBatchSize)
+func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, r.cfg.RemoteExecutionBatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -60,8 +60,8 @@ func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, fullPl
 	return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan *planning.QueryPlan, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, enablePerStepStats bool, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, fullPlan, node, timeRange, enablePerStepStats, eagerLoad, 0)
+func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
+	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -71,37 +71,42 @@ func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, fullPlan
 
 func (r *RemoteExecutor) startExecution(
 	ctx context.Context,
-	fullPlan *planning.QueryPlan,
+	params *planning.QueryParameters,
 	node planning.Node,
 	timeRange types.QueryTimeRange,
-	enablePerStepStats bool,
 	eagerLoad bool,
 	batchSize uint64,
 ) (responseStream, error) {
 	subsetPlan := &planning.QueryPlan{
-		TimeRange:          timeRange,
-		Root:               node,
-		OriginalExpression: fullPlan.OriginalExpression,
-		Version:            fullPlan.Version,
+		Root:       node,
+		Parameters: params,
 	}
 
-	encodedPlan, err := subsetPlan.ToEncodedPlan(false, true)
+	if err := subsetPlan.DeterminePlanVersion(); err != nil {
+		return nil, err
+	}
+
+	encodedPlan, nodeIndices, err := subsetPlan.ToEncodedPlan(false, true, node)
 	if err != nil {
 		return nil, err
 	}
 
 	req := &querierpb.EvaluateQueryRequest{
-		Plan: *encodedPlan,
-		Nodes: []querierpb.EvaluationNode{
-			{NodeIndex: encodedPlan.RootNode, TimeRange: encodedPlan.TimeRange},
-		},
-		EnablePerStepStats: enablePerStepStats,
-		BatchSize:          batchSize,
+		Plan:      *encodedPlan,
+		Nodes:     make([]querierpb.EvaluationNode, 0, len(nodeIndices)),
+		BatchSize: batchSize,
+	}
+
+	for _, nodeIdx := range nodeIndices {
+		req.Nodes = append(req.Nodes, querierpb.EvaluationNode{NodeIndex: nodeIdx, TimeRange: planning.ToEncodedTimeRange(timeRange)})
 	}
 
 	stats := stats.FromContext(ctx)
 	stats.AddRemoteExecutionRequests(1)
-	queriedTimeRange := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
+	queriedTimeRange, err := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
+	if err != nil {
+		return nil, err
+	}
 
 	var stream responseStream
 	stream, err = r.frontend.DoProtobufRequest(ctx, req, queriedTimeRange.MinT, queriedTimeRange.MaxT)
@@ -117,7 +122,9 @@ func (r *RemoteExecutor) startExecution(
 }
 
 type responseStream interface {
+	// Next returns the next message in the stream, or an error if the stream has ended or failed.
 	Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error)
+	// Close closes the stream.
 	Close()
 }
 
@@ -551,6 +558,11 @@ func (e *eagerLoadingResponseStream) bufferOne(ctx context.Context) bool {
 	defer e.mtx.Unlock()
 	defer e.notifyNewDataAvailable()
 
+	if e.buffer == nil {
+		// The stream has been closed, don't buffer any more data.
+		return false
+	}
+
 	e.buffer.Push(bufferedMessage{msg, err})
 
 	return err == nil
@@ -579,6 +591,11 @@ func (e *eagerLoadingResponseStream) Next(ctx context.Context) (*frontendv2pb.Qu
 		return nil, errMultipleEagerLoadingNextCalls
 	}
 
+	if e.buffer == nil {
+		e.mtx.Unlock()
+		return nil, errStreamClosed
+	}
+
 	if e.buffer.Any() {
 		msg := e.buffer.Pop()
 		defer e.mtx.Unlock()
@@ -600,6 +617,12 @@ func (e *eagerLoadingResponseStream) Next(ctx context.Context) (*frontendv2pb.Qu
 	case <-newDataAvailable:
 		e.mtx.Lock()
 		defer e.mtx.Unlock()
+
+		// Check the buffer wasn't closed in the meantime.
+		if e.buffer == nil {
+			return nil, errStreamClosed
+		}
+
 		msg := e.buffer.Pop()
 
 		if msg.err != nil {
@@ -612,6 +635,17 @@ func (e *eagerLoadingResponseStream) Next(ctx context.Context) (*frontendv2pb.Qu
 
 func (e *eagerLoadingResponseStream) Close() {
 	e.inner.Close() // This is expected to release any pending Next() call in startBuffering(), so we don't need to do anything to terminate it here.
+
+	e.mtx.Lock()
+	defer e.mtx.Unlock()
+
+	if e.buffer == nil {
+		// Already closed, nothing more to do.
+		return
+	}
+
+	e.buffer.Close()
+	e.buffer = nil
 }
 
 type responseStreamBuffer struct {
@@ -627,7 +661,7 @@ type bufferedMessage struct {
 
 func (b *responseStreamBuffer) Push(msg bufferedMessage) {
 	if b.length == cap(b.msgs) {
-		newCap := max(len(b.msgs)*2, 1)
+		newCap := max(cap(b.msgs)*2, 1)
 		newMsgs := responseMessageSlicePool.Get(newCap)
 		newMsgs = newMsgs[:newCap]
 		headSize := cap(b.msgs) - b.startIndex
@@ -660,6 +694,11 @@ func (b *responseStreamBuffer) Pop() bufferedMessage {
 
 func (b *responseStreamBuffer) Any() bool {
 	return b.length > 0
+}
+
+func (b *responseStreamBuffer) Close() {
+	clear(b.msgs)
+	responseMessageSlicePool.Put(b.msgs)
 }
 
 // Why types.MaxExpectedSeriesPerResult as the slice size limit?

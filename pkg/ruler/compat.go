@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -41,6 +42,12 @@ import (
 const (
 	failureReasonServerError = "server_error"
 	failureReasonClientError = "client_error"
+)
+
+// TODO: remove this once these errors are populated as sentinels at mimir-prometheus
+const (
+	prometheusDuplicateLabelsetAlertingRuleError  = "vector contains metrics with the same labelset after applying alert labels"
+	prometheusDuplicateLabelsetRecordingRuleError = "vector contains metrics with the same labelset after applying rule labels"
 )
 
 // Pusher is an ingester server that accepts pushes.
@@ -93,12 +100,12 @@ func (a *PusherAppender) AppendHistogram(_ storage.SeriesRef, l labels.Labels, t
 	return 0, nil
 }
 
-func (a *PusherAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *PusherAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
-func (a *PusherAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *PusherAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *PusherAppender) Commit() error {
@@ -182,12 +189,12 @@ func (a *NoopAppender) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, _ i
 	return 0, nil
 }
 
-func (a *NoopAppender) AppendCTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *NoopAppender) AppendSTZeroSample(_ storage.SeriesRef, _ labels.Labels, _, _ int64) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
-func (a *NoopAppender) AppendHistogramCTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
-	return 0, errors.New("CT zero samples are unsupported")
+func (a *NoopAppender) AppendHistogramSTZeroSample(storage.SeriesRef, labels.Labels, int64, int64, *histogram.Histogram, *histogram.FloatHistogram) (storage.SeriesRef, error) {
+	return 0, errors.New("ST zero samples are unsupported")
 }
 
 func (a *NoopAppender) Commit() error {
@@ -215,6 +222,7 @@ type RulesLimits interface {
 	RulerEvaluationConsistencyMaxDelay(userID string) time.Duration
 	RulerTenantShardSize(userID string) int
 	RulerMaxRuleGroupsPerTenant(userID, namespace string) int
+	RulerMaxRuleGroupsPerTenantByNamespaceConfigured(userID, namespace string) bool
 	RulerMaxRulesPerRuleGroup(userID, namespace string) int
 	RulerRecordingRulesEvaluationEnabled(userID string) bool
 	RulerAlertingRulesEvaluationEnabled(userID string) bool
@@ -485,6 +493,11 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 		return false
 	}
 
+	// Check for rule evaluation failures (errors that occur after query succeeds)
+	if isUserRuleEvalFailure(err) {
+		return false
+	}
+
 	if code := grpcutil.ErrorToStatusCode(err); util.IsHTTPStatusCode(code) {
 		if code >= 400 && code < 500 {
 			return code == http.StatusTooManyRequests
@@ -498,6 +511,7 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 				return !mimirpb.IsClientErrorCause(errDetails.GetCause())
 			}
 		}
+		return true
 	}
 
 	if validation.IsLimitError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -515,4 +529,10 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 
 	// Unknown errors
 	return true
+}
+
+func isUserRuleEvalFailure(err error) bool {
+	errStr := err.Error()
+	return strings.Contains(errStr, prometheusDuplicateLabelsetAlertingRuleError) ||
+		strings.Contains(errStr, prometheusDuplicateLabelsetRecordingRuleError)
 }

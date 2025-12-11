@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -13,7 +14,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/middleware"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,13 +36,16 @@ const (
 type MimirClient interface {
 	// WriteSeries writes input series to Mimir. Returns the response status code and optionally
 	// an error. The error is always returned if request was not successful (eg. received a 4xx or 5xx error).
-	WriteSeries(ctx context.Context, series []prompb.TimeSeries) (statusCode int, err error)
+	WriteSeries(ctx context.Context, series []prompb.TimeSeries, metadata []prompb.MetricMetadata) (statusCode int, err error)
 
 	// QueryRange performs a range query.
 	QueryRange(ctx context.Context, query string, start, end time.Time, step time.Duration, options ...RequestOption) (model.Matrix, error)
 
 	// Query performs an instant query.
 	Query(ctx context.Context, query string, ts time.Time, options ...RequestOption) (model.Vector, error)
+
+	// Metadata performs a metadata query.
+	Metadata(ctx context.Context, metricName string) (v1.Metadata, error)
 }
 
 type ClientConfig struct {
@@ -75,7 +78,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.WriteBaseEndpoint, "tests.write-endpoint", "The base endpoint on the write path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/push for the remote write API endpoint, so the configured URL must not include it.")
 	f.IntVar(&cfg.WriteBatchSize, "tests.write-batch-size", 1000, "The maximum number of series to write in a single request.")
 	f.DurationVar(&cfg.WriteTimeout, "tests.write-timeout", 5*time.Second, "The timeout for a single write request.")
-	f.StringVar(&cfg.WriteProtocol, "tests.write-protocol", "prometheus", "The protocol to use to write series data. Supported values are: prometheus, otlp-http")
+	f.StringVar(&cfg.WriteProtocol, "tests.write-protocol", "prometheus", "The protocol to use to write series data. Supported values are: prometheus, prometheus2, otlp-http")
 
 	f.Var(&cfg.ReadBaseEndpoint, "tests.read-endpoint", "The base endpoint on the read path. The URL should have no trailing slash. The specific API path is appended by the tool to the URL, for example /api/v1/query_range for range query API, so the configured URL must not include it.")
 	f.DurationVar(&cfg.ReadTimeout, "tests.read-timeout", 60*time.Second, "The timeout for a single read request.")
@@ -132,9 +135,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 	if cfg.ReadBaseEndpoint.URL == nil {
 		return nil, errors.New("the read endpoint has not been set")
 	}
-	if cfg.WriteProtocol != "prometheus" && cfg.WriteProtocol != "otlp-http" {
-		return nil, fmt.Errorf("the only supported write protocols are \"prometheus\" or \"otlp-http\"")
-	}
+
 	// Ensure not multiple auth methods set at the same time
 	// Allow tenantID and auth to be defined at the same time for tenant testing
 	// anonymous is the default value for TenantID.
@@ -143,22 +144,19 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 		return nil, errors.New("either set tests.tenant-id or tests.basic-auth-user/tests.basic-auth-password or tests.bearer-token")
 	}
 
-	apiCfg := api.Config{
-		Address:      cfg.ReadBaseEndpoint.String(),
-		RoundTripper: rt,
-	}
-
-	readClient, err := api.NewClient(apiCfg)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create read client")
-	}
-
 	var writeClient clientWriter
 
 	switch cfg.WriteProtocol {
-
 	case "prometheus":
 		writeClient = &prometheusWriter{
+			httpClient:        &http.Client{Transport: rt},
+			writeBaseEndpoint: cfg.WriteBaseEndpoint,
+			writeBatchSize:    cfg.WriteBatchSize,
+			writeTimeout:      cfg.WriteTimeout,
+		}
+
+	case "prometheus2":
+		writeClient = &prometheus2Writer{
 			httpClient:        &http.Client{Transport: rt},
 			writeBaseEndpoint: cfg.WriteBaseEndpoint,
 			writeBatchSize:    cfg.WriteBatchSize,
@@ -172,6 +170,19 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 			writeBatchSize:    cfg.WriteBatchSize,
 			writeTimeout:      cfg.WriteTimeout,
 		}
+
+	default:
+		return nil, fmt.Errorf("the only supported write protocols are: \"prometheus\", \"prometheus2\", \"otlp-http\"")
+	}
+
+	apiCfg := api.Config{
+		Address:      cfg.ReadBaseEndpoint.String(),
+		RoundTripper: rt,
+	}
+
+	readClient, err := api.NewClient(apiCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create read client: %w", err)
 	}
 
 	return &Client{
@@ -236,8 +247,21 @@ func (c *Client) Query(ctx context.Context, query string, ts time.Time, options 
 	return vector, nil
 }
 
+// Metadata implements MimirClient.
+func (c *Client) Metadata(ctx context.Context, metricName string) (v1.Metadata, error) {
+	result, err := c.readClient.Metadata(ctx, metricName, "1")
+	if err != nil {
+		return v1.Metadata{}, err
+	}
+	m := result[metricName]
+	if len(m) == 0 {
+		return v1.Metadata{}, fmt.Errorf("metadata for metric %q not found", metricName)
+	}
+	return m[0], nil
+}
+
 // WriteSeries implements MimirClient.
-func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (int, error) {
+func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries, metadata []prompb.MetricMetadata) (int, error) {
 	lastStatusCode := 0
 
 	// Honor the batch size.
@@ -247,7 +271,10 @@ func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries) (i
 		series = series[end:]
 
 		var err error
-		lastStatusCode, err = c.writeClient.sendWriteRequest(ctx, &prompb.WriteRequest{Timeseries: batch})
+		lastStatusCode, err = c.writeClient.sendWriteRequest(ctx, &prompb.WriteRequest{
+			Timeseries: batch,
+			Metadata:   metadata,
+		})
 		if err != nil {
 			return lastStatusCode, err
 		}

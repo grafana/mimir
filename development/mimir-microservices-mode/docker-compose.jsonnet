@@ -28,10 +28,16 @@ std.manifestYamlDoc({
     // Two additional Prometheus instances are started that scrape the same memcached-exporter and load-generator
     // targets and remote write to distributor-2.
     enable_prometheus: true,  // If Prometheus is disabled, recording rules will not be evaluated and so dashboards in Grafana that depend on these recorded series will display no data.
+    // Whether to use Prometheus Remote-Write 2.0 or not for the main Prometheus. This also turns on NHCB conversion.
+    enable_prometheus_rw2: false,
     enable_otel_collector: false,
 
     // If true, a query-tee instance with a single backend is started.
     enable_query_tee: false,
+
+    // If true, a secondary query path is started.
+    enable_secondary_query_path: false,
+    secondary_query_path_extra_args: '',
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -39,6 +45,7 @@ std.manifestYamlDoc({
     self.distributor +
     self.ingesters +
     self.read_components +  // querier, query-frontend, and query-scheduler.
+    (if $._config.enable_secondary_query_path then self.secondary_read_components else {}) +
     self.store_gateways(3) +
     self.compactor +
     self.rulers(2) +
@@ -99,26 +106,39 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_components:: {
-    querier: mimirService({
-      name: 'querier',
+  read_path(prefix='', portOffset=0, extraArgs=''):: {
+    [prefix + 'querier']: mimirService({
+      name: prefix + 'querier',
       target: 'querier',
-      httpPort: 8005,
+      httpPort: 8005 + portOffset,
+      jaegerApp: prefix + 'querier',
+      extraArguments: extraArgs,
     }),
 
-    'query-frontend': mimirService({
-      name: 'query-frontend',
+    [prefix + 'query-frontend']: mimirService({
+      name: prefix + 'query-frontend',
       target: 'query-frontend',
-      httpPort: 8007,
-      jaegerApp: 'query-frontend',
+      httpPort: 8007 + portOffset,
+      jaegerApp: prefix + 'query-frontend',
+      extraArguments: extraArgs,
     }),
 
-    'query-scheduler': mimirService({
-      name: 'query-scheduler',
+    [prefix + 'query-scheduler']: mimirService({
+      name: prefix + 'query-scheduler',
       target: 'query-scheduler',
-      httpPort: 8008,
+      httpPort: 8008 + portOffset,
+      jaegerApp: prefix + 'query-scheduler',
+      extraArguments: extraArgs,
     }),
   },
+
+  read_components:: self.read_path(),
+
+  secondary_read_components:: self.read_path(
+    prefix='secondary-',
+    portOffset=100,
+    extraArgs='-querier.ring.prefix=secondary-querier/ -query-scheduler.ring.prefix=secondary-scheduler/ ' + $._config.secondary_query_path_extra_args,
+  ),
 
   compactor:: {
     compactor: mimirService({
@@ -311,9 +331,9 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.5.0',
+      image: 'prom/prometheus:v3.7.3',
       command: [
-        '--config.file=/etc/prometheus/prometheus.yaml',
+        if $._config.enable_prometheus_rw2 then '--config.file=/etc/prometheus/prometheusRW2.yaml' else '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
         '--enable-feature=native-histograms',
       ],

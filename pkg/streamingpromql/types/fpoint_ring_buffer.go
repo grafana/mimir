@@ -107,6 +107,16 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 	return existing
 }
 
+// ViewAll returns a view which includes all points in the ring buffer.
+// The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
+func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBufferView {
+	if existing == nil {
+		existing = &FPointRingBufferView{buffer: b}
+	}
+	existing.size = b.size
+	return existing
+}
+
 // ViewUntilSearchingBackwards is like ViewUntilSearchingForwards, except it examines the points from the end of the buffer, so
 // is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
 func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPointRingBufferView) *FPointRingBufferView {
@@ -186,7 +196,7 @@ type FPointRingBufferView struct {
 //
 // FIXME: the fact we have to expose this is a bit gross, but the overhead of calling a function with ForEach is terrible.
 // Perhaps we can use range-over function iterators (https://go.dev/wiki/RangefuncExperiment) once this is not experimental?
-func (v FPointRingBufferView) UnsafePoints() (head []promql.FPoint, tail []promql.FPoint) {
+func (v *FPointRingBufferView) UnsafePoints() (head []promql.FPoint, tail []promql.FPoint) {
 	if v.size == 0 {
 		return nil, nil
 	}
@@ -210,7 +220,7 @@ func (v FPointRingBufferView) UnsafePoints() (head []promql.FPoint, tail []promq
 // PutFPointSlice when it is no longer needed.
 // Calling UnsafePoints is more efficient than calling CopyPoints, as CopyPoints will create a new slice and copy all
 // points into the slice, whereas UnsafePoints returns a view into the internal state of this buffer.
-func (v FPointRingBufferView) CopyPoints() ([]promql.FPoint, error) {
+func (v *FPointRingBufferView) CopyPoints() ([]promql.FPoint, error) {
 	if v.size == 0 {
 		return nil, nil
 	}
@@ -228,7 +238,7 @@ func (v FPointRingBufferView) CopyPoints() ([]promql.FPoint, error) {
 }
 
 // ForEach calls f for each point in this buffer view.
-func (v FPointRingBufferView) ForEach(f func(p promql.FPoint)) {
+func (v *FPointRingBufferView) ForEach(f func(p promql.FPoint)) {
 	for i := 0; i < v.size; i++ {
 		f(v.buffer.pointAt(v.offset + i))
 	}
@@ -236,7 +246,7 @@ func (v FPointRingBufferView) ForEach(f func(p promql.FPoint)) {
 
 // First returns the first point in this ring buffer view.
 // It panics if the buffer is empty.
-func (v FPointRingBufferView) First() promql.FPoint {
+func (v *FPointRingBufferView) First() promql.FPoint {
 	if v.size == 0 {
 		panic("Can't get first element of empty buffer")
 	}
@@ -246,7 +256,7 @@ func (v FPointRingBufferView) First() promql.FPoint {
 
 // Last returns the last point in this ring buffer view.
 // It returns false if the view is empty.
-func (v FPointRingBufferView) Last() (promql.FPoint, bool) {
+func (v *FPointRingBufferView) Last() (promql.FPoint, bool) {
 	if v.size == 0 {
 		return promql.FPoint{}, false
 	}
@@ -255,18 +265,18 @@ func (v FPointRingBufferView) Last() (promql.FPoint, bool) {
 }
 
 // Count returns the number of points in this ring buffer view.
-func (v FPointRingBufferView) Count() int {
+func (v *FPointRingBufferView) Count() int {
 	return v.size
 }
 
 // Any returns true if this ring buffer view contains any points.
-func (v FPointRingBufferView) Any() bool {
+func (v *FPointRingBufferView) Any() bool {
 	return v.size != 0
 }
 
 // PointAt returns the point at index i in this ring buffer view.
 // It panics if i is outside the range of points in this view.
-func (v FPointRingBufferView) PointAt(i int) promql.FPoint {
+func (v *FPointRingBufferView) PointAt(i int) promql.FPoint {
 	if i >= v.size {
 		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
 	}
@@ -276,7 +286,7 @@ func (v FPointRingBufferView) PointAt(i int) promql.FPoint {
 
 // Clone returns a clone of this view and its underlying ring buffer.
 // The caller is responsible for closing the returned ring buffer when it is no longer needed.
-func (v FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer, error) {
+func (v *FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer, error) {
 	if v.size == 0 {
 		return &FPointRingBufferView{}, nil, nil
 	}

@@ -147,6 +147,8 @@ func NewLazyBinaryReader(
 		_ = df.Close()
 	}
 
+	logger = log.With(logger, "id", id)
+
 	g := errgroup.Group{}
 	g.Go(func() error {
 		return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)

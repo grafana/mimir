@@ -108,27 +108,19 @@ func BenchmarkTrackerStoreLoadSnapshot(b *testing.B) {
 	snapshots, lim := generateSnapshot(b, 1, 10e6, now)
 	b.Logf("Snapshots generation took %s", time.Since(now))
 
-	b.Run("concurrency=1", func(b *testing.B) {
+	b.Run("mode=sequential", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
 			for _, d := range snapshots {
-				require.NoError(b, t.loadSnapshot(d, now, true))
+				require.NoError(b, t.loadSnapshot(d, now))
 			}
 		}
 	})
 
-	b.Run("concurrency=shards", func(b *testing.B) {
+	b.Run("mode=parallel", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			t := newTrackerStore(testIdleTimeout, 85, log.NewNopLogger(), lim, noopEvents{})
-			wg := &sync.WaitGroup{}
-			wg.Add(len(snapshots))
-			for _, d := range snapshots {
-				go func() {
-					defer wg.Done()
-					require.NoError(b, t.loadSnapshot(d, now, true))
-				}()
-			}
-			wg.Wait()
+			require.NoError(b, t.loadSnapshots(snapshots, now))
 		}
 	})
 }

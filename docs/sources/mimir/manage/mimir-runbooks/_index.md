@@ -1107,6 +1107,42 @@ How to **investigate**:
        $.apps.v1.statefulSet.spec.template.metadata.withLabelsMixin({ [$._config.gossip_member_label]: 'false' }),
      ```
 
+### MimirMemberlistBridgeZoneUnavailable
+
+This alert fires when there are no available memberlist-bridge pods in a zone where it's expected to be deployed.
+
+How it **works**:
+
+- The memberlist-bridge is deployed in multiple zones (e.g. zone-a, zone-b, zone-c) to facilitate gossip protocol communication across zones.
+- When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), each zone must have at least one healthy memberlist-bridge pod running to guarantee inter-AZ communication, and avoid network partitioning issues.
+- If a zone has no alive bridge running, the memberlist client automatically temporarily disables the zone-aware routing in order to reduce the likelihood of network partitioning. However, detecting that bridges are unhealthy may take a while, and during this period of time, one or more zones could fail to receive memberlist updates. For this reason, you should always have at least one healthy bridge per zone.
+- This alert triggers when a zone has a memberlist-bridge deployment configured but no bridge pods are in ready state in that zone.
+
+How to **investigate**:
+
+- Check the status of memberlist-bridge pods in the affected zone, and why they're not running
+- In case of emergency, disable zone-aware routing in Mimir by setting `-memberlist.zone-aware-routing.enabled=false` on each Mimir component or by using the following jsonnet snippet:
+  ```
+  _config+:: {
+    memberlist_zone_aware_routing_enabled: false,
+  }
+  ```
+
+### MimirMemberlistZoneAwareRoutingAutoFailover
+
+This alert fires when memberlist zone-aware routing auto-failover triggers because it detects missing memberlist bridges in any of the zones where members are running.
+
+How it **works**:
+
+- When memberlist zone-aware routing is enabled and a zone has no healthy memberlist-bridge pods, the memberlist client automatically temporarily disables zone-aware routing to reduce the likelihood of network partitioning.
+- When the failover triggers, inter-AZ data transfer will occur. Inter-AZ data transfer is billed in most cloud providers.
+- This alert triggers when the auto-failover mechanism is actively skipping nodes due to missing bridges.
+
+How to **investigate**:
+
+- Ensure memberlist-bridge is running in every zone where Mimir is running.
+- Refer to the [MimirMemberlistBridgeZoneUnavailable](#mimirmemberlistbridgezoneunavailable) runbook for detailed investigation steps.
+
 ### MimirAlertmanagerSyncConfigsFailing
 
 How it **works**:

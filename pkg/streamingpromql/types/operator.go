@@ -12,7 +12,8 @@ import (
 )
 
 type PrepareParams struct {
-	QueryStats *QueryStats
+	// This struct used to contain values, but they are now passed by other means.
+	// We kept it here to avoid making a big disruptive change.
 }
 
 // Operator represents all operators.
@@ -137,21 +138,6 @@ func (s Matchers) ToPrometheusType() ([]*labels.Matcher, error) {
 	}
 
 	return out, nil
-}
-
-// Append appends other Matchers to this matcher if both are non-nil.
-// If this Matchers is nil, other is returned unchanged.
-// If other is nil, this Matchers is returned unchanged.
-func (s Matchers) Append(other Matchers) Matchers {
-	if s == nil {
-		return other
-	}
-
-	if other == nil {
-		return s
-	}
-
-	return append(s, other...)
 }
 
 // With returns a new Matchers that only contains matchers targeting labels

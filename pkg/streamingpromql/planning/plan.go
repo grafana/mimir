@@ -29,27 +29,44 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV1
+var MaximumSupportedQueryPlanVersion = QueryPlanV4
+
+// IMPORTANT:
+// Do not change the value or meaning of these constants once they have been merged.
+// Doing so could result in queriers receiving query plans they don't understand, which could
+// lead to errors or silently incorrect behaviour or results.
 
 const QueryPlanVersionZero = QueryPlanVersion(0)
 
-// This version introduces:
+// QueryPlanV1 introduces:
 // 1. DropName node
-// 2. Step invariant expression node
+// 2. StepInvariantExpression node
 const QueryPlanV1 = QueryPlanVersion(1)
 
-type QueryPlan struct {
-	TimeRange types.QueryTimeRange
-	Root      Node
+// QueryPlanV2 introduces support for limitk and limit_ratio PromQL aggregates
+const QueryPlanV2 = QueryPlanVersion(2)
 
-	OriginalExpression       string
-	EnableDelayedNameRemoval bool
+// QueryPlanV3 introduces support for evaluating multiple query plan nodes in a single querier request.
+const QueryPlanV3 = QueryPlanVersion(3)
+
+// QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
+const QueryPlanV4 = QueryPlanVersion(4)
+
+type QueryPlan struct {
+	Root       Node
+	Parameters *QueryParameters
 
 	// The version of this query plan.
 	//
 	// Queriers use this to ensure they do not attempt to execute a query plan that contains features they
 	// cannot safely or correctly execute (eg. new nodes or new meaning for existing node details).
 	Version QueryPlanVersion
+}
+
+type QueryParameters struct {
+	OriginalExpression       string
+	TimeRange                types.QueryTimeRange
+	EnableDelayedNameRemoval bool
 }
 
 // Node represents a node in the query plan graph.
@@ -126,11 +143,11 @@ type Node interface {
 	// and its children.
 	//
 	// If no data is queried by this node and its children, QueriedTimeRange.AnyDataQueried will be false.
-	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) QueriedTimeRange
+	QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (QueriedTimeRange, error)
 
 	// ExpressionPosition returns the position of the subexpression this node represents in the original
 	// expression.
-	ExpressionPosition() posrange.PositionRange
+	ExpressionPosition() (posrange.PositionRange, error)
 
 	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
 	MinimumRequiredPlanVersion() QueryPlanVersion
@@ -203,10 +220,10 @@ type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	Annotations              *annotations.Annotations
+	QueryStats               *types.QueryStats
 	LookbackDelta            time.Duration
 	EagerLoadSelectors       bool
-	Plan                     *QueryPlan
-	EnableDelayedNameRemoval bool
+	QueryParameters          *QueryParameters
 	Logger                   log.Logger
 }
 
@@ -224,23 +241,52 @@ type SplittableNode interface {
 	GetTimeRangeParams() types.TimeRangeParams
 }
 
-func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool) (*EncodedQueryPlan, error) {
+// ToEncodedPlan converts this query plan to its encoded form.
+//
+// If nodes is not empty:
+// - only nodes reachable from the provided nodes will be encoded
+// - the corresponding indices in the encoded plan for the provided nodes will be returned
+// - RootNode on the returned plan will not be populated
+//
+// If nodes is empty:
+// - all nodes reachable from the plan's root will be encoded
+// - the corresponding index in the encoded plan for the root node will be returned
+// - RootNode on the returned plan will be populated
+func (p *QueryPlan) ToEncodedPlan(includeDescriptions bool, includeDetails bool, nodes ...Node) (*EncodedQueryPlan, []int64, error) {
 	encoder := newQueryPlanEncoder(includeDescriptions, includeDetails)
-	rootNode, err := encoder.encodeNode(p.Root)
-	if err != nil {
-		return nil, err
-	}
 
 	encoded := &EncodedQueryPlan{
-		TimeRange:                toEncodedTimeRange(p.TimeRange),
-		Nodes:                    encoder.nodes,
-		RootNode:                 rootNode,
-		OriginalExpression:       p.OriginalExpression,
-		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
+		TimeRange:                ToEncodedTimeRange(p.Parameters.TimeRange),
+		OriginalExpression:       p.Parameters.OriginalExpression,
+		EnableDelayedNameRemoval: p.Parameters.EnableDelayedNameRemoval,
 		Version:                  p.Version,
 	}
 
-	return encoded, nil
+	var encodedNodeIndices []int64
+
+	if len(nodes) > 0 {
+		encodedNodeIndices = make([]int64, 0, len(nodes))
+
+		for _, n := range nodes {
+			idx, err := encoder.encodeNode(n)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			encodedNodeIndices = append(encodedNodeIndices, idx)
+		}
+	} else {
+		idx, err := encoder.encodeNode(p.Root)
+		if err != nil {
+			return nil, nil, err
+		}
+		encoded.RootNode = idx
+		encodedNodeIndices = []int64{idx}
+	}
+
+	encoded.Nodes = encoder.nodes
+
+	return encoded, encodedNodeIndices, nil
 }
 
 // DeterminePlanVersion will set the plan Version to the largest MinimumRequiredPlanVersion found within the plan nodes.
@@ -260,7 +306,7 @@ func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) QueryPlanVersion {
 	return maxVersion
 }
 
-func toEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
+func ToEncodedTimeRange(t types.QueryTimeRange) EncodedQueryTimeRange {
 	return EncodedQueryTimeRange{
 		StartT:               t.StartT,
 		EndT:                 t.EndT,
@@ -293,6 +339,10 @@ func newQueryPlanEncoder(includeDescriptions bool, includeDetails bool) *queryPl
 }
 
 func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
+	if idx, haveWritten := e.nodesToIndex[n]; haveWritten {
+		return idx, nil
+	}
+
 	encoded := &EncodedNode{}
 	childCount := n.ChildCount()
 
@@ -302,15 +352,9 @@ func (e *queryPlanEncoder) encodeNode(n Node) (int64, error) {
 		// Check all children have been encoded already.
 		for childIdx := range childCount {
 			child := n.Child(childIdx)
-			idx, haveWritten := e.nodesToIndex[child]
-
-			if !haveWritten {
-				var err error
-				idx, err = e.encodeNode(child)
-
-				if err != nil {
-					return -1, err
-				}
+			idx, err := e.encodeNode(child)
+			if err != nil {
+				return -1, err
 			}
 
 			childIndices = append(childIndices, idx)
@@ -348,40 +392,32 @@ func NodeTypeName(n Node) string {
 	return reflect.TypeOf(n).Elem().Name()
 }
 
-// ToDecodedPlan converts this encoded plan to its decoded form.
-// It returns references to the specified nodeIndices.
-func (p *EncodedQueryPlan) ToDecodedPlan(nodeIndices ...int64) (*QueryPlan, []Node, error) {
+// DecodeNodes decodes nodes for the provided nodeIndices from the encoded plan.
+func (p *EncodedQueryPlan) DecodeNodes(nodeIndices ...int64) ([]Node, error) {
 	if p.Version > MaximumSupportedQueryPlanVersion {
-		return nil, nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
-	}
-
-	if p.RootNode < 0 || p.RootNode >= int64(len(p.Nodes)) {
-		return nil, nil, apierror.Newf(apierror.TypeBadData, "root node index %v out of range with %v nodes in plan", p.RootNode, len(p.Nodes))
+		return nil, apierror.Newf(apierror.TypeBadData, "query plan has version %v, but the maximum supported query plan version is %v", p.Version, MaximumSupportedQueryPlanVersion)
 	}
 
 	decoder := newQueryPlanDecoder(p.Nodes)
-	root, err := decoder.decodeNode(p.RootNode)
-
-	if err != nil {
-		return nil, nil, err
-	}
 
 	nodes := make([]Node, 0, len(nodeIndices))
 	for _, idx := range nodeIndices {
 		n, err := decoder.decodeNode(idx)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		nodes = append(nodes, n)
 	}
 
-	return &QueryPlan{
-		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
-		Root:                     root,
+	return nodes, nil
+}
+
+func (p *EncodedQueryPlan) DecodeParameters() *QueryParameters {
+	return &QueryParameters{
 		OriginalExpression:       p.OriginalExpression,
+		TimeRange:                p.TimeRange.ToDecodedTimeRange(),
 		EnableDelayedNameRemoval: p.EnableDelayedNameRemoval,
-		Version:                  p.Version,
-	}, nodes, nil
+	}
 }
 
 type queryPlanDecoder struct {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -34,7 +35,7 @@ func TestMap(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, events*seriesPerEvent, m.count())
+	require.Equal(t, events*seriesPerEvent, m.Count())
 	require.Equal(t, uint64(events*seriesPerEvent), series.Load())
 
 	{
@@ -56,7 +57,8 @@ func TestMap(t *testing.T) {
 
 	{
 		// Cleanup first wave of series
-		m.Cleanup(clock.Minutes(1), series)
+		removed := m.Cleanup(clock.Minutes(1))
+		series.Add(-uint64(removed))
 		expectedSeries := (events - 1) * seriesPerEvent
 
 		// It's unsafe to check m.count() after Cleanup event.
@@ -78,7 +80,7 @@ func TestMapValues(t *testing.T) {
 		stored[key] = val
 		m.Put(key, val, total, nil, false)
 	}
-	require.Equal(t, len(stored), m.count())
+	require.Equal(t, len(stored), m.Count())
 	require.Equal(t, len(stored), int(total.Load()))
 
 	got := map[uint64]clock.Minutes{}
@@ -103,5 +105,29 @@ func BenchmarkMapRehash(b *testing.B) {
 				m.rehash(size)
 			}
 		})
+	}
+}
+
+func BenchmarkMapCleanup(b *testing.B) {
+	now := time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC)
+	const idleTimeout = 20 * time.Minute
+
+	const size = 1e6
+
+	maps := make([]*Map, b.N)
+	for i := range maps {
+		maps[i] = New(size)
+	}
+	r := rand.New(rand.NewSource(1))
+	for _, m := range maps {
+		for i := 0; i < size; i++ {
+			ts := now.Add(time.Duration(-r.Float64() * float64(idleTimeout) / 3 * 4))
+			m.Put(r.Uint64(), clock.ToMinutes(ts), nil, nil, false)
+		}
+	}
+	b.ResetTimer()
+	watermark := now.Add(-idleTimeout)
+	for i := 0; i < b.N; i++ {
+		maps[i].Cleanup(clock.ToMinutes(watermark))
 	}
 }

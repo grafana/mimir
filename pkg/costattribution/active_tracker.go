@@ -34,7 +34,7 @@ type ActiveSeriesTracker struct {
 	activeNativeHistogramBucketsPerUserAttribution *descriptor
 	logger                                         log.Logger
 
-	labels         []costattributionmodel.Label
+	labels         costattributionmodel.Labels
 	overflowLabels []string
 
 	// maxCardinality is the cardinality at which tracker enters the overflow state.
@@ -49,7 +49,7 @@ type ActiveSeriesTracker struct {
 	overflowCounter counters
 }
 
-func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.Label, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
+func NewActiveSeriesTracker(userID string, trackedLabels costattributionmodel.Labels, limit int, cooldownDuration time.Duration, logger log.Logger) (*ActiveSeriesTracker, error) {
 	// Create a map for overflow labels to export when overflow happens
 	overflowLabels := make([]string, len(trackedLabels)+1)
 	for i := range trackedLabels {
@@ -74,9 +74,9 @@ func NewActiveSeriesTracker(userID string, trackedLabels []costattributionmodel.
 	return ast, nil
 }
 
-func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels []costattributionmodel.Label) error {
+func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels costattributionmodel.Labels) error {
 	variableLabels := make([]string, 0, len(trackedLabels)+1)
-	variableLabels = append(variableLabels, costattributionmodel.FromCostAttributionLabelsToOutputLabels(trackedLabels)...)
+	variableLabels = append(variableLabels, trackedLabels.OutputLabels()...)
 	variableLabels = append(variableLabels, tenantLabel)
 
 	var err error
@@ -103,7 +103,7 @@ func (at *ActiveSeriesTracker) createAndValidateDescriptors(trackedLabels []cost
 	return nil
 }
 
-func (at *ActiveSeriesTracker) hasSameLabels(labels []costattributionmodel.Label) bool {
+func (at *ActiveSeriesTracker) hasSameLabels(labels costattributionmodel.Labels) bool {
 	return slices.Equal(at.labels, labels)
 }
 

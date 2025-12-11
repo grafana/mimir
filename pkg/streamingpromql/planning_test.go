@@ -1372,6 +1372,56 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
+		"matrix anchored selector": {
+			expr:      `some_metric[1m] anchored`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  0,
+				Version:   planning.QueryPlanV4,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Range:              60 * time.Second,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
+							Anchored:           true,
+						}),
+						Type:        "MatrixSelector",
+						Description: `{__name__="some_metric"}[1m0s] anchored`,
+					},
+				},
+			},
+		},
+		"matrix smoothed selector": {
+			expr:      `some_metric[1m] smoothed`,
+			timeRange: instantQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  0,
+				Version:   planning.QueryPlanV4,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_MATRIX_SELECTOR,
+						Details: marshalDetails(&core.MatrixSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Range:              60 * time.Second,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
+							Smoothed:           true,
+						}),
+						Type:        "MatrixSelector",
+						Description: `{__name__="some_metric"}[1m0s] smoothed`,
+					},
+				},
+			},
+		},
 	}
 
 	ctx := context.Background()
@@ -1407,16 +1457,60 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 			require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_mimir_query_engine_plans_generated_total"))
 
 			// Encode plan, confirm it matches what we expect
-			encoded, err := originalPlan.ToEncodedPlan(true, true)
+			encoded, nodeIndices, err := originalPlan.ToEncodedPlan(true, true)
 			require.NoError(t, err)
 			require.Equal(t, testCase.expectedPlan, encoded)
+			require.Equal(t, []int64{testCase.expectedPlan.RootNode}, nodeIndices)
 
-			// Decode plan, confirm it matches the original plan
-			decodedPlan, _, err := encoded.ToDecodedPlan()
+			// Decode plan tree from root node, confirm it matches the original plan
+			nodes, err := encoded.DecodeNodes(encoded.RootNode)
 			require.NoError(t, err)
-			require.Equal(t, originalPlan, decodedPlan)
+			require.Len(t, nodes, 1)
+			require.Equal(t, originalPlan.Root, nodes[0])
+
+			require.Equal(t, originalPlan.Parameters, encoded.DecodeParameters())
 		})
 	}
+}
+
+func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `topk(5, foo)`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	aggregationNode := plan.Root.(*core.AggregateExpression)
+	numberLiteralNode := aggregationNode.Param
+	vectorSelectorNode := aggregationNode.Inner
+
+	encoded, nodes, err := plan.ToEncodedPlan(false, true, numberLiteralNode, vectorSelectorNode)
+	require.NoError(t, err)
+	require.Len(t, nodes, 2)
+	require.Len(t, encoded.Nodes, 2)
+	require.Equal(t, planning.NODE_TYPE_NUMBER_LITERAL, encoded.Nodes[nodes[0]].NodeType)
+	require.Equal(t, planning.NODE_TYPE_VECTOR_SELECTOR, encoded.Nodes[nodes[1]].NodeType)
+}
+
+func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	expr := `sum(foo)`
+	ctx := context.Background()
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	require.NoError(t, err)
+
+	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
+	require.NoError(t, err)
+	require.Len(t, encoded.Nodes, 2)
+	require.Equal(t, []int64{1, 1}, nodes)
+	require.Equal(t, planning.NODE_TYPE_VECTOR_SELECTOR, encoded.Nodes[0].NodeType)
+	require.Equal(t, planning.NODE_TYPE_AGGREGATE_EXPRESSION, encoded.Nodes[1].NodeType)
 }
 
 func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(t *testing.T) {
@@ -1453,21 +1547,26 @@ func TestPlanVersioning(t *testing.T) {
 
 	// Plan has a node which has a min required plan version of 9000
 	plan := &planning.QueryPlan{
-		TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
-		Root:               newTestNode(9000),
-		OriginalExpression: "123",
+		Root: newTestNode(9000),
+		Parameters: &planning.QueryParameters{
+			TimeRange:          types.NewInstantQueryTimeRange(time.Now()),
+			OriginalExpression: "123",
+		},
 	}
 
 	err := plan.DeterminePlanVersion()
 	require.NoError(t, err)
 
-	encoded, err := plan.ToEncodedPlan(false, true)
+	encoded, _, err := plan.ToEncodedPlan(false, true)
 	require.NoError(t, err)
 	require.Equal(t, planning.QueryPlanVersion(9000), encoded.Version)
 
-	decoded, _, err := encoded.ToDecodedPlan()
+	nodes, err := encoded.DecodeNodes(encoded.RootNode)
 	require.NoError(t, err)
-	require.Equal(t, plan, decoded)
+	require.Len(t, nodes, 1)
+	require.Equal(t, plan.Root, nodes[0])
+
+	require.Equal(t, plan.Parameters, encoded.DecodeParameters())
 }
 
 func TestDeduplicateAndMergePlanning(t *testing.T) {
@@ -1635,7 +1734,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 				var marshalled []byte
 
 				for b.Loop() {
-					encoded, err := plan.ToEncodedPlan(false, true)
+					encoded, _, err := plan.ToEncodedPlan(false, true)
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1650,7 +1749,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 			})
 
 			b.Run("decode", func(b *testing.B) {
-				encoded, err := plan.ToEncodedPlan(false, true)
+				encoded, _, err := plan.ToEncodedPlan(false, true)
 				require.NoError(b, err)
 
 				marshalled, err := encoded.Marshal()
@@ -1663,7 +1762,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 						require.NoError(b, err)
 					}
 
-					_, _, err = unmarshalled.ToDecodedPlan()
+					_, err = unmarshalled.DecodeNodes(unmarshalled.RootNode)
 					if err != nil {
 						require.NoError(b, err)
 					}
@@ -1723,7 +1822,7 @@ func TestDecodingInvalidPlan(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "root node index 1 out of range with 1 nodes in plan",
+			expectedError: "node index 1 out of range with 1 nodes in plan",
 		},
 		"negative root node index": {
 			input: &planning.EncodedQueryPlan{
@@ -1738,7 +1837,7 @@ func TestDecodingInvalidPlan(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "root node index -1 out of range with 1 nodes in plan",
+			expectedError: "node index -1 out of range with 1 nodes in plan",
 		},
 		"child node index out of range": {
 			input: &planning.EncodedQueryPlan{
@@ -1847,9 +1946,8 @@ func TestDecodingInvalidPlan(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			output, _, err := testCase.input.ToDecodedPlan()
+			_, err := testCase.input.DecodeNodes(testCase.input.RootNode)
 			require.EqualError(t, err, testCase.expectedError)
-			require.Nil(t, output)
 		})
 	}
 }
@@ -1963,12 +2061,12 @@ func (t *versioningTestNode) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
 }
 
-func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.NoDataQueried()
+func (t *versioningTestNode) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
 }
 
-func (t *versioningTestNode) ExpressionPosition() posrange.PositionRange {
-	return posrange.PositionRange{}
+func (t *versioningTestNode) ExpressionPosition() (posrange.PositionRange, error) {
+	return posrange.PositionRange{}, nil
 }
 
 func (t *versioningTestNode) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

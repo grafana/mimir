@@ -265,7 +265,7 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
-	PreferAvailabilityZone                     string        `yaml:"-"`
+	PreferAvailabilityZones                    []string      `yaml:"-"`
 
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
@@ -377,8 +377,11 @@ type PushMetrics struct {
 	influxRequestCounter       *prometheus.CounterVec
 	influxUncompressedBodySize *prometheus.HistogramVec
 	// OTLP metrics.
-	otlpRequestCounter   *prometheus.CounterVec
-	uncompressedBodySize *prometheus.HistogramVec
+	otlpRequestCounter     *prometheus.CounterVec
+	uncompressedBodySize   *prometheus.HistogramVec
+	otlpContentTypeCounter *prometheus.CounterVec
+	// Temporary to better understand which array (ResourceMetrics/ScopeMetrics/Metrics) is usually large
+	otlpArrayLengths *prometheus.HistogramVec
 }
 
 func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
@@ -405,6 +408,17 @@ func newPushMetrics(reg prometheus.Registerer) *PushMetrics {
 			NativeHistogramMinResetDuration: 1 * time.Hour,
 			NativeHistogramMaxBucketNumber:  100,
 		}, []string{"user", "handler"}),
+		otlpContentTypeCounter: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_distributor_otlp_requests_by_content_type_total",
+			Help: "Total number of requests with a given content type.",
+		}, []string{"content_type"}),
+		otlpArrayLengths: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+			Name:                            "cortex_distributor_otlp_array_lengths",
+			Help:                            "Number of elements in the arrays of OTLP requests.",
+			NativeHistogramBucketFactor:     1.1,
+			NativeHistogramMinResetDuration: 1 * time.Hour,
+			NativeHistogramMaxBucketNumber:  100,
+		}, []string{"field"}),
 	}
 }
 
@@ -429,6 +443,18 @@ func (m *PushMetrics) IncOTLPRequest(user string) {
 func (m *PushMetrics) ObserveUncompressedBodySize(user string, handler string, size float64) {
 	if m != nil {
 		m.uncompressedBodySize.WithLabelValues(user, handler).Observe(size)
+	}
+}
+
+func (m *PushMetrics) IncOTLPContentType(contentType string) {
+	if m != nil {
+		m.otlpContentTypeCounter.WithLabelValues(contentType).Inc()
+	}
+}
+
+func (m *PushMetrics) ObserveOTLPArrayLengths(field string, length int) {
+	if m != nil {
+		m.otlpArrayLengths.WithLabelValues(field).Observe(float64(length))
 	}
 }
 
@@ -2352,7 +2378,7 @@ func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, r
 	var zoneSorter ring.ZoneSorter
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZone)
+		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZones)
 	} else {
 		// We expect to always have exactly 1 replication set when ingest storage is disabled.
 		// To keep the code safer, we run with no zone sorter if that's not the case.
@@ -2393,22 +2419,25 @@ func queryIngestersRingZoneSorter(replicationSet ring.ReplicationSet) ring.ZoneS
 // queryIngesterPartitionsRingZoneSorter returns a ring.ZoneSorter that should be used to sort
 // ingester zones to attempt to query first, when ingest storage is enabled.
 //
-// The sorter gives preference to preferredZone if non empty, and then randomize the other zones.
-func queryIngesterPartitionsRingZoneSorter(preferredZone string) ring.ZoneSorter {
+// The sorter gives preference to preferredZones if non empty, and then randomizes the other zones.
+// All preferred zones are given equal priority.
+func queryIngesterPartitionsRingZoneSorter(preferredZones []string) ring.ZoneSorter {
 	return func(zones []string) []string {
 		// Shuffle the zones to distribute load evenly.
-		if len(zones) > 2 || (preferredZone == "" && len(zones) > 1) {
+		if len(zones) > 2 || (len(preferredZones) == 0 && len(zones) > 1) {
 			rand.Shuffle(len(zones), func(i, j int) {
 				zones[i], zones[j] = zones[j], zones[i]
 			})
 		}
 
-		if preferredZone != "" {
-			// Give priority to the preferred zone.
-			for i, z := range zones {
-				if z == preferredZone {
-					zones[0], zones[i] = zones[i], zones[0]
-					break
+		if len(preferredZones) > 0 {
+			// Move all preferred zones to the front.
+			// This gives equal priority to all preferred zones (since they were already shuffled).
+			nextPos := 0
+			for idx, zone := range zones {
+				if slices.Contains(preferredZones, zone) {
+					zones[nextPos], zones[idx] = zones[idx], zones[nextPos]
+					nextPos++
 				}
 			}
 		}

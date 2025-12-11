@@ -32,8 +32,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunks"
-	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
@@ -57,7 +55,6 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
-	"github.com/grafana/mimir/pkg/util/pool"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -300,10 +297,10 @@ func (s *BucketStore) Stats() BucketStoreStats {
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
-	return s.syncBlocks(ctx)
+	return s.syncBlocks(ctx, false)
 }
 
-func (s *BucketStore) syncBlocks(ctx context.Context) error {
+func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -317,7 +314,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
-				if err := s.addBlock(ctx, meta); err != nil {
+				if err := s.addBlock(ctx, meta, initialSync); err != nil {
 					continue
 				}
 			}
@@ -369,7 +366,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	// so we need to read the pre-shutdown snapshot before the sync.
 	previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
 
-	if err := s.syncBlocks(ctx); err != nil {
+	if err := s.syncBlocks(ctx, true); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
 	if s.indexHeaderCfg.LazyLoadingEnabled {
@@ -437,7 +434,7 @@ func (s *BucketStore) cleanUpUnownedBlocks() error {
 	return nil
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -453,8 +450,11 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
 
 			// Record block discovery latency as time from block creation (ULID timestamp) to now.
-			blockCreationTime := time.UnixMilli(int64(meta.ULID.Time()))
-			s.metrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
+			// Don't track the metric on initial sync; otherwise, it is skewed by the old blocks on restart.
+			if !initialSync {
+				blockCreationTime := time.UnixMilli(int64(meta.ULID.Time()))
+				s.metrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
+			}
 		}
 	}()
 	s.metrics.blockLoads.Inc()
@@ -2051,63 +2051,6 @@ type Partitioner interface {
 	// It supports overlapping ranges.
 	// NOTE: It expects range to be sorted by start time.
 	Partition(length int, rng func(int) (uint64, uint64)) []Part
-}
-
-type symbolizedLabel struct {
-	name, value uint32
-}
-
-// decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
-// If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if there is at least a single chunk.
-// decodeSeries returns false, when there are no chunks for the series.
-func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
-
-	*chks = (*chks)[:0]
-
-	d := encoding.Decbuf{B: b}
-
-	// Read labels without looking up symbols.
-	k := d.Uvarint()
-	lset = lsetPool.Get(k)[:0]
-	for i := 0; i < k; i++ {
-		lno := uint32(d.Uvarint())
-		lvo := uint32(d.Uvarint())
-		lset = append(lset, symbolizedLabel{name: lno, value: lvo})
-	}
-	// Read the chunks meta data.
-	k = d.Uvarint()
-	if k == 0 {
-		return false, nil, d.Err()
-	}
-
-	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
-	mint := d.Varint64()
-	maxt := int64(d.Uvarint64()) + mint
-	// Similar for first ref.
-	ref := int64(d.Uvarint64())
-
-	for i := 0; i < k; i++ {
-		if i > 0 {
-			mint += int64(d.Uvarint64())
-			maxt = int64(d.Uvarint64()) + mint
-			ref += d.Varint64()
-		}
-
-		// Found a chunk.
-		if skipChunks {
-			// We are not interested in chunks and we know there is at least one, that's enough to return series.
-			return true, lset, nil
-		}
-
-		*chks = append(*chks, chunks.Meta{
-			Ref:     chunks.ChunkRef(ref),
-			MinTime: mint,
-			MaxTime: maxt,
-		})
-
-		mint = maxt
-	}
-	return len(*chks) > 0, lset, d.Err()
 }
 
 func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {

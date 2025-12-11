@@ -1028,7 +1028,7 @@ func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
 	assert.True(t, valid)
 
 	// Change the cost attribution tracker, and make sure it's reloaded, purge result not valid.
-	cat, err := costattribution.NewActiveSeriesTracker("a", []costattributionmodel.Label{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat, err := costattribution.NewActiveSeriesTracker("a", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
 	assert.NoError(t, err)
 	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
 	valid = c.Purge(currentTime, nil)
@@ -1042,7 +1042,7 @@ func TestActiveSeries_ReloadCostAttributionTrackers(t *testing.T) {
 	assert.True(t, valid)
 	assert.NotNil(t, c.cat)
 
-	cat, err = costattribution.NewActiveSeriesTracker("a", []costattributionmodel.Label{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat, err = costattribution.NewActiveSeriesTracker("a", costattributionmodel.Labels{{Input: "a"}}, 4, 5*time.Minute, log.NewNopLogger())
 	assert.NoError(t, err)
 	c.ReloadMatchersAndTrackers(asm, cat, currentTime)
 	valid = c.Purge(currentTime, nil)
@@ -1130,7 +1130,7 @@ func TestActiveSeries_ReloadSeriesMatchers_LessMatchers(t *testing.T) {
 		"bar": `{a=~.+}`,
 	}))
 
-	cat, err := costattribution.NewActiveSeriesTracker("a", []costattributionmodel.Label{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
+	cat, err := costattribution.NewActiveSeriesTracker("a", costattributionmodel.Labels{{Input: "a"}, {Input: "b"}}, 4, 5*time.Minute, log.NewNopLogger())
 	assert.NoError(t, err)
 	currentTime := time.Now()
 	c := NewActiveSeries(asm, DefaultTimeout, cat)

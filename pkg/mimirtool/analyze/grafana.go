@@ -35,6 +35,10 @@ var (
 		"$__range", "1d",
 		"${__range_s:glob}", "30",
 		"${__range_s}", "30",
+		// $latency_metrics is commonly used by Grafana dashboards to switch
+		// between classic and native histograms. See:
+		// https://grafana.com/docs/mimir/latest/send/native-histograms/_exponential_buckets/#migrate-from-classic-histograms
+		"$latency_metrics", "0",
 	)
 )
 

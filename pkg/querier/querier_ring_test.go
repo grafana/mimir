@@ -44,7 +44,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 					state: ring.ACTIVE,
 				},
 			},
-			expectedError: "could not compute maximum supported query plan version: one or more queriers in the ring is not reporting a supported query plan version",
+			expectedError: "could not compute maximum supported query plan version: at least one querier in the ring is not reporting a supported query plan version",
 		},
 		"one instance in the ring, has version and is active": {
 			instances: []mockInstance{
@@ -94,7 +94,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 					state: ring.ACTIVE,
 				},
 			},
-			expectedError: "could not compute maximum supported query plan version: one or more queriers in the ring is not reporting a supported query plan version",
+			expectedError: "could not compute maximum supported query plan version: at least one querier in the ring is not reporting a supported query plan version",
 		},
 		"many instances in the ring, some have no version": {
 			instances: []mockInstance{
@@ -109,7 +109,7 @@ func TestRingQueryPlanVersionProvider(t *testing.T) {
 					state: ring.ACTIVE,
 				},
 			},
-			expectedError: "could not compute maximum supported query plan version: one or more queriers in the ring is not reporting a supported query plan version",
+			expectedError: "could not compute maximum supported query plan version: at least one querier in the ring is not reporting a supported query plan version",
 		},
 		"many instances in the ring, all have the same version": {
 			instances: []mockInstance{

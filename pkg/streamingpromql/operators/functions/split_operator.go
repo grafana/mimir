@@ -378,7 +378,8 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 
 func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
-	pos := m.innerNode.ExpressionPosition()
+	// TODO: handle error
+	pos, _ := m.innerNode.ExpressionPosition()
 
 	m.Annotations.Add(generator(metricName, pos))
 }

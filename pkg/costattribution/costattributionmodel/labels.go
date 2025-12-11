@@ -58,9 +58,29 @@ func (l Label) OutputLabel() string {
 	return l.Output
 }
 
-func FromCostAttributionLabelsToOutputLabels(labels []Label) []string {
-	res := make([]string, 0, len(labels))
-	for _, label := range labels {
+type Labels []Label
+
+func (l Labels) Validate() error {
+	if len(l) == 0 {
+		return nil
+	}
+
+	outputLabels := make(map[string]struct{}, len(l))
+	for _, labelWithOverride := range l {
+		if err := labelWithOverride.Validate(); err != nil {
+			return err
+		}
+		if _, ok := outputLabels[labelWithOverride.OutputLabel()]; ok {
+			return fmt.Errorf("duplicate output label: %q", labelWithOverride.String())
+		}
+		outputLabels[labelWithOverride.OutputLabel()] = struct{}{}
+	}
+	return nil
+}
+
+func (l Labels) OutputLabels() []string {
+	res := make([]string, 0, len(l))
+	for _, label := range l {
 		res = append(res, label.OutputLabel())
 	}
 	return res

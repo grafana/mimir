@@ -628,7 +628,7 @@ func TestMiddlewaresConsistency(t *testing.T) {
 				"splitAndCacheMiddleware",          // No time splitting and results cache support.
 				"stepAlignMiddleware",              // Not applicable because remote read requests don't take step in account when running in Mimir.
 				"rewriteMiddleware",                // No query rewriting support.
-				"experimentalFunctionsMiddleware",  // No blocking for PromQL experimental functions as it is executed remotely.
+				"experimentalFeaturesMiddleware",   // Not applicable because remote read requests don't evaluate PromQL expressions.
 				"durationsMiddleware",              // No duration expressions support.
 				"prom2RangeCompatHandler",          // No rewriting Prometheus 2 subqueries to Prometheus 3
 				"spinOffSubqueriesMiddleware",      // This middleware is only for instant queries.
@@ -761,7 +761,21 @@ func TestTripperware_RemoteRead(t *testing.T) {
 		expectAPIError      bool
 		expectErrorContains string
 	}{
-		"valid query": {
+		"request without matchers": {
+			makeRequest: func() *http.Request {
+				return makeTestHTTPRequestFromRemoteRead(&prompb.ReadRequest{
+					Queries: []*prompb.Query{
+						{
+							Matchers:         nil,
+							StartTimestampMs: 0,
+							EndTimestampMs:   42,
+						},
+					},
+				})
+			},
+			limits: mockLimits{},
+		},
+		"request with matchers": {
 			makeRequest: func() *http.Request {
 				return makeTestHTTPRequestFromRemoteRead(makeTestRemoteReadRequest())
 			},
