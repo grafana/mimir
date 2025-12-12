@@ -28,7 +28,7 @@ var (
 
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
-	uniqueSeries   map[uint64]struct{}
+	uniqueSeries   map[uint64]*labels.Labels
 
 	chunkBytesCount     atomic.Int64
 	chunkCount          atomic.Int64
@@ -47,7 +47,7 @@ type QueryLimiter struct {
 func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, maxEstimatedChunksPerQuery int, queryMetrics *stats.QueryMetrics) *QueryLimiter {
 	return &QueryLimiter{
 		uniqueSeriesMx: sync.Mutex{},
-		uniqueSeries:   map[uint64]struct{}{},
+		uniqueSeries:   map[uint64]*labels.Labels{},
 
 		maxSeriesPerQuery:          maxSeriesPerQuery,
 		maxChunkBytesPerQuery:      maxChunkBytesPerQuery,
@@ -74,30 +74,34 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 }
 
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (bool, validation.LimitError) {
-	// If the max series is unlimited just return without managing map
-	if ql.maxSeriesPerQuery == 0 {
-		return false, nil
-	}
+func (ql *QueryLimiter) AddSeries(seriesLabels *labels.Labels) (*labels.Labels, validation.LimitError) {
 	fingerprint := seriesLabels.Hash()
 
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
 	uniqueSeriesBefore := len(ql.uniqueSeries)
-	_, duplicated := ql.uniqueSeries[fingerprint]
-	ql.uniqueSeries[fingerprint] = struct{}{}
+	existing, duplicated := ql.uniqueSeries[fingerprint]
+	ql.uniqueSeries[fingerprint] = seriesLabels
 	uniqueSeriesAfter := len(ql.uniqueSeries)
 
-	if uniqueSeriesAfter > ql.maxSeriesPerQuery {
+	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
 		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
 			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
 		}
 
-		return duplicated, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		if duplicated {
+			return existing, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		}
+
+		return seriesLabels, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
-	return duplicated, nil
+
+	if duplicated {
+		return existing, nil
+	}
+	return seriesLabels, nil
 }
 
 // uniqueSeriesCount returns the count of unique series seen by this query limiter.
