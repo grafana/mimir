@@ -1,32 +1,4 @@
-local utils = import 'mixin-utils/utils.libsonnet';
-
 (import 'alerts-utils.libsonnet') {
-  local highVolumeLevel1BlocksQueried(histogram_type) = {
-    // Alert if there's sustained querying of level 1 blocks, which indicates the compactor
-    // is not keeping up and the store-gateway is serving blocks that aren't well compacted.
-    alert: $.alertName('HighVolumeLevel1BlocksQueried'),
-    local sum_by = [$._config.alert_aggregation_labels],
-    local range_interval = $.alertRangeInterval(10),
-    local job = $.jobMatcher($._config.job_names.store_gateway),
-    local numerator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_bucket_store_series_blocks_queried', 'component="store-gateway",level="1",out_of_order="false",%(job)s' % job, rate_interval=range_interval, from_recording=false), sum_by),
-    local denominator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_bucket_store_series_blocks_queried', 'component="store-gateway",out_of_order="false",%(job)s' % job, rate_interval=range_interval, from_recording=false), sum_by),
-    expr: |||
-      (
-        %(numerator)s
-        /
-        %(denominator)s
-      ) > 0.05
-    ||| % {
-      numerator: numerator[histogram_type],
-      denominator: denominator[histogram_type],
-    },
-    'for': '6h',
-    labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=true),
-    annotations: {
-      message: '%(product)s store-gateway in %(alert_aggregation_variables)s is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
-    },
-  },
-
   local alertGroups = [
     {
       name: 'mimir_blocks_alerts',
@@ -274,8 +246,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
             message: '%(product)s bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
-        highVolumeLevel1BlocksQueried('classic'),
-        highVolumeLevel1BlocksQueried('native'),
+        {
+          // Alert if there's sustained querying of level 1 blocks, which indicates the compactor
+          // is not keeping up and the store-gateway is serving blocks that aren't well compacted.
+          alert: $.alertName('HighVolumeLevel1BlocksQueried'),
+          'for': '6h',
+          expr: |||
+            (
+            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",level="1",out_of_order="false",%(job)s}[%(range_interval)s]))
+            /
+            sum by(%(alert_aggregation_labels)s) (rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",out_of_order="false",%(job)s}[%(range_interval)s]))
+            ) > 0.05
+          ||| % $._config {
+            job: $.jobMatcher($._config.job_names.store_gateway),
+            range_interval: $.alertRangeInterval(10),
+          },
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: '%(product)s store-gateway in %(alert_aggregation_variables)s is querying level 1 blocks, indicating the compactor may not be keeping up with compaction.' % $._config,
+          },
+        },
       ],
     },
   ],
