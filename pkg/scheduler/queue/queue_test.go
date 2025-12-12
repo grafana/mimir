@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/go-kit/log"
@@ -21,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
@@ -37,6 +39,8 @@ var secondQueueDimensionOptions = []string{
 	ingesterAndStoreGatewayQueueDimension,
 	unknownQueueDimension,
 }
+
+const queueStopTimeout = 5 * time.Second
 
 // randAdditionalQueueDimension is the basic implementation of additionalQueueDimensionFunc,
 // used to assign the expected query component queue dimensions to SchedulerRequests
@@ -100,7 +104,9 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+								atomic.NewInt64(0),
 								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+								queueStopTimeout,
 							)
 							require.NoError(b, err)
 
@@ -347,7 +353,9 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -461,7 +469,9 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -547,7 +557,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -620,7 +632,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -709,7 +723,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -765,7 +781,9 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -796,7 +814,9 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
 	)
 	require.NoError(t, err)
 
@@ -844,4 +864,196 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
+}
+
+// This test ensure that the queue instance waits until the timeout to exit when there are queriers connected to
+// dequeue the waiting requests
+func TestRequestQueue_ShutdownWithPendingRequests_ShouldTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		tenantID := "testTenant"
+
+		// We create a queue instance
+		queue, err := NewRequestQueue(
+			log.NewNopLogger(),
+			1,
+			0,
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+			atomic.NewInt64(0),
+			promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+			queueStopTimeout,
+		)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+		// Push a request to it
+		req := makeSchedulerRequest(tenantID, []string{})
+		require.NotNil(t, req)
+		err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
+		require.NoError(t, err)
+
+		// Ensure that the request has been added to the queue
+		require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
+
+		// Then stop the Queue service without dequeueing the request
+		now := time.Now()
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+		synctest.Wait()
+
+		// And ensure requests Queue stops after timeout
+		require.GreaterOrEqual(t, time.Since(now), queueStopTimeout)
+		require.GreaterOrEqual(t, queueStopTimeout+time.Second, time.Since(now))
+	})
+}
+
+// This test ensures that the queue will wait for any pending tests to be dequeued and processed before exiting.
+// This should be completed before the timeout.
+func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testing.T) {
+	ctx := context.Background()
+	tenantID := "testTenant"
+	querierID := "querier1"
+
+	// Create a new request queue
+	queue, err := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		0,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		atomic.NewInt64(0),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
+	)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+	// And register a worker for dequeueing
+	conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
+
+	// Push a request to the queue
+	req := makeSchedulerRequest(tenantID, []string{})
+	require.NotNil(t, req)
+	err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
+	require.NoError(t, err)
+
+	// And make sure it got queued
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
+
+	// Stop the Queue
+	start := time.Now()
+	queue.StopAsync()
+
+	// Consume existing requests
+	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
+	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	// Ensure requests Queue is empty and stops
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
+	require.NoError(t, queue.AwaitTerminated(ctx))
+
+	// And it was within the timeout
+	require.WithinDuration(t, time.Now(), start, queue.stopTimeout-1*time.Second)
+}
+
+// This test ensures that even if the queue has no pending requests but existing requests are still being processed,
+// it will reach the timeout and exit if they don't return in time
+func TestRequestQueue_ShutdownWithInflightSchedulerRequests_ShouldTimeout(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+
+		// For this test we're intentionally testing the scheduler inflight requests rather than the internal queue length
+		inflight := atomic.NewInt64(0)
+
+		// So we create a queue using our local inflight request tracker
+		queue, err := NewRequestQueue(
+			log.NewNopLogger(),
+			1,
+			0,
+			promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+			promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+			promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+			inflight,
+			promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+			queueStopTimeout,
+		)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+		// And then record a request as inflight in the scheduler, even though we're not putting anything in the queue
+		inflight.Add(1)
+
+		// Then stop the Queue
+		start := time.Now()
+		assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+
+		// And ensure that it waits until the timeout to exit (using synctest.Wait so we're not actually waiting)
+		synctest.Wait()
+		require.LessOrEqual(t, queueStopTimeout, time.Since(start))
+		require.LessOrEqual(t, time.Since(start), queueStopTimeout+time.Second)
+	})
+}
+
+// This test ensures that even if the queue has no pending requests, we still wait until any inflight requests
+// have been returned before existing
+func TestRequestQueue_ShutdownWithInflightSchedulerRequests_ShouldDrainRequests(t *testing.T) {
+	ctx := context.Background()
+	tenantID := "testTenant"
+	querierID := "querier1"
+
+	// We care about the inflight requests
+	inflight := atomic.NewInt64(0)
+
+	// So we create a queue
+	queue, err := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		0,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		inflight,
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+		queueStopTimeout,
+	)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+	// With a worker
+	conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
+
+	// And push a request to the queue
+	req := makeSchedulerRequest(tenantID, []string{})
+	require.NotNil(t, req)
+	err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
+	require.NoError(t, err)
+
+	// And make sure it got to the queue
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
+	// Then we record it as inflight
+	require.Equal(t, inflight.Add(1), int64(1))
+
+	// Stop the Queue
+	start := time.Now()
+	queue.StopAsync()
+
+	// Consume the existing request from the queue
+	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
+	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+
+	// Ensure the request has been removed from the queue and remove it from inflight tracking
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
+	require.Equal(t, inflight.Sub(1), int64(0))
+
+	// And finally make sure it stops within the timeout
+	require.NoError(t, queue.AwaitTerminated(ctx))
+	require.WithinDuration(t, time.Now(), start, queue.stopTimeout-1*time.Second)
 }

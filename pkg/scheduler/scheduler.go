@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -72,7 +73,8 @@ type Scheduler struct {
 	inflightRequestsMu sync.Mutex
 	// schedulerInflightRequests tracks requests from the time they are received to be enqueued by the scheduler
 	// to the time they are completed by the querier or failed due to cancel, timeout, or disconnect.
-	schedulerInflightRequests map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequests     map[queue.RequestKey]*queue.SchedulerRequest
+	schedulerInflightRequestCount *atomic.Int64
 
 	// The ring is used to let other components discover query-scheduler replicas.
 	// The ring is optional.
@@ -108,11 +110,14 @@ type Config struct {
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
+
+	SchedulerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.MaxOutstandingPerTenant, "query-scheduler.max-outstanding-requests-per-tenant", 100, "Maximum number of outstanding requests per tenant per query-scheduler. In-flight requests above this limit will fail with HTTP response status code 429.")
 	f.DurationVar(&cfg.QuerierForgetDelay, "query-scheduler.querier-forget-delay", 0, "If a querier disconnects without sending notification about graceful shutdown, the query-scheduler will keep the querier in the tenant's shard until the forget delay has passed. This feature is useful to reduce the blast radius when shuffle-sharding is enabled.")
+	f.DurationVar(&cfg.SchedulerGracefulShutdownTimeout, "query-scheduler.graceful-shutdown-timeout", 135*time.Second, "Maximum time that the scheduler waits for the queue to drain on shutdown. (default 2m15s)")
 
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix("query-scheduler.grpc-client-config", f)
@@ -132,9 +137,10 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		log:    log,
 		limits: limits,
 
-		schedulerInflightRequests: map[queue.RequestKey]*queue.SchedulerRequest{},
-		connectedFrontends:        map[string]*connectedFrontend{},
-		subservicesWatcher:        services.NewFailureWatcher(),
+		schedulerInflightRequests:     map[queue.RequestKey]*queue.SchedulerRequest{},
+		schedulerInflightRequestCount: atomic.NewInt64(0),
+		connectedFrontends:            map[string]*connectedFrontend{},
+		subservicesWatcher:            services.NewFailureWatcher(),
 	}
 
 	s.queueLength = promauto.With(registerer).NewGaugeVec(prometheus.GaugeOpts{
@@ -173,7 +179,9 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.queueLength,
 		s.discardedRequests,
 		enqueueDuration,
+		s.schedulerInflightRequestCount,
 		querierInflightRequestsMetric,
+		cfg.SchedulerGracefulShutdownTimeout,
 	)
 	if err != nil {
 		return nil, err
@@ -249,7 +257,7 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 
 	// We stop accepting new queries in Stopping state. By returning quickly, we disconnect frontends, which in turns
 	// cancels all their queries.
-	for s.State() == services.Running {
+	for s.isRunning() {
 		msg, err := frontend.Recv()
 		if err != nil {
 			// No need to report this as error, it is expected when query-frontend performs SendClose() (as frontendSchedulerWorker does).
@@ -290,6 +298,9 @@ func (s *Scheduler) FrontendLoop(frontend schedulerpb.SchedulerForFrontend_Front
 			case errors.Is(err, queue.ErrTooManyRequests):
 				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.TOO_MANY_REQUESTS_PER_TENANT}
+			case errors.Is(err, queue.ErrStopped):
+				enqueueSpan.RecordError(err)
+				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.SHUTTING_DOWN}
 			default:
 				enqueueSpan.RecordError(err)
 				resp = &schedulerpb.SchedulerToFrontend{Status: schedulerpb.ERROR, Error: err.Error()}
@@ -412,6 +423,7 @@ func (s *Scheduler) addRequestToPending(req *queue.SchedulerRequest) {
 	defer s.inflightRequestsMu.Unlock()
 
 	s.schedulerInflightRequests[req.Key()] = req
+	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 }
 
 // This method doesn't do removal from the queue.
@@ -425,6 +437,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(key queue.RequestKey, reas
 	}
 
 	delete(s.schedulerInflightRequests, key)
+	s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
 	return req
 }
 
@@ -468,6 +481,7 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			// (see note in transformRequestQueueError).
 			// ErrQuerierWorkerDisconnected is caused by connection/goroutine crash;
 			// we expect this loop is no longer alive to receive the error anyway.
+			level.Info(s.log).Log("msg", "AwaitRequestForQuerier returned an error", "err", err)
 			return s.transformRequestQueueError(err)
 		}
 
@@ -504,6 +518,8 @@ func (s *Scheduler) QuerierLoop(querier schedulerpb.SchedulerForQuerier_QuerierL
 			return err
 		}
 	}
+
+	level.Info(s.log).Log("msg", "query loop closed because scheduler is not running", "querier_id", querierID)
 
 	return schedulerpb.ErrSchedulerIsNotRunning
 }
@@ -704,11 +720,7 @@ func (s *Scheduler) running(ctx context.Context) error {
 	for {
 		select {
 		case <-inflightRequestsTicker.C:
-			s.inflightRequestsMu.Lock()
-			inflight := len(s.schedulerInflightRequests)
-			s.inflightRequestsMu.Unlock()
-
-			s.inflightRequests.Observe(float64(inflight))
+			s.inflightRequests.Observe(float64(s.schedulerInflightRequestCount.Load()))
 		case <-ctx.Done():
 			return nil
 		case err := <-s.subservicesWatcher.Chan():

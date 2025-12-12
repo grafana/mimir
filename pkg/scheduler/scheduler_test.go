@@ -81,6 +81,7 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
+	cfg.SchedulerGracefulShutdownTimeout = 5 * time.Second
 
 	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
@@ -373,6 +374,8 @@ func TestTracingContext(t *testing.T) {
 		require.True(t, r.ParentSpanContext.IsValid())
 		require.Equal(t, sp.SpanContext().TraceID().String(), r.ParentSpanContext.TraceID().String())
 	}
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 }
 
 func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
@@ -394,6 +397,7 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 	msg, err := frontendLoop.Recv()
 	require.NoError(t, err)
 	require.Equal(t, schedulerpb.SHUTTING_DOWN, msg.Status)
+	// require.Equal(t, queue.ErrStopped.Error(), msg.Error)
 	verifyQueryComponentUtilizationLeft(t, scheduler)
 }
 
