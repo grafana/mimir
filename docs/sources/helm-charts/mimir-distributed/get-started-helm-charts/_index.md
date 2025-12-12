@@ -109,28 +109,28 @@ Using a custom namespace solves problems later on because you do not have to ove
    The results look similar to this:
 
    ```bash
-   NAME                                       READY   STATUS      RESTARTS       AGE
-   mimir-alertmanager-0                       1/1     Running     0              2m25s
-   mimir-compactor-0                          1/1     Running     0              2m25s
-   mimir-distributor-5c8f54fcf-t7f9m          1/1     Running     2 (2m1s ago)   2m25s
-   mimir-ingester-zone-a-0                    1/1     Running     2 (117s ago)   2m25s
-   mimir-ingester-zone-b-0                    1/1     Running     2 (118s ago)   2m25s
-   mimir-ingester-zone-c-0                    1/1     Running     2 (112s ago)   2m25s
-   mimir-kafka-0                              1/1     Running     0              2m25s
-   mimir-make-minio-buckets-5.4.0-d556m       0/1     Completed   0              2m25s
-   mimir-minio-5477c4c7b4-dwvsv               1/1     Running     0              2m25s
-   mimir-nginx-5ddc75564-lcqlv                1/1     Running     0              2m25s
-   mimir-overrides-exporter-6db7cfd7c-c4ljk   1/1     Running     0              2m25s
-   mimir-querier-7fb9d8c875-x9jkd             1/1     Running     2 (119s ago)   2m25s
-   mimir-querier-7fb9d8c875-xf9hd             1/1     Running     2 (117s ago)   2m25s
-   mimir-query-frontend-6f56dc997f-lgd4j      1/1     Running     0              2m25s
-   mimir-query-scheduler-bf95f647-rm9cf       1/1     Running     0              2m25s
-   mimir-query-scheduler-bf95f647-swlzs       1/1     Running     0              2m25s
-   mimir-rollout-operator-569576c88c-xs2wz    1/1     Running     0              2m25s
-   mimir-ruler-67548666f-bmmn2                1/1     Running     2 (2m ago)     2m25s
-   mimir-store-gateway-zone-a-0               1/1     Running     0              2m25s
-   mimir-store-gateway-zone-b-0               1/1     Running     0              2m25s
-   mimir-store-gateway-zone-c-0               1/1     Running     0              2m25s
+   NAME                                         READY   STATUS      RESTARTS       AGE
+   mimir-alertmanager-0                         1/1     Running     0              2m25s
+   mimir-compactor-0                            1/1     Running     0              2m25s
+   mimir-distributor-5c8f54fcf-t7f9m            1/1     Running     2 (2m1s ago)   2m25s
+   mimir-ingester-zone-a-0                      1/1     Running     2 (117s ago)   2m25s
+   mimir-ingester-zone-b-0                      1/1     Running     2 (118s ago)   2m25s
+   mimir-ingester-zone-c-0                      1/1     Running     2 (112s ago)   2m25s
+   mimir-kafka-0                                1/1     Running     0              2m25s
+   mimir-make-minio-buckets-5.4.0-d556m         0/1     Completed   0              2m25s
+   mimir-minio-5477c4c7b4-dwvsv                 1/1     Running     0              2m25s
+   mimir-gateway-5ddc75564-lcqlv                1/1     Running     0              2m25s
+   mimir-overrides-exporter-6db7cfd7c-c4ljk     1/1     Running     0              2m25s
+   mimir-querier-7fb9d8c875-x9jkd               1/1     Running     2 (119s ago)   2m25s
+   mimir-querier-7fb9d8c875-xf9hd               1/1     Running     2 (117s ago)   2m25s
+   mimir-query-frontend-6f56dc997f-lgd4j        1/1     Running     0              2m25s
+   mimir-query-scheduler-bf95f647-rm9cf         1/1     Running     0              2m25s
+   mimir-query-scheduler-bf95f647-swlzs         1/1     Running     0              2m25s
+   mimir-rollout-operator-569576c88c-xs2wz      1/1     Running     0              2m25s
+   mimir-ruler-67548666f-bmmn2                  1/1     Running     2 (2m ago)     2m25s
+   mimir-store-gateway-zone-a-0                 1/1     Running     0              2m25s
+   mimir-store-gateway-zone-b-0                 1/1     Running     0              2m25s
+   mimir-store-gateway-zone-c-0                 1/1     Running     0              2m25s
    ```
 
 1. Wait until all of the pods have a status of `Running` or `Completed`, which might take a few minutes.
@@ -220,7 +220,7 @@ We will install [Grafana Alloy](https://grafana.com/docs/alloy/latest/), preconf
          // Remote write to Mimir
          prometheus.remote_write "test_mimir" {
            endpoint {
-             url = "http://mimir-nginx.mimir-test.svc.cluster.local/api/v1/push"
+             url = "http://mimir-gateway.mimir-test.svc.cluster.local/api/v1/push"
              send_native_histograms = true
            }
          }
@@ -266,10 +266,10 @@ We will install [Grafana Alloy](https://grafana.com/docs/alloy/latest/), preconf
 1. On the left-hand side, go to **Configuration** > **Data sources**.
 1. Configure a new Prometheus data source to query the local Grafana Mimir server, by using the following settings:
 
-   | Field | Value                                           |
-   | ----- | ----------------------------------------------- |
-   | Name  | Mimir                                           |
-   | URL   | http://mimir-nginx.mimir-test.svc:80/prometheus |
+   | Field | Value                                             |
+   | ----- | ------------------------------------------------- |
+   | Name  | Mimir                                             |
+   | URL   | http://mimir-gateway.mimir-test.svc:80/prometheus |
 
    To add a data source, see [Add a data source](/docs/grafana/latest/datasources/add-a-data-source/).
 
