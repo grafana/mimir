@@ -82,7 +82,9 @@ func (ql *QueryLimiter) AddSeries(seriesLabels *labels.Labels) (*labels.Labels, 
 
 	uniqueSeriesBefore := len(ql.uniqueSeries)
 	existing, duplicated := ql.uniqueSeries[fingerprint]
-	ql.uniqueSeries[fingerprint] = seriesLabels
+	if !duplicated {
+		ql.uniqueSeries[fingerprint] = seriesLabels
+	}
 	uniqueSeriesAfter := len(ql.uniqueSeries)
 
 	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
