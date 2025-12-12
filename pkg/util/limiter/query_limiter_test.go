@@ -34,22 +34,33 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 			model.MetricNameLabel: metricName + "_2",
 			"series2":             "1",
 		})
+		series2Duplicate = labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName + "_2",
+			"series2":             "1",
+		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	duplicated, err := limiter.AddSeries(series1)
+	uniqueSeriesLabels, err := limiter.AddSeries(&series1)
 	assert.NoError(t, err)
-	assert.False(t, duplicated)
-	duplicated, err = limiter.AddSeries(series2)
+	assert.Equal(t, uniqueSeriesLabels, &series1)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2)
 	assert.NoError(t, err)
-	assert.False(t, duplicated)
+	assert.Same(t, uniqueSeriesLabels, &series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	duplicated, err = limiter.AddSeries(series1)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series1)
 	assert.NoError(t, err)
-	assert.True(t, duplicated)
+	assert.Same(t, uniqueSeriesLabels, &series1)
+	assert.Equal(t, 2, limiter.uniqueSeriesCount())
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+
+	// Re-add duplicated series
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2Duplicate)
+	assert.NoError(t, err)
+	assert.Same(t, uniqueSeriesLabels, &series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 }
@@ -72,29 +83,39 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 			model.MetricNameLabel: metricName + "_3",
 			"series2":             "1",
 		})
+		series3Duplicate = labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName + "_3",
+			"series2":             "1",
+		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	duplicated, err := limiter.AddSeries(series1)
+	uniqueSeriesLabels, err := limiter.AddSeries(&series1)
 	require.NoError(t, err)
-	require.False(t, duplicated)
+	require.Same(t, uniqueSeriesLabels, &series1)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	duplicated, err = limiter.AddSeries(series2)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2)
 	require.Error(t, err)
-	require.False(t, duplicated)
+	require.Same(t, uniqueSeriesLabels, &series2)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
-	duplicated, err = limiter.AddSeries(series2)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2)
 	require.Error(t, err)
-	require.True(t, duplicated)
+	require.Same(t, uniqueSeriesLabels, &series2)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
-	duplicated, err = limiter.AddSeries(series3)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series3)
 	require.Error(t, err)
-	require.False(t, duplicated)
+	require.Same(t, uniqueSeriesLabels, &series3)
+	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
+
+	// Add another series with duplicate labels and ensure that we don't increment the failed queries metric again.
+	uniqueSeriesLabels, err = limiter.AddSeries(&series3Duplicate)
+	require.Error(t, err)
+	require.Same(t, uniqueSeriesLabels, &series3)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
 
@@ -195,7 +216,7 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	for _, s := range series {
-		_, err := limiter.AddSeries(s)
+		_, err := limiter.AddSeries(&s)
 		assert.NoError(b, err)
 	}
 }
@@ -233,11 +254,8 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			duplicated, _ := limiter.AddSeries(s)
-			if duplicated {
-				continue
-			}
-			result = append(result, s)
+			uniqueSeriesLabels, _ := limiter.AddSeries(&s)
+			result = append(result, *uniqueSeriesLabels)
 		}
 	}
 }
@@ -268,11 +286,8 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates(b *testing.B) 
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			duplicated, _ := limiter.AddSeries(s)
-			if duplicated {
-				continue
-			}
-			result = append(result, s)
+			uniqueSeriesLabels, _ := limiter.AddSeries(&s)
+			result = append(result, *uniqueSeriesLabels)
 		}
 	}
 }
@@ -310,11 +325,8 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct(b *testing.B) {
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			duplicated, _ := limiter.AddSeries(s)
-			if duplicated {
-				continue
-			}
-			result = append(result, s)
+			uniqueSeriesLabels, _ := limiter.AddSeries(&s)
+			result = append(result, *uniqueSeriesLabels)
 		}
 	}
 }

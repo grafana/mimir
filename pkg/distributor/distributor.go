@@ -3268,12 +3268,12 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		// ignore duplicated check because metrics map should already be unique
-		if _, err := queryLimiter.AddSeries(m); err != nil {
+		uniqueSeriesLabels, err := queryLimiter.AddSeries(m)
+		if err != nil {
 			return nil, err
 		}
 
-		result = append(result, m)
+		result = append(result, *uniqueSeriesLabels)
 	}
 	return result, nil
 }
