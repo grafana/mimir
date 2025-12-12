@@ -185,16 +185,17 @@ func rateCombineFloat(splits []RateIntermediate, isRate bool) (float64, bool, er
 	totalDelta := firstPiece.Delta
 	totalCount := int(firstPiece.SampleCount)
 
+	lastSplitIdx := startIdx
 	for i := startIdx + 1; i < len(splits); i++ {
 		split := splits[i]
 		if split.SampleCount == 0 {
 			continue
 		}
 
-		if split.FirstSample.Value < splits[i-1].LastSample.Value {
+		if split.FirstSample.Value < splits[lastSplitIdx].LastSample.Value {
 			totalDelta += split.FirstSample.Value
 		} else {
-			interSplitDelta := split.FirstSample.Value - splits[i-1].LastSample.Value
+			interSplitDelta := split.FirstSample.Value - splits[lastSplitIdx].LastSample.Value
 			totalDelta += interSplitDelta
 		}
 
@@ -205,6 +206,7 @@ func rateCombineFloat(splits []RateIntermediate, isRate bool) (float64, bool, er
 			T: split.LastSample.TimestampMs,
 			F: split.LastSample.Value,
 		}
+		lastSplitIdx = i
 	}
 
 	// Need at least 2 samples total to calculate rate
