@@ -347,11 +347,9 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
-				return nil, false, err
-			}
-
-			if err := queryLimiter.AddSeries(l); err != nil {
+			// AddSeries returns canonical labels for deduplication and isNew flag
+			canonicalLabels, err := queryLimiter.AddSeries(l, memoryConsumptionTracker)
+			if err != nil {
 				return nil, false, err
 			}
 
@@ -364,7 +362,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 				return nil, false, err
 			}
 
-			labelsBatch = append(labelsBatch, l)
+			labelsBatch = append(labelsBatch, canonicalLabels)
 		}
 
 		return labelsBatch, resp.IsEndOfSeriesStream, nil
