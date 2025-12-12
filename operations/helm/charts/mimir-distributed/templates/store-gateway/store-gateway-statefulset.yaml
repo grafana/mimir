@@ -68,6 +68,11 @@ spec:
         {{- end }}
         accessModes:
           {{- toYaml .accessModes | nindent 10 }}
+        {{- with .selector }}
+        selector:
+          matchLabels:
+            {{- toYaml . | nindent 12 }}
+        {{- end }}
         resources:
           requests:
             storage: "{{ .size }}"
