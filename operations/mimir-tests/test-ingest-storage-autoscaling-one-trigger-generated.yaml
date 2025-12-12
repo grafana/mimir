@@ -3195,8 +3195,8 @@ metadata:
   namespace: default
 spec:
   maxUnavailable: 1
-  podNamePartitionRegex: '[a-z\-]+-zone-[a-z]-([0-9]+)'
-  podNameRegexGroup: 1
+  podNamePartitionRegex: '[a-z\-]+-zone-[a-z]-(partition\-)?([0-9]+)'
+  podNameRegexGroup: 2
   selector:
     matchLabels:
       rollout-group: ingester

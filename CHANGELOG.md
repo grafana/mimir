@@ -178,6 +178,7 @@
 * [ENHANCEMENT] Add extra, **experimental**, KEDA ScaledObject trigger to prevent from down-scaling during OOM kills, if memory trigger is disabled and `$._config.autoscaling_oom_protection_enabled` is true. #13509
 * [ENHANCEMENT] Multi-zone: Make config validation exclusions configurable via `multi_zone_config_validation_excluded_args` and `multi_zone_config_validation_excluded_env_vars`, and add validation for multi-zone distributor deployments. #13728
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
+* [ENHANCEMENT] Rollout-operator: Extend zone aware pod distribution budget partition regex to include optional `-partition` in pod name. eg `ingester-zone-a-partition-10` is now supported. #TODO
 
 ### Documentation
 
