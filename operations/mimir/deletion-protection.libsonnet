@@ -11,7 +11,7 @@
 
   // Helper function to create a deletion protection policy for StatefulSets.
   // The policy blocks deletion of StatefulSets whose name starts with the given name.
-  local newStatefulSetDeletionProtectionPolicy(name) = {
+  newStatefulSetDeletionProtectionPolicy(name):: {
     local policyName = '%s-%s-deletion-protection' % [$._config.namespace, name],
 
     policy:
@@ -39,12 +39,12 @@
   },
 
   // Ingester deletion protection
-  local ingesterProtection = newStatefulSetDeletionProtectionPolicy('ingester'),
+  local ingesterProtection = $.newStatefulSetDeletionProtectionPolicy('ingester'),
   ingester_deletion_protection_policy: if !$._config.ingester_deletion_protection_enabled then null else ingesterProtection.policy,
   ingester_deletion_protection_policy_binding: if !$._config.ingester_deletion_protection_enabled then null else ingesterProtection.binding,
 
   // Store-gateway deletion protection
-  local storeGatewayProtection = newStatefulSetDeletionProtectionPolicy('store-gateway'),
+  local storeGatewayProtection = $.newStatefulSetDeletionProtectionPolicy('store-gateway'),
   store_gateway_deletion_protection_policy: if !$._config.store_gateway_deletion_protection_enabled then null else storeGatewayProtection.policy,
   store_gateway_deletion_protection_policy_binding: if !$._config.store_gateway_deletion_protection_enabled then null else storeGatewayProtection.binding,
 }
