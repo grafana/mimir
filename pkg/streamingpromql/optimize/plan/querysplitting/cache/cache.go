@@ -148,7 +148,7 @@ func NewReadEntry[T any](
 		return nil, false, err
 	}
 
-	stats.AddCachedEntryStat(len(cached.Series), len(data))
+	stats.AddReadEntryStat(len(cached.Series), len(data))
 
 	return &bufferedReadEntry[T]{
 		cached: cached,
@@ -263,7 +263,7 @@ func (e *bufferedWriteEntry[T]) Finalize() error {
 
 	level.Debug(e.logger).Log("msg", "cache entry written", "cache_key", e.cached.CacheKey, "series_count", len(e.cached.Series), "entry_size", len(data))
 
-	e.stats.AddUncachedEntryStat(len(e.cached.Series), len(data))
+	e.stats.AddWriteEntryStat(len(e.cached.Series), len(data))
 
 	e.finalized = true
 	return nil

@@ -9,6 +9,7 @@ package functions
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/go-kit/log"
@@ -347,6 +348,11 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (resul
 	// recovering from panics for now to make debugging easier
 	defer func() {
 		if r := recover(); r != nil {
+			// Capture stack trace
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			stackTrace := string(buf[:n])
+
 			// Log panic details for debugging
 			level.Error(m.logger).Log(
 				"msg", "panic in FunctionOverRangeVectorSplit.NextSeries",
@@ -358,9 +364,10 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (resul
 				"currentSeriesIdx", m.currentSeriesIdx,
 				"totalSeries", len(m.seriesToSplits),
 				"splits_total", len(m.splits),
+				"stack_trace", stackTrace,
 			)
-			err = fmt.Errorf("panic in FunctionOverRangeVectorSplit.NextSeries (series %d/%d, function %s): %v",
-				m.currentSeriesIdx, len(m.seriesToSplits), m.FuncId.PromQLName(), r)
+			err = fmt.Errorf("panic in FunctionOverRangeVectorSplit.NextSeries (series %d/%d, function %s): %v\nStack trace:\n%s",
+				m.currentSeriesIdx, len(m.seriesToSplits), m.FuncId.PromQLName(), r, stackTrace)
 			result = types.InstantVectorSeriesData{}
 		}
 		m.currentSeriesIdx++
@@ -457,8 +464,8 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"splits_total", len(m.splits),
 		"splits_cached", cachedCount,
 		"splits_uncached", uncachedCount,
-		"cache_entries_cached", m.cacheStats.CachedEntries,
-		"cache_entries_uncached", m.cacheStats.UncachedEntries,
+		"cache_entries_read", m.cacheStats.ReadEntries,
+		"cache_entries_written", m.cacheStats.WrittenEntries,
 		"max_series_per_entry", m.cacheStats.MaxSeries,
 		"min_series_per_entry", m.cacheStats.MinSeries,
 		"total_series", m.cacheStats.TotalSeries,
@@ -467,7 +474,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"total_cache_bytes", m.cacheStats.TotalBytes,
 		"prepare_duration", m.prepareEnd.Sub(m.prepareStart),
 		"series_metadata_duration", m.seriesMetadataEnd.Sub(m.seriesMetadataStart),
-		"metadata_to_finialize_duration", m.finalizeStart.Sub(m.seriesMetadataEnd),
+		"metadata_end_to_finalize_start_duration", m.finalizeStart.Sub(m.seriesMetadataEnd),
 		"finalize_duration", m.finalizeEnd.Sub(m.finalizeStart),
 		"total_duration", m.finalizeEnd.Sub(m.prepareStart),
 	)
@@ -607,6 +614,9 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 }
 
 func (p *UncachedSplit[T]) ReadResultsAt(ctx context.Context, idx int) ([]T, error) {
+	if p.resultGetter == nil {
+		return nil, fmt.Errorf("resultGetter not initialized - SeriesMetadata may have failed")
+	}
 	return p.resultGetter.GetResultsAtIdx(ctx, idx)
 }
 
