@@ -34,6 +34,7 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 	if ts != nil {
 		builder.WriteString(" @ ")
 		builder.WriteString(strconv.FormatInt(timestamp.FromTime(*ts), 10))
+		// Only include human-readable timestamp for display purposes (redundant with unix timestamp)
 		builder.WriteString(" (")
 		builder.WriteString(ts.Format(time.RFC3339Nano))
 		builder.WriteRune(')')
@@ -52,6 +53,7 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 	}
 
 	if skipHistogramBuckets {
+		// This needs to be kept in the cache key, as the returned results will differ depending on if buckets are skipped or not
 		builder.WriteString(", skip histogram buckets")
 	}
 

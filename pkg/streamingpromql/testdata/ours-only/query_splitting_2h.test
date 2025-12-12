@@ -1,0 +1,75 @@
+# Tests for query splitting with 2-hour split intervals. The same tests should pass with and without splitting enabled.
+
+# min/max_over_time
+load 1h
+	test_metric{env="prod"} 1 3 5 124372145 -5 7 7
+
+eval instant at 6h min_over_time(test_metric[5h])
+	{env="prod"} -5
+
+eval instant at 6h max_over_time(test_metric[5h])
+	{env="prod"} 124372145
+
+clear
+
+# count_over_time
+load 10m
+	test_metric{env="prod"} 0+1x60
+
+eval instant at 6h count_over_time(test_metric[5h])
+	{env="prod"} 30
+
+# rate/increase
+load 1m
+	test_counter_total{env="prod"} 0+60x400
+
+eval instant at 6h rate(test_counter_total[5h])
+	{env="prod"} 1.0
+
+eval instant at 6h increase(test_counter_total[5h])
+	{env="prod"} 18000
+
+clear
+
+# Counter reset within a split
+# Splits: Head (1h, 2h-1ms], Block 1 (2h-1ms, 4h-1ms], Block 2 (4h-1ms, 6h-1ms], Tail (6h-1ms, 6h]
+# The reset happens at t=3h (middle of Block 1)
+load 1m
+	test_counter_total{env="prod"} 0+60x179 60+60x220
+
+eval instant at 6h rate(test_counter_total[5h])
+	{env="prod"} 1.0
+
+eval instant at 6h increase(test_counter_total[5h])
+	{env="prod"} 18000
+
+clear
+
+# Counter reset across splits
+# Splits: Head (1h, 2h-1ms], Block 1 (2h-1ms, 4h-1ms], Tail (4h-1ms, 4h]
+# The reset happens at t=2h (start of Block 1)
+load 1m
+	test_counter_total{env="prod"} 0+60x119 60+60x120
+
+eval instant at 4h rate(test_counter_total[3h])
+	{env="prod"} 1.0
+
+eval instant at 4h increase(test_counter_total[3h])
+	{env="prod"} 10800
+
+clear
+
+# Sparse splits plus zero extrapolation
+# Two samples at 1h30m and 2h30m
+load 30m
+	test_counter_total{env="prod"} _ _ _ 1800 _ 3600
+
+eval instant at 6h rate(test_counter_total[5h])
+	{env="prod"} 0.2
+
+eval instant at 6h increase(test_counter_total[5h])
+	{env="prod"} 3600
+
+clear
+
+# TODO: test histograms
