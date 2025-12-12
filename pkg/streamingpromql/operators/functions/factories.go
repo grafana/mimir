@@ -561,11 +561,6 @@ type FunctionMetadata struct {
 	SplittableOperatorFactory SplittableOperatorFactory
 }
 
-type SplittableMetadata struct {
-	Definition     FunctionOverRangeVectorDefinition
-	OperatorFactor SplittableOperatorFactory
-}
-
 func RegisterFunction(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory) error {
 	return RegisterFunctionWithSplitFactory(function, name, returnType, factory, nil)
 }

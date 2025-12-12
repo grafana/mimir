@@ -65,6 +65,10 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV5 {
+		return plan, nil
+	}
+
 	var err error
 	plan.Root, err = o.wrapSplittableRangeVectorFunctions(plan.Root, plan.Parameters.TimeRange)
 	if err != nil {

@@ -468,6 +468,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"inner_cache_key", m.innerCacheKey,
 		"query_start_ms", m.queryTimeRange.StartT,
 		"query_end_ms", m.queryTimeRange.EndT,
+		"inner_describe", m.innerNode.Describe(),
 		"splits_total", len(m.splits),
 		"splits_cached", cachedCount,
 		"splits_uncached", uncachedCount,

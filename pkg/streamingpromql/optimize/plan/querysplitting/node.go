@@ -129,7 +129,8 @@ func (s *SplittableFunctionCall) ExpressionPosition() (posrange.PositionRange, e
 }
 
 func (s *SplittableFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	return s.Inner.MinimumRequiredPlanVersion()
+	// Query splitting with intermediate result caching requires QueryPlanV5
+	return planning.QueryPlanV5
 }
 
 type Materializer struct {
