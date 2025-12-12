@@ -1,4 +1,65 @@
+local utils = import 'mixin-utils/utils.libsonnet';
+
 (import 'alerts-utils.libsonnet') {
+  local startingIngesterKafkaDelayGrowing(histogram_type) = {
+    // This is an experiment. We compute derivation (ie. rate of consumption lag change) over 5 minutes. If derivation is above 0, it means consumption lag is increasing, instead of decreasing.
+    alert: $.alertName('StartingIngesterKafkaDelayGrowing'),
+    local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label],
+    local range_interval = $.alertRangeInterval(1),
+    local numerator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="starting"', rate_interval=range_interval, from_recording=false), sum_by),
+    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="starting"', rate_interval=range_interval, from_recording=false), sum_by),
+    expr: |||
+      deriv((
+          %(numerator)s
+          /
+          %(denominator)s
+      )[5m:1m]) > 0
+    ||| % {
+      numerator: numerator[histogram_type],
+      denominator: denominator[histogram_type],
+    },
+    'for': '5m',
+    labels: $.histogramLabels({ severity: 'warning' }, histogram_type, nhcb=false),
+    annotations: {
+      message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "starting" phase is not reducing consumption lag of write requests read from Kafka.' % $._config,
+    },
+  },
+
+  local runningIngesterReceiveDelayTooHigh(histogram_type, threshold_value, for_duration, threshold_label) = {
+    alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
+    local sum_by = [$._config.alert_aggregation_labels, $._config.per_instance_label],
+    local range_interval = $.alertRangeInterval(1),
+    local numerator = utils.ncHistogramSumBy(utils.ncHistogramSumRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="running"', rate_interval=range_interval, from_recording=false), sum_by),
+    local denominator = utils.ncHistogramSumBy(utils.ncHistogramCountRate('cortex_ingest_storage_reader_receive_delay_seconds', 'phase="running"', rate_interval=range_interval, from_recording=false), sum_by),
+    expr: |||
+      (
+        %(numerator)s
+        /
+        %(denominator)s
+      ) > %(threshold_value)s
+    ||| % {
+      numerator: numerator[histogram_type],
+      denominator: denominator[histogram_type],
+      threshold_value: threshold_value,
+    },
+    'for': for_duration,
+    labels: $.histogramLabels({
+      severity: 'critical',
+      threshold: threshold_label,  // Add an extra label to distinguish between multiple alerts with the same name.
+    }, histogram_type, nhcb=false),
+    annotations: {
+      message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
+    },
+  },
+
+  // Alert firing if an ingester is ingesting data with a very high delay, even for a short period of time.
+  // With a threshold of 2m, a for duration of 3m, an evaluation delay of 1m and an evaluation interval of 1m
+  // when this alert fires the ingester should be up to 2+3+1+1=7 minutes behind.
+  local runningIngesterReceiveDelayVeryHigh(histogram_type) = runningIngesterReceiveDelayTooHigh(histogram_type, '(2 * 60)', '3m', 'very_high_for_short_period'),
+
+  // Alert firing if an ingester is ingesting data with a relatively high delay for a long period of time.
+  local runningIngesterReceiveDelayRelativelyHigh(histogram_type) = runningIngesterReceiveDelayTooHigh(histogram_type, '30', '15m', 'relatively_high_for_long_period'),
+
   local alertGroups = [
     {
       name: 'mimir_ingest_storage_alerts',
@@ -57,66 +118,12 @@
           },
         },
 
-        // This is an experiment. We compute derivatition (ie. rate of consumption lag change) over 5 minutes. If derivation is above 0, it means consumption lag is increasing, instead of decreasing.
-        {
-          alert: $.alertName('StartingIngesterKafkaDelayGrowing'),
-          'for': '5m',
-          expr: |||
-            deriv((
-                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="starting"}[1m]))
-                /
-                sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="starting"}[1m]))
-            )[5m:1m]) > 0
-          ||| % $._config,
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "starting" phase is not reducing consumption lag of write requests read from Kafka.' % $._config,
-          },
-        },
-
-        // Alert firing if an ingester is ingesting data with a very high delay, even for a short period of time.
-        // With a threshold of 2m, a for duration of 3m, an evaluation delay of 1m and an evaluation interval of 1m
-        // when this alert fires the ingester should be up to 2+3+1+1=7 minutes behind.
-        {
-          alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
-          'for': '3m',
-          expr: |||
-            (
-              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
-              /
-              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
-            ) > (2 * 60)
-          ||| % $._config,
-          labels: {
-            severity: 'critical',
-            threshold: 'very_high_for_short_period',  // Add an extra label to distinguish between multiple alerts with the same name.
-          },
-          annotations: {
-            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
-          },
-        },
-
-        // Alert firing if an ingester is ingesting data with a relatively high delay for a long period of time.
-        {
-          alert: $.alertName('RunningIngesterReceiveDelayTooHigh'),
-          'for': '15m',
-          expr: |||
-            (
-              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_sum{phase="running"}[1m]))
-              /
-              sum by (%(alert_aggregation_labels)s, %(per_instance_label)s) (rate(cortex_ingest_storage_reader_receive_delay_seconds_count{phase="running"}[1m]))
-            ) > 30
-          ||| % $._config,
-          labels: {
-            severity: 'critical',
-            threshold: 'relatively_high_for_long_period',  // Add an extra label to distinguish between multiple alerts with the same name.
-          },
-          annotations: {
-            message: '%(product)s {{ $labels.%(per_instance_label)s }} in %(alert_aggregation_variables)s in "running" phase is too far behind in its consumption of write requests from Kafka.' % $._config,
-          },
-        },
+        startingIngesterKafkaDelayGrowing('classic'),
+        startingIngesterKafkaDelayGrowing('native'),
+        runningIngesterReceiveDelayVeryHigh('classic'),
+        runningIngesterReceiveDelayVeryHigh('native'),
+        runningIngesterReceiveDelayRelativelyHigh('classic'),
+        runningIngesterReceiveDelayRelativelyHigh('native'),
 
         // Alert firing if an ingester is failing to read from Kafka.
         {

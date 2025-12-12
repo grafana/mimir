@@ -53,7 +53,7 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrequestlatency
           expr: |
             cluster_namespace_job_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop|debug_pprof"}
-               >
+              >
             2.5
           for: 15m
           labels:
@@ -131,14 +131,32 @@ groups:
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkvstorefailure
           expr: |
             (
-              sum by(cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[1m]))
+              sum by (cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[1m]))
               /
-              sum by(cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count[1m]))
+              sum by (cluster, namespace, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{}[1m]))
             )
             # We want to get alerted only in case there's a constant failure.
             == 1
           for: 5m
           labels:
+            histogram: classic
+            severity: critical
+        - alert: MimirKVStoreFailure
+          annotations:
+            message: |
+                GEM {{ $labels.pod }} in  {{ $labels.cluster }}/{{ $labels.namespace }} is failing to talk to the KV store {{ $labels.kv_name }}.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirkvstorefailure
+          expr: |
+            (
+              sum by (cluster, namespace, pod, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{status_code!~"2.+"}[1m])))
+              /
+              sum by (cluster, namespace, pod, status_code, kv_name) (histogram_count(rate(cortex_kv_request_duration_seconds{}[1m])))
+            )
+            # We want to get alerted only in case there's a constant failure.
+            == 1
+          for: 5m
+          labels:
+            histogram: native
             severity: critical
         - alert: MimirMemoryMapAreasTooHigh
           annotations:
@@ -1286,6 +1304,21 @@ groups:
             )[5m:1m]) > 0
           for: 5m
           labels:
+            histogram: classic
+            severity: warning
+        - alert: MimirStartingIngesterKafkaDelayGrowing
+          annotations:
+            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} in "starting" phase is not reducing consumption lag of write requests read from Kafka.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirstartingingesterkafkadelaygrowing
+          expr: |
+            deriv((
+                sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+                /
+                sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="starting"}[1m])))
+            )[5m:1m]) > 0
+          for: 5m
+          labels:
+            histogram: native
             severity: warning
         - alert: MimirRunningIngesterReceiveDelayTooHigh
           annotations:
@@ -1299,6 +1332,22 @@ groups:
             ) > (2 * 60)
           for: 3m
           labels:
+            histogram: classic
+            severity: critical
+            threshold: very_high_for_short_period
+        - alert: MimirRunningIngesterReceiveDelayTooHigh
+          annotations:
+            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} in "running" phase is too far behind in its consumption of write requests from Kafka.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
+          expr: |
+            (
+              sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              /
+              sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+            ) > (2 * 60)
+          for: 3m
+          labels:
+            histogram: native
             severity: critical
             threshold: very_high_for_short_period
         - alert: MimirRunningIngesterReceiveDelayTooHigh
@@ -1313,6 +1362,22 @@ groups:
             ) > 30
           for: 15m
           labels:
+            histogram: classic
+            severity: critical
+            threshold: relatively_high_for_long_period
+        - alert: MimirRunningIngesterReceiveDelayTooHigh
+          annotations:
+            message: GEM {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} in "running" phase is too far behind in its consumption of write requests from Kafka.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirrunningingesterreceivedelaytoohigh
+          expr: |
+            (
+              sum by (cluster, namespace, pod) (histogram_sum(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+              /
+              sum by (cluster, namespace, pod) (histogram_count(rate(cortex_ingest_storage_reader_receive_delay_seconds{phase="running"}[1m])))
+            ) > 30
+          for: 15m
+          labels:
+            histogram: native
             severity: critical
             threshold: relatively_high_for_long_period
         - alert: MimirIngesterKafkaProcessingFailed
@@ -1507,9 +1572,29 @@ groups:
             100 * (
               sum by (remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{status="server_error"}[1m]))
               /
-              sum by (remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count[1m]))
+              sum by (remote_cluster) (rate(cortex_federation_frontend_cluster_remote_latency_seconds_count{}[1m]))
             ) > 1
           for: 15m
           labels:
+            histogram: classic
+            service: federation-frontend
+            severity: critical
+        - alert: GEMFederationFrontendRemoteClusterErrors
+          annotations:
+            message: |
+                The federation-frontend has been receiving {{ $value | humanizePercentage }} errors from cluster {{ $labels.remote_cluster }} over the last 15 minutes.
+                If partial responses are disabled (default), then clients of the federation-frontend are receiving errors.
+                If partial responses are enabled, then responses are now less complete.
+            runbook_url: https://grafana.com/docs/enterprise-metrics/latest/operations/runbooks/#gemfederationfrontendremoteclustererrors
+            summary: An upstream cluster is returning more than 1%% server-side errors over the last 15 minutes.
+          expr: |
+            100 * (
+              sum by (remote_cluster) (histogram_count(rate(cortex_federation_frontend_cluster_remote_latency_seconds{status="server_error"}[1m])))
+              /
+              sum by (remote_cluster) (histogram_count(rate(cortex_federation_frontend_cluster_remote_latency_seconds{}[1m])))
+            ) > 1
+          for: 15m
+          labels:
+            histogram: native
             service: federation-frontend
             severity: critical
