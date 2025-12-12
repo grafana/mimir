@@ -1221,22 +1221,18 @@ github.com/prometheus/alertmanager/timeinterval
 github.com/prometheus/alertmanager/tracing
 github.com/prometheus/alertmanager/types
 github.com/prometheus/alertmanager/ui
-# github.com/prometheus/client_golang v1.23.2 => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
-## explicit; go 1.24.0
+# github.com/prometheus/client_golang v1.23.2 => github.com/colega/prometheus-client_golang v1.13.2-0.20231004145405-dac14aae41e4
+## explicit; go 1.19
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
-github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
-github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil/header
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/collectors
 github.com/prometheus/client_golang/prometheus/internal
 github.com/prometheus/client_golang/prometheus/promauto
 github.com/prometheus/client_golang/prometheus/promhttp
-github.com/prometheus/client_golang/prometheus/promhttp/internal
 github.com/prometheus/client_golang/prometheus/push
 github.com/prometheus/client_golang/prometheus/testutil
 github.com/prometheus/client_golang/prometheus/testutil/promlint
-github.com/prometheus/client_golang/prometheus/testutil/promlint/validations
 # github.com/prometheus/client_golang/exp v0.0.0-20250914183048-a974e0d45e0a
 ## explicit; go 1.23.0
 github.com/prometheus/client_golang/exp/api/remote
@@ -2201,4 +2197,4 @@ sigs.k8s.io/yaml
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
-# github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
+# github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.13.2-0.20231004145405-dac14aae41e4

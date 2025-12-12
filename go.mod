@@ -386,4 +386,4 @@ replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptra
 
 // Use a fork of client_golang with changes from:
 // - https://github.com/prometheus/client_golang/pull/1925
-replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
+replace github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.13.2-0.20231004145405-dac14aae41e4
