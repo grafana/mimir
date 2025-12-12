@@ -339,12 +339,30 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 	return mergedMetadata, seriesToSplits, nil
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (result types.InstantVectorSeriesData, err error) {
 	if m.currentSeriesIdx >= len(m.seriesToSplits) {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
 
+	// recovering from panics for now to make debugging easier
 	defer func() {
+		if r := recover(); r != nil {
+			// Log panic details for debugging
+			level.Error(m.logger).Log(
+				"msg", "panic in FunctionOverRangeVectorSplit.NextSeries",
+				"panic", r,
+				"function", m.FuncId.PromQLName(),
+				"inner_cache_key", m.innerCacheKey,
+				"query_start_ms", m.queryTimeRange.StartT,
+				"query_end_ms", m.queryTimeRange.EndT,
+				"currentSeriesIdx", m.currentSeriesIdx,
+				"totalSeries", len(m.seriesToSplits),
+				"splits_total", len(m.splits),
+			)
+			err = fmt.Errorf("panic in FunctionOverRangeVectorSplit.NextSeries (series %d/%d, function %s): %v",
+				m.currentSeriesIdx, len(m.seriesToSplits), m.FuncId.PromQLName(), r)
+			result = types.InstantVectorSeriesData{}
+		}
 		m.currentSeriesIdx++
 	}()
 
@@ -683,7 +701,8 @@ func (p *ResultGetter[T]) GetResultsAtIdx(ctx context.Context, splitSeriesIdx in
 		if err != nil {
 			return nil, err
 		}
-		p.resultBuffer[p.nextSeriesIdx-1] = results
+		p.resultBuffer[p.nextSeriesIdx] = results
+		p.nextSeriesIdx++
 	}
 
 	result, err := p.nextSeriesFunc(ctx)
