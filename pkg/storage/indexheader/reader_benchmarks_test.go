@@ -8,11 +8,15 @@ import (
 	"math/rand"
 	"path/filepath"
 	"slices"
+	"sort"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
@@ -248,6 +252,10 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 
 				require.NoError(b, err)
 				require.NotEmpty(b, values)
+
+				bufStats := reader.BufReaderStats()
+				b.ReportMetric(float64(bufStats.BytesDiscarded.Load())/float64(b.N), "buffered-bytes-discarded/op")
+
 			}
 		})
 	}
@@ -262,11 +270,23 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instBkt, bucketDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	// We reuse cache between tests (!)
+	cache := cache.NewMockCache()
+
+	const cfgName = "index"
+	subrangeSize := int64(16000)
+	cfg := bucketcache.NewCachingBucketConfig()
+	cfg.CacheGetRange(cfgName, cache, func(string) bool { return true }, subrangeSize, cache, time.Hour, time.Hour, 0)
+
+	cacheBucketReg := prometheus.NewPedanticRegistry()
+	cachingBucket, err := bucketcache.NewCachingBucket("test", instBkt, cfg, log.NewNopLogger(), cacheBucketReg)
+	require.NoError(b, err)
+
+	diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
-	bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), instBkt, bucketDir, blockID, 32, Config{})
+	bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, blockID, 32, Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
 
@@ -281,16 +301,83 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 		"bucket": bucketReader,
 	}
 
+	sortedTestLbls := make([]string, 0, len(tests))
+	for k := range tests {
+		sortedTestLbls = append(sortedTestLbls, k)
+	}
+	sort.Strings(sortedTestLbls)
+
 	b.ResetTimer()
 	b.ReportAllocs()
-	for readerName, reader := range readers {
-		for lbl, tcs := range tests {
+	for _, lbl := range sortedTestLbls {
+		tcs := tests[lbl]
+		for readerName, _ := range readers {
 			for _, tc := range tcs {
 				b.Run(fmt.Sprintf("Reader=%s/Label=%s/Prefix='%s'/Desc=%s", readerName, lbl, tc.prefix, tc.desc), func(b *testing.B) {
+					cacheBucketReg := prometheus.NewPedanticRegistry()
+					cachingBucket, err := bucketcache.NewCachingBucket("test", instBkt, cfg, log.NewNopLogger(), cacheBucketReg)
+					require.NoError(b, err)
+
+					var reader Reader
+					switch readerName {
+					case "disk":
+						r, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+						require.NoError(b, err)
+						b.Cleanup(func() { require.NoError(b, r.Close()) })
+						reader = r
+					case "bucket":
+						r, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, blockID, 32, Config{})
+						require.NoError(b, err)
+						b.Cleanup(func() { require.NoError(b, r.Close()) })
+						reader = r
+					default:
+						b.Fatalf("unknown reader: %s", readerName)
+					}
+
+					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
+						startBytesDiscarded := reader.BufReaderStats().BytesDiscarded.Load()
 						values, err := reader.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 						require.NoError(b, err)
 						require.Equal(b, tc.expected, len(values))
+
+						endBytesDiscarded := reader.BufReaderStats().BytesDiscarded.Load()
+						diff := endBytesDiscarded - startBytesDiscarded
+						output := float64(diff)
+						b.ReportMetric(output, "buffered-bytes-discarded/op")
+
+						metrics, err := cacheBucketReg.Gather()
+						require.NoError(b, err)
+
+						promToBenchmarkMetrics := map[string]string{
+							"thanos_store_bucket_cache_operation_requests_total":       "get-range-ops",
+							"thanos_store_bucket_cache_operation_hits_total":           "get-range-hits",
+							"thanos_store_bucket_cache_getrange_requested_bytes_total": "get-range-bytes-requested",
+							"thanos_store_bucket_cache_getrange_fetched_bytes_total":   "get-range-bytes-fetched",
+							"thanos_store_bucket_cache_getrange_refetched_bytes_total": "get-range-bytes-refetched",
+						}
+					MetricFamilyLoop:
+						for _, mf := range metrics {
+						MetricLoop:
+							for _, m := range mf.GetMetric() {
+								name := mf.GetName()
+
+								benchMetricName, ok := promToBenchmarkMetrics[name]
+								if !ok {
+									continue MetricFamilyLoop
+								}
+
+								for _, l := range m.GetLabel() {
+									lName, lValue := l.GetName(), l.GetValue()
+									if lName == "operation" && lValue != "get_range" {
+										continue MetricLoop
+									}
+								}
+
+								value := m.GetCounter().GetValue()
+								b.ReportMetric(value, benchMetricName+"/op")
+							}
+						}
 					}
 				})
 			}

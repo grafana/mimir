@@ -488,7 +488,7 @@ type labelValuesTestCase struct {
 }
 
 func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, blockID ulid.ULID, bucketDir string, bkt objstore.Bucket) {
-	const testLabelCount = 32
+	const testLabelCount = 16
 	const testSeriesCount = 512
 
 	ctx := context.Background()

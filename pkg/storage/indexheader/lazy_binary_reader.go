@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/gate"
+	streamencoding "github.com/grafana/mimir/pkg/storage/indexheader/encoding"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -87,7 +88,8 @@ type LazyBinaryReader struct {
 	// Keep track of the last time it was used.
 	usedAt *atomic.Int64
 
-	readerFactory func() (Reader, error)
+	readerFactory  func() (Reader, error)
+	bufReaderStats *streamencoding.BufReaderStats
 
 	blockID ulid.ULID
 	done    chan struct{}
@@ -260,6 +262,7 @@ func (r *LazyBinaryReader) PostingsOffset(ctx context.Context, name string, valu
 		return index.Range{}, loaded.err
 	}
 	defer loaded.inUse.Done()
+	defer r.bufReaderStats.Merge(loaded.reader.BufReaderStats())
 
 	return loaded.reader.PostingsOffset(ctx, name, value)
 }
@@ -297,6 +300,7 @@ func (r *LazyBinaryReader) LabelValuesOffsets(ctx context.Context, name string, 
 		return nil, loaded.err
 	}
 	defer loaded.inUse.Done()
+	defer r.bufReaderStats.Merge(loaded.reader.BufReaderStats())
 
 	return loaded.reader.LabelValuesOffsets(ctx, name, prefix, filter)
 }
@@ -308,8 +312,13 @@ func (r *LazyBinaryReader) LabelNames(ctx context.Context) ([]string, error) {
 		return nil, loaded.err
 	}
 	defer loaded.inUse.Done()
+	defer r.bufReaderStats.Merge(loaded.reader.BufReaderStats())
 
 	return loaded.reader.LabelNames(ctx)
+}
+
+func (r *LazyBinaryReader) BufReaderStats() *streamencoding.BufReaderStats {
+	return r.bufReaderStats
 }
 
 // getOrLoadReader ensures the underlying binary index-header reader has been successfully loaded.

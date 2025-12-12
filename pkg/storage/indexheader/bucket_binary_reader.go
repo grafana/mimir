@@ -80,8 +80,7 @@ func NewBucketBinaryReader(
 	indexPath := filepath.Join(blockID.String(), block.IndexFilename)
 
 	r := &BucketBinaryReader{
-		bkt: bkt,
-
+		bkt:     bkt,
 		factory: streamencoding.NewBucketDecbufFactory(ctx, bkt, indexPath),
 	}
 
@@ -295,6 +294,10 @@ func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, 
 	}
 
 	return data, nil
+}
+
+func (r *BucketBinaryReader) BufReaderStats() *streamencoding.BufReaderStats {
+	return r.postingsOffsetTable.BufReaderStats()
 }
 
 // Close implements Reader.
