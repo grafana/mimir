@@ -434,6 +434,13 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 
 	m.finalizeStart = time.Now()
 
+	// Only flush and log if we completed processing all series
+	// TODO: refine - doesn't properly account for the case where last series fails
+	completedAllSeries := m.currentSeriesIdx >= len(m.seriesToSplits)
+	if !completedAllSeries {
+		return nil
+	}
+
 	logger := spanlogger.FromContext(ctx, m.logger)
 
 	var cachedCount, uncachedCount int
