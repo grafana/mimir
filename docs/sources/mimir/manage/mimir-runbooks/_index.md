@@ -3025,8 +3025,6 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 - `prometheus_rules_namespace`
 - `prometheus_rules`
 
-## Mimir blocks storage - What to do when things go wrong
-
 ## Recovering from a potential data loss incident
 
 The ingested series data that could be lost during an incident can be stored in two places:
@@ -3285,7 +3283,7 @@ container to the existing container's namespace. This allows us to bring in all 
 tools we may need and to not disturb the existing environment.
 That is, we do not need to restart the running container to attach our debug tools.
 
-## Creating a debug container
+### Creating a debug container
 
 Kubernetes gives us a command that allows us to start an ephemeral debug container in a pre-existing pod,
 attaching it to the same namespace as other containers in that pod. More detail about the command and
@@ -3319,7 +3317,7 @@ The root filesystem of the target container is available in `/proc/1/root`. For
 example, `/data` would be found at `/proc/1/root/data`, and
 binaries of the target container would be somewhere like `/proc/1/root/usr/bin/mimir`.
 
-## Copying files from a distroless container
+### Copying files from a distroless container
 
 Because distroless images do not have `tar` in them, it is not possible to copy files using `kubectl cp`.
 
@@ -3345,6 +3343,62 @@ kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - 
 ```
 
 Note that the container that you're copying files from must still be running. If you have already exited your debugging container before, that container has stopped, and it cannot be used to copy files. In that case you need to start a new container.
+
+## Mimir components deletion protection
+
+Mimir jsonnet-based deployment supports deletion protection for specific critical components, implemented using [Validating Admission Policies](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
+The supported components are:
+
+- Ingesters
+- Store-gateways
+
+### Ingesters deletion protection
+
+Deleting the ingesters StatefulSet is highly destructive and can lead to a difficult-to-recover outage with potential data loss.
+This operation should be avoided except in extremely rare circumstances and only when following well-tested procedures.
+
+#### Potential side effects
+
+Deleting an ingesters zone StatefulSet may have unexpected side effects, including but not limited to:
+
+- Cascading scale-down with autoscaling enabled<br />
+  When ingesters autoscaling is enabled and the StatefulSet is manually deleted in a Flux-managed environment, Flux recreates it with a single replica because the replicas field is not managed in the manifest and Kubernetes defaults to one replica. If the leader zone (zone-a by default) is deleted, other zones follow the leader, causing a cascading scale-down to 1 replica across the cluster.
+- Pod Disruption Budget enforcement is bypassed<br />
+  When an ingesters zone StatefulSet is deleted, the ingesters Pod Disruption Budget (PDB), including the Zone Pod Disruption Budget (ZPDB), does not correctly enforce the maximum unavailable instances. The deleted zone is not treated as a disruption, which can result in excessive unavailability. For this reason, set maxUnavailable to 0 in the PDB before proceeding.
+
+#### Proceeding with deletion
+
+If you must delete an ingesters StatefulSet, first disable the deletion protection by setting:
+
+```
+_config+:: {
+  ingester_deletion_protection_enabled: false,
+}
+```
+
+### Store-gateways deletion protection
+
+Deleting the store-gateways StatefulSet can lead to a slow-to-recover outage.
+This operation should be avoided except in extremely rare circumstances and only when following well-tested procedures.
+
+#### Potential side effects
+
+Deleting an store-gateways zone StatefulSet may have unexpected side effects, including but not limited to:
+
+- Cascading scale-down with autoscaling enabled<br />
+  When store-gateways autoscaling is enabled and the StatefulSet is manually deleted in a Flux-managed environment, Flux recreates it with a single replica because the replicas field is not managed in the manifest and Kubernetes defaults to one replica. Store-gateway autoscaling is cascading (zone-b follows zone-a, zone-c follows zone-b), so even a short-lived recreation of the leader zone StatefulSet with a single replica can trigger an unexpected cascading scale-down in other zones.
+- Slow recovery times<br />
+  Deleting the StatefulSet may also delete the store-gateway pods' persistent volumes. In this case, recreating store-gateways can take a long time because all block index-headers must be fully resynced.
+
+#### Proceeding with deletion
+
+If you must delete an store-gateways StatefulSet, first disable the deletion protection by setting:
+
+```
+_config+:: {
+  store_gateway_deletion_protection_enabled: false,
+}
+```
 
 ## Cleanup and Limitations
 

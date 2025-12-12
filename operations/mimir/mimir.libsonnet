@@ -53,6 +53,9 @@
 // Automatic cleanup of unused PVCs after scaling down
 (import 'pvc-auto-deletion.libsonnet') +
 
+// Deletion protection for specific Mimir components.
+(import 'deletion-protection.libsonnet') +
+
 // Experimental ingest storage. Keep this at the end, because we need to override components on top of other changes.
 (import 'ingest-storage.libsonnet') +
 (import 'ingest-storage-ingester-autoscaling.libsonnet') +
