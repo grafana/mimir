@@ -570,3 +570,27 @@ func (p *planPrinter) printNode(n Node, indent int, label string) {
 		p.printNode(n.Child(childIdx), indent+1, label)
 	}
 }
+
+func (p *QueryPlan) CountSplitNodes() uint32 {
+	if p == nil || p.Root == nil {
+		return 0
+	}
+	return countSplitNodesRecursive(p.Root)
+}
+
+func countSplitNodesRecursive(node Node) uint32 {
+	if node == nil {
+		return 0
+	}
+
+	count := uint32(0)
+	if node.NodeType() == NODE_TYPE_SPLIT_RANGE_VECTOR {
+		count = 1
+	}
+
+	for i := 0; i < node.ChildCount(); i++ {
+		count += countSplitNodesRecursive(node.Child(i))
+	}
+
+	return count
+}

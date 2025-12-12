@@ -9,9 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/go-kit/log/level"
 	"math"
 	"time"
+
+	"github.com/go-kit/log/level"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tracing"
@@ -26,9 +27,9 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -197,6 +198,15 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
+	}
+
+	// TODO: clean this up
+	if timeRange.IsInstant {
+		if splitCount := plan.CountSplitNodes(); splitCount > 0 {
+			if queryStats := stats.FromContext(ctx); queryStats != nil {
+				queryStats.AddInstantQuerySplittingCount(splitCount)
+			}
+		}
 	}
 
 	if opts == nil {

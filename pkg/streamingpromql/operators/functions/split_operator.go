@@ -57,8 +57,16 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	seriesToSplits   [][]SplitSeries
 	currentSeriesIdx int
 
+	finalized  bool
 	logger     log.Logger
 	cacheStats *cache.CacheStats
+
+	prepareStart        time.Time
+	prepareEnd          time.Time
+	seriesMetadataStart time.Time
+	seriesMetadataEnd   time.Time
+	finalizeStart       time.Time
+	finalizeEnd         time.Time
 }
 
 var _ types.InstantVectorOperator = (*FunctionOverRangeVectorSplit[any])(nil)
@@ -124,6 +132,10 @@ func (m *FunctionOverRangeVectorSplit[T]) ExpressionPosition() posrange.Position
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	m.prepareStart = time.Now()
+	defer func() {
+		m.prepareEnd = time.Now()
+	}()
 	var err error
 	m.splits, err = m.createSplits(ctx)
 	if err != nil {
@@ -234,6 +246,10 @@ func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start 
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	m.seriesMetadataStart = time.Now()
+	defer func() {
+		m.seriesMetadataEnd = time.Now()
+	}()
 	var err error
 	var metadata []types.SeriesMetadata
 	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
@@ -248,7 +264,6 @@ func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, ma
 	if m.FuncDef.SeriesMetadataFunction.Func != nil {
 		return m.FuncDef.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
 	}
-
 	return metadata, nil
 }
 
@@ -384,10 +399,18 @@ func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.Annotat
 	m.Annotations.Add(generator(metricName, pos))
 }
 
+// TODO: cater for this case
+// It must be safe to call Finalize even if Prepare, SeriesMetadata, NextSeries, NextStepSamples or Finalize have not been called.
+// We shouldn't write to cache if series metadata is set but series samples aren't
 func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
+	if m.finalized {
+		return nil
+	}
+
+	m.finalizeStart = time.Now()
+
 	logger := spanlogger.FromContext(ctx, m.logger)
 
-	// Count cached vs uncached splits
 	var cachedCount, uncachedCount int
 	for _, split := range m.splits {
 		if split.IsCached() {
@@ -403,6 +426,8 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 			return err
 		}
 	}
+
+	m.finalizeEnd = time.Now()
 
 	// TODO: currently at info level while testing, may also modify and remove some stats post tests
 	level.Info(logger).Log(
@@ -422,8 +447,14 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"max_bytes_per_entry", m.cacheStats.MaxBytes,
 		"min_bytes_per_entry", m.cacheStats.MinBytes,
 		"total_cache_bytes", m.cacheStats.TotalBytes,
+		"prepare_duration", m.prepareEnd.Sub(m.prepareStart),
+		"series_metadata_duration", m.seriesMetadataEnd.Sub(m.seriesMetadataStart),
+		"metadata_to_finialize_duration", m.finalizeStart.Sub(m.seriesMetadataEnd),
+		"finalize_duration", m.finalizeEnd.Sub(m.finalizeStart),
+		"total_duration", m.finalizeEnd.Sub(m.prepareStart),
 	)
 
+	m.finalized = true
 	return nil
 }
 
