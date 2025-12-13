@@ -34,19 +34,33 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 			model.MetricNameLabel: metricName + "_2",
 			"series2":             "1",
 		})
+		series2Duplicate = labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName + "_2",
+			"series2":             "1",
+		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	err := limiter.AddSeries(series1)
+	uniqueSeriesLabels, err := limiter.AddSeries(&series1)
 	assert.NoError(t, err)
-	err = limiter.AddSeries(series2)
+	assert.Equal(t, uniqueSeriesLabels, &series1)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2)
 	assert.NoError(t, err)
+	assert.Same(t, uniqueSeriesLabels, &series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	err = limiter.AddSeries(series1)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series1)
 	assert.NoError(t, err)
+	assert.Same(t, uniqueSeriesLabels, &series1)
+	assert.Equal(t, 2, limiter.uniqueSeriesCount())
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+
+	// Re-add duplicated series
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2Duplicate)
+	assert.NoError(t, err)
+	assert.Same(t, uniqueSeriesLabels, &series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 }
@@ -69,25 +83,39 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 			model.MetricNameLabel: metricName + "_3",
 			"series2":             "1",
 		})
+		series3Duplicate = labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName + "_3",
+			"series2":             "1",
+		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	err := limiter.AddSeries(series1)
+	uniqueSeriesLabels, err := limiter.AddSeries(&series1)
 	require.NoError(t, err)
+	require.Same(t, uniqueSeriesLabels, &series1)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	err = limiter.AddSeries(series2)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2)
 	require.Error(t, err)
+	require.Same(t, uniqueSeriesLabels, &series2)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
-	err = limiter.AddSeries(series2)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series2)
 	require.Error(t, err)
+	require.Same(t, uniqueSeriesLabels, &series2)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
-	err = limiter.AddSeries(series3)
+	uniqueSeriesLabels, err = limiter.AddSeries(&series3)
 	require.Error(t, err)
+	require.Same(t, uniqueSeriesLabels, &series3)
+	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
+
+	// Add another series with duplicate labels and ensure that we don't increment the failed queries metric again.
+	uniqueSeriesLabels, err = limiter.AddSeries(&series3Duplicate)
+	require.Error(t, err)
+	require.Same(t, uniqueSeriesLabels, &series3)
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
 
@@ -188,8 +216,118 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	for _, s := range series {
-		err := limiter.AddSeries(s)
+		_, err := limiter.AddSeries(&s)
 		assert.NoError(b, err)
+	}
+}
+
+// BenchmarkQueryLimiter_AddSeries_WithCallerDedup benchmarks caller-side deduplication with 50% duplicates
+func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
+	const (
+		metricName   = "test_metric"
+		uniqueSeries = 500
+		totalSeries  = 1000 // 50% duplicates
+	)
+
+	// Create unique series
+	uniqueSet := make([]labels.Labels, 0, uniqueSeries)
+	for i := 0; i < uniqueSeries; i++ {
+		uniqueSet = append(uniqueSet, labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName,
+			"series":              fmt.Sprint(i),
+		}))
+	}
+
+	// Create series array with duplicates
+	series := make([]labels.Labels, 0, totalSeries)
+	for i := 0; i < totalSeries; i++ {
+		series = append(series, uniqueSet[i%uniqueSeries])
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		reg := prometheus.NewPedanticRegistry()
+		limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
+
+		// Simulate caller behavior: skip duplicates
+		result := make([]labels.Labels, 0, totalSeries)
+		for _, s := range series {
+			uniqueSeriesLabels, _ := limiter.AddSeries(&s)
+			result = append(result, *uniqueSeriesLabels)
+		}
+	}
+}
+
+// BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates benchmarks with all unique series
+func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates(b *testing.B) {
+	const (
+		metricName  = "test_metric"
+		totalSeries = 1000
+	)
+
+	// Create all unique series
+	series := make([]labels.Labels, 0, totalSeries)
+	for i := 0; i < totalSeries; i++ {
+		series = append(series, labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName,
+			"series":              fmt.Sprint(i),
+		}))
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		reg := prometheus.NewPedanticRegistry()
+		limiter := NewQueryLimiter(totalSeries*2, 0, 0, 0, stats.NewQueryMetrics(reg))
+
+		// Simulate caller behavior: skip duplicates
+		result := make([]labels.Labels, 0, totalSeries)
+		for _, s := range series {
+			uniqueSeriesLabels, _ := limiter.AddSeries(&s)
+			result = append(result, *uniqueSeriesLabels)
+		}
+	}
+}
+
+// BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct benchmarks with 90% duplicates
+func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct(b *testing.B) {
+	const (
+		metricName   = "test_metric"
+		uniqueSeries = 100
+		totalSeries  = 1000 // 90% duplicates
+	)
+
+	// Create few unique series
+	uniqueSet := make([]labels.Labels, 0, uniqueSeries)
+	for i := 0; i < uniqueSeries; i++ {
+		uniqueSet = append(uniqueSet, labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName,
+			"series":              fmt.Sprint(i),
+		}))
+	}
+
+	// Build series with many duplicates
+	series := make([]labels.Labels, 0, totalSeries)
+	for i := 0; i < totalSeries; i++ {
+		series = append(series, uniqueSet[i%uniqueSeries])
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		reg := prometheus.NewPedanticRegistry()
+		limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
+
+		// Simulate caller behavior: skip duplicates
+		result := make([]labels.Labels, 0, totalSeries)
+		for _, s := range series {
+			uniqueSeriesLabels, _ := limiter.AddSeries(&s)
+			result = append(result, *uniqueSeriesLabels)
+		}
 	}
 }
 
