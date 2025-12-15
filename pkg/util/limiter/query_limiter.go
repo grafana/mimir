@@ -16,6 +16,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+type MemoryTracker interface {
+	IncreaseMemoryConsumptionForLabels(labels labels.Labels) error
+}
+
+type NoopMemoryTracker struct{}
+
+func (n NoopMemoryTracker) IncreaseMemoryConsumptionForLabels(labels labels.Labels) error {
+	return nil
+}
+
 type queryLimiterCtxKey struct{}
 
 const (
@@ -83,7 +93,7 @@ func countConflictSeries(series map[uint64][]labels.Labels) int {
 }
 
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, validation.LimitError) {
+func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker MemoryTracker) (labels.Labels, error) {
 	fingerprint := seriesLabels.Hash()
 
 	ql.uniqueSeriesMx.Lock()
@@ -95,22 +105,31 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 	var newSeriesButHashCollided bool
 	if existing, found = ql.uniqueSeries[fingerprint]; !found || labels.Equal(existing, seriesLabels) {
 		if !found {
-			// only store when not found
+			// This is unique new series.
 			ql.uniqueSeries[fingerprint] = seriesLabels
+			err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
+			if err != nil {
+				return labels.EmptyLabels(), err
+			}
 		}
 	} else {
-		// conflicted hash is found
+		// Conflicted hash is found.
 		if ql.conflictSeries == nil {
 			ql.conflictSeries = make(map[uint64][]labels.Labels)
 		}
 		l := ql.conflictSeries[fingerprint]
 		for _, prev := range l {
+			// Labels matches with previous series, return the same labels instance.
 			if labels.Equal(prev, seriesLabels) {
 				return prev, nil
 			}
 		}
-		ql.conflictSeries[fingerprint] = append(l, seriesLabels)
 		newSeriesButHashCollided = true
+		ql.conflictSeries[fingerprint] = append(l, seriesLabels)
+		err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
+		if err != nil {
+			return labels.EmptyLabels(), err
+		}
 	}
 
 	uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
