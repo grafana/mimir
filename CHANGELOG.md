@@ -4,24 +4,13 @@
 
 ### Grafana Mimir
 
-* [CHANGE] Build: Upgrade Go to 1.25.4. #13691
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
-* [CHANGE] API: The `/api/v1/user_limits` endpoint is now stable and no longer experimental. #13218
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
-* [CHANGE] Ingester: limiting CPU and memory utilized by the read path (`-ingester.read-path-cpu-utilization-limit` and `-ingester.read-path-memory-utilization-limit`) is now considered stable. #13167
 * [CHANGE] Distributor: removed experimental flag `-distributor.metric-relabeling-enabled`. #13143
-* [CHANGE] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
 * [CHANGE] Compactor: removed experimental flag `-compactor.no-blocks-file-cleanup-enabled`. Cleanup of remaining files when no blocks exist is now always enabled. #13108
 * [CHANGE] Ruler: Add "unknown" alert rule state to alerts and rules on the `GET <prometheus-http-prefix>/api/v1/alerts` end point. Alerts are in the "unknown" state when they haven't yet been evaluated since the ruler started.  #13060
-* [CHANGE] Alertmanager: UTF-8 strict mode (`-alertmanager.utf8-strict-mode-enabled`) is now stable and no longer experimental. #13109
-* [CHANGE] Promote the logger rate-limiting configuration parameters from experimental to stable. #13128
-* [CHANGE] Ingester: Out-of-order ingestion support is now stable, use `-ingester.out-of-order-time-window` and `-ingester.out-of-order-blocks-external-label-enabled` to configure it. #13132
-* [CHANGE] Ruler: `align_evaluation_time_on_interval` is now stable and no longer experimental. #13103
-* [CHANGE] Query-frontend: query blocking (configured with `blocked_queries` limit) is now stable and no longer experimental. #13107
-* [CHANGE] Querier: `-querier.active-series-results-max-size-bytes` is now stable and no longer experimental. #13110
 * [CHANGE] All: remove experimental feature that allowed disabling ring heartbeats and timeouts. #13142
 * [CHANGE] Store-gateway: Removed experimental `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled` flag. The eager loading feature is now always enabled when lazy loading is enabled. #13126
-* [CHANGE] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
 * [CHANGE] Compactor: remove experimental `-compactor.in-memory-tenant-meta-cache-size`. #13131
 * [CHANGE] Distributor: Replace per-label-value warning on value length exceeded by an aggregated summary per metric and label name. #13189
 * [CHANGE] Limits: removed the experimental `cost_attribution_labels` configuration option. Use `cost_attribution_labels_structured` instead. #13286
@@ -81,6 +70,16 @@
 * [ENHANCEMENT] Server: The `/metrics` endpoint now supports metrics filtering by providing one or more `name[]` query parameters. #13746
 * [ENHANCEMENT] Ingester: Make sharded active-series requests matching all series faster. #13491
 * [ENHANCEMENT] Partitions ring: Add support to forcefully lock a partition state through the web UI. #13811
+* [ENHANCEMENT] API: The `/api/v1/user_limits` endpoint is now stable and no longer experimental. #13218
+* [ENHANCEMENT] Ingester: limiting CPU and memory utilized by the read path (`-ingester.read-path-cpu-utilization-limit` and `-ingester.read-path-memory-utilization-limit`) is now considered stable. #13167
+* [ENHANCEMENT] Querier: `-querier.max-estimated-fetched-chunks-per-query-multiplier` is now stable and no longer experimental. #13120
+* [ENHANCEMENT] Alertmanager: UTF-8 strict mode (`-alertmanager.utf8-strict-mode-enabled`) is now stable and no longer experimental. #13109
+* [ENHANCEMENT] Promote the logger rate-limiting configuration parameters from experimental to stable. #13128
+* [ENHANCEMENT] Ingester: Out-of-order ingestion support is now stable, use `-ingester.out-of-order-time-window` and `-ingester.out-of-order-blocks-external-label-enabled` to configure it. #13132
+* [ENHANCEMENT] Ruler: `align_evaluation_time_on_interval` is now stable and no longer experimental. #13103
+* [ENHANCEMENT] Query-frontend: query blocking (configured with `blocked_queries` limit) is now stable and no longer experimental. #13107
+* [ENHANCEMENT] Querier: `-querier.active-series-results-max-size-bytes` is now stable and no longer experimental. #13110
+* [ENHANCEMENT] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
