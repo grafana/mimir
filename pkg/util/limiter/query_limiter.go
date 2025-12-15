@@ -92,6 +92,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 	uniqueSeriesBefore := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
 	var found bool
 	var existing labels.Labels
+	var newSeriesButHashCollided bool
 	if existing, found = ql.uniqueSeries[fingerprint]; !found || labels.Equal(existing, seriesLabels) {
 		if !found {
 			// only store when not found
@@ -109,7 +110,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 			}
 		}
 		ql.conflictSeries[fingerprint] = append(l, seriesLabels)
-		return seriesLabels, nil
+		newSeriesButHashCollided = true
 	}
 
 	uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
@@ -123,6 +124,11 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
 
+	// new seriesLabels that has hash collision
+	if newSeriesButHashCollided {
+		return seriesLabels, nil
+	}
+	// duplicated series
 	if found {
 		return existing, nil
 	}
