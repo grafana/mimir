@@ -93,11 +93,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
 		}
 
-		if duplicated {
-			return existing, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
-		}
-
-		return seriesLabels, NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
 
 	if duplicated {
