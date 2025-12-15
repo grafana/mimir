@@ -1027,7 +1027,6 @@ func (i *Ingester) updateLimitMetrics() {
 		if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
 			os := db.ownedSeriesState()
 			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(os.ownedSeriesCount))
-			i.metrics.ownedTargetInfoSeriesPerUser.WithLabelValues(userID).Set(float64(os.ownedTargetInfoSeriesCount))
 
 			if i.cfg.UseIngesterOwnedSeriesForLimits {
 				minLocalSeriesLimit = os.localSeriesLimit
