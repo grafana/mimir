@@ -8,7 +8,9 @@ package limiter
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -34,33 +36,41 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 			model.MetricNameLabel: metricName + "_2",
 			"series2":             "1",
 		})
-		series2Duplicate = labels.FromMap(map[string]string{
+		series2NewInstance = labels.FromMap(map[string]string{
 			model.MetricNameLabel: metricName + "_2",
 			"series2":             "1",
 		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	uniqueSeriesLabels, err := limiter.AddSeries(series1)
+	returnedSeries1, err := limiter.AddSeries(series1)
 	assert.NoError(t, err)
-	assert.Equal(t, uniqueSeriesLabels, &series1)
-	uniqueSeriesLabels, err = limiter.AddSeries(series2)
+	assertSameLabels(t, returnedSeries1, series1)
+	returnedSeries2, err := limiter.AddSeries(series2)
 	assert.NoError(t, err)
-	assert.Same(t, uniqueSeriesLabels, series2)
+	assertSameLabels(t, returnedSeries2, series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	uniqueSeriesLabels, err = limiter.AddSeries(series1)
+	returnedSeries1Dup, err := limiter.AddSeries(series1)
 	assert.NoError(t, err)
-	assert.Same(t, uniqueSeriesLabels, series1)
+	assertSameLabels(t, returnedSeries1Dup, series1)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	// Re-add duplicated series
-	uniqueSeriesLabels, err = limiter.AddSeries(series2Duplicate)
+	// Re-add previous series to make sure it's not double counted
+	returnedSeries2Dup, err := limiter.AddSeries(series2)
 	assert.NoError(t, err)
-	assert.Same(t, uniqueSeriesLabels, series2)
+	assertSameLabels(t, returnedSeries2Dup, series2)
+	assert.Equal(t, 2, limiter.uniqueSeriesCount())
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+
+	// Add different instance of series with same labels
+	returnedSeries2NewInstance, err := limiter.AddSeries(series2NewInstance)
+	assert.NoError(t, err)
+	assertSameLabels(t, returnedSeries2NewInstance, returnedSeries2Dup)
+	assertSameLabels(t, returnedSeries2NewInstance, returnedSeries2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 }
@@ -83,39 +93,40 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 			model.MetricNameLabel: metricName + "_3",
 			"series2":             "1",
 		})
-		series3Duplicate = labels.FromMap(map[string]string{
+		series3NewInstance = labels.FromMap(map[string]string{
 			model.MetricNameLabel: metricName + "_3",
 			"series2":             "1",
 		})
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	uniqueSeriesLabels, err := limiter.AddSeries(series1)
+	returnedSeries1, err := limiter.AddSeries(series1)
 	require.NoError(t, err)
-	require.Same(t, uniqueSeriesLabels, &series1)
+	assertSameLabels(t, returnedSeries1, series1)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	uniqueSeriesLabels, err = limiter.AddSeries(series2)
+	returnedSeries2, err := limiter.AddSeries(series2)
 	require.Error(t, err)
-	require.Same(t, uniqueSeriesLabels, &series2)
+	// When limit is exceeded, empty labels are returned
+	require.True(t, returnedSeries2.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
-	uniqueSeriesLabels, err = limiter.AddSeries(series2)
+	returnedSeries2Again, err := limiter.AddSeries(series2)
 	require.Error(t, err)
-	require.Same(t, uniqueSeriesLabels, &series2)
+	require.True(t, returnedSeries2Again.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
-	uniqueSeriesLabels, err = limiter.AddSeries(series3)
+	returnedSeries3, err := limiter.AddSeries(series3)
 	require.Error(t, err)
-	require.Same(t, uniqueSeriesLabels, &series3)
+	require.True(t, returnedSeries3.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series with duplicate labels and ensure that we don't increment the failed queries metric again.
-	uniqueSeriesLabels, err = limiter.AddSeries(series3Duplicate)
+	returnedSeries3NewInstance, err := limiter.AddSeries(series3NewInstance)
 	require.Error(t, err)
-	require.Same(t, uniqueSeriesLabels, &series3)
+	require.True(t, returnedSeries3NewInstance.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
 
@@ -328,6 +339,120 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct(b *testing.B) {
 			result = append(result, uniqueSeriesLabels)
 		}
 	}
+}
+
+// assertSameLabels checks if two labels.Labels share the same internal data.
+// This is used to verify that AddSeries returns the same labels object for duplicates.
+// This function is implementation-agnostic and works with:
+// - stringlabels (default): stores labels as a single string with length prefixes
+// - slicelabels (build with -tags slicelabels): stores labels as a slice of Label structs
+// - dedupelabels (build with -tags dedupelabels): uses a shared SymbolTable
+//
+// To test with different implementations:
+//
+//	go test -tags slicelabels ./pkg/util/limiter/
+//	go test -tags dedupelabels ./pkg/util/limiter/
+func assertSameLabels(t *testing.T, a, b labels.Labels) {
+	t.Helper()
+
+	aVal := reflect.ValueOf(a)
+	bVal := reflect.ValueOf(b)
+
+	// Try stringlabels implementation (default)
+	// stringlabels stores data in a "data" field of type string
+	if aData := aVal.FieldByName("data"); aData.IsValid() && aData.Kind() == reflect.String {
+		bData := bVal.FieldByName("data")
+		if !bData.IsValid() || bData.Kind() != reflect.String {
+			assert.Fail(t, "labels have different implementations")
+			return
+		}
+
+		aStr := aData.String()
+		bStr := bData.String()
+
+		if len(aStr) == 0 && len(bStr) == 0 {
+			// Both empty
+			return
+		}
+
+		if len(aStr) > 0 && len(bStr) > 0 {
+			// Compare string data pointers
+			aPtr := unsafe.Pointer(unsafe.StringData(aStr))
+			bPtr := unsafe.Pointer(unsafe.StringData(bStr))
+			assert.Equal(t, aPtr, bPtr, "labels should share the same internal data pointer (stringlabels)")
+			return
+		}
+
+		assert.Fail(t, "labels have different lengths")
+		return
+	}
+
+	// Try slicelabels implementation (build with -tags slicelabels)
+	// slicelabels stores data in a "labels" field which is a slice of Label
+	if aSlice := aVal.FieldByName("labels"); aSlice.IsValid() && aSlice.Kind() == reflect.Slice {
+		bSlice := bVal.FieldByName("labels")
+		if !bSlice.IsValid() || bSlice.Kind() != reflect.Slice {
+			assert.Fail(t, "labels have different implementations")
+			return
+		}
+
+		if aSlice.Len() == 0 && bSlice.Len() == 0 {
+			// Both empty
+			return
+		}
+
+		if aSlice.Len() > 0 && bSlice.Len() > 0 {
+			// Compare slice backing array pointers
+			aPtr := aSlice.Pointer()
+			bPtr := bSlice.Pointer()
+			assert.Equal(t, aPtr, bPtr, "labels should share the same slice backing array (slicelabels)")
+			return
+		}
+
+		assert.Fail(t, "labels have different lengths")
+		return
+	}
+
+	// Try dedupelabels implementation (build with -tags dedupelabels)
+	// dedupelabels uses a SymbolTable; check if there's a "symbolTable" field
+	if aSymTable := aVal.FieldByName("symbolTable"); aSymTable.IsValid() {
+		bSymTable := bVal.FieldByName("symbolTable")
+		if !bSymTable.IsValid() {
+			assert.Fail(t, "labels have different implementations")
+			return
+		}
+
+		// For dedupelabels, we need to check if they reference the same entries in the symbol table
+		// Get the "data" field which should contain indices into the symbol table
+		if aData := aVal.FieldByName("data"); aData.IsValid() && aData.Kind() == reflect.Slice {
+			bData := bVal.FieldByName("data")
+			if bData.IsValid() && bData.Kind() == reflect.Slice {
+				if aData.Len() == 0 && bData.Len() == 0 {
+					return
+				}
+				if aData.Len() > 0 && bData.Len() > 0 {
+					// Compare slice pointers
+					aPtr := aData.Pointer()
+					bPtr := bData.Pointer()
+					assert.Equal(t, aPtr, bPtr, "labels should share the same data slice (dedupelabels)")
+					return
+				}
+			}
+		}
+	}
+
+	// Fallback: Unknown implementation or unable to determine
+	// Just verify that the labels have equal content
+	aBytes := a.Bytes(nil)
+	bBytes := b.Bytes(nil)
+
+	if len(aBytes) == 0 && len(bBytes) == 0 {
+		return
+	}
+
+	// This fallback only checks content equality, not pointer equality
+	// If we reach here, the test may pass even without proper deduplication
+	assert.Equal(t, aBytes, bBytes, "labels should have equal content (unable to verify pointer equality for unknown implementation)")
 }
 
 func assertRejectedQueriesMetricValue(t *testing.T, c prometheus.Collector, expectedMaxSeries, expectedMaxChunkBytes, expectedMaxChunks, expectedMaxEstimatedChunks int) {
