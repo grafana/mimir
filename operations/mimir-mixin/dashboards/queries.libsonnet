@@ -62,7 +62,8 @@ local filename = 'mimir-queries.json';
         $.queryPanel(
           'sum by(%s) (cortex_query_frontend_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
-        ),
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
@@ -71,6 +72,7 @@ local filename = 'mimir-queries.json';
           'sum by(user) (cortex_query_frontend_queue_length{$read_path_matcher}) > 0',
           '{{user}}'
         ) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { noValue: '0' } } }
       )
     )
@@ -87,7 +89,8 @@ local filename = 'mimir-queries.json';
         $.queryPanel(
           'sum by(%s) (cortex_query_scheduler_queue_length{$read_path_matcher})' % [$._config.per_instance_label],
           '{{%s}}' % $._config.per_instance_label
-        ),
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Queue length (per user)') +
@@ -96,6 +99,7 @@ local filename = 'mimir-queries.json';
           'sum by(user) (cortex_query_scheduler_queue_length{$read_path_matcher}) > 0',
           '{{user}}'
         ) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { noValue: '0' } } }
       )
     )
@@ -582,7 +586,8 @@ local filename = 'mimir-queries.json';
             eventually loaded in memory (if index-header lazy loading is disabled, or lazy loading
             is enabled and the index-header was loaded).
           |||
-        ),
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('Blocks loaded / sec') +
@@ -606,6 +611,7 @@ local filename = 'mimir-queries.json';
       .addPanel(
         $.timeseriesPanel('Lazy loaded index-headers') +
         $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { custom+: { fillOpacity: 0 } } } }
       )
       .addPanel(

@@ -90,14 +90,16 @@ local filename = 'mimir-slow-queries.json';
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",%s=~"$component.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(response_time) [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_component_loki_label],
           '{{user}}',
           unit='s',
-        )
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('P99 fetched series') +
         $.lokiMetricsQueryPanel(
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",%s=~"$component.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_series_count[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_component_loki_label],
           '{{user}}',
-        )
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('P99 fetched chunks') +
@@ -105,7 +107,8 @@ local filename = 'mimir-slow-queries.json';
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",%s=~"$component.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap fetched_chunk_bytes[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_component_loki_label],
           '{{user}}',
           unit='bytes',
-        )
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('P99 response size') +
@@ -113,7 +116,8 @@ local filename = 'mimir-slow-queries.json';
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",%s=~"$component.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap response_size_bytes[$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_component_loki_label],
           '{{user}}',
           unit='bytes',
-        )
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('P99 time span') +
@@ -121,7 +125,8 @@ local filename = 'mimir-slow-queries.json';
           'topk(10, quantile_over_time(0.99, {%s=~"$cluster",%s=~"$namespace",%s=~"$component.*"} |= "query stats" != "/api/v1/read" | logfmt | user=~"${tenant_id}" | user_agent=~"${user_agent}" | response_time > ${min_duration} | unwrap duration_seconds(length) [$__auto]) by (user))' % [$._config.per_cluster_label, $._config.per_namespace_label, $._config.per_component_loki_label],
           '{{user}}',
           unit='s',
-        )
+        ) +
+        $.showAllTooltip,
       )
       .addPanel(
         $.timeseriesPanel('P99 query wall time') +
@@ -137,7 +142,8 @@ local filename = 'mimir-slow-queries.json';
             This is roughly the product of the number of subqueries for a query and how long they took.
             In increase in this metric means that queries take more resources from the query path to evaluate.
           |||
-        ),
+        ) +
+        $.showAllTooltip,
       )
     )
     .addRow(
