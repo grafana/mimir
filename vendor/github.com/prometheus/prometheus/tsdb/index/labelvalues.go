@@ -246,10 +246,10 @@ func (p *MemPostings) labelValuesFor(postings Postings, name string, includeMatc
 	vals := make([]string, 0, len(e))
 	candidates := make([]Postings, 0, len(e))
 	// Allocate a slice for all needed ListPostings, so no need to allocate them one by one.
-	lps := make([]ListPostings, 0, len(e))
+	lps := make([]listPostings, 0, len(e))
 	for val, srs := range e {
 		vals = append(vals, val)
-		lps = append(lps, ListPostings{list: srs})
+		lps = append(lps, listPostings{list: srs})
 		candidates = append(candidates, &lps[len(lps)-1])
 	}
 

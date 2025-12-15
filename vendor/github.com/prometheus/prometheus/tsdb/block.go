@@ -109,18 +109,6 @@ type IndexReader interface {
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
 
-	// LabelValueFor returns label value for the given label name in the series referred to by ID.
-	// If the series couldn't be found or the series doesn't have the requested label a
-	// storage.ErrNotFound is returned as error.
-	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
-
-	// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
-	LabelValuesFor(p index.Postings, name string) storage.LabelValues
-
-	// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
-	// This is useful for obtaining label values for other postings than the ones you wish to exclude.
-	LabelValuesExcluding(p index.Postings, name string) storage.LabelValues
-
 	// LabelNamesFor returns all the label names for the series referred to by the postings.
 	// The names returned are sorted.
 	LabelNamesFor(ctx context.Context, postings index.Postings) ([]string, error)
@@ -574,17 +562,6 @@ func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 	return r.ir.ShardedPostings(p, shardIndex, shardCount)
 }
 
-// LabelValuesFor returns LabelValues for the given label name in the series referred to by postings.
-func (r blockIndexReader) LabelValuesFor(postings index.Postings, name string) storage.LabelValues {
-	return r.ir.LabelValuesFor(postings, name)
-}
-
-// LabelValuesExcluding returns LabelValues for the given label name in all other series than those referred to by postings.
-// This is useful for obtaining label values for other postings than the ones you wish to exclude.
-func (r blockIndexReader) LabelValuesExcluding(postings index.Postings, name string) storage.LabelValues {
-	return r.ir.LabelValuesExcluding(postings, name)
-}
-
 func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error {
 	if err := r.ir.Series(ref, builder, chks); err != nil {
 		return fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
@@ -595,11 +572,6 @@ func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.ScratchB
 func (r blockIndexReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
-}
-
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r blockIndexReader) LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error) {
-	return r.ir.LabelValueFor(ctx, id, label)
 }
 
 // LabelNamesFor returns all the label names for the series referred to by the postings.
