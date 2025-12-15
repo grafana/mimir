@@ -28,7 +28,7 @@ var (
 
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
-	uniqueSeries   map[uint64]*labels.Labels
+	uniqueSeries   map[uint64]labels.Labels
 
 	chunkBytesCount     atomic.Int64
 	chunkCount          atomic.Int64
@@ -47,7 +47,7 @@ type QueryLimiter struct {
 func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, maxEstimatedChunksPerQuery int, queryMetrics *stats.QueryMetrics) *QueryLimiter {
 	return &QueryLimiter{
 		uniqueSeriesMx: sync.Mutex{},
-		uniqueSeries:   map[uint64]*labels.Labels{},
+		uniqueSeries:   map[uint64]labels.Labels{},
 
 		maxSeriesPerQuery:          maxSeriesPerQuery,
 		maxChunkBytesPerQuery:      maxChunkBytesPerQuery,
@@ -74,7 +74,7 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 }
 
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels *labels.Labels) (*labels.Labels, validation.LimitError) {
+func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, validation.LimitError) {
 	fingerprint := seriesLabels.Hash()
 
 	ql.uniqueSeriesMx.Lock()
