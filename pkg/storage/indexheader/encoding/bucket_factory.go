@@ -65,8 +65,8 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 
 	r := newStreamReader(rc, bufLength)
 	r.pos = len(lengthBytes)
-	r.resetReader = func(off int) error {
-		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset+off), -1)
+	r.resetReader = func(off, length int) error {
+		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset+off), int64(length))
 		if err != nil {
 			return err
 		}
@@ -118,7 +118,7 @@ type streamReader struct {
 	pos    int
 	length int
 
-	resetReader func(off int) error
+	resetReader func(off, length int) error
 }
 
 var netbufPool = sync.Pool{
@@ -140,7 +140,7 @@ func newStreamReader(rc io.ReadCloser, length int) *streamReader {
 }
 
 // maxSkippableBytes is the max number of bytes, the reader will skip ahead on resetAt. Larger values will reset the underlying readCloser.
-const maxSkippableBytes = 1 << 20
+const maxSkippableBytes = 1 << 18
 
 // resetAt moves the cursor position to the given offset in the data segment.
 // Attempting to resetAt to the end of the file segment is valid. Attempting to resetAt _beyond_ the end of the file
@@ -150,14 +150,15 @@ func (r *streamReader) resetAt(off int) error {
 		return ErrInvalidSize
 	}
 
-	if dist := off - r.pos; dist > 0 && dist < maxSkippableBytes {
+	dist := off - r.pos
+	if dist > 0 && dist < maxSkippableBytes {
 		// skip ahead by discarding the distance bytes
 		// TODO(v): there is a tradeoff between consuming dist bytes from the existing stream, or recreating the stream, via a new GetObject call.
 		return r.skip(dist)
 	}
 
 	// Otherwise we must close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state.
-	if err := r.resetReader(off); err != nil {
+	if err := r.resetReader(off, r.len()-dist); err != nil {
 		return err
 	}
 

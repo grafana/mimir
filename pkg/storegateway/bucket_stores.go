@@ -59,7 +59,8 @@ type BucketStores struct {
 	syncBackoffConfig  backoff.Config
 
 	// Index cache shared across all tenants.
-	indexCache indexcache.IndexCache
+	indexHeaderCache *IndexHeaderCache
+	indexCache       indexcache.IndexCache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
@@ -164,6 +165,8 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	)
 
 	// Init the index cache.
+	const indexHeaderCacheSize = 50_000 // 50K x PageSize(64KiB) = 3GiB
+	u.indexHeaderCache = NewIndexHeaderCache(indexHeaderCacheSize)
 	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
 		return nil, errors.Wrap(err, "create index cache")
 	}
@@ -525,6 +528,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	)
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
+		WithIndexHeaderCache(u.indexHeaderCache),
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithLazyLoadingGate(u.lazyLoadingGate),
