@@ -251,9 +251,7 @@ func NewCodec(
 ) Codec {
 	return Codec{
 		formats: []formatter{
-			jsonFormatter{
-				maxEncodedSize: maxResponseSizeBytes,
-			},
+			newJSONFormatter(maxResponseSizeBytes),
 			ProtobufFormatter{
 				maxEncodedSize: maxResponseSizeBytes,
 			},
@@ -1142,7 +1140,8 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		var err error
 		b, err = formatter.EncodeLabelsResponse(a)
 		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
+			typ := apierror.TypeForError(err, apierror.TypeInternal)
+			return nil, apierror.Newf(typ, "error encoding response: %v", err)
 		}
 	case true:
 		a, ok := res.(*PrometheusSeriesResponse)
@@ -1157,7 +1156,8 @@ func (c Codec) EncodeLabelsSeriesQueryResponse(ctx context.Context, req *http.Re
 		var err error
 		b, err = formatter.EncodeSeriesResponse(a)
 		if err != nil {
-			return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
+			typ := apierror.TypeForError(err, apierror.TypeInternal)
+			return nil, apierror.Newf(typ, "error encoding response: %v", err)
 		}
 	}
 

@@ -509,7 +509,69 @@ func TestCodec_JSONEncoding_Metrics(t *testing.T) {
 	}
 }
 
-func TestCodec_JSONEncoding_Labels(t *testing.T) {
+func TestCodec_JSONEncoding_Metrics_SizeLimit(t *testing.T) {
+	resp := &PrometheusResponse{
+		Status: statusSuccess,
+		Data: &PrometheusData{
+			ResultType: model.ValString.String(),
+			Result: []SampleStream{
+				{
+					Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+					Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
+				},
+			},
+		},
+		Headers: expectedProtobufResponseHeaders,
+	}
+
+	expectedPayload, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	encodeWithLimit := func(t *testing.T, limit uint64) ([]byte, error) {
+		reg := prometheus.NewPedanticRegistry()
+		codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{}, limit)
+
+		httpRequest := &http.Request{
+			Header: http.Header{"Accept": []string{jsonMimeType}},
+		}
+
+		httpResponse, err := codec.EncodeMetricsQueryResponse(context.Background(), httpRequest, resp)
+		if err != nil {
+			return nil, err
+		}
+
+		require.Equal(t, http.StatusOK, httpResponse.StatusCode)
+		require.Equal(t, jsonMimeType, httpResponse.Header.Get("Content-Type"))
+
+		body, err := io.ReadAll(httpResponse.Body)
+		require.NoError(t, err)
+
+		return body, nil
+	}
+
+	t.Run("payload too large for limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload) - 1)
+		body, err := encodeWithLimit(t, limit)
+		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is larger than the maximum allowed (%d bytes)", limit), err)
+		require.Nil(t, body)
+	})
+
+	t.Run("payload exactly same size as limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload))
+		body, err := encodeWithLimit(t, limit)
+		require.NoError(t, err)
+		require.Equal(t, expectedPayload, body)
+	})
+
+	t.Run("payload smaller than limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload) + 1)
+		body, err := encodeWithLimit(t, limit)
+		require.NoError(t, err)
+		require.Equal(t, expectedPayload, body)
+	})
+}
+
+func TestCodec_JSONEncoding_LabelsAndSeries(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
 		expectedJSON     string
@@ -580,4 +642,122 @@ func TestCodec_JSONEncoding_Labels(t *testing.T) {
 			require.Equal(t, len(encodedJSON), int(encoded.ContentLength))
 		})
 	}
+}
+
+func TestCodec_JSONEncoding_Labels_SizeLimit(t *testing.T) {
+	resp := &PrometheusLabelsResponse{
+		Status: statusSuccess,
+		Data: []string{
+			"foo",
+			"bar",
+		},
+	}
+
+	expectedPayload, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	encodeWithLimit := func(t *testing.T, limit uint64) ([]byte, error) {
+		reg := prometheus.NewPedanticRegistry()
+		codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{}, limit)
+
+		httpRequest := &http.Request{
+			Header: http.Header{"Accept": []string{jsonMimeType}},
+		}
+
+		httpResponse, err := codec.EncodeLabelsSeriesQueryResponse(context.Background(), httpRequest, resp, false)
+		if err != nil {
+			return nil, err
+		}
+
+		require.Equal(t, http.StatusOK, httpResponse.StatusCode)
+		require.Equal(t, jsonMimeType, httpResponse.Header.Get("Content-Type"))
+
+		body, err := io.ReadAll(httpResponse.Body)
+		require.NoError(t, err)
+
+		return body, nil
+	}
+
+	t.Run("payload too large for limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload) - 1)
+		body, err := encodeWithLimit(t, limit)
+		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is larger than the maximum allowed (%d bytes)", limit), err)
+		require.Nil(t, body)
+	})
+
+	t.Run("payload exactly same size as limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload))
+		body, err := encodeWithLimit(t, limit)
+		require.NoError(t, err)
+		require.Equal(t, expectedPayload, body)
+	})
+
+	t.Run("payload smaller than limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload) + 1)
+		body, err := encodeWithLimit(t, limit)
+		require.NoError(t, err)
+		require.Equal(t, expectedPayload, body)
+	})
+}
+
+func TestCodec_JSONEncoding_Series_SizeLimit(t *testing.T) {
+	resp := &PrometheusSeriesResponse{
+		Status: statusSuccess,
+		Data: []SeriesData{
+			{
+				"__name__": "series_1",
+				"foo":      "bar",
+			},
+			{
+				"__name__": "hist_series_1",
+				"hoo":      "hbar",
+			},
+		},
+	}
+
+	expectedPayload, err := json.Marshal(resp)
+	require.NoError(t, err)
+
+	encodeWithLimit := func(t *testing.T, limit uint64) ([]byte, error) {
+		reg := prometheus.NewPedanticRegistry()
+		codec := NewCodec(reg, 0*time.Minute, formatProtobuf, nil, &propagation.NoopInjector{}, limit)
+
+		httpRequest := &http.Request{
+			Header: http.Header{"Accept": []string{jsonMimeType}},
+		}
+
+		httpResponse, err := codec.EncodeLabelsSeriesQueryResponse(context.Background(), httpRequest, resp, true)
+		if err != nil {
+			return nil, err
+		}
+
+		require.Equal(t, http.StatusOK, httpResponse.StatusCode)
+		require.Equal(t, jsonMimeType, httpResponse.Header.Get("Content-Type"))
+
+		body, err := io.ReadAll(httpResponse.Body)
+		require.NoError(t, err)
+
+		return body, nil
+	}
+
+	t.Run("payload too large for limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload) - 1)
+		body, err := encodeWithLimit(t, limit)
+		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is larger than the maximum allowed (%d bytes)", limit), err)
+		require.Nil(t, body)
+	})
+
+	t.Run("payload exactly same size as limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload))
+		body, err := encodeWithLimit(t, limit)
+		require.NoError(t, err)
+		require.Equal(t, expectedPayload, body)
+	})
+
+	t.Run("payload smaller than limit", func(t *testing.T) {
+		limit := uint64(len(expectedPayload) + 1)
+		body, err := encodeWithLimit(t, limit)
+		require.NoError(t, err)
+		require.Equal(t, expectedPayload, body)
+	})
 }

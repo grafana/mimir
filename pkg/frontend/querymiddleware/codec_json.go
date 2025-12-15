@@ -6,17 +6,33 @@
 package querymiddleware
 
 import (
+	"errors"
+
+	jsoniter "github.com/json-iterator/go"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 const jsonMimeType = "application/json"
 
 type jsonFormatter struct {
-	maxEncodedSize uint64
+	encoder jsoniter.API
+}
+
+func newJSONFormatter(maxEncodedSize uint64) jsonFormatter {
+	cfg := jsoniter.Config{
+		EscapeHTML:             false, // No HTML in our responses.
+		SortMapKeys:            true,
+		ValidateJsonRawMessage: true,
+		MaxMarshalledBytes:     maxEncodedSize,
+	}
+
+	return jsonFormatter{encoder: cfg.Froze()}
 }
 
 func (j jsonFormatter) EncodeQueryResponse(resp *PrometheusResponse) ([]byte, error) {
-	return json.Marshal(resp)
+	return j.marshal(resp)
 }
 
 func (j jsonFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, error) {
@@ -30,7 +46,7 @@ func (j jsonFormatter) DecodeQueryResponse(buf []byte) (*PrometheusResponse, err
 }
 
 func (j jsonFormatter) EncodeLabelsResponse(resp *PrometheusLabelsResponse) ([]byte, error) {
-	return json.Marshal(resp)
+	return j.marshal(resp)
 }
 
 func (j jsonFormatter) DecodeLabelsResponse(buf []byte) (*PrometheusLabelsResponse, error) {
@@ -44,7 +60,7 @@ func (j jsonFormatter) DecodeLabelsResponse(buf []byte) (*PrometheusLabelsRespon
 }
 
 func (j jsonFormatter) EncodeSeriesResponse(resp *PrometheusSeriesResponse) ([]byte, error) {
-	return json.Marshal(resp)
+	return j.marshal(resp)
 }
 
 func (j jsonFormatter) DecodeSeriesResponse(buf []byte) (*PrometheusSeriesResponse, error) {
@@ -63,4 +79,20 @@ func (j jsonFormatter) Name() string {
 
 func (j jsonFormatter) ContentType() v1.MIMEType {
 	return v1.MIMEType{Type: "application", SubType: "json"}
+}
+
+func (j jsonFormatter) marshal(v interface{}) ([]byte, error) {
+	b, err := j.encoder.Marshal(v)
+	if err != nil {
+		var limitErr jsoniter.ExceededMaxMarshalledBytesError
+
+		if errors.As(err, &limitErr) {
+			return nil, apierror.Newf(apierror.TypeTooLargeEntry, "JSON response is larger than the maximum allowed (%d bytes)", limitErr.MaxMarshalledBytes)
+		}
+
+		return nil, err
+	}
+
+	return b, nil
+
 }
