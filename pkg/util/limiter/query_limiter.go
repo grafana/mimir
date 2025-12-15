@@ -29,6 +29,7 @@ var (
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
 	uniqueSeries   map[uint64]labels.Labels
+	conflictSeries map[uint64][]labels.Labels
 
 	chunkBytesCount     atomic.Int64
 	chunkCount          atomic.Int64
@@ -80,12 +81,25 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
-	uniqueSeriesBefore := len(ql.uniqueSeries)
-	existing, duplicated := ql.uniqueSeries[fingerprint]
-	if !duplicated {
+	uniqueSeriesBefore := len(ql.uniqueSeries) + len(ql.conflictSeries)
+	if existing, found := ql.uniqueSeries[fingerprint]; !found || labels.Equal(existing, seriesLabels) {
 		ql.uniqueSeries[fingerprint] = seriesLabels
+	} else {
+		// conflicted hash is found
+		if ql.conflictSeries == nil {
+			ql.conflictSeries = make(map[uint64][]labels.Labels)
+		}
+		l := ql.conflictSeries[fingerprint]
+		for i, prev := range l {
+			if labels.Equal(prev, seriesLabels) {
+				l[i] = seriesLabels
+				return l[i], nil
+			}
+		}
+		ql.conflictSeries[fingerprint] = append(l, seriesLabels)
 	}
-	uniqueSeriesAfter := len(ql.uniqueSeries)
+
+	uniqueSeriesAfter := len(ql.uniqueSeries) + len(ql.conflictSeries)
 
 	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
 		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
@@ -96,9 +110,6 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
 
-	if duplicated {
-		return existing, nil
-	}
 	return seriesLabels, nil
 }
 
