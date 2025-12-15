@@ -74,6 +74,14 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 	return ql
 }
 
+func countConflictSeries(series map[uint64][]labels.Labels) int {
+	count := 0
+	for _, lbls := range series {
+		count += len(lbls)
+	}
+	return count
+}
+
 // AddSeries adds the input series and returns an error if the limit is reached.
 func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, validation.LimitError) {
 	fingerprint := seriesLabels.Hash()
@@ -81,7 +89,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
-	uniqueSeriesBefore := len(ql.uniqueSeries) + len(ql.conflictSeries)
+	uniqueSeriesBefore := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
 	var found bool
 	var existing labels.Labels
 	if existing, found = ql.uniqueSeries[fingerprint]; !found || labels.Equal(existing, seriesLabels) {
@@ -101,9 +109,10 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 			}
 		}
 		ql.conflictSeries[fingerprint] = append(l, seriesLabels)
+		return seriesLabels, nil
 	}
 
-	uniqueSeriesAfter := len(ql.uniqueSeries) + len(ql.conflictSeries)
+	uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
 
 	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
 		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
