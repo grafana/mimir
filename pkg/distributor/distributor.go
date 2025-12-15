@@ -3273,7 +3273,7 @@ respsLoop:
 			return nil, err
 		}
 
-		result = append(result, *uniqueSeriesLabels)
+		result = append(result, uniqueSeriesLabels)
 	}
 	return result, nil
 }

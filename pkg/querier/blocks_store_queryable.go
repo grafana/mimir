@@ -1018,17 +1018,17 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
 			// Add series fingerprint to query limiter; will return error if we are over the limit
-			uniqueSeriesLabels, limitErr := queryLimiter.AddSeries(&ls)
+			uniqueSeriesLabels, limitErr := queryLimiter.AddSeries(ls)
 			if limitErr != nil {
 				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
 			}
 
 			// TODO move this inside AddSeries
-			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(*uniqueSeriesLabels); err != nil {
+			if err := memoryTracker.IncreaseMemoryConsumptionForLabels(uniqueSeriesLabels); err != nil {
 				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, err
 			}
 
-			myStreamingSeriesLabels = append(myStreamingSeriesLabels, *uniqueSeriesLabels)
+			myStreamingSeriesLabels = append(myStreamingSeriesLabels, uniqueSeriesLabels)
 		}
 
 		if ss.IsEndOfSeriesStream {
