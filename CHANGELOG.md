@@ -81,6 +81,7 @@
 * [ENHANCEMENT] Server: The `/metrics` endpoint now supports metrics filtering by providing one or more `name[]` query parameters. #13746
 * [ENHANCEMENT] Ingester: Make sharded active-series requests matching all series faster. #13491
 * [ENHANCEMENT] Partitions ring: Add support to forcefully lock a partition state through the web UI. #13811
+* [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084
@@ -115,6 +116,7 @@
 * [BUGFIX] Ruler: Fixed `-ruler.max-rule-groups-per-tenant-by-namespace` to only count rule groups in the specified namespace instead of all namespaces. #13743
 * [BUGFIX] Update to Go v1.25.5 to address [CVE-2025-61729](https://pkg.go.dev/vuln/GO-2025-4155). #13755
 * [BUGFIX] Query-frontend: Fix race condition that could sometimes cause unnecessary resharding of queriers if querier shuffle sharding and remote execution is enabled. #13794
+* [ENHANCEMENT] HA: Deduplication per sample instead of per batch. #13665
 
 ### Mixin
 
