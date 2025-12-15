@@ -3268,7 +3268,7 @@ respsLoop:
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		uniqueSeriesLabels, err := queryLimiter.AddSeries(m)
+		uniqueSeriesLabels, err := queryLimiter.AddSeries(m, mimir_limiter.NoopMemoryTracker{})
 		if err != nil {
 			return nil, err
 		}

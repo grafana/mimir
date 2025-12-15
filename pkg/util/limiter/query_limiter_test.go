@@ -43,31 +43,33 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	returnedSeries1, err := limiter.AddSeries(series1)
+
+	memoryTracker := NoopMemoryTracker{}
+	returnedSeries1, err := limiter.AddSeries(series1, memoryTracker)
 	assert.NoError(t, err)
 	assertSameLabels(t, returnedSeries1, series1)
-	returnedSeries2, err := limiter.AddSeries(series2)
+	returnedSeries2, err := limiter.AddSeries(series2, memoryTracker)
 	assert.NoError(t, err)
 	assertSameLabels(t, returnedSeries2, series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	returnedSeries1Dup, err := limiter.AddSeries(series1)
+	returnedSeries1Dup, err := limiter.AddSeries(series1, memoryTracker)
 	assert.NoError(t, err)
 	assertSameLabels(t, returnedSeries1Dup, series1)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
-	returnedSeries2Dup, err := limiter.AddSeries(series2)
+	returnedSeries2Dup, err := limiter.AddSeries(series2, memoryTracker)
 	assert.NoError(t, err)
 	assertSameLabels(t, returnedSeries2Dup, series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Add different instance of series with same labels
-	returnedSeries2NewInstance, err := limiter.AddSeries(series2NewInstance)
+	returnedSeries2NewInstance, err := limiter.AddSeries(series2NewInstance, memoryTracker)
 	assert.NoError(t, err)
 	assertSameLabels(t, returnedSeries2NewInstance, returnedSeries2Dup)
 	assertSameLabels(t, returnedSeries2NewInstance, returnedSeries2)
@@ -100,31 +102,32 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	returnedSeries1, err := limiter.AddSeries(series1)
+	memoryTracker := NoopMemoryTracker{}
+	returnedSeries1, err := limiter.AddSeries(series1, memoryTracker)
 	require.NoError(t, err)
 	assertSameLabels(t, returnedSeries1, series1)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
-	returnedSeries2, err := limiter.AddSeries(series2)
+	returnedSeries2, err := limiter.AddSeries(series2, memoryTracker)
 	require.Error(t, err)
 	// When limit is exceeded, empty labels are returned
 	require.True(t, returnedSeries2.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add the same series again and ensure that we don't increment the failed queries metric again.
-	returnedSeries2Again, err := limiter.AddSeries(series2)
+	returnedSeries2Again, err := limiter.AddSeries(series2, memoryTracker)
 	require.Error(t, err)
 	require.True(t, returnedSeries2Again.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series and ensure that we don't increment the failed queries metric again.
-	returnedSeries3, err := limiter.AddSeries(series3)
+	returnedSeries3, err := limiter.AddSeries(series3, memoryTracker)
 	require.Error(t, err)
 	require.True(t, returnedSeries3.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 
 	// Add another series with duplicate labels and ensure that we don't increment the failed queries metric again.
-	returnedSeries3NewInstance, err := limiter.AddSeries(series3NewInstance)
+	returnedSeries3NewInstance, err := limiter.AddSeries(series3NewInstance, memoryTracker)
 	require.Error(t, err)
 	require.True(t, returnedSeries3NewInstance.IsEmpty(), "should return empty labels on error")
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
@@ -227,7 +230,7 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	for _, s := range series {
-		_, err := limiter.AddSeries(s)
+		_, err := limiter.AddSeries(s, NoopMemoryTracker{})
 		assert.NoError(b, err)
 	}
 }
@@ -258,7 +261,7 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates(b *testing.B) 
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			uniqueSeriesLabels, _ := limiter.AddSeries(s)
+			uniqueSeriesLabels, _ := limiter.AddSeries(s, NoopMemoryTracker{})
 			result = append(result, uniqueSeriesLabels)
 		}
 	}
@@ -297,7 +300,7 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct(b *testing.B) {
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			uniqueSeriesLabels, _ := limiter.AddSeries(s)
+			uniqueSeriesLabels, _ := limiter.AddSeries(s, NoopMemoryTracker{})
 			result = append(result, uniqueSeriesLabels)
 		}
 	}
@@ -335,7 +338,7 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			uniqueSeriesLabels, _ := limiter.AddSeries(s)
+			uniqueSeriesLabels, _ := limiter.AddSeries(s, NoopMemoryTracker{})
 			result = append(result, uniqueSeriesLabels)
 		}
 	}
