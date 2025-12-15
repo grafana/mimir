@@ -139,7 +139,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 func (ql *QueryLimiter) uniqueSeriesCount() int {
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
-	return len(ql.uniqueSeries)
+	return len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
 }
 
 // AddChunkBytes adds the input chunk size in bytes and returns an error if the limit is reached.
