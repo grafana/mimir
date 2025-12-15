@@ -973,7 +973,7 @@ github.com/jmespath/go-jmespath
 # github.com/jpillora/backoff v1.0.0
 ## explicit; go 1.13
 github.com/jpillora/backoff
-# github.com/json-iterator/go v1.1.12
+# github.com/json-iterator/go v1.1.12 => github.com/charleskorn/json-iterator-go v0.0.0-20251215054129-8df468a86247
 ## explicit; go 1.12
 github.com/json-iterator/go
 # github.com/julienschmidt/httprouter v1.3.0
@@ -2202,3 +2202,4 @@ sigs.k8s.io/yaml
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
 # github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
+# github.com/json-iterator/go => github.com/charleskorn/json-iterator-go v0.0.0-20251215054129-8df468a86247
