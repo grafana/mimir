@@ -320,6 +320,7 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopCompleted:
 			// We still check if q.stopCompleted is closed or else we'd be leaving this goroutine running in a timeout exit condition
 			return
+
 		case querierWorkerOp := <-q.querierWorkerOperations:
 			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
 			needToDispatchQueries = q.processQuerierWorkerOperation(querierWorkerOp)

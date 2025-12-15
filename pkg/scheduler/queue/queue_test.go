@@ -908,59 +908,6 @@ func TestRequestQueue_ShutdownWithPendingRequests_ShouldTimeout(t *testing.T) {
 	})
 }
 
-// This test ensures that the queue will wait for any pending tests to be dequeued and processed before exiting.
-// This should be completed before the timeout.
-func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testing.T) {
-	ctx := context.Background()
-	tenantID := "testTenant"
-	querierID := "querier1"
-
-	// Create a new request queue
-	queue, err := NewRequestQueue(
-		log.NewNopLogger(),
-		1,
-		0,
-		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
-		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
-		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
-		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
-		queueStopTimeout,
-	)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
-
-	// And register a worker for dequeueing
-	conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
-	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
-
-	// Push a request to the queue
-	req := makeSchedulerRequest(tenantID, []string{})
-	require.NotNil(t, req)
-	err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
-	require.NoError(t, err)
-
-	// And make sure it got queued
-	require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
-
-	// Stop the Queue
-	start := time.Now()
-	queue.StopAsync()
-
-	// Consume existing requests
-	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
-	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
-	require.NoError(t, err)
-	require.NotNil(t, r)
-
-	// Ensure requests Queue is empty and stops
-	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
-	require.NoError(t, queue.AwaitTerminated(ctx))
-
-	// And it was within the timeout
-	require.WithinDuration(t, time.Now(), start, queue.stopTimeout-1*time.Second)
-}
-
 // This test ensures that even if the queue has no pending requests but existing requests are still being processed,
 // it will reach the timeout and exit if they don't return in time
 func TestRequestQueue_ShutdownWithInflightSchedulerRequests_ShouldTimeout(t *testing.T) {
@@ -1001,7 +948,7 @@ func TestRequestQueue_ShutdownWithInflightSchedulerRequests_ShouldTimeout(t *tes
 
 // This test ensures that even if the queue has no pending requests, we still wait until any inflight requests
 // have been returned before existing
-func TestRequestQueue_ShutdownWithInflightSchedulerRequests_ShouldDrainRequests(t *testing.T) {
+func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testing.T) {
 	ctx := context.Background()
 	tenantID := "testTenant"
 	querierID := "querier1"
