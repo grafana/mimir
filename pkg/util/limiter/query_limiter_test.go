@@ -258,11 +258,8 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates(b *testing.B) 
 	limiter := NewQueryLimiter(totalSeries*2, 0, 0, 0, stats.NewQueryMetrics(reg))
 
 	for b.Loop() {
-		// Simulate caller behavior: skip duplicates
-		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			uniqueSeriesLabels, _ := limiter.AddSeries(s, NoopMemoryTracker{})
-			result = append(result, uniqueSeriesLabels)
+			_, _ = limiter.AddSeries(s, NoopMemoryTracker{})
 		}
 	}
 }
@@ -297,11 +294,8 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct(b *testing.B) {
 	limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
 
 	for b.Loop() {
-		// Simulate caller behavior: skip duplicates
-		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			uniqueSeriesLabels, _ := limiter.AddSeries(s, NoopMemoryTracker{})
-			result = append(result, uniqueSeriesLabels)
+			_, _ = limiter.AddSeries(s, NoopMemoryTracker{})
 		}
 	}
 }
@@ -335,11 +329,8 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
 	limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
 
 	for b.Loop() {
-		// Simulate caller behavior: skip duplicates
-		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
-			uniqueSeriesLabels, _ := limiter.AddSeries(s, NoopMemoryTracker{})
-			result = append(result, uniqueSeriesLabels)
+			_, _ = limiter.AddSeries(s, NoopMemoryTracker{})
 		}
 	}
 }
