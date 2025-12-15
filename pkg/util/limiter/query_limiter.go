@@ -90,10 +90,9 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) (labels.Labels, va
 			ql.conflictSeries = make(map[uint64][]labels.Labels)
 		}
 		l := ql.conflictSeries[fingerprint]
-		for i, prev := range l {
+		for _, prev := range l {
 			if labels.Equal(prev, seriesLabels) {
-				l[i] = seriesLabels
-				return l[i], nil
+				return seriesLabels, nil
 			}
 		}
 		ql.conflictSeries[fingerprint] = append(l, seriesLabels)
