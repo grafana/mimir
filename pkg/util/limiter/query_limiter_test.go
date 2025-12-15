@@ -232,44 +232,6 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 	}
 }
 
-// BenchmarkQueryLimiter_AddSeries_WithCallerDedup benchmarks caller-side deduplication with 50% duplicates
-func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
-	const (
-		metricName   = "test_metric"
-		uniqueSeries = 500
-		totalSeries  = 1000 // 50% duplicates
-	)
-
-	// Create unique series
-	uniqueSet := make([]labels.Labels, 0, uniqueSeries)
-	for i := 0; i < uniqueSeries; i++ {
-		uniqueSet = append(uniqueSet, labels.FromMap(map[string]string{
-			model.MetricNameLabel: metricName,
-			"series":              fmt.Sprint(i),
-		}))
-	}
-
-	// Create series array with duplicates
-	series := make([]labels.Labels, 0, totalSeries)
-	for i := 0; i < totalSeries; i++ {
-		series = append(series, uniqueSet[i%uniqueSeries])
-	}
-
-	b.ReportAllocs()
-
-	for b.Loop() {
-		reg := prometheus.NewPedanticRegistry()
-		limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
-
-		// Simulate caller behavior: skip duplicates
-		result := make([]labels.Labels, 0, totalSeries)
-		for _, s := range series {
-			uniqueSeriesLabels, _ := limiter.AddSeries(s)
-			result = append(result, uniqueSeriesLabels)
-		}
-	}
-}
-
 // BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates benchmarks with all unique series
 func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates(b *testing.B) {
 	const (
@@ -289,10 +251,10 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates(b *testing.B) 
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
-		reg := prometheus.NewPedanticRegistry()
-		limiter := NewQueryLimiter(totalSeries*2, 0, 0, 0, stats.NewQueryMetrics(reg))
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(totalSeries*2, 0, 0, 0, stats.NewQueryMetrics(reg))
 
+	for b.Loop() {
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
@@ -328,10 +290,48 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
-		reg := prometheus.NewPedanticRegistry()
-		limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
 
+	for b.Loop() {
+		// Simulate caller behavior: skip duplicates
+		result := make([]labels.Labels, 0, totalSeries)
+		for _, s := range series {
+			uniqueSeriesLabels, _ := limiter.AddSeries(s)
+			result = append(result, uniqueSeriesLabels)
+		}
+	}
+}
+
+// BenchmarkQueryLimiter_AddSeries_WithCallerDedup benchmarks caller-side deduplication with 50% duplicates
+func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
+	const (
+		metricName   = "test_metric"
+		uniqueSeries = 500
+		totalSeries  = 1000 // 50% duplicates
+	)
+
+	// Create unique series
+	uniqueSet := make([]labels.Labels, 0, uniqueSeries)
+	for i := 0; i < uniqueSeries; i++ {
+		uniqueSet = append(uniqueSet, labels.FromMap(map[string]string{
+			model.MetricNameLabel: metricName,
+			"series":              fmt.Sprint(i),
+		}))
+	}
+
+	// Create series array with duplicates
+	series := make([]labels.Labels, 0, totalSeries)
+	for i := 0; i < totalSeries; i++ {
+		series = append(series, uniqueSet[i%uniqueSeries])
+	}
+
+	b.ReportAllocs()
+
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
+
+	for b.Loop() {
 		// Simulate caller behavior: skip duplicates
 		result := make([]labels.Labels, 0, totalSeries)
 		for _, s := range series {
