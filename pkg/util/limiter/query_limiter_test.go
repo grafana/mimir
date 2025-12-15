@@ -244,10 +244,9 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
 		series = append(series, uniqueSet[i%uniqueSeries])
 	}
 
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		reg := prometheus.NewPedanticRegistry()
 		limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
 
