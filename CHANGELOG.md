@@ -27,6 +27,7 @@
 * [CHANGE] Limits: removed the experimental `cost_attribution_labels` configuration option. Use `cost_attribution_labels_structured` instead. #13286
 * [CHANGE] Ingester: Renamed `cortex_ingest_storage_writer_buffered_produce_bytes` metric to `cortex_ingest_storage_writer_buffered_produce_bytes_distribution` (Prometheus summary), and added `cortex_ingest_storage_writer_buffered_produce_bytes` metric that exports the buffer size as a Prometheus Gauge. #13414
 * [CHANGE] Querier and query-frontend: Removed support for per-step stats when MQE is enabled. #13582
+* [CHANGE] Compactor: Require that uploaded TSDB blocks use v2 of the index file format. #13815
 * [CHANGE] Query-frontend: Removed support for calculating 'cache-adjusted samples processed' query statistic. The `-query-frontend.cache-samples-processed-stats` CLI flag has been deprecated and will be removed in a future release. Setting it has now no effect. #13582
 * [CHANGE] Querier: Renamed experimental flag `-querier.prefer-availability-zone` to `-querier.prefer-availability-zones` and changed it to accept a comma-separated list of availability zones. All zones in the list are given equal priority when querying ingesters and store-gateways. #13756 #13758
 * [CHANGE] Ingester: Stabilize experimental flag `-ingest-storage.write-logs-fsync-before-kafka-commit-concurrency` to fsync write logs before the offset is committed to Kafka. Remove `-ingest-storage.write-logs-fsync-before-kafka-commit-enabled` since this is always enabled now. #13591
@@ -136,6 +137,7 @@
   * `MimirIngesterStuckProcessingRecordsFromKafka` → `MimirIngesterKafkaProcessingStuck`
   * `MimirStrongConsistencyOffsetNotPropagatedToIngesters` → `MimirStrongConsistencyOffsetMissing`
   * `MimirKafkaClientBufferedProduceBytesTooHigh` → `MimirKafkaClientProduceBufferHigh`
+* [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814
 * [ENHANCEMENT] Dashboards: Support native histograms in the Alertmanager, Compactor, Queries, Rollout operator, Reads, RemoteRuler-Reads, Ruler, and Writes dashboards. #13556 #13621 #13629 #13673 #13690 #13678 #13633 #13672
 * [ENHANCEMENT] Alerts: Add `MimirFewerIngestersConsumingThanActivePartitions` alert. #13159
 * [ENHANCEMENT] Querier and query-frontend: Add alerts for querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13165
@@ -169,7 +171,9 @@
 * [CHANGE] Store-gateway: The store-gateway disk class now honors the one configured via `$._config.store_gateway_data_disk_class` and doesn't replace `fast` with `fast-dont-retain`. #13152
 * [CHANGE] Rollout-operator: Vendor jsonnet from rollout-operator repository. #13245 #13317 #13793 #13799
 * [CHANGE] Ruler: Set default memory ballast to 1GiB to reduce GC pressure during startup. #13376
+* [CHANGE] Zone pod disruption budget: Remove `multi_zone_zpdb_enabled` and replace it with `multi_zone_ingester_zpdb_enabled` and `multi_zone_store_gateway_zpdb_enabled` to allow to selectively enable the zone pod disruption budget on a per-component basis. #13813
 * [FEATURE] Add multi-zone support for read path components (memcached, querier, query-frontend, query-scheduler, ruler, and ruler remote evaluation stack). Add multi-AZ support for ingester and store-gateway multi-zone deployments. Add memberlist-bridge support for zone-aware memberlist routing. #13559 #13628 #13636
+* [FEATURE] Add deletion protection support for ingesters and store-gateways StatefulSet. It can be enabled by setting `ingester_deletion_protection_enabled` and `store_gateway_deletion_protection_enabled` in the `_config` block. #13819
 * [ENHANCEMENT] Ruler querier and query-frontend: Add support for newly-introduced querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13017
 * [ENHANCEMENT] Ingester: Increase `$._config.ingester_tsdb_head_early_compaction_min_in_memory_series` default when Mimir is running with the ingest storage architecture. #13450
 * [ENHANCEMENT] Memberlist bridge: Add `memberlist_bridge_replicas_per_zone` configuration option (default: 2). #13727

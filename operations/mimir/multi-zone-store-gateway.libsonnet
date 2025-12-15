@@ -4,6 +4,8 @@
     multi_zone_store_gateway_read_path_enabled: $._config.multi_zone_store_gateway_enabled,
     multi_zone_store_gateway_migration_enabled: false,
     multi_zone_store_gateway_replicas: 0,
+    multi_zone_store_gateway_zpdb_enabled: $._config.multi_zone_store_gateway_enabled,
+
     // When store-gateway lazy loading is disabled, store-gateway may take a long time to startup.
     // To speed up rollouts, we increase the max unavailable to rollout all store-gateways in a zone in a single batch.
     multi_zone_store_gateway_max_unavailable: if $._config.store_gateway_lazy_loading_enabled then 50 else 1000,
@@ -28,6 +30,7 @@
 
   assert !isMultiAZEnabled || $._config.multi_zone_store_gateway_enabled : 'store-gateway multi-AZ deployment requires store-gateway multi-zone to be enabled',
   assert !isMultiAZEnabled || $._config.multi_zone_memcached_enabled : 'store-gateway multi-AZ deployment requires memcached multi-zone to be enabled',
+  assert !$._config.multi_zone_store_gateway_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
 
   //
   // Zone-aware replication.
@@ -169,7 +172,7 @@
   store_gateway_rollout_pdb:
     if !$._config.multi_zone_store_gateway_enabled then null else
       (
-        if $._config.multi_zone_zpdb_enabled then
+        if $._config.multi_zone_store_gateway_zpdb_enabled then
           $.newZPDB('store-gateway-rollout', 'store-gateway', $._config.multi_zone_store_gateway_zpdb_max_unavailable)
         else
           podDisruptionBudget.new('store-gateway-rollout') +
