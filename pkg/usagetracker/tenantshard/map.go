@@ -38,6 +38,9 @@ type Map struct {
 	resident uint32
 	dead     uint32
 	limit    uint32
+
+	// rehashes is only counted for testing purposes.
+	rehashes uint32
 }
 
 // index is the prefix index array for data.
@@ -59,9 +62,12 @@ func xor(v clock.Minutes) xorData { return xorData(^v) }
 func (x xorData) clockMinutes() clock.Minutes { return clock.Minutes(^x) }
 
 const (
-	prefixOffset        = 2
-	empty        prefix = 0b0000_0000
-	tombstone    prefix = 0b0000_0001
+	prefixOffset = 2
+
+	// empty is an index or data mark for an empty slot.
+	empty = 0b0000_0000
+	// tombstone is an index or data mark for a deleted slot.
+	tombstone = 0b0000_0001
 )
 
 type prefix uint8
@@ -87,8 +93,8 @@ func (m *Map) Put(key uint64, value clock.Minutes, series, limit *atomic.Uint64,
 		m.rehash(m.nextSize())
 	}
 
-	if value == 0xff {
-		// We can't store 0xff because it's stored as 0 which has a special meaning.
+	if value >= 0xfe {
+		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & tombstone).
 		panic("value is too large")
 	}
 
@@ -143,8 +149,8 @@ func (m *Map) Load(key uint64, value clock.Minutes) {
 		m.rehash(m.nextSize())
 	}
 
-	if value == 0xff {
-		// We can't store 0xff because it's stored as 0 which has a special meaning.
+	if value >= 0xfe {
+		// We can't store 0xff or 0xfe because it's stored as 0/1 which have a special meaning (empty & tombstone).
 		panic("value is too large")
 	}
 
@@ -184,19 +190,49 @@ func (m *Map) Count() int {
 
 func (m *Map) Cleanup(watermark clock.Minutes) int {
 	removed := 0
+groups:
 	for i := range m.data {
-		for j, entry := range m.data[i] {
-			if entry == 0 {
+		for j := uint32(0); j < groupSize; {
+			if m.data[i][j] == empty {
 				// There's nothing here.
-				continue
+				// Hence, there's nothing in the next slots.
+				continue groups
 			}
-			if watermark.GreaterOrEqualThan(entry.clockMinutes()) {
+			if watermark.GreaterOrEqualThan(m.data[i][j].clockMinutes()) {
+				removed++
+
+				// We want to avoid creating tombstones. Every time we create a tombstone, we get closer to the rehash of the map.
+				// Rehash of the map is slow and creates garbage, slowing down the entire service.
+				if emptySlots := m.index[i].matchEmpty(); emptySlots != 0 {
+					// We target groups to be half-full, so it's likely that there are empty slots in this group so far.
+					// If there's an empty slot in this group, it means that no elements that were originally targeting this group
+					// have been written to a next group, which in turn means that we can safely move the elements in this group.
+					e := nextMatch(&emptySlots)
+					if e == j+1 {
+						// This is the last element in the group, just mark it as empty and move to the next group.
+						m.index[i][j] = empty
+						m.keys[i][j] = 0
+						m.data[i][j] = empty
+						continue groups
+					}
+
+					// There are more elements in the group, move the last element in the group to this position.
+					// Set that element position to empty.
+					m.index[i][j], m.index[i][e-1] = m.index[i][e-1], empty
+					m.keys[i][j], m.keys[i][e-1] = m.keys[i][e-1], 0
+					m.data[i][j], m.data[i][e-1] = m.data[i][e-1], empty
+
+					// Continue checking the same position again.
+					continue
+				}
+
+				// Bad luck, the group is full, just set a tombstone and keep checking.
 				m.index[i][j] = tombstone
 				m.keys[i][j] = 0
-				m.data[i][j] = 0
+				m.data[i][j] = tombstone
 				m.dead++
-				removed++
 			}
+			j++
 		}
 	}
 	if m.dead > m.limit/2 {
@@ -223,6 +259,8 @@ func (m *Map) nextSize() (n uint32) {
 }
 
 func (m *Map) rehash(n uint32) {
+	m.rehashes++
+
 	indices, ks, datas := m.index, m.keys, m.data
 	m.index = make([]index, n)
 	m.keys = make([]keys, n)
@@ -294,7 +332,7 @@ func (m *Map) Items() (length int, iterator iter.Seq2[uint64, clock.Minutes]) {
 
 		for i, g := range *dataClone {
 			for j, entry := range g {
-				if entry == 0 {
+				if entry == empty || entry == tombstone {
 					// There's nothing here.
 					continue
 				}

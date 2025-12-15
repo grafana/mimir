@@ -74,7 +74,7 @@ func TestMapValues(t *testing.T) {
 	for i := 0; i < count; i++ {
 		key := rand.Uint64()
 		val := clock.Minutes(i)
-		if val == 0xff {
+		if val >= 0xfe {
 			continue
 		}
 		stored[key] = val
@@ -130,4 +130,34 @@ func BenchmarkMapCleanup(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		maps[i].Cleanup(clock.ToMinutes(watermark))
 	}
+}
+
+func BenchmarkMapTrackCleanupGarbage(b *testing.B) {
+	const series = 100e3
+	r := rand.New(rand.NewSource(1))
+	hashes := make([]uint64, 3*series)
+	for i := 0; i < 3*series; i++ {
+		hashes[i] = r.Uint64()
+	}
+
+	m := New(series)
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		t := clock.ToMinutes(now)
+		for j := 0; j < series; j++ {
+			m.Put(hashes[i*series+j], t, nil, nil, false)
+		}
+		now = now.Add(time.Minute)
+	}
+	m.Cleanup(clock.ToMinutes(now.Add(-3 * time.Minute)))
+	for i := 0; i < b.N; i++ {
+		t := clock.ToMinutes(now)
+		offset := i % 3
+		for j := 0; j < series; j++ {
+			m.Put(hashes[offset*series+j], t, nil, nil, false)
+		}
+		now = now.Add(time.Minute)
+		m.Cleanup(clock.ToMinutes(now.Add(-3 * time.Minute)))
+	}
+	b.Logf("Rehashes: %d, rehashes per iteration %.2f", m.rehashes, float64(m.rehashes)/float64(b.N))
 }
