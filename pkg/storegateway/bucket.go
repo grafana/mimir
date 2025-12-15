@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -90,6 +91,8 @@ type BucketStore struct {
 	indexCache      indexcache.IndexCache
 	indexReaderPool *indexheader.ReaderPool
 	seriesHashCache *hashcache.SeriesHashCache
+
+	indexHeaderCache *IndexHeaderCache
 
 	snapshotter services.Service
 
@@ -195,6 +198,191 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 	}
 }
 
+type pageCacheKey struct {
+	prefix string
+	key    string // TODO(v): block's ULID is 2x smaller (16b vs ~33b)
+	page   uint32
+}
+
+type IndexHeaderCache = lru.Cache[pageCacheKey, []byte]
+
+func NewIndexHeaderCache(size int) *IndexHeaderCache {
+	c, _ := lru.New[pageCacheKey, []byte](size)
+	return c
+}
+
+func WithIndexHeaderCache(cache *IndexHeaderCache) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.indexHeaderCache = cache
+	}
+}
+
+type indexHeaderCachedBucketReader struct {
+	objstore.InstrumentedBucketReader
+	logger log.Logger
+	cache  *IndexHeaderCache
+
+	userID string
+}
+
+func newIndexHeaderCachedBucketReader(logger log.Logger, bkt objstore.InstrumentedBucketReader, cache *IndexHeaderCache, userID string) *indexHeaderCachedBucketReader {
+	return &indexHeaderCachedBucketReader{
+		InstrumentedBucketReader: bkt,
+		logger:                   logger,
+		cache:                    cache,
+		userID:                   userID,
+	}
+}
+
+func (b *indexHeaderCachedBucketReader) GetRange(ctx context.Context, name string, off, length int64) (io.ReadCloser, error) {
+	if length == 0 {
+		// Zero-length request is a special case. Pass it directly to the underlying bucket client.
+		return b.InstrumentedBucketReader.GetRange(ctx, name, off, length)
+	}
+	if length == -1 {
+		// TODO(v): getting the object's length could be cached separately
+		attrs, err := b.InstrumentedBucketReader.Attributes(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		length = attrs.Size - off
+		level.Debug(b.logger).Log("msg", "forced to get obj length", "obj", name, "offset", off, "length", length)
+	}
+	r := &indexHeaderPageReader{
+		b:    b,
+		ctx:  ctx,
+		name: name,
+		off:  off,
+		len:  length,
+	}
+	return r, nil
+}
+
+const PageSize = 1 << 16 // 64KiB is arbitrary large and sufficiently small
+
+func (b *indexHeaderCachedBucketReader) fetchPage(ctx context.Context, name string, off int64) ([]byte, error) {
+	cacheKey := func(page uint32) pageCacheKey {
+		return pageCacheKey{b.userID, name, page}
+	}
+	page := uint32(off / PageSize)
+	pk := cacheKey(page)
+	if buf, ok := b.cache.Get(pk); ok {
+		level.Debug(b.logger).Log("msg", "cache hit", "user", b.userID, "obj", name, "page", page, "offset", off)
+		n := off % PageSize
+		return buf[n:], nil
+	}
+
+	const maxLookAhead = 16 // arbitrary large, sufficiently small (16*64KiB = 1MiB)
+
+	lastPage := page
+	for p := uint32(1); p < maxLookAhead; p++ {
+		page := page + p
+		pk := cacheKey(page)
+		if ok := b.cache.Contains(pk); ok {
+			break
+		}
+		lastPage = page
+	}
+
+	level.Debug(b.logger).Log("msg", "cache miss: prefetching", "user", b.userID, "obj", name, "page", page, "last_page", lastPage)
+
+	plen := int64((lastPage - page + 1) * PageSize)
+	poff := int64(page) * PageSize
+	r, err := b.InstrumentedBucketReader.GetRange(ctx, name, poff, plen)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	// TODO(v): use slab; after the reader is closed, release the slab's portion on cache eviction
+	buf := make([]byte, plen)
+	n, err := io.ReadFull(r, buf)
+	if n > 0 && errors.Is(err, io.ErrUnexpectedEOF) {
+		buf = buf[:n] // it's possible to get a short read, when requesting a page near the object's end
+		err = nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	numPages := len(buf) / PageSize
+	if len(buf)%PageSize > 0 {
+		numPages++
+	}
+	if numPages == 0 {
+		return nil, fmt.Errorf("fetch page [%d, %d) from %s: unexpected empty response", page, lastPage, name)
+	}
+	for p := 0; p < numPages; p++ {
+		start := p * PageSize
+		size := min(PageSize, len(buf)-start)
+		data := buf[start : start+size]
+		page := uint32(start/PageSize) + page
+		pk := cacheKey(page)
+		b.cache.Add(pk, data)
+	}
+
+	return buf, nil
+}
+
+type indexHeaderPageReader struct {
+	b    *indexHeaderCachedBucketReader
+	ctx  context.Context
+	name string
+	off  int64
+	len  int64
+	buf  []byte
+	err  error
+	pos  int
+	n    int64
+}
+
+func (r *indexHeaderPageReader) Read(p []byte) (_ int, err error) {
+	if r.n >= r.len {
+		return 0, io.EOF
+	}
+	if r.err != nil {
+		return 0, fmt.Errorf("read: %w", r.err)
+	}
+
+	d := r.len - r.n
+	toRead := min(int64(len(p)), d)
+
+	var n int64
+	for n < toRead {
+		if len(r.buf) == 0 {
+			r.buf, err = r.b.fetchPage(r.ctx, r.name, r.off)
+			if err != nil {
+				r.err = fmt.Errorf("ensure buf: %w", err)
+				return 0, r.err
+			}
+			if len(r.buf) == 0 {
+				r.err = io.ErrUnexpectedEOF
+				return 0, r.err
+			}
+			r.off += int64(len(r.buf))
+		}
+
+		pos := int64(r.pos)
+		size := min(toRead-n, int64(len(r.buf))-pos)
+		copy(p[n:], r.buf[pos:pos+size])
+
+		n += size
+		r.pos += int(size)
+
+		if r.pos >= len(r.buf) {
+			r.buf = r.buf[:0]
+			r.pos = 0
+		}
+	}
+
+	r.n += n
+	return int(n), nil
+}
+
+func (r *indexHeaderPageReader) Close() error {
+	r.buf = nil
+	return nil
+}
+
 // NewBucketStore creates a new bucket backed store that implements the store API against
 // an object store bucket. It is optimized to work against high latency backends.
 func NewBucketStore(
@@ -235,6 +423,10 @@ func NewBucketStore(
 
 	for _, option := range options {
 		option(s)
+	}
+
+	if s.indexHeaderCache == nil {
+		panic("indexHeaderCache must not be nil")
 	}
 
 	s.indexReaderPool = indexheader.NewReaderPool(s.logger, bucketStoreConfig.IndexHeader, s.lazyLoadingGate, metrics.indexHeaderReaderMetrics)
@@ -462,7 +654,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 	indexHeaderReader, err := s.indexReaderPool.NewBinaryReader(
 		ctx,
 		s.logger,
-		s.bkt,
+		newIndexHeaderCachedBucketReader(log.With(s.logger, "block", meta.ULID), s.bkt, s.indexHeaderCache, s.userID),
 		s.dir,
 		meta.ULID,
 		s.postingOffsetsInMemSampling,
