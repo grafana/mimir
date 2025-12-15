@@ -414,6 +414,35 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 			expectedAttempts: 1,
 			expectedModified: 1,
 		},
+		"logical or binary expression should not have hints added": {
+			expr: `
+				first_metric
+				or on (env, region)
+				second_metric
+			`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or on (env, region) RHS
+						- LHS: VectorSelector: {__name__="first_metric"}
+						- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
+		"logical unless binary expression should not have hints added": {
+			expr: `
+				first_metric
+				unless on (env, region)
+				second_metric
+			`,
+			expectedPlan: `
+				- BinaryExpression: LHS unless on (env, region) RHS
+					- LHS: VectorSelector: {__name__="first_metric"}
+					- RHS: VectorSelector: {__name__="second_metric"}
+			`,
+			expectedAttempts: 1,
+			expectedModified: 0,
+		},
 	}
 
 	for name, testCase := range testCases {
