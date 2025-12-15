@@ -314,13 +314,14 @@ func (b *indexHeaderCachedBucketReader) fetchPage(ctx context.Context, name stri
 	for p := 0; p < numPages; p++ {
 		start := p * PageSize
 		size := min(PageSize, len(buf)-start)
-		data := buf[start : start+size]
+		data := buf[start : start+size : start+size]
 		page := uint32(start/PageSize) + page
 		pk := cacheKey(page)
 		b.cache.Add(pk, data)
 	}
 
-	return buf, nil
+	n = int(off % PageSize) // offset inside the first page
+	return buf[n:], nil
 }
 
 type indexHeaderPageReader struct {
