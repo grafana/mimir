@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/propagation"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -53,6 +54,8 @@ var (
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
 	errRequestNoQuery = apierror.New(apierror.TypeBadData, "the request has no query")
 	allFormats        = []string{formatJSON, formatProtobuf}
+
+	responseSizeTooLargeErrorFormat = globalerror.MaxResponseSizeBytes.MessageWithPerInstanceLimitConfig("the query response exceeded the maximum allowed size (limit: %d bytes)", maxResponseSizeBytesFlag)
 
 	// List of HTTP headers to propagate when a Prometheus request is encoded into a HTTP request.
 	// Read consistency level and max delay headers are propagated as HTTP header -> Request.Context -> Request.Header, so there's no need to explicitly propagate it here.

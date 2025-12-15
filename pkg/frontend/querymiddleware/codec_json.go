@@ -87,7 +87,7 @@ func (j jsonFormatter) marshal(v interface{}) ([]byte, error) {
 		var limitErr jsoniter.ExceededMaxMarshalledBytesError
 
 		if errors.As(err, &limitErr) {
-			return nil, apierror.Newf(apierror.TypeTooLargeEntry, "JSON response is larger than the maximum allowed (%d bytes)", limitErr.MaxMarshalledBytes)
+			return nil, apierror.Newf(apierror.TypeTooLargeEntry, "JSON response is too large: "+responseSizeTooLargeErrorFormat, limitErr.MaxMarshalledBytes)
 		}
 
 		return nil, err

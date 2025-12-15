@@ -748,7 +748,7 @@ func TestProtobufFormat_EncodeResponse_SizeLimit(t *testing.T) {
 			t.Run("payload too large for limit", func(t *testing.T) {
 				limit := uint64(len(expectedPayload) - 1)
 				body, err := encodeWithLimit(t, limit)
-				require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: Protobuf response (%d bytes) is larger than the maximum allowed (%d bytes)", len(expectedPayload), limit), err)
+				require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: Protobuf response (%d bytes) is too large: the query response exceeded the maximum allowed size (limit: %d bytes) (err-mimir-max-response-size-bytes). To adjust the related limit, configure -query-frontend.max-response-size-bytes, or contact your service administrator.", len(expectedPayload), limit), err)
 				require.Nil(t, body)
 			})
 

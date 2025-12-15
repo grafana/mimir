@@ -552,7 +552,7 @@ func TestCodec_JSONEncoding_Metrics_SizeLimit(t *testing.T) {
 	t.Run("payload too large for limit", func(t *testing.T) {
 		limit := uint64(len(expectedPayload) - 1)
 		body, err := encodeWithLimit(t, limit)
-		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is larger than the maximum allowed (%d bytes)", limit), err)
+		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is too large: the query response exceeded the maximum allowed size (limit: %d bytes) (err-mimir-max-response-size-bytes). To adjust the related limit, configure -query-frontend.max-response-size-bytes, or contact your service administrator.", limit), err)
 		require.Nil(t, body)
 	})
 
@@ -681,7 +681,7 @@ func TestCodec_JSONEncoding_Labels_SizeLimit(t *testing.T) {
 	t.Run("payload too large for limit", func(t *testing.T) {
 		limit := uint64(len(expectedPayload) - 1)
 		body, err := encodeWithLimit(t, limit)
-		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is larger than the maximum allowed (%d bytes)", limit), err)
+		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is too large: the query response exceeded the maximum allowed size (limit: %d bytes) (err-mimir-max-response-size-bytes). To adjust the related limit, configure -query-frontend.max-response-size-bytes, or contact your service administrator.", limit), err)
 		require.Nil(t, body)
 	})
 
@@ -743,7 +743,7 @@ func TestCodec_JSONEncoding_Series_SizeLimit(t *testing.T) {
 	t.Run("payload too large for limit", func(t *testing.T) {
 		limit := uint64(len(expectedPayload) - 1)
 		body, err := encodeWithLimit(t, limit)
-		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is larger than the maximum allowed (%d bytes)", limit), err)
+		require.Equal(t, apierror.Newf(apierror.TypeTooLargeEntry, "error encoding response: JSON response is too large: the query response exceeded the maximum allowed size (limit: %d bytes) (err-mimir-max-response-size-bytes). To adjust the related limit, configure -query-frontend.max-response-size-bytes, or contact your service administrator.", limit), err)
 		require.Nil(t, body)
 	})
 
