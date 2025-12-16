@@ -516,15 +516,20 @@ func (m *shardingLimitsMock) StoreGatewayTenantShardSize(_ string) int {
 // 5. Re-add zone-c instances with new tokens
 //
 // Throughout this process, blocks owned by zone-a and zone-b instances should never change.
-//
-// Note: This test uses shard size 0 (shuffle sharding disabled) which means the full ring
-// is used for all tenants. This is the standard configuration for zone-aware deployments
-// where all store-gateways participate in block distribution. When shuffle sharding is
-// enabled (shard size > 0), adding new zones can change which instances are in each
-// tenant's shuffle shard, which is expected behavior for that feature.
 func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 	t.Parallel()
-	runRF3toRF4MigrationTest(t, 0) // shard size 0 = shuffle sharding disabled
+
+	t.Run("shuffle sharding disabled", func(t *testing.T) {
+		runRF3toRF4MigrationTest(t, 0) // shard size 0 = shuffle sharding disabled
+	})
+
+	t.Run("shuffle sharding enabled with shard size = 3", func(t *testing.T) {
+		runRF3toRF4MigrationTest(t, 3) // shard size 3 = 1 instance per zone in the initial state
+	})
+
+	t.Run("shuffle sharding enabled with shard size = 6", func(t *testing.T) {
+		runRF3toRF4MigrationTest(t, 6) // shard size 6 = 2 instances per zone in the initial state
+	})
 }
 
 func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
@@ -722,9 +727,11 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 
 	baselineState := captureState(t, r, allInitialInstances, 3, limits)
 
-	// Ensure every instance gets some blocks.
-	for instance, state := range baselineState {
-		require.NotEmpty(t, state.blocksPerUser, "no blocks owned by instance %s", instance)
+	// Ensure every instance gets some blocks with shuffle sharding is disabled.
+	if shardSize == 0 {
+		for instance, state := range baselineState {
+			require.NotEmpty(t, state.blocksPerUser, "no blocks owned by instance %s", instance)
+		}
 	}
 
 	t.Logf("Baseline captured: %d instances", len(baselineState))
