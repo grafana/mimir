@@ -1,5 +1,7 @@
 The following are the main/default maintainers:
 
+- Alex Weaver [@alexweav](https://github.com/alexweav) ([Grafana Labs](https://grafana.com/))
+- Andrew Hall [@tcp13equals2](https://github.com/tcp13equals2) ([Grafana Labs](https://grafana.com/))
 - Andy Asp [@andyasp](https://github.com/andyasp) ([Grafana Labs](https://grafana.com/))
 - Arve Knudsen — [@aknuds1](https://github.com/aknuds1) ([Grafana Labs](https://grafana.com/))
 - Bryan Boreham — [@bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
@@ -17,7 +19,9 @@ The following are the main/default maintainers:
 - Jonathan Halterman [@jhalterman](https://github.com/jhalterman) ([Grafana Labs](https://grafana.com/))
 - Josh Abreu Mesa [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
 - Joshua Hesketh [@jhesketh](https://github.com/jhesketh) ([Grafana Labs](https://grafana.com/))
+- Julius Hinze [@juliusmh](https://github.com/juliusmh) ([Grafana Labs](https://grafana.com/))
 - Justin Lei [@leizor](https://github.com/leizor) ([Grafana Labs](https://grafana.com/))
+- Karl Skewes [@karlskewes](https://github.com/karlskewes) ([Grafana Labs](https://grafana.com/))
 - Marco Pracucci — [@pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
 - Mauro Stettler — [@replay](https://github.com/replay) ([Grafana Labs](https://grafana.com/))
 - Miguel Ángel Ortuño [@ortuman](https://github.com/ortuman) ([Grafana Labs](https://grafana.com/))
@@ -26,6 +30,7 @@ The following are the main/default maintainers:
 - Patrick Oyarzun - [@Logiraptor](https://github.com/Logiraptor) ([Grafana Labs](https://grafana.com/))
 - Patryk Prus [@pr00se](https://github.com/pr00se) ([Grafana Labs](https://grafana.com/))
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
+- Toni Cárdenas [@tcard](https://github.com/tcard) ([Grafana Labs](https://grafana.com/))
 - Vernon Miller [@aldernero](https://github.com/aldernero) ([Grafana Labs](https://grafana.com/))
 - Vladimir Varankin [@narqo](https://github.com/narqo) ([Grafana Labs](https://grafana.com/))
 - Ying-jeanne Wang [@ying-jeanne](https://github.com/ying-jeanne) ([Grafana Labs](https://grafana.com/))
