@@ -6020,7 +6020,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # policy. Uploads will be retried on transient errors. Note: this does not
 # guarantee idempotency.
 # CLI flag: -<prefix>.gcs.enable-upload-retries
-[enable_upload_retries: <boolean> | default = false]
+[enable_upload_retries: <boolean> | default = true]
 
 # (advanced) Maximum number of attempts for GCS operations (0 = unlimited, 1 =
 # no retries). Applies to both regular and upload retry modes.

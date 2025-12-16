@@ -9100,7 +9100,7 @@
               "required": false,
               "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "blocks-storage.gcs.enable-upload-retries",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -14954,7 +14954,7 @@
               "required": false,
               "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "ruler-storage.gcs.enable-upload-retries",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -17245,7 +17245,7 @@
               "required": false,
               "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "alertmanager-storage.gcs.enable-upload-retries",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -20137,7 +20137,7 @@
                   "required": false,
                   "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "common.storage.gcs.enable-upload-retries",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
