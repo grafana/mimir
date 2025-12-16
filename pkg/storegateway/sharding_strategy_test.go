@@ -8,10 +8,12 @@ package storegateway
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -529,12 +531,14 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	ctx := context.Background()
 	registeredAt := time.Now()
 
+	// Initialize a random number generator with a constant seed for reproducibility.
+	random := rand.New(rand.NewSource(0))
+
 	// Generate a large number of block IDs for comprehensive testing.
-	// Using deterministic ULIDs for reproducibility.
 	numBlocks := 100
 	blocks := make([]ulid.ULID, numBlocks)
 	for i := 0; i < numBlocks; i++ {
-		blocks[i] = ulid.MustNew(uint64(i+1), nil)
+		blocks[i] = ulid.MustNew(0, random)
 	}
 
 	// Generate multiple user IDs to test FilterUsers as well.
@@ -545,20 +549,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	}
 
 	// Define instances per zone. Using 3 instances per zone for a realistic scenario.
-	instancesPerZone := 3
-
-	// Generate deterministic tokens for each instance.
-	// We use a simple scheme: instance N in zone gets tokens based on its index.
-	generateTokens := func(instanceIndex, tokensPerInstance int) []uint32 {
-		tokens := make([]uint32, tokensPerInstance)
-		baseToken := uint32(instanceIndex * 1000000)
-		for i := 0; i < tokensPerInstance; i++ {
-			tokens[i] = baseToken + uint32(i*10000)
-		}
-		return tokens
-	}
-
-	tokensPerInstance := 128
+	const instancesPerZone = 3
 
 	// Helper to create instance definitions for a zone.
 	type instanceDef struct {
@@ -568,23 +559,25 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 		tokens []uint32
 	}
 
-	createZoneInstances := func(zone string, startIndex int) []instanceDef {
+	createZoneInstances := func(zone string) []instanceDef {
+		generator := ring.NewRandomTokenGeneratorWithSeed(random.Int63())
 		instances := make([]instanceDef, instancesPerZone)
 		for i := 0; i < instancesPerZone; i++ {
+			id := fmt.Sprintf("store-gateway-zone-%s-%d", zone, i+1)
 			instances[i] = instanceDef{
-				id:     fmt.Sprintf("store-gateway-%s-%d", zone, i+1),
-				addr:   fmt.Sprintf("%s-%d.example.com", zone, i+1),
+				id:     id,
+				addr:   id,
 				zone:   zone,
-				tokens: generateTokens(startIndex+i, tokensPerInstance),
+				tokens: generator.GenerateTokens(ringNumTokensDefault, nil),
 			}
 		}
 		return instances
 	}
 
 	// Create initial instances for 3 zones.
-	zoneAInstances := createZoneInstances("zone-a", 0)
-	zoneBInstances := createZoneInstances("zone-b", instancesPerZone)
-	zoneCInstances := createZoneInstances("zone-c", instancesPerZone*2)
+	zoneAInstances := createZoneInstances("zone-a")
+	zoneBInstances := createZoneInstances("zone-b")
+	zoneCInstances := createZoneInstances("zone-c")
 
 	// Helper type to capture state of an instance.
 	// We store blocks per-user to ensure we're tracking the exact same block ownership,
@@ -612,11 +605,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 				metas := make(map[ulid.ULID]*block.Meta, len(blocks))
 				for _, blockID := range blocks {
 					metas[blockID] = &block.Meta{
-						BlockMeta: tsdb.BlockMeta{
-							ULID:    blockID,
-							MinTime: time.Now().Add(-24 * time.Hour).UnixMilli(),
-							MaxTime: time.Now().UnixMilli(),
-						},
+						BlockMeta: tsdb.BlockMeta{ULID: blockID},
 					}
 				}
 
@@ -624,11 +613,9 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 				err := strategy.FilterBlocks(ctx, userID, metas, nil, synced)
 				require.NoError(t, err, "FilterBlocks failed for instance %s, user %s", inst.id, userID)
 
-				var userBlocks []ulid.ULID
 				for blockID := range metas {
-					userBlocks = append(userBlocks, blockID)
+					blocksPerUser[userID] = append(blocksPerUser[userID], blockID)
 				}
-				blocksPerUser[userID] = userBlocks
 			}
 
 			state[inst.id] = instanceState{
@@ -702,7 +689,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	// ============================================================================
 	t.Log("Step 1: Setting up initial ring with 3 zones, RF=3")
 
-	require.NoError(t, store.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
+	require.NoError(t, store.CAS(ctx, RingKey, func(interface{}) (interface{}, bool, error) {
 		d := ring.NewDesc()
 		addInstancesToRing(d, zoneAInstances)
 		addInstancesToRing(d, zoneBInstances)
@@ -710,14 +697,13 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 		return d, true, nil
 	}))
 
-	ringCfg := ring.Config{
-		ReplicationFactor:    3,
-		HeartbeatTimeout:     time.Minute,
-		SubringCacheDisabled: true,
-		ZoneAwarenessEnabled: true,
-	}
+	var gatewayCfg Config
+	flagext.DefaultValues(&gatewayCfg)
+	ringCfg := gatewayCfg.ShardingRing.ToRingConfig()
+	ringCfg.ZoneAwarenessEnabled = true
+	require.Equal(t, 3, ringCfg.ReplicationFactor, "pre-condition check: the initial replication factor must be 3")
 
-	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", store, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, RingNameForServer, RingKey, store, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 
@@ -729,8 +715,17 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneAInstances[0].id, ring.ACTIVE))
 
 	// Capture baseline state for all instances.
-	allInitialInstances := append(append(zoneAInstances, zoneBInstances...), zoneCInstances...)
+	var allInitialInstances []instanceDef
+	allInitialInstances = append(allInitialInstances, zoneAInstances...)
+	allInitialInstances = append(allInitialInstances, zoneBInstances...)
+	allInitialInstances = append(allInitialInstances, zoneCInstances...)
+
 	baselineState := captureState(t, r, allInitialInstances, 3, limits)
+
+	// Ensure every instance gets some blocks.
+	for instance, state := range baselineState {
+		require.NotEmpty(t, state.blocksPerUser, "no blocks owned by instance %s", instance)
+	}
 
 	t.Logf("Baseline captured: %d instances", len(baselineState))
 
@@ -743,7 +738,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
 
 	ringCfg.ReplicationFactor = 4
-	r, err = ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", store, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+	r, err = ring.NewWithStoreClientAndStrategy(ringCfg, RingNameForServer, RingKey, store, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
 	currentRing = r // Update for cleanup
@@ -752,7 +747,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneAInstances[0].id, ring.ACTIVE))
 
 	// Verify all instances have the same blocks as before.
-	stateAfterRFChange := captureState(t, r, allInitialInstances, 4, limits)
+	stateAfterRFChange := captureState(t, r, allInitialInstances, ringCfg.ReplicationFactor, limits)
 	assertStateUnchanged(t, baselineState, stateAfterRFChange,
 		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
 
@@ -763,9 +758,9 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	// ============================================================================
 	t.Log("Step 3: Adding zone-d instances")
 
-	zoneDInstances := createZoneInstances("zone-d", instancesPerZone*3)
+	zoneDInstances := createZoneInstances("zone-d")
 
-	require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
+	require.NoError(t, store.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		d := in.(*ring.Desc)
 		addInstancesToRing(d, zoneDInstances)
 		return d, true, nil
@@ -775,7 +770,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneDInstances[0].id, ring.ACTIVE))
 
 	// Verify zone-a, zone-b, zone-c instances have the same blocks as baseline.
-	stateAfterZoneDAdded := captureState(t, r, allInitialInstances, 4, limits)
+	stateAfterZoneDAdded := captureState(t, r, allInitialInstances, ringCfg.ReplicationFactor, limits)
 	assertStateUnchanged(t, baselineState, stateAfterZoneDAdded,
 		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
 
@@ -786,7 +781,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	// ============================================================================
 	t.Log("Step 4: Removing zone-c instances")
 
-	require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
+	require.NoError(t, store.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		d := in.(*ring.Desc)
 		removeInstancesFromRing(d, zoneCInstances)
 		return d, true, nil
@@ -809,7 +804,10 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	}, 10*time.Second, 100*time.Millisecond, "zone-c instances should be removed from ring")
 
 	// Verify zone-a and zone-b instances have the same blocks as baseline.
-	zoneABInstances := append(zoneAInstances, zoneBInstances...)
+	var zoneABInstances []instanceDef
+	zoneABInstances = append(zoneABInstances, zoneAInstances...)
+	zoneABInstances = append(zoneABInstances, zoneBInstances...)
+
 	stateAfterZoneCRemoved := captureState(t, r, zoneABInstances, 4, limits)
 	assertStateUnchanged(t, baselineState, stateAfterZoneCRemoved,
 		getInstanceIDs(zoneAInstances, zoneBInstances))
@@ -822,9 +820,9 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	t.Log("Step 5: Re-adding zone-c instances with new tokens")
 
 	// Create new zone-c instances with different tokens.
-	newZoneCInstances := createZoneInstances("zone-c", instancesPerZone*4) // Different token base
+	newZoneCInstances := createZoneInstances("zone-c")
 
-	require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
+	require.NoError(t, store.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		d := in.(*ring.Desc)
 		addInstancesToRing(d, newZoneCInstances)
 		return d, true, nil
