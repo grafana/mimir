@@ -188,7 +188,7 @@ func newFilePool(path string, cap uint, opens prometheus.Counter, pooledOpens pr
 		path: path,
 		// We don't care if cap is 0 which means the channel will be unbuffered. Because
 		// we have default cases for reads and writes to the channel, we will always open
-		// new files and close file handles immediately if the channel is unbuffered.
+		// new files and Close file handles immediately if the channel is unbuffered.
 		handles: make(chan *os.File, cap),
 
 		opens:        opens,
@@ -241,7 +241,7 @@ func (p *filePool) put(f *os.File) error {
 }
 
 // stop closes all pooled file handles. After this method is called, subsequent
-// get calls will return an error and put calls will immediately close the file
+// get calls will return an error and put calls will immediately Close the file
 // handle.
 func (p *filePool) stop() {
 	p.mtx.Lock()

@@ -469,6 +469,10 @@ func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 	return r.postingsOffsetTable.LabelNames()
 }
 
+func (r *StreamBinaryReader) BufReaderStats() *streamencoding.BufReaderStats {
+	return r.postingsOffsetTable.BufReaderStats()
+}
+
 func (r *StreamBinaryReader) Close() error {
 	r.factory.Stop()
 	return nil
