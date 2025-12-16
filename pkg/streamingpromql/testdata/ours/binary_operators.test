@@ -1621,24 +1621,41 @@ eval_fail range from 0 to 18m step 6m right_side == bool on(pod) {__name__=~"lef
 
 clear
 
-# If we change the data slightly... (note the second point for left_side_b is now 2)
-
 load 6m
-  left_side_a{env="test", pod="a"} 1 2 3 4
-  left_side_b{env="test", pod="a"} 5 2 7 8
+  left_side_a{env="test", pod="a"} 1 2 _ _
+  left_side_b{env="test", pod="a"} _ _ 7 8
   right_side{env="test", pod="a"}  2 2 7 7
 
-eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == ignoring(env) right_side
-  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == ignoring(env) right_side
+  left_side_a{pod="a"} _ 2 _ _
+  left_side_b{pod="a"} _ _ 7 _
 
-eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool ignoring(env) right_side
-  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool ignoring(env) right_side
+  {pod="a"} 0 1 1 0
 
-eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == on(pod) right_side
-  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+eval range from 0 to 18m step 6m right_side == ignoring(env) {__name__=~"left_side.*"}
+  right_side{pod="a"} _ 2 7 _
 
-eval_fail range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool on(pod) right_side
-  expected_fail_regexp (multiple matches for labels: many-to-one matching must be explicit|found duplicate series for the match group .* on the left side of the operation)
+eval range from 0 to 18m step 6m right_side == bool ignoring(env) {__name__=~"left_side.*"}
+  {pod="a"} 0 1 1 0
+
+# This should return:
+#  left_side_a{pod="a"} _ 2 _ _
+#  left_side_b{pod="a"} _ _ 7 _
+# but instead both engines drop the metric names in the output.
+# This is accepted behaviour: https://github.com/prometheus/prometheus/issues/5326
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == on(pod) right_side
+  {pod="a"} _ 2 7 _
+
+eval range from 0 to 18m step 6m {__name__=~"left_side.*"} == bool on(pod) right_side
+  {pod="a"} 0 1 1 0
+
+# Same as above - see https://github.com/prometheus/prometheus/issues/5326
+eval range from 0 to 18m step 6m right_side == on(pod) {__name__=~"left_side.*"}
+  {pod="a"} _ 2 7 _
+
+eval range from 0 to 18m step 6m right_side == bool on(pod) {__name__=~"left_side.*"}
+  {pod="a"} 0 1 1 0
 
 clear
 
