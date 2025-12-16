@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/mimir/pkg/storage/fixtures"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
@@ -256,6 +257,74 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 				bufStats := reader.BufReaderStats()
 				b.ReportMetric(float64(bufStats.BytesDiscarded.Load())/float64(b.N), "buffered-bytes-discarded/op")
 
+			}
+		})
+	}
+}
+
+func BenchmarkExpandedLabelValuesOffsetsIndexV2(b *testing.B) {
+	ctx := context.Background()
+	const series = 5_000_000
+
+	testBlock := fixtures.SetupTestBlock(b, fixtures.AppendTestSeries(series))
+	blockID := testBlock.Meta.ULID
+	testCases := fixtures.SeriesSelectorTestCases(b, series)
+
+	indexHeaderFileName := filepath.Join(testBlock.StoreGatewayDir, blockID.String(), block.IndexHeaderFilename)
+	require.NoError(b, WriteBinary(ctx, testBlock.Bkt, blockID, indexHeaderFileName))
+
+	diskReader, err := NewStreamBinaryReader(
+		ctx, log.NewNopLogger(),
+		testBlock.Bkt, testBlock.BktDir, blockID,
+		32, NewStreamBinaryReaderMetrics(nil), Config{},
+	)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
+
+	bucketReader, err := NewBucketBinaryReader(
+		ctx, log.NewNopLogger(),
+		testBlock.Bkt, testBlock.BktDir, blockID,
+		32, Config{},
+	)
+	require.NoError(b, err)
+	b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
+
+	diskNames, err := diskReader.LabelNames(ctx)
+	require.NoError(b, err)
+	bucketReaderNames, err := bucketReader.LabelNames(ctx)
+	require.NoError(b, err)
+	require.Equal(b, diskNames, bucketReaderNames)
+
+	fmt.Println("OK", diskNames)
+
+	readers := map[string]Reader{
+		"disk":   diskReader,
+		"bucket": bucketReader,
+	}
+
+	b.ResetTimer()
+	for readerName, reader := range readers {
+		b.Run(fmt.Sprintf("Reader=%s", readerName), func(b *testing.B) {
+			b.ReportAllocs()
+			for _, testCase := range testCases {
+				matchCount := 0
+				for _, matcher := range testCase.Matchers {
+					values, err := reader.LabelValuesOffsets(
+						ctx, matcher.Name, "", matcher.Matches,
+					)
+
+					require.NoError(b, err)
+					matchCount += len(values)
+				}
+				// TODO these cases aren't actually correct for this test
+				//   because the index reader only solves one matcher at a time;
+				//   the expected counts from the test are from the intersection of all matchers
+				//require.Equal(
+				//	b, testCase.ExpectedCount, matchCount,
+				//	"wrong match count",
+				//	"case", testCase.Name,
+				//	"matchers", testCase.Matchers,
+				//)
 			}
 		})
 	}
