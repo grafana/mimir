@@ -16,6 +16,11 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
+var disallowedOperations = map[core.BinaryOperation]struct{}{
+	core.BINARY_LOR:     {},
+	core.BINARY_LUNLESS: {},
+}
+
 // NarrowSelectorsOptimizationPass examines a QueryPlan to determine if there are any
 // labels that can be used to reduce the amount of data fetched on one side of binary
 // expression and propagates those labels as a Hint on the binary expression.
@@ -72,19 +77,25 @@ func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node 
 	addedHint := false
 
 	if e, ok := node.(*core.BinaryExpression); ok {
-		// If this is a binary expression, try to find appropriate labels to use as hints
-		// based on joins or aggregations being performed by child nodes. We start with an
-		// empty "created" set of labels that we _cannot_ use as hints. This is populated
-		// and checked when generating hints.
-		if include := n.includeFromNode(ctx, e, nil); len(include) > 0 {
-			if e.Hints == nil {
-				e.Hints = &core.BinaryExpressionHints{}
-			}
+		// Only find hints for this binary expression if it is an operation that is compatible
+		// with adding extra selectors to the right side of the expression. For example, "logical
+		// or" includes series from the right side only when they _don't_ have matching label sets
+		// on the left side.
+		if _, disallowed := disallowedOperations[e.Op]; !disallowed {
+			// If this is a binary expression, try to find appropriate labels to use as hints
+			// based on joins or aggregations being performed by child nodes. We start with an
+			// empty "created" set of labels that we _cannot_ use as hints. This is populated
+			// and checked when generating hints.
+			if include := n.includeFromNode(ctx, e, nil); len(include) > 0 {
+				if e.Hints == nil {
+					e.Hints = &core.BinaryExpressionHints{}
+				}
 
-			e.Hints.Include = include
-			sl := spanlogger.FromContext(ctx, n.logger)
-			sl.DebugLog("msg", "setting query hint on binary expression", "labels", include)
-			addedHint = true
+				e.Hints.Include = include
+				sl := spanlogger.FromContext(ctx, n.logger)
+				sl.DebugLog("msg", "setting query hint on binary expression", "labels", include)
+				addedHint = true
+			}
 		}
 	}
 
