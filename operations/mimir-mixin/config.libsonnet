@@ -25,7 +25,7 @@
     // Added default flag for GEM-specific dashboards and alerts.
     gem_enabled: false,
 
-    rollout_operator_alerts_enable: true,
+    rollout_operator_alerts_enable: $._config.gem_enabled == false && $._config.deployment_type == 'kubernetes' && $._config.singleBinary == false,
     rollout_operator_dashboard_enable: true,
     rollout_operator_dashboard_title: 'rollout-operator',
     // This is the md5 of the rollout-operator dashboard name.

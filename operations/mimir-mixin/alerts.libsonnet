@@ -8,7 +8,7 @@
     (import 'alerts/distributor.libsonnet') +
     (import 'alerts/autoscaling.libsonnet') +
     (if $._config.ingest_storage_enabled then import 'alerts/ingest-storage.libsonnet' else {}) +
-    (if $._config.gem_enabled || $._config.deployment_type != 'kubernetes' || $._config.singleBinary == true || !$._config.rollout_operator_dashboard_enable then {} else import 'rollout-operator-mixin/alerts/alerts.libsonnet') +
+    (if $._config.rollout_operator_alerts_enable then import 'rollout-operator-mixin/alerts/alerts.libsonnet' else {}) +
 
     (import 'alerts/continuous-test.libsonnet') +
     (if $._config.gem_enabled then import 'alerts/gem.libsonnet' else {}),
