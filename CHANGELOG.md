@@ -46,7 +46,7 @@
 * [ENHANCEMENT] Compactor, Store-gateway: Add metrics to track performance of in-memory and disk-based metadata caches. #13150
 * [ENHANCEMENT] Ruler: Removed disk interaction when loading rules. #13156
 * [ENHANCEMENT] Ingester: Cost-based index lookup planner accounts for query sharding when estimating cardinality and filter costs. #13374
-* [ENHANCEMENT] GCS: Make uploads optionally retryable. Use the following advanced flags: #13226
+* [ENHANCEMENT] GCS: Make uploads optionally retryable. Use the following advanced flags (default true): #13226 #13842
   * `-alertmanager-storage.gcs.enable-upload-retries`
   * `-blocks-storage.gcs.enable-upload-retries`
   * `-common.storage.gcs.enable-upload-retries`
