@@ -519,20 +519,52 @@ func (m *shardingLimitsMock) StoreGatewayTenantShardSize(_ string) int {
 func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 	t.Parallel()
 
-	t.Run("shuffle sharding disabled", func(t *testing.T) {
-		runRF3toRF4MigrationTest(t, 0) // shard size 0 = shuffle sharding disabled
-	})
+	// Test cases cover different combinations of shard size and instances per zone.
+	//
+	// Important: Shuffle sharding stability during zone migrations depends on cluster size
+	// and token distribution. With larger clusters, shuffle sharding will redistribute
+	// tenants across instances when zones are added/removed, even if the shard size
+	// divides evenly across zones. This is expected behavior of the shuffle sharding
+	// algorithm (designed to balance load when ring topology changes).
+	//
+	// For migrations where shuffle sharding must remain stable:
+	// - Option 1: Temporarily disable shuffle sharding (shard size = 0) during migration
+	// - Option 2: Use ShuffleShardWithLookback (requires code changes to store-gateway)
+	testCases := []struct {
+		name             string
+		shardSize        int
+		instancesPerZone int
+	}{
+		{
+			name:             "shuffle sharding disabled, 3 instances per zone",
+			shardSize:        0,
+			instancesPerZone: 3,
+		},
+		{
+			name:             "shuffle sharding enabled with shard size = 3, 3 instances per zone",
+			shardSize:        3,
+			instancesPerZone: 3,
+		},
+		{
+			name:             "shuffle sharding enabled with shard size = 3, 3 instances per zone",
+			shardSize:        6,
+			instancesPerZone: 3,
+		},
+		{
+			name:             "shuffle sharding enabled with shard size = 12, 5 instances per zone",
+			shardSize:        12,
+			instancesPerZone: 5,
+		},
+	}
 
-	t.Run("shuffle sharding enabled with shard size = 3", func(t *testing.T) {
-		runRF3toRF4MigrationTest(t, 3) // shard size 3 = 1 instance per zone in the initial state
-	})
-
-	t.Run("shuffle sharding enabled with shard size = 6", func(t *testing.T) {
-		runRF3toRF4MigrationTest(t, 6) // shard size 6 = 2 instances per zone in the initial state
-	})
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			runRF3toRF4MigrationTest(t, tc.shardSize, tc.instancesPerZone)
+		})
+	}
 }
 
-func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
+func runRF3toRF4MigrationTest(t *testing.T, shardSize, instancesPerZone int) {
 	ctx := context.Background()
 	registeredAt := time.Now()
 
@@ -552,9 +584,6 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize int) {
 	for i := 0; i < numUsers; i++ {
 		userIDs[i] = fmt.Sprintf("user-%d", i)
 	}
-
-	// Define instances per zone. Using 3 instances per zone for a realistic scenario.
-	const instancesPerZone = 3
 
 	// Helper to create instance definitions for a zone.
 	type instanceDef struct {
