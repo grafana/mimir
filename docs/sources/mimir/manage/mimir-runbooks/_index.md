@@ -1459,6 +1459,18 @@ How to **investigate**:
   {name="rollout-operator",namespace="<namespace>"}
   ```
 
+### MimirBadZoneAwarePodDisruptionBudgetConfiguration
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#incorrectwebhookconfigurationfailurepolicy)
+
+### MimirIncorrectWebhookConfigurationFailurePolicy
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#badzoneawarepoddisruptionbudgetconfiguration)
+
+### MimirHighNumberInflightZpdbRequests
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#highnumberinflightzpdbrequests)
+
 ### MimirIngestedDataTooFarInTheFuture
 
 This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
@@ -2050,18 +2062,6 @@ This shouldn't happen in normal circumstances and is most likely indicative of a
 
 - Immediately scale out ingesters to the number of active partitions to consume the data.
 - Check that the ingester shutdowns are working as expected. When ingesters are downscaled, they should set their partition as INACTIVE before shutting down. Ingesters are most likely the cause of this issue.
-
-### BadZoneAwarePodDisruptionBudgetConfiguration
-
-See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#incorrectwebhookconfigurationfailurepolicy)
-
-### IncorrectWebhookConfigurationFailurePolicy
-
-See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#badzoneawarepoddisruptionbudgetconfiguration)
-
-### HighNumberInflightZpdbRequests
-
-See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#highnumberinflightzpdbrequests)
 
 ## Errors catalog
 
