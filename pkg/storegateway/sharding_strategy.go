@@ -41,6 +41,7 @@ type ShardingStrategy interface {
 // limiting the scope of the limits to the ones required by sharding strategies.
 type ShardingLimits interface {
 	StoreGatewayTenantShardSize(userID string) int
+	StoreGatewayTenantShardSizePerZone(userID string) int
 }
 
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
@@ -170,6 +171,18 @@ func (s *ShuffleShardingStrategy) FilterBlocks(_ context.Context, userID string,
 // GetShuffleShardingSubring returns the subring to be used for a given user. This function
 // should be used both by store-gateway and querier in order to guarantee the same logic is used.
 func GetShuffleShardingSubring(ring *ring.Ring, userID string, limits ShardingLimits) ring.ReadRing {
+	// Check per-zone shard size first. When set, the total shard size is computed as
+	// per-zone shard size * number of zones. This is useful during zone migrations
+	// (e.g., RF 3 -> RF 4) because it ensures the shard size scales with the number
+	// of zones, preventing block reshuffling in existing zones.
+	if shardSizePerZone := limits.StoreGatewayTenantShardSizePerZone(userID); shardSizePerZone > 0 {
+		zonesCount := ring.ZonesCount()
+		if zonesCount == 0 {
+			zonesCount = 1 // Fallback for non-zone-aware setups.
+		}
+		return ring.ShuffleShard(userID, shardSizePerZone*zonesCount)
+	}
+
 	shardSize := limits.StoreGatewayTenantShardSize(userID)
 
 	// A shard size of 0 means shuffle sharding is disabled for this specific user,

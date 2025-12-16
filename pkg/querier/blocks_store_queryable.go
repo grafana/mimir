@@ -98,6 +98,7 @@ type BlocksStoreLimits interface {
 	MaxLabelsQueryLength(userID string) time.Duration
 	MaxChunksPerQuery(userID string) int
 	StoreGatewayTenantShardSize(userID string) int
+	StoreGatewayTenantShardSizePerZone(userID string) int
 }
 
 type blocksStoreQueryableMetrics struct {

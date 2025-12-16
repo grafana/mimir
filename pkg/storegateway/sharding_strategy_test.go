@@ -496,11 +496,16 @@ func TestShuffleShardingStrategy(t *testing.T) {
 }
 
 type shardingLimitsMock struct {
-	storeGatewayTenantShardSize int
+	storeGatewayTenantShardSize        int
+	storeGatewayTenantShardSizePerZone int
 }
 
 func (m *shardingLimitsMock) StoreGatewayTenantShardSize(_ string) int {
 	return m.storeGatewayTenantShardSize
+}
+
+func (m *shardingLimitsMock) StoreGatewayTenantShardSizePerZone(_ string) int {
+	return m.storeGatewayTenantShardSizePerZone
 }
 
 // TestShuffleShardingStrategy_RF3toRF4Migration tests that during a migration from RF=3 to RF=4,
@@ -529,10 +534,12 @@ func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 	//
 	// For migrations where shuffle sharding must remain stable:
 	// - Option 1: Temporarily disable shuffle sharding (shard size = 0) during migration
-	// - Option 2: Use ShuffleShardWithLookback (requires code changes to store-gateway)
+	// - Option 2: Use per-zone shard size (shardSizePerZone > 0), which automatically
+	//   scales total shard size with the number of zones, maintaining stability
 	testCases := []struct {
 		name             string
 		shardSize        int
+		shardSizePerZone int
 		instancesPerZone int
 	}{
 		{
@@ -546,25 +553,25 @@ func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 			instancesPerZone: 3,
 		},
 		{
-			name:             "shuffle sharding enabled with shard size = 3, 3 instances per zone",
+			name:             "shuffle sharding enabled with shard size = 6, 3 instances per zone",
 			shardSize:        6,
 			instancesPerZone: 3,
 		},
 		{
-			name:             "shuffle sharding enabled with shard size = 12, 5 instances per zone",
-			shardSize:        12,
+			name:             "shuffle sharding enabled with per-zone shard size = 3, 5 instances per zone",
+			shardSizePerZone: 3,
 			instancesPerZone: 5,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			runRF3toRF4MigrationTest(t, tc.shardSize, tc.instancesPerZone)
+			runRF3toRF4MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone)
 		})
 	}
 }
 
-func runRF3toRF4MigrationTest(t *testing.T, shardSize, instancesPerZone int) {
+func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int) {
 	ctx := context.Background()
 	registeredAt := time.Now()
 
@@ -691,7 +698,10 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, instancesPerZone int) {
 	store, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	limits := &shardingLimitsMock{storeGatewayTenantShardSize: shardSize}
+	limits := &shardingLimitsMock{
+		storeGatewayTenantShardSize:        shardSize,
+		storeGatewayTenantShardSizePerZone: shardSizePerZone,
+	}
 
 	// Helper to add instances to ring descriptor.
 	addInstancesToRing := func(d *ring.Desc, instances []instanceDef) {
@@ -756,8 +766,8 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, instancesPerZone int) {
 
 	baselineState := captureState(t, r, allInitialInstances, 3, limits)
 
-	// Ensure every instance gets some blocks with shuffle sharding is disabled.
-	if shardSize == 0 {
+	// Ensure every instance gets some blocks when shuffle sharding is disabled.
+	if shardSize == 0 && shardSizePerZone == 0 {
 		for instance, state := range baselineState {
 			require.NotEmpty(t, state.blocksPerUser, "no blocks owned by instance %s", instance)
 		}
