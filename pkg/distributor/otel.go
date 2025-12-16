@@ -494,14 +494,14 @@ func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCo
 }
 
 func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
+	// Content-Type is validated in the OTLP parser. By the time we reach this point, Content-Type is either
+	// application/json or application/x-protobuf per the OTLP spec (https://opentelemetry.io/docs/specs/otlp/#otlphttp-response).
+	// For successful responses, we mirror the request's Content-Type. For error responses, the spec requires protobuf encoding.
 	contentType := r.Header.Get("Content-Type")
-	switch contentType {
-	case jsonContentType, pbContentType:
-	default:
-		// Default to protobuf encoding.
+	if httpCode/100 == 4 || httpCode/100 == 5 {
+		// 4xx and 5xx error responses must always use protobuf per OTLP spec
 		contentType = pbContentType
 	}
-
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	body, _, err := marshal(payload, contentType)
@@ -514,7 +514,6 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 	}
 	if err != nil {
 		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
-		contentType = "text/plain"
 		body = nil
 	}
 

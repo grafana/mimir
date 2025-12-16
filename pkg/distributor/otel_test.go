@@ -2138,6 +2138,48 @@ func TestHttpRetryableToOTLPRetryable(t *testing.T) {
 	}
 }
 
+func TestOTLPResponseContentType(t *testing.T) {
+	exportReq := TimeseriesToOTLPRequest([]prompb.TimeSeries{{
+		Labels:  []prompb.Label{{Name: "__name__", Value: "foo"}},
+		Samples: []prompb.Sample{{Value: 1, Timestamp: time.Now().UnixNano()}},
+	}}, nil)
+
+	tests := []struct {
+		name       string
+		req        *http.Request
+		expectCode int
+		expectType string
+	}{
+		{name: "protobuf", req: createOTLPProtoRequest(t, exportReq, ""), expectCode: http.StatusOK, expectType: "application/x-protobuf"},
+		{name: "json", req: createOTLPJSONRequest(t, exportReq, ""), expectCode: http.StatusOK, expectType: "application/json"},
+		{name: "valid_json_wrong_content_type", req: func() *http.Request {
+			body, _ := exportReq.MarshalJSON()
+			return createOTLPRequest(t, body, "", "text/plain")
+		}(), expectCode: http.StatusUnsupportedMediaType, expectType: "application/x-protobuf"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			limits := validation.NewOverrides(
+				validation.Limits{},
+				validation.NewMockTenantLimits(map[string]*validation.Limits{
+					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: false},
+				}),
+			)
+			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
+				_, err := req.WriteRequest()
+				return err
+			}, nil, nil, util_log.Logger)
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, tc.req)
+			require.Equal(t, tc.expectCode, resp.Code)
+			if tc.expectType != "" {
+				require.Equal(t, tc.expectType, resp.Header().Get("Content-Type"))
+			}
+		})
+	}
+}
+
 type fakeResourceAttributePromotionConfig struct {
 	promote []string
 }
