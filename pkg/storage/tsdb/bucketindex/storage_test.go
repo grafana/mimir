@@ -7,13 +7,16 @@ package bucketindex
 
 import (
 	"context"
+	"io"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
@@ -117,4 +120,63 @@ func TestDeleteIndex_ShouldNotReturnErrorIfIndexDoesNotExist(t *testing.T) {
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	assert.NoError(t, DeleteIndex(ctx, bkt, "user-1", nil))
+}
+
+func TestReadIndex_ShouldRetryIfIndexIsCorrupted(t *testing.T) {
+	const userID = "user-1"
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	// Create base bucket with valid index
+	baseBkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	baseBkt = block.BucketWithGlobalMarkers(baseBkt)
+
+	// Create and write valid index
+	block.MockStorageBlock(t, baseBkt, userID, 10, 20)
+	block.MockStorageBlock(t, baseBkt, userID, 20, 30)
+
+	u := NewUpdater(baseBkt, userID, nil, 16, 16, logger)
+	expectedIdx, _, err := u.UpdateIndex(ctx, nil)
+	require.NoError(t, err)
+	require.NoError(t, WriteIndex(ctx, baseBkt, userID, nil, expectedIdx))
+
+	// Wrap bucket to simulate corruption on first attempt, then success
+	bkt := &corruptingBucket{
+		Bucket:               baseBkt,
+		remainingCorruptions: 1, // Corrupt once, then return valid data
+	}
+
+	// Should succeed on retry
+	actualIdx, err := ReadIndex(ctx, bkt, userID, nil, logger)
+	require.NoError(t, err)
+	assert.Equal(t, expectedIdx, actualIdx)
+
+	// Verify it made 2 attempts (1 failed + 1 success)
+	assert.Equal(t, 2, bkt.getAttemptCount, "expected 2 attempts: 1 corruption + 1 success")
+}
+
+// corruptingBucket simulates transient corruption
+type corruptingBucket struct {
+	objstore.Bucket
+	remainingCorruptions int
+	getAttemptCount      int
+	mu                   sync.Mutex
+}
+
+func (c *corruptingBucket) Get(ctx context.Context, name string) (io.ReadCloser, error) {
+	c.mu.Lock()
+	c.getAttemptCount++
+	shouldCorrupt := c.remainingCorruptions > 0
+	if shouldCorrupt {
+		c.remainingCorruptions--
+	}
+	c.mu.Unlock()
+
+	// Simulate corrupted bucket index file
+	if shouldCorrupt && strings.HasSuffix(name, IndexCompressedFilename) {
+		return io.NopCloser(strings.NewReader("corrupted-gzip-data!")), nil
+	}
+
+	return c.Bucket.Get(ctx, name)
 }
