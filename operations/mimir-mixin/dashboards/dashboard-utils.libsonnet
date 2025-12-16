@@ -524,6 +524,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -549,6 +550,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -570,6 +572,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -590,6 +593,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         instanceDataDir: $._config.instance_data_mountpoint,
       }, label
     ) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         defaults+: { unit: 'percentunit' },

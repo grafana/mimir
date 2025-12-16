@@ -11,12 +11,14 @@ local filename = 'mimir-writes-resources.json';
       .addPanel(
         $.timeseriesPanel('CPU') +
         $.queryPanel($.resourceUtilizationQuery('cpu', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
+        $.showAllTooltip +
         $.stack,
       )
       .addPanel(
         $.timeseriesPanel('Memory (workingset)') +
         $.queryPanel($.resourceUtilizationQuery('memory_working', $._config.instance_names.write, $._config.container_names.write), '{{%s}}' % $._config.per_instance_label) +
         $.stack +
+        $.showAllTooltip +
         { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
       .addPanel(

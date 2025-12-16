@@ -126,6 +126,7 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           },
           '{{%s}}' % $._config.per_instance_label
         ) +
+        $.showAllTooltip +
         { fieldConfig: { defaults: { unit: 'percentunit', max: 1, noValue: 1 } } } +
         $.panelDescription(
           'Tenants compaction progress',
@@ -304,7 +305,8 @@ local fixTargetsForTransformations(panel, refIds) = panel {
           |||
             The 10 tenants with the largest number of blocks.
           |||
-        ),
+        ) +
+        $.showAllTooltip,
       )
     )
     .addRow(

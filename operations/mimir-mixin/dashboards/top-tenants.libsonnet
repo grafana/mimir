@@ -102,7 +102,8 @@ local filename = 'mimir-top-tenants.json';
             in_memory_series_per_user_at_start: in_memory_series_per_user_query(at='@ start()'),
           },
           '{{ user }}',
-        )
+        ) +
+        $.showAllTooltip,
       ),
     )
 
@@ -140,7 +141,8 @@ local filename = 'mimir-top-tenants.json';
             job: $.jobMatcher($._config.job_names.distributor),
           },
           '{{ user }}',
-        )
+        ) +
+        $.showAllTooltip,
       ),
     )
 
@@ -150,7 +152,7 @@ local filename = 'mimir-top-tenants.json';
         $.panel('Top $limit users by query expression length') +
         $.tablePanel(
           |||
-            topk($limit, 
+            topk($limit,
               histogram_quantile(
                 0.99,
                 sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{%(job)s}[$__rate_interval]))
@@ -238,7 +240,8 @@ local filename = 'mimir-top-tenants.json';
             job: $.jobMatcher($._config.job_names.ingester + $._config.job_names.distributor),
           },
           '{{ user }}',
-        )
+        ) +
+        $.showAllTooltip,
       ),
     )
 

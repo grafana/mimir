@@ -395,7 +395,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 12,
@@ -607,7 +607,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 12,
@@ -726,7 +726,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit, \n  histogram_quantile(\n    0.99,\n    sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))\n  )\n)\n",
+                        "expr": "topk($limit,\n  histogram_quantile(\n    0.99,\n    sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))\n  )\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -967,7 +967,7 @@
                      },
                      "tooltip": {
                         "mode": "multi",
-                        "sort": "none"
+                        "sort": "desc"
                      }
                   },
                   "span": 12,
