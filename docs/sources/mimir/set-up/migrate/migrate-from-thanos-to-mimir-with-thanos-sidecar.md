@@ -25,7 +25,7 @@ This is not so much of a guide as it is a collection of configurations that have
 
 There are very few obstacles to get this working properly. Thanos Sidecar is designed to work with the Prometheus API which Mimir (almost) implements. There are only 2 endpoints that are not implemented that we need to "spoof" to get Thanos sidecar to believe it is connecting to a Prometheus server: `/api/v1/status/buildinfo` and `/api/v1/status/config`. We spoof these endpoints using NGINX (more details later).
 
-In addition the `/metrics` endpoint of the Prometheus server needs to be handled via NGINX configuration. Since Thanos version `v0.37.0` the sidecar evaluates the `prometheus_tsdb_lowest_timestamp_seconds` to get the lowest timestamp in the tsdb database (see https://github.com/thanos-io/thanos/pull/7820).
+In addition, you need to handle the `/metrics` endpoint of the Prometheus server through NGINX configuration. Since Thanos version `v0.37.0`, the sidecar evaluates the `prometheus_tsdb_lowest_timestamp_seconds` to get the lowest timestamp in the TSDB database. Refer to https://github.com/thanos-io/thanos/pull/7820.
 
 The only other roadblock is the requirement for requests to Mimir to contain the `X-Scope-Org-Id` header to identify the Tenant. We inject this header using another NGINX container sitting in between Thanos Sidecar and Mimir.
 
