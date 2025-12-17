@@ -6097,7 +6097,7 @@ sharding_ring:
 # (experimental) Compactor scheduler endpoint. Required when compactor mode is
 # 'scheduler'.
 # CLI flag: -compactor.scheduler-endpoint
-[scheduler_address: <string> | default = ""]
+[scheduler_endpoint: <string> | default = ""]
 
 # (experimental) Interval between scheduler job lease updates.
 # CLI flag: -compactor.scheduler-update-interval
