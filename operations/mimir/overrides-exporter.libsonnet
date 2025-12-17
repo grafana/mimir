@@ -28,6 +28,7 @@
   overrides_exporter_args::
     $._config.commonConfig +
     $._config.limitsConfig +
+    $._config.queryConfig +
     $._config.overridesExporterRingConfig +
     $.mimirRuntimeConfigFile +
     {
