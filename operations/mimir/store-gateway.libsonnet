@@ -75,10 +75,12 @@
     $.util.readinessProbe +
     $.tracing_env_mixin,
 
+  store_gateway_termination_grace_period_seconds:: 120,
+
   newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=[])::
     $.newMimirStatefulSet(name, 3, container, store_gateway_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
+    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.store_gateway_termination_grace_period_seconds) +
     $.mimirVolumeMounts +
     (if withAntiAffinity then $.util.antiAffinity else {}),
 

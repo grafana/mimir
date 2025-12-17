@@ -91,6 +91,10 @@
     pvc.mixin.spec.withStorageClassName($._config.ingester_data_disk_class) +
     pvc.mixin.metadata.withName('ingester-data'),
 
+  // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
+  // For this reason, we grant an high termination period (80 minutes).
+  ingester_termination_grace_period_seconds:: 1200,
+
   newIngesterStatefulSet(name, container, withAntiAffinity=true, nodeAffinityMatchers=[])::
     local ingesterContainer = container + $.core.v1.container.withVolumeMountsMixin([
       volumeMount.new('ingester-data', '/data'),
@@ -98,9 +102,7 @@
 
     $.newMimirStatefulSet(name, 3, ingesterContainer, ingester_data_pvc) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
-    // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
-    // For this reason, we grant an high termination period (80 minutes).
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
+    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.ingester_termination_grace_period_seconds) +
     $.mimirVolumeMounts +
     $.util.podPriority('high') +
     (if withAntiAffinity then $.util.antiAffinity else {}),
