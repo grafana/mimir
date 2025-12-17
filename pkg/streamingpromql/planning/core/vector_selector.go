@@ -22,7 +22,7 @@ type VectorSelector struct {
 }
 
 func (v *VectorSelector) Describe() string {
-	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false)
+	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude)
 
 	if v.ReturnSampleTimestamps {
 		return d + ", return sample timestamps"
@@ -101,6 +101,8 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Smoothed:                 v.Smoothed,
+		ProjectionLabels:         v.ProjectionLabels,
+		ProjectionInclude:        v.ProjectionInclude,
 	}
 
 	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps)), nil
