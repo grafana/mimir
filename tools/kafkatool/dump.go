@@ -174,6 +174,7 @@ func (c *DumpCommand) doPrint(*kingpin.ParseContext) error {
 	return c.parseDumpFile(
 		func(recordIdx int, record *kgo.Record) {
 			req := mimirpb.PreallocWriteRequest{}
+			defer mimirpb.ReuseSlice(req.Timeseries)
 			version := ingest.ParseRecordVersion(record)
 			err := ingest.DeserializeRecordContent(record.Value, &req, version)
 			if err != nil {
@@ -184,7 +185,7 @@ func (c *DumpCommand) doPrint(*kingpin.ParseContext) error {
 			switch c.printFormat {
 			case "json":
 				// Print the entire write request as json.
-				lineBytes, err := json.Marshal(req)
+				lineBytes, err := json.Marshal(req.WriteRequest)
 				if err != nil {
 					c.printer.PrintLine(fmt.Sprintf("failed to marshal write request: %v", err))
 					return
