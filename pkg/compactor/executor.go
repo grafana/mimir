@@ -382,14 +382,12 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		return compactorschedulerpb.REASSIGN, errors.Wrap(err, "failed to create syncer")
 	}
 
-	blockIDs := make([]ulid.ULID, 0, len(spec.Job.BlockIds))
-	for _, id := range spec.Job.BlockIds {
-		blockID, err := ulid.Parse(string(id))
-		if err != nil {
+	blockIDs := make([]ulid.ULID, len(spec.Job.BlockIds))
+	for i, id := range spec.Job.BlockIds {
+		if err := blockIDs[i].UnmarshalBinary(id); err != nil {
 			level.Error(userLogger).Log("msg", "invalid block ID, abandoning job", "tenant", userID, "err", err)
 			return compactorschedulerpb.ABANDON, errors.Wrapf(err, "failed to parse block ID")
 		}
-		blockIDs = append(blockIDs, blockID)
 	}
 
 	// TODO: When requested blocks aren't found in object storage, the job should ideally
