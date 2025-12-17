@@ -537,10 +537,11 @@ func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 	// - Option 2: Use per-zone shard size (shardSizePerZone > 0), which automatically
 	//   scales total shard size with the number of zones, maintaining stability
 	testCases := []struct {
-		name             string
-		shardSize        int
-		shardSizePerZone int
-		instancesPerZone int
+		name               string
+		shardSize          int
+		shardSizePerZone   int
+		instancesPerZone   int
+		dynamicReplication bool
 	}{
 		{
 			name:             "shuffle sharding disabled, 3 instances per zone",
@@ -562,18 +563,24 @@ func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 			shardSizePerZone: 3,
 			instancesPerZone: 5,
 		},
+		{
+			name:               "shuffle sharding disabled with dynamic replication, 3 instances per zone",
+			shardSize:          0,
+			instancesPerZone:   3,
+			dynamicReplication: true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			runRF3toRF4MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone)
+			runRF3toRF4MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone, tc.dynamicReplication)
 		})
 	}
 }
 
-func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int) {
+func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int, dynamicReplication bool) {
 	ctx := context.Background()
 	registeredAt := time.Now()
 
@@ -630,13 +637,28 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 		blocksPerUser map[string][]ulid.ULID // userID -> blocks owned for that user
 	}
 
+	// Helper to create dynamic replication based on configuration.
+	createDynamicReplication := func(rf int) DynamicReplication {
+		if !dynamicReplication {
+			return NewNopDynamicReplication(rf)
+		}
+		return NewMaxTimeDynamicReplication(Config{
+			ShardingRing: RingConfig{ReplicationFactor: rf},
+			DynamicReplication: DynamicReplicationConfig{
+				Enabled:          true,
+				MaxTimeThreshold: 25 * time.Hour,
+				Multiple:         2,
+			},
+		}, 45*time.Minute)
+	}
+
 	// Helper to capture state for all instances.
 	captureState := func(t *testing.T, r *ring.Ring, instances []instanceDef, replicationFactor int, limits ShardingLimits) map[string]instanceState {
 		t.Helper()
 		state := make(map[string]instanceState)
 
 		for _, inst := range instances {
-			strategy := NewShuffleShardingStrategy(r, inst.id, inst.addr, NewNopDynamicReplication(replicationFactor), limits, log.NewNopLogger())
+			strategy := NewShuffleShardingStrategy(r, inst.id, inst.addr, createDynamicReplication(replicationFactor), limits, log.NewNopLogger())
 
 			// Capture FilterUsers result.
 			filteredUsers, err := strategy.FilterUsers(ctx, userIDs)
@@ -647,8 +669,13 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 			for _, userID := range userIDs {
 				metas := make(map[ulid.ULID]*block.Meta, len(blocks))
 				for _, blockID := range blocks {
+					// Set MaxTime to a recent value so dynamic replication considers these blocks as "recent".
+					// Dynamic replication uses MaxTime to determine if a block should have higher RF.
 					metas[blockID] = &block.Meta{
-						BlockMeta: tsdb.BlockMeta{ULID: blockID},
+						BlockMeta: tsdb.BlockMeta{
+							ULID:    blockID,
+							MaxTime: time.Now().UnixMilli(),
+						},
 					}
 				}
 
@@ -899,6 +926,308 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 		getInstanceIDs(zoneAInstances, zoneBInstances))
 
 	t.Log("Step 5 passed: Re-adding zone-c with new tokens did not reshuffle blocks in zone-a and zone-b")
+
+	t.Log("All migration steps completed successfully - blocks were never reshuffled in untouched zones")
+}
+
+// TestShuffleShardingStrategy_RF4toRF3Migration tests the reverse migration from RF=4 to RF=3.
+// This verifies that scaling down zones also maintains block stability in untouched zones.
+//
+// The migration procedure tested is:
+// 1. Start with RF=4, 4 zones (zone-a, zone-b, zone-c, zone-d)
+// 2. Remove zone-d instances
+// 3. Decrease RF to 3
+//
+// Throughout this process, blocks owned by zone-a, zone-b, and zone-c instances should never change.
+func TestShuffleShardingStrategy_RF4toRF3Migration(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		name             string
+		shardSize        int
+		shardSizePerZone int
+		instancesPerZone int
+	}{
+		{
+			name:             "shuffle sharding disabled, 3 instances per zone",
+			shardSize:        0,
+			instancesPerZone: 3,
+		},
+		{
+			name:             "shuffle sharding enabled with per-zone shard size = 3, 5 instances per zone",
+			shardSizePerZone: 3,
+			instancesPerZone: 5,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			runRF4toRF3MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone)
+		})
+	}
+}
+
+func runRF4toRF3MigrationTest(t *testing.T, shardSize, shardSizePerZone, instancesPerZone int) {
+	ctx := context.Background()
+	registeredAt := time.Now()
+
+	// Initialize a random number generator with a constant seed for reproducibility.
+	random := rand.New(rand.NewSource(0))
+
+	// Generate a large number of block IDs for comprehensive testing.
+	const numBlocks = 100
+	blocks := make([]ulid.ULID, numBlocks)
+	for i := 0; i < numBlocks; i++ {
+		blocks[i] = ulid.MustNew(0, random)
+	}
+
+	// Generate multiple user IDs to test FilterUsers as well.
+	const numUsers = 10
+	userIDs := make([]string, numUsers)
+	for i := 0; i < numUsers; i++ {
+		userIDs[i] = fmt.Sprintf("user-%d", i)
+	}
+
+	// Helper to create instance definitions for a zone.
+	type instanceDef struct {
+		id     string
+		addr   string
+		zone   string
+		tokens []uint32
+	}
+
+	createZoneInstances := func(zone string, numInstances int) []instanceDef {
+		generator := ring.NewRandomTokenGeneratorWithSeed(random.Int63())
+		instances := make([]instanceDef, numInstances)
+		for i := 0; i < numInstances; i++ {
+			id := fmt.Sprintf("store-gateway-zone-%s-%d", zone, i+1)
+			instances[i] = instanceDef{
+				id:     id,
+				addr:   id,
+				zone:   zone,
+				tokens: generator.GenerateTokens(ringNumTokensDefault, nil),
+			}
+		}
+		return instances
+	}
+
+	// Create initial instances for 4 zones.
+	zoneAInstances := createZoneInstances("zone-a", instancesPerZone)
+	zoneBInstances := createZoneInstances("zone-b", instancesPerZone)
+	zoneCInstances := createZoneInstances("zone-c", instancesPerZone)
+	zoneDInstances := createZoneInstances("zone-d", instancesPerZone)
+
+	// Helper type to capture state of an instance.
+	type instanceState struct {
+		users         []string
+		blocksPerUser map[string][]ulid.ULID
+	}
+
+	// Helper to capture state for all instances.
+	captureState := func(t *testing.T, r *ring.Ring, instances []instanceDef, replicationFactor int, limits ShardingLimits) map[string]instanceState {
+		t.Helper()
+		state := make(map[string]instanceState)
+
+		for _, inst := range instances {
+			strategy := NewShuffleShardingStrategy(r, inst.id, inst.addr, NewNopDynamicReplication(replicationFactor), limits, log.NewNopLogger())
+
+			filteredUsers, err := strategy.FilterUsers(ctx, userIDs)
+			require.NoError(t, err, "FilterUsers failed for instance %s", inst.id)
+
+			blocksPerUser := make(map[string][]ulid.ULID)
+			for _, userID := range userIDs {
+				metas := make(map[ulid.ULID]*block.Meta, len(blocks))
+				for _, blockID := range blocks {
+					metas[blockID] = &block.Meta{
+						BlockMeta: tsdb.BlockMeta{
+							ULID:    blockID,
+							MaxTime: time.Now().UnixMilli(),
+						},
+					}
+				}
+
+				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
+				err := strategy.FilterBlocks(ctx, userID, metas, nil, synced)
+				require.NoError(t, err, "FilterBlocks failed for instance %s, user %s", inst.id, userID)
+
+				for blockID := range metas {
+					blocksPerUser[userID] = append(blocksPerUser[userID], blockID)
+				}
+			}
+
+			state[inst.id] = instanceState{
+				users:         filteredUsers,
+				blocksPerUser: blocksPerUser,
+			}
+		}
+
+		return state
+	}
+
+	// Helper to assert state is unchanged for specified instances.
+	assertStateUnchanged := func(t *testing.T, baseline, current map[string]instanceState, instanceIDs []string) {
+		t.Helper()
+		for _, id := range instanceIDs {
+			baselineState, ok := baseline[id]
+			require.True(t, ok, "baseline state not found for instance %s", id)
+
+			currentState, ok := current[id]
+			require.True(t, ok, "current state not found for instance %s", id)
+
+			assert.ElementsMatch(t, baselineState.users, currentState.users,
+				"FilterUsers result changed for instance %s", id)
+
+			require.Equal(t, len(baselineState.blocksPerUser), len(currentState.blocksPerUser),
+				"Number of users with blocks changed for instance %s", id)
+
+			for userID, baselineBlocks := range baselineState.blocksPerUser {
+				currentBlocks, ok := currentState.blocksPerUser[userID]
+				require.True(t, ok, "user %s blocks not found in current state for instance %s", userID, id)
+				assert.ElementsMatch(t, baselineBlocks, currentBlocks,
+					"FilterBlocks result changed for instance %s, user %s", id, userID)
+			}
+		}
+	}
+
+	// Create KV store.
+	store, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	limits := &shardingLimitsMock{
+		storeGatewayTenantShardSize:        shardSize,
+		storeGatewayTenantShardSizePerZone: shardSizePerZone,
+	}
+
+	// Helper to add instances to ring descriptor.
+	addInstancesToRing := func(d *ring.Desc, instances []instanceDef) {
+		for _, inst := range instances {
+			d.AddIngester(inst.id, inst.addr, inst.zone, inst.tokens, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+		}
+	}
+
+	// Helper to remove instances from ring descriptor.
+	removeInstancesFromRing := func(d *ring.Desc, instances []instanceDef) {
+		for _, inst := range instances {
+			d.RemoveIngester(inst.id)
+		}
+	}
+
+	// Helper to get instance IDs from definitions.
+	getInstanceIDs := func(instances ...[]instanceDef) []string {
+		var ids []string
+		for _, instList := range instances {
+			for _, inst := range instList {
+				ids = append(ids, inst.id)
+			}
+		}
+		return ids
+	}
+
+	// ============================================================================
+	// Step 1: Initial state - 4 zones, RF=4
+	// ============================================================================
+	t.Log("Step 1: Setting up initial ring with 4 zones, RF=4")
+
+	require.NoError(t, store.CAS(ctx, RingKey, func(interface{}) (interface{}, bool, error) {
+		d := ring.NewDesc()
+		addInstancesToRing(d, zoneAInstances)
+		addInstancesToRing(d, zoneBInstances)
+		addInstancesToRing(d, zoneCInstances)
+		addInstancesToRing(d, zoneDInstances)
+		return d, true, nil
+	}))
+
+	var gatewayCfg Config
+	flagext.DefaultValues(&gatewayCfg)
+	ringCfg := gatewayCfg.ShardingRing.ToRingConfig()
+	ringCfg.ZoneAwarenessEnabled = true
+	ringCfg.ReplicationFactor = 4
+
+	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, RingNameForServer, RingKey, store, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+
+	currentRing := r
+	t.Cleanup(func() { _ = services.StopAndAwaitTerminated(ctx, currentRing) })
+
+	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneAInstances[0].id, ring.ACTIVE))
+
+	// Capture baseline state for all instances.
+	var allInitialInstances []instanceDef
+	allInitialInstances = append(allInitialInstances, zoneAInstances...)
+	allInitialInstances = append(allInitialInstances, zoneBInstances...)
+	allInitialInstances = append(allInitialInstances, zoneCInstances...)
+	allInitialInstances = append(allInitialInstances, zoneDInstances...)
+
+	baselineState := captureState(t, r, allInitialInstances, 4, limits)
+
+	if shardSize == 0 && shardSizePerZone == 0 {
+		for instance, state := range baselineState {
+			require.NotEmpty(t, state.blocksPerUser, "no blocks owned by instance %s", instance)
+		}
+	}
+
+	t.Logf("Baseline captured: %d instances", len(baselineState))
+
+	// ============================================================================
+	// Step 2: Remove zone-d instances
+	// ============================================================================
+	t.Log("Step 2: Removing zone-d instances")
+
+	require.NoError(t, store.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
+		d := in.(*ring.Desc)
+		removeInstancesFromRing(d, zoneDInstances)
+		return d, true, nil
+	}))
+
+	require.Eventually(t, func() bool {
+		replicationSet, err := r.GetAllHealthy(BlocksOwnerSync)
+		if err != nil {
+			return false
+		}
+		for _, inst := range zoneDInstances {
+			if replicationSet.Includes(inst.addr) {
+				return false
+			}
+		}
+		return true
+	}, 10*time.Second, 100*time.Millisecond, "zone-d instances should be removed from ring")
+
+	// Verify zone-a, zone-b, zone-c instances have the same blocks as baseline.
+	var zoneABCInstances []instanceDef
+	zoneABCInstances = append(zoneABCInstances, zoneAInstances...)
+	zoneABCInstances = append(zoneABCInstances, zoneBInstances...)
+	zoneABCInstances = append(zoneABCInstances, zoneCInstances...)
+
+	stateAfterZoneDRemoved := captureState(t, r, zoneABCInstances, 4, limits)
+	assertStateUnchanged(t, baselineState, stateAfterZoneDRemoved,
+		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
+
+	t.Log("Step 2 passed: Removing zone-d did not reshuffle blocks in zone-a, zone-b, zone-c")
+
+	// ============================================================================
+	// Step 3: Decrease RF to 3
+	// ============================================================================
+	t.Log("Step 3: Changing RF from 4 to 3")
+
+	require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+
+	ringCfg.ReplicationFactor = 3
+	r, err = ring.NewWithStoreClientAndStrategy(ringCfg, RingNameForServer, RingKey, store, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, r))
+	currentRing = r
+
+	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneAInstances[0].id, ring.ACTIVE))
+
+	// Verify zone-a, zone-b, zone-c instances have the same blocks as baseline.
+	stateAfterRFChange := captureState(t, r, zoneABCInstances, ringCfg.ReplicationFactor, limits)
+	assertStateUnchanged(t, baselineState, stateAfterRFChange,
+		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
+
+	t.Log("Step 3 passed: RF change did not reshuffle blocks")
 
 	t.Log("All migration steps completed successfully - blocks were never reshuffled in untouched zones")
 }
