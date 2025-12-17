@@ -839,6 +839,14 @@ pool:
   # CLI flag: -distributor.health-check-ingesters
   [health_check_ingesters: <boolean> | default = true]
 
+  # (experimental) The grace period for ingester health checks. If an ingester
+  # connection consistently fails health checks for this period, any open
+  # connections are closed. The distributor or querier will attempt to reconnect
+  # to the ingester if a subsequent request is made to the ingester. Set to 0 to
+  # immediately remove ingester connections on the first health check failure.
+  # CLI flag: -distributor.health-check-grace-period
+  [ingester_health_check_grace_period: <duration> | default = 0s]
+
 retry_after_header:
   # (advanced) Enables inclusion of the Retry-After header in the response: true
   # includes it for client retry guidance, false omits it.

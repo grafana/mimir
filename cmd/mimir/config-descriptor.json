@@ -901,6 +901,17 @@
               "fieldFlag": "distributor.health-check-ingesters",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ingester_health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
