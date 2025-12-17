@@ -2961,6 +2961,15 @@ alertmanager_client:
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
     [label: <string> | default = ""]
 
+  # (experimental) The grace period for health checks. If an alertmanager
+  # connection consistently fails health checks for this period, any open
+  # connections are closed. The alertmanager will attempt to reconnect to that
+  # alertmanager if a subsequent request is made to that alertmanager. Set to 0
+  # to immediately remove alertmanager connections on the first health check
+  # failure.
+  # CLI flag: -alertmanager.alertmanager-client.health-check-grace-period
+  [health_check_grace_period: <duration> | default = 0s]
+
 # (advanced) The interval between persisting the current alertmanager state
 # (notification log and silences) to object storage. This is only used when
 # sharding is enabled. This state is read when all replicas for a shard can not

@@ -213,6 +213,8 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -alertmanager.alertmanager-client.health-check-grace-period duration
+    	[experimental] The grace period for health checks. If an alertmanager connection consistently fails health checks for this period, any open connections are closed. The alertmanager will attempt to reconnect to that alertmanager if a subsequent request is made to that alertmanager. Set to 0 to immediately remove alertmanager connections on the first health check failure.
   -alertmanager.alertmanager-client.initial-connection-window-size value
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -alertmanager.alertmanager-client.initial-stream-window-size value

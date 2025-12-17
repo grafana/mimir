@@ -1185,6 +1185,7 @@
   "alertmanager.alertmanager-client.connect-backoff-base-delay": 1000000000,
   "alertmanager.alertmanager-client.connect-backoff-max-delay": 5000000000,
   "alertmanager.alertmanager-client.cluster-validation.label": "",
+  "alertmanager.alertmanager-client.health-check-grace-period": 0,
   "alertmanager.persist-interval": 900000000000,
   "alertmanager.enable-state-cleanup": true,
   "alertmanager-storage.backend": "filesystem",
