@@ -88,6 +88,7 @@
 * [ENHANCEMENT] Query-frontend: query blocking (configured with `blocked_queries` limit) is now stable and no longer experimental. #13107
 * [ENHANCEMENT] Querier: `-querier.active-series-results-max-size-bytes` is now stable and no longer experimental. #13110
 * [ENHANCEMENT] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
+* [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
 * [BUGFIX] Query-frontend: Fix issue where query stats, such as series read, did not include the parameters to the `histogram_quantile` and `histogram_fraction` functions if remote execution was enabled. #13084

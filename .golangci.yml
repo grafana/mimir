@@ -25,6 +25,7 @@ linters:
     - misspell
     - revive
     - staticcheck
+    - exhaustruct
   settings:
     # path to a file containing a list of functions to exclude from checking
     # see https://github.com/kisielk/errcheck#excluding-functions for details
@@ -83,6 +84,9 @@ linters:
         - -ST1020
         - -ST1021
         - -ST1022
+    exhaustruct:
+      exclude:
+        - .*
   exclusions:
     presets:
       - comments
