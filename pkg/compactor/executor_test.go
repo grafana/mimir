@@ -588,7 +588,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 				Tenant: "test-tenant",
 				Job: &compactorschedulerpb.CompactionJob{
 					BlockIds: [][]byte{
-						[]byte("01HZBE7WEN8ZGXWXRGEKWZXP1N"),
+						testBlockID1.Bytes(),
 						[]byte("invalid"),
 					},
 					Split: false,
