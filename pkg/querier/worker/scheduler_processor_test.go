@@ -501,7 +501,7 @@ func TestSchedulerProcessor_QueryTime(t *testing.T) {
 }
 
 func TestCreateSchedulerProcessor(t *testing.T) {
-	conf := grpcclient.Config{}
+	conf := QueryFrontendClientConfig{}
 	flagext.DefaultValues(&conf)
 	conf.MaxSendMsgSize = 1 * 1024 * 1024
 
@@ -514,7 +514,7 @@ func TestCreateSchedulerProcessor(t *testing.T) {
 	}, nil, nil, nil, nil)
 
 	assert.Equal(t, 1*1024*1024, sp.maxMessageSize)
-	assert.Equal(t, conf, sp.grpcConfig)
+	assert.Equal(t, conf.Config, sp.grpcConfig)
 }
 
 func TestSchedulerProcessor_ResponseStream(t *testing.T) {
