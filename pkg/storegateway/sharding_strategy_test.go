@@ -549,6 +549,12 @@ func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 			instancesPerZone: 3,
 		},
 		{
+			name:               "shuffle sharding disabled with dynamic replication, 3 instances per zone",
+			shardSize:          0,
+			instancesPerZone:   3,
+			dynamicReplication: true,
+		},
+		{
 			name:             "shuffle sharding enabled with shard size = 3, 3 instances per zone",
 			shardSize:        3,
 			instancesPerZone: 3,
@@ -564,9 +570,9 @@ func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 			instancesPerZone: 5,
 		},
 		{
-			name:               "shuffle sharding disabled with dynamic replication, 3 instances per zone",
-			shardSize:          0,
-			instancesPerZone:   3,
+			name:               "shuffle sharding enabled with per-zone shard size = 3, with dynamic replication, 5 instances per zone",
+			shardSize:          3,
+			instancesPerZone:   5,
 			dynamicReplication: true,
 		},
 	}
@@ -652,6 +658,29 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 		}, 45*time.Minute)
 	}
 
+	// Helper to create block metadata. When dynamic replication is enabled, only 40% of blocks
+	// are marked as "recent" (within the MaxTimeThreshold), the rest are older blocks.
+	createBlockMetas := func() map[ulid.ULID]*block.Meta {
+		metas := make(map[ulid.ULID]*block.Meta, len(blocks))
+		for i, blockID := range blocks {
+			var maxTime int64
+			if dynamicReplication && i >= len(blocks)*40/100 {
+				// Old block: 48 hours ago (beyond the 25 hour threshold)
+				maxTime = time.Now().Add(-48 * time.Hour).UnixMilli()
+			} else {
+				// Recent block: now
+				maxTime = time.Now().UnixMilli()
+			}
+			metas[blockID] = &block.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MaxTime: maxTime,
+				},
+			}
+		}
+		return metas
+	}
+
 	// Helper to capture state for all instances.
 	captureState := func(t *testing.T, r *ring.Ring, instances []instanceDef, replicationFactor int, limits ShardingLimits) map[string]instanceState {
 		t.Helper()
@@ -667,17 +696,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 			// Capture FilterBlocks result for each user separately.
 			blocksPerUser := make(map[string][]ulid.ULID)
 			for _, userID := range userIDs {
-				metas := make(map[ulid.ULID]*block.Meta, len(blocks))
-				for _, blockID := range blocks {
-					// Set MaxTime to a recent value so dynamic replication considers these blocks as "recent".
-					// Dynamic replication uses MaxTime to determine if a block should have higher RF.
-					metas[blockID] = &block.Meta{
-						BlockMeta: tsdb.BlockMeta{
-							ULID:    blockID,
-							MaxTime: time.Now().UnixMilli(),
-						},
-					}
-				}
+				metas := createBlockMetas()
 
 				synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{}, []string{"state"})
 				err := strategy.FilterBlocks(ctx, userID, metas, nil, synced)
