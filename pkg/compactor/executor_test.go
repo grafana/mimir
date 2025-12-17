@@ -39,8 +39,8 @@ import (
 )
 
 var (
-	testBlockID1 = []byte(ulid.MustNew(ulid.Timestamp(time.Unix(1600000000, 0)), rand.New(rand.NewSource(1))).String())
-	testBlockID2 = []byte(ulid.MustNew(ulid.Timestamp(time.Unix(1600000001, 0)), rand.New(rand.NewSource(2))).String())
+	testBlockID1 = ulid.MustNew(ulid.Timestamp(time.Unix(1600000000, 0)), rand.New(rand.NewSource(1)))
+	testBlockID2 = ulid.MustNew(ulid.Timestamp(time.Unix(1600000001, 0)), rand.New(rand.NewSource(2)))
 )
 
 func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
@@ -148,7 +148,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
 						Key:  &compactorschedulerpb.JobKey{Id: "compaction-job"},
-						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1}}, JobType: compactorschedulerpb.COMPACTION},
+						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1.Bytes()}}, JobType: compactorschedulerpb.COMPACTION},
 					}, nil
 				}
 				mock.UpdateJobFunc = func(_ context.Context, in *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -225,7 +225,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 }
 
 func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
-	var IDs = [][]byte{testBlockID1, testBlockID2}
+	var IDs = [][]byte{testBlockID1.Bytes(), testBlockID2.Bytes()}
 
 	tests := map[string]struct {
 		setupMock           func(*mockCompactorSchedulerClient)
@@ -463,7 +463,7 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 		LeaseJobFunc: func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 			return &compactorschedulerpb.LeaseJobResponse{
 				Key:  &compactorschedulerpb.JobKey{Id: "compaction-job"},
-				Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1}}, JobType: compactorschedulerpb.COMPACTION},
+				Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1.Bytes()}}, JobType: compactorschedulerpb.COMPACTION},
 			}, nil
 		},
 		UpdateJobFunc: func(_ context.Context, in *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -576,7 +576,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 			spec: &compactorschedulerpb.JobSpec{
 				Tenant: "test-tenant",
 				Job: &compactorschedulerpb.CompactionJob{
-					BlockIds: [][]byte{[]byte("not-a-valid-ulid")},
+					BlockIds: [][]byte{[]byte("invalid")},
 					Split:    false,
 				},
 				JobType: compactorschedulerpb.COMPACTION,
@@ -588,7 +588,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 				Tenant: "test-tenant",
 				Job: &compactorschedulerpb.CompactionJob{
 					BlockIds: [][]byte{
-						[]byte("01HZBE7WEN8ZGXWXRGEKWZXP1N"),
+						testBlockID1.Bytes(),
 						[]byte("invalid"),
 					},
 					Split: false,
@@ -620,7 +620,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 	const splitShards = 4
 
 	type setupResult struct {
-		blockIDsToCompact []string
+		blockIDsToCompact []ulid.ULID
 		compactedBlocks   []ulid.ULID
 		uncompactedBlocks []ulid.ULID
 	}
@@ -637,7 +637,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
 				return setupResult{
-					blockIDsToCompact: []string{block1.String()},
+					blockIDsToCompact: []ulid.ULID{block1},
 					compactedBlocks:   []ulid.ULID{block1},
 					uncompactedBlocks: nil,
 				}
@@ -653,7 +653,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
 				block2 := createTSDBBlock(t, bkt, "test-tenant", 20, 30, 2, nil)
 				return setupResult{
-					blockIDsToCompact: []string{block1.String(), block2.String()},
+					blockIDsToCompact: []ulid.ULID{block1, block2},
 					compactedBlocks:   []ulid.ULID{block1, block2},
 					uncompactedBlocks: nil,
 				}
@@ -669,7 +669,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				block2 := createTSDBBlock(t, bkt, "test-tenant", 20, 30, 2, nil)
 				block3 := createTSDBBlock(t, bkt, "test-tenant", 30, 40, 2, nil)
 				return setupResult{
-					blockIDsToCompact: []string{block1.String(), block2.String()},
+					blockIDsToCompact: []ulid.ULID{block1, block2},
 					compactedBlocks:   []ulid.ULID{block1, block2},
 					uncompactedBlocks: []ulid.ULID{block3},
 				}
@@ -683,7 +683,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 50, 32, nil)
 				return setupResult{
-					blockIDsToCompact: []string{block1.String()},
+					blockIDsToCompact: []ulid.ULID{block1},
 					compactedBlocks:   []ulid.ULID{block1},
 					uncompactedBlocks: nil,
 				}
@@ -698,7 +698,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
 				block2 := ulid.MustNew(ulid.Timestamp(time.Unix(1600000002, 0)), rand.New(rand.NewSource(2)))
 				return setupResult{
-					blockIDsToCompact: []string{block1.String(), block2.String()},
+					blockIDsToCompact: []ulid.ULID{block1, block2},
 					compactedBlocks:   nil,
 					uncompactedBlocks: []ulid.ULID{block1},
 				}
@@ -739,7 +739,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 
 			blockIDBytes := make([][]byte, len(setup.blockIDsToCompact))
 			for i, id := range setup.blockIDsToCompact {
-				blockIDBytes[i] = []byte(id)
+				blockIDBytes[i] = id.Bytes()
 			}
 
 			spec := &compactorschedulerpb.JobSpec{
