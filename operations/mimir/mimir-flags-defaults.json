@@ -56,7 +56,7 @@
   "server.cluster-validation.http.excluded-user-agents": "",
   "distributor.client-cleanup-period": 15000000000,
   "distributor.health-check-ingesters": true,
-  "distributor.health-check-grace-period": 0,
+  "distributor.ingester-health-check-grace-period": 0,
   "distributor.retry-after-header.enabled": true,
   "distributor.retry-after-header.min-backoff": 6000000000,
   "distributor.retry-after-header.max-backoff": 96000000000,

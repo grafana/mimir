@@ -34,8 +34,7 @@ type PoolConfig struct {
 func (cfg *PoolConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.ClientCleanupPeriod, "distributor.client-cleanup-period", 15*time.Second, "How frequently to clean up clients for ingesters that have gone away.")
 	f.BoolVar(&cfg.HealthCheckIngesters, "distributor.health-check-ingesters", true, "Run a health check on each ingester client during periodic cleanup.")
-	f.DurationVar(&cfg.HealthCheckGracePeriod, "distributor.health-check-grace-period", 0, "The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.")
-
+	f.DurationVar(&cfg.HealthCheckGracePeriod, "distributor.ingester-health-check-grace-period", 0, "The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.")
 }
 
 func NewPool(cfg PoolConfig, ring ring.ReadRing, factory ring_client.PoolFactory, logger log.Logger) *ring_client.Pool {

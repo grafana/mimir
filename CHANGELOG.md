@@ -62,7 +62,12 @@
 * [ENHANCEMENT] Usage-tracker: Ensure tenant shards have enough capacity when loading a snapshot. #13607
 * [ENHANCEMENT] Ruler: Implemented `OperatorControllableErrorClassifier` for rule evaluation, allowing differentiation between operator-controllable errors (e.g., storage failures, 5xx errors, rate limiting) and user-controllable errors (e.g., bad queries, validation errors, 4xx errors). This change affects the rule evaluation failure metric `prometheus_rule_evaluation_failures_total`, which now includes a `reason` label with values `operator` or `user` to distinguish between them. #13313, #13470
 * [ENHANCEMENT] Store-gateway: Added `cortex_bucket_store_block_discovery_latency_seconds` metric to track time from block creation to discovery by store-gateway. #13489 #13552
-* [ENHANCEMENT] Querier: Added experimental `-querier.frontend-client.health-check-grace-period` CLI flag to configure a grace period for query-frontend health checks. The default value of 0 preserves the existing behaviour of immediately removing query-frontend connections that have failed a health check. #13521
+* [ENHANCEMENT] Alertmanager, distributor, querier, ruler: Added experimental CLI flags to configure a grace period for health checks for connections to other services or other replicas. The default value of 0 preserves the existing behaviour of immediately removing connections that have failed a health check. #13521 #13846
+  * `-alertmanager.alertmanager-client.health-check-grace-period`
+  * `-distributor.ingester-health-check-grace-period`
+  * `-querier.frontend-client.health-check-grace-period`
+  * `-querier.store-gateway-client.health-check-grace-period`
+  * `-ruler.client.health-check-grace-period`
 * [ENHANCEMENT] Query-frontend: Added more efficient encoding and decoding of JSON payloads. #13561
 * [ENHANCEMENT] Querier: Add optional per-tenant max limits for label name and label value requests, `max_label_names_limit` and `max_label_values_limit`. #13654
 * [ENHANCEMENT] Usage tracker: `loadSnapshot()` checks shard emptiness instead of using explicit `first` parameter. #13534

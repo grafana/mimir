@@ -1271,10 +1271,10 @@ Usage of ./cmd/mimir/mimir:
     	Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
   -distributor.ha-tracker.update-timeout-jitter-max duration
     	Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. (default 5s)
-  -distributor.health-check-grace-period duration
-    	[experimental] The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.
   -distributor.health-check-ingesters
     	Run a health check on each ingester client during periodic cleanup. (default true)
+  -distributor.ingester-health-check-grace-period duration
+    	[experimental] The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.
   -distributor.ingestion-burst-factor float
     	[experimental] Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.
   -distributor.ingestion-burst-size int
