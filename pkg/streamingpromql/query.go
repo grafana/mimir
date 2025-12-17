@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -235,6 +236,26 @@ func (q *Query) ScalarEvaluated(_ context.Context, _ *Evaluator, _ planning.Node
 
 // StringEvaluated implements the EvaluationObserver interface.
 func (q *Query) StringEvaluated(_ context.Context, _ *Evaluator, _ planning.Node, data string) error {
+	// Easter egg: "The Hitchhiker's Guide to the Galaxy"
+	if data == "42" && q.topLevelQueryTimeRange.IsInstant {
+		var err error
+		q.vector, err = types.VectorPool.Get(1, q.memoryConsumptionTracker)
+		if err != nil {
+			return err
+		}
+		metric := labels.FromStrings(model.MetricNameLabel, "Answer to the Ultimate Question of Life, the Universe, and Everything")
+		if err := q.memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(metric); err != nil {
+			types.VectorPool.Put(&q.vector, q.memoryConsumptionTracker)
+			return err
+		}
+		q.vector = append(q.vector, promql.Sample{
+			Metric: metric,
+			T:      q.topLevelQueryTimeRange.StartT,
+			F:      42,
+		})
+		return nil
+	}
+
 	q.string = &promql.String{
 		T: q.topLevelQueryTimeRange.StartT,
 		V: data,
