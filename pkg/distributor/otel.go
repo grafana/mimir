@@ -494,14 +494,21 @@ func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCo
 }
 
 func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
-	// Content-Type is validated in the OTLP parser. By the time we reach this point, Content-Type is either
-	// application/json or application/x-protobuf per the OTLP spec (https://opentelemetry.io/docs/specs/otlp/#otlphttp-response).
-	// For successful responses, we mirror the request's Content-Type. For error responses, the spec requires protobuf encoding.
+	// Per the OTLP spec (https://opentelemetry.io/docs/specs/otlp/#otlphttp-response), the server MUST use the same
+	// Content-Type in the response as it received in the request. Content-Type is validated in the OTLP parser, which
+	// only accepts application/json or application/x-protobuf. For successful requests, we mirror the validated Content-Type.
+	// For error responses where the parser rejected an unsupported Content-Type (e.g., text/plain), we cannot mirror
+	// the invalid Content-Type since we must encode the response body as a protobuf Status message. In such cases,
+	// we default to application/x-protobuf as a fallback.
 	contentType := r.Header.Get("Content-Type")
-	if httpCode/100 == 4 || httpCode/100 == 5 {
-		// 4xx and 5xx error responses must always use protobuf per OTLP spec
+	switch contentType {
+	case jsonContentType, pbContentType:
+		// Valid Content-Type - mirror it in the response.
+	default:
+		// Invalid or unsupported Content-Type - default to protobuf encoding for error responses.
 		contentType = pbContentType
 	}
+
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 
 	body, _, err := marshal(payload, contentType)
