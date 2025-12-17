@@ -940,6 +940,7 @@
   "ruler.client.connect-backoff-base-delay": 1000000000,
   "ruler.client.connect-backoff-max-delay": 5000000000,
   "ruler.client.cluster-validation.label": "",
+  "ruler.client.health-check-grace-period": 0,
   "ruler.evaluation-interval": 60000000000,
   "ruler.poll-interval": 600000000000,
   "ruler.rule-path": "./data-ruler/",

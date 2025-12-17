@@ -13355,6 +13355,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If a ruler connection consistently fails health checks for this period, any open connections are closed. The ruler will attempt to reconnect to that ruler if a subsequent request is made to that ruler. Set to 0 to immediately remove ruler connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler.client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
