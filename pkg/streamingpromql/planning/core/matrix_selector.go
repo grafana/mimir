@@ -22,7 +22,7 @@ type MatrixSelector struct {
 }
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.ProjectionLabels, m.ProjectionInclude)
 }
 
 func (m *MatrixSelector) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {
@@ -97,6 +97,8 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
+		ProjectionLabels:         m.ProjectionLabels,
+		ProjectionInclude:        m.ProjectionInclude,
 	}
 
 	if m.Anchored || m.Smoothed {
