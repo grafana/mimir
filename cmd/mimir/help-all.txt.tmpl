@@ -2077,6 +2077,8 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -querier.frontend-client.health-check-grace-period duration
+    	[experimental] The grace period for health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.
   -querier.frontend-client.initial-connection-window-size value
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.frontend-client.initial-stream-window-size value
@@ -2097,8 +2099,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -querier.frontend-health-check-grace-period duration
-    	[experimental] The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.label-names-and-values-results-max-size-bytes int

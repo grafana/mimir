@@ -196,7 +196,7 @@ The following features are currently experimental:
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
   - Querier ring (all flags beginning with `-querier.ring`)
-  - Query-frontend health check grace period (`querier.frontend-health-check-grace-period`)
+  - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)
 - Query-frontend
 
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
