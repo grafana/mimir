@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
-func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets, anchored, smooothed, counterAware bool) string {
+func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets, anchored, smooothed, counterAware bool, projectionLabels []string, projectionInclude bool) string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range matchers {
@@ -56,6 +56,22 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 
 	if skipHistogramBuckets {
 		builder.WriteString(", skip histogram buckets")
+	}
+
+	if len(projectionLabels) > 0 {
+		if projectionInclude {
+			builder.WriteString(`, include (`)
+		} else {
+			builder.WriteString(`, exclude (`)
+		}
+
+		quoted := make([]string, len(projectionLabels))
+		for i := range projectionLabels {
+			quoted[i] = strconv.Quote(projectionLabels[i])
+		}
+
+		builder.WriteString(strings.Join(quoted, `, `))
+		builder.WriteString(`)`)
 	}
 
 	return builder.String()
