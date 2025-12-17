@@ -114,7 +114,7 @@ The following features are currently experimental:
     - `-distributor.otel-translation-strategy`
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
-  - Ingester health check grace period (`-distributor.health-check-grace-period`)
+  - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -201,7 +201,7 @@ The following features are currently experimental:
   - Querier ring (all flags beginning with `-querier.ring`)
   - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)
   - Store-gateway health check grace period (`-querier.store-gateway-client.health-check-grace-period`)
-  - Ingester health check grace period (`-distributor.health-check-grace-period`)
+  - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
 - Query-frontend
 
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
