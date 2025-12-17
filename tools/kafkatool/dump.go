@@ -17,6 +17,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/ingest"
 )
 
 type DumpCommand struct {
@@ -172,8 +173,9 @@ func (c *DumpCommand) doImport(*kingpin.ParseContext) error {
 func (c *DumpCommand) doPrint(*kingpin.ParseContext) error {
 	return c.parseDumpFile(
 		func(recordIdx int, record *kgo.Record) {
-			req := mimirpb.WriteRequest{}
-			err := req.Unmarshal(record.Value)
+			req := mimirpb.PreallocWriteRequest{}
+			version := ingest.ParseRecordVersion(record)
+			err := ingest.DeserializeRecordContent(record.Value, &req, version)
 			if err != nil {
 				c.printer.PrintLine(fmt.Sprintf("failed to unmarshal write request from record %d: %v", recordIdx, err))
 				return
