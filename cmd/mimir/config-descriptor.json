@@ -901,6 +901,17 @@
               "fieldFlag": "distributor.health-check-ingesters",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ingester_health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.ingester-health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -2279,6 +2290,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If a store-gateway connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the store-gateway if a subsequent request is made to the store-gateway. Set to 0 to immediately remove store-gateway connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.store-gateway-client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -7058,6 +7080,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.frontend-client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -7355,17 +7388,6 @@
           "fieldDefaultValue": false,
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "frontend_health_check_grace_period",
-          "required": false,
-          "desc": "The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "querier.frontend-health-check-grace-period",
-          "fieldType": "duration",
           "fieldCategory": "experimental"
         }
       ],
@@ -13333,6 +13355,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If a ruler connection consistently fails health checks for this period, any open connections are closed. The ruler will attempt to reconnect to that ruler if a subsequent request is made to that ruler. Set to 0 to immediately remove ruler connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler.client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -16729,6 +16762,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If an alertmanager connection consistently fails health checks for this period, any open connections are closed. The alertmanager will attempt to reconnect to that alertmanager if a subsequent request is made to that alertmanager. Set to 0 to immediately remove alertmanager connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager.alertmanager-client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

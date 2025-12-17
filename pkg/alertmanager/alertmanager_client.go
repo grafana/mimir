@@ -42,8 +42,9 @@ type Client interface {
 
 // ClientConfig is the configuration struct for the alertmanager client.
 type ClientConfig struct {
-	RemoteTimeout    time.Duration     `yaml:"remote_timeout" category:"advanced"`
-	GRPCClientConfig grpcclient.Config `yaml:",inline"`
+	RemoteTimeout          time.Duration     `yaml:"remote_timeout" category:"advanced"`
+	GRPCClientConfig       grpcclient.Config `yaml:",inline"`
+	HealthCheckGracePeriod time.Duration     `yaml:"health_check_grace_period" category:"experimental"`
 }
 
 // RegisterFlagsWithPrefix registers flags with prefix.
@@ -51,6 +52,7 @@ func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	cfg.GRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix, f)
 	f.DurationVar(&cfg.RemoteTimeout, prefix+".remote-timeout", 2*time.Second, "Timeout for downstream alertmanagers.")
+	f.DurationVar(&cfg.HealthCheckGracePeriod, prefix+".health-check-grace-period", 0, "The grace period for health checks. If an alertmanager connection consistently fails health checks for this period, any open connections are closed. The alertmanager will attempt to reconnect to that alertmanager if a subsequent request is made to that alertmanager. Set to 0 to immediately remove alertmanager connections on the first health check failure.")
 }
 
 // alertmanagerClientsPool is a pool of alertmanager clients.
@@ -82,9 +84,10 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	})
 
 	poolCfg := client.PoolConfig{
-		CheckInterval:      10 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 10 * time.Second,
+		CheckInterval:          10 * time.Second,
+		HealthCheckEnabled:     true,
+		HealthCheckTimeout:     10 * time.Second,
+		HealthCheckGracePeriod: amClientCfg.HealthCheckGracePeriod,
 	}
 
 	clientsCount := promauto.With(reg).NewGauge(prometheus.GaugeOpts{

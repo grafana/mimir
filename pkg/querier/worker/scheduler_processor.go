@@ -77,7 +77,7 @@ func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandl
 		streamResponse:   streamResponse,
 		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
 		querierID:        cfg.QuerierID,
-		grpcConfig:       cfg.QueryFrontendGRPCClientConfig,
+		grpcConfig:       cfg.QueryFrontendGRPCClientConfig.Config,
 		streamingEnabled: cfg.ResponseStreamingEnabled,
 
 		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
@@ -102,7 +102,7 @@ func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandl
 		CheckInterval:          5 * time.Second,
 		HealthCheckEnabled:     true,
 		HealthCheckTimeout:     1 * time.Second,
-		HealthCheckGracePeriod: cfg.QueryFrontendHealthCheckGracePeriod,
+		HealthCheckGracePeriod: cfg.QueryFrontendGRPCClientConfig.HealthCheckGracePeriod,
 	}
 
 	p.frontendPool = client.NewPool("frontend", poolConfig, nil, client.PoolAddrFunc(p.createFrontendClient), frontendClientsGauge, log)

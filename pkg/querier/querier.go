@@ -55,7 +55,7 @@ type Config struct {
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter time.Duration `yaml:"query_store_after" category:"advanced"`
 
-	StoreGatewayClient grpcclient.Config `yaml:"store_gateway_client"`
+	StoreGatewayClient StoreGatewayClientConfig `yaml:"store_gateway_client"`
 
 	ShuffleShardingIngestersEnabled bool `yaml:"shuffle_sharding_ingesters_enabled" category:"advanced"`
 
@@ -142,6 +142,16 @@ func (cfg *Config) ValidateLimits(limits validation.Limits) error {
 	}
 
 	return nil
+}
+
+type StoreGatewayClientConfig struct {
+	grpcclient.Config      `yaml:",inline"`
+	HealthCheckGracePeriod time.Duration `yaml:"health_check_grace_period" category:"experimental"`
+}
+
+func (cfg *StoreGatewayClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Config.RegisterFlagsWithPrefix(prefix, f)
+	f.DurationVar(&cfg.HealthCheckGracePeriod, prefix+".health-check-grace-period", 0, "The grace period for health checks. If a store-gateway connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the store-gateway if a subsequent request is made to the store-gateway. Set to 0 to immediately remove store-gateway connections on the first health check failure.")
 }
 
 // ShouldQueryIngesters provides a check for whether the ingesters will be used for a given query.
