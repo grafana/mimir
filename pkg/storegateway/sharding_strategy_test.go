@@ -566,6 +566,8 @@ func TestShuffleShardingStrategy_RF3toRF4Migration(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			runRF3toRF4MigrationTest(t, tc.shardSize, tc.shardSizePerZone, tc.instancesPerZone)
 		})
 	}
@@ -579,14 +581,14 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	random := rand.New(rand.NewSource(0))
 
 	// Generate a large number of block IDs for comprehensive testing.
-	numBlocks := 100
+	const numBlocks = 100
 	blocks := make([]ulid.ULID, numBlocks)
 	for i := 0; i < numBlocks; i++ {
 		blocks[i] = ulid.MustNew(0, random)
 	}
 
 	// Generate multiple user IDs to test FilterUsers as well.
-	numUsers := 10
+	const numUsers = 10
 	userIDs := make([]string, numUsers)
 	for i := 0; i < numUsers; i++ {
 		userIDs[i] = fmt.Sprintf("user-%d", i)
@@ -600,10 +602,10 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 		tokens []uint32
 	}
 
-	createZoneInstances := func(zone string) []instanceDef {
+	createZoneInstances := func(zone string, numInstances int) []instanceDef {
 		generator := ring.NewRandomTokenGeneratorWithSeed(random.Int63())
-		instances := make([]instanceDef, instancesPerZone)
-		for i := 0; i < instancesPerZone; i++ {
+		instances := make([]instanceDef, numInstances)
+		for i := 0; i < numInstances; i++ {
 			id := fmt.Sprintf("store-gateway-zone-%s-%d", zone, i+1)
 			instances[i] = instanceDef{
 				id:     id,
@@ -616,9 +618,9 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	}
 
 	// Create initial instances for 3 zones.
-	zoneAInstances := createZoneInstances("zone-a")
-	zoneBInstances := createZoneInstances("zone-b")
-	zoneCInstances := createZoneInstances("zone-c")
+	zoneAInstances := createZoneInstances("zone-a", instancesPerZone)
+	zoneBInstances := createZoneInstances("zone-b", instancesPerZone)
+	zoneCInstances := createZoneInstances("zone-c", instancesPerZone)
 
 	// Helper type to capture state of an instance.
 	// We store blocks per-user to ensure we're tracking the exact same block ownership,
@@ -804,21 +806,35 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	// ============================================================================
 	t.Log("Step 3: Adding zone-d instances")
 
-	zoneDInstances := createZoneInstances("zone-d")
+	// Simulate the gradual addition of zone-d instances, like would happen in the real world
+	// when a new zone is added (different instances don't join the ring at the same exact time).
+	for _, numZoneDInstances := range []int{1, instancesPerZone / 2, instancesPerZone} {
+		t.Run(fmt.Sprintf("zone-d instances=%d", numZoneDInstances), func(t *testing.T) {
+			zoneDInstances := createZoneInstances("zone-d", numZoneDInstances)
 
-	require.NoError(t, store.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
-		d := in.(*ring.Desc)
-		addInstancesToRing(d, zoneDInstances)
-		return d, true, nil
-	}))
+			require.NoError(t, store.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
+				d := in.(*ring.Desc)
+				addInstancesToRing(d, zoneDInstances)
+				return d, true, nil
+			}))
 
-	// Wait for zone-d instances to appear in the ring.
-	require.NoError(t, ring.WaitInstanceState(ctx, r, zoneDInstances[0].id, ring.ACTIVE))
+			// Wait for zone-d instances to appear in the ring.
+			require.NoError(t, ring.WaitInstanceState(ctx, r, zoneDInstances[0].id, ring.ACTIVE))
 
-	// Verify zone-a, zone-b, zone-c instances have the same blocks as baseline.
-	stateAfterZoneDAdded := captureState(t, r, allInitialInstances, ringCfg.ReplicationFactor, limits)
-	assertStateUnchanged(t, baselineState, stateAfterZoneDAdded,
-		getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
+			// Verify zone-a, zone-b, zone-c instances have the same blocks as baseline.
+			stateAfterZoneDAdded := captureState(t, r, allInitialInstances, ringCfg.ReplicationFactor, limits)
+			assertStateUnchanged(t, baselineState, stateAfterZoneDAdded,
+				getInstanceIDs(zoneAInstances, zoneBInstances, zoneCInstances))
+
+			// In case there's only 1 zone-d instance, we expect that instance to own all blocks.
+			if numZoneDInstances == 1 {
+				require.Len(t, zoneDInstances, 1)
+				for user, blocks := range stateAfterZoneDAdded[zoneDInstances[0].id].blocksPerUser {
+					require.Len(t, blocks, numBlocks, "user %s has wrong number of blocks", user)
+				}
+			}
+		})
+	}
 
 	t.Log("Step 3 passed: Adding zone-d did not reshuffle blocks in existing zones")
 
@@ -866,7 +882,7 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 	t.Log("Step 5: Re-adding zone-c instances with new tokens")
 
 	// Create new zone-c instances with different tokens.
-	newZoneCInstances := createZoneInstances("zone-c")
+	newZoneCInstances := createZoneInstances("zone-c", instancesPerZone)
 
 	require.NoError(t, store.CAS(ctx, RingKey, func(in interface{}) (interface{}, bool, error) {
 		d := in.(*ring.Desc)
