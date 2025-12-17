@@ -12228,7 +12228,7 @@
         },
         {
           "kind": "field",
-          "name": "scheduler_address",
+          "name": "scheduler_endpoint",
           "required": false,
           "desc": "Compactor scheduler endpoint. Required when compactor mode is 'scheduler'.",
           "fieldValue": null,
