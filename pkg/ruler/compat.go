@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -42,12 +41,6 @@ import (
 const (
 	failureReasonServerError = "server_error"
 	failureReasonClientError = "client_error"
-)
-
-// TODO: remove this once these errors are populated as sentinels at mimir-prometheus
-const (
-	prometheusDuplicateLabelsetAlertingRuleError  = "vector contains metrics with the same labelset after applying alert labels"
-	prometheusDuplicateLabelsetRecordingRuleError = "vector contains metrics with the same labelset after applying rule labels"
 )
 
 // Pusher is an ingester server that accepts pushes.
@@ -494,7 +487,7 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 	}
 
 	// Check for rule evaluation failures (errors that occur after query succeeds)
-	if isUserRuleEvalFailure(err) {
+	if errors.Is(err, rules.ErrDuplicateAlertLabelSet) || errors.Is(err, rules.ErrDuplicateRecordingLabelSet) {
 		return false
 	}
 
@@ -529,10 +522,4 @@ func (c *rulerErrorClassifier) IsOperatorControllable(err error) bool {
 
 	// Unknown errors
 	return true
-}
-
-func isUserRuleEvalFailure(err error) bool {
-	errStr := err.Error()
-	return strings.Contains(errStr, prometheusDuplicateLabelsetAlertingRuleError) ||
-		strings.Contains(errStr, prometheusDuplicateLabelsetRecordingRuleError)
 }

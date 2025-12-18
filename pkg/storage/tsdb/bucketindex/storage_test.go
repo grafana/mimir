@@ -37,7 +37,7 @@ func TestReadIndex_ShouldReturnErrorIfIndexIsCorrupted(t *testing.T) {
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, IndexCompressedFilename), strings.NewReader("invalid!}")))
 
 	idx, err := ReadIndex(ctx, bkt, userID, nil, log.NewNopLogger())
-	require.Equal(t, ErrIndexCorrupted, err)
+	require.ErrorIs(t, err, ErrIndexCorrupted)
 	require.Nil(t, idx)
 }
 

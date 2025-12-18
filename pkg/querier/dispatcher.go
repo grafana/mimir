@@ -139,7 +139,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 		nodeIndices = append(nodeIndices, node.NodeIndex)
 	}
 
-	plan, nodes, err := req.Plan.ToDecodedPlan(nodeIndices...)
+	nodes, err := req.Plan.DecodeNodes(nodeIndices...)
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not decode plan: %w", err))
 		return
@@ -170,7 +170,7 @@ func (d *Dispatcher) evaluateQuery(ctx context.Context, body []byte, resp *query
 	}
 
 	opts := promql.NewPrometheusQueryOpts(false, 0)
-	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, plan, nodeRequests)
+	e, err := d.engine.NewEvaluator(ctx, d.queryable, opts, req.Plan.DecodeParameters(), nodeRequests)
 	if err != nil {
 		resp.WriteError(ctx, apierror.TypeBadData, fmt.Errorf("could not materialize query: %w", err))
 		return

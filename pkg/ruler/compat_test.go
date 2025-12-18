@@ -1066,28 +1066,28 @@ func TestRulerErrorClassifier_IsOperatorControllable(t *testing.T) {
 		// Rule evaluation failures - duplicate labelsets
 		{
 			name:                   "duplicate labelset after applying alert labels (user, remote querier)",
-			err:                    errors.New("vector contains metrics with the same labelset after applying alert labels"),
+			err:                    rules.ErrDuplicateAlertLabelSet,
 			expectedUserFailed:     true,
 			expectedOperatorFailed: false,
 			remoteQuerier:          true,
 		},
 		{
 			name:                   "duplicate labelset after applying alert labels (user, local querier)",
-			err:                    errors.New("vector contains metrics with the same labelset after applying alert labels"),
+			err:                    rules.ErrDuplicateAlertLabelSet,
 			expectedUserFailed:     true,
 			expectedOperatorFailed: false,
 			remoteQuerier:          false,
 		},
 		{
 			name:                   "duplicate labelset after applying rule labels (user, remote querier)",
-			err:                    errors.New("vector contains metrics with the same labelset after applying rule labels"),
+			err:                    rules.ErrDuplicateRecordingLabelSet,
 			expectedUserFailed:     true,
 			expectedOperatorFailed: false,
 			remoteQuerier:          true,
 		},
 		{
 			name:                   "duplicate labelset after applying rule labels (user, local querier)",
-			err:                    errors.New("vector contains metrics with the same labelset after applying rule labels"),
+			err:                    rules.ErrDuplicateRecordingLabelSet,
 			expectedUserFailed:     true,
 			expectedOperatorFailed: false,
 			remoteQuerier:          false,
@@ -1290,19 +1290,19 @@ func TestPrometheusErrorStringsForDuplicateLabelsets(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name                string
-		rule                rules.Rule
-		expectedErrorSubstr string
+		name          string
+		rule          rules.Rule
+		expectedError error
 	}{
 		{
-			name:                "alerting rule",
-			rule:                rules.NewAlertingRule("test_alert", expr, time.Minute, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", false, logger),
-			expectedErrorSubstr: prometheusDuplicateLabelsetAlertingRuleError,
+			name:          "alerting rule",
+			rule:          rules.NewAlertingRule("test_alert", expr, time.Minute, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", false, logger),
+			expectedError: rules.ErrDuplicateAlertLabelSet,
 		},
 		{
-			name:                "recording rule",
-			rule:                rules.NewRecordingRule("test_record", expr, labels.EmptyLabels()),
-			expectedErrorSubstr: prometheusDuplicateLabelsetRecordingRuleError,
+			name:          "recording rule",
+			rule:          rules.NewRecordingRule("test_record", expr, labels.EmptyLabels()),
+			expectedError: rules.ErrDuplicateRecordingLabelSet,
 		},
 	}
 
@@ -1313,9 +1313,8 @@ func TestPrometheusErrorStringsForDuplicateLabelsets(t *testing.T) {
 			_, err := tc.rule.Eval(context.Background(), 0, time.Now(), queryFunc, nil, 0)
 
 			require.Error(t, err)
-			require.Contains(t, err.Error(), tc.expectedErrorSubstr,
-				"Prometheus error message changed! Update isUserRuleEvalFailure() in compat.go")
-			require.True(t, isUserRuleEvalFailure(err), "isUserRuleEvalFailure should detect this error")
+			require.ErrorIs(t, err, tc.expectedError,
+				"Prometheus sentinel error changed! Update the inline check in IsOperatorControllable() in compat.go")
 		})
 	}
 }

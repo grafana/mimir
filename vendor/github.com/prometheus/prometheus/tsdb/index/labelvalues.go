@@ -246,10 +246,10 @@ func (p *MemPostings) labelValuesFor(postings Postings, name string, includeMatc
 	vals := make([]string, 0, len(e))
 	candidates := make([]Postings, 0, len(e))
 	// Allocate a slice for all needed ListPostings, so no need to allocate them one by one.
-	lps := make([]ListPostings, 0, len(e))
+	lps := make([]listPostings, 0, len(e))
 	for val, srs := range e {
 		vals = append(vals, val)
-		lps = append(lps, ListPostings{list: srs})
+		lps = append(lps, listPostings{list: srs})
 		candidates = append(candidates, &lps[len(lps)-1])
 	}
 
@@ -289,10 +289,7 @@ func intersect(p1, p2 Postings) bool {
 		return false
 	}
 
-	cur := p1.At()
-	if p2.At() > cur {
-		cur = p2.At()
-	}
+	cur := max(p2.At(), p1.At())
 
 	for p1.Seek(cur) {
 		if p1.At() > cur {

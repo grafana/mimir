@@ -51,9 +51,6 @@ func (e *errorIndexReader) Series(storage.SeriesRef, *labels.ScratchBuilder, *[]
 func (e *errorIndexReader) LabelNames(context.Context, ...*labels.Matcher) ([]string, error) {
 	return nil, errors.New("mock error from LabelNames")
 }
-func (e *errorIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
-	return "", errors.New("mock error from LabelValueFor")
-}
 func (e *errorIndexReader) LabelValuesExcluding(index.Postings, string) storage.LabelValues {
 	return nil // Return empty label values
 }

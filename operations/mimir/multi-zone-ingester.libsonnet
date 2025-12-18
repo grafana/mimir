@@ -6,6 +6,7 @@
     multi_zone_ingester_replication_read_path_enabled: true,
     multi_zone_ingester_replicas: 0,
     multi_zone_ingester_max_unavailable: 50,
+    multi_zone_ingester_zpdb_enabled: $._config.multi_zone_ingester_enabled,
 
     // this can be either a number or a percenage. ie 1 or 50%
     multi_zone_ingester_zpdb_max_unavailable: if $._config.ingest_storage_enabled then 1 else std.toString($._config.multi_zone_ingester_max_unavailable),
@@ -32,6 +33,7 @@
   local isZoneCEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
   assert !isMultiAZEnabled || $._config.multi_zone_ingester_enabled : 'ingester multi-AZ deployment requires ingester multi-zone to be enabled',
+  assert !$._config.multi_zone_ingester_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
 
   //
   // Zone-aware replication.
@@ -84,7 +86,6 @@
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'ingester' }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': 'ingester' }) +
     statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
     statefulSet.mixin.spec.withReplicas(std.ceil($._config.multi_zone_ingester_replicas / 3)) +
     (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     if $._config.ingester_allow_multiple_replicas_on_same_node then {} else {
@@ -142,7 +143,7 @@
 
   ingester_rollout_pdb: if !$._config.multi_zone_ingester_enabled then null else
     (
-      if $._config.multi_zone_zpdb_enabled then
+      if $._config.multi_zone_ingester_zpdb_enabled then
         $.newZPDB('ingester-rollout', 'ingester', $._config.multi_zone_ingester_zpdb_max_unavailable, $._config.multi_zone_ingester_zpdb_partition_regex, $._config.multi_zone_ingester_zpdb_partition_group)
       else
         podDisruptionBudget.new('ingester-rollout') +

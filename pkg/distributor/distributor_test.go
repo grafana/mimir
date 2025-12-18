@@ -1652,9 +1652,10 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 			require.Len(t, ds, 1)
 			require.Len(t, regs, 1)
 
+			cfg := newValidationConfig("user", ds[0].limits)
 			now := mtime.Now()
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, true, true, 0, 0, nil)
 				require.NoError(t, err)
 			}
 
@@ -1826,11 +1827,12 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	for name, tc := range testCases {
 		b.Run(name, func(b *testing.B) {
 			timeseries := tc.setup(b.N)
+			cfg := newValidationConfig("user", ds[0].limits)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
-					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
+					err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, true, true, 0, 0, nil)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -2072,8 +2074,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, ds, 1)
 			require.Len(t, regs, 1)
 
+			cfg := newValidationConfig("user", ds[0].limits)
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS, nil)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, false, false, tc.minExemplarTS, tc.maxExemplarTS, nil)
 				assert.NoError(t, err)
 			}
 
@@ -2179,8 +2182,9 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, ds, 1)
 			require.Len(t, regs, 1)
 
+			cfg := newValidationConfig("user", ds[0].limits)
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0, nil)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, false, false, 0, 0, nil)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
 				} else {

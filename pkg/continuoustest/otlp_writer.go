@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/pkg/distributor"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type otlpHTTPWriter struct {
@@ -25,7 +26,16 @@ type otlpHTTPWriter struct {
 }
 
 func (pw *otlpHTTPWriter) sendWriteRequest(ctx context.Context, req *prompb.WriteRequest) (int, error) {
-	metricRequest := distributor.TimeseriesToOTLPRequest(req.Timeseries, nil)
+	metadata := make([]mimirpb.MetricMetadata, 0, len(req.Metadata))
+	for _, m := range req.Metadata {
+		metadata = append(metadata, mimirpb.MetricMetadata{
+			Type:             mimirpb.MetricMetadata_MetricType(m.Type),
+			MetricFamilyName: m.MetricFamilyName,
+			Help:             m.Help,
+			Unit:             m.Unit,
+		})
+	}
+	metricRequest := distributor.TimeseriesToOTLPRequest(req.Timeseries, metadata)
 	rawBytes, err := metricRequest.MarshalProto()
 	if err != nil {
 		return 0, err

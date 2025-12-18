@@ -69,7 +69,7 @@ func NewVectorScalarBinaryOperation(
 		Op:                       op,
 		ReturnBool:               returnBool,
 		MemoryConsumptionTracker: opParams.MemoryConsumptionTracker,
-		EnableDelayedNameRemoval: opParams.EnableDelayedNameRemoval,
+		EnableDelayedNameRemoval: opParams.QueryParameters.EnableDelayedNameRemoval,
 
 		timeRange:          timeRange,
 		annotations:        opParams.Annotations,

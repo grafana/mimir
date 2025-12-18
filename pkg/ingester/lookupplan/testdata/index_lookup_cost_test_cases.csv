@@ -17,4 +17,4 @@ job="prometheus";11
 job=~"prometheus|grafana";24.4
 job!~"";44
 job!="";44
-job=~".*prometheus.*";124
+job=~".*prometheus.*";44

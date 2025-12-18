@@ -48,7 +48,7 @@ Usage of ./cmd/mimir/mimir:
   -alertmanager-storage.gcs.bucket-name string
     	GCS bucket name
   -alertmanager-storage.gcs.enable-upload-retries
-    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -alertmanager-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -alertmanager-storage.gcs.http.idle-conn-timeout duration
@@ -213,6 +213,8 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -alertmanager.alertmanager-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -alertmanager.alertmanager-client.health-check-grace-period duration
+    	[experimental] The grace period for health checks. If an alertmanager connection consistently fails health checks for this period, any open connections are closed. The alertmanager will attempt to reconnect to that alertmanager if a subsequent request is made to that alertmanager. Set to 0 to immediately remove alertmanager connections on the first health check failure.
   -alertmanager.alertmanager-client.initial-connection-window-size value
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -alertmanager.alertmanager-client.initial-stream-window-size value
@@ -632,7 +634,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.gcs.bucket-name string
     	GCS bucket name
   -blocks-storage.gcs.enable-upload-retries
-    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -blocks-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -blocks-storage.gcs.http.idle-conn-timeout duration
@@ -902,7 +904,7 @@ Usage of ./cmd/mimir/mimir:
   -common.storage.gcs.bucket-name string
     	GCS bucket name
   -common.storage.gcs.enable-upload-retries
-    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -common.storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -common.storage.gcs.http.idle-conn-timeout duration
@@ -1271,6 +1273,8 @@ Usage of ./cmd/mimir/mimir:
     	Maximum jitter applied to the update timeout, in order to spread the HA heartbeats over time. (default 5s)
   -distributor.health-check-ingesters
     	Run a health check on each ingester client during periodic cleanup. (default true)
+  -distributor.ingester-health-check-grace-period duration
+    	[experimental] The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.
   -distributor.ingestion-burst-factor float
     	[experimental] Per-tenant burst factor which is the maximum burst size allowed as a multiple of the per-tenant ingestion rate, this burst-factor must be greater than or equal to 1. If this is set it will override the ingestion-burst-size option.
   -distributor.ingestion-burst-size int
@@ -2077,6 +2081,8 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.frontend-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -querier.frontend-client.health-check-grace-period duration
+    	[experimental] The grace period for health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.
   -querier.frontend-client.initial-connection-window-size value
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.frontend-client.initial-stream-window-size value
@@ -2097,8 +2103,6 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -querier.frontend-client.tls-server-name string
     	Override the expected name on the server certificate.
-  -querier.frontend-health-check-grace-period duration
-    	[experimental] The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.
   -querier.id string
     	Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.
   -querier.label-names-and-values-results-max-size-bytes int
@@ -2307,6 +2311,8 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -querier.store-gateway-client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -querier.store-gateway-client.health-check-grace-period duration
+    	[experimental] The grace period for health checks. If a store-gateway connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the store-gateway if a subsequent request is made to the store-gateway. Set to 0 to immediately remove store-gateway connections on the first health check failure.
   -querier.store-gateway-client.initial-connection-window-size value
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -querier.store-gateway-client.initial-stream-window-size value
@@ -2347,12 +2353,16 @@ Usage of ./cmd/mimir/mimir:
     	Cache requests that are not step-aligned.
   -query-frontend.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
+  -query-frontend.enable-multiple-node-remote-execution-requests
+    	[experimental] Set to true to allow evaluating multiple query plan nodes within a single remote execution request to queriers.
   -query-frontend.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -query-frontend.enable-remote-execution
     	[experimental] If set to true and the Mimir query engine is in use, use remote execution to evaluate queries in queriers.
   -query-frontend.enabled-promql-experimental-functions comma-separated-list-of-strings
     	Enable certain experimental PromQL functions, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental functions are disabled. Set to 'all' to enable all experimental functions.
+  -query-frontend.enabled-promql-extended-range-selectors comma-separated-list-of-strings
+    	Enable certain experimental PromQL extended range selector modifiers, which are subject to being changed or removed at any time, on a per-tenant basis. Defaults to empty which means all experimental modifiers are disabled. Set to 'all' to enable all experimental modifiers.
   -query-frontend.extra-propagated-headers comma-separated-list-of-strings
     	Comma-separated list of request header names to allow to pass through to the rest of the query path. This is in addition to a list of required headers that the read path needs.
   -query-frontend.grpc-client-config.backoff-max-period duration
@@ -2728,7 +2738,7 @@ Usage of ./cmd/mimir/mimir:
   -ruler-storage.gcs.bucket-name string
     	GCS bucket name
   -ruler-storage.gcs.enable-upload-retries
-    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.
+    	Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency. (default true)
   -ruler-storage.gcs.expect-continue-timeout duration
     	The time to wait for a server's first response headers after fully writing the request headers if the request has an Expect header. Set to 0 to send the request body immediately. (default 1s)
   -ruler-storage.gcs.http.idle-conn-timeout duration
@@ -2931,6 +2941,8 @@ Usage of ./cmd/mimir/mimir:
     	gRPC client max receive message size (bytes). (default 104857600)
   -ruler.client.grpc-max-send-msg-size int
     	gRPC client max send message size (bytes). (default 104857600)
+  -ruler.client.health-check-grace-period duration
+    	[experimental] The grace period for health checks. If a ruler connection consistently fails health checks for this period, any open connections are closed. The ruler will attempt to reconnect to that ruler if a subsequent request is made to that ruler. Set to 0 to immediately remove ruler connections on the first health check failure.
   -ruler.client.initial-connection-window-size value
     	[experimental] Initial connection window size. Values less than the default are not supported and are ignored. Setting this to a value other than the default disables the BDP estimator. (default 63KiB1023B)
   -ruler.client.initial-stream-window-size value
@@ -3363,6 +3375,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable zone-awareness and replicate blocks across different availability zones. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.
   -store-gateway.tenant-shard-size int
     	The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.
+  -store-gateway.tenant-shard-size-per-zone int
+    	[experimental] The tenant's shard size per availability zone when zone-awareness is enabled, used when store-gateway sharding is enabled. The total shard size is computed as this value multiplied by the number of zones. This option takes precedence over -store-gateway.tenant-shard-size.
   -store.max-labels-query-length duration
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -target comma-separated-list-of-strings

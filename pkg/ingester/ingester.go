@@ -1027,7 +1027,6 @@ func (i *Ingester) updateLimitMetrics() {
 		if i.cfg.UseIngesterOwnedSeriesForLimits || i.cfg.UpdateIngesterOwnedSeries {
 			os := db.ownedSeriesState()
 			i.metrics.ownedSeriesPerUser.WithLabelValues(userID).Set(float64(os.ownedSeriesCount))
-			i.metrics.ownedTargetInfoSeriesPerUser.WithLabelValues(userID).Set(float64(os.ownedTargetInfoSeriesCount))
 
 			if i.cfg.UseIngesterOwnedSeriesForLimits {
 				minLocalSeriesLimit = os.localSeriesLimit
@@ -3891,7 +3890,12 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 
 		if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionInactive); err != nil {
 			level.Error(logger).Log("msg", "failed to change partition state to inactive", "err", err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+
+			if errors.Is(err, ring.ErrPartitionStateChangeLocked) {
+				http.Error(w, err.Error(), http.StatusConflict)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
 			return
 		}
 
@@ -3913,7 +3917,12 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 			// than "lookback period" ago, it looks to be an edge case not worth to address.
 			if err := i.ingestPartitionLifecycler.ChangePartitionState(r.Context(), ring.PartitionActive); err != nil {
 				level.Error(logger).Log("msg", "failed to change partition state to active", "err", err)
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+
+				if errors.Is(err, ring.ErrPartitionStateChangeLocked) {
+					http.Error(w, err.Error(), http.StatusConflict)
+				} else {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
 				return
 			}
 		}

@@ -72,7 +72,7 @@ func (n *NumberLiteral) ChildrenLabels() []string {
 }
 
 func MaterializeNumberLiteral(n *NumberLiteral, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := scalars.NewScalarConstant(n.Value, timeRange, params.MemoryConsumptionTracker, n.ExpressionPosition())
+	o := scalars.NewScalarConstant(n.Value, timeRange, params.MemoryConsumptionTracker, n.GetExpressionPosition().ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -81,12 +81,12 @@ func (n *NumberLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeScalar, nil
 }
 
-func (n *NumberLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.NoDataQueried()
+func (n *NumberLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
 }
 
-func (n *NumberLiteral) ExpressionPosition() posrange.PositionRange {
-	return n.GetExpressionPosition().ToPrometheusType()
+func (n *NumberLiteral) ExpressionPosition() (posrange.PositionRange, error) {
+	return n.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (n *NumberLiteral) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

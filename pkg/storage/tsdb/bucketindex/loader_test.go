@@ -112,7 +112,7 @@ func TestLoader_GetIndex_ShouldCacheError(t *testing.T) {
 	// Request the index multiple times.
 	for i := 0; i < 10; i++ {
 		_, err := loader.GetIndex(ctx, "user-1")
-		require.Equal(t, ErrIndexCorrupted, err)
+		require.ErrorIs(t, err, ErrIndexCorrupted)
 	}
 
 	// Ensure metrics have been updated accordingly.
@@ -328,7 +328,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadFailure(t *testing.T)
 	})
 
 	_, err := loader.GetIndex(ctx, "user-1")
-	assert.Equal(t, ErrIndexCorrupted, err)
+	assert.ErrorIs(t, err, ErrIndexCorrupted)
 
 	// Upload the bucket index.
 	idx := &Index{

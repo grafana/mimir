@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -428,7 +429,7 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			h := &partitionRingHolder{pr: buildPartitionRingFromPartitionStates(testData.partitionStates...)}
+			h := &partitionRingHolder{pr: buildPartitionRingFromPartitionStates(t, testData.partitionStates...)}
 
 			// Mock limits
 			limits := validation.Limits{IngestionPartitionsTenantShardSize: testData.tenantPartitionsShardSize}
@@ -444,7 +445,7 @@ func runLimiterMaxFunctionTestWithPartitionsRing(
 	}
 }
 
-func buildPartitionRingFromPartitionStates(states ...ring.PartitionState) *ring.PartitionRing {
+func buildPartitionRingFromPartitionStates(t *testing.T, states ...ring.PartitionState) *ring.PartitionRing {
 	pr := ring.NewPartitionRingDesc()
 	for ix, s := range states {
 		if s == ring.PartitionUnknown {
@@ -453,7 +454,10 @@ func buildPartitionRingFromPartitionStates(states ...ring.PartitionState) *ring.
 
 		pr.AddPartition(int32(ix), s, time.Time{})
 	}
-	return ring.NewPartitionRing(*pr)
+
+	partitionRing, err := ring.NewPartitionRing(*pr)
+	require.NoError(t, err)
+	return partitionRing
 }
 
 func TestLimiter_IsWithinMaxSeriesPerMetric(t *testing.T) {
@@ -534,7 +538,7 @@ func TestLimiter_IsWithinMaxSeriesPerMetric_WithPartitionsRing(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
+			pr := buildPartitionRingFromPartitionStates(t, testData.partitionStates...)
 
 			limits := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerMetric: testData.maxGlobalSeriesPerMetric}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
@@ -624,7 +628,7 @@ func TestLimiter_IsWithinMaxMetadataPerMetric_WithPartitionsRing(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
+			pr := buildPartitionRingFromPartitionStates(t, testData.partitionStates...)
 
 			limits := validation.NewOverrides(validation.Limits{MaxGlobalMetadataPerMetric: testData.maxGlobalMetadataPerMetric}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)
@@ -779,7 +783,7 @@ func TestLimiter_IsWithinMaxSeriesPerUser_WithPartitionsRing(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
+			pr := buildPartitionRingFromPartitionStates(t, testData.partitionStates...)
 
 			limits := validation.NewOverrides(validation.Limits{MaxGlobalSeriesPerUser: testData.maxGlobalSeriesPerUser, IngestionPartitionsTenantShardSize: testData.tenantShardSize}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionPartitionsTenantShardSize)
@@ -869,7 +873,7 @@ func TestLimiter_IsWithinMaxMetricsWithMetadataPerUser_WithPartitionsRing(t *tes
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			pr := buildPartitionRingFromPartitionStates(testData.partitionStates...)
+			pr := buildPartitionRingFromPartitionStates(t, testData.partitionStates...)
 
 			limits := validation.NewOverrides(validation.Limits{MaxGlobalMetricsWithMetadataPerUser: testData.maxGlobalMetadataPerUser}, nil)
 			strategy := newPartitionRingLimiterStrategy(&partitionRingHolder{pr: pr}, limits.IngestionTenantShardSize)

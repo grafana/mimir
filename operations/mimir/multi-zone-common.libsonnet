@@ -2,9 +2,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
 
 {
   _config+: {
-    // Use a zone aware pod disruption budget for ingester and/or store-gateways
-    multi_zone_zpdb_enabled: $._config.multi_zone_ingester_enabled || $._config.multi_zone_store_gateway_enabled,
-
     // Ordered list of availability zones where multi-zone components should be deployed to.
     // Mimir zone-a deployments are scheduled to the first AZ in the list, zone-b deployment to the second AZ,
     // and zone-c deployments to the third AZ. Maximum 3 AZs are supported.
@@ -36,7 +33,6 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
     ],
   },
 
-  assert !$._config.multi_zone_zpdb_enabled || $._config.rollout_operator_webhooks_enabled : 'zpdb configuration requires rollout_operator_webhooks_enabled=true',
   assert std.length($._config.multi_zone_availability_zones) <= 3 : 'Mimir jsonnet supports a maximum of 3 availability zones',
 
   //

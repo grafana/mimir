@@ -163,7 +163,7 @@ func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsCorrupted(t *testing.T) 
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
 	_, err := finder.GetBlocks(ctx, userID, 10, 20)
-	require.Equal(t, bucketindex.ErrIndexCorrupted, err)
+	require.ErrorIs(t, err, bucketindex.ErrIndexCorrupted)
 }
 
 func TestBucketIndexBlocksFinder_GetBlocks_BucketIndexIsTooOld(t *testing.T) {

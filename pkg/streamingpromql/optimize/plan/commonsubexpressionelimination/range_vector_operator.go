@@ -288,9 +288,15 @@ type bufferedRangeVectorStepData struct {
 func cloneStepData(stepData *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (bufferedRangeVectorStepData, error) {
 	buffered := bufferedRangeVectorStepData{
 		stepData: &types.RangeVectorStepData{
-			StepT:      stepData.StepT,
-			RangeStart: stepData.RangeStart,
-			RangeEnd:   stepData.RangeEnd,
+			StepT:                        stepData.StepT,
+			RangeStart:                   stepData.RangeStart,
+			RangeEnd:                     stepData.RangeEnd,
+			Smoothed:                     stepData.Smoothed,
+			Anchored:                     stepData.Anchored,
+			SmoothedBasisForTailPointSet: stepData.SmoothedBasisForTailPointSet,
+			SmoothedBasisForHeadPointSet: stepData.SmoothedBasisForHeadPointSet,
+			SmoothedBasisForTailPoint:    stepData.SmoothedBasisForTailPoint,
+			SmoothedBasisForHeadPoint:    stepData.SmoothedBasisForHeadPoint,
 		},
 	}
 

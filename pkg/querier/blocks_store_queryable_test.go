@@ -3307,10 +3307,11 @@ func (m *cancelerStoreGatewayClientMock) RemoteZone() string {
 }
 
 type blocksStoreLimitsMock struct {
-	maxLabelsQueryLength            time.Duration
-	maxChunksPerQuery               int
-	storeGatewayTenantShardSize     int
-	storeGatewayExpandedReplication bool
+	maxLabelsQueryLength               time.Duration
+	maxChunksPerQuery                  int
+	storeGatewayTenantShardSize        int
+	storeGatewayTenantShardSizePerZone int
+	storeGatewayExpandedReplication    bool
 }
 
 func (m *blocksStoreLimitsMock) MaxLabelsQueryLength(_ string) time.Duration {
@@ -3323,6 +3324,10 @@ func (m *blocksStoreLimitsMock) MaxChunksPerQuery(_ string) int {
 
 func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSize(_ string) int {
 	return m.storeGatewayTenantShardSize
+}
+
+func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSizePerZone(_ string) int {
+	return m.storeGatewayTenantShardSizePerZone
 }
 
 func (m *blocksStoreLimitsMock) StoreGatewayExpandedReplication(_ string) bool {
