@@ -888,7 +888,8 @@ func TestOwnedSeriesPartitionsTestUserShuffleSharding(t *testing.T) {
 				rd.AddPartition(pid, ring.PartitionActive, time.Time{})
 			}
 
-			r := ring.NewPartitionRing(*rd)
+			r, err := ring.NewPartitionRing(*rd)
+			require.NoError(t, err)
 			nr, err := r.ShuffleShard(ownedServiceTestUserPartitionsRing, tc.shardSize)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedPartitionsInTheShard, nr.PartitionIDs())

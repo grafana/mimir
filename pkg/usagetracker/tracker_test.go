@@ -615,7 +615,9 @@ func getPartitionRing(t require.TestingT, kvStore kv.Client) *ring.PartitionRing
 	val, err := kvStore.Get(context.Background(), PartitionRingKey)
 	require.NoError(t, err)
 	desc := ring.GetOrCreatePartitionRingDesc(val)
-	return ring.NewPartitionRing(*desc)
+	partitionRing, err := ring.NewPartitionRing(*desc)
+	require.NoError(t, err)
+	return partitionRing
 }
 
 func requireAllTrackersReady(t *testing.T, trackers map[string]*UsageTracker) {
