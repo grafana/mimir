@@ -56,7 +56,7 @@ type SmoothedPoints struct {
 	smoothedTail    promql.FPoint
 }
 
-// NewExtendedPointsForAnchored prepares a buffer with points adjusted to include
+// ApplyAnchoredModifier prepares a buffer with points adjusted to include
 // anchored boundary points at the start and end of the specified range.
 //
 // A synthetic point is placed at both rangeStart and rangeEnd (if points do not already exist on these boundaries):
@@ -80,10 +80,10 @@ type SmoothedPoints struct {
 // a caller to undo the synthetic modifications.
 //
 // Note that synthetic head modifications are not tracked since they will be discarded in the next step iteration as the buffer
-// will be trimmed to remove points before the new steps rangeStart.
+// will be trimmed to remove points before the new step's rangeStart.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
-func NewExtendedPointsForAnchored(buff *types.FPointRingBuffer, view *types.FPointRingBufferView, rangeStart, rangeEnd int64) (AnchoredExtensionMetadata, error) {
+func ApplyAnchoredModifier(buff *types.FPointRingBuffer, view *types.FPointRingBufferView, rangeStart, rangeEnd int64) (AnchoredExtensionMetadata, error) {
 
 	head, tail := view.UnsafePoints()
 
@@ -96,15 +96,10 @@ func NewExtendedPointsForAnchored(buff *types.FPointRingBuffer, view *types.FPoi
 	// Modifications for added or modified tail points are recorded.
 
 	// Add synthetic or clamp start boundary
-	if e.first.T == rangeStart {
-		if err := buff.InsertHeadPoint(e.first); err != nil {
-			return e, err
-		}
-
-	} else if e.first.T > rangeStart {
+	if e.first.T > rangeStart {
 		// Note - we do these inserts in reverse order so the point with the T=rangeStart will be the head of the buffer.
 		// This extra check is to ensure that this point does not already exist in the buffer
-		if buff.Count() == 0 || buff.TimeAt(0) > e.first.T {
+		if buff.Count() == 0 || buff.PointAt(0).T > e.first.T {
 			if err := buff.InsertHeadPoint(e.first); err != nil {
 				return e, err
 			}
@@ -120,9 +115,15 @@ func NewExtendedPointsForAnchored(buff *types.FPointRingBuffer, view *types.FPoi
 	}
 
 	// scan past any given points which have a timestamp less than the last point in the buffer
-	indexFunc := func(p promql.FPoint) bool { return p.T > buff.TimeAt(buff.Count()-1) }
+	lastT := buff.PointAt(buff.Count() - 1).T
+	indexFunc := func(p promql.FPoint) bool { return p.T > lastT }
 	hIdx := slices.IndexFunc(head[1:], indexFunc)
-	tIdx := slices.IndexFunc(tail, indexFunc)
+	tIdx := 0
+	if hIdx <= 0 {
+		// since the tail points follow the head points, we only need to filter tail points
+		// if all the head points were trimmed.
+		tIdx = slices.IndexFunc(tail, indexFunc)
+	}
 
 	// Copy the remaining points into the buffer.
 	if hIdx >= 0 {
@@ -161,8 +162,8 @@ func NewExtendedPointsForAnchored(buff *types.FPointRingBuffer, view *types.FPoi
 
 // ConvertExtendedPointsToSmoothed modifies a buffer to adjust boundary points to be smoothed.
 //
-// This given buffer should have already been passed through NewExtendedPointsForAnchored. The given
-// anchoredMetadata should be the result of calling NewExtendedPointsForAnchored.
+// This given buffer should have already been passed through ApplyAnchoredModifier. The given
+// anchoredMetadata should be the result of calling ApplyAnchoredModifier.
 //
 // Synthetic points on the boundaries will be re-calculated using interpolation:
 //

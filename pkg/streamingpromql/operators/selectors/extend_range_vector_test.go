@@ -54,10 +54,9 @@ func TestFPointRingBufferUndoModifications(t *testing.T) {
 			require.NoError(t, buff.Use(original))
 			require.NoError(t, tc.mods.UndoSyntheticPoints(buff))
 			view := buff.ViewAll(nil)
-			require.Equal(t, len(tc.expected), view.Count())
-			for i, point := range tc.expected {
-				require.Equal(t, point, view.PointAt(i))
-			}
+			actual, err := view.CopyPoints()
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, actual)
 		})
 	}
 }

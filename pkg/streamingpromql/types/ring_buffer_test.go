@@ -564,71 +564,13 @@ func setupRingBufferTestingPools(t *testing.T) {
 	})
 }
 
-func TestFPointRingBufferInsertHeadPointsTimestampCheck(t *testing.T) {
-	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 10, F: 20}))
-	require.ErrorContains(t, buff.InsertHeadPoint(promql.FPoint{T: 20, F: 30}), "unable to insert point to the head of the buffer - new point must have a timestamp less then the current first point timestamp")
-}
-
-func TestFPointRingBufferDiscardPointsAtOrBefore(t *testing.T) {
-	testCases := map[string]struct {
-		timestamp int64
-		buff      []promql.FPoint
-		expected  []promql.FPoint
-	}{
-		"empty buff": {
-			timestamp: 0,
-			buff:      []promql.FPoint{},
-			expected:  nil,
-		},
-		"single point - remove on boundary": {
-			timestamp: 10,
-			buff:      []promql.FPoint{{T: 10, F: 20}},
-			expected:  nil,
-		},
-
-		"single point - remove not on boundary": {
-			timestamp: 12,
-			buff:      []promql.FPoint{{T: 10, F: 20}},
-			expected:  nil,
-		},
-
-		"single point - remove nothing": {
-			timestamp: 9,
-			buff:      []promql.FPoint{{T: 12, F: 20}},
-			expected:  []promql.FPoint{{T: 12, F: 20}},
-		},
-
-		"multiple points - remove all": {
-			timestamp: 100,
-			buff:      []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-			expected:  nil,
-		},
-
-		"multiple points - remove some": {
-			timestamp: 35,
-			buff:      []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-			expected:  []promql.FPoint{{T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
-			require.NoError(t, buff.Use(tc.buff))
-			buff.DiscardPointsAtOrBefore(tc.timestamp)
-			bufferMembersEquals(t, tc.expected, buff)
-		})
-	}
-}
-
-func TestFPointRingBufferRemoveLast(t *testing.T) {
+func TestFPointRingBuffer_RemoveLast(t *testing.T) {
 
 	testCases := map[string]struct {
 		buff     []promql.FPoint
 		expected []promql.FPoint
 	}{
-		"empty buff": {
+		"empty buffer": {
 			buff:     []promql.FPoint{},
 			expected: nil,
 		},
@@ -647,12 +589,12 @@ func TestFPointRingBufferRemoveLast(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
 			buff.RemoveLast()
-			bufferMembersEquals(t, tc.expected, buff)
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
 		})
 	}
 }
 
-func TestFPointRingBufferReplaceTail(t *testing.T) {
+func TestFPointRingBuffer_ReplaceTail(t *testing.T) {
 
 	testCases := map[string]struct {
 		tail     promql.FPoint
@@ -680,11 +622,6 @@ func TestFPointRingBufferReplaceTail(t *testing.T) {
 			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 30, F: 20}},
 		},
-		"out of order": {
-			tail: promql.FPoint{T: 5, F: 20},
-			buff: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
-			err:  "unable to replace point to the tail of the buffer - new point must have a timestamp greater then the previous point in the buffer",
-		},
 	}
 
 	for name, tc := range testCases {
@@ -697,12 +634,12 @@ func TestFPointRingBufferReplaceTail(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			bufferMembersEquals(t, tc.expected, buff)
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
 		})
 	}
 }
 
-func TestFPointRingBufferReplaceValueAtPos(t *testing.T) {
+func TestFPointRingBuffer_ReplaceValueAtPos(t *testing.T) {
 	testCases := map[string]struct {
 		position int
 		value    float64
@@ -710,17 +647,17 @@ func TestFPointRingBufferReplaceValueAtPos(t *testing.T) {
 		buff     []promql.FPoint
 		expected []promql.FPoint
 	}{
-		"empty buff": {
+		"empty buffer": {
 			position: 0,
 			value:    10,
 			buff:     []promql.FPoint{},
-			err:      "unable to replace value at position - position exceeds buffer size",
+			err:      "unable to replace value at position 0 - position exceeds buffer size 0",
 		},
 		"position exceeds buffer size": {
 			position: 1,
 			value:    10,
 			buff:     []promql.FPoint{{T: 10, F: 20}},
-			err:      "unable to replace value at position - position exceeds buffer size",
+			err:      "unable to replace value at position 1 - position exceeds buffer size 1",
 		},
 		"single point": {
 			position: 0,
@@ -758,71 +695,60 @@ func TestFPointRingBufferReplaceValueAtPos(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			bufferMembersEquals(t, tc.expected, buff)
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
 		})
 	}
 }
 
-func TestFPointRingBufferAppendSlice(t *testing.T) {
+func TestFPointRingBuffer_AppendSlice(t *testing.T) {
 
 	testCases := map[string]struct {
 		append   []promql.FPoint
 		buff     []promql.FPoint
 		expected []promql.FPoint
-		err      string
 	}{
-		"empty buff - nil slice": {
+		"empty buffer - nil slice": {
 			append:   nil,
 			buff:     []promql.FPoint{},
 			expected: nil,
 		},
-		"empty buff - empty slice": {
+		"empty buffer - empty slice": {
 			append:   []promql.FPoint{},
 			buff:     []promql.FPoint{},
 			expected: nil,
 		},
-		"empty buff - slice len 1": {
+		"empty buffer - slice len 1": {
 			append:   []promql.FPoint{{T: 10, F: 20}},
 			buff:     []promql.FPoint{},
 			expected: []promql.FPoint{{T: 10, F: 20}},
 		},
-		"empty buff - slice len not a power of 2": {
+		"empty buffer - slice len not a power of 2": {
 			append:   []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}},
 			buff:     []promql.FPoint{},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}},
 		},
-		"empty buff - slice len power of 2": {
+		"empty buffer - slice len power of 2": {
 			append:   []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}},
 			buff:     []promql.FPoint{},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}},
 		},
 
-		"not empty buff - nil slice": {
+		"not empty buffer - nil slice": {
 			append:   nil,
 			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
 		},
-		"not empty buff - empty slice": {
+		"not empty buffer - empty slice": {
 			append:   []promql.FPoint{},
 			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
 		},
-		"out of order": {
-			append: []promql.FPoint{{T: 5, F: 20}},
-			buff:   []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
-			err:    "unable to append points to buffer - new point must have a timestamp greater then the current tail point timestamp",
-		},
-		"same timestamp": {
-			append: []promql.FPoint{{T: 20, F: 20}},
-			buff:   []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
-			err:    "unable to append points to buffer - new point must have a timestamp greater then the current tail point timestamp",
-		},
-		"not empty buff - slice len 1": {
+		"not empty buffer - slice len 1": {
 			append:   []promql.FPoint{{T: 30, F: 20}},
 			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}},
 		},
-		"not empty buff - larger slice": {
+		"not empty buffer - larger slice": {
 			append:   []promql.FPoint{{T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}},
 			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}},
@@ -834,17 +760,13 @@ func TestFPointRingBufferAppendSlice(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
 			err := buff.AppendSlice(tc.append)
-			if len(tc.err) > 0 {
-				require.ErrorContains(t, err, tc.err)
-				return
-			}
 			require.NoError(t, err)
-			bufferMembersEquals(t, tc.expected, buff)
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
 		})
 	}
 }
 
-func TestInsertHeadPointFirstPointAllocation(t *testing.T) {
+func TestFPointRingBuffer_InsertHeadPoint_FirstPointAlignment(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	require.NoError(t, buff.Append(promql.FPoint{T: 10, F: 20}))
 	require.Equal(t, 1, buff.size)
@@ -880,16 +802,26 @@ func TestInsertHeadPointFirstPointAllocation(t *testing.T) {
 	require.Equal(t, promql.FPoint{T: 6, F: 20}, buff.PointAt(0))
 }
 
-func TestOutOfOrderInsertHeads(t *testing.T) {
+func TestFPointRingBuffer_AppendSlice_Alignment(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+	// insert 2 samples - the first point will be at the tail of the ring
 	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 10, F: 20}))
 	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 5, F: 20}))
+
+	require.Equal(t, 2, buff.size)
+	require.Equal(t, 1, buff.firstIndex)
+	require.Len(t, buff.points, 2)
+
+	// append a slice and validate that the buffer has been re-aligned to start at firstIndex=0
 	require.NoError(t, buff.AppendSlice([]promql.FPoint{{T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}}))
-	bufferMembersEquals(t, []promql.FPoint{{T: 5, F: 20}, {T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}}, buff)
+	shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, []promql.FPoint{{T: 5, F: 20}, {T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}}...)
+
+	require.Equal(t, 0, buff.firstIndex)
+	require.Equal(t, promql.FPoint{T: 5, F: 20}, buff.PointAt(0))
 }
 
 // TestSizeLessThanFirstIndex creates a scenario where the buffer size is 1, the underlying point slice is 4 and the firstIndex is 3
-func TestSizeLessThanFirstIndex(t *testing.T) {
+func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	require.NoError(t, buff.Append(promql.FPoint{T: 10}))
 	require.NoError(t, buff.Append(promql.FPoint{T: 20}))
@@ -913,13 +845,4 @@ func TestSizeLessThanFirstIndex(t *testing.T) {
 	require.Equal(t, 3, buff.firstIndex)
 
 	require.NoError(t, buff.AppendSlice([]promql.FPoint{{T: 50}, {T: 60}, {T: 70}, {T: 80}}))
-}
-
-func bufferMembersEquals(t *testing.T, expected []promql.FPoint, buff *FPointRingBuffer) {
-	require.Equal(t, len(expected), buff.Count())
-	view := buff.ViewAll(nil)
-	buffPoints, tail := view.UnsafePoints()
-	buffPoints = append(buffPoints, tail...)
-	require.Equal(t, len(expected), len(buffPoints))
-	require.Equal(t, expected, buffPoints)
 }

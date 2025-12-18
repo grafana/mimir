@@ -156,7 +156,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		if hasLastPoint && lastInView.T > originalRangeStart {
 
 			// Fill the extendedRangeFloats buffer with points from the view and extend the range to include points on the boundaries
-			if m.lastExtendedRangeFloatModifications, err = NewExtendedPointsForAnchored(m.extendedRangeFloats, m.extendedRangeView, originalRangeStart, originalRangeEnd); err != nil {
+			if m.lastExtendedRangeFloatModifications, err = ApplyAnchoredModifier(m.extendedRangeFloats, m.extendedRangeView, originalRangeStart, originalRangeEnd); err != nil {
 				return nil, err
 			}
 

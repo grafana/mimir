@@ -100,11 +100,3 @@ func (p *BucketedPool[T, E]) Put(s T) {
 func IsPowerOfTwo(n int) bool {
 	return (n & (n - 1)) == 0
 }
-
-func NextPowerTwo(n int) int {
-	if n <= 1 {
-		return 2
-	}
-	u := uint(n - 1)
-	return 1 << bits.Len(u)
-}
