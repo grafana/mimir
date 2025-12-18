@@ -38,7 +38,7 @@ func walk(node planning.Node, path []planning.Node, visitor Visitor) error {
 type Visitor interface {
 	// Visit examines node and has access to the path of nodes visited
 	// before node was reached, not including node, with the root in the
-	// first index and closest child in the last.
+	// first index and closest parent in the last.
 	Visit(node planning.Node, path []planning.Node) error
 }
 
