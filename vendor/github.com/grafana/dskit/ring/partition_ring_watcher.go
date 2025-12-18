@@ -2,7 +2,6 @@ package ring
 
 import (
 	"context"
-	"strconv"
 	"sync"
 
 	"github.com/go-kit/log"
@@ -37,11 +36,15 @@ type PartitionRingWatcherDelegate interface {
 }
 
 func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
+	emptyRing, err := NewPartitionRing(*NewPartitionRingDesc())
+	if err != nil {
+		panic(err) // This should never executes.
+	}
 	r := &PartitionRingWatcher{
 		key:    key,
 		kv:     kv,
 		logger: logger,
-		ring:   NewPartitionRing(*NewPartitionRingDesc()),
+		ring:   emptyRing,
 		numPartitionsGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name:        "partition_ring_partitions",
 			Help:        "Number of partitions by state in the partitions ring.",
@@ -75,25 +78,31 @@ func (w *PartitionRingWatcher) starting(ctx context.Context) error {
 		value = NewPartitionRingDesc()
 	}
 
-	w.updatePartitionRing(value.(*PartitionRingDesc))
-	return nil
+	return w.updatePartitionRing(value.(*PartitionRingDesc))
 }
 
 func (w *PartitionRingWatcher) loop(ctx context.Context) error {
+	var watchErr error
 	w.kv.WatchKey(ctx, w.key, func(value interface{}) bool {
 		if value == nil {
 			level.Info(w.logger).Log("msg", "partition ring doesn't exist in KV store yet")
 			return true
 		}
 
-		w.updatePartitionRing(value.(*PartitionRingDesc))
+		if err := w.updatePartitionRing(value.(*PartitionRingDesc)); err != nil {
+			watchErr = err
+			return false
+		}
 		return true
 	})
-	return nil
+	return watchErr
 }
 
-func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
-	newRing := NewPartitionRing(*desc)
+func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) error {
+	newRing, err := NewPartitionRing(*desc)
+	if err != nil {
+		return errors.Wrap(err, "failed to create partition ring from descriptor")
+	}
 	w.ringMx.Lock()
 	oldRing := w.ring
 	w.ring = newRing
@@ -108,14 +117,20 @@ func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) {
 		w.numPartitionsGaugeVec.WithLabelValues(state.CleanName()).Set(float64(count))
 	}
 
-	// Check partitions whose state change is locked and log them.
+	// Check partitions whose state change lock status has changed and log them.
 	for partitionID, partition := range desc.Partitions {
 		state := partition.GetState().CleanName()
-		partitionIDStr := strconv.Itoa(int(partitionID))
-		if partition.StateChangeLocked {
-			level.Warn(w.logger).Log("msg", "partition state change is locked", "partition_id", partitionIDStr, "partition_state", state)
+
+		oldPartition, existedBefore := oldRing.desc.Partitions[partitionID]
+		if !existedBefore || partition.StateChangeLocked != oldPartition.StateChangeLocked {
+			if partition.StateChangeLocked {
+				level.Warn(w.logger).Log("msg", "partition state change is locked", "partition_id", partitionID, "partition_state", state)
+			} else if existedBefore {
+				level.Info(w.logger).Log("msg", "partition state change is unlocked", "partition_id", partitionID, "partition_state", state)
+			}
 		}
 	}
+	return nil
 }
 
 // PartitionRing returns the most updated snapshot of the PartitionRing. The returned instance

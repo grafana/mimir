@@ -29,6 +29,12 @@ type Cache interface {
 	// instances may be passed to modify the behavior of this GetMulti call.
 	GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte
 
+	// GetMultiWithError fetches multiple keys at once from a cache and returns an error
+	// if the operation failed. It may return both results and an error if there are only partial
+	// failures. One or more Option instances may be passed to modify the
+	// behavior of this GetMultiWithError call.
+	GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error)
+
 	// SetAsync enqueues an operation to store a key into a cache. In case the underlying
 	// operation fails, the error will be tracked/logged.
 	SetAsync(key string, value []byte, ttl time.Duration)
