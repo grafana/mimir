@@ -711,8 +711,12 @@ func runRF3toRF4MigrationTest(t *testing.T, shardSize, shardSizePerZone, instanc
 			// In case there's only 1 zone-d instance, we expect that instance to own all blocks.
 			if numZoneDInstances == 1 {
 				require.Len(t, zoneDInstances, 1)
-				for user, blocks := range stateAfterZoneDAdded[zoneDInstances[0].id].blocksPerUser {
-					require.Len(t, blocks, numBlocks, "user %s has wrong number of blocks", user)
+				zoneDState := captureState(t, ctx, r, zoneDInstances, ringCfg.ReplicationFactor, limits, userIDs, blocks, dynamicReplication)
+				instState, ok := zoneDState[zoneDInstances[0].id]
+				require.True(t, ok, "zone-d instance %s not found in captured state", zoneDInstances[0].id)
+				require.NotEmpty(t, instState.blocksPerUser, "zone-d instance %s should own blocks for users", zoneDInstances[0].id)
+				for user, userBlocks := range instState.blocksPerUser {
+					require.Len(t, userBlocks, numBlocks, "user %s has wrong number of blocks", user)
 				}
 			}
 		})
