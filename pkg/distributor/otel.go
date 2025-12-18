@@ -495,17 +495,17 @@ func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCo
 
 func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
 	// Per the OTLP spec (https://opentelemetry.io/docs/specs/otlp/#otlphttp-response), the server MUST use the same
-	// Content-Type in the response as it received in the request. Content-Type is validated in the OTLP parser, which
+	// Content-Type in the response as it received in the request. Content-Type is validated in the OTLPparser, which
 	// only accepts application/json or application/x-protobuf. For successful requests, we mirror the validated Content-Type.
 	// For error responses where the parser rejected an unsupported Content-Type (e.g., text/plain), we cannot mirror
-	// the invalid Content-Type since we must encode the response body as a protobuf Status message. In such cases,
-	// we default to application/x-protobuf as a fallback.
+	// the invalid Content-Type and encode the response body as a protobuf Status message. In such cases, we default to
+	// application/x-protobuf as a fallback.
 	contentType := r.Header.Get("Content-Type")
 	switch contentType {
 	case jsonContentType, pbContentType:
-		// Valid Content-Type - mirror it in the response.
+		// Valid Content-Type, mirror it in the response.
 	default:
-		// Invalid or unsupported Content-Type - default to protobuf encoding for error responses.
+		// Invalid or unsupported Content-Type, default to protobuf encoding.
 		contentType = pbContentType
 	}
 

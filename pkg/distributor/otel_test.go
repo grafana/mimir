@@ -2139,27 +2139,39 @@ func TestHttpRetryableToOTLPRetryable(t *testing.T) {
 }
 
 func TestOTLPResponseContentType(t *testing.T) {
+
 	exportReq := TimeseriesToOTLPRequest([]prompb.TimeSeries{{
-		Labels:  []prompb.Label{{Name: "__name__", Value: "foo"}},
+		Labels:  []prompb.Label{{Name: "__name__", Value: "value"}},
 		Samples: []prompb.Sample{{Value: 1, Timestamp: time.Now().UnixNano()}},
 	}}, nil)
 
-	tests := []struct {
-		name       string
+	tests := map[string]struct {
 		req        *http.Request
 		expectCode int
 		expectType string
 	}{
-		{name: "protobuf", req: createOTLPProtoRequest(t, exportReq, ""), expectCode: http.StatusOK, expectType: "application/x-protobuf"},
-		{name: "json", req: createOTLPJSONRequest(t, exportReq, ""), expectCode: http.StatusOK, expectType: "application/json"},
-		{name: "valid_json_wrong_content_type", req: func() *http.Request {
-			body, _ := exportReq.MarshalJSON()
-			return createOTLPRequest(t, body, "", "text/plain")
-		}(), expectCode: http.StatusUnsupportedMediaType, expectType: "application/x-protobuf"},
+		"protobuf": {
+			req:        createOTLPProtoRequest(t, exportReq, ""),
+			expectCode: http.StatusOK,
+			expectType: "application/x-protobuf",
+		},
+		"json": {
+			req:        createOTLPJSONRequest(t, exportReq, ""),
+			expectCode: http.StatusOK,
+			expectType: "application/json",
+		},
+		"valid_json_wrong_content_type": {
+			req: func() *http.Request {
+				body, _ := exportReq.MarshalJSON()
+				return createOTLPRequest(t, body, "", "text/plain")
+			}(),
+			expectCode: http.StatusUnsupportedMediaType,
+			expectType: "application/x-protobuf",
+		},
 	}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
 			limits := validation.NewOverrides(
 				validation.Limits{},
 				validation.NewMockTenantLimits(map[string]*validation.Limits{
@@ -2172,10 +2184,10 @@ func TestOTLPResponseContentType(t *testing.T) {
 			}, nil, nil, util_log.Logger)
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, tc.req)
+
 			require.Equal(t, tc.expectCode, resp.Code)
-			if tc.expectType != "" {
-				require.Equal(t, tc.expectType, resp.Header().Get("Content-Type"))
-			}
+			require.Equal(t, tc.expectType, resp.Header().Get("Content-Type"))
+			
 		})
 	}
 }
