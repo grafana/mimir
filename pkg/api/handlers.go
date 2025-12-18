@@ -220,13 +220,12 @@ func NewQuerierHandler(
 	const (
 		remoteWriteEnabled = false
 		otlpEnabled        = false
-		appendMetadata     = false
 	)
 
 	api := v1.NewAPI(
 		engine,
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
-		nil, // No remote write support.
+		nil, // No remote write support (AppendableV2).
 		exemplarQueryable,
 		func(context.Context) v1.ScrapePoolsRetriever { return &querier.DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &querier.DummyTargetRetriever{} },
@@ -245,23 +244,21 @@ func NewQuerierHandler(
 		regexp.MustCompile(".*"),
 		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
 		&v1.PrometheusVersion{},
-		nil,
-		nil,
+		nil, // notificationsGetter
+		nil, // notificationsSub
 		// This is used for the stats API which we should not support. Or find other ways to.
 		prometheus.GathererFunc(func() ([]*dto.MetricFamily, error) { return nil, nil }),
 		reg,
 		querier.StatsRenderer,
 		remoteWriteEnabled,
-		nil,
+		nil, // acceptRemoteWriteProtoMsgs
 		otlpEnabled,
-		false,
-		false,
-		true,
+		false, // otlpDeltaToCumulative
+		false, // otlpNativeDeltaIngestion
 		querierCfg.EngineConfig.LookbackDelta,
-		false,
-		appendMetadata,
-		nil,
-		nil,
+		false, // enableTypeAndUnitLabels
+		nil,   // overrideErrorCode
+		nil,   // featureRegistry
 	)
 
 	api.InstallCodec(protobufCodec{})

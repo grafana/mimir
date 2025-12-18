@@ -145,8 +145,8 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 	api := v1.NewAPI(
 		engine,
 		q,
-		nil,
-		nil,
+		nil, // AppendableV2
+		nil, // ExemplarQueryable
 		func(context.Context) v1.ScrapePoolsRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) v1.AlertmanagerRetriever { return &DummyAlertmanagerRetriever{} },
@@ -164,22 +164,20 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		regexp.MustCompile(".*"),
 		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
 		&v1.PrometheusVersion{},
-		nil,
-		nil,
+		nil, // notificationsGetter
+		nil, // notificationsSub
 		prometheus.DefaultGatherer,
-		nil,
-		nil,
+		nil, // registerer
+		nil, // statsRenderer
 		false,
-		nil,
-		false,
+		nil, // acceptRemoteWriteProtoMsgs
 		false,
 		false,
 		false,
 		5*time.Minute,
-		false,
-		false,
-		nil,
-		nil,
+		false, // enableTypeAndUnitLabels
+		nil,   // overrideErrorCode
+		nil,   // featureRegistry
 	)
 
 	promRouter := route.New().WithPrefix("/api/v1")

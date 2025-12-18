@@ -75,8 +75,8 @@ func TestStatsRenderer(t *testing.T) {
 	api := v1.NewAPI(
 		engine,
 		storage,
-		nil,
-		nil,
+		nil, // AppendableV2
+		nil, // ExemplarQueryable
 		func(context.Context) v1.ScrapePoolsRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) v1.TargetRetriever { return &DummyTargetRetriever{} },
 		func(context.Context) v1.AlertmanagerRetriever { return &DummyAlertmanagerRetriever{} },
@@ -94,22 +94,20 @@ func TestStatsRenderer(t *testing.T) {
 		regexp.MustCompile(".*"),
 		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, nil },
 		&v1.PrometheusVersion{},
-		nil,
-		nil,
+		nil, // notificationsGetter
+		nil, // notificationsSub
 		prometheus.DefaultGatherer,
-		nil,
+		nil, // registerer
 		StatsRenderer,
 		false,
-		nil,
-		false,
+		nil, // acceptRemoteWriteProtoMsgs
 		false,
 		false,
 		false,
 		5*time.Minute,
-		false,
-		false,
-		nil,
-		nil,
+		false, // enableTypeAndUnitLabels
+		nil,   // overrideErrorCode
+		nil,   // featureRegistry
 	)
 	promRouter := route.New().WithPrefix("/api/v1")
 
