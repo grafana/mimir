@@ -2187,7 +2187,6 @@ func TestOTLPResponseContentType(t *testing.T) {
 
 			require.Equal(t, tc.expectCode, resp.Code)
 			require.Equal(t, tc.expectType, resp.Header().Get("Content-Type"))
-			
 		})
 	}
 }
