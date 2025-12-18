@@ -1,10 +1,16 @@
 ## Upcoming Release
 
+## 0.9.4
+
+### Improvements
+
+- Added `AdaptiveLimiter.MaxInflight` metric, to indicate the max executions that were inflight during the last sampling period.
+
 ## 0.9.3
 
 ### Bug Fixes
 
-- Fixed #123 - `failsafegrpc` client should not cancel merged contexts until response Body is closed.
+- Fixed #123 - `failsafehttp` client should not cancel merged contexts until response Body is closed.
 
 ## 0.9.2
 

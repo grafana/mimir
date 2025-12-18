@@ -293,7 +293,6 @@ func (cb *circuitBreaker[R]) ToExecutor(_ R) any {
 //
 // Requires external locking.
 func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Execution[R], listener func(StateChangedEvent)) {
-	transitioned := false
 	currentState := cb.state
 	if currentState.state() != newState {
 		switch newState {
@@ -308,25 +307,27 @@ func (cb *circuitBreaker[R]) transitionTo(newState State, exec failsafe.Executio
 		case HalfOpenState:
 			cb.state = newHalfOpenState(cb)
 		}
-		transitioned = true
-	}
 
-	if transitioned && (listener != nil || cb.stateChangedListener != nil) {
-		ctx := context.Background()
-		if exec != nil {
-			ctx = exec.Context()
-		}
-		event := StateChangedEvent{
-			OldState: currentState.state(),
-			NewState: newState,
-			metrics:  &eventMetrics{currentState},
-			context:  ctx,
-		}
-		if listener != nil {
-			listener(event)
-		}
-		if cb.stateChangedListener != nil {
-			cb.stateChangedListener(event)
+		if listener != nil || cb.stateChangedListener != nil {
+			ctx := context.Background()
+			if exec != nil {
+				ctx = exec.Context()
+			}
+			event := StateChangedEvent{
+				OldState: currentState.state(),
+				NewState: newState,
+				metrics:  &eventMetrics{currentState},
+				context:  ctx,
+			}
+
+			cb.mu.Unlock()
+			if listener != nil {
+				listener(event)
+			}
+			if cb.stateChangedListener != nil {
+				cb.stateChangedListener(event)
+			}
+			cb.mu.Lock()
 		}
 	}
 }
