@@ -258,7 +258,8 @@ type Limits struct {
 	RulerMaxRuleEvaluationResults                         int                               `yaml:"ruler_max_rule_evaluation_results" json:"ruler_max_rule_evaluation_results" category:"experimental"`
 
 	// Store-gateway.
-	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
+	StoreGatewayTenantShardSize        int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
+	StoreGatewayTenantShardSizePerZone int `yaml:"store_gateway_tenant_shard_size_per_zone" json:"store_gateway_tenant_shard_size_per_zone" category:"experimental"`
 
 	// Compactor.
 	CompactorBlocksRetentionPeriod        model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
@@ -485,6 +486,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
+	f.IntVar(&l.StoreGatewayTenantShardSizePerZone, "store-gateway.tenant-shard-size-per-zone", 0, "The tenant's shard size per availability zone when zone-awareness is enabled, used when store-gateway sharding is enabled. The total shard size is computed as this value multiplied by the number of zones. This option takes precedence over -store-gateway.tenant-shard-size.")
 
 	// Alertmanager.
 	f.Var(&l.AlertmanagerReceiversBlockCIDRNetworks, "alertmanager.receivers-firewall-block-cidr-networks", "Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.")
@@ -1269,6 +1271,11 @@ func (o *Overrides) RulerMaxRuleEvaluationResults(userID string) int {
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
 func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).StoreGatewayTenantShardSize
+}
+
+// StoreGatewayTenantShardSizePerZone returns the store-gateway shard size per zone for a given user.
+func (o *Overrides) StoreGatewayTenantShardSizePerZone(userID string) int {
+	return o.getOverridesForUser(userID).StoreGatewayTenantShardSizePerZone
 }
 
 // MaxHAClusters returns maximum number of clusters that HA tracker will track for a user.

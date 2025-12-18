@@ -225,6 +225,7 @@ The following features are currently experimental:
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
+  - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`

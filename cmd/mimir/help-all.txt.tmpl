@@ -3375,6 +3375,8 @@ Usage of ./cmd/mimir/mimir:
     	True to enable zone-awareness and replicate blocks across different availability zones. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.
   -store-gateway.tenant-shard-size int
     	The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.
+  -store-gateway.tenant-shard-size-per-zone int
+    	[experimental] The tenant's shard size per availability zone when zone-awareness is enabled, used when store-gateway sharding is enabled. The total shard size is computed as this value multiplied by the number of zones. This option takes precedence over -store-gateway.tenant-shard-size.
   -store.max-labels-query-length duration
     	Limit the time range (end - start time) of series, label names and values queries. This limit is enforced in the querier. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.
   -target comma-separated-list-of-strings

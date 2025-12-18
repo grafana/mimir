@@ -436,6 +436,7 @@
   "ruler.min-rule-evaluation-interval": 0,
   "ruler.max-rule-evaluation-results": 0,
   "store-gateway.tenant-shard-size": 0,
+  "store-gateway.tenant-shard-size-per-zone": 0,
   "compactor.blocks-retention-period": 0,
   "compactor.split-and-merge-shards": 0,
   "compactor.split-groups": 1,

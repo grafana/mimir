@@ -6309,6 +6309,17 @@
         },
         {
           "kind": "field",
+          "name": "store_gateway_tenant_shard_size_per_zone",
+          "required": false,
+          "desc": "The tenant's shard size per availability zone when zone-awareness is enabled, used when store-gateway sharding is enabled. The total shard size is computed as this value multiplied by the number of zones. This option takes precedence over -store-gateway.tenant-shard-size.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "store-gateway.tenant-shard-size-per-zone",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "compactor_blocks_retention_period",
           "required": false,
           "desc": "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.",

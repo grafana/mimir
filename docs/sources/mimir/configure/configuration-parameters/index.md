@@ -4723,6 +4723,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -store-gateway.tenant-shard-size
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
+# (experimental) The tenant's shard size per availability zone when
+# zone-awareness is enabled, used when store-gateway sharding is enabled. The
+# total shard size is computed as this value multiplied by the number of zones.
+# This option takes precedence over -store-gateway.tenant-shard-size.
+# CLI flag: -store-gateway.tenant-shard-size-per-zone
+[store_gateway_tenant_shard_size_per_zone: <int> | default = 0]
+
 # Delete blocks containing samples older than the specified retention period.
 # Also used by query-frontend to avoid querying beyond the retention period by
 # instant, range or remote read queries. 0 to disable.
