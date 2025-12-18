@@ -18,6 +18,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querierpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -26,102 +27,211 @@ import (
 )
 
 var errMultipleEagerLoadingNextCalls = errors.New("multiple pending calls to eagerLoadingResponseStream.Next()")
+var errRequestAlreadySent = errors.New("can't call enqueueEvaluation() after the request was already sent")
+var errRequestNotSent = errors.New("can't call readNextMessage() before the request was sent")
+var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got end of stream")
 
-type RemoteExecutor struct {
-	frontend ProtobufFrontend
-	cfg      Config
+var _ remoteexec.GroupEvaluator = &RemoteExecutionGroupEvaluator{}
+
+func RegisterRemoteExecutionMaterializers(engine *streamingpromql.Engine, frontend ProtobufFrontend, cfg Config) error {
+	groupEvaluatorFactory := func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.GroupEvaluator {
+		return NewRemoteExecutionGroupEvaluator(frontend, cfg, eagerLoad, queryParameters, memoryConsumptionTracker)
+	}
+
+	if err := engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_GROUP, remoteexec.NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory)); err != nil {
+		return fmt.Errorf("unable to register remote execution group materializer: %w", err)
+	}
+
+	if err := engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_CONSUMER, remoteexec.NewRemoteExecutionConsumerMaterializer()); err != nil {
+		return fmt.Errorf("unable to register remote execution consumer materializer: %w", err)
+	}
+
+	return nil
 }
-
-var _ remoteexec.RemoteExecutor = &RemoteExecutor{}
 
 type ProtobufFrontend interface {
-	DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error)
+	DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (ResponseStream, error)
 }
 
-func NewRemoteExecutor(frontend ProtobufFrontend, cfg Config) *RemoteExecutor {
-	return &RemoteExecutor{frontend: frontend, cfg: cfg}
+type RemoteExecutionGroupEvaluator struct {
+	frontend                 ProtobufFrontend
+	cfg                      Config
+	eagerLoad                bool
+	queryParameters          *planning.QueryParameters
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+
+	stream          ResponseStream
+	nodeStreamState []remoteExecutionNodeStreamState
+	requestSent     bool
 }
 
-func (r *RemoteExecutor) StartScalarExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.ScalarRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, 0)
+type remoteExecutionNodeStreamState struct {
+	node      planning.Node
+	timeRange types.QueryTimeRange
+	finished  bool
+
+	// The following fields are only populated once the request is sent:
+	nodeIndex int64
+	buffer    *responseStreamBuffer
+}
+
+// remoteExecutionNodeStreamIndex represents the index of a node stream in a group (ie. index into RemoteExecutionGroupEvaluator.nodeStreamState)
+// We use a different type to make it harder to accidentally confuse it with a node index in the query plan.
+type remoteExecutionNodeStreamIndex int
+
+func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *RemoteExecutionGroupEvaluator {
+	return &RemoteExecutionGroupEvaluator{
+		frontend:                 frontend,
+		cfg:                      cfg,
+		eagerLoad:                eagerLoad,
+		queryParameters:          queryParameters,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
+}
+
+func (g *RemoteExecutionGroupEvaluator) enqueueEvaluation(node planning.Node, timeRange types.QueryTimeRange) (remoteExecutionNodeStreamIndex, error) {
+	if g.requestSent {
+		return -1, errRequestAlreadySent
+	}
+
+	g.nodeStreamState = append(g.nodeStreamState, remoteExecutionNodeStreamState{
+		node:      node,
+		timeRange: timeRange,
+	})
+
+	return remoteExecutionNodeStreamIndex(len(g.nodeStreamState) - 1), nil
+}
+
+func (g *RemoteExecutionGroupEvaluator) CreateScalarExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.ScalarRemoteExecutionResponse, error) {
+	streamIdx, err := g.enqueueEvaluation(node, timeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	return &scalarExecutionResponse{stream, memoryConsumptionTracker}, nil
+	return newScalarExecutionResponse(g, streamIdx, g.memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) StartInstantVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, r.cfg.RemoteExecutionBatchSize)
+func (g *RemoteExecutionGroupEvaluator) CreateInstantVectorExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.InstantVectorRemoteExecutionResponse, error) {
+	streamIdx, err := g.enqueueEvaluation(node, timeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker), nil
+	return newInstantVectorExecutionResponse(g, streamIdx, g.memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) StartRangeVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
-	stream, err := r.startExecution(ctx, params, node, timeRange, eagerLoad, 0)
+func (g *RemoteExecutionGroupEvaluator) CreateRangeVectorExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.RangeVectorRemoteExecutionResponse, error) {
+	streamIdx, err := g.enqueueEvaluation(node, timeRange)
 	if err != nil {
 		return nil, err
 	}
 
-	return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker), nil
+	return newRangeVectorExecutionResponse(g, streamIdx, g.memoryConsumptionTracker), nil
 }
 
-func (r *RemoteExecutor) startExecution(
-	ctx context.Context,
-	params *planning.QueryParameters,
-	node planning.Node,
-	timeRange types.QueryTimeRange,
-	eagerLoad bool,
-	batchSize uint64,
-) (responseStream, error) {
+type releaseMessageFunc func()
+
+func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*querierpb.EvaluateQueryResponse, releaseMessageFunc, error) {
+	if !g.requestSent {
+		return nil, nil, errRequestNotSent
+	}
+
+	// TODO:
+	// If have buffered message for this node index: pop it from the buffer, return it
+
+	// If don't have buffered message for this node:
+	// - read next message from stream
+	//   - if it's for this response, return it
+	//   - if it's not, buffer it and loop to next message
+
+	msg, err := g.stream.Next(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if msg == nil {
+		return nil, nil, errUnexpectedEndOfStream
+	}
+
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	return resp, msg.FreeBuffer, nil
+}
+
+func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
+	if g.requestSent {
+		return nil
+	}
+
+	g.requestSent = true
+
+	nodes := make([]planning.Node, 0, len(g.nodeStreamState))
+	version := planning.QueryPlanVersionZero
+	for _, state := range g.nodeStreamState {
+		nodes = append(nodes, state.node)
+		version = max(version, planning.MinimumRequiredPlanVersion(state.node))
+	}
+
 	subsetPlan := &planning.QueryPlan{
-		Root:       node,
-		Parameters: params,
+		Parameters: g.queryParameters,
+		Version:    version,
 	}
 
-	if err := subsetPlan.DeterminePlanVersion(); err != nil {
-		return nil, err
-	}
-
-	encodedPlan, nodeIndices, err := subsetPlan.ToEncodedPlan(false, true, node)
+	encodedPlan, nodeIndices, err := subsetPlan.ToEncodedPlan(false, true, nodes...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	req := &querierpb.EvaluateQueryRequest{
 		Plan:      *encodedPlan,
 		Nodes:     make([]querierpb.EvaluationNode, 0, len(nodeIndices)),
-		BatchSize: batchSize,
+		BatchSize: g.cfg.RemoteExecutionBatchSize,
 	}
 
-	for _, nodeIdx := range nodeIndices {
+	overallQueriedTimeRange := planning.NoDataQueried()
+
+	for streamIdx, nodeIdx := range nodeIndices {
+		state := &g.nodeStreamState[streamIdx]
+		state.nodeIndex = nodeIdx
+		timeRange := state.timeRange
+
+		queriedTimeRange, err := state.node.QueriedTimeRange(timeRange, g.cfg.LookBackDelta)
+		if err != nil {
+			return err
+		}
+
+		overallQueriedTimeRange = overallQueriedTimeRange.Union(queriedTimeRange)
+
 		req.Nodes = append(req.Nodes, querierpb.EvaluationNode{NodeIndex: nodeIdx, TimeRange: planning.ToEncodedTimeRange(timeRange)})
 	}
 
 	stats := stats.FromContext(ctx)
 	stats.AddRemoteExecutionRequests(1)
-	queriedTimeRange, err := node.QueriedTimeRange(timeRange, r.cfg.LookBackDelta)
+
+	g.stream, err = g.frontend.DoProtobufRequest(ctx, req, overallQueriedTimeRange.MinT, overallQueriedTimeRange.MaxT)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var stream responseStream
-	stream, err = r.frontend.DoProtobufRequest(ctx, req, queriedTimeRange.MinT, queriedTimeRange.MaxT)
-	if err != nil {
-		return nil, err
+	if g.eagerLoad {
+		g.stream = newEagerLoadingResponseStream(ctx, g.stream)
 	}
 
-	if eagerLoad {
-		stream = newEagerLoadingResponseStream(ctx, stream)
-	}
-
-	return stream, nil
+	return nil
 }
 
-type responseStream interface {
+func (g *RemoteExecutionGroupEvaluator) closeOneStream() {
+	// TODO:
+	// Pass node index
+	// If only some nodes have closed: return
+	// If last node closed: close stream, if request sent
+	g.stream.Close()
+}
+
+type ResponseStream interface {
 	// Next returns the next message in the stream, or an error if the stream has ended or failed.
 	Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error)
 	// Close closes the stream.
@@ -129,12 +239,26 @@ type responseStream interface {
 }
 
 type scalarExecutionResponse struct {
-	stream                   responseStream
+	group                    *RemoteExecutionGroupEvaluator
+	streamIndex              remoteExecutionNodeStreamIndex
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	closed                   bool
+}
+
+func newScalarExecutionResponse(group *RemoteExecutionGroupEvaluator, streamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *scalarExecutionResponse {
+	return &scalarExecutionResponse{
+		group:                    group,
+		streamIndex:              streamIndex,
+		memoryConsumptionTracker: memoryConsumptionTracker,
+	}
+}
+
+func (r *scalarExecutionResponse) Start(ctx context.Context) error {
+	return r.group.sendRequest(ctx)
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
-	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
+	resp, releaseMessage, err := r.group.readNextMessage(ctx, r.streamIndex)
 	if err != nil {
 		return types.ScalarData{}, err
 	}
@@ -162,33 +286,45 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 }
 
 func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return readEvaluationCompleted(ctx, r.stream)
+	return readEvaluationCompleted(ctx, r.group, r.streamIndex)
 }
 
 func (r *scalarExecutionResponse) Close() {
-	r.stream.Close()
+	if r.closed {
+		return
+	}
+
+	r.group.closeOneStream()
+	r.closed = true
 }
 
 type instantVectorExecutionResponse struct {
-	stream                   responseStream
+	group                    *RemoteExecutionGroupEvaluator
+	streamIndex              remoteExecutionNodeStreamIndex
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	currentBatch             []querierpb.InstantVectorSeriesData
+	closed                   bool
 }
 
-func newInstantVectorExecutionResponse(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *instantVectorExecutionResponse {
+func newInstantVectorExecutionResponse(group *RemoteExecutionGroupEvaluator, streamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *instantVectorExecutionResponse {
 	return &instantVectorExecutionResponse{
-		stream:                   stream,
+		group:                    group,
+		streamIndex:              streamIndex,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 	}
 }
 
+func (r *instantVectorExecutionResponse) Start(ctx context.Context) error {
+	return r.group.sendRequest(ctx)
+}
+
 func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return readSeriesMetadata(ctx, r.stream, r.memoryConsumptionTracker)
+	return readSeriesMetadata(ctx, r.group, r.streamIndex, r.memoryConsumptionTracker)
 }
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(r.currentBatch) == 0 {
-		resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
+		resp, releaseMessage, err := r.group.readNextMessage(ctx, r.streamIndex)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -237,26 +373,34 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 }
 
 func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return readEvaluationCompleted(ctx, r.stream)
+	return readEvaluationCompleted(ctx, r.group, r.streamIndex)
 }
 
 func (r *instantVectorExecutionResponse) Close() {
-	r.stream.Close()
+	if r.closed {
+		return
+	}
+
+	r.group.closeOneStream()
 	r.currentBatch = nil
+	r.closed = true
 }
 
 type rangeVectorExecutionResponse struct {
-	stream                   responseStream
+	group                    *RemoteExecutionGroupEvaluator
+	streamIndex              remoteExecutionNodeStreamIndex
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 	currentSeriesIndex       int64
 	floats                   *types.FPointRingBuffer
 	histograms               *types.HPointRingBuffer
 	stepData                 *types.RangeVectorStepData
+	closed                   bool
 }
 
-func newRangeVectorExecutionResponse(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *rangeVectorExecutionResponse {
+func newRangeVectorExecutionResponse(group *RemoteExecutionGroupEvaluator, streamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *rangeVectorExecutionResponse {
 	return &rangeVectorExecutionResponse{
-		stream:                   stream,
+		group:                    group,
+		streamIndex:              streamIndex,
 		memoryConsumptionTracker: memoryConsumptionTracker,
 		currentSeriesIndex:       -1,
 		floats:                   types.NewFPointRingBuffer(memoryConsumptionTracker),
@@ -265,8 +409,12 @@ func newRangeVectorExecutionResponse(stream responseStream, memoryConsumptionTra
 	}
 }
 
+func (r *rangeVectorExecutionResponse) Start(ctx context.Context) error {
+	return r.group.sendRequest(ctx)
+}
+
 func (r *rangeVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) ([]types.SeriesMetadata, error) {
-	return readSeriesMetadata(ctx, r.stream, r.memoryConsumptionTracker)
+	return readSeriesMetadata(ctx, r.group, r.streamIndex, r.memoryConsumptionTracker)
 }
 
 func (r *rangeVectorExecutionResponse) AdvanceToNextSeries(ctx context.Context) error {
@@ -278,7 +426,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	r.floats.Release()
 	r.histograms.Release()
 
-	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, r.stream)
+	resp, releaseMessage, err := r.group.readNextMessage(ctx, r.streamIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -331,38 +479,22 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 }
 
 func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return readEvaluationCompleted(ctx, r.stream)
+	return readEvaluationCompleted(ctx, r.group, r.streamIndex)
 }
 
 func (r *rangeVectorExecutionResponse) Close() {
+	if r.closed {
+		return
+	}
+
+	r.group.closeOneStream()
 	r.floats.Close()
 	r.histograms.Close()
-	r.stream.Close()
+	r.closed = true
 }
 
-var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got end of stream")
-
-type releaseMessageFunc func()
-
-func readNextEvaluateQueryResponse(ctx context.Context, stream responseStream) (*querierpb.EvaluateQueryResponse, releaseMessageFunc, error) {
-	msg, err := stream.Next(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if msg == nil {
-		return nil, nil, errUnexpectedEndOfStream
-	}
-
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
-	}
-
-	return resp, msg.FreeBuffer, nil
-}
-
-func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, stream)
+func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluator, streamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
+	resp, releaseMessage, err := group.readNextMessage(ctx, streamIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -396,10 +528,10 @@ func readSeriesMetadata(ctx context.Context, stream responseStream, memoryConsum
 	return mqeSeries, nil
 }
 
-func readEvaluationCompleted(ctx context.Context, stream responseStream) (*annotations.Annotations, stats.Stats, error) {
+func readEvaluationCompleted(ctx context.Context, group *RemoteExecutionGroupEvaluator, streamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
 	// Keep reading the stream until we get to an evaluation completed message.
 	for {
-		resp, releaseMessage, err := readNextEvaluateQueryResponse(ctx, stream)
+		resp, releaseMessage, err := group.readNextMessage(ctx, streamIndex)
 		if err != nil {
 			return nil, stats.Stats{}, err
 		}
@@ -523,7 +655,7 @@ func ensureHPointSliceCapacityIsPowerOfTwo(points []promql.HPoint, memoryConsump
 }
 
 type eagerLoadingResponseStream struct {
-	inner       responseStream
+	inner       ResponseStream
 	bufferedErr error
 
 	mtx              *sync.Mutex
@@ -531,7 +663,7 @@ type eagerLoadingResponseStream struct {
 	newDataAvailable chan struct{}
 }
 
-func newEagerLoadingResponseStream(ctx context.Context, inner responseStream) *eagerLoadingResponseStream {
+func newEagerLoadingResponseStream(ctx context.Context, inner ResponseStream) *eagerLoadingResponseStream {
 	stream := &eagerLoadingResponseStream{
 		inner:  inner,
 		mtx:    &sync.Mutex{},

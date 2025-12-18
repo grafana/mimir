@@ -449,7 +449,7 @@ func TestFrontend_Protobuf_ResponseClosedBeforeStreamExhausted(t *testing.T) {
 }
 
 func TestFrontend_Protobuf_ResponseClosedBeforeResponseReceived(t *testing.T) {
-	respChannel := make(chan *ProtobufResponseStream)
+	respChannel := make(chan ResponseStream)
 	defer close(respChannel)
 
 	f, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -723,9 +723,10 @@ func TestFrontend_Protobuf_ReadingResponseAfterAllMessagesReceived(t *testing.T)
 	ctx := user.InjectOrgID(context.Background(), userID)
 	ctx = querymiddleware.ContextWithParallelismLimiter(ctx, querymiddleware.NewParallelismLimiter(math.MaxInt))
 	req := &querierpb.EvaluateQueryRequest{}
-	resp, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
+	r, err := f.DoProtobufRequest(ctx, req, time.Now(), time.Now())
 	require.NoError(t, err)
-	defer resp.Close()
+	defer r.Close()
+	resp := r.(*ProtobufResponseStream)
 
 	msg, err := resp.Next(ctx)
 	require.NoError(t, err)

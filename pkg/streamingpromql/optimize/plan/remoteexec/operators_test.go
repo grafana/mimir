@@ -50,6 +50,10 @@ type mockResponse struct {
 	stats stats.Stats
 }
 
+func (m *mockResponse) Start(ctx context.Context) error {
+	return nil
+}
+
 func (m *mockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
 	annos := annotations.New()
 	annos.Add(annotations.NewMixedFloatsHistogramsWarning("mixed_metric", posrange.PositionRange{Start: 5, End: 6}))
@@ -65,6 +69,10 @@ func (m *mockResponse) Close() {
 type finalizationTestMockResponse struct {
 	Closed                  bool
 	GetEvaluationInfoCalled bool
+}
+
+func (m *finalizationTestMockResponse) Start(ctx context.Context) error {
+	return nil
 }
 
 func (m *finalizationTestMockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
