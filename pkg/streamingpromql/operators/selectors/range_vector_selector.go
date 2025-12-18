@@ -34,9 +34,8 @@ type RangeVectorSelector struct {
 	extendedRangeView                   *types.FPointRingBufferView
 	lastExtendedRangeFloatModifications AnchoredExtensionMetadata
 
-	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	anchored                 bool // The anchored modifier has been used for this range query
-	smoothed                 bool // The smoothed modifier has been used for this range query
+	anchored bool // The anchored modifier has been used for this range query
+	smoothed bool // The smoothed modifier has been used for this range query
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
