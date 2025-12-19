@@ -5,7 +5,6 @@ package math
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,37 +25,16 @@ func TestIsPowerTwo(t *testing.T) {
 }
 
 func TestPowerTwo(t *testing.T) {
-	testCases := map[string]struct {
-		value    int
-		expected int
-	}{
-		"zero": {
-			value:    0,
-			expected: 2,
-		},
-		"one": {
-			value:    1,
-			expected: 2,
-		},
-		"two": {
-			value:    2,
-			expected: 2,
-		},
-		"three": {
-			value:    3,
-			expected: 4,
-		},
-		"four": {
-			value:    4,
-			expected: 4,
-		},
-		"five": {
-			value:    5,
-			expected: 8,
-		},
+	testCases := map[int]int{
+		0: 2,
+		1: 2,
+		2: 2,
+		3: 4,
+		4: 4,
+		5: 8,
 	}
-	for testName, testCase := range testCases {
-		require.Equal(t, testCase.expected, NextPowerTwo(testCase.value), testName)
-		require.True(t, IsPowerOfTwo(testCase.expected), testName)
+	for value, expected := range testCases {
+		require.Equal(t, expected, NextPowerTwo(value))
+		require.True(t, IsPowerOfTwo(expected))
 	}
 }
