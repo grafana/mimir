@@ -8043,6 +8043,35 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
     `), metricsToCheck...))
 }
 
+func TestIngesterCloseIdleTSDBWhenShippingDisabled(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
+	cfg.BlocksStorageConfig.TSDB.ShipInterval = 0                         // Disable shipping
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled = true // Enforce closing of idle TSDB
+
+	reg := prometheus.NewRegistry()
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	pushSingleSampleWithMetadata(t, i)
+	require.Equal(t, int64(1), i.seriesCount.Load())
+
+	// Wait until TSDB has been closed and removed.
+	test.Poll(t, 20*time.Second, 0, func() interface{} {
+		i.tsdbsMtx.Lock()
+		defer i.tsdbsMtx.Unlock()
+		return len(i.tsdbs)
+	})
+
+	require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
+	i.updateActiveSeries(time.Now())
+	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
+}
+
 func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)

@@ -3484,8 +3484,12 @@ func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
 
 func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckResult {
 	userDB := i.getTSDB(userID)
-	if userDB == nil || userDB.shipper == nil {
-		// We will not delete local data when not using shipping to storage.
+	if userDB == nil {
+		return tsdbShippingDisabled
+	}
+
+	if userDB.shipper == nil && !i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled {
+		// We will not delete local data when not using shipping to storage unless explicitly configured.
 		return tsdbShippingDisabled
 	}
 
