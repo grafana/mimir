@@ -1194,6 +1194,14 @@ INFO[0000] block uploaded successfully              block=01G8CB7GTTC5ZXY23WTXHS
 INFO[0001] finished uploading blocks                already_exists=1 failed=0 succeeded=2
 ```
 
+{{< admonition type="note" >}}
+Backfilled data visibility depends on the sample timestamps in the uploaded blocks. Data from the last 12 hours appears soon after upload. Data older than 12 hours can take much longer to appear in queries, sometimes more than a dozen hours.
+
+For example:
+- A block that includes samples newer than 12 hours typically becomes queryable shortly after upload.
+- A block that includes samples older than 12 hours might not be queryable for many hours after upload.
+{{< /admonition >}}
+
 ## License
 
 This software is licensed as AGPLv3. For more information, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).
