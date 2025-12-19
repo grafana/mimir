@@ -347,7 +347,21 @@ func (e *schedulerExecutor) updateJobStatus(ctx context.Context, key *compactors
 	}
 }
 
-func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (compactorschedulerpb.UpdateType, error) {
+func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *MultitenantCompactor, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec) (result compactorschedulerpb.UpdateType, resultErr error) {
+	c.compactionRunsStarted.Inc()
+	defer func() {
+		if resultErr != nil {
+			if errors.Is(resultErr, context.Canceled) {
+				c.compactionRunsShutdown.Inc()
+			} else {
+				c.compactionRunsErred.Inc()
+			}
+		} else {
+			c.compactionRunsCompleted.Inc()
+			c.compactionRunsLastSuccess.SetToCurrentTime()
+		}
+	}()
+
 	if spec.Job == nil || len(spec.Job.BlockIds) == 0 {
 		level.Error(e.logger).Log("msg", "invalid compaction plan, abandoning job", "tenant", spec.Tenant)
 		return compactorschedulerpb.ABANDON, errCompactionJobHasNoBlocks
