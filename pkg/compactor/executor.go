@@ -133,12 +133,13 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 			}
 		}
 
-		work, err := e.leaseAndExecuteJob(ctx, c, workerID)
+		ok, err := e.leaseAndExecuteJob(ctx, c, workerID)
 		if err != nil {
-			level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
+			if grpcutil.ErrorToStatusCode(err) != codes.NotFound || b.NumRetries() > 10 {
+				level.Warn(e.logger).Log("msg", "failed to lease or execute job", "err", err)
+			}
 		}
-
-		if work {
+		if ok {
 			b.Reset()
 		}
 
@@ -213,7 +214,7 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *comp
 		case <-ticker.C:
 			if err := e.updateJobStatus(ctx, key, spec, compactorschedulerpb.IN_PROGRESS); err != nil {
 				// Check if the job was canceled from the scheduler side (not found response)
-				if errStatus, ok := grpcutil.ErrorToStatus(err); ok && errStatus.Code() == codes.NotFound {
+				if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
 					level.Info(e.logger).Log("msg", "job canceled by scheduler, stopping work", "job_id", jobId, "tenant", jobTenant)
 					cancelJob(err) // Cancel the job context to stop the main work
 					return
