@@ -78,6 +78,7 @@
 * [ENHANCEMENT] Server: The `/metrics` endpoint now supports metrics filtering by providing one or more `name[]` query parameters. #13746
 * [ENHANCEMENT] Distributor: Improved the performance of configuration retrieval in the validation middleware. #13807
 * [ENHANCEMENT] Ingester: Make sharded active-series requests matching all series faster. #13491
+* [ENHANCEMENT] Ingester: New `-blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled` flag to enforce closing of idle TSDBs when block shipping is disabled. #13862
 * [ENHANCEMENT] Partitions ring: Add support to forcefully lock a partition state through the web UI. #13811
 * [ENHANCEMENT] API: The `/api/v1/user_limits` endpoint is now stable and no longer experimental. #13218
 * [ENHANCEMENT] Ingester: limiting CPU and memory utilized by the read path (`-ingester.read-path-cpu-utilization-limit` and `-ingester.read-path-memory-utilization-limit`) is now considered stable. #13167
