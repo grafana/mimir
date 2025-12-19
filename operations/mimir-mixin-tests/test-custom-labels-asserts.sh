@@ -24,7 +24,7 @@ FORBIDDEN_LABELS="cluster instance pod"
 
 # Alerts to exclude from validation (space-separated list of alert names).
 # These alerts are excluded because they rely on Kubernetes metrics that use hardcoded label names.
-EXCLUDED_ALERTS="MimirMemberlistBridgeZoneUnavailable"
+EXCLUDED_ALERTS="MimirMemberlistBridgeZoneUnavailable MimirIncorrectWebhookConfigurationFailurePolicy"
 
 for LABEL in ${FORBIDDEN_LABELS}; do
   QUERY_REGEX="[^\$a-z_]${LABEL}[^a-z_]"
