@@ -535,7 +535,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		GetDeletionMarkersConcurrency: defaultGetDeletionMarkersConcurrency,
 		UpdateBlocksConcurrency:       c.compactorCfg.UpdateBlocksConcurrency,
 		CompactionBlockRanges:         c.compactorCfg.BlockRanges,
-	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.parentLogger, c.registerer)
+	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnsUser, c.cfgProvider, c.compactorCfg.DataDir, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
 	if err := c.blocksCleaner.StartAsync(ctx); err != nil {

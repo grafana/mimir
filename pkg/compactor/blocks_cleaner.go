@@ -58,6 +58,7 @@ type BlocksCleaner struct {
 
 	cfg          BlocksCleanerConfig
 	cfgProvider  ConfigProvider
+	dataDir      string
 	logger       log.Logger
 	bucketClient objstore.Bucket
 	usersScanner *mimir_tsdb.UsersScanner
@@ -86,12 +87,13 @@ type BlocksCleaner struct {
 	bucketIndexCompactionPlanningErrors prometheus.Counter
 }
 
-func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, dataDir string, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 	c := &BlocksCleaner{
 		cfg:                   cfg,
 		bucketClient:          bucketClient,
 		usersScanner:          mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
 		cfgProvider:           cfgProvider,
+		dataDir:               dataDir,
 		singleFlight:          concurrency.NewLimitedConcurrencySingleFlight(cfg.CleanupConcurrency),
 		logger:                log.With(logger, "component", "cleaner"),
 		supportsUpdatedAtIter: slices.Contains(bucketClient.SupportedIterOptions(), objstore.UpdatedAt),
@@ -455,21 +457,73 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		}
 	}()
 
-	// Read the bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
-	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
-		level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
-	} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
-		return err
+	// Try to load in-progress index from local cache.
+	var idx *bucketindex.Index
+	var baseUpdatedAt int64
+	var usedCachedIndex bool
+
+	cachedIdx, err := bucketindex.ReadInProgressIndex(c.dataDir, userID, userLogger)
+	if err != nil {
+		level.Warn(userLogger).Log("msg", "failed to read cached in-progress index, will read from storage", "err", err)
+		// Try to clean up the corrupted cache file.
+		if err := bucketindex.DeleteInProgressIndex(c.dataDir, userID, userLogger); err != nil {
+			level.Warn(userLogger).Log("msg", "failed to delete corrupted in-progress index cache", "err", err)
+		}
+	} else if cachedIdx != nil {
+		// Verify the cached index is still valid by checking if the
+		// bucket index in object storage hasn't changed.
+		osIdx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
+		if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) && !errors.Is(err, bucketindex.ErrIndexCorrupted) {
+			return err
+		}
+
+		osUpdatedAt := int64(0)
+		if osIdx != nil {
+			osUpdatedAt = osIdx.UpdatedAt
+		}
+
+		// If the bucket index in object storage matches what the cached index was based on,
+		// we can use the cached index.
+		if cachedIdx.BaseUpdatedAt == osUpdatedAt {
+			level.Info(userLogger).Log("msg", "using cached in-progress index",
+				"cached_created_at", time.Unix(cachedIdx.CreatedAt, 0),
+				"base_updated_at", cachedIdx.BaseUpdatedAt)
+			idx = cachedIdx.Index
+			baseUpdatedAt = cachedIdx.BaseUpdatedAt
+			usedCachedIndex = true
+		} else {
+			level.Info(userLogger).Log("msg", "discarding stale cached in-progress index",
+				"cached_base_updated_at", cachedIdx.BaseUpdatedAt,
+				"os_updated_at", osUpdatedAt)
+			// Clean up the stale cache file.
+			if err := bucketindex.DeleteInProgressIndex(c.dataDir, userID, userLogger); err != nil {
+				level.Warn(userLogger).Log("msg", "failed to delete stale in-progress index cache", "err", err)
+			}
+		}
 	}
 
-	level.Info(userLogger).Log("msg", "fetched existing bucket index")
+	// If no valid cached index, read from bucket.
+	if idx == nil {
+		idx, err = bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, userLogger)
+		if errors.Is(err, bucketindex.ErrIndexCorrupted) {
+			level.Warn(userLogger).Log("msg", "found a corrupted bucket index, recreating it")
+		} else if err != nil && !errors.Is(err, bucketindex.ErrIndexNotFound) {
+			return err
+		}
+
+		if idx != nil {
+			baseUpdatedAt = idx.UpdatedAt
+		}
+
+		level.Info(userLogger).Log("msg", "fetched existing bucket index")
+	}
 
 	// Mark blocks for future deletion based on the retention period for the user.
 	// Note doing this before UpdateIndex, so it reads in the deletion marks.
 	// The trade-off being that retention is not applied if the index has to be
 	// built, but this is rare.
-	if idx != nil {
+	// Skip if we used cached index - retention was already applied when the cached index was created.
+	if idx != nil && !usedCachedIndex {
 		// We do not want to stop the remaining work in the cleaner if an
 		// error occurs here. Errors are logged in the function.
 		retention := c.cfgProvider.CompactorBlocksRetentionPeriod(userID)
@@ -478,10 +532,29 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 
 	// Generate an updated in-memory version of the bucket index.
 	w := bucketindex.NewUpdater(c.bucketClient, userID, c.cfgProvider, c.cfg.GetDeletionMarkersConcurrency, c.cfg.UpdateBlocksConcurrency, userLogger)
-	idx, partials, err := w.UpdateIndex(ctx, idx)
+	var partials map[ulid.ULID]error
+	idx, partials, err = w.UpdateIndex(ctx, idx)
 	if err != nil {
 		return err
 	}
+
+	// From this point on, if we fail, we should save the in-progress index
+	// to allow the next run to resume from where we left off.
+	saveOnFailure := c.dataDir != ""
+	defer func() {
+		if returnErr != nil && saveOnFailure {
+			inProgress := &bucketindex.InProgressIndex{
+				Index:         idx,
+				BaseUpdatedAt: baseUpdatedAt,
+				CreatedAt:     time.Now().Unix(),
+			}
+			if err := bucketindex.WriteInProgressIndex(c.dataDir, userID, inProgress, userLogger); err != nil {
+				level.Warn(userLogger).Log("msg", "failed to save in-progress index to disk", "err", err)
+			} else {
+				level.Info(userLogger).Log("msg", "saved in-progress index to disk for next run")
+			}
+		}
+	}()
 
 	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
 
@@ -533,6 +606,14 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, userLogger
 		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageSplit)).Set(float64(splitJobs))
 		c.bucketIndexCompactionJobs.WithLabelValues(userID, string(stageMerge)).Set(float64(mergeJobs))
 	}
+
+	// Success - delete the in-progress index cache if it exists.
+	if c.dataDir != "" {
+		if err := bucketindex.DeleteInProgressIndex(c.dataDir, userID, userLogger); err != nil {
+			level.Warn(userLogger).Log("msg", "failed to delete in-progress index cache", "err", err)
+		}
+	}
+	saveOnFailure = false // Prevent deferred save since we succeeded.
 
 	return nil
 }
