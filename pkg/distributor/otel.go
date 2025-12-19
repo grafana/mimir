@@ -520,13 +520,16 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 		err = errors.Wrapf(err, "marshalling %T to %s", payload, format)
 	}
 	if err != nil {
-		level.Error(logger).Log("msg", "OTLP response marshal failed, responding with empty valid body", "err", err, "content_type", contentType)
-		// Both marshal attempts failed. Return a valid empty response for the Content-Type to avoid client parse errors.
-		// For JSON, return empty object {}. For protobuf, return empty Status message (code=0).
+		level.Error(logger).Log("msg", "OTLP response marshal failed, using fallback encoding", "err", err, "content_type", contentType)
+		// Both marshal attempts failed (extremely rare - indicates protobuf marshaling is broken).
+		// Return a minimal valid error response to avoid client parse errors.
+		// For JSON: manually encode a Status message as JSON. For protobuf: use standard library encoding as last resort.
 		if contentType == jsonContentType {
-			body = []byte("{}")
+			// Manually encode Status message as JSON to avoid json.Marshal dependency
+			body = []byte(`{"code":13,"message":"internal error: failed to encode response"}`)
 		} else {
-			body, _ = proto.Marshal(status.New(codes.OK, "").Proto())
+			// Fall back to standard library proto.Marshal
+			body, _ = proto.Marshal(status.New(codes.Internal, "internal error: failed to encode response").Proto())
 		}
 	}
 
