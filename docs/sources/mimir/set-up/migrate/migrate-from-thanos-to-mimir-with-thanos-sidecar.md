@@ -25,6 +25,8 @@ This is not so much of a guide as it is a collection of configurations that have
 
 There are very few obstacles to get this working properly. Thanos Sidecar is designed to work with the Prometheus API which Mimir (almost) implements. There are only 2 endpoints that are not implemented that we need to "spoof" to get Thanos sidecar to believe it is connecting to a Prometheus server: `/api/v1/status/buildinfo` and `/api/v1/status/config`. We spoof these endpoints using NGINX (more details later).
 
+In addition, you need to handle the `/metrics` endpoint of the Prometheus server through NGINX configuration. Since Thanos version `v0.37.0`, the sidecar evaluates the `prometheus_tsdb_lowest_timestamp_seconds` to get the lowest timestamp in the TSDB database. Refer to https://github.com/thanos-io/thanos/pull/7820.
+
 The only other roadblock is the requirement for requests to Mimir to contain the `X-Scope-Org-Id` header to identify the Tenant. We inject this header using another NGINX container sitting in between Thanos Sidecar and Mimir.
 
 In our case, everything was being deployed in Kubernetes. Mimir was deployed using the `mimir-distributed` helm chart. Therefore configurations shown will be Kubernetes manifests that will need to be modified for your environment. If you are not using Kubernetes then you will need to set up the appropriate configuration for NGINX to implement the technical setup described above. You may use the configurations below for inspiration but they will not work out of the box.
@@ -181,9 +183,17 @@ location /prometheus/api/v1/status/buildinfo {
         add_header Content-Type application/json;
         return 200 "{\"status\":\"success\",\"data\":{\"version\":\"2.35.0\",\"revision\":\"6656cd29fe6ac92bab91ecec0fe162ef0f187654\",\"branch\":\"HEAD\",\"buildUser\":\"root@cf6852b14d68\",\"buildDate\":\"20220421-09:53:42\",\"goVersion\":\"go1.18.1\"}}";
     }
+
+location /prometheus/metrics {
+        gzip on;
+        gzip_types text/plain
+        add_header "Content-Encoding" "gzip";
+        add_header "Content-Type" "text/plain; version=1.0.0; escaping=underscores";
+        return 200 "# HELP prometheus_tsdb_lowest_timestamp_seconds Lowest timestamp value stored in the database.\n# TYPE prometheus_tsdb_lowest_timestamp_seconds gauge\nprometheus_tsdb_lowest_timestamp_seconds 0\n";
+    }
 ```
 
-You need to modify the first one to set your external labels. The second one just allows Thanos to detect the version of Prometheus running.
+You need to modify the first one to set your external labels. The second one just allows Thanos to detect the version of Prometheus running. The third one fakes the metrics endpoint of the Prometheus server and returns the `prometheus_tsdb_lowest_timestamp_seconds` metric with a value of `0` which disables setting the min time within the Thanos sidecar.
 
 To modify the external labels alter this string: `"{\"status\":\"success\",\"data\":{\"yaml\": \"global:\\n external_labels:\\n source: mimir\"}}"`. You will notice it is escaped JSON. Simply add elements to the `data.external_labels` field to add more external labels as required or alter the existing key to modify them.
 
@@ -270,11 +280,17 @@ http {
     }
 
     location /prometheus/api/v1/status/buildinfo {
-    add_header Content-Type application/json;
-    return 200 "{\"status\":\"success\",\"data\":{\"version\":\"2.35.0\",\"revision\":\"6656cd29fe6ac92bab91ecec0fe162ef0f187654\",\"branch\":\"HEAD\",\"buildUser\":\"root@cf6852b14d68\",\"buildDate\":\"20220421-09:53:42\",\"goVersion\":\"go1.18.1\"}}";
+      add_header Content-Type application/json;
+      return 200 "{\"status\":\"success\",\"data\":{\"version\":\"2.35.0\",\"revision\":\"6656cd29fe6ac92bab91ecec0fe162ef0f187654\",\"branch\":\"HEAD\",\"buildUser\":\"root@cf6852b14d68\",\"buildDate\":\"20220421-09:53:42\",\"goVersion\":\"go1.18.1\"}}";
     }
 
-
+    location /prometheus/metrics {
+      gzip on;
+      gzip_types text/plain
+      add_header "Content-Encoding" "gzip";
+      add_header "Content-Type" "text/plain; version=1.0.0; escaping=underscores";
+      return 200 "# HELP prometheus_tsdb_lowest_timestamp_seconds Lowest timestamp value stored in the database.\n# TYPE prometheus_tsdb_lowest_timestamp_seconds gauge\nprometheus_tsdb_lowest_timestamp_seconds 0\n";
+    }
 
     # Rest of /prometheus goes to the query frontend
     location /prometheus {
