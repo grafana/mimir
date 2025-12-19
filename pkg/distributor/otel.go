@@ -520,8 +520,14 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 		err = errors.Wrapf(err, "marshalling %T to %s", payload, format)
 	}
 	if err != nil {
-		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
-		body = nil
+		level.Error(logger).Log("msg", "OTLP response marshal failed, responding with empty valid body", "err", err, "content_type", contentType)
+		// Both marshal attempts failed. Return a valid empty response for the Content-Type to avoid client parse errors.
+		// For JSON, return empty object {}. For protobuf, return empty Status message (code=0).
+		if contentType == jsonContentType {
+			body = []byte("{}")
+		} else {
+			body, _ = proto.Marshal(status.New(codes.OK, "").Proto())
+		}
 	}
 
 	w.Header().Set("Content-Type", contentType)

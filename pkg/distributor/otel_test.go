@@ -2142,7 +2142,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 
 	exportReq := TimeseriesToOTLPRequest([]prompb.TimeSeries{{
 		Labels:  []prompb.Label{{Name: "__name__", Value: "value"}},
-		Samples: []prompb.Sample{{Value: 1, Timestamp: time.Now().UnixNano()}},
+		Samples: []prompb.Sample{{Value: 1, Timestamp: time.Now().UnixMilli()}},
 	}}, nil)
 
 	tests := map[string]struct {
