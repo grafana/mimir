@@ -14,6 +14,9 @@ import (
 // Walk visits the specified node and all children, depth first.
 // Visiting is stopped if visitor returns an error at any point.
 func Walk(node planning.Node, visitor Visitor) error {
+	// The size of 4 elements here is picked to not have to resize
+	// for simple plans and matches the value used in Prometheus'
+	// function for walking an AST.
 	var path [4]planning.Node
 	return walk(node, path[:0], visitor)
 }
