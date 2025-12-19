@@ -467,6 +467,11 @@ func (u *userTSDB) getCachedShippedBlocks() map[ulid.ULID]time.Time {
 // getOldestUnshippedBlockTime returns the unix timestamp with milliseconds precision of the oldest
 // TSDB block not shipped to the storage yet, or 0 if all blocks have been shipped.
 func (u *userTSDB) getOldestUnshippedBlockTime() uint64 {
+	// When shipping is disabled, always return 0 because the concept of "unshipped" doesn't apply.
+	if u.shipper == nil {
+		return 0
+	}
+
 	shippedBlocks := u.getCachedShippedBlocks()
 	oldestTs := uint64(0)
 
