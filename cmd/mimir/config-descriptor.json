@@ -11129,6 +11129,17 @@
             },
             {
               "kind": "field",
+              "name": "close_idle_tsdb_when_shipping_disabled",
+              "required": false,
+              "desc": "True to allow closing of idle TSDBs even when block shipping is disabled. When enabled, idle TSDBs with an empty head will be closed and deleted from local disk regardless of shipping status. This helps prevent accumulation of idle users with 0 series.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled",
+              "fieldType": "boolean",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "memory_snapshot_on_shutdown",
               "required": false,
               "desc": "True to enable snapshotting of in-memory TSDB data on disk when shutting down.",

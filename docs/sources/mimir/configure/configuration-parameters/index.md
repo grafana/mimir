@@ -5572,6 +5572,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
   [close_idle_tsdb_timeout: <duration> | default = 13h]
 
+  # (advanced) True to allow closing of idle TSDBs even when block shipping is
+  # disabled. When enabled, idle TSDBs with an empty head will be closed and
+  # deleted from local disk regardless of shipping status. This helps prevent
+  # accumulation of idle users with 0 series.
+  # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled
+  [close_idle_tsdb_when_shipping_disabled: <boolean> | default = false]
+
   # (experimental) True to enable snapshotting of in-memory TSDB data on disk
   # when shutting down.
   # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown

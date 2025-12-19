@@ -783,6 +783,8 @@ Usage of ./cmd/mimir/mimir:
     	How long to cache postings for matchers in each compacted block queried from the ingester. 0 disables the cache and just deduplicates the in-flight calls. (default 10s)
   -blocks-storage.tsdb.close-idle-tsdb-timeout duration
     	If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB. (default 13h0m0s)
+  -blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled
+    	True to allow closing of idle TSDBs even when block shipping is disabled. When enabled, idle TSDBs with an empty head will be closed and deleted from local disk regardless of shipping status. This helps prevent accumulation of idle users with 0 series.
   -blocks-storage.tsdb.dir string
     	Directory to store TSDBs (including WAL) in the ingesters. This directory is required to be persisted between restarts. (default "./tsdb/")
   -blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage int
