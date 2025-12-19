@@ -57,6 +57,6 @@ func TestPowerTwo(t *testing.T) {
 	}
 	for testName, testCase := range testCases {
 		require.Equal(t, testCase.expected, NextPowerTwo(testCase.value), testName)
-		assert.True(t, IsPowerOfTwo(testCase.expected), testName)
+		require.True(t, IsPowerOfTwo(testCase.expected), testName)
 	}
 }
