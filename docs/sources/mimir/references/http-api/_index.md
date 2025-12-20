@@ -140,8 +140,6 @@ curl -v \
   "https://<MIMIR_BASE_URL>/<prometheus-http-prefix>/api/v1/rules"
 ```
 
-For guidance specific to Grafana Cloud Mimir (endpoints, base URLs, and authentication), refer to [Query Grafana Cloud Mimir HTTP API](../grafana-cloud-http-api/).
-
 ## All services
 
 The following API endpoints are exposed by all services.
