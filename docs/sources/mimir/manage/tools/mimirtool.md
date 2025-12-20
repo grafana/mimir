@@ -1195,7 +1195,7 @@ INFO[0001] finished uploading blocks                already_exists=1 failed=0 su
 ```
 
 {{< admonition type="note" >}}
-Backfilled data visibility depends on the sample timestamps in the uploaded blocks. Sometimes data can appear more than 12 hours after upload
+Backfilled data visibility depends on the sample timestamps in the uploaded blocks. Sometimes data can appear more than 12 hours after upload.
 {{< /admonition >}}
 
 ## License
