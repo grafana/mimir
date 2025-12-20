@@ -27,6 +27,10 @@ func (mapper *propagateMatchers) HasChanged() bool {
 	return mapper.changed
 }
 
+func (mapper *propagateMatchers) Stats() (int, int, int) {
+	return 0, 0, 0
+}
+
 func (mapper *propagateMatchers) MapExpr(ctx context.Context, expr parser.Expr) (mapped parser.Expr, finished bool, err error) {
 	e, ok := expr.(*parser.BinaryExpr)
 	if !ok {
