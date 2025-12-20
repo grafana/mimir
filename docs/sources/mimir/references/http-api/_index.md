@@ -122,6 +122,26 @@ Multi-tenancy can be enabled and disabled via the `-auth.multitenancy-enabled` f
 
 For more information about authentication and authorization, refer to [Authentication and Authorization](../../manage/secure/authentication-and-authorization/).
 
+#### Basic authentication
+
+You can authenticate with a Basic authorization header. Format credentials as `<TENANT_ID>:<TOKEN>`, Base64‑encode the value, and send it in the `Authorization` header.
+
+Generate the Base64 value on Linux:
+
+```sh
+echo "<TENANT_ID>:<TOKEN>" | base64 -w0
+```
+
+List rules:
+
+```sh
+curl -v \
+  -H "Authorization: Basic <BASE64_VALUE>" \
+  "https://<MIMIR_BASE_URL>/<prometheus-http-prefix>/api/v1/rules"
+```
+
+For guidance specific to Grafana Cloud Mimir (endpoints, base URLs, and authentication), refer to [Query Grafana Cloud Mimir HTTP API](../grafana-cloud-http-api/).
+
 ## All services
 
 The following API endpoints are exposed by all services.
