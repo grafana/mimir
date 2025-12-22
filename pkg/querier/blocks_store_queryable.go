@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,7 +75,7 @@ type BlocksFinder interface {
 
 	// GetBlocks returns known blocks for userID containing samples within the range minT
 	// and maxT (milliseconds, both included). Returned blocks are sorted by MaxTime descending.
-	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error)
+	GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, *bucketindex.Metadata, error)
 }
 
 // BlocksStoreClient is the interface that should be implemented by any client used
@@ -142,6 +143,23 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 			Help: "Number of chunks received from store gateways at query time.",
 		}),
 	}
+}
+
+type bucketIndexMetadataContextKey struct{}
+
+var bucketIndexMetadataCtxKey = &bucketIndexMetadataContextKey{}
+
+func contextWithBucketIndexMetadata(ctx context.Context, meta *bucketindex.Metadata) context.Context {
+	// Bucket index metadata is the best effort, thus it can be nil.
+	if meta == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, bucketIndexMetadataCtxKey, meta)
+}
+
+func bucketIndexMetadataFromContext(ctx context.Context) (*bucketindex.Metadata, bool) {
+	meta, ok := ctx.Value(bucketIndexMetadataCtxKey).(*bucketindex.Metadata)
+	return meta, ok
 }
 
 // BlocksStoreQueryable is a queryable which queries blocks storage via
@@ -561,7 +579,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 	maxT = clampMaxTime(spanLog, maxT, now.UnixMilli(), -q.queryStoreAfter, "query store after")
 
 	// Find the list of blocks we need to query given the time range.
-	knownBlocks, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
+	knownBlocks, indexMeta, err := q.finder.GetBlocks(ctx, tenantID, minT, maxT)
 	if err != nil {
 		return err
 	}
@@ -570,6 +588,10 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(
 		q.metrics.storesHit.Observe(0)
 		spanLog.DebugLog("msg", "no blocks found")
 		return nil
+	}
+
+	if indexMeta != nil {
+		ctx = contextWithBucketIndexMetadata(ctx, indexMeta)
 	}
 
 	q.metrics.blocksFound.Add(float64(len(knownBlocks)))
@@ -780,11 +802,18 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 // chunks for the fetched series if it was a streaming call for series+chunks. startStreamingChunks must be called
 // before iterating on the series.
 func (q *blocksStoreQuerier) fetchSeriesFromStores(ctx context.Context, sp *storage.SelectHints, clients map[BlocksStoreClient][]ulid.ULID, minT int64, maxT int64, tenantID string, convertedMatchers []storepb.LabelMatcher, memoryTracker *limiter.MemoryConsumptionTracker) (_ []storage.SeriesSet, _ []ulid.ULID, _ annotations.Annotations, streamReaders []*storeGatewayStreamReader, estimateChunks func() int, _ error) {
-	var (
-		// We deliberately only cancel this context if any store-gateway call fails, to ensure that all streams are aborted promptly.
-		// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
-		reqCtx, cancelReqCtx = context.WithCancelCause(grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)) //nolint:govet
+	reqCtx := grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
 
+	if meta, ok := bucketIndexMetadataFromContext(ctx); ok {
+		reqCtx = grpc_metadata.AppendToOutgoingContext(reqCtx,
+			storegateway.GrpcContextMetadataBucketIndexUpdatedAt, strconv.FormatInt(meta.UpdatedAt, 10))
+	}
+
+	// We deliberately only cancel this context if any store-gateway call fails, to ensure that all streams are aborted promptly.
+	// When all calls succeed, we rely on the parent context being cancelled, otherwise we'd abort all the store-gateway streams returned by this method, which makes them unusable.
+	reqCtx, cancelReqCtx := context.WithCancelCause(reqCtx) //nolint:govet
+
+	var (
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		seriesSets    = []storage.SeriesSet(nil)
@@ -1058,8 +1087,14 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 	hints *storage.LabelHints,
 	matchers []storepb.LabelMatcher,
 ) ([][]string, annotations.Annotations, []ulid.ULID, error) {
+	reqCtx := grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
+
+	if meta, ok := bucketIndexMetadataFromContext(ctx); ok {
+		reqCtx = grpc_metadata.AppendToOutgoingContext(reqCtx,
+			storegateway.GrpcContextMetadataBucketIndexUpdatedAt, strconv.FormatInt(meta.UpdatedAt, 10))
+	}
+
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		nameSets      = [][]string{}
@@ -1137,8 +1172,14 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	hints *storage.LabelHints,
 	matchers ...*labels.Matcher,
 ) ([][]string, annotations.Annotations, []ulid.ULID, error) {
+	reqCtx := grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
+
+	if meta, ok := bucketIndexMetadataFromContext(ctx); ok {
+		reqCtx = grpc_metadata.AppendToOutgoingContext(reqCtx,
+			storegateway.GrpcContextMetadataBucketIndexUpdatedAt, strconv.FormatInt(meta.UpdatedAt, 10))
+	}
+
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, storegateway.GrpcContextMetadataTenantID, tenantID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		valueSets     = [][]string{}
