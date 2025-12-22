@@ -687,7 +687,7 @@ func newReadyTestUsageTracker(t *testing.T, limits map[string]*validation.Limits
 	require.NoError(t, tracker.reconcilePartitions(t.Context()))
 
 	require.EventuallyWithT(t, func(t *assert.CollectT) {
-		require.Len(t, getPartitionRing(t, pkv).ActivePartitionIDs(), testPartitionsCount)
+		require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
 	}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
 
 	return tracker
