@@ -7,6 +7,7 @@ package limiter
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 		limiter = NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
 
-	memoryTracker := NoopMemoryTracker{}
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 	returnedSeries1, err := limiter.AddSeries(series1, memoryTracker)
 	assert.NoError(t, err)
 	assertSameLabels(t, returnedSeries1, series1)
@@ -100,7 +101,7 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 		reg     = prometheus.NewPedanticRegistry()
 		limiter = NewQueryLimiter(1, 0, 0, 0, stats.NewQueryMetrics(reg))
 	)
-	memoryTracker := NoopMemoryTracker{}
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 	returnedSeries1, err := limiter.AddSeries(series1, memoryTracker)
 	require.NoError(t, err)
 	assertSameLabels(t, returnedSeries1, series1)
@@ -227,8 +228,9 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(b.N+1, 0, 0, 0, stats.NewQueryMetrics(reg))
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 	for _, s := range series {
-		_, err := limiter.AddSeries(s, NoopMemoryTracker{})
+		_, err := limiter.AddSeries(s, memoryTracker)
 		assert.NoError(b, err)
 	}
 }
@@ -254,10 +256,11 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_NoDuplicates(b *testing.B) 
 
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(totalSeries*2, 0, 0, 0, stats.NewQueryMetrics(reg))
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
 		for _, s := range series {
-			_, _ = limiter.AddSeries(s, NoopMemoryTracker{})
+			_, _ = limiter.AddSeries(s, memoryTracker)
 		}
 	}
 }
@@ -290,10 +293,11 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_90pct(b *testing.B) {
 
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
 		for _, s := range series {
-			_, _ = limiter.AddSeries(s, NoopMemoryTracker{})
+			_, _ = limiter.AddSeries(s, memoryTracker)
 		}
 	}
 }
@@ -325,10 +329,11 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
 
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(totalSeries, 0, 0, 0, stats.NewQueryMetrics(reg))
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
 		for _, s := range series {
-			_, _ = limiter.AddSeries(s, NoopMemoryTracker{})
+			_, _ = limiter.AddSeries(s, memoryTracker)
 		}
 	}
 }
