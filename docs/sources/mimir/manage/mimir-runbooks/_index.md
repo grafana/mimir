@@ -719,6 +719,17 @@ How to **investigate**:
     - **How to detect**: A telltale sign is having many cores of sustained kernel-mode CPU usage by the compactor process. Check the metric `rate(container_cpu_system_seconds_total{pod="<pod>"}[$__rate_interval])` for the affected pod.
     - **What it means**: The compactor process has frozen because it's blocked on kernel-mode flushes to an unresponsive network block storage device.
     - **How to mitigate**: Unknown. This typically self-resolves after ten to twenty minutes.
+  - Result block index postings offsets table exceeds maximum size:
+    - **How to detect**: Search compactor logs for `length size exceeds`.
+    - **What it means**: Compactor block merging fails because the resulting postings offsets table gets too large.
+    - This is caused by extremely high label cardinality, which can be handled by increasing `compactor_split_and_merge_shards`.
+    - **How to mitigate**:
+      1. These blocks are impossible to compact, mark the source blocks indicated in the error messages with `no-compact`.
+      - GCS example:
+      ```
+      ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "Result block exceeds postings offsets table maximum size" -blocks "<block-1>,<block-2>..."
+      ```
+      1. Double the `compactor_split_and_merge_shards` compactor for the affected tenant ([example PR](https://github.com/grafana/deployment_tools/pull/438877)).
 
 - Check the [Compactor Dashboard](../monitor-grafana-mimir/dashboards/compactor/) and set it to view the last 7 days.
 
