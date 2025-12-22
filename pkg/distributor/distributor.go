@@ -3265,10 +3265,14 @@ respsLoop:
 	}
 
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
+	tracker, err := mimir_limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
-		uniqueSeriesLabels, err := queryLimiter.AddSeries(m, mimir_limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
+		uniqueSeriesLabels, err := queryLimiter.AddSeries(m, tracker)
 		if err != nil {
 			return nil, err
 		}
