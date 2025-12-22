@@ -8,9 +8,7 @@ package limiter
 import (
 	"bytes"
 	"fmt"
-	"reflect"
 	"testing"
-	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -333,120 +331,6 @@ func BenchmarkQueryLimiter_AddSeries_WithCallerDedup_50pct(b *testing.B) {
 			_, _ = limiter.AddSeries(s, NoopMemoryTracker{})
 		}
 	}
-}
-
-// assertSameLabels checks if two labels.Labels share the same internal data.
-// This is used to verify that AddSeries returns the same labels object for duplicates.
-// This function is implementation-agnostic and works with:
-// - stringlabels (default): stores labels as a single string with length prefixes
-// - slicelabels (build with -tags slicelabels): stores labels as a slice of Label structs
-// - dedupelabels (build with -tags dedupelabels): uses a shared SymbolTable
-//
-// To test with different implementations:
-//
-//	go test -tags slicelabels ./pkg/util/limiter/
-//	go test -tags dedupelabels ./pkg/util/limiter/
-func assertSameLabels(t *testing.T, a, b labels.Labels) {
-	t.Helper()
-
-	aVal := reflect.ValueOf(a)
-	bVal := reflect.ValueOf(b)
-
-	// Try stringlabels implementation (default)
-	// stringlabels stores data in a "data" field of type string
-	if aData := aVal.FieldByName("data"); aData.IsValid() && aData.Kind() == reflect.String {
-		bData := bVal.FieldByName("data")
-		if !bData.IsValid() || bData.Kind() != reflect.String {
-			assert.Fail(t, "labels have different implementations")
-			return
-		}
-
-		aStr := aData.String()
-		bStr := bData.String()
-
-		if len(aStr) == 0 && len(bStr) == 0 {
-			// Both empty
-			return
-		}
-
-		if len(aStr) > 0 && len(bStr) > 0 {
-			// Compare string data pointers
-			aPtr := unsafe.Pointer(unsafe.StringData(aStr))
-			bPtr := unsafe.Pointer(unsafe.StringData(bStr))
-			assert.Equal(t, aPtr, bPtr, "labels should share the same internal data pointer (stringlabels)")
-			return
-		}
-
-		assert.Fail(t, "labels have different lengths")
-		return
-	}
-
-	// Try slicelabels implementation (build with -tags slicelabels)
-	// slicelabels stores data in a "labels" field which is a slice of Label
-	if aSlice := aVal.FieldByName("labels"); aSlice.IsValid() && aSlice.Kind() == reflect.Slice {
-		bSlice := bVal.FieldByName("labels")
-		if !bSlice.IsValid() || bSlice.Kind() != reflect.Slice {
-			assert.Fail(t, "labels have different implementations")
-			return
-		}
-
-		if aSlice.Len() == 0 && bSlice.Len() == 0 {
-			// Both empty
-			return
-		}
-
-		if aSlice.Len() > 0 && bSlice.Len() > 0 {
-			// Compare slice backing array pointers
-			aPtr := aSlice.Pointer()
-			bPtr := bSlice.Pointer()
-			assert.Equal(t, aPtr, bPtr, "labels should share the same slice backing array (slicelabels)")
-			return
-		}
-
-		assert.Fail(t, "labels have different lengths")
-		return
-	}
-
-	// Try dedupelabels implementation (build with -tags dedupelabels)
-	// dedupelabels uses a SymbolTable; check if there's a "symbolTable" field
-	if aSymTable := aVal.FieldByName("symbolTable"); aSymTable.IsValid() {
-		bSymTable := bVal.FieldByName("symbolTable")
-		if !bSymTable.IsValid() {
-			assert.Fail(t, "labels have different implementations")
-			return
-		}
-
-		// For dedupelabels, we need to check if they reference the same entries in the symbol table
-		// Get the "data" field which should contain indices into the symbol table
-		if aData := aVal.FieldByName("data"); aData.IsValid() && aData.Kind() == reflect.Slice {
-			bData := bVal.FieldByName("data")
-			if bData.IsValid() && bData.Kind() == reflect.Slice {
-				if aData.Len() == 0 && bData.Len() == 0 {
-					return
-				}
-				if aData.Len() > 0 && bData.Len() > 0 {
-					// Compare slice pointers
-					aPtr := aData.Pointer()
-					bPtr := bData.Pointer()
-					assert.Equal(t, aPtr, bPtr, "labels should share the same data slice (dedupelabels)")
-					return
-				}
-			}
-		}
-	}
-
-	// Fallback: Unknown implementation or unable to determine
-	// Just verify that the labels have equal content
-	aBytes := a.Bytes(nil)
-	bBytes := b.Bytes(nil)
-
-	if len(aBytes) == 0 && len(bBytes) == 0 {
-		return
-	}
-
-	// This fallback only checks content equality, not pointer equality
-	// If we reach here, the test may pass even without proper deduplication
-	assert.Equal(t, aBytes, bBytes, "labels should have equal content (unable to verify pointer equality for unknown implementation)")
 }
 
 func assertRejectedQueriesMetricValue(t *testing.T, c prometheus.Collector, expectedMaxSeries, expectedMaxChunkBytes, expectedMaxChunks, expectedMaxEstimatedChunks int) {
