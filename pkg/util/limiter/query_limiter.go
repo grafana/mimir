@@ -39,7 +39,6 @@ var (
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
 	uniqueSeries   map[uint64]labels.Labels
-	conflictSeries map[uint64][]labels.Labels
 
 	chunkBytesCount     atomic.Int64
 	chunkCount          atomic.Int64
@@ -84,14 +83,6 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 	return ql
 }
 
-func countConflictSeries(series map[uint64][]labels.Labels) int {
-	count := 0
-	for _, lbls := range series {
-		count += len(lbls)
-	}
-	return count
-}
-
 // AddSeries adds the input series and returns an error if the limit is reached.
 func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker MemoryTracker) (labels.Labels, error) {
 	fingerprint := seriesLabels.Hash()
@@ -99,40 +90,29 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker MemoryTrac
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
-	uniqueSeriesBefore := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
-	var found bool
-	var existing labels.Labels
-	var newSeriesButHashCollided bool
-	if existing, found = ql.uniqueSeries[fingerprint]; !found || labels.Equal(existing, seriesLabels) {
-		if !found {
-			// This is unique new series.
-			ql.uniqueSeries[fingerprint] = seriesLabels
-			err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
-			if err != nil {
-				return labels.EmptyLabels(), err
-			}
+	// Note that we are simplifying hash conflict check because we know they are going to be very rare.
+	uniqueSeriesBefore := len(ql.uniqueSeries)
+	existing, found := ql.uniqueSeries[fingerprint]
+	// This is the case where there are duplicated labels from previously seen series, hence we return the existing
+	// labels and not counting up the memory consumption.
+	if found && labels.Equal(existing, seriesLabels) {
+		// Still return error if the duplicated labels had been exceeding the limit.
+		if ql.maxSeriesPerQuery != 0 && len(ql.uniqueSeries) > ql.maxSeriesPerQuery {
+			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 		}
-	} else {
-		// Conflicted hash is found.
-		if ql.conflictSeries == nil {
-			ql.conflictSeries = make(map[uint64][]labels.Labels)
-		}
-		l := ql.conflictSeries[fingerprint]
-		for _, prev := range l {
-			// Labels matches with previous series, return the same labels instance.
-			if labels.Equal(prev, seriesLabels) {
-				return prev, nil
-			}
-		}
-		newSeriesButHashCollided = true
-		ql.conflictSeries[fingerprint] = append(l, seriesLabels)
-		err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
-		if err != nil {
-			return labels.EmptyLabels(), err
-		}
+		return existing, nil
 	}
 
-	uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
+	// This can be either newly seen labels with different fingerprint or can also be newly seen labels whose hash
+	// conflicted with previous seen different labels.
+	// In both cases we just return a new labels and increase memory consumption.
+	ql.uniqueSeries[fingerprint] = seriesLabels
+	err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
+	if err != nil {
+		return labels.EmptyLabels(), err
+	}
+
+	uniqueSeriesAfter := len(ql.uniqueSeries)
 
 	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
 		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
@@ -143,14 +123,6 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker MemoryTrac
 		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
 
-	// new seriesLabels that has hash collision
-	if newSeriesButHashCollided {
-		return seriesLabels, nil
-	}
-	// duplicated series
-	if found {
-		return existing, nil
-	}
 	return seriesLabels, nil
 }
 
@@ -158,7 +130,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker MemoryTrac
 func (ql *QueryLimiter) uniqueSeriesCount() int {
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
-	return len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
+	return len(ql.uniqueSeries)
 }
 
 // AddChunkBytes adds the input chunk size in bytes and returns an error if the limit is reached.
