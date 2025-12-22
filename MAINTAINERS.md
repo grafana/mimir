@@ -8,7 +8,6 @@ The following are the main/default maintainers:
 - Casie Chen — [@chencs](https://github.com/chencs) ([Grafana Labs](https://grafana.com/))
 - Charles Korn — [@charleskorn](https://github.com/charleskorn) ([Grafana Labs](https://grafana.com/))
 - David Grant [@seizethedave](https://github.com/seizethedave) ([Grafana Labs](https://grafana.com/))
-- Dimitar Dimitrov - [@dimitarvdimitrov](https://github.com/dimitarvdimitrov) ([Grafana Labs](https://grafana.com/))
 - Dustin Wilson [@dmwilson-grafana](https://github.com/dmwilson-grafana) ([Grafana Labs](https://grafana.com/))
 - Fayzal Ghantiwala [@fayzal-g](https://github.com/fayzal) ([Grafana Labs](https://grafana.com/))
 - Felix Beuke [@flxbk](https://github.com/flxbk) ([Grafana Labs](https://grafana.com/))
