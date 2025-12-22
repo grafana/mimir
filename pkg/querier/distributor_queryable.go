@@ -120,7 +120,11 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
-		return series.LabelsToSeriesSet(ms)
+		memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+		return series.NewMemoryTrackingSeriesSet(series.LabelsToSeriesSet(ms), memoryTracker)
 	}
 
 	return q.streamingSelect(ctx, minT, maxT, matchers)
