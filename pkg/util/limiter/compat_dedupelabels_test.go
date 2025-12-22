@@ -16,9 +16,6 @@ func assertSameLabels(t *testing.T, a, b labels.Labels) {
 	bVal := reflect.ValueOf(b)
 
 	// We don't validate the reflection because the runtime guaranteed the correct type by the build tag.
-	aSymTable := aVal.FieldByName("symbolTable")
-	bSymTable := bVal.FieldByName("symbolTable")
-
 	aData := aVal.FieldByName("data")
 	bData := bVal.FieldByName("data")
 	if aData.Len() == 0 && bData.Len() == 0 {
