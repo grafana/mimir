@@ -203,6 +203,7 @@
 * [ENHANCEMENT] Add Azure object store workload identity example configuration. #13135
 * [ENHANCEMENT] Ruler: clarify that internal distributor applies to both operational modes. #13300
 * [ENHANCEMENT] Native histograms: Set expectations on querying classic histograms versus NHCBs. #13689
+* [ENHANCEMENT] Add a scenario to the MimirCompactorNotRunningCompaction runbook. #13874
 
 ### Tools
 
