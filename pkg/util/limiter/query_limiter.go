@@ -90,6 +90,11 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker MemoryTrac
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
+	err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
+	if err != nil {
+		return labels.EmptyLabels(), err
+	}
+
 	// Note that we are simplifying hash conflict check because we know they are going to be very rare.
 	uniqueSeriesBefore := len(ql.uniqueSeries)
 	existing, found := ql.uniqueSeries[fingerprint]
@@ -107,10 +112,6 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker MemoryTrac
 	// conflicted with previous seen different labels.
 	// In both cases we just return a new labels and increase memory consumption.
 	ql.uniqueSeries[fingerprint] = seriesLabels
-	err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
-	if err != nil {
-		return labels.EmptyLabels(), err
-	}
 
 	uniqueSeriesAfter := len(ql.uniqueSeries)
 
