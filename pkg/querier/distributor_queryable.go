@@ -127,10 +127,10 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return series.NewMemoryTrackingSeriesSet(series.LabelsToSeriesSet(ms), memoryTracker)
 	}
 
-	return q.streamingSelect(ctx, minT, maxT, matchers, memoryTracker)
+	return series.NewMemoryTrackingSeriesSet(q.streamingSelect(ctx, minT, maxT, matchers), memoryTracker)
 }
 
-func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher, memoryTracker *limiter.MemoryConsumptionTracker) storage.SeriesSet {
+func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
 	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -175,7 +175,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 	// Store the stream readers so we can free their buffers when we're done using this Querier.
 	q.streamReaders = append(q.streamReaders, results.StreamReaders...)
 
-	return series.NewMemoryTrackingSeriesSet(series.NewConcreteSeriesSetFromSortedSeries(streamingSeries), memoryTracker)
+	return series.NewConcreteSeriesSetFromSortedSeries(streamingSeries)
 }
 
 func (q *distributorQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
