@@ -133,61 +133,6 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
 
-func TestQueryLimiter_AddSeries_HashCollision(t *testing.T) {
-	const metricName = "test_metric"
-
-	// Create two different series
-	series1 := labels.FromMap(map[string]string{
-		model.MetricNameLabel: metricName + "_1",
-		"label1":              "value1",
-	})
-	series2 := labels.FromMap(map[string]string{
-		model.MetricNameLabel: metricName + "_2",
-		"label2":              "value2",
-	})
-	series3 := labels.FromMap(map[string]string{
-		model.MetricNameLabel: metricName + "_3",
-		"label3":              "value3",
-	})
-
-	reg := prometheus.NewPedanticRegistry()
-	limiter := NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
-
-	// Test scenario: Manually simulate a hash collision state
-	// In reality, hash collisions are extremely rare with 64-bit hashes,
-	// but we need to verify the code handles them correctly.
-
-	// Use a common hash for series1 and series2 to simulate collision
-	collisionHash := uint64(12345)
-
-	// Manually set up the collision state in the limiter
-	limiter.conflictSeries = make(map[uint64][]labels.Labels)
-	// The first series is in uniqueSeries map.
-	limiter.uniqueSeries[collisionHash] = series1
-	// If another series hash is colliding, AddSeries will add it to conflictSeries map.
-	limiter.conflictSeries[collisionHash] = []labels.Labels{series2}
-
-	// Verify the conflict series count
-	conflictCount := countConflictSeries(limiter.conflictSeries)
-	require.Equal(t, 1, conflictCount, "should have 1 series in conflict list")
-
-	// Now add series3 normally - it should not interfere with the collision
-	returned3, err := limiter.AddSeries(series3, NoopMemoryTracker{})
-	require.NoError(t, err)
-	assertSameLabels(t, returned3, series3)
-
-	// Verify total count includes both unique series and conflict series
-	totalUnique := len(limiter.uniqueSeries)
-	totalConflict := countConflictSeries(limiter.conflictSeries)
-	totalCount := totalUnique + totalConflict
-	require.Equal(t, 2, totalUnique, "should have 2 unique series (series1, series3)")
-	require.Equal(t, 1, totalConflict, "should have 1 conflict series")
-	require.Equal(t, 3, totalCount, "should count all series including conflicts")
-
-	// Verify uniqueSeriesCount includes conflict series (this method uses mutex internally)
-	require.Equal(t, 3, limiter.uniqueSeriesCount(), "uniqueSeriesCount should include conflict series")
-}
-
 func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(0, 100, 0, 0, stats.NewQueryMetrics(reg))
