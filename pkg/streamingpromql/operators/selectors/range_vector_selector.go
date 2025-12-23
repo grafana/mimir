@@ -175,6 +175,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 					m.stepData.SmoothedBasisForTailPointSet = true
 				}
 			}
+		} else {
+			m.lastExtendedRangeFloatModifications = AnchoredExtensionMetadata{}
 		}
 		m.stepData.Floats = m.extendedRangeFloats.ViewAll(m.stepData.Floats)
 	} else {
