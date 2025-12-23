@@ -3092,6 +3092,8 @@ kafka:
     allowPrivilegeEscalation: false
   # -- Grace period to allow Kafka to shutdown before it is killed
   terminationGracePeriodSeconds: 30
+  # -- Kafka log retention period in hours
+  logRetentionHours: 24
   # -- Additional environment variables for Kafka
   extraEnv: []
   # -- Additional environment variables from secrets or configmaps
