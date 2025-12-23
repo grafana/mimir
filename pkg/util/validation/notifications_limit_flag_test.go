@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestNotificationLimitsMap(t *testing.T) {
@@ -72,17 +72,17 @@ func TestNotificationsLimitMapYaml(t *testing.T) {
 
 	require.NoError(t, testStruct.Flag.Set("{\"email\": 500 }"))
 	expected := []byte(`flag:
-    email: 500
+  email: 500
 `)
 
-	actual, err := yaml.Marshal(testStruct)
+	actual, err := yaml.Dump(testStruct)
 	require.NoError(t, err)
 	assert.Equal(t, expected, actual)
 
 	var actualStruct TestStruct
 	actualStruct.Flag = NotificationRateLimitMap()
 
-	err = yaml.Unmarshal(expected, &actualStruct)
+	err = yaml.Load(expected, &actualStruct)
 	require.NoError(t, err)
 	assert.True(t, testStruct.Flag.Equal(actualStruct.Flag))
 }
@@ -95,9 +95,9 @@ func TestUnknownIntegrationWhenLoadingYaml(t *testing.T) {
   unknown_integration: 500
 `
 
-	err := yaml.Unmarshal([]byte(yamlInput), &s)
+	err := yaml.Load([]byte(yamlInput), &s)
 	require.NotNil(t, err)
-	require.Equal(t, "unknown integration name: unknown_integration", err.Error())
+	require.Equal(t, "yaml: unmarshal errors:\n  line 2: unknown integration name: unknown_integration", err.Error())
 }
 
 func TestWrongYamlStructureWhenLoadingYaml(t *testing.T) {
@@ -110,7 +110,7 @@ func TestWrongYamlStructureWhenLoadingYaml(t *testing.T) {
     burst_size: 7777
 `
 
-	err := yaml.Unmarshal([]byte(yamlInput), &s)
+	err := yaml.Load([]byte(yamlInput), &s)
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "cannot unmarshal !!map into float64")
 }

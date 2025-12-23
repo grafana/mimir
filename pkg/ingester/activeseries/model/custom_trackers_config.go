@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // preAllocDynamicSlice is using uint16 to represent custom tracker matches
@@ -156,7 +156,7 @@ func customTrackerFlagValueToMap(s string) (map[string]string, error) {
 // CustomTrackersConfig are marshaled in yaml as a map[string]string, with matcher names as keys and strings as matchers definitions.
 func (c *CustomTrackersConfig) UnmarshalYAML(value *yaml.Node) error {
 	stringMap := map[string]string{}
-	err := value.DecodeWithOptions(&stringMap, yaml.DecodeOptions{KnownFields: true})
+	err := value.Load(&stringMap, yaml.WithKnownFields(true))
 	if err != nil {
 		return err
 	}

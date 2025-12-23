@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 type conversionInput struct {
@@ -596,7 +596,7 @@ func TestChangedCortexDefaults(t *testing.T) {
 		return params.SetValue(path, params.MustGetDefaultValue(path))
 	})
 	require.NoError(t, err)
-	config, err := yaml.Marshal(params)
+	config, err := yaml.Dump(params)
 	require.NoError(t, err)
 
 	in := conversionInput{
@@ -662,7 +662,7 @@ func TestChangedGEMDefaults(t *testing.T) {
 		return params.SetValue(path, params.MustGetDefaultValue(path))
 	})
 	require.NoError(t, err)
-	config, err := yaml.Marshal(params)
+	config, err := yaml.Dump(params)
 	require.NoError(t, err)
 
 	in := conversionInput{

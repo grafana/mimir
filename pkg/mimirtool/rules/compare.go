@@ -14,7 +14,7 @@ import (
 	"github.com/mitchellh/colorstring"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	yaml "gopkg.in/yaml.v3"
+	yaml "go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
@@ -303,13 +303,13 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 
 				// Print the full diff of the rules if verbose is set
 				if verbose {
-					newYaml, _ := yaml.Marshal(c.New)
+					newYaml, _ := yaml.Dump(c.New)
 					separated := strings.Split(string(newYaml), "\n")
 					for _, l := range separated {
 						colorstring.Printf("[green]+ %v\n", l)
 					}
 
-					oldYaml, _ := yaml.Marshal(c.Original)
+					oldYaml, _ := yaml.Dump(c.Original)
 					separated = strings.Split(string(oldYaml), "\n")
 					for _, l := range separated {
 						colorstring.Printf("[red]- %v\n", l)

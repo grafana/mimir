@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestSSEConfig_Validate(t *testing.T) {
@@ -220,7 +220,7 @@ access_key_id: access key id
 secret_access_key: secret access key
 session_token: session token
 `
-	err := yaml.Unmarshal([]byte(yamlCfg), &cfg)
+	err := yaml.Load([]byte(yamlCfg), &cfg)
 	require.NoError(t, err)
 
 	require.Equal(t, cfg.AccessKeyID, "access key id")
@@ -235,7 +235,7 @@ func TestConfigRedactsCredentials(t *testing.T) {
 		SessionToken:    flagext.SecretWithValue("session token"),
 	}
 
-	output, err := yaml.Marshal(cfg)
+	output, err := yaml.Dump(cfg)
 	require.NoError(t, err)
 
 	require.True(t, bytes.Contains(output, []byte("access key id")))

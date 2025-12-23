@@ -42,8 +42,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/time/rate"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
@@ -416,7 +416,7 @@ func ComputeFallbackConfig(fallbackConfigFile string) ([]byte, error) {
 			},
 		},
 	}
-	fallbackConfig, err := yaml.Marshal(defaultConfig)
+	fallbackConfig, err := yaml.Dump(defaultConfig)
 	if err != nil {
 		return nil, fmt.Errorf("unable to marshal default fallback config: %s", err)
 	}

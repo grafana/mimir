@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -124,7 +124,7 @@ func TestStreamWriteYAMLResponse(t *testing.T) {
 		}
 		tt.value[ts.Name] = &ts
 	}
-	d, err := yaml.Marshal(tt.value)
+	d, err := yaml.Dump(tt.value)
 	require.NoError(t, err)
 	tt.expectedOutput = string(d)
 	w := httptest.NewRecorder()

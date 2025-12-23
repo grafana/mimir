@@ -9,7 +9,7 @@ import (
 
 	"github.com/prometheus/otlptranslator"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestOTelTranslationStrategyValue_UnmarshalYAML(t *testing.T) {
@@ -53,7 +53,7 @@ func TestOTelTranslationStrategyValue_UnmarshalYAML(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			var got OTelTranslationStrategyValue
-			err := yaml.Unmarshal([]byte(tc.input), &got)
+			err := yaml.Load([]byte(tc.input), &got)
 			if tc.wantErr {
 				require.Error(t, err)
 				return
@@ -62,7 +62,7 @@ func TestOTelTranslationStrategyValue_UnmarshalYAML(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.want, otlptranslator.TranslationStrategyOption(got))
 
-			output, err := yaml.Marshal(got)
+			output, err := yaml.Dump(got)
 			require.NoError(t, err)
 			require.Equal(t, tc.input, strings.TrimSpace(string(output)))
 		})

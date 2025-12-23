@@ -10,7 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -51,7 +51,7 @@ common:
 		fs := flag.NewFlagSet("test", flag.PanicOnError)
 		cfg.RegisterFlags(fs, log.NewNopLogger())
 
-		err := yaml.Unmarshal([]byte(commonYAMLConfig), &cfg)
+		err := yaml.Load([]byte(commonYAMLConfig), &cfg)
 		require.NoError(t, err)
 
 		// Values should be properly inherited.
@@ -115,7 +115,7 @@ querier:
 		fs := flag.NewFlagSet("test", flag.PanicOnError)
 		cfg.RegisterFlags(fs, log.NewNopLogger())
 
-		err := yaml.Unmarshal([]byte(commonYAMLConfig), &cfg)
+		err := yaml.Load([]byte(commonYAMLConfig), &cfg)
 		require.NoError(t, err)
 
 		// common configuration is correctly set
@@ -189,7 +189,7 @@ alertmanager:
 		fs := flag.NewFlagSet("test", flag.PanicOnError)
 		cfg.RegisterFlags(fs, log.NewNopLogger())
 
-		err := yaml.Unmarshal([]byte(commonYAMLConfig), &cfg)
+		err := yaml.Load([]byte(commonYAMLConfig), &cfg)
 		require.NoError(t, err)
 
 		// common configuration is correctly set
@@ -240,7 +240,7 @@ func (c *customExtendedConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	type plain customExtendedConfig
-	return value.DecodeWithOptions((*plain)(c), yaml.DecodeOptions{KnownFields: true})
+	return value.Load((*plain)(c), yaml.WithKnownFields(true))
 }
 
 func TestMimirConfigCanBeInlined(t *testing.T) {
@@ -255,7 +255,7 @@ custom_client_cluster_validation:
 	fs := flag.NewFlagSet("test", flag.PanicOnError)
 	cfg.RegisterFlags(fs, log.NewNopLogger())
 
-	err := yaml.Unmarshal([]byte(commonYAMLConfig), &cfg)
+	err := yaml.Load([]byte(commonYAMLConfig), &cfg)
 	require.NoError(t, err)
 
 	// Value should be properly set.
@@ -299,7 +299,7 @@ distributor:
 			fs := flag.NewFlagSet("test", flag.PanicOnError)
 			cfg.RegisterFlags(fs, log.NewNopLogger())
 
-			err := yaml.Unmarshal([]byte(testCase.yamlConfig), &cfg)
+			err := yaml.Load([]byte(testCase.yamlConfig), &cfg)
 			require.NoError(t, err)
 
 			err = cfg.Validate(log.NewNopLogger())

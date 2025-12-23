@@ -10,7 +10,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimir"
 )
@@ -219,12 +219,12 @@ func TestInspectedConfig_MarshalThenUnmarshalRetainsTypeInformation(t *testing.T
 	inspectedConfig, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
 	require.NoError(t, inspectedConfig.SetValue("distributor.remote_timeout", DurationValue(time.Minute)))
-	bytes, err := yaml.Marshal(inspectedConfig)
+	bytes, err := yaml.Dump(inspectedConfig)
 	require.NoError(t, err)
 
 	inspectedConfig, err = InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
-	require.NoError(t, yaml.Unmarshal(bytes, &inspectedConfig))
+	require.NoError(t, yaml.Load(bytes, &inspectedConfig))
 
 	val := inspectedConfig.MustGetValue("distributor.remote_timeout")
 	assert.Equal(t, time.Minute, val.AsDuration()) // if type info was lost this would be "1m" instead of time.Minute
@@ -233,7 +233,7 @@ func TestInspectedConfig_MarshalThenUnmarshalRetainsTypeInformation(t *testing.T
 func TestInspectedEntry_MarshalYAML(t *testing.T) {
 	d, err := InspectConfig(&mimir.Config{})
 	require.NoError(t, err)
-	require.NoError(t, yaml.Unmarshal([]byte(`
+	require.NoError(t, yaml.Load([]byte(`
 distributor:
   remote_timeout: 10s
 `), &d))
@@ -335,7 +335,7 @@ func TestDecodeDurationInVariousFormats(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			d, err := InspectConfig(&mimir.Config{})
 			require.NoError(t, err)
-			require.NoError(t, yaml.Unmarshal([]byte(`
+			require.NoError(t, yaml.Load([]byte(`
 distributor:
   remote_timeout: `+test.yamlRawValue+`
 `), &d))

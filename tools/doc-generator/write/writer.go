@@ -13,7 +13,7 @@ import (
 
 	"github.com/grafana/regexp"
 	"github.com/mitchellh/go-wordwrap"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
@@ -152,7 +152,7 @@ func (w *specWriter) writeExample(example *parse.FieldExample, indent int) {
 		w.writeComment(w.modifyDescriptions(example.Comment), indent, 2)
 	}
 
-	data, err := yaml.Marshal(example.Yaml)
+	data, err := yaml.Dump(example.Yaml)
 	if err != nil {
 		panic(fmt.Errorf("can't render example: %w", err))
 	}

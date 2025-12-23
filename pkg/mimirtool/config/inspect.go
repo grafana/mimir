@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/tools/doc-generator/parse"
 )
@@ -117,8 +117,12 @@ func (i *InspectedEntry) Set(s string) (err error) {
 	case "string":
 		v = StringValue(s)
 	default:
-		jsonDecoder := yaml.NewDecoder(bytes.NewBuffer([]byte(s)))
-		v, err = i.decodeValue(jsonDecoder)
+		var loader *yaml.Loader
+		loader, err = yaml.NewLoader(bytes.NewBuffer([]byte(s)))
+		if err != nil {
+			return
+		}
+		v, err = i.decodeValue(loader.Load)
 	}
 	i.FieldValue = v
 	return
@@ -176,7 +180,7 @@ func (i *InspectedEntry) unmarshalJSONValue(b []byte) error {
 		if len(b) == 0 || bytes.Equal(b, []byte("null")) {
 			return Value{}, nil
 		}
-		return i.decodeValue(json.NewDecoder(bytes.NewBuffer(b)))
+		return i.decodeValue(json.NewDecoder(bytes.NewBuffer(b)).Decode)
 	}
 
 	var v Value
@@ -229,7 +233,7 @@ func (i *InspectedEntry) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	if i.Kind == KindField {
-		decodedValue, err := i.decodeValue(value)
+		decodedValue, err := i.decodeValue(func(v interface{}) error { return value.Load(v) })
 		if err != nil {
 			return err
 		}
@@ -267,14 +271,13 @@ func (i *InspectedEntry) zeroValuePtr() Value {
 	return InterfaceValue(reflect.New(typ).Interface()) // create a new typed pointer
 }
 
-type decoder interface {
-	Decode(interface{}) error
-}
+// decodeFunc is a function that decodes a value into the given interface.
+type decodeFunc func(interface{}) error
 
-func (i *InspectedEntry) decodeValue(decoder decoder) (Value, error) {
+func (i *InspectedEntry) decodeValue(decode decodeFunc) (Value, error) {
 	decoded := i.zeroValuePtr()
 
-	err := decoder.Decode(decoded.AsInterface())
+	err := decode(decoded.AsInterface())
 	if err != nil {
 		return Value{}, err
 	}
@@ -296,7 +299,7 @@ func (i *InspectedEntry) decodeSlice(value *yaml.Node) (Value, error) {
 	slice := make([]*InspectedEntry, len(value.Content))
 	for idx := range slice {
 		slice[idx] = i.FieldElement.Clone()
-		err := value.Content[idx].Decode(slice[idx])
+		err := value.Content[idx].Load(slice[idx])
 		if err != nil {
 			return Value{}, err
 		}
@@ -544,7 +547,8 @@ func parseDefaultValue(e *InspectedEntry, def string) Value {
 	} else if strings.HasPrefix(e.FieldType, "list") {
 		yamlNodeKind = yaml.SequenceNode
 	}
-	value, _ := e.decodeValue(&yaml.Node{Kind: yamlNodeKind, Value: def})
+	node := &yaml.Node{Kind: yamlNodeKind, Value: def}
+	value, _ := e.decodeValue(func(v interface{}) error { return node.Load(v) })
 	return value
 }
 
@@ -563,21 +567,21 @@ type duration time.Duration
 
 func (d *duration) UnmarshalYAML(value *yaml.Node) error {
 	td := time.Duration(0)
-	err := value.Decode(&td)
+	err := value.Load(&td)
 	if err == nil {
 		*d = duration(td)
 		return nil
 	}
 
 	md := model.Duration(0)
-	err = value.Decode(&md)
+	err = value.Load(&md)
 	if err == nil {
 		*d = duration(md)
 		return nil
 	}
 
 	nanos := int64(0)
-	err = value.Decode(&nanos)
+	err = value.Load(&nanos)
 	if err == nil {
 		*d = duration(nanos)
 		return nil
@@ -634,9 +638,9 @@ func (s stringSlice) MarshalYAML() (interface{}, error) {
 }
 
 func (s *stringSlice) UnmarshalYAML(value *yaml.Node) error {
-	err := value.Decode((*[]string)(s))
+	err := value.Load((*[]string)(s))
 	if err != nil {
-		err = value.Decode((*flagext.StringSliceCSV)(s))
+		err = value.Load((*flagext.StringSliceCSV)(s))
 		if err != nil {
 			return err
 		}

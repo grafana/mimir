@@ -40,7 +40,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -61,7 +61,7 @@ compaction_retries: 123
 
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
-	assert.NoError(t, yaml.Unmarshal([]byte(yamlCfg), &cfg))
+	assert.NoError(t, yaml.Load([]byte(yamlCfg), &cfg))
 	assert.Equal(t, mimir_tsdb.DurationList{2 * time.Hour, 48 * time.Hour}, cfg.BlockRanges)
 	assert.Equal(t, 123, cfg.BlockSyncConcurrency)
 	assert.Equal(t, "/tmp", cfg.DataDir)

@@ -47,7 +47,7 @@ require (
 	golang.org/x/time v0.14.0
 	google.golang.org/grpc v1.77.0
 	gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 v3.0.1
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
@@ -95,6 +95,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0
 	go.opentelemetry.io/proto/otlp v1.9.0
 	go.uber.org/multierr v1.11.0
+	go.yaml.in/yaml/v4 v4.0.0-rc.3.0.20251222200925-3467d58aa2a0
 	golang.org/x/term v0.37.0
 	google.golang.org/api v0.257.0
 	google.golang.org/protobuf v1.36.10
@@ -355,15 +356,11 @@ require (
 )
 
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20251215052230-093503f70405
+replace github.com/grafana/dskit => ../dskit
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
 replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
-
-// gopkg.in/yaml.v3
-// + https://github.com/go-yaml/yaml/pull/691
-// + https://github.com/go-yaml/yaml/pull/876
-replace gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 
 // We are using our modified version of the upstream GO regexp (branch remotes/origin/speedup)
 replace github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71

@@ -23,8 +23,8 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"go.yaml.in/yaml/v4"
 	"google.golang.org/api/googleapi"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -387,7 +387,7 @@ var (
 )
 
 func marshalAndSend(output interface{}, w http.ResponseWriter, logger log.Logger, headers ...http.Header) {
-	d, err := yaml.Marshal(&output)
+	d, err := yaml.Dump(&output)
 	if err != nil {
 		level.Error(logger).Log("msg", "error marshalling yaml rule groups", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -651,7 +651,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	level.Debug(logger).Log("msg", "attempting to unmarshal rulegroup", "userID", userID, "group", string(payload))
 
 	rg := rulefmt.RuleGroup{}
-	if err = yaml.Unmarshal(payload, &rg); err != nil {
+	if err = yaml.Load(payload, &rg); err != nil {
 		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
 		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
 		return

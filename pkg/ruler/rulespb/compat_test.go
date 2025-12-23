@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimirpb" //lint:ignore faillint allowed to import other protobuf
 )
@@ -92,12 +92,12 @@ rules:
 	} {
 		t.Run(name, func(t *testing.T) {
 			rg := rulefmt.RuleGroup{}
-			require.NoError(t, yaml.Unmarshal([]byte(group), &rg))
+			require.NoError(t, yaml.Load([]byte(group), &rg))
 
 			desc := ToProto("user", "namespace", rg)
 			newRg := FromProto(desc)
 
-			newYaml, err := yaml.Marshal(newRg)
+			newYaml, err := yaml.Dump(newRg)
 			require.NoError(t, err)
 
 			assert.YAMLEq(t, group, string(newYaml))
@@ -493,7 +493,7 @@ rules:
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			rg := rulefmt.RuleGroup{}
-			require.NoError(t, yaml.Unmarshal([]byte(testData.input), &rg))
+			require.NoError(t, yaml.Load([]byte(testData.input), &rg))
 
 			desc := ToProto("user", "namespace", rg)
 			newRg := FromProto(desc)
