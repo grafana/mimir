@@ -114,13 +114,10 @@ func ApplyAnchoredModifier(buff *types.FPointRingBuffer, view *types.FPointRingB
 
 	// scan past any given points which have a timestamp less than the last point in the buffer
 	lastT := buff.PointAt(buff.Count() - 1).T
-	//indexFunc := func(p promql.FPoint) bool { return p.T > lastT }
 
 	// start from 1, since head[0] has already been considered
 	// scan until we find the first head point which is not yet in the buffer
 	hIdx := search(head, lastT, 1)
-
-	// log.Default().Printf("head len=%d, hIdx=%d", len(head), hIdx)
 
 	tIdx := 0
 	if hIdx == len(head) && len(tail) > 0 {
@@ -250,6 +247,7 @@ func interpolateCombined(p1, p2 promql.FPoint, t int64, leftEdge bool) (float64,
 
 // search finds the first index in the given slice whose point.T > the given t.
 // if no points meet this condition then len(pts) is returned.
+// if the given pts slice is nil or empty then 1 is returned.
 // minIdx sets the minimum index of pts which is considered.
 // It is the callers responsibility to ensure that minIdx is a valid index within the given pts slice.
 func search(pts []promql.FPoint, t int64, minIdx int) int {
