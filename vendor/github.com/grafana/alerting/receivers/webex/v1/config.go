@@ -52,46 +52,45 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, err
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "Cisco Webex API URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "https://api.ciscospark.com/v1/messages",
-				Description:  "API endpoint at which we'll send webhooks to.",
-				PropertyName: "api_url",
-			},
-			{
-				Label:        "Room ID",
-				Description:  "The room ID to send messages to.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "GMtOWY0ZGJkNzMyMGFl",
-				PropertyName: "room_id",
-				Required:     true,
-			},
-			{
-				Label:        "Bot Token",
-				Description:  "Non-expiring access token of the bot that will post messages on our behalf.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  `GMtOWY0ZGJkNzMyMGFl-12535454-123213`,
-				PropertyName: "bot_token",
-				Secure:       true,
-				Required:     true,
-			},
-			{
-				Label:        "Notification Template",
-				Description:  "Notification template to use. Markdown is supported.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  `{{ template "default.message" . }}`,
-				PropertyName: "message",
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "Cisco Webex API URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "https://api.ciscospark.com/v1/messages",
+			Description:  "API endpoint at which we'll send webhooks to.",
+			PropertyName: "api_url",
+			Protected:    true,
 		},
-	}
+		{
+			Label:        "Room ID",
+			Description:  "The room ID to send messages to.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "GMtOWY0ZGJkNzMyMGFl",
+			PropertyName: "room_id",
+			Required:     true,
+		},
+		{
+			Label:        "Bot Token",
+			Description:  "Non-expiring access token of the bot that will post messages on our behalf.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  `GMtOWY0ZGJkNzMyMGFl-12535454-123213`,
+			PropertyName: "bot_token",
+			Secure:       true,
+			Required:     true,
+		},
+		{
+			Label:        "Notification Template",
+			Description:  "Notification template to use. Markdown is supported.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  `{{ template "default.message" . }}`,
+			PropertyName: "message",
+		},
+	},
 }
