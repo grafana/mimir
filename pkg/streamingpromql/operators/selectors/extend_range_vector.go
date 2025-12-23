@@ -185,7 +185,7 @@ func ApplyAnchoredModifier(buff *types.FPointRingBuffer, view *types.FPointRingB
 // with the added (interpolated or direct) boundary points.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
-func ConvertExtendedPointsToSmoothed(anchoredMetadata AnchoredExtensionMetadata, buff *types.FPointRingBuffer, rangeStart, rangeEnd int64) (SmoothedPoints, error) {
+func ConvertExtendedPointsToSmoothed(anchoredMetadata AnchoredExtensionMetadata, buff *types.FPointRingBuffer, rangeStart, rangeEnd int64, calculateCounterAdjustedPoints bool) (SmoothedPoints, error) {
 
 	smoothedPoints := SmoothedPoints{}
 
@@ -201,9 +201,15 @@ func ConvertExtendedPointsToSmoothed(anchoredMetadata AnchoredExtensionMetadata,
 	var interpolatedBoundaryValue float64
 	if anchoredMetadata.first.T < rangeStart {
 		pointAfterRangeStart := buff.PointAt(1)
-		interpolatedBoundaryValue, smoothedPoints.smoothedHead.F = interpolateCombined(anchoredMetadata.first, pointAfterRangeStart, rangeStart, true)
-		smoothedPoints.smoothedHead.T = rangeStart
-		smoothedPoints.smoothedHeadSet = true
+
+		if calculateCounterAdjustedPoints {
+			interpolatedBoundaryValue, smoothedPoints.smoothedHead.F = interpolateCombined(anchoredMetadata.first, pointAfterRangeStart, rangeStart, true)
+			smoothedPoints.smoothedHead.T = rangeStart
+			smoothedPoints.smoothedHeadSet = true
+		} else {
+			interpolatedBoundaryValue = interpolate(anchoredMetadata.first, pointAfterRangeStart, rangeStart)
+		}
+
 		if err := buff.ReplaceValueAtPos(0, interpolatedBoundaryValue); err != nil {
 			return smoothedPoints, err
 		}
@@ -211,9 +217,14 @@ func ConvertExtendedPointsToSmoothed(anchoredMetadata AnchoredExtensionMetadata,
 
 	if anchoredMetadata.last.T > rangeEnd {
 		pointBeforeRangeEnd := buff.PointAt(buff.Count() - 2)
-		interpolatedBoundaryValue, smoothedPoints.smoothedTail.F = interpolateCombined(pointBeforeRangeEnd, anchoredMetadata.last, rangeEnd, false)
-		smoothedPoints.smoothedTail.T = rangeEnd
-		smoothedPoints.smoothedTailSet = true
+
+		if calculateCounterAdjustedPoints {
+			interpolatedBoundaryValue, smoothedPoints.smoothedTail.F = interpolateCombined(pointBeforeRangeEnd, anchoredMetadata.last, rangeEnd, false)
+			smoothedPoints.smoothedTail.T = rangeEnd
+			smoothedPoints.smoothedTailSet = true
+		} else {
+			interpolatedBoundaryValue = interpolate(pointBeforeRangeEnd, anchoredMetadata.last, rangeEnd)
+		}
 		if err := buff.ReplaceValueAtPos(buff.Count()-1, interpolatedBoundaryValue); err != nil {
 			return smoothedPoints, err
 		}
@@ -243,6 +254,13 @@ func interpolateCombined(p1, p2 promql.FPoint, t int64, leftEdge bool) (float64,
 	}
 
 	return notCounter, asCounter
+}
+
+func interpolate(p1, p2 promql.FPoint, t int64) float64 {
+	y1 := p1.F
+	y2 := p2.F
+
+	return y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)
 }
 
 // search finds the first index in the given slice whose point.T > the given t.

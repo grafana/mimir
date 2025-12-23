@@ -535,12 +535,14 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				if !supported {
 					return nil, ErrAnchoredIncompatibleFunction{functionName: expr.Func.Name}
 				}
+				matrixSelector.OuterFunc = expr.Func.Name
 			}
 			if ok && matrixSelector.Smoothed {
 				_, supported := promql.SmoothedSafeFunctions[expr.Func.Name]
 				if !supported {
 					return nil, ErrSmoothedIncompatibleFunction{functionName: expr.Func.Name}
 				}
+				matrixSelector.OuterFunc = expr.Func.Name
 			}
 
 			args = append(args, node)

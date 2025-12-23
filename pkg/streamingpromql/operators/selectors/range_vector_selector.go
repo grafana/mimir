@@ -33,27 +33,27 @@ type RangeVectorSelector struct {
 	extendedRangeFloats                 *types.FPointRingBuffer // A buffer we use to create views for smoothed/anchored extended ranges which have added/modified points from the original floats buffer
 	extendedRangeView                   *types.FPointRingBufferView
 	lastExtendedRangeFloatModifications AnchoredExtensionMetadata
-
-	anchored bool // The anchored modifier has been used for this range query
-	smoothed bool // The smoothed modifier has been used for this range query
+	calcSmoothedCounterAdjustedPoints   bool
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
 
-func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, anchored bool, smoothed bool) *RangeVectorSelector {
+func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats) *RangeVectorSelector {
 
 	rangeVectorSelector := RangeVectorSelector{
 		Selector:   selector,
 		Stats:      stats,
 		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
-		stepData:   &types.RangeVectorStepData{Anchored: anchored, Smoothed: smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
-		anchored:   anchored,
-		smoothed:   smoothed,
+		stepData:   &types.RangeVectorStepData{Anchored: selector.Anchored, Smoothed: selector.Smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
 	}
 
-	if anchored || smoothed {
+	if selector.Anchored || selector.Smoothed {
 		rangeVectorSelector.extendedRangeFloats = types.NewFPointRingBuffer(memoryConsumptionTracker)
+	}
+
+	if selector.Smoothed && (selector.OuterFunc == "rate" || selector.OuterFunc == "increase") {
+		rangeVectorSelector.calcSmoothedCounterAdjustedPoints = true
 	}
 
 	return &rangeVectorSelector
@@ -112,9 +112,9 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 	// When the smoothed/anchored modifiers are used, the selector (fillBuffer) will return a wider range of points.
 	// Modify the range boundaries accordingly so that we do not discard these extended points.
-	if m.anchored {
+	if m.Selector.Anchored {
 		rangeStart -= m.Selector.LookbackDelta.Milliseconds()
-	} else if m.smoothed {
+	} else if m.Selector.Smoothed {
 		rangeStart -= m.Selector.LookbackDelta.Milliseconds()
 		rangeEnd += m.Selector.LookbackDelta.Milliseconds()
 	}
@@ -131,7 +131,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		return nil, err
 	}
 
-	if m.anchored || m.smoothed {
+	if m.Selector.Anchored || m.Selector.Smoothed {
 		// Histograms are not supported for these modified range queries
 		if histogramObserved {
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
@@ -160,9 +160,9 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 				return nil, err
 			}
 
-			if m.smoothed {
+			if m.Selector.Smoothed {
 				// Replace the boundary points with interpolated values and calculate the counter adjusted smoothed boundary points for use in rate/increase functions
-				smoothedPoints, err := ConvertExtendedPointsToSmoothed(m.lastExtendedRangeFloatModifications, m.extendedRangeFloats, originalRangeStart, originalRangeEnd)
+				smoothedPoints, err := ConvertExtendedPointsToSmoothed(m.lastExtendedRangeFloatModifications, m.extendedRangeFloats, originalRangeStart, originalRangeEnd, m.calcSmoothedCounterAdjustedPoints)
 				if err != nil {
 					return nil, err
 				}

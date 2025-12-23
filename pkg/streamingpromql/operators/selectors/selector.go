@@ -37,8 +37,9 @@ type Selector struct {
 
 	// When these range selector modifiers are used the start/end timestamps are adjusted to query for a larger range of points.
 	// It's the responsibility of the caller to apply any modifications to the returned samples for these modifiers.
-	Anchored bool
-	Smoothed bool
+	Anchored  bool
+	Smoothed  bool
+	OuterFunc string
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
