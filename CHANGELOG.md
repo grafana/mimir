@@ -92,6 +92,7 @@
 * [ENHANCEMENT] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
 * [ENHANCEMENT] Querier: Default to streaming active series responses to query-frontends via `querier.response-streaming-enabled`. #13883
 * [ENHANCEMENT] Store-gateway: Add `cortex_bucket_store_blocks_loaded_size_bytes` metric to track per-tenant disk utilization. #13891
+* [ENHANCEMENT] Compactor: If compaction fails because the result block would have a postings offsets table larger than the 4GB limit, mark input blocks for no-compaction to avoid blocking future compactor runs. #13876
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
