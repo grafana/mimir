@@ -6,11 +6,8 @@
 package selectors
 
 import (
-	"slices"
-
-	"github.com/prometheus/prometheus/promql"
-
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/prometheus/prometheus/promql"
 )
 
 type undoAction int
@@ -116,22 +113,28 @@ func ApplyAnchoredModifier(buff *types.FPointRingBuffer, view *types.FPointRingB
 
 	// scan past any given points which have a timestamp less than the last point in the buffer
 	lastT := buff.PointAt(buff.Count() - 1).T
-	indexFunc := func(p promql.FPoint) bool { return p.T > lastT }
-	hIdx := slices.IndexFunc(head[1:], indexFunc)
+	//indexFunc := func(p promql.FPoint) bool { return p.T > lastT }
+
+	// start from 1, since head[0] has already been considered
+	// scan until we find the first head point which is not yet in the buffer
+	hIdx := search(head, lastT, 1)
+
+	// log.Default().Printf("head len=%d, hIdx=%d", len(head), hIdx)
+
 	tIdx := 0
-	if hIdx <= 0 {
+	if hIdx == len(head) && len(tail) > 0 {
 		// since the tail points follow the head points, we only need to filter tail points
-		// if all the head points were trimmed.
-		tIdx = slices.IndexFunc(tail, indexFunc)
+		// if all the head points were excluded.
+		tIdx = search(tail, lastT, 0)
 	}
 
 	// Copy the remaining points into the buffer.
-	if hIdx >= 0 {
-		if err := buff.AppendSlice(head[hIdx+1:]); err != nil {
+	if hIdx < len(head) {
+		if err := buff.AppendSlice(head[hIdx:]); err != nil {
 			return e, err
 		}
 	}
-	if tIdx >= 0 {
+	if len(tail) > 0 && tIdx < len(tail) {
 		if err := buff.AppendSlice(tail[tIdx:]); err != nil {
 			return e, err
 		}
@@ -242,4 +245,37 @@ func interpolateCombined(p1, p2 promql.FPoint, t int64, leftEdge bool) (float64,
 	}
 
 	return notCounter, asCounter
+}
+
+// search finds the first index in the given slice whose point.T > the given t.
+// if no points meet this condition then len(pts) is returned.
+// minIdx sets the minimum index of pts which is considered.
+// It is the callers responsibility to ensure that minIdx is a valid index within the given pts slice.
+func search(pts []promql.FPoint, t int64, minIdx int) int {
+	idx := minIdx
+	n := len(pts)
+
+	if n == 0 {
+		return 1
+	}
+
+	if pts[n-1].T < t {
+		// fast path - all the points in the given slice are before the given t
+		idx = n
+	} else if n > minIdx && pts[minIdx].T > t {
+		// fast path - all the points in the given slice are after the given t
+		idx = minIdx
+	} else {
+		lo, hi := minIdx, n // search in [minIdx, n)
+		for lo < hi {
+			mid := int(uint(lo+hi) >> 1)
+			if pts[mid].T <= t {
+				lo = mid + 1
+			} else {
+				hi = mid
+			}
+		}
+		idx = lo
+	}
+	return idx
 }
