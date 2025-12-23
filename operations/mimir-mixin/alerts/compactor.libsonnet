@@ -123,32 +123,19 @@
           },
         },
         {
-          // Alert if compactor has tried to compact unhealthy blocks.
-          alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
-          'for': '1m',
+          // Alert if compactor has marked blocks for no-compaction in the last 24 hours.
+          alert: $.alertName('CompactorSkippedBlocks'),
+          'for': '5m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 0
-          ||| % $.alertRangeInterval(5),
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
-          },
-        },
-        {
-          // Alert if compactor has tried to compact unhealthy blocks.
-          // Any number greater than 1 over the last 30 minutes should be investigated quickly as it could start to impact the read path.
-          alert: $.alertName('CompactorSkippedUnhealthyBlocks'),
-          'for': '30m',
-          expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[%s]) > 1
-          ||| % $.alertRangeInterval(5),
+            sum by (%(alert_aggregation_labels)s, reason) (
+              increase(cortex_compactor_blocks_marked_for_no_compaction_total[24h]) > 0
+            )
+          ||| % $._config,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has found and ignored unhealthy blocks.' % $._config,
+            message: '%(product)s Compactor in %(alert_aggregation_variables)s has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).' % $._config,
           },
         },
         // Alert if compactor has failed to build sparse-index headers.
