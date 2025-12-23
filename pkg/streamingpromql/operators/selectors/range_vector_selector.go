@@ -126,7 +126,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 	// When smoothed/anchored is used, the buffer is filled for the user requested time range,
 	// and it may include points immediately outside the range boundaries if they are within the extended time windows.
-	histogramObserved, err := m.fillBuffer(m.floats, m.histograms, originalRangeStart, originalRangeEnd, rangeStart)
+	histogramObserved, err := m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 // fillBuffer will iterate through the chunkIterator and add points to the given ring buffers.
 // points are accumulated into the buffer if they are rangeStart < T <= rangeEnd.
-func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64, extendedRangeStart int64) (bool, error) {
+func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) (bool, error) {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	histogramObserved := false
 
@@ -212,7 +212,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			return histogramObserved, m.chunkIterator.Err()
 		case chunkenc.ValFloat:
 			t, f := m.chunkIterator.At()
-			if value.IsStaleNaN(f) || t <= extendedRangeStart {
+			if value.IsStaleNaN(f) || t <= rangeStart {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
 				continue
@@ -231,7 +231,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			t := m.chunkIterator.AtT()
 
-			if t <= extendedRangeStart {
+			if t <= rangeStart {
 				continue
 			}
 
