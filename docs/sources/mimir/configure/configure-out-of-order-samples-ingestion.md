@@ -11,7 +11,7 @@ weight: 100
 
 If you have out-of-order samples, due to the nature of your architecture or the system that you are observing, then you can configure Grafana Mimir to set an out-of-order time-window threshold for how old samples can be ingested.
 
-As an **experimental** feature, Mimir allows you to ingest out-of-order samples. As a result, no sample is dropped if it is within the configured time window.
+Mimir allows you to ingest out-of-order samples. As a result, no sample is dropped if it is within the configured time window.
 
 ## Configure out-of-order samples ingestion instance-wide
 
@@ -67,7 +67,7 @@ The moment that a new series sample arrives, Mimir needs to determine if the ser
 - If the series exists within the Head block of the TSDB, the incoming sample must have a newer timestamp than the latest sample that is stored for the series. Otherwise, the ingesters consider it to be out-of-order.
 - If the series does not exist, then the sample has to be within bounds, which go back 1 hour from TSDB's head-block max time (when using 2 hour block range). If it fails to be within bounds, then the ingesters consider it to be out-of-bounds.
 
-The experimental out-of-order ingestion helps fix both the issues.
+Out-of-order ingestion helps address both issues.
 
 {{< admonition type="note" >}}
 If you're writing metrics using Prometheus remote write or Grafana Alloy, then you shouldn't expect out-of-order samples.
