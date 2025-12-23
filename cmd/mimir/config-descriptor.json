@@ -12160,17 +12160,6 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "upload_sparse_index_headers",
-          "required": false,
-          "desc": "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "compactor.upload-sparse-index-headers",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
