@@ -22,16 +22,17 @@ import (
 	"io"
 	"math"
 	"reflect"
-	"strconv"
 	"time"
+
+	"go.yaml.in/yaml/v4/internal/libyaml"
 )
 
 // ----------------------------------------------------------------------------
 // Parser, produces a node tree out of a libyaml event stream.
 
 type parser struct {
-	parser   yaml_parser_t
-	event    yaml_event_t
+	parser   libyaml.Parser
+	event    libyaml.Event
 	doc      *Node
 	anchors  map[string]*Node
 	doneInit bool
@@ -39,23 +40,21 @@ type parser struct {
 }
 
 func newParser(b []byte) *parser {
-	p := parser{}
-	if !yaml_parser_initialize(&p.parser) {
-		panic("failed to initialize YAML emitter")
+	p := parser{
+		parser: libyaml.NewParser(),
 	}
 	if len(b) == 0 {
 		b = []byte{'\n'}
 	}
-	yaml_parser_set_input_string(&p.parser, b)
+	p.parser.SetInputString(b)
 	return &p
 }
 
 func newParserFromReader(r io.Reader) *parser {
-	p := parser{}
-	if !yaml_parser_initialize(&p.parser) {
-		panic("failed to initialize YAML emitter")
+	p := parser{
+		parser: libyaml.NewParser(),
 	}
-	yaml_parser_set_input_reader(&p.parser, r)
+	p.parser.SetInputReader(r)
 	return &p
 }
 
@@ -64,77 +63,52 @@ func (p *parser) init() {
 		return
 	}
 	p.anchors = make(map[string]*Node)
-	p.expect(yaml_STREAM_START_EVENT)
+	p.expect(libyaml.STREAM_START_EVENT)
 	p.doneInit = true
 }
 
 func (p *parser) destroy() {
-	if p.event.typ != yaml_NO_EVENT {
-		yaml_event_delete(&p.event)
+	if p.event.Type != libyaml.NO_EVENT {
+		p.event.Delete()
 	}
-	yaml_parser_delete(&p.parser)
+	p.parser.Delete()
 }
 
 // expect consumes an event from the event stream and
 // checks that it's of the expected type.
-func (p *parser) expect(e yaml_event_type_t) {
-	if p.event.typ == yaml_NO_EVENT {
-		if !yaml_parser_parse(&p.parser, &p.event) {
-			p.fail()
+func (p *parser) expect(e libyaml.EventType) {
+	if p.event.Type == libyaml.NO_EVENT {
+		if !p.parser.Parse(&p.event) {
+			p.fail(p.parser.Err)
 		}
 	}
-	if p.event.typ == yaml_STREAM_END_EVENT {
+	if p.event.Type == libyaml.STREAM_END_EVENT {
 		failf("attempted to go past the end of stream; corrupted value?")
 	}
-	if p.event.typ != e {
-		p.parser.problem = fmt.Sprintf("expected %s event but got %s", e, p.event.typ)
-		p.fail()
+	if p.event.Type != e {
+		p.fail(fmt.Errorf("expected %s event but got %s", e, p.event.Type))
 	}
-	yaml_event_delete(&p.event)
-	p.event.typ = yaml_NO_EVENT
+	p.event.Delete()
+	p.event.Type = libyaml.NO_EVENT
 }
 
 // peek peeks at the next event in the event stream,
 // puts the results into p.event and returns the event type.
-func (p *parser) peek() yaml_event_type_t {
-	if p.event.typ != yaml_NO_EVENT {
-		return p.event.typ
+func (p *parser) peek() libyaml.EventType {
+	if p.event.Type != libyaml.NO_EVENT {
+		return p.event.Type
 	}
 	// It's curious choice from the underlying API to generally return a
 	// positive result on success, but on this case return true in an error
 	// scenario. This was the source of bugs in the past (issue #666).
-	if !yaml_parser_parse(&p.parser, &p.event) || p.parser.error != yaml_NO_ERROR {
-		p.fail()
+	if !p.parser.Parse(&p.event) || p.parser.Err != nil {
+		p.fail(p.parser.Err)
 	}
-	return p.event.typ
+	return p.event.Type
 }
 
-func (p *parser) fail() {
-	var where string
-	var line int
-	if p.parser.context_mark.line != 0 {
-		line = p.parser.context_mark.line
-		// Scanner errors don't iterate line before returning error
-		if p.parser.error == yaml_SCANNER_ERROR {
-			line++
-		}
-	} else if p.parser.problem_mark.line != 0 {
-		line = p.parser.problem_mark.line
-		// Scanner errors don't iterate line before returning error
-		if p.parser.error == yaml_SCANNER_ERROR {
-			line++
-		}
-	}
-	if line != 0 {
-		where = "line " + strconv.Itoa(line) + ": "
-	}
-	var msg string
-	if len(p.parser.problem) > 0 {
-		msg = p.parser.problem
-	} else {
-		msg = "unknown problem parsing YAML content"
-	}
-	failf("%s%s", where, msg)
+func (p *parser) fail(err error) {
+	fail(err)
 }
 
 func (p *parser) anchor(n *Node, anchor []byte) {
@@ -147,23 +121,23 @@ func (p *parser) anchor(n *Node, anchor []byte) {
 func (p *parser) parse() *Node {
 	p.init()
 	switch p.peek() {
-	case yaml_SCALAR_EVENT:
+	case libyaml.SCALAR_EVENT:
 		return p.scalar()
-	case yaml_ALIAS_EVENT:
+	case libyaml.ALIAS_EVENT:
 		return p.alias()
-	case yaml_MAPPING_START_EVENT:
+	case libyaml.MAPPING_START_EVENT:
 		return p.mapping()
-	case yaml_SEQUENCE_START_EVENT:
+	case libyaml.SEQUENCE_START_EVENT:
 		return p.sequence()
-	case yaml_DOCUMENT_START_EVENT:
+	case libyaml.DOCUMENT_START_EVENT:
 		return p.document()
-	case yaml_STREAM_END_EVENT:
+	case libyaml.STREAM_END_EVENT:
 		// Happens when attempting to decode an empty buffer.
 		return nil
-	case yaml_TAIL_COMMENT_EVENT:
+	case libyaml.TAIL_COMMENT_EVENT:
 		panic("internal error: unexpected tail comment event (please report)")
 	default:
-		panic("internal error: attempted to parse unknown event (please report): " + p.event.typ.String())
+		panic("internal error: attempted to parse unknown event (please report): " + p.event.Type.String())
 	}
 }
 
@@ -184,11 +158,11 @@ func (p *parser) node(kind Kind, defaultTag, tag, value string) *Node {
 		Style: style,
 	}
 	if !p.textless {
-		n.Line = p.event.start_mark.line + 1
-		n.Column = p.event.start_mark.column + 1
-		n.HeadComment = string(p.event.head_comment)
-		n.LineComment = string(p.event.line_comment)
-		n.FootComment = string(p.event.foot_comment)
+		n.Line = p.event.StartMark.Line + 1
+		n.Column = p.event.StartMark.Column + 1
+		n.HeadComment = string(p.event.HeadComment)
+		n.LineComment = string(p.event.LineComment)
+		n.FootComment = string(p.event.FootComment)
 	}
 	return n
 }
@@ -202,40 +176,47 @@ func (p *parser) parseChild(parent *Node) *Node {
 func (p *parser) document() *Node {
 	n := p.node(DocumentNode, "", "", "")
 	p.doc = n
-	p.expect(yaml_DOCUMENT_START_EVENT)
+	p.expect(libyaml.DOCUMENT_START_EVENT)
 	p.parseChild(n)
-	if p.peek() == yaml_DOCUMENT_END_EVENT {
-		n.FootComment = string(p.event.foot_comment)
+	if p.peek() == libyaml.DOCUMENT_END_EVENT {
+		n.FootComment = string(p.event.FootComment)
 	}
-	p.expect(yaml_DOCUMENT_END_EVENT)
+	p.expect(libyaml.DOCUMENT_END_EVENT)
 	return n
 }
 
 func (p *parser) alias() *Node {
-	n := p.node(AliasNode, "", "", string(p.event.anchor))
+	n := p.node(AliasNode, "", "", string(p.event.Anchor))
 	n.Alias = p.anchors[n.Value]
 	if n.Alias == nil {
-		failf("unknown anchor '%s' referenced", n.Value)
+		msg := fmt.Sprintf("unknown anchor '%s' referenced", n.Value)
+		fail(&libyaml.ParserError{
+			Message: msg,
+			Mark: libyaml.Mark{
+				Line:   n.Line,
+				Column: n.Column,
+			},
+		})
 	}
-	p.expect(yaml_ALIAS_EVENT)
+	p.expect(libyaml.ALIAS_EVENT)
 	return n
 }
 
 func (p *parser) scalar() *Node {
-	var parsedStyle = p.event.scalar_style()
+	parsedStyle := p.event.ScalarStyle()
 	var nodeStyle Style
 	switch {
-	case parsedStyle&yaml_DOUBLE_QUOTED_SCALAR_STYLE != 0:
+	case parsedStyle&libyaml.DOUBLE_QUOTED_SCALAR_STYLE != 0:
 		nodeStyle = DoubleQuotedStyle
-	case parsedStyle&yaml_SINGLE_QUOTED_SCALAR_STYLE != 0:
+	case parsedStyle&libyaml.SINGLE_QUOTED_SCALAR_STYLE != 0:
 		nodeStyle = SingleQuotedStyle
-	case parsedStyle&yaml_LITERAL_SCALAR_STYLE != 0:
+	case parsedStyle&libyaml.LITERAL_SCALAR_STYLE != 0:
 		nodeStyle = LiteralStyle
-	case parsedStyle&yaml_FOLDED_SCALAR_STYLE != 0:
+	case parsedStyle&libyaml.FOLDED_SCALAR_STYLE != 0:
 		nodeStyle = FoldedStyle
 	}
-	var nodeValue = string(p.event.value)
-	var nodeTag = string(p.event.tag)
+	nodeValue := string(p.event.Value)
+	nodeTag := string(p.event.Tag)
 	var defaultTag string
 	if nodeStyle == 0 {
 		if nodeValue == "<<" {
@@ -246,37 +227,37 @@ func (p *parser) scalar() *Node {
 	}
 	n := p.node(ScalarNode, defaultTag, nodeTag, nodeValue)
 	n.Style |= nodeStyle
-	p.anchor(n, p.event.anchor)
-	p.expect(yaml_SCALAR_EVENT)
+	p.anchor(n, p.event.Anchor)
+	p.expect(libyaml.SCALAR_EVENT)
 	return n
 }
 
 func (p *parser) sequence() *Node {
-	n := p.node(SequenceNode, seqTag, string(p.event.tag), "")
-	if p.event.sequence_style()&yaml_FLOW_SEQUENCE_STYLE != 0 {
+	n := p.node(SequenceNode, seqTag, string(p.event.Tag), "")
+	if p.event.SequenceStyle()&libyaml.FLOW_SEQUENCE_STYLE != 0 {
 		n.Style |= FlowStyle
 	}
-	p.anchor(n, p.event.anchor)
-	p.expect(yaml_SEQUENCE_START_EVENT)
-	for p.peek() != yaml_SEQUENCE_END_EVENT {
+	p.anchor(n, p.event.Anchor)
+	p.expect(libyaml.SEQUENCE_START_EVENT)
+	for p.peek() != libyaml.SEQUENCE_END_EVENT {
 		p.parseChild(n)
 	}
-	n.LineComment = string(p.event.line_comment)
-	n.FootComment = string(p.event.foot_comment)
-	p.expect(yaml_SEQUENCE_END_EVENT)
+	n.LineComment = string(p.event.LineComment)
+	n.FootComment = string(p.event.FootComment)
+	p.expect(libyaml.SEQUENCE_END_EVENT)
 	return n
 }
 
 func (p *parser) mapping() *Node {
-	n := p.node(MappingNode, mapTag, string(p.event.tag), "")
+	n := p.node(MappingNode, mapTag, string(p.event.Tag), "")
 	block := true
-	if p.event.mapping_style()&yaml_FLOW_MAPPING_STYLE != 0 {
+	if p.event.MappingStyle()&libyaml.FLOW_MAPPING_STYLE != 0 {
 		block = false
 		n.Style |= FlowStyle
 	}
-	p.anchor(n, p.event.anchor)
-	p.expect(yaml_MAPPING_START_EVENT)
-	for p.peek() != yaml_MAPPING_END_EVENT {
+	p.anchor(n, p.event.Anchor)
+	p.expect(libyaml.MAPPING_START_EVENT)
+	for p.peek() != libyaml.MAPPING_END_EVENT {
 		k := p.parseChild(n)
 		if block && k.FootComment != "" {
 			// Must be a foot comment for the prior value when being dedented.
@@ -290,20 +271,20 @@ func (p *parser) mapping() *Node {
 			k.FootComment = v.FootComment
 			v.FootComment = ""
 		}
-		if p.peek() == yaml_TAIL_COMMENT_EVENT {
+		if p.peek() == libyaml.TAIL_COMMENT_EVENT {
 			if k.FootComment == "" {
-				k.FootComment = string(p.event.foot_comment)
+				k.FootComment = string(p.event.FootComment)
 			}
-			p.expect(yaml_TAIL_COMMENT_EVENT)
+			p.expect(libyaml.TAIL_COMMENT_EVENT)
 		}
 	}
-	n.LineComment = string(p.event.line_comment)
-	n.FootComment = string(p.event.foot_comment)
+	n.LineComment = string(p.event.LineComment)
+	n.FootComment = string(p.event.FootComment)
 	if n.Style&FlowStyle == 0 && n.FootComment != "" && len(n.Content) > 1 {
 		n.Content[len(n.Content)-2].FootComment = n.FootComment
 		n.FootComment = ""
 	}
-	p.expect(yaml_MAPPING_END_EVENT)
+	p.expect(libyaml.MAPPING_END_EVENT)
 	return n
 }
 
@@ -313,7 +294,7 @@ func (p *parser) mapping() *Node {
 type decoder struct {
 	doc     *Node
 	aliases map[*Node]bool
-	terrors []string
+	terrors []*UnmarshalError
 
 	stringMapType  reflect.Type
 	generalMapType reflect.Type
@@ -324,26 +305,32 @@ type decoder struct {
 	aliasCount  int
 	aliasDepth  int
 
-	mergedFields map[interface{}]bool
+	mergedFields map[any]bool
 }
 
 var (
 	nodeType       = reflect.TypeOf(Node{})
 	durationType   = reflect.TypeOf(time.Duration(0))
-	stringMapType  = reflect.TypeOf(map[string]interface{}{})
-	generalMapType = reflect.TypeOf(map[interface{}]interface{}{})
+	stringMapType  = reflect.TypeOf(map[string]any{})
+	generalMapType = reflect.TypeOf(map[any]any{})
 	ifaceType      = generalMapType.Elem()
-	timeType       = reflect.TypeOf(time.Time{})
-	ptrTimeType    = reflect.TypeOf(&time.Time{})
 )
 
-func newDecoder() *decoder {
+func newDecoder(opts *options) *decoder {
 	d := &decoder{
 		stringMapType:  stringMapType,
 		generalMapType: generalMapType,
-		uniqueKeys:     true,
+		uniqueKeys:     true, // default for legacy Decoder API (when opts == nil)
 	}
 	d.aliases = make(map[*Node]bool)
+
+	if opts != nil {
+		// For Loader API, opts comes from applyOptions() which initializes
+		// uniqueKeys to true by default, so this preserves the same behavior
+		d.knownFields = opts.knownFields
+		d.uniqueKeys = opts.uniqueKeys
+	}
+
 	return d
 }
 
@@ -359,24 +346,34 @@ func (d *decoder) terror(n *Node, tag string, out reflect.Value) {
 			value = " `" + value + "`"
 		}
 	}
-	d.terrors = append(d.terrors, fmt.Sprintf("line %d: cannot unmarshal %s%s into %s", n.Line, shortTag(tag), value, out.Type()))
+	d.terrors = append(d.terrors, &UnmarshalError{
+		Err:    fmt.Errorf("cannot unmarshal %s%s into %s", shortTag(tag), value, out.Type()),
+		Line:   n.Line,
+		Column: n.Column,
+	})
 }
 
 func (d *decoder) callUnmarshaler(n *Node, u Unmarshaler) (good bool) {
 	err := u.UnmarshalYAML(n)
-	if e, ok := err.(*TypeError); ok {
+	switch e := err.(type) {
+	case nil:
+		return true
+	case *TypeError:
 		d.terrors = append(d.terrors, e.Errors...)
 		return false
+	default:
+		d.terrors = append(d.terrors, &UnmarshalError{
+			Err:    err,
+			Line:   n.Line,
+			Column: n.Column,
+		})
+		return false
 	}
-	if err != nil {
-		fail(err)
-	}
-	return true
 }
 
 func (d *decoder) callObsoleteUnmarshaler(n *Node, u obsoleteUnmarshaler) (good bool) {
 	terrlen := len(d.terrors)
-	err := u.UnmarshalYAML(func(v interface{}) (err error) {
+	err := u.UnmarshalYAML(func(v any) (err error) {
 		defer handleErr(&err)
 		d.unmarshal(n, reflect.ValueOf(v))
 		if len(d.terrors) > terrlen {
@@ -386,14 +383,20 @@ func (d *decoder) callObsoleteUnmarshaler(n *Node, u obsoleteUnmarshaler) (good 
 		}
 		return nil
 	})
-	if e, ok := err.(*TypeError); ok {
+	switch e := err.(type) {
+	case nil:
+		return true
+	case *TypeError:
 		d.terrors = append(d.terrors, e.Errors...)
 		return false
+	default:
+		d.terrors = append(d.terrors, &UnmarshalError{
+			Err:    err,
+			Line:   n.Line,
+			Column: n.Column,
+		})
+		return false
 	}
-	if err != nil {
-		fail(err)
-	}
-	return true
 }
 
 // d.prepare initializes and dereferences pointers and calls UnmarshalYAML
@@ -410,7 +413,7 @@ func (d *decoder) prepare(n *Node, out reflect.Value) (newout reflect.Value, unm
 	again := true
 	for again {
 		again = false
-		if out.Kind() == reflect.Ptr {
+		if out.Kind() == reflect.Pointer {
 			if out.IsNil() {
 				out.Set(reflect.New(out.Type().Elem()))
 			}
@@ -438,7 +441,7 @@ func (d *decoder) fieldByIndex(n *Node, v reflect.Value, index []int) (field ref
 	}
 	for _, num := range index {
 		for {
-			if v.Kind() == reflect.Ptr {
+			if v.Kind() == reflect.Pointer {
 				if v.IsNil() {
 					v.Set(reflect.New(v.Type().Elem()))
 				}
@@ -543,18 +546,10 @@ func (d *decoder) alias(n *Node, out reflect.Value) (good bool) {
 	return good
 }
 
-var zeroValue reflect.Value
-
-func resetMap(out reflect.Value) {
-	for _, k := range out.MapKeys() {
-		out.SetMapIndex(k, zeroValue)
-	}
-}
-
 func (d *decoder) null(out reflect.Value) bool {
 	if out.CanAddr() {
 		switch out.Kind() {
-		case reflect.Interface, reflect.Ptr, reflect.Map, reflect.Slice:
+		case reflect.Interface, reflect.Pointer, reflect.Map, reflect.Slice:
 			out.Set(reflect.Zero(out.Type()))
 			return true
 		}
@@ -564,7 +559,7 @@ func (d *decoder) null(out reflect.Value) bool {
 
 func (d *decoder) scalar(n *Node, out reflect.Value) bool {
 	var tag string
-	var resolved interface{}
+	var resolved any
 	if n.indicatedString() {
 		tag = strTag
 		resolved = n.Value
@@ -602,7 +597,12 @@ func (d *decoder) scalar(n *Node, out reflect.Value) bool {
 			}
 			err := u.UnmarshalText(text)
 			if err != nil {
-				fail(err)
+				d.terrors = append(d.terrors, &UnmarshalError{
+					Err:    err,
+					Line:   n.Line,
+					Column: n.Column,
+				})
+				return false
 			}
 			return true
 		}
@@ -626,6 +626,9 @@ func (d *decoder) scalar(n *Node, out reflect.Value) bool {
 		case int:
 			if !isDuration && !out.OverflowInt(int64(resolved)) {
 				out.SetInt(int64(resolved))
+				return true
+			} else if isDuration && resolved == 0 {
+				out.SetInt(0)
 				return true
 			}
 		case int64:
@@ -712,14 +715,14 @@ func (d *decoder) scalar(n *Node, out reflect.Value) bool {
 			out.Set(resolvedv)
 			return true
 		}
-	case reflect.Ptr:
+	case reflect.Pointer:
 		panic("yaml internal error: please report the issue")
 	}
 	d.terror(n, tag, out)
 	return false
 }
 
-func settableValueOf(i interface{}) reflect.Value {
+func settableValueOf(i any) reflect.Value {
 	v := reflect.ValueOf(i)
 	sv := reflect.New(v.Type()).Elem()
 	sv.Set(v)
@@ -740,7 +743,7 @@ func (d *decoder) sequence(n *Node, out reflect.Value) (good bool) {
 	case reflect.Interface:
 		// No type hints. Will have to use a generic sequence.
 		iface = out
-		out = settableValueOf(make([]interface{}, l))
+		out = settableValueOf(make([]any, l))
 	default:
 		d.terror(n, seqTag, out)
 		return false
@@ -773,7 +776,11 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 			for j := i + 2; j < l; j += 2 {
 				nj := n.Content[j]
 				if ni.Kind == nj.Kind && ni.Value == nj.Value {
-					d.terrors = append(d.terrors, fmt.Sprintf("line %d: mapping key %#v already defined at line %d", nj.Line, nj.Value, ni.Line))
+					d.terrors = append(d.terrors, &UnmarshalError{
+						Err:    fmt.Errorf("mapping key %#v already defined at line %d", nj.Value, ni.Line),
+						Line:   nj.Line,
+						Column: nj.Column,
+					})
 				}
 			}
 		}
@@ -832,17 +839,17 @@ func (d *decoder) mapping(n *Node, out reflect.Value) (good bool) {
 		if d.unmarshal(n.Content[i], k) {
 			if mergedFields != nil {
 				ki := k.Interface()
-				if mergedFields[ki] {
+				if d.getPossiblyUnhashableKey(mergedFields, ki) {
 					continue
 				}
-				mergedFields[ki] = true
+				d.setPossiblyUnhashableKey(mergedFields, ki, true)
 			}
 			kkind := k.Kind()
 			if kkind == reflect.Interface {
 				kkind = k.Elem().Kind()
 			}
 			if kkind == reflect.Map || kkind == reflect.Slice {
-				failf("invalid map key: %#v", k.Interface())
+				failf("cannot use '%#v' as a map key; try decoding into yaml.Node", k.Interface())
 			}
 			e := reflect.New(et).Elem()
 			if d.unmarshal(n.Content[i+1], e) || n.Content[i+1].ShortTag() == nullTag && (mapIsNew || !out.MapIndex(k).IsValid()) {
@@ -921,7 +928,11 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 		if info, ok := sinfo.FieldsMap[sname]; ok {
 			if d.uniqueKeys {
 				if doneFields[info.Id] {
-					d.terrors = append(d.terrors, fmt.Sprintf("line %d: field %s already set in type %s", ni.Line, name.String(), out.Type()))
+					d.terrors = append(d.terrors, &UnmarshalError{
+						Err:    fmt.Errorf("field %s already set in type %s", name.String(), out.Type()),
+						Line:   ni.Line,
+						Column: ni.Column,
+					})
 					continue
 				}
 				doneFields[info.Id] = true
@@ -941,7 +952,11 @@ func (d *decoder) mappingStruct(n *Node, out reflect.Value) (good bool) {
 			d.unmarshal(n.Content[i+1], value)
 			inlineMap.SetMapIndex(name, value)
 		} else if d.knownFields {
-			d.terrors = append(d.terrors, fmt.Sprintf("line %d: field %s not found in type %s", ni.Line, name.String(), out.Type()))
+			d.terrors = append(d.terrors, &UnmarshalError{
+				Err:    fmt.Errorf("field %s not found in type %s", name.String(), out.Type()),
+				Line:   ni.Line,
+				Column: ni.Column,
+			})
 		}
 	}
 
@@ -956,14 +971,32 @@ func failWantMap() {
 	failf("map merge requires map or sequence of maps as the value")
 }
 
+func (d *decoder) setPossiblyUnhashableKey(m map[any]bool, key any, value bool) {
+	defer func() {
+		if err := recover(); err != nil {
+			failf("%v", err)
+		}
+	}()
+	m[key] = value
+}
+
+func (d *decoder) getPossiblyUnhashableKey(m map[any]bool, key any) bool {
+	defer func() {
+		if err := recover(); err != nil {
+			failf("%v", err)
+		}
+	}()
+	return m[key]
+}
+
 func (d *decoder) merge(parent *Node, merge *Node, out reflect.Value) {
 	mergedFields := d.mergedFields
 	if mergedFields == nil {
-		d.mergedFields = make(map[interface{}]bool)
+		d.mergedFields = make(map[any]bool)
 		for i := 0; i < len(parent.Content); i += 2 {
 			k := reflect.New(ifaceType).Elem()
 			if d.unmarshal(parent.Content[i], k) {
-				d.mergedFields[k.Interface()] = true
+				d.setPossiblyUnhashableKey(d.mergedFields, k.Interface(), true)
 			}
 		}
 	}
