@@ -49,11 +49,11 @@ In this tutorial, you'll:
 - Run Prometheus to scrape some metrics and remote write to Grafana Mimir
 - Run Grafana to explore Grafana Mimir dashboards
 - Configure a testing recording rule and alert in Grafana Mimir
- 
+
 {{< admonition type="note" >}}
 This tutorial runs Grafana Mimir using classic architecture. For more information about the supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 {{< /admonition >}}
- 
+
 <!-- INTERACTIVE ignore START -->
 
 ## Prerequisites
