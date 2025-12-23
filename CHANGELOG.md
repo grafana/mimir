@@ -196,6 +196,7 @@
 * [ENHANCEMENT] Multi-zone: Make config validation exclusions configurable via `multi_zone_config_validation_excluded_args` and `multi_zone_config_validation_excluded_env_vars`, and add validation for multi-zone distributor deployments. #13728
 * [ENHANCEMENT] Overrides-exporter: Include query configuration so that query limit defaults are reported accurately. #13850
 * [ENHANCEMENT] Expose pod termination grace period for alertmanagers, ingesters, query-frontends, rulers and store-gateways. #13852
+* [ENHANCEMENT] Store-gateways configured in multi-zone deployment will only scale up once the preceding zones replicas are all ready. #13879
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
