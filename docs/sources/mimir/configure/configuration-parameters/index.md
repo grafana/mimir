@@ -3561,7 +3561,7 @@ grpc_client_config:
 # for response types that support it (currently only `active_series` responses
 # do).
 # CLI flag: -querier.response-streaming-enabled
-[response_streaming_enabled: <boolean> | default = false]
+[response_streaming_enabled: <boolean> | default = true]
 ```
 
 ### etcd

@@ -7396,7 +7396,7 @@
           "required": false,
           "desc": "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
