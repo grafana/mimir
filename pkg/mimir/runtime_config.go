@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -73,16 +73,18 @@ type runtimeConfigLoader struct {
 func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	var overrides = &runtimeConfigValues{}
 
-	decoder := yaml.NewDecoder(r)
-	decoder.KnownFields(true)
+	decoder, err := yaml.NewLoader(r, yaml.WithKnownFields(true))
+	if err != nil {
+		return nil, err
+	}
 
 	// Decode the first document. An empty document (EOF) is OK.
-	if err := decoder.Decode(&overrides); err != nil && !errors.Is(err, io.EOF) {
+	if err := decoder.Load(&overrides); err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 
 	// Ensure the provided YAML config is not composed of multiple documents,
-	if err := decoder.Decode(&runtimeConfigValues{}); !errors.Is(err, io.EOF) {
+	if err := decoder.Load(&runtimeConfigValues{}); !errors.Is(err, io.EOF) {
 		return nil, errMultipleDocuments
 	}
 

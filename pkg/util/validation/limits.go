@@ -23,9 +23,9 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/time/rate"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
@@ -527,7 +527,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (l *Limits) UnmarshalYAML(value *yaml.Node) error {
 	return l.unmarshal(func(v any) error {
-		return value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true})
+		return value.Load(v, yaml.WithKnownFields(true))
 	})
 }
 
