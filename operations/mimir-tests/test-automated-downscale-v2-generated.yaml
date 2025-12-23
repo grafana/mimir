@@ -2237,6 +2237,7 @@ metadata:
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-a
+    grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
     grafana.com/min-time-between-zones-downscale: 15m
@@ -2379,6 +2380,7 @@ metadata:
     grafana.com/prepare-downscale-http-path: store-gateway/prepare-shutdown
     grafana.com/prepare-downscale-http-port: "80"
     grafana.com/rollout-downscale-leader: store-gateway-zone-b
+    grafana.com/rollout-upscale-only-when-leader-ready: "true"
     rollout-max-unavailable: "50"
   labels:
     grafana.com/min-time-between-zones-downscale: 15m
