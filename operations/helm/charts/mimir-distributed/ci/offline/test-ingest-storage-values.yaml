@@ -3,6 +3,7 @@ kubeVersionOverride: "1.29"
 
 kafka:
   enabled: true
+  logRetentionHours: 48
 
 mimir:
   structuredConfig:

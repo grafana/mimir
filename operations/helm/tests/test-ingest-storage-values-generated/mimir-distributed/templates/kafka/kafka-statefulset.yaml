@@ -86,7 +86,7 @@ spec:
             - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
               value: "1"
             - name: KAFKA_LOG_RETENTION_HOURS
-              value: "24"
+              value: "48"
           resources:
             limits: {}
             requests:
