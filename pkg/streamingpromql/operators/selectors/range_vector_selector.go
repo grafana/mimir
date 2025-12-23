@@ -137,6 +137,11 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
 		}
 
+		// Left trim the float buffer to ensure we have at most 1 point <= rangeStart
+		for m.floats.Count() > 1 && m.floats.PointAt(1).T <= originalRangeStart {
+			m.floats.RemoveHead()
+		}
+
 		// remove any synthetic points from the previous step iteration
 		if err := m.lastExtendedRangeFloatModifications.UndoSyntheticPoints(m.extendedRangeFloats); err != nil {
 			return nil, err
@@ -194,27 +199,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 
 // fillBuffer will iterate through the chunkIterator and add points to the given ring buffers.
 // points are accumulated into the buffer if they are rangeStart < T <= rangeEnd.
-// When extendedRangeStart != rangeStart, the last point which is in the range extendedRangeStart < T <= rangeStart is accumulated into the buffer.
-// When extendedRangeStart != rangeStart, the float buffer is automatically left-trimmed to ensure that there is at most 1 point <= rangeStart.
 func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64, extendedRangeStart int64) (bool, error) {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
-
-	// This block is responsible for left trimming of points in the extended look back window.
-	// The reason for doing this at the end and not during accumulation is because of the re-use of the given ring buffers.
-	// We would need to read the points at the start of the ring buffer on each iteration of fillBuffer in order to decide if pruning is required.
-	// And the decision to prune depends on which points are read from the iterator.
-	if extendedRangeStart != rangeStart {
-		defer func() {
-			// This ensures that we have at most 1 point <= rangeStart
-			// Note we only do this for floats, as this is only relevant to the smoothed/anchored implementation which does not consider histograms
-			m.extendedRangeView = m.floats.ViewUntilSearchingForwards(rangeStart, m.extendedRangeView)
-			last, ok := m.extendedRangeView.Last()
-			if ok {
-				m.floats.DiscardPointsAtOrBefore(last.T - 1)
-			}
-		}()
-	}
-
 	histogramObserved := false
 
 	for {

@@ -103,6 +103,17 @@ func (b *FPointRingBuffer) RemoveLast() {
 	}
 }
 
+func (b *FPointRingBuffer) RemoveHead() {
+	if b.size > 0 {
+		b.firstIndex++
+		b.size--
+
+		if b.firstIndex >= len(b.points) {
+			b.firstIndex = 0
+		}
+	}
+}
+
 // ReplaceTail will replace the last point in the buffer with the given point.
 // An error will be returned if the buffer is empty.
 // It is the responsibility of the caller to ensure that replacing the point maintains chronological order of the buffer.

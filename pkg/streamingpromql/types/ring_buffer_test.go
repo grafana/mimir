@@ -565,7 +565,6 @@ func setupRingBufferTestingPools(t *testing.T) {
 }
 
 func TestFPointRingBuffer_RemoveLast(t *testing.T) {
-
 	testCases := map[string]struct {
 		buff     []promql.FPoint
 		expected []promql.FPoint
@@ -594,8 +593,35 @@ func TestFPointRingBuffer_RemoveLast(t *testing.T) {
 	}
 }
 
-func TestFPointRingBuffer_ReplaceTail(t *testing.T) {
+func TestFPointRingBuffer_RemoveHead(t *testing.T) {
+	testCases := map[string]struct {
+		buff     []promql.FPoint
+		expected []promql.FPoint
+	}{
+		"empty buff": {
+			buff:     []promql.FPoint{},
+			expected: nil,
+		},
+		"single point": {
+			buff:     []promql.FPoint{{T: 10, F: 20}},
+			expected: nil,
+		},
+		"multiple points": {
+			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
+			expected: []promql.FPoint{{T: 20, F: 20}},
+		},
+	}
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+			require.NoError(t, buff.Use(tc.buff))
+			buff.RemoveHead()
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
+		})
+	}
+}
 
+func TestFPointRingBuffer_ReplaceTail(t *testing.T) {
 	testCases := map[string]struct {
 		tail     promql.FPoint
 		err      string
