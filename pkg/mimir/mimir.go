@@ -931,9 +931,11 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	setUpGoRuntimeMetrics(cfg, reg)
 
 	mimirpb.CustomCodecConfig{
-		InstrumentRefLeaksPct:             cfg.Common.InstrumentRefLeaks.Percentage,
-		WaitBeforeReuseInstrumentedBuffer: cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
-		MaxInflightInstrumentedBytes:      cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
+		InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{
+			Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
+			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
+			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
+		},
 	}.RegisterGlobally()
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {

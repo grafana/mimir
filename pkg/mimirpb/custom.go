@@ -6,15 +6,11 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"sync"
 	"syscall"
 	"testing"
-	"time"
-	"unsafe"
 
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
-	"go.uber.org/atomic"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
@@ -23,32 +19,19 @@ import (
 )
 
 type CustomCodecConfig struct {
-	InstrumentRefLeaksPct             float64
-	WaitBeforeReuseInstrumentedBuffer time.Duration
-	MaxInflightInstrumentedBytes      uint64
+	InstrumentRefLeaksConfig
 }
 
 var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
 
 func (cfg CustomCodecConfig) codec() *codecV2 {
-	c := &codecV2{}
-	if cfg.InstrumentRefLeaksPct > 0 {
-		c.instrumentRefLeaksOneIn = uint64(math.Trunc(100 / cfg.InstrumentRefLeaksPct))
-		c.waitBeforeReuse = cfg.WaitBeforeReuseInstrumentedBuffer
-		c.maxInflightInstrumentedBytes = cfg.MaxInflightInstrumentedBytes
-		if c.maxInflightInstrumentedBytes == 0 {
-			c.maxInflightInstrumentedBytes = math.MaxUint64
-		}
-	}
-	return c
+	return &codecV2{refLeaksTracker: cfg.InstrumentRefLeaksConfig.tracker()}
 }
 
 var globalCodec encoding.CodecV2
 
 func (cfg CustomCodecConfig) RegisterGlobally() {
-	if cfg.InstrumentRefLeaksPct > 0 && cfg.WaitBeforeReuseInstrumentedBuffer > 0 {
-		startFreeingInstrumentedBuffers()
-	}
+	cfg.maybeStartFreeingInstrumentedBuffers()
 	globalCodec = cfg.codec()
 	encoding.RegisterCodecV2(globalCodec)
 }
@@ -57,8 +40,8 @@ func init() {
 	config := CustomCodecConfig{}
 	if testing.Testing() {
 		// Instrument all buffers when testing.
-		config.InstrumentRefLeaksPct = 100
-		config.WaitBeforeReuseInstrumentedBuffer = 0
+		config.Percentage = 100
+		config.BeforeReusePeriod = 0
 		config.MaxInflightInstrumentedBytes = 0
 	}
 	config.RegisterGlobally()
@@ -69,12 +52,7 @@ func init() {
 // We customize unmarshalling in order to use an optimized path when possible,
 // and to retain the unmarshalling buffer when necessary.
 type codecV2 struct {
-	instrumentRefLeaksOneIn      uint64
-	waitBeforeReuse              time.Duration
-	maxInflightInstrumentedBytes uint64
-
-	unmarshaledWithBufferRefCount atomic.Uint64
-	inflightInstrumentedBytes     atomic.Uint64
+	refLeaksTracker
 }
 
 var _ encoding.CodecV2 = &codecV2{}
@@ -175,45 +153,22 @@ var pageSize = syscall.Getpagesize()
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 	holder, isBufferHolder := v.(MessageWithBufferRef)
-	instrumentLeaks := data.Len() > 0 && isBufferHolder && c.instrumentRefLeaksOneIn > 0 && c.unmarshaledWithBufferRefCount.Add(1)%c.instrumentRefLeaksOneIn == 0
-
-	var pageAlignedLen int
-	if instrumentLeaks {
-		pageAlignedLen = roundUpToMultiple(data.Len(), pageSize)
-		inflight := c.inflightInstrumentedBytes.Add(uint64(pageAlignedLen))
-		if inflight > c.maxInflightInstrumentedBytes {
-			c.inflightInstrumentedBytes.Sub(uint64(pageAlignedLen))
-			instrumentLeaks = false
-		}
-	}
 
 	var buf mem.Buffer
-	if instrumentLeaks {
-		// Allocate separate pages for this buffer. We'll detect ref leaks by
-		// munmaping the pages on Free, after which trying to access them will
-		// segfault.
-		b, err := syscall.Mmap(-1, 0, pageAlignedLen, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
-		if err != nil {
-			panic(fmt.Errorf("mmap: %w", err))
+	if isBufferHolder {
+		buf = c.maybeInstrumentRefLeaks(data)
+	}
+
+	if buf == nil {
+		if len(data) == 1 {
+			// BufferSlice.MaterializeToBuffer already has this behavior when
+			// len(data) == 1, but we reproduce it here for explicitness and for
+			// ensuring forward-compatibility.
+			data[0].Ref()
+			buf = data[0]
+		} else {
+			buf = data.MaterializeToBuffer(unmarshalSlicePool)
 		}
-		b = b[:data.Len()]
-		data.CopyTo(b)
-		buf = mem.NewBuffer(&b, nil)
-		instrumentedBuf := &instrumentLeaksBuf{
-			Buffer:                    buf,
-			waitBeforeReuse:           c.waitBeforeReuse,
-			inflightInstrumentedBytes: &c.inflightInstrumentedBytes,
-		}
-		instrumentedBuf.refCount.Inc()
-		buf = instrumentedBuf
-	} else if len(data) == 1 {
-		// BufferSlice.MaterializeToBuffer already has this behavior when
-		// len(data) == 1, but we reproduce it here for explicitness and for
-		// ensuring forward-compatibility.
-		data[0].Ref()
-		buf = data[0]
-	} else {
-		buf = data.MaterializeToBuffer(unmarshalSlicePool)
 	}
 	// Decrement buf's reference count. Note though that if v implements MessageWithBufferRef,
 	// we increase buf's reference count first so it doesn't go to zero.
@@ -270,67 +225,6 @@ func (m *BufferHolder) FreeBuffer() {
 }
 
 var _ MessageWithBufferRef = &BufferHolder{}
-
-type instrumentLeaksBuf struct {
-	mem.Buffer
-	refCount                  atomic.Int64
-	waitBeforeReuse           time.Duration
-	inflightInstrumentedBytes *atomic.Uint64
-}
-
-func (b *instrumentLeaksBuf) Ref() {
-	b.Buffer.Ref()
-	b.refCount.Inc()
-}
-
-func (b *instrumentLeaksBuf) Free() {
-	b.Buffer.Free()
-
-	if b.refCount.Dec() == 0 {
-		buf := b.ReadOnlyData()
-		ptr := unsafe.SliceData(buf)
-		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
-		if b.waitBeforeReuse > 0 {
-			err := syscall.Mprotect(allPages, syscall.PROT_NONE)
-			if err != nil {
-				panic(fmt.Errorf("mprotect: %w", err))
-			}
-			select {
-			case unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse), inflightInstrumentedBytes: b.inflightInstrumentedBytes}:
-				return
-			default:
-				// Queue is full, munmap right away.
-			}
-		}
-		unmap(allPages, b.inflightInstrumentedBytes)
-	}
-}
-
-type unmapTask struct {
-	buf                       []byte
-	at                        time.Time
-	inflightInstrumentedBytes *atomic.Uint64
-}
-
-var unmapQueue chan unmapTask
-
-var startFreeingInstrumentedBuffers = sync.OnceFunc(func() {
-	unmapQueue = make(chan unmapTask, 1000)
-	go func() {
-		for t := range unmapQueue {
-			time.Sleep(time.Until(t.at))
-			unmap(t.buf, t.inflightInstrumentedBytes)
-		}
-	}()
-})
-
-func unmap(buf []byte, inflightInstrumentedBytes *atomic.Uint64) {
-	inflightInstrumentedBytes.Sub(uint64(len(buf)))
-	err := syscall.Munmap(buf)
-	if err != nil {
-		panic(fmt.Errorf("munmap: %w", err))
-	}
-}
 
 // MinTimestamp returns the minimum timestamp (milliseconds) among all series
 // in the WriteRequest. Returns math.MaxInt64 if the request is empty.
@@ -721,8 +615,4 @@ func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
 		m.sourceBufferHolders = map[*BufferHolder]struct{}{}
 	}
 	m.sourceBufferHolders[bufh] = struct{}{}
-}
-
-func roundUpToMultiple(n, of int) int {
-	return ((n + of - 1) / of) * of
 }
