@@ -6,8 +6,9 @@
 package selectors
 
 import (
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 type undoAction int
@@ -252,7 +253,7 @@ func interpolateCombined(p1, p2 promql.FPoint, t int64, leftEdge bool) (float64,
 // minIdx sets the minimum index of pts which is considered.
 // It is the callers responsibility to ensure that minIdx is a valid index within the given pts slice.
 func search(pts []promql.FPoint, t int64, minIdx int) int {
-	idx := minIdx
+	idx := 0
 	n := len(pts)
 
 	if n == 0 {
