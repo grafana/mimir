@@ -110,6 +110,7 @@ Annotations:
 {{- $priority -}}
 {{- end -}}
 
+{{- define "webhook.default.payload.state" -}}{{ if eq .Status "resolved" }}ok{{ else }}alerting{{ end }}{{ end }}
 {{ define "webhook.default.payload" -}}
   {{ coll.Dict 
   "receiver" .Receiver
@@ -123,7 +124,7 @@ Annotations:
   "orgId"  (index .Alerts 0).OrgID
   "truncatedAlerts"  .TruncatedAlerts
   "groupKey" .GroupKey
-  "state"  (tmpl.Inline "{{ if eq .Status \"resolved\" }}ok{{ else }}alerting{{ end }}" . )
+  "state"  (tmpl.Exec "webhook.default.payload.state" . )
   "title" (tmpl.Exec "default.title" . )
   "message" (tmpl.Exec "default.message" . )
   | data.ToJSONPretty " "}}
@@ -209,7 +210,10 @@ func ForTests(t *testing.T) *Template {
 	externalURL, err := url.Parse("http://test.com")
 	require.NoError(t, err)
 	tmpl.ExternalURL = externalURL
-	return tmpl
+	return &Template{
+		Template: tmpl,
+		limits:   DefaultLimits,
+	}
 }
 
 var DefaultTemplateName = "__default__"

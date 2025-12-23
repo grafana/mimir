@@ -67,90 +67,89 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "Kafka REST Proxy",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Description:  "Hint: If you are directly using v3 APIs hosted on a Confluent Kafka Server, you must append /kafka to the URL here. Example: https://localhost:8082/kafka",
-				Placeholder:  "http://localhost:8082",
-				PropertyName: "kafkaRestProxy",
-				Required:     true,
-			},
-			{
-				Label:        "Topic",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "topic1",
-				PropertyName: "kafkaTopic",
-				Required:     true,
-			},
-			{
-				Label:        "Username",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "username",
-				Required:     false,
-			},
-			{
-				Label:        "Password",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypePassword,
-				Description:  "The password to use when making a call to the Kafka REST Proxy",
-				PropertyName: "password",
-				Required:     false,
-				Secure:       true,
-			},
-			{
-				Label:        "API version",
-				Element:      schema.ElementTypeSelect,
-				InputType:    schema.InputTypeText,
-				Description:  "The API version to use when contacting the Kafka REST Server. By default v2 will be used.",
-				PropertyName: "apiVersion",
-				Required:     false,
-				SelectOptions: []schema.SelectOption{
-					{
-						Value: apiVersionV2,
-						Label: "v2",
-					},
-					{
-						Value: apiVersionV3,
-						Label: "v3",
-					},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "Kafka REST Proxy",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Description:  "Hint: If you are directly using v3 APIs hosted on a Confluent Kafka Server, you must append /kafka to the URL here. Example: https://localhost:8082/kafka",
+			Placeholder:  "http://localhost:8082",
+			PropertyName: "kafkaRestProxy",
+			Required:     true,
+			Protected:    true,
+		},
+		{
+			Label:        "Topic",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "topic1",
+			PropertyName: "kafkaTopic",
+			Required:     true,
+		},
+		{
+			Label:        "Username",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "username",
+			Required:     false,
+		},
+		{
+			Label:        "Password",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypePassword,
+			Description:  "The password to use when making a call to the Kafka REST Proxy",
+			PropertyName: "password",
+			Required:     false,
+			Secure:       true,
+		},
+		{
+			Label:        "API version",
+			Element:      schema.ElementTypeSelect,
+			InputType:    schema.InputTypeText,
+			Description:  "The API version to use when contacting the Kafka REST Server. By default v2 will be used.",
+			PropertyName: "apiVersion",
+			Required:     false,
+			SelectOptions: []schema.SelectOption{
+				{
+					Value: apiVersionV2,
+					Label: "v2",
 				},
-			},
-			{
-				Label:        "Cluster ID",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Description:  "v3 APIs require a clusterID to be specified.",
-				Placeholder:  "lkc-abcde",
-				PropertyName: "kafkaClusterId",
-				Required:     true,
-				ShowWhen: schema.ShowWhen{
-					Field: "apiVersion",
-					Is:    apiVersionV3,
+				{
+					Value: apiVersionV3,
+					Label: "v3",
 				},
-			},
-			{
-				Label:        "Description",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Description:  "Templated description of the Kafka message",
-				PropertyName: "description",
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-			},
-			{
-				Label:        "Details",
-				Element:      schema.ElementTypeTextArea,
-				Description:  "Custom details to include with the message. You can use template variables.",
-				PropertyName: "details",
-				Placeholder:  templates.DefaultMessageEmbed,
 			},
 		},
-	}
+		{
+			Label:        "Cluster ID",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Description:  "v3 APIs require a clusterID to be specified.",
+			Placeholder:  "lkc-abcde",
+			PropertyName: "kafkaClusterId",
+			Required:     true,
+			ShowWhen: schema.ShowWhen{
+				Field: "apiVersion",
+				Is:    apiVersionV3,
+			},
+		},
+		{
+			Label:        "Description",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Description:  "Templated description of the Kafka message",
+			PropertyName: "description",
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+		},
+		{
+			Label:        "Details",
+			Element:      schema.ElementTypeTextArea,
+			Description:  "Custom details to include with the message. You can use template variables.",
+			PropertyName: "details",
+			Placeholder:  templates.DefaultMessageEmbed,
+		},
+	},
 }

@@ -561,7 +561,7 @@ func initialCommentForImage(alert templates.ExtendedAlert) (string, string) {
 
 	titleBuilder.WriteString(" ")
 	if alert.Labels != nil {
-		titleBuilder.WriteString(string(alert.Labels[model.AlertNameLabel]))
+		titleBuilder.WriteString(alert.Labels[model.AlertNameLabel])
 	}
 
 	textBuilder := strings.Builder{}
@@ -747,6 +747,13 @@ func uploadFile(_ context.Context, req *http.Request, logger log.Logger) error {
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			level.Warn(logger).Log("msg", "Failed to close response body", "err", err)
+		}
+	}()
+
 	// no need to check body, just check the status code
 	return errorForStatusCode(logger, resp.StatusCode)
 }
