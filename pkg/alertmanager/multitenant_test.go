@@ -4240,8 +4240,6 @@ func (f *passthroughAlertmanagerClientPool) GetClientFor(addr string) (Client, e
 }
 
 type mockAlertManagerLimits struct {
-	notifyHooksLimits
-
 	emailNotificationRateLimit     rate.Limit
 	emailNotificationBurst         int
 	maxConfigSize                  int
