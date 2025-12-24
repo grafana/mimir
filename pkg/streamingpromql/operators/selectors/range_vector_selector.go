@@ -30,10 +30,8 @@ type RangeVectorSelector struct {
 	histograms        *types.HPointRingBuffer
 	stepData          *types.RangeVectorStepData // Retain the last step data instance we used to avoid allocating it for every step.
 
-	extendedRangeFloats                 *types.FPointRingBuffer // A buffer we use to create views for smoothed/anchored extended ranges which have added/modified points from the original floats buffer
-	extendedRangeView                   *types.FPointRingBufferView
-	lastExtendedRangeFloatModifications AnchoredExtensionMetadata
-	calcSmoothedCounterAdjustedPoints   bool
+	lastFloatModifications            AnchoredExtensionMetadata
+	calcSmoothedCounterAdjustedPoints bool
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
@@ -46,10 +44,6 @@ func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limite
 		floats:     types.NewFPointRingBuffer(memoryConsumptionTracker),
 		histograms: types.NewHPointRingBuffer(memoryConsumptionTracker),
 		stepData:   &types.RangeVectorStepData{Anchored: selector.Anchored, Smoothed: selector.Smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
-	}
-
-	if selector.Anchored || selector.Smoothed {
-		rangeVectorSelector.extendedRangeFloats = types.NewFPointRingBuffer(memoryConsumptionTracker)
 	}
 
 	if selector.Smoothed && (selector.OuterFunc == "rate" || selector.OuterFunc == "increase") {
@@ -66,7 +60,6 @@ func (m *RangeVectorSelector) ExpressionPosition() posrange.PositionRange {
 func (m *RangeVectorSelector) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Compute value we need on every call to NextSeries() once, here.
 	m.rangeMilliseconds = m.Selector.Range.Milliseconds()
-
 	return m.Selector.SeriesMetadata(ctx, matchers)
 }
 
@@ -76,14 +69,10 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	m.nextStepT = m.Selector.TimeRange.StartT
 	m.floats.Reset()
 	m.histograms.Reset()
-	if m.extendedRangeFloats != nil {
-		m.extendedRangeFloats.Reset()
-		m.lastExtendedRangeFloatModifications = AnchoredExtensionMetadata{}
-	}
+	m.lastFloatModifications = AnchoredExtensionMetadata{}
 
 	return nil
 }
@@ -119,16 +108,45 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		rangeEnd += m.Selector.LookbackDelta.Milliseconds()
 	}
 
+	if m.Selector.Anchored || m.Selector.Smoothed {
+		// Restore the buffer to its original points before the anchor modifier was applied.
+		// Note this must be done prior to calling the next fillBuffer
+		if err := m.lastFloatModifications.UndoChanges(m.floats); err != nil {
+			return nil, err
+		}
+	}
+
+	// Note that this rangeStart is the extended rangeStart when we are processing a smoothed/anchored request
 	m.floats.DiscardPointsAtOrBefore(rangeStart)
 	m.histograms.DiscardPointsAtOrBefore(rangeStart)
 	m.stepData.SmoothedBasisForHeadPointSet = false
 	m.stepData.SmoothedBasisForTailPointSet = false
 
-	// When smoothed/anchored is used, the buffer is filled for the user requested time range,
-	// and it may include points immediately outside the range boundaries if they are within the extended time windows.
-	histogramObserved, err := m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd)
-	if err != nil {
-		return nil, err
+	// We may already have a point in the buffer after the range end. If we continue to
+	// fill the float buffer we may have multiple points after the rangeEnd.
+	//
+	// This can occur in a range query where there are missing samples.
+	// The last point can be well past the rangeEnd and we do not need to get another point until
+	// the step iterations takes us to a new rangeEnd beyond this point.
+	//
+	// Note that we only do this for smoothed/anchored since it does not care about histograms.
+	fillBufferRequired := true
+	if (m.Selector.Anchored || m.Selector.Smoothed) && m.floats.Count() > 0 {
+		last := m.floats.Last()
+		if last.T >= originalRangeEnd {
+			fillBufferRequired = false
+		}
+	}
+
+	var err error
+	histogramObserved := false
+	if fillBufferRequired {
+		// Note that when smoothed/anchored is used, this buffer may contain points before the original rangeStart. These will be after the extended range start.
+		// The buffer may have points after the rangeEnd.
+		histogramObserved, err = m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd, m.Selector.Anchored || m.Selector.Smoothed)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if m.Selector.Anchored || m.Selector.Smoothed {
@@ -137,53 +155,36 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			return nil, errors.New("smoothed and anchored modifiers do not work with native histograms")
 		}
 
-		// Left trim the float buffer to ensure we have at most 1 point <= rangeStart
-		for m.floats.Count() > 1 && m.floats.PointAt(1).T <= originalRangeStart {
-			m.floats.RemoveHead()
-		}
-
-		// remove any synthetic points from the previous step iteration
-		if err := m.lastExtendedRangeFloatModifications.UndoSyntheticPoints(m.extendedRangeFloats); err != nil {
+		m.lastFloatModifications, err = ApplyRangeAnchoring(m.floats, originalRangeStart, originalRangeEnd, rangeEnd)
+		if err != nil {
 			return nil, err
 		}
 
-		// left trim the buffer to remove all points before the range start.
-		// note that this will remove the head point if it is already aligned to the range start.
-		// this will be re-inserted as part of the extended point handling below.
-		m.extendedRangeFloats.DiscardPointsAtOrBefore(originalRangeStart)
+		// Note - at this point we either have an empty floats buffer, or we have a buffer with points
+		// at both the originalRangeStart and originalRangeEnd boundaries. There are no points in the buffer
+		// which are outside the [originalRangeStart, originalRangeEnd] range.
+		// Any modified points are captured in the m.lastFloatModifications such that the originals can be
+		// restored for the next step iteration.
 
-		// Note that this view includes the extended range window, so will have the extended points used in the anchored/smoothed filling
-		m.extendedRangeView = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.extendedRangeView)
-
-		lastInView, hasLastPoint := m.extendedRangeView.Last()
-
-		// If we only find points prior to the start of the original range then no points are returned.
-		if hasLastPoint && lastInView.T > originalRangeStart {
-
-			// Fill the extendedRangeFloats buffer with points from the view and extend the range to include points on the boundaries
-			if m.lastExtendedRangeFloatModifications, err = ApplyAnchoredModifier(m.extendedRangeFloats, m.extendedRangeView, originalRangeStart, originalRangeEnd); err != nil {
+		if m.floats.Count() > 0 && m.Selector.Smoothed {
+			// Replace the boundary points with interpolated values and calculate the counter adjusted smoothed boundary points for use in rate/increase functions
+			smoothedPoints, err := ConvertExtendedPointsToSmoothed(m.lastFloatModifications, m.floats, originalRangeStart, originalRangeEnd, m.calcSmoothedCounterAdjustedPoints)
+			if err != nil {
 				return nil, err
 			}
-
-			if m.Selector.Smoothed {
-				// Replace the boundary points with interpolated values and calculate the counter adjusted smoothed boundary points for use in rate/increase functions
-				smoothedPoints, err := ConvertExtendedPointsToSmoothed(m.lastExtendedRangeFloatModifications, m.extendedRangeFloats, originalRangeStart, originalRangeEnd, m.calcSmoothedCounterAdjustedPoints)
-				if err != nil {
-					return nil, err
-				}
-				if smoothedPoints.smoothedHeadSet {
-					m.stepData.SmoothedBasisForHeadPoint = smoothedPoints.smoothedHead
-					m.stepData.SmoothedBasisForHeadPointSet = true
-				}
-				if smoothedPoints.smoothedTailSet {
-					m.stepData.SmoothedBasisForTailPoint = smoothedPoints.smoothedTail
-					m.stepData.SmoothedBasisForTailPointSet = true
-				}
+			if smoothedPoints.smoothedHeadSet {
+				m.stepData.SmoothedBasisForHeadPoint = smoothedPoints.smoothedHead
+				m.stepData.SmoothedBasisForHeadPointSet = true
 			}
-		} else {
-			m.lastExtendedRangeFloatModifications = AnchoredExtensionMetadata{}
+			if smoothedPoints.smoothedTailSet {
+				m.stepData.SmoothedBasisForTailPoint = smoothedPoints.smoothedTail
+				m.stepData.SmoothedBasisForTailPointSet = true
+			}
 		}
-		m.stepData.Floats = m.extendedRangeFloats.ViewAll(m.stepData.Floats)
+
+		// A ViewAll can be used since we know that this floats buffer only contains points within the requested range.
+		m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
+
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
 	}
@@ -198,8 +199,10 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 }
 
 // fillBuffer will iterate through the chunkIterator and add points to the given ring buffers.
-// points are accumulated into the buffer if they are rangeStart < T <= rangeEnd.
-func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64) (bool, error) {
+// points are accumulated into the buffer if they have a timestamp greater than rangeStart with the accumulation stopping
+// once a point with a timestamp greater than or equal to rangeEnd has been accumulated.
+// As such, no point is accumulated for rangeStart and there may be one point after rangeEnd in the buffer.
+func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histograms *types.HPointRingBuffer, rangeStart, rangeEnd int64, smoothedOrAnchored bool) (bool, error) {
 	// Keep filling the buffer until we reach the end of the range or the end of the iterator.
 	histogramObserved := false
 
@@ -271,9 +274,6 @@ func (m *RangeVectorSelector) Finalize(ctx context.Context) error {
 func (m *RangeVectorSelector) Close() {
 	m.Selector.Close()
 	m.floats.Close()
-	if m.extendedRangeFloats != nil {
-		m.extendedRangeFloats.Close()
-	}
 	m.histograms.Close()
 	m.chunkIterator = nil
 }

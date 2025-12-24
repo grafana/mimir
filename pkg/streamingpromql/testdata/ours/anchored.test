@@ -295,11 +295,6 @@ eval instant at 2m changes(metric[1m] anchored)
   {id="1"} 1
   {id="2"} 1
 
-# I dont think this is correct as metric{id="1"}[1m] anchored returns an empty matrix
-#eval instant at 3m changes(metric[1m] anchored)
-#    {id="1"} 1
-#    {id="2"} 1
-
 # {F: 0, T: 420000}, {F: 0, T: 480000}
 eval instant at 8m changes(metric[1m] anchored)
   {id="1"} 0
@@ -324,11 +319,6 @@ eval instant at 2m resets(metric[1m] anchored)
 eval instant at 3m metric[1m] anchored
   expect range vector from 2m to 3m step 1m
   {__name__="metric", id="2"} 97 96
-
-# I dont think this is correct as metric{id="1"}[1m] anchored returns an empty matrix - see above
-#eval instant at 3m resets(metric[1m] anchored)
-#    {id="1"} 1
-#    {id="2"} 1
 
 eval instant at 8m resets(metric[1m] anchored)
   {id="1"} 0
@@ -465,6 +455,6 @@ load 1s
   metric 100 _ 3 _ 200 _ _ 8 _ 600
 
 # This test case validates that synthetic tail points have been removed from
-# the extended float buffer in the range vector selector
+# the float buffer in the range vector selector
 eval range from 0s to 20s step 1s delta(metric[3s] anchored)
   {} 0 0 -97 -97 100 197 197 -192 -192 400 592 592

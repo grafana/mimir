@@ -615,7 +615,7 @@ func TestFPointRingBuffer_RemoveHead(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
-			buff.RemoveHead()
+			buff.RemoveFirst()
 			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
 		})
 	}
@@ -655,6 +655,49 @@ func TestFPointRingBuffer_ReplaceTail(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
 			err := buff.ReplaceTail(tc.tail)
+			if len(tc.err) > 0 {
+				require.ErrorContains(t, err, tc.err)
+				return
+			}
+			require.NoError(t, err)
+			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
+		})
+	}
+}
+
+func TestFPointRingBuffer_ReplaceHead(t *testing.T) {
+	testCases := map[string]struct {
+		head     promql.FPoint
+		err      string
+		buff     []promql.FPoint
+		expected []promql.FPoint
+	}{
+		"empty buff": {
+			buff: []promql.FPoint{},
+			err:  "unable to replace point to the head of the buffer - current buffer is empty",
+		},
+		"single point - replace same timestamp": {
+			head:     promql.FPoint{T: 10, F: 30},
+			buff:     []promql.FPoint{{T: 10, F: 20}},
+			expected: []promql.FPoint{{T: 10, F: 30}},
+		},
+		"single point - replace different timestamp": {
+			head:     promql.FPoint{T: 20, F: 20},
+			buff:     []promql.FPoint{{T: 10, F: 20}},
+			expected: []promql.FPoint{{T: 20, F: 20}},
+		},
+		"multiple points": {
+			head:     promql.FPoint{T: 5, F: 20},
+			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}},
+			expected: []promql.FPoint{{T: 5, F: 20}, {T: 20, F: 20}},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+			require.NoError(t, buff.Use(tc.buff))
+			err := buff.ReplaceHead(tc.head)
 			if len(tc.err) > 0 {
 				require.ErrorContains(t, err, tc.err)
 				return

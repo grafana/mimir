@@ -103,7 +103,7 @@ func (b *FPointRingBuffer) RemoveLast() {
 	}
 }
 
-func (b *FPointRingBuffer) RemoveHead() {
+func (b *FPointRingBuffer) RemoveFirst() {
 	if b.size > 0 {
 		b.firstIndex++
 		b.size--
@@ -124,6 +124,15 @@ func (b *FPointRingBuffer) ReplaceTail(point promql.FPoint) error {
 
 	position := b.size - 1
 	b.points[(b.firstIndex+position)&b.pointsIndexMask] = point
+	return nil
+}
+
+func (b *FPointRingBuffer) ReplaceHead(point promql.FPoint) error {
+	if b.size == 0 {
+		return errors.New("unable to replace point to the head of the buffer - current buffer is empty")
+	}
+
+	b.points[b.firstIndex] = point
 	return nil
 }
 
