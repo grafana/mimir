@@ -364,9 +364,7 @@ func TestPostingsOffsetTableErrorStringDetection(t *testing.T) {
 				fmt.Errorf("postings offset table length/crc32 write error: %w",
 					fmt.Errorf("length size exceeds 4 bytes: 5000000000"))))
 
-		ok, returnedErr := IsPostingsOffsetTableSizeError(err)
-		require.True(t, ok, "should detect postings offset table size error from Prometheus TSDB")
-		require.Equal(t, err, returnedErr)
+		require.True(t, IsPostingsOffsetTableSizeError(err), "should detect postings offset table size error from Prometheus TSDB")
 	})
 
 	t.Run("does not detect unrelated errors", func(t *testing.T) {
@@ -390,8 +388,7 @@ func TestPostingsOffsetTableErrorStringDetection(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				ok, _ := IsPostingsOffsetTableSizeError(tc.err)
-				require.False(t, ok, "should not detect error: %v", tc.err)
+				require.False(t, IsPostingsOffsetTableSizeError(tc.err), "should not detect error: %v", tc.err)
 			})
 		}
 	})
