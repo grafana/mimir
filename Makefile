@@ -627,6 +627,18 @@ check-helm-tests: build-helm-tests helm-conftest-test
 
 endif
 
+%.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
+%.pb.go.expdiff: %.pb.go
+	@echo "Regenerating $@"
+	$(eval PBGO_FILE := $(patsubst %.pb.go.expdiff,%.pb.go,$@))
+	$(eval PROTO_FILE := $(patsubst %.pb.go.expdiff,%.proto,$@))
+	@cp $(PBGO_FILE) $(PBGO_FILE).bak
+	@touch $(PROTO_FILE)
+	@$(MAKE) -B $(PBGO_FILE)
+	@git diff --no-index $(PBGO_FILE).bak $(PBGO_FILE) | sed 's/.pb.go.bak/.pb.go/g' > $@ || true
+	@rm $(PBGO_FILE).bak
+	@./tools/apply-expected-diffs.sh $(PBGO_FILE)
+
 .PHONY: check-makefiles
 check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
