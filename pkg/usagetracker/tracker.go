@@ -227,6 +227,15 @@ type UsageTracker struct {
 }
 
 func NewUsageTracker(cfg Config, instanceRing *ring.Ring, partitionRing *ring.MultiPartitionInstanceRing, overrides *validation.Overrides, logger log.Logger, registerer prometheus.Registerer) (*UsageTracker, error) {
+	// Register all usage-tracker's metrics through a single collector, making the inner collectors opaque to the gathering process
+	// and preventing the concurrent collection of metrics from all partitions.
+	// See TestMetricsGatheringIsNotConcurrent for more details.
+	usageTrackerRegisterer := prometheus.NewRegistry()
+	if err := registerer.Register(usageTrackerRegisterer); err != nil {
+		return nil, fmt.Errorf("can't register: %w", err)
+	}
+	registerer = usageTrackerRegisterer
+
 	t := &UsageTracker{
 		cfg:           cfg,
 		instanceRing:  instanceRing,

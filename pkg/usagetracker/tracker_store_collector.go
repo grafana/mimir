@@ -2,7 +2,9 @@
 
 package usagetracker
 
-import "github.com/prometheus/client_golang/prometheus"
+import (
+	"github.com/prometheus/client_golang/prometheus"
+)
 
 var _ prometheus.Collector = &trackerStore{}
 
@@ -28,6 +30,8 @@ func (t *trackerStore) Describe(descs chan<- *prometheus.Desc) {
 }
 
 func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
+	trackerStoreCollectTestHook()
+
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 	for _, tenantID := range t.sortedTenants {
@@ -36,3 +40,5 @@ func (t *trackerStore) Collect(metrics chan<- prometheus.Metric) {
 		metrics <- prometheus.MustNewConstMetric(currentLimitMetricDesc, prometheus.GaugeValue, float64(tenant.currentLimit.Load()), tenantID)
 	}
 }
+
+var trackerStoreCollectTestHook = func() {}
