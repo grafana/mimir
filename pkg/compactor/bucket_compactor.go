@@ -679,16 +679,16 @@ func IsCriticalError(err error) (bool, CriticalError) {
 // Prometheus TSDB does not expose this as a structured error type.
 //
 // The error originates from vendor/github.com/prometheus/prometheus/tsdb/index/index.go (writeLengthAndHash).
-func IsPostingsOffsetTableSizeError(err error) (bool, error) {
+func IsPostingsOffsetTableSizeError(err error) bool {
 	if err == nil {
-		return false, nil
+		return false
 	}
 
 	errStr := err.Error()
 	hasLengthError := strings.Contains(errStr, "length size exceeds 4 bytes")
 	hasPostingsTable := strings.Contains(errStr, "postings offset table")
 
-	return hasLengthError && hasPostingsTable, err
+	return hasLengthError && hasPostingsTable
 }
 
 // repairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
@@ -1066,7 +1066,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// Handle postings offset table size errors by marking all input blocks as no-compact.
 					// This error indicates the blocks have extremely high label cardinality and cannot be
 					// compacted together without exceeding the 4GB offset table size limit.
-					if ok, _ := IsPostingsOffsetTableSizeError(err); ok && c.skipUnhealthyBlocks {
+					if IsPostingsOffsetTableSizeError(err) && c.skipUnhealthyBlocks {
 						blockIDs := g.IDs()
 						level.Warn(c.logger).Log(
 							"msg", "compaction failed due to postings offset table size limit; marking input blocks as no-compact",
