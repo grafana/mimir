@@ -130,6 +130,10 @@ func (cfg *Config) Validate() error {
 		return errStreamingStoreGatewayBufferSize
 	}
 
+	if err := cfg.EngineConfig.MimirQueryEngine.InstantQuerySplitting.Validate(); err != nil {
+		return fmt.Errorf("invalid instant query splitting config: %w", err)
+	}
+
 	return nil
 }
 
