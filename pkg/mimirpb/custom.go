@@ -158,6 +158,10 @@ type BufferHolder struct {
 	buffer mem.Buffer
 }
 
+func (m *BufferHolder) Buffer() mem.Buffer {
+	return m.buffer
+}
+
 func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
 }
@@ -165,7 +169,6 @@ func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
 func (m *BufferHolder) FreeBuffer() {
 	if m.buffer != nil {
 		m.buffer.Free()
-		m.buffer = nil
 	}
 }
 
@@ -533,4 +536,31 @@ type orderAwareMetricMetadata struct {
 	MetricMetadata
 	// order is the 0-based index of this metadata object in a wider metadata array.
 	order int
+}
+
+func (m *WriteRequest) FreeBuffer() {
+	m.BufferHolder.FreeBuffer()
+	for p := range m.sourceBufferHolders {
+		p.FreeBuffer()
+	}
+}
+
+// AddSourceBufferHolder adds a source BufferHolder to the WriteRequest,
+// retaining a strong reference to the source buffer. See
+// [WriteRequest.SourceBufferHolders].
+func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
+	buf := bufh.Buffer()
+	if buf == nil {
+		return
+	}
+	if _, ok := m.sourceBufferHolders[bufh]; ok {
+		return
+	}
+
+	buf.Ref()
+
+	if m.sourceBufferHolders == nil {
+		m.sourceBufferHolders = map[*BufferHolder]struct{}{}
+	}
+	m.sourceBufferHolders[bufh] = struct{}{}
 }
