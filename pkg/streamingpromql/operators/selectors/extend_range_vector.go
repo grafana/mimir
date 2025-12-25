@@ -9,89 +9,185 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+type undoAction int
+
+const (
+	none undoAction = iota
+	remove
+	replace
+)
+
+// AnchoredExtensionMetadata tracks the first and last points considered in a range extension.
+// It also tracks modifications made to the buffer, such as synthetic boundary points and head/tail trimming.
+// A function is provided to undo these changes on a given buffer.
+type AnchoredExtensionMetadata struct {
+	// The original first point in the set of points considered for the anchored extension. This may not be the first point in the overall buffer.
+	first promql.FPoint
+	// The original last point in the set of points considered for the anchored extension. This may not be the last point in the overall buffer.
+	last promql.FPoint
+	// If the buffer has a trailing point which is outside consideration for the anchored extension it is stored here so it can be restored.
+	excludedLast promql.FPoint
+	// Flag indicating that the point in excludedLast needs to be re-inserted to the fail of the buffer
+	restoreExcludedLast bool
+	// If the buffer has leading point which is outside consideration for the anchored extension it is stored here so it can be restored.
+	// This can occur when there is a single point in the extended look-back. The point can not be used since it is not after the rangeStart,
+	// but we can not delete it from the buffer since it may be usable in the next step when additional points are pulled in.
+	excludedFirst        promql.FPoint
+	restoreExcludedFirst bool
+	// The actions required to undo synthetic head and tail modifications
+	undoTailModifications undoAction
+	undoHeadModifications undoAction
+}
+
+// UndoChanges will restore the buffer to its original points.
+func (m *AnchoredExtensionMetadata) UndoChanges(buff *types.FPointRingBuffer) error {
+
+	switch m.undoTailModifications {
+	case none:
+		// nothing to be done
+	case remove:
+		buff.RemoveLast()
+	case replace:
+		if err := buff.ReplaceTail(m.last); err != nil {
+			return err
+		}
+	}
+
+	switch m.undoHeadModifications {
+	case none:
+		// nothing to be done
+	case remove:
+		buff.RemoveFirst()
+	case replace:
+		if err := buff.ReplaceHead(m.first); err != nil {
+			return err
+		}
+	}
+
+	if m.restoreExcludedLast {
+		if err := buff.Append(m.excludedLast); err != nil {
+			return err
+		}
+	}
+
+	if m.restoreExcludedFirst {
+		if err := buff.InsertHeadPoint(m.excludedFirst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type SmoothedPoints struct {
-	points          []promql.FPoint
 	smoothedHeadSet bool
 	smoothedTailSet bool
 	smoothedHead    promql.FPoint
 	smoothedTail    promql.FPoint
 }
 
-type ExtendedPoints struct {
-	points []promql.FPoint
-	first  promql.FPoint
-	last   promql.FPoint
-}
-
-// NewExtendedPointsForAnchored returns a slice of points adjusted to include
-// anchored boundary points at the start and end of the specified range.
+// ApplyRangeAnchoring modifies the given buffer to both trim it to the desired range and to
+// anchor points at the start and end of the specified range.
 //
-// A synthetic point is placed at both rangeStart and rangeEnd:
+// A synthetic (anchored) point is placed at both rangeStart and rangeEnd (if points do not already exist on these boundaries):
 //
 //   - Start value: taken from the last point with T <= rangeStart,
 //     or, if none exists, the first point with T > rangeStart.
 //   - End value:   taken from the first point with T >= rangeEnd,
 //     or, if none exists, the last point with T < rangeEnd.
 //
-// The provided view has already prepared the input range to include a point before the rangeStart,
-// and a point after the rangeEnd (smoothed only).
+// The given buffer has had some preparation.
+// The given buffer may be empty.
+// The buffer may have 0 or more points before the rangeStart, but it is assumed these are all after the extended range start.
+// The buffer may have 0 or 1 point after the rangeEnd. It is possible for this point to be after the extended range end.
 //
-// Note that these points outside the original range are only provided if there is no existing point
-// already on the range boundary and the points are within a defined lookback/lookahead window.
+// The given buffer is updated to discard un-necessary leading or trailing points, and to ensure the anchored points are set on the boundary.
 //
-// The returned slice includes all points within the range, along with the added/modified boundary points.
+// Because this buffer may be re-used between steps, details of the modifications are returned which allows
+// a caller to undo these modifications.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
-func NewExtendedPointsForAnchored(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (ExtendedPoints, error) {
-	head, tail := view.UnsafePoints()
-	count := len(head) + len(tail)
+func ApplyRangeAnchoring(buff *types.FPointRingBuffer, rangeStart, rangeEnd, extendedRangeEnd int64) (AnchoredExtensionMetadata, error) {
+	e := AnchoredExtensionMetadata{}
 
-	// We need a new buffer to store the extended points
-	// The caller is responsible for releasing this slice back to the slices pool
-	buff, err := types.FPointSlicePool.Get(count+2, memoryConsumptionTracker)
-	if err != nil {
-		return ExtendedPoints{}, err
+	if buff.Count() == 0 {
+		return e, nil
 	}
 
-	e := ExtendedPoints{}
-	e.first = head[0]
+	// Left trim the float buffer to ensure we have at most 1 point <= rangeStart
+	// Note that we do delete the point from the buffer, we instead record the modification
+	// so it can be undone for the next step.
+	for buff.Count() > 1 && buff.PointAt(1).T <= rangeStart {
+		e.excludedFirst = buff.PointAt(0)
+		e.restoreExcludedFirst = true
+		buff.RemoveFirst()
+	}
+
+	e.first = buff.PointAt(0)
+	e.last = buff.Last()
+
+	// Discard any trailing point which is outside the extended range end.
+	// Note that we only expect at most 1 point to be found here.
+	if e.last.T > extendedRangeEnd {
+		e.excludedLast = e.last
+		e.restoreExcludedLast = true
+		buff.RemoveLast()
+		if buff.Count() == 0 {
+			return e, nil
+		}
+		e.last = buff.Last()
+	}
+
+	// A single point can be within the extended look-back, but we discard it because
+	// we need at least one point within the original range to proceed.
+	// Note that this may replace a point already stored in excludedFirst.
+	// This is ok, as we only require one point before the rangeStart and the
+	// next step will have a rangeStart greater than this rangeStart.
+	if buff.Count() == 1 && e.first.T <= rangeStart {
+		e.excludedFirst = e.first
+		e.restoreExcludedFirst = true
+		buff.RemoveFirst()
+		return e, nil
+	}
 
 	// Add synthetic or clamp start boundary
-	if e.first.T == rangeStart {
-		buff = append(buff, e.first)
-	} else if e.first.T > rangeStart {
-		buff = append(buff, promql.FPoint{T: rangeStart, F: e.first.F})
-		buff = append(buff, e.first)
-	} else {
-		buff = append(buff, promql.FPoint{T: rangeStart, F: e.first.F})
-	}
+	if e.first.T > rangeStart {
+		if err := buff.InsertHeadPoint(promql.FPoint{T: rangeStart, F: e.first.F}); err != nil {
+			return e, err
+		}
+		e.undoHeadModifications = remove
 
-	buff = append(buff, head[1:]...)
-	buff = append(buff, tail...)
+	} else if e.first.T < rangeStart {
+		if err := buff.ReplaceHead(promql.FPoint{T: rangeStart, F: e.first.F}); err != nil {
+			return e, err
+		}
+		e.undoHeadModifications = replace
+	}
 
 	// Add synthetic or clamp end boundary
-	lastIdx := len(buff) - 1
-	e.last = buff[lastIdx]
 	if e.last.T < rangeEnd {
-		buff = append(buff, promql.FPoint{T: rangeEnd, F: e.last.F})
-	} else if e.last.T > rangeEnd {
-		buff[lastIdx].T = rangeEnd
-	}
+		if err := buff.Append(promql.FPoint{T: rangeEnd, F: e.last.F}); err != nil {
+			return e, err
+		}
+		e.undoTailModifications = remove
 
-	e.points = buff
+	} else if e.last.T > rangeEnd {
+		if err := buff.ReplaceTail(promql.FPoint{T: rangeEnd, F: e.last.F}); err != nil {
+			return e, err
+		}
+		e.undoTailModifications = replace
+	}
 
 	return e, nil
 }
 
-// NewExtendedPointsForSmoothed returns a slice of points adjusted to include
-// smoothed boundary points at the start and end of the specified range.
+// ConvertExtendedPointsToSmoothed modifies a buffer to adjust boundary points to be smoothed.
 //
-// As with NewExtendedPointsForAnchored, synthetic points are placed at both
-// rangeStart and rangeEnd. However, the boundary values are determined using
-// interpolation:
+// This given buffer should have already been passed through ApplyRangeAnchoring. The given
+// anchoredMetadata should be the result of calling ApplyRangeAnchoring.
+//
+// Synthetic points on the boundaries will be re-calculated using interpolation:
 //
 //   - Start value: interpolated between the last point with T < rangeStart and
 //     the first point with T > rangeStart, or taken directly from
@@ -106,19 +202,13 @@ func NewExtendedPointsForAnchored(view *types.FPointRingBufferView, rangeStart, 
 // rate() or increase(), these alternate compensated boundary points must be
 // substituted for the default smoothed ones.
 //
-// The returned slice includes all points within the specified range, along
+// The modified buffer includes all points within the specified range, along
 // with the added (interpolated or direct) boundary points.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
-func NewExtendedPointsForSmoothed(view *types.FPointRingBufferView, rangeStart, rangeEnd int64, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (SmoothedPoints, error) {
-	extendedPoints, err := NewExtendedPointsForAnchored(view, rangeStart, rangeEnd, memoryConsumptionTracker)
-	if err != nil {
-		return SmoothedPoints{}, err
-	}
+func ConvertExtendedPointsToSmoothed(anchoredMetadata AnchoredExtensionMetadata, buff *types.FPointRingBuffer, rangeStart, rangeEnd int64, calculateCounterAdjustedPoints bool) (SmoothedPoints, error) {
 
-	smoothedPoints := SmoothedPoints{
-		points: extendedPoints.points,
-	}
+	smoothedPoints := SmoothedPoints{}
 
 	// Smoothing has 2 special cases.
 	// Firstly, the values on the boundaries are replaced with an interpolated values - thereby smoothing the value to reflect the values of the points before/after the boundary
@@ -128,17 +218,36 @@ func NewExtendedPointsForSmoothed(view *types.FPointRingBufferView, rangeStart, 
 	// alongside the resulting vector so that the rate/increase function handler can utilise these values.
 	//
 	// This is done regardless of this selector being wrapped in rate/increase.
-	if len(extendedPoints.points) > 1 {
-		if extendedPoints.first.T < rangeStart {
-			extendedPoints.points[0].F, smoothedPoints.smoothedHead.F = interpolateCombined(extendedPoints.first, extendedPoints.points[1], rangeStart, true)
+
+	var interpolatedBoundaryValue float64
+	if anchoredMetadata.first.T < rangeStart {
+		pointAfterRangeStart := buff.PointAt(1)
+
+		if calculateCounterAdjustedPoints {
+			interpolatedBoundaryValue, smoothedPoints.smoothedHead.F = interpolateCombined(anchoredMetadata.first, pointAfterRangeStart, rangeStart, true)
 			smoothedPoints.smoothedHead.T = rangeStart
 			smoothedPoints.smoothedHeadSet = true
+		} else {
+			interpolatedBoundaryValue = interpolate(anchoredMetadata.first, pointAfterRangeStart, rangeStart)
 		}
 
-		if extendedPoints.last.T > rangeEnd {
-			extendedPoints.points[len(extendedPoints.points)-1].F, smoothedPoints.smoothedTail.F = interpolateCombined(extendedPoints.points[len(extendedPoints.points)-2], extendedPoints.last, rangeEnd, false)
+		if err := buff.ReplaceValueAtPos(0, interpolatedBoundaryValue); err != nil {
+			return smoothedPoints, err
+		}
+	}
+
+	if anchoredMetadata.last.T > rangeEnd {
+		pointBeforeRangeEnd := buff.PointAt(buff.Count() - 2)
+
+		if calculateCounterAdjustedPoints {
+			interpolatedBoundaryValue, smoothedPoints.smoothedTail.F = interpolateCombined(pointBeforeRangeEnd, anchoredMetadata.last, rangeEnd, false)
 			smoothedPoints.smoothedTail.T = rangeEnd
 			smoothedPoints.smoothedTailSet = true
+		} else {
+			interpolatedBoundaryValue = interpolate(pointBeforeRangeEnd, anchoredMetadata.last, rangeEnd)
+		}
+		if err := buff.ReplaceValueAtPos(buff.Count()-1, interpolatedBoundaryValue); err != nil {
+			return smoothedPoints, err
 		}
 	}
 
@@ -166,4 +275,11 @@ func interpolateCombined(p1, p2 promql.FPoint, t int64, leftEdge bool) (float64,
 	}
 
 	return notCounter, asCounter
+}
+
+func interpolate(p1, p2 promql.FPoint, t int64) float64 {
+	y1 := p1.F
+	y2 := p2.F
+
+	return y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)
 }

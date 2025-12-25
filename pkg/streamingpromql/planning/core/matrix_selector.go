@@ -97,13 +97,14 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
+		OuterFunc:                m.OuterFunc,
 	}
 
 	if m.Anchored || m.Smoothed {
 		selector.LookbackDelta = params.LookbackDelta
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, m.Anchored, m.Smoothed)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
