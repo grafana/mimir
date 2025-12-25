@@ -5950,13 +5950,6 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
-
-# (experimental) If enabled, the compactor constructs and uploads sparse index
-# headers to object storage during each compaction cycle. This allows
-# store-gateway instances to use the sparse headers from object storage instead
-# of recreating them locally.
-# CLI flag: -compactor.upload-sparse-index-headers
-[upload_sparse_index_headers: <boolean> | default = true]
 ```
 
 ### store_gateway
