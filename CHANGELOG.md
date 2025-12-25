@@ -91,6 +91,7 @@
 * [ENHANCEMENT] Query-frontend: query blocking (configured with `blocked_queries` limit) is now stable and no longer experimental. #13107
 * [ENHANCEMENT] Querier: `-querier.active-series-results-max-size-bytes` is now stable and no longer experimental. #13110
 * [ENHANCEMENT] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
+* [ENHANCEMENT] Compactor: If compaction fails because the result block would have a postings offsets table larger than the 4GB limit, mark input blocks for no-compaction to avoid blocking future compactor runs. #13876
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
@@ -149,6 +150,7 @@
   * `MimirIngesterStuckProcessingRecordsFromKafka` → `MimirIngesterKafkaProcessingStuck`
   * `MimirStrongConsistencyOffsetNotPropagatedToIngesters` → `MimirStrongConsistencyOffsetMissing`
   * `MimirKafkaClientBufferedProduceBytesTooHigh` → `MimirKafkaClientProduceBufferHigh`
+* [CHANGE] Alerts: Replaced `MimirCompactorSkippedUnhealthyBlocks` with more generic `MimirCompactorSkippedBlocks`. #13876
 * [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814
 * [ENHANCEMENT] Dashboards: Support native histograms in the Alertmanager, Compactor, Queries, Rollout operator, Reads, RemoteRuler-Reads, Ruler, and Writes dashboards. #13556 #13621 #13629 #13673 #13690 #13678 #13633 #13672
 * [ENHANCEMENT] Alerts: Add `MimirFewerIngestersConsumingThanActivePartitions` alert. #13159
