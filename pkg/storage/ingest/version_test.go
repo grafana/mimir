@@ -97,6 +97,8 @@ func TestDeserializeRecordContent(t *testing.T) {
 
 		require.NoError(t, err)
 		wr.ClearTimeseriesUnmarshalData()
+		defer wr.FreeBuffer()
+		wr.BufferHolder = mimirpb.BufferHolder{} // We don't want to compare this.
 		require.Equal(t, reqv0, &wr)
 	})
 
@@ -124,6 +126,8 @@ func TestDeserializeRecordContent(t *testing.T) {
 
 		require.NoError(t, err)
 		wr.ClearTimeseriesUnmarshalData()
+		defer wr.FreeBuffer()
+		wr.BufferHolder = mimirpb.BufferHolder{} // We don't want to compare this.
 		require.Equal(t, reqv1, &wr)
 	})
 
