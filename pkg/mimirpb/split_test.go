@@ -434,7 +434,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 	}
 
 	// If the fields of WriteRequest have changed, then you will probably need to modify
-	// the SplitWriteRequestByMaxMarshalSize() and SplitWriteRequestByMaxMarshalSize() implementations accordingly!
+	// the [SplitWriteRequestByMaxMarshalSize] and [SplitWriteRequestByMaxMarshalSizeRW2] implementations accordingly!
 	assert.ElementsMatch(t, []string{
 		"Timeseries",
 		"Source",
@@ -449,6 +449,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"unmarshalFromRW2",
 		"rw2symbols",
 		"BufferHolder",
+		"sourceBufferHolders",
 	}, fieldNames)
 }
 
