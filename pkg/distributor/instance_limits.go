@@ -6,7 +6,7 @@ import (
 	"flag"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/util/globalerror"
 )
@@ -49,5 +49,5 @@ func (l *InstanceLimits) UnmarshalYAML(value *yaml.Node) error {
 		*l = *defaultInstanceLimits
 	}
 	type plain InstanceLimits // type indirection to make sure we don't go into recursive loop
-	return value.DecodeWithOptions((*plain)(l), yaml.DecodeOptions{KnownFields: true})
+	return value.Load((*plain)(l), yaml.WithKnownFields(true))
 }

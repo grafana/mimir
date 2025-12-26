@@ -23,8 +23,8 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
+	yamlv3 "go.yaml.in/yaml/v4"
 	"golang.org/x/term"
-	yamlv3 "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 	"github.com/grafana/mimir/pkg/mimirtool/printer"

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/pflag"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 var (
@@ -30,7 +30,7 @@ const (
 
 func (s *LabelValueLengthOverLimitStrategy) UnmarshalYAML(value *yaml.Node) error {
 	var repr string
-	if err := value.Decode(&repr); err != nil {
+	if err := value.Load(&repr); err != nil {
 		return err
 	}
 	return s.Set(repr)
