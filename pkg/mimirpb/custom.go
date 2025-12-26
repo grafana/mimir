@@ -25,7 +25,7 @@ type CustomCodecConfig struct {
 var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
 
 func (cfg CustomCodecConfig) codec() *codecV2 {
-	return &codecV2{refLeaksTracker: cfg.InstrumentRefLeaksConfig.tracker()}
+	return &codecV2{refLeaksTracker: cfg.tracker()}
 }
 
 var globalCodec encoding.CodecV2
