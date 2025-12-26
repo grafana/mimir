@@ -114,7 +114,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	logger := log.NewNopLogger()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -256,7 +256,7 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	logger := log.NewNopLogger()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, nil)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -317,7 +317,7 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	logger := log.NewNopLogger()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, nil)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -369,7 +369,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -458,7 +458,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 		return true, nil
 	}
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, ownUser, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, ownUser, cfgProvider, "", logger, reg)
 	require.NoError(t, cleaner.StartAsync(ctx))
 	require.NoError(t, cleaner.AwaitRunning(ctx))
 
@@ -573,7 +573,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 
 	assertBlockExists := func(user string, blockID ulid.ULID, expectExists bool) {
 		exists, err := bucketClient.Exists(ctx, path.Join(user, blockID.String(), block.MetaFilename))
@@ -776,7 +776,7 @@ func TestBlocksCleaner_ShouldCleanUpFilesWhenNoMoreBlocksRemain(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 	require.NoError(t, cleaner.runCleanupWithErr(ctx))
 
 	// Check bucket index, markers and debug files have been deleted.
@@ -813,7 +813,7 @@ func TestBlocksCleaner_ShouldRemovePartialBlocksOutsideDelayPeriod(t *testing.T)
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 
 	makeBlockPartial := func(user string, blockID ulid.ULID) {
 		err := bucketClient.Delete(ctx, path.Join(user, blockID.String(), block.MetaFilename))
@@ -900,7 +900,7 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithMarkerOutsideDelayP
 	checkBlockDeletionMarker(t, "user-1", parentClient, block1, false)
 	checkBlockDeletionMarker(t, "user-1", bucketClient, block1, false)
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// cleaner.cleanUser makes the clients consistent again. block1 is marked for deletion again
@@ -973,7 +973,7 @@ func TestBlocksCleaner_ShouldRemovePartiallyDeletedBlocksWithGlobalMarkerPresent
 	require.True(t, foundBefore)
 	checkBlock(t, "user-1", parentClient, block1, false, false)
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	var foundAfter bool
@@ -1030,7 +1030,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksInsideDelayPeriod(t *testing.
 	reg := prometheus.NewPedanticRegistry()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 
 	makeBlockPartial := func(user string, blockID ulid.ULID) {
 		err := bucketClient.Delete(ctx, path.Join(user, blockID.String(), block.MetaFilename))
@@ -1121,7 +1121,7 @@ func TestBlocksCleaner_ShouldNotRemovePartialBlocksIfConfiguredDelayIsInvalid(t 
 	checkBlock(t, "user-1", bucketClient, block1, false, false)
 
 	// Run the cleanup.
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 	require.NoError(t, cleaner.cleanUser(ctx, "user-1", logger))
 
 	// Ensure the block has NOT been marked for deletion.
@@ -1215,7 +1215,7 @@ func TestStalePartialBlockLastModifiedTime(t *testing.T) {
 				baseBucket = bucketWithoutUpdatedAt
 			}
 
-			cleaner := NewBlocksCleaner(BlocksCleanerConfig{}, baseBucket, func(userID string) (bool, error) { return true, nil }, nil, log.NewNopLogger(), nil)
+			cleaner := NewBlocksCleaner(BlocksCleanerConfig{}, baseBucket, func(userID string) (bool, error) { return true, nil }, nil, "", log.NewNopLogger(), nil)
 			lastModified, err := cleaner.stalePartialBlockLastModifiedTime(context.Background(), tc.blockID, tc.bucket, tc.cutoff)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedLastModified, lastModified)
@@ -1582,8 +1582,8 @@ func TestBlocksCleaner_RaceCondition_CleanerUpdatesBucketIndexWhileAnotherCleane
 			createDeletionMark(t, bucketClient, tenantID, block1, time.Now().Add(-deletionDelay).Add(-time.Minute))
 
 			cleaner1BucketClient, cleaner2BucketClient := testData.mockBucketClients(bucketClient)
-			cleaner1 := NewBlocksCleaner(cfg, cleaner1BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
-			cleaner2 := NewBlocksCleaner(cfg, cleaner2BucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
+			cleaner1 := NewBlocksCleaner(cfg, cleaner1BucketClient, tsdb.AllUsers, cfgProvider, "", logger, nil)
+			cleaner2 := NewBlocksCleaner(cfg, cleaner2BucketClient, tsdb.AllUsers, cfgProvider, "", logger, nil)
 
 			// Run both cleaners concurrently.
 			wg := sync.WaitGroup{}
@@ -1639,7 +1639,7 @@ func TestBlocksCleaner_instrumentBucketIndexUpdate(t *testing.T) {
 	logger := log.NewNopLogger()
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, "", logger, reg)
 
 	idx := bucketindex.Index{UpdatedAt: 1}
 	require.NoError(t, bucketindex.WriteIndex(ctx, bucketClient, "user-1", cfgProvider, &idx))
