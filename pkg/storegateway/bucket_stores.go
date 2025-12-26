@@ -41,9 +41,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
-// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
-const GrpcContextMetadataTenantID = "__org_id__"
+const (
+	// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
+	// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
+	GrpcContextMetadataTenantID = "__org_id__"
+	// GrpcContextMetadataBucketIndexUpdatedAt is a key for GPRC Metadata used to pass bucket index metadata to store-gateway.
+	GrpcContextMetadataBucketIndexUpdatedAt = "__bktidx_updated_at__"
+)
 
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
