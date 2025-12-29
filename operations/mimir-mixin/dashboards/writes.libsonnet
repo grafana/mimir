@@ -38,6 +38,7 @@ local filename = 'mimir-writes.json';
          height: '100px',
          showTitle: false,
        })
+      .justifyPanels()  // Make sure panels use all width even if 12 columns are not divisible by the number of panels.
       .addPanel(
         $.panel('Samples / sec') +
         $.statPanel(
@@ -71,6 +72,40 @@ local filename = 'mimir-writes.json';
           |||
             The number of series not yet flushed to object storage that are held in ingester memory.
             With classic storage we the sum of series from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum series of each ingest partition.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Owned series';
+        $.panel(title) +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('sum without (user) (cortex_ingester_owned_series{%s})' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The number of owned series across all ingesters.
+            Owned series are the subset of in-memory series that currently map to the ingester in the ring.
+            With classic storage the sum of series from all ingesters is divided by the replication factor.
+            With ingest storage we take the maximum series of each ingest partition.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Active series';
+        $.panel(title) +
+        $.statPanel(
+          $.queries.ingester.ingestOrClassicDeduplicatedQuery('sum without (user) (cortex_ingester_active_series{%s})' % [$.jobMatcher($._config.job_names.ingester)]),
+          format='short'
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The number of active series across all ingesters.
+            Active series are series that have received a sample within the active series window (configured via -ingester.active-series-metrics-idle-timeout).
+            With classic storage the sum of series from all ingesters is divided by the replication factor.
             With ingest storage we take the maximum series of each ingest partition.
           |||
         ),

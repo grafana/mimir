@@ -32,6 +32,7 @@
 * [FEATURE] Continuous test: Add `prometheus2` option `-tests.write-protocol` flag to select Prometheus Remote-Write 2.0 as a protocol. #13659
 * [FEATURE] Continuous test: Write metrics metadata along with samples. #13659 #13732 #13796
 * [FEATURE] Store-gateway: Add experimental per-zone shard size `-store-gateway.tenant-shard-size-per-zone`. When set, the total shard size is computed as this value multiplied by the number of zones. This option takes precedence over `-store-gateway.tenant-shard-size`. #13835
+* [ENHANCEMENT] Dashboards: Add "Owned series" and "Active series" panels to the writes dashboard Headlines row. #13894
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
 * [ENHANCEMENT] Ingester: the per-tenant postings for matchers cache is now stable. Use the following configuration options: #13101
