@@ -59,7 +59,7 @@ RUN GO111MODULE=on \
 	go install github.com/google/go-jsonnet/cmd/jsonnet@v0.19.1 && \
 	go install github.com/google/go-jsonnet/cmd/jsonnetfmt@v0.19.1 && \
 	go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.8.1 && \
-	go install github.com/open-policy-agent/conftest@v0.42.1 && \
+	go install github.com/open-policy-agent/conftest@v0.62.0 && \
 	go install github.com/uber-go/gopatch@v0.4.0 && \
 	go install github.com/bufbuild/buf/cmd/buf@v1.55.1 && \
 	rm -rf /go/pkg /go/src /root/.cache
