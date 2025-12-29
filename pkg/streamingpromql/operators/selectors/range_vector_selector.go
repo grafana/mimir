@@ -46,9 +46,8 @@ func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limite
 		stepData:   &types.RangeVectorStepData{Anchored: selector.Anchored, Smoothed: selector.Smoothed}, // Include the smoothed/anchored context to the step data as functions such as rate/increase require this
 	}
 
-	if selector.Smoothed && (selector.OuterFunc == "rate" || selector.OuterFunc == "increase") {
-		rangeVectorSelector.calcSmoothedCounterAdjustedPoints = true
-	}
+	// We only need to calculate the counter-aware interpolated smoothed points if the outer function is rate or increase
+	rangeVectorSelector.calcSmoothedCounterAdjustedPoints = selector.Smoothed && (selector.OuterFunc == "rate" || selector.OuterFunc == "increase")
 
 	return &rangeVectorSelector
 }
@@ -73,7 +72,6 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	m.floats.Reset()
 	m.histograms.Reset()
 	m.lastFloatModifications = AnchoredExtensionMetadata{}
-
 	return nil
 }
 
@@ -141,8 +139,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 	var err error
 	histogramObserved := false
 	if fillBufferRequired {
-		// Note that when smoothed/anchored is used, this buffer may contain points before the original rangeStart. These will be after the extended range start.
-		// The buffer may have points after the rangeEnd.
+		// Note - fillBuffer may result in the buffer having a point after the rangeEnd.
 		histogramObserved, err = m.fillBuffer(m.floats, m.histograms, rangeStart, originalRangeEnd, m.Selector.Anchored || m.Selector.Smoothed)
 		if err != nil {
 			return nil, err
@@ -182,9 +179,8 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 			}
 		}
 
-		// A ViewAll can be used since we know that this floats buffer only contains points within the requested range.
+		// A ViewAll can be used since we know that this buffer only contains points within the requested range.
 		m.stepData.Floats = m.floats.ViewAll(m.stepData.Floats)
-
 	} else {
 		m.stepData.Floats = m.floats.ViewUntilSearchingBackwards(rangeEnd, m.stepData.Floats)
 	}

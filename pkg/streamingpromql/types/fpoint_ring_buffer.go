@@ -127,6 +127,9 @@ func (b *FPointRingBuffer) ReplaceTail(point promql.FPoint) error {
 	return nil
 }
 
+// ReplaceHead will replace the first point in the buffer with the given point.
+// An error will be returned if the buffer is empty.
+// It is the responsibility of the caller to ensure that replacing the point maintains chronological order of the buffer.
 func (b *FPointRingBuffer) ReplaceHead(point promql.FPoint) error {
 	if b.size == 0 {
 		return errors.New("unable to replace point to the head of the buffer - current buffer is empty")
@@ -148,9 +151,7 @@ func (b *FPointRingBuffer) ReplaceValueAtPos(position int, value float64) error 
 
 // InsertHeadPoint will insert the given point into the head of this buffer, expanding if required.
 // Subsequently calling PointAt(0) will return this point.
-// If the buffer is not empty, the given point.T must be less than the current buffer[0].T
-// It is the responsibility of the caller to ensure that the inserted point has a
-// timestamp before the current first point (if any) in the buffer.
+// It is the responsibility of the caller to ensure that inserting this point maintains chronological order of the buffer.
 func (b *FPointRingBuffer) InsertHeadPoint(point promql.FPoint) error {
 	if err := b.resizeIfRequired(1, true); err != nil {
 		return err
@@ -164,8 +165,7 @@ func (b *FPointRingBuffer) InsertHeadPoint(point promql.FPoint) error {
 }
 
 // Append adds p to this buffer, expanding it if required.
-// If this buffer is non-empty, p.T must be greater than or equal to the
-// timestamp of the last point in the buffer.
+// It is the responsibility of the caller to ensure that inserting this point maintains chronological order of the buffer.
 func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 	if err := b.resizeIfRequired(1, false); err != nil {
 		return err

@@ -40,8 +40,8 @@ type Selector struct {
 	Anchored bool
 	Smoothed bool
 
-	// When Smoothed is used this will be set to the name of the function which is wrapping this selector. This allows the
-	// wrapping selector to optimise for the given function.
+	// When Smoothed range modifier is used this will be set to the name of the function which is wrapping this selector. This allows the
+	// selector implementation to perform additional preparation to the result set to assist the function implementation.
 	OuterFunc string
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker

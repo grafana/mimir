@@ -29,14 +29,14 @@ type AnchoredExtensionMetadata struct {
 	last promql.FPoint
 	// If the buffer has a trailing point which is outside consideration for the anchored extension it is stored here so it can be restored.
 	excludedLast promql.FPoint
-	// Flag indicating that the point in excludedLast needs to be re-inserted to the fail of the buffer
+	// Flag indicating that the point in excludedLast needs to be re-inserted to the end of the buffer.
 	restoreExcludedLast bool
-	// If the buffer has leading point which is outside consideration for the anchored extension it is stored here so it can be restored.
-	// This can occur when there is a single point in the extended look-back. The point can not be used since it is not after the rangeStart,
-	// but we can not delete it from the buffer since it may be usable in the next step when additional points are pulled in.
+	// If the buffer has a leading point which is outside consideration for the anchored extension it is stored here so it can be restored.
+	// This can occur when there is a single point in the extended look-back. The point can not be used since there is no point within the original time range.
+	// But we can not delete it from the buffer since the point may be used in subsequent step iterations.
 	excludedFirst        promql.FPoint
 	restoreExcludedFirst bool
-	// The actions required to undo synthetic head and tail modifications
+	// The actions required to undo synthetic head and tail modifications.
 	undoTailModifications undoAction
 	undoHeadModifications undoAction
 }
@@ -87,8 +87,8 @@ type SmoothedPoints struct {
 	smoothedTail    promql.FPoint
 }
 
-// ApplyRangeAnchoring modifies the given buffer to both trim it to the desired range and to
-// anchor points at the start and end of the specified range.
+// ApplyRangeAnchoring modifies the given buffer to trim points to the desired range and to
+// anchor points to the start and end of the specified range.
 //
 // A synthetic (anchored) point is placed at both rangeStart and rangeEnd (if points do not already exist on these boundaries):
 //
@@ -97,10 +97,10 @@ type SmoothedPoints struct {
 //   - End value:   taken from the first point with T >= rangeEnd,
 //     or, if none exists, the last point with T < rangeEnd.
 //
-// The given buffer has had some preparation.
-// The given buffer may be empty.
-// The buffer may have 0 or more points before the rangeStart, but it is assumed these are all after the extended range start.
-// The buffer may have 0 or 1 point after the rangeEnd. It is possible for this point to be after the extended range end.
+// Notes:
+//   - the given buffer may be empty
+//   - the buffer may have 0 or more points before the rangeStart, but it is assumed these are all after the extended range start
+//   - the buffer may have 0 or 1 point after the rangeEnd. It is possible for this point to be after the extended range end
 //
 // The given buffer is updated to discard un-necessary leading or trailing points, and to ensure the anchored points are set on the boundary.
 //
@@ -115,9 +115,10 @@ func ApplyRangeAnchoring(buff *types.FPointRingBuffer, rangeStart, rangeEnd, ext
 		return e, nil
 	}
 
-	// Left trim the float buffer to ensure we have at most 1 point <= rangeStart
-	// Note that we do delete the point from the buffer, we instead record the modification
-	// so it can be undone for the next step.
+	// Left-trim the float buffer so that at most one point with timestamp <= rangeStart remains.
+	// We record the modification so it can be undone and the point restored into the buffer for the next step iteration.
+	// Note: if multiple points exist before rangeStart, we only need to retain the most recent
+	// one, since the next step iteration will have a rangeStart greater than this one.
 	for buff.Count() > 1 && buff.PointAt(1).T <= rangeStart {
 		e.excludedFirst = buff.PointAt(0)
 		e.restoreExcludedFirst = true
@@ -182,7 +183,10 @@ func ApplyRangeAnchoring(buff *types.FPointRingBuffer, rangeStart, rangeEnd, ext
 	return e, nil
 }
 
-// ConvertExtendedPointsToSmoothed modifies a buffer to adjust boundary points to be smoothed.
+// ConvertExtendedPointsToSmoothed modifies a buffer to adjust boundary points to be smoothed values.
+//
+// Unlike the result of ApplyRangeAnchoring which simply anchors existing values to the boundaries, this function
+// replaces the values on the boundaries with interpolated values.
 //
 // This given buffer should have already been passed through ApplyRangeAnchoring. The given
 // anchoredMetadata should be the result of calling ApplyRangeAnchoring.
@@ -196,28 +200,24 @@ func ApplyRangeAnchoring(buff *types.FPointRingBuffer, rangeStart, rangeEnd, ext
 //     the first point with T >= rangeEnd, or taken directly from
 //     the last point with T <= rangeEnd.
 //
-// When an interpolated boundary point is used, an additional interpolated
-// value—applying counter-reset compensation—is written into the provided
-// smoothedHead or smoothedTail. If the returned range is later used by
-// rate() or increase(), these alternate compensated boundary points must be
-// substituted for the default smoothed ones.
+// When calculateCounterAdjustedPoints is true, additional interpolated points
+// for smoothedHead and smoothedTail are returned.
 //
-// The modified buffer includes all points within the specified range, along
-// with the added (interpolated or direct) boundary points.
+// These points include counter-reset compensation to align with the left and
+// right range boundaries. rate() and increase() use these adjusted boundary
+// points.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
 func ConvertExtendedPointsToSmoothed(anchoredMetadata AnchoredExtensionMetadata, buff *types.FPointRingBuffer, rangeStart, rangeEnd int64, calculateCounterAdjustedPoints bool) (SmoothedPoints, error) {
 
 	smoothedPoints := SmoothedPoints{}
 
-	// Smoothing has 2 special cases.
 	// Firstly, the values on the boundaries are replaced with an interpolated values - thereby smoothing the value to reflect the values of the points before/after the boundary
 	//
 	// Secondly, to ensure rate/increase return the correct values, we need to calculate and store alternate points in addition to the interpolated points.
 	// These alternate points ensure that rate/increase don't incorrectly detect counter resets at the beginning and end of the range, and will be stored
 	// alongside the resulting vector so that the rate/increase function handler can utilise these values.
-	//
-	// This is done regardless of this selector being wrapped in rate/increase.
+	// These alternate points are only calculated if calculateCounterAdjustedPoints has been set to true.
 
 	var interpolatedBoundaryValue float64
 	if anchoredMetadata.first.T < rangeStart {
