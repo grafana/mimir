@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/ring"
@@ -51,9 +52,6 @@ const (
 
 type Config struct {
 	Enabled bool `yaml:"enabled"`
-
-	DoNotApplySeriesLimits bool `yaml:"do_not_apply_series_limits"`
-	UseGlobalSeriesLimits  bool `yaml:"use_global_series_limits"`
 
 	Partitions                        int           `yaml:"partitions"`
 	PartitionReconcileInterval        time.Duration `yaml:"partition_reconcile_interval"`
@@ -92,7 +90,7 @@ type Config struct {
 func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.Enabled, "usage-tracker.enabled", false, "True to enable the usage-tracker.")
 
-	f.BoolVar(&c.UseGlobalSeriesLimits, "usage-tracker.use-global-series-limits", false, "If true, the usage-tracker service uses global in-memory series limits instead of the active series limits. This is useful for testing purposes only.") // TODO: Remove in Mimir 3.0
+	flagext.DeprecatedFlag(f, "usage-tracker.use-global-series-limits", "Flag '-usage-tracker.use-global-series-limits' has been deprecated. Usage-tracker will now always fall back to global series limit if active series limit is not defined for a user.", logger)
 
 	f.IntVar(&c.Partitions, "usage-tracker.partitions", 64, "Number of partitions to use for the usage-tracker. This number isn't expected to change after you're already using the usage-tracker.")
 	f.DurationVar(&c.PartitionReconcileInterval, "usage-tracker.partition-reconcile-interval", 10*time.Second, "Interval to reconcile partitions.")
@@ -746,18 +744,10 @@ func (t *UsageTracker) instancesServingPartitions() int32 {
 }
 
 func (t *UsageTracker) localSeriesLimit(userID string) uint64 {
-	var globalLimit int
-	if t.cfg.UseGlobalSeriesLimits {
-		globalLimit = t.overrides.MaxGlobalSeriesPerUser(userID)
-	} else {
-		globalLimit = t.overrides.MaxActiveSeriesPerUser(userID)
-	}
-	if globalLimit <= 0 {
-		return 0
-	}
-
-	// Global limit is equally distributed among all active partitions.
-	return uint64(float64(globalLimit) / float64(t.partitionRing.PartitionRing().ActivePartitionsCount()))
+	limit := t.overrides.MaxActiveOrGlobalSeriesPerUser(userID)
+	// Global limit is equally distributed among all partitions.
+	// We don't care how many are active now, we know how many we expect.
+	return uint64(float64(limit) / float64(t.cfg.Partitions))
 }
 
 func (t *UsageTracker) zonesCount() uint64 {

@@ -34,7 +34,7 @@ var (
 
 // limitsProvider provides access to user limits.
 type limitsProvider interface {
-	MaxActiveSeriesPerUser(userID string) int
+	MaxActiveOrGlobalSeriesPerUser(userID string) int
 }
 
 type Config struct {
@@ -481,7 +481,7 @@ func (c *UsageTrackerClient) selectRandomPartition() (int32, ring.ReplicationSet
 func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 	// Check if user's limit is below the minimum threshold for async tracking.
 	if c.cfg.MinSeriesLimitForAsyncTracking > 0 {
-		userLimit := c.limits.MaxActiveSeriesPerUser(userID)
+		userLimit := c.limits.MaxActiveOrGlobalSeriesPerUser(userID)
 		if userLimit > 0 && userLimit < c.cfg.MinSeriesLimitForAsyncTracking {
 			// User's limit is too low, must track synchronously.
 			return false
