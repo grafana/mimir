@@ -13,6 +13,7 @@ should_be_namespaced(contents) {
 
 metadata_has_namespace(metadata) {
 	has_key(metadata, "namespace")
+	metadata.namespace != null
 	regex.match(".+", metadata.namespace)
 }
 
