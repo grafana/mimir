@@ -70,8 +70,9 @@ const (
 type BucketStoreStats struct {
 	// BlocksLoadedTotal is the total number of blocks currently loaded in the bucket store.
 	BlocksLoadedTotal int
-	// BlocksSizeBytes is the total size in bytes of all on-disk files for blocks in the bucket store.
-	BlocksSizeBytes int64
+	// BlocksLoadedSizeBytes is the total size in bytes of loaded blocks on local disk.
+	// This includes index-header and sparse-index-header files, but not the actual block data in the object storage.
+	BlocksLoadedSizeBytes int64
 }
 
 // BucketStore implements the store API backed by a bucket. It loads all index
@@ -292,8 +293,8 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 // Stats returns statistics about the BucketStore instance.
 func (s *BucketStore) Stats() BucketStoreStats {
 	return BucketStoreStats{
-		BlocksLoadedTotal: s.blockSet.len(),
-		BlocksSizeBytes:   s.blockSet.sizeBytes(),
+		BlocksLoadedTotal:     s.blockSet.len(),
+		BlocksLoadedSizeBytes: s.blockSet.sizeBytes(),
 	}
 }
 
@@ -2084,8 +2085,7 @@ func collectBucketBlockFileStats(blockDir string) (res []block.File, _ error) {
 	}
 	res = append(res, mf)
 
-	// sparse index headers are optional, ingester does not compute them while the compactor does
-	// not adding sparse header entry if file does not exist, Upload of sparse index header is skipped in this case
+	// Sparse index headers are optional and may not exist on disk.
 	sparseHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.SparseIndexHeaderFilename))
 	if err != nil {
 		if !os.IsNotExist(err) {

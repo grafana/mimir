@@ -81,12 +81,12 @@ type BucketStores struct {
 	allowedTenants *util.AllowList
 
 	// Metrics.
-	syncTimes         prometheus.Histogram
-	syncLastSuccess   prometheus.Gauge
-	tenantsDiscovered prometheus.Gauge
-	tenantsSynced     prometheus.Gauge
-	blocksLoaded      *prometheus.Desc
-	blocksSizeBytes   *prometheus.Desc
+	syncTimes             prometheus.Histogram
+	syncLastSuccess       prometheus.Gauge
+	tenantsDiscovered     prometheus.Gauge
+	tenantsSynced         prometheus.Gauge
+	blocksLoaded          *prometheus.Desc
+	blocksLoadedSizeBytes *prometheus.Desc
 }
 
 // NewBucketStores makes a new BucketStores. After starting the returned BucketStores
@@ -163,9 +163,9 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		"Number of currently loaded blocks.",
 		nil, nil,
 	)
-	u.blocksSizeBytes = prometheus.NewDesc(
-		"cortex_bucket_store_blocks_size_bytes",
-		"Disk usage in bytes for blocks of discovered tenants.",
+	u.blocksLoadedSizeBytes = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded_size_bytes",
+		"Size in bytes used by loaded blocks of discovered tenants.",
 		[]string{"user"}, nil,
 	)
 
@@ -609,7 +609,7 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 
 func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 	descs <- u.blocksLoaded
-	descs <- u.blocksSizeBytes
+	descs <- u.blocksLoadedSizeBytes
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
@@ -621,7 +621,7 @@ func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 	for userID, store := range u.stores {
 		stats := store.Stats()
 		loadedTotal += stats.BlocksLoadedTotal
-		blockSizes[userID] = stats.BlocksSizeBytes
+		blockSizes[userID] = stats.BlocksLoadedSizeBytes
 	}
 	u.storesMu.RUnlock()
 
@@ -629,7 +629,7 @@ func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
 
 	for userID, size := range blockSizes {
 		metrics <- prometheus.MustNewConstMetric(
-			u.blocksSizeBytes,
+			u.blocksLoadedSizeBytes,
 			prometheus.GaugeValue,
 			float64(size),
 			userID,
