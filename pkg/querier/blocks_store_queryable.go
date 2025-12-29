@@ -117,7 +117,7 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 		storesHit: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_storegateway_instances_hit_per_query",
 			Help:    "Number of store-gateway instances hit for a single query.",
-			Buckets: []float64{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+			Buckets: []float64{0, 1, 2, 4, 8, 16, 32, 64, 128},
 		}),
 		refetches: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_querier_storegateway_refetches_per_query",
