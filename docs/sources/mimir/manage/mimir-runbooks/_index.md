@@ -800,7 +800,7 @@ Where:
 
 ### MimirCompactorBuildingSparseIndexFailed
 
-This alert fires when `-compactor.upload-sparse-index-headers` is set to `true` but the compactor fails to build some sparse index headers.
+This alert fires when the compactor fails to build some sparse index headers.
 
 How to **investigate**:
 
