@@ -70,6 +70,8 @@ const (
 type BucketStoreStats struct {
 	// BlocksLoadedTotal is the total number of blocks currently loaded in the bucket store.
 	BlocksLoadedTotal int
+	// BlocksSizeBytes is the total size in bytes of all on-disk files for blocks in the bucket store.
+	BlocksSizeBytes int64
 }
 
 // BucketStore implements the store API backed by a bucket. It loads all index
@@ -291,6 +293,7 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 func (s *BucketStore) Stats() BucketStoreStats {
 	return BucketStoreStats{
 		BlocksLoadedTotal: s.blockSet.len(),
+		BlocksSizeBytes:   s.blockSet.sizeBytes(),
 	}
 }
 
