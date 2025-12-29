@@ -434,19 +434,16 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return false, nil, err
 	}
 
-	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a
+	// Building sparse-index-headers is best-effort, we do not skip uploading a
 	// compacted block if there's an error affecting sparse-index-headers.
-	switch c.uploadSparseIndexHeaders {
-	case true:
-		// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
-		// construct sparse-index-headers without making requests to object storage.
-		fsbkt, err := filesystem.NewBucket(subDir)
-		if err != nil {
-			c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
-			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
-			break
-		}
-
+	//
+	// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
+	// construct sparse-index-headers without making requests to object storage.
+	fsbkt, err := filesystem.NewBucket(subDir)
+	if err != nil {
+		c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
+		level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
+	} else {
 		// instrument filesystem.Bucket to objstore.InstrumentedBucket
 		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
 		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
@@ -866,7 +863,6 @@ type BucketCompactor struct {
 	bkt                           objstore.Bucket
 	concurrency                   int
 	skipUnhealthyBlocks           bool
-	uploadSparseIndexHeaders      bool
 	sparseIndexHeaderSamplingRate int
 	maxPerBlockUploadConcurrency  int
 	sparseIndexHeaderconfig       indexheader.Config
@@ -895,7 +891,6 @@ func NewBucketCompactor(
 	skipFutureMaxTime bool,
 	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
-	uploadSparseIndexHeaders bool,
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
 	maxPerBlockUploadConcurrency int,
@@ -924,7 +919,6 @@ func NewBucketCompactor(
 		skipFutureMaxTime:             skipFutureMaxTime,
 		blockSyncConcurrency:          blockSyncConcurrency,
 		metrics:                       metrics,
-		uploadSparseIndexHeaders:      uploadSparseIndexHeaders,
 		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
 		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
 		maxPerBlockUploadConcurrency:  maxPerBlockUploadConcurrency,
