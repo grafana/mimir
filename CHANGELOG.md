@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.17.4-rc.0
+## 2.17.4
 
 ### Grafana Mimir
 
