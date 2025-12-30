@@ -5,11 +5,7 @@
     memcachedExporter: 'prom/memcached-exporter:v0.15.3',
 
     // Our services.
-<<<<<<< HEAD
     mimir: 'grafana/mimir:3.0.1',
-=======
-    mimir: 'grafana/mimir:2.17.4',
->>>>>>> origin/release-2.17
 
     alertmanager: self.mimir,
     distributor: self.mimir,
@@ -23,15 +19,7 @@
     query_scheduler: self.mimir,
     overrides_exporter: self.mimir,
 
-<<<<<<< HEAD
     query_tee: 'grafana/query-tee:3.0.1',
     continuous_test: self.mimir,
-=======
-    query_tee: 'grafana/query-tee:2.17.4',
-    continuous_test: 'grafana/mimir-continuous-test:2.17.4',
-
-    // See: https://github.com/grafana/rollout-operator
-    rollout_operator: 'grafana/rollout-operator:v0.28.0',
->>>>>>> origin/release-2.17
   },
 }

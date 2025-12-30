@@ -452,11 +452,7 @@ spec:
         - -tests.write-endpoint=http://distributor.default.svc.cluster.local
         - -tests.write-read-series-test.max-query-age=48h
         - -tests.write-read-series-test.num-series=1000
-<<<<<<< HEAD
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir-continuous-test:2.17.4
->>>>>>> origin/release-2.17
         imagePullPolicy: IfNotPresent
         name: continuous-test
         ports:

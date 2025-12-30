@@ -532,11 +532,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -632,11 +628,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -714,11 +706,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -790,11 +778,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -1063,11 +1047,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1177,11 +1157,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1545,11 +1521,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
         image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
