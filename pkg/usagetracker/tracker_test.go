@@ -83,16 +83,14 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.ErrorContains(t, err, "partition handler 0 is not running (state: Terminated)")
 	})
 
-	t.Run("applies global series limit when configured", func(t *testing.T) {
+	t.Run("applies global series limit when active series limit is not configured", func(t *testing.T) {
 		t.Parallel()
 
 		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
 			"tenant": {
-				MaxActiveSeriesPerUser: testPartitionsCount,     // one series per partition.
+				MaxActiveSeriesPerUser: 0,                       // unset
 				MaxGlobalSeriesPerUser: testPartitionsCount * 2, // two series per partition
 			},
-		}, func(cfg *Config) {
-			cfg.UseGlobalSeriesLimits = true
 		})
 
 		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{

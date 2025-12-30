@@ -40,7 +40,7 @@ func newMockLimitsProvider() *mockLimitsProvider {
 	}
 }
 
-func (m *mockLimitsProvider) MaxActiveSeriesPerUser(userID string) int {
+func (m *mockLimitsProvider) MaxActiveOrGlobalSeriesPerUser(userID string) int {
 	if limit, ok := m.limits[userID]; ok {
 		return limit
 	}
