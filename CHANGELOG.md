@@ -1,6 +1,5 @@
 # Changelog
 
-<<<<<<< HEAD
 ## main / unreleased
 
 ### Grafana Mimir
