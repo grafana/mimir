@@ -7,19 +7,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: alertmanager
-  name: alertmanager
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      name: alertmanager
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
     name: compactor
   name: compactor
   namespace: default
@@ -137,32 +124,6 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
-    name: query-scheduler
-  name: query-scheduler
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      name: query-scheduler
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
-    name: ruler
-  name: ruler
-  namespace: default
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      name: ruler
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  labels:
     name: store-gateway
   name: store-gateway
   namespace: default
@@ -180,28 +141,6 @@ kind: ConfigMap
 metadata:
   name: overrides
   namespace: default
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    name: alertmanager
-  name: alertmanager
-  namespace: default
-spec:
-  clusterIP: None
-  ports:
-  - name: alertmanager-http-metrics
-    port: 8080
-    targetPort: 8080
-  - name: alertmanager-grpc
-    port: 9095
-    targetPort: 9095
-  - name: alertmanager-gossip-ring
-    port: 7946
-    targetPort: 7946
-  selector:
-    name: alertmanager
 ---
 apiVersion: v1
 kind: Service
@@ -403,57 +342,21 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    name: query-scheduler
-  name: query-scheduler
-  namespace: default
-spec:
-  ports:
-  - name: query-scheduler-http-metrics
-    port: 8080
-    targetPort: 8080
-  - name: query-scheduler-grpc
-    port: 9095
-    targetPort: 9095
-  selector:
-    name: query-scheduler
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    name: query-scheduler
-  name: query-scheduler-discovery
+    name: query-frontend
+  name: query-frontend-discovery
   namespace: default
 spec:
   clusterIP: None
   ports:
-  - name: query-scheduler-http-metrics
+  - name: query-frontend-http-metrics
     port: 8080
     targetPort: 8080
-  - name: query-scheduler-grpc
+  - name: query-frontend-grpc
     port: 9095
     targetPort: 9095
   publishNotReadyAddresses: true
   selector:
-    name: query-scheduler
----
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    name: ruler
-  name: ruler
-  namespace: default
-spec:
-  ports:
-  - name: ruler-http-metrics
-    port: 8080
-    targetPort: 8080
-  - name: ruler-grpc
-    port: 9095
-    targetPort: 9095
-  selector:
-    name: ruler
+    name: query-frontend
 ---
 apiVersion: v1
 kind: Service
@@ -502,8 +405,9 @@ spec:
       - args:
         - -distributor.ha-tracker.enable=true
         - -distributor.ha-tracker.enable-for-all-users=true
+        - -distributor.ha-tracker.etcd.endpoints=etcd-client.default.svc.cluster.local.:2379
         - -distributor.ha-tracker.prefix=prom_ha/
-        - -distributor.ha-tracker.store=memberlist
+        - -distributor.ha-tracker.store=etcd
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
@@ -519,7 +423,6 @@ spec:
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
         - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc-max-concurrent-streams=1000
         - -server.grpc.keepalive.max-connection-age=60s
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -532,11 +435,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
-        image: grafana/mimir:3.0.1
-=======
         image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -614,10 +513,10 @@ spec:
         - -mem-ballast-size-bytes=268435456
         - -memberlist.bind-port=7946
         - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
+        - -querier.frontend-address=query-frontend-discovery.default.svc.cluster.local.:9095
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -632,11 +531,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
-        image: grafana/mimir:3.0.1
-=======
         image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -705,7 +600,6 @@ spec:
         - -query-frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local.:11211
         - -query-frontend.results-cache.memcached.max-item-size=5242880
         - -query-frontend.results-cache.memcached.timeout=500ms
-        - -query-frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local.:9095
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=30s
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -714,11 +608,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
-        image: grafana/mimir:3.0.1
-=======
         image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -753,264 +643,6 @@ spec:
       - configMap:
           name: overrides
         name: overrides
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: query-scheduler
-  namespace: default
-spec:
-  minReadySeconds: 10
-  replicas: 2
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      name: query-scheduler
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        name: query-scheduler
-    spec:
-      affinity:
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchLabels:
-                name: query-scheduler
-            topologyKey: kubernetes.io/hostname
-      containers:
-      - args:
-        - -query-scheduler.max-outstanding-requests-per-tenant=100
-        - -server.grpc.keepalive.min-time-between-pings=10s
-        - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -server.http-listen-port=8080
-        - -target=query-scheduler
-        - -usage-stats.installation-mode=jsonnet
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
-        image: grafana/mimir:3.0.1
-=======
-        image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
-        imagePullPolicy: IfNotPresent
-        name: query-scheduler
-        ports:
-        - containerPort: 8080
-          name: http-metrics
-        - containerPort: 9095
-          name: grpc
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 15
-          timeoutSeconds: 1
-        resources:
-          limits:
-            memory: 2Gi
-          requests:
-            cpu: "2"
-            memory: 1Gi
-        volumeMounts:
-        - mountPath: /etc/mimir
-          name: overrides
-      terminationGracePeriodSeconds: 180
-      volumes:
-      - configMap:
-          name: overrides
-        name: overrides
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ruler
-  namespace: default
-spec:
-  minReadySeconds: 10
-  replicas: 2
-  revisionHistoryLimit: 10
-  selector:
-    matchLabels:
-      name: ruler
-  strategy:
-    rollingUpdate:
-      maxSurge: 50%
-      maxUnavailable: 0
-  template:
-    metadata:
-      labels:
-        gossip_ring_member: "true"
-        name: ruler
-    spec:
-      containers:
-      - args:
-        - -blocks-storage.bucket-store.metadata-cache.backend=memcached
-        - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency=50
-        - -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size=1048576
-        - -blocks-storage.bucket-store.sync-dir=/data/tsdb
-        - -blocks-storage.bucket-store.sync-interval=15m
-        - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -common.storage.backend=gcs
-        - -distributor.health-check-ingesters=true
-        - -distributor.remote-timeout=10s
-        - -ingester.ring.heartbeat-timeout=10m
-        - -ingester.ring.prefix=
-        - -ingester.ring.replication-factor=3
-        - -ingester.ring.store=memberlist
-        - -mem-ballast-size-bytes=1073741824
-        - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
-        - -querier.max-partial-query-length=768h
-        - -ruler-storage.cache.backend=memcached
-        - -ruler-storage.cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local.:11211
-        - -ruler-storage.cache.memcached.max-async-concurrency=50
-        - -ruler-storage.cache.memcached.max-item-size=1048576
-        - -ruler-storage.cache.memcached.timeout=500ms
-        - -ruler-storage.gcs.bucket-name=rules-bucket
-        - -ruler.alertmanager-url=http://alertmanager.default.svc.cluster.local./alertmanager
-        - -ruler.max-rule-groups-per-tenant=85
-        - -ruler.max-rules-per-rule-group=20
-        - -ruler.ring.store=memberlist
-        - -ruler.rule-path=/rules
-        - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc.keepalive.min-time-between-pings=10s
-        - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -server.http-listen-port=8080
-        - -store-gateway.sharding-ring.heartbeat-timeout=10m
-        - -store-gateway.sharding-ring.prefix=
-        - -store-gateway.sharding-ring.replication-factor=3
-        - -store-gateway.sharding-ring.store=memberlist
-        - -target=ruler
-        - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.1
-        imagePullPolicy: IfNotPresent
-        name: ruler
-        ports:
-        - containerPort: 8080
-          name: http-metrics
-        - containerPort: 9095
-          name: grpc
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 15
-          timeoutSeconds: 1
-        resources:
-          limits:
-            cpu: "16"
-            memory: 16Gi
-          requests:
-            cpu: "1"
-            memory: 6Gi
-        volumeMounts:
-        - mountPath: /etc/mimir
-          name: overrides
-      terminationGracePeriodSeconds: 600
-      topologySpreadConstraints:
-      - labelSelector:
-          matchLabels:
-            name: ruler
-        maxSkew: 1
-        topologyKey: kubernetes.io/hostname
-        whenUnsatisfiable: ScheduleAnyway
-      volumes:
-      - configMap:
-          name: overrides
-        name: overrides
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  labels:
-    name: alertmanager
-  name: alertmanager
-  namespace: default
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      name: alertmanager
-  serviceName: alertmanager
-  template:
-    metadata:
-      labels:
-        gossip_ring_member: "true"
-        name: alertmanager
-    spec:
-      containers:
-      - args:
-        - -alertmanager-storage.gcs.bucket-name=alerts-bucket
-        - -alertmanager.sharding-ring.replication-factor=3
-        - -alertmanager.sharding-ring.store=memberlist
-        - -alertmanager.storage.path=/data
-        - -alertmanager.web.external-url=http://test/alertmanager
-        - -common.storage.backend=gcs
-        - -memberlist.bind-port=7946
-        - -memberlist.join=dns+gossip-ring.default.svc.cluster.local.:7946
-        - -runtime-config.file=/etc/mimir/overrides.yaml
-        - -server.grpc.keepalive.min-time-between-pings=10s
-        - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -server.http-idle-timeout=6m
-        - -server.http-listen-port=8080
-        - -target=alertmanager
-        - -usage-stats.installation-mode=jsonnet
-        env:
-        - name: POD_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
-        image: grafana/mimir:3.0.1
-        imagePullPolicy: IfNotPresent
-        name: alertmanager
-        ports:
-        - containerPort: 8080
-          name: http-metrics
-        - containerPort: 9095
-          name: grpc
-        - containerPort: 7946
-          name: gossip-ring
-        readinessProbe:
-          httpGet:
-            path: /ready
-            port: 8080
-          initialDelaySeconds: 15
-          timeoutSeconds: 1
-        resources:
-          limits:
-            memory: 15Gi
-          requests:
-            cpu: "2"
-            memory: 10Gi
-        volumeMounts:
-        - mountPath: /data
-          name: alertmanager-data
-        - mountPath: /etc/mimir
-          name: overrides
-      securityContext:
-        runAsUser: 0
-      terminationGracePeriodSeconds: 900
-      volumes:
-      - configMap:
-          name: overrides
-        name: overrides
-  updateStrategy:
-    type: RollingUpdate
-  volumeClaimTemplates:
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: alertmanager-data
-    spec:
-      accessModes:
-      - ReadWriteOnce
-      resources:
-        requests:
-          storage: 100Gi
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -1063,11 +695,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
-        image: grafana/mimir:3.0.1
-=======
         image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1177,11 +805,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
-        image: grafana/mimir:3.0.1
-=======
         image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1236,7 +860,6 @@ metadata:
   name: memcached
   namespace: default
 spec:
-  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1296,7 +919,6 @@ metadata:
   name: memcached-frontend
   namespace: default
 spec:
-  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1356,7 +978,6 @@ metadata:
   name: memcached-index-queries
   namespace: default
 spec:
-  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1416,7 +1037,6 @@ metadata:
   name: memcached-metadata
   namespace: default
 spec:
-  minReadySeconds: 60
   replicas: 3
   selector:
     matchLabels:
@@ -1545,11 +1165,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-<<<<<<< HEAD:operations/mimir-tests/test-all-components-with-deletion-protection-generated.yaml
-        image: grafana/mimir:3.0.1
-=======
         image: grafana/mimir:2.17.4
->>>>>>> origin/release-2.17:operations/mimir-tests/test-etcd-replicas-generated.yaml
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
@@ -1598,80 +1214,35 @@ spec:
           storage: 50Gi
       storageClassName: standard
 ---
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicy
+apiVersion: etcd.database.coreos.com/v1beta2
+kind: EtcdCluster
 metadata:
-  name: default-ingester-deletion-protection
+  annotations:
+    etcd.database.coreos.com/scope: clusterwide
+  name: etcd
   namespace: default
 spec:
-  failurePolicy: Fail
-  matchConstraints:
-    resourceRules:
-    - apiGroups:
-      - apps
-      apiVersions:
-      - v1
-      operations:
-      - DELETE
-      resources:
-      - statefulsets
-  validations:
-  - expression: '!oldObject.metadata.name.startsWith("ingester")'
-    messageExpression: '"Deleting " + oldObject.metadata.name + " StatefulSet is forbidden
-      because it is highly destructive. If you must proceed, consult the ''Mimir components
-      deletion protection'' runbook to understand the consequences and how to unblock
-      the deletion."'
-    reason: Forbidden
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicy
-metadata:
-  name: default-store-gateway-deletion-protection
-  namespace: default
-spec:
-  failurePolicy: Fail
-  matchConstraints:
-    resourceRules:
-    - apiGroups:
-      - apps
-      apiVersions:
-      - v1
-      operations:
-      - DELETE
-      resources:
-      - statefulsets
-  validations:
-  - expression: '!oldObject.metadata.name.startsWith("store-gateway")'
-    messageExpression: '"Deleting " + oldObject.metadata.name + " StatefulSet is forbidden
-      because it is highly destructive. If you must proceed, consult the ''Mimir components
-      deletion protection'' runbook to understand the consequences and how to unblock
-      the deletion."'
-    reason: Forbidden
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicyBinding
-metadata:
-  name: default-ingester-deletion-protection
-  namespace: default
-spec:
-  matchResources:
-    namespaceSelector:
-      matchLabels:
-        kubernetes.io/metadata.name: default
-  policyName: default-ingester-deletion-protection
-  validationActions:
-  - Deny
----
-apiVersion: admissionregistration.k8s.io/v1
-kind: ValidatingAdmissionPolicyBinding
-metadata:
-  name: default-store-gateway-deletion-protection
-  namespace: default
-spec:
-  matchResources:
-    namespaceSelector:
-      matchLabels:
-        kubernetes.io/metadata.name: default
-  policyName: default-store-gateway-deletion-protection
-  validationActions:
-  - Deny
+  pod:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              etcd_cluster: etcd
+          topologyKey: kubernetes.io/hostname
+    annotations:
+      prometheus.io/port: "2379"
+      prometheus.io/scrape: "true"
+    etcdEnv:
+    - name: ETCD_AUTO_COMPACTION_RETENTION
+      value: 1h
+    labels:
+      name: etcd
+    resources:
+      limits:
+        memory: 512Mi
+      requests:
+        cpu: 500m
+        memory: 512Mi
+  size: 3
+  version: 3.3.13

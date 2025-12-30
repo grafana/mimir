@@ -1,5 +1,6 @@
 # Changelog
 
+<<<<<<< HEAD
 ## main / unreleased
 
 ### Grafana Mimir
@@ -413,7 +414,7 @@
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 * [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
 
-## 2.17.4-rc.0
+## 2.17.4
 
 ### Grafana Mimir
 
