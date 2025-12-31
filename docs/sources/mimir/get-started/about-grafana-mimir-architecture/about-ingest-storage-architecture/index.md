@@ -88,6 +88,7 @@ Mimir extracts the partition number by matching the instance ID against the regu
 This means the instance ID must end with a hyphen followed by a number.
 
 For example:
+
 - An ingester with instance ID `ingester-zone-a-13` consumes from partition 13.
 - An ingester with instance ID `mimir-write-zone-b-7` consumes from partition 7.
 - An ingester with instance ID `ingester-0` consumes from partition 0.
