@@ -199,6 +199,10 @@
 * [ENHANCEMENT] Overrides-exporter: Include query configuration so that query limit defaults are reported accurately. #13850
 * [ENHANCEMENT] Expose pod termination grace period for alertmanagers, ingesters, query-frontends, rulers and store-gateways. #13852
 * [ENHANCEMENT] Store-gateways configured in multi-zone deployment will only scale up once the preceding zones replicas are all ready. #13879
+* [ENHANCEMENT] Multi-zone: Add config options to enable multi-zone and multi-AZ deployments for all write and read path components respectively: #13906
+  * `multi_zone_write_path_enabled`
+  * `multi_zone_read_path_enabled`
+  * `multi_zone_read_path_multi_az_enabled`
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
