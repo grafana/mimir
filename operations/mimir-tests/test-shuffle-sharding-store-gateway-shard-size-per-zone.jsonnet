@@ -2,7 +2,7 @@
 (import 'test-shuffle-sharding.jsonnet') {
   _config+:: {
     shuffle_sharding+:: {
-      ingest_storage_partitions_enabled: true,
+      store_gateway_shard_size_per_zone_enabled: true,
     },
   },
 }

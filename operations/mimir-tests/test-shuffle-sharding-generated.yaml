@@ -111,6 +111,19 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: overrides-exporter
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: querier
   name: querier
   namespace: default
@@ -364,6 +377,21 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  ports:
+  - name: overrides-exporter-http-metrics
+    port: 8080
+    targetPort: 8080
+  selector:
+    name: overrides-exporter
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
     name: querier
   name: querier
   namespace: default
@@ -566,6 +594,68 @@ spec:
         maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: overrides-exporter
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        name: overrides-exporter
+    spec:
+      containers:
+      - args:
+        - -compactor.blocks-retention-period=0
+        - -distributor.ingestion-burst-size=200000
+        - -distributor.ingestion-rate-limit=10000
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -querier.max-partial-query-length=768h
+        - -ruler.max-rule-groups-per-tenant=85
+        - -ruler.max-rules-per-rule-group=20
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.http-listen-port=8080
+        - -store-gateway.tenant-shard-size=3
+        - -target=overrides-exporter
+        image: grafana/mimir:3.0.1
+        imagePullPolicy: IfNotPresent
+        name: overrides-exporter
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http-metrics
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 0.5Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
       volumes:
       - configMap:
           name: overrides
