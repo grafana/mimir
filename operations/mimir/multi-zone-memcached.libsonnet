@@ -3,7 +3,7 @@
     // Allow to configure whether memcached should be deployed in single or multi-zone.
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_memcached_enabled: !$._config.multi_zone_memcached_enabled,
-    multi_zone_memcached_enabled: false,
+    multi_zone_memcached_enabled: $._config.multi_zone_read_path_enabled,
 
     // Per-zone replica counts for memcached deployments. Each defaults to the single-zone value.
     memcached_frontend_zone_a_replicas: $._config.memcached_frontend_replicas,

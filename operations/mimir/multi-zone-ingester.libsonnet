@@ -1,6 +1,6 @@
 {
   _config+:: {
-    multi_zone_ingester_enabled: false,
+    multi_zone_ingester_enabled: $._config.multi_zone_read_path_enabled,
     multi_zone_ingester_migration_enabled: false,
     multi_zone_ingester_replication_write_path_enabled: true,
     multi_zone_ingester_replication_read_path_enabled: true,
@@ -18,7 +18,7 @@
     multi_zone_ingester_zpdb_partition_group: 1,
 
     // Controls whether the multi (virtual) zone ingester should also be deployed multi-AZ.
-    multi_zone_ingester_multi_az_enabled: false,
+    multi_zone_ingester_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
   },
 
   local container = $.core.v1.container,
