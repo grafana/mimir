@@ -764,6 +764,7 @@ check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-j
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
 build-jsonnet-tests: ## Build the jsonnet tests.
+	@rm -f ./operations/mimir-tests/*-generated.yaml
 	@./operations/mimir-tests/build.sh
 
 jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that
