@@ -1085,7 +1085,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 								blockID,
 								block.PostingsOffsetTableTooLargeNoCompactReason,
 								"PostingsOffsetTableTooLarge: marking input block as no compact to unblock compaction",
-								c.metrics.blocksMarkedForNoCompact.WithLabelValues(string(block.PostingsOffsetTableTooLargeNoCompactReason)),
+								c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason),
 							)
 							if markErr != nil {
 								level.Error(c.logger).Log(
