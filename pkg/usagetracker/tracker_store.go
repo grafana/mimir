@@ -14,6 +14,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/util/zeropool"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/usagetracker/clock"
@@ -79,40 +81,65 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejectedRefs []uint64, err error) {
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent("trackerStore: got tenant", trace.WithAttributes(
+		attribute.Int64("tenant_series", int64(tenant.series.Load())),
+		attribute.Int64("tenant_limit", int64(tenant.currentLimit.Load())),
+	))
 
 	// Sort series by shard to minimize lock contention by taking mutex once for each shard.
 	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
+	span.AddEvent("trackerStore: sorted series", trace.WithAttributes(
+		attribute.Int("series", len(series)),
+	))
 
 	now := clock.ToMinutes(timeNow)
 
 	// We don't pool rejectedRefs because we don't have full control of its lifecycle.
 	createdRefs := refsPool.Get()[:0]
 	i0 := 0
+	// Very verbose tracing for debugging purposes.
+	// This will have a performance impact but we want a detailed view at this point.
+	trackingMillisecondsPerShard := make([]int64, shards)
+	lockMillisecondsPerShard := make([]int64, shards)
+	createdPerShard := make([]int, shards)
+	rejectedPerShard := make([]int, shards)
 	for i := 1; i <= len(series); i++ {
 		// Track series if shard changes on the next element or if we're at the end of series.
 		if shard := uint8(series[i0] % shards); i == len(series) || shard != uint8(series[i]%shards) {
 			m := tenant.shards[shard]
+			t0 := time.Now()
 			m.Lock()
+			lockMillisecondsPerShard[shard], t0 = timeNow.Sub(t0).Milliseconds(), time.Now()
 			for _, ref := range series[i0:i] {
 				if created, rejected := m.Put(ref, now, tenant.series, tenant.currentLimit, true); created {
 					createdRefs = append(createdRefs, ref)
+					createdPerShard[shard]++
 				} else if rejected {
 					rejectedRefs = append(rejectedRefs, ref)
+					rejectedPerShard[shard]++
 				}
 			}
+			trackingMillisecondsPerShard[shard] = timeNow.Sub(t0).Milliseconds()
 			m.Unlock()
 			i0 = i
 		}
 	}
+	span.AddEvent("trackerStore: tracked series", trace.WithAttributes(
+		attribute.Int64Slice("lock_milliseconds_per_shard", trackingMillisecondsPerShard),
+		attribute.Int64Slice("tracking_milliseconds_per_shard", trackingMillisecondsPerShard),
+		attribute.Int("created_series", len(createdRefs)),
+		attribute.Int("rejected_series", len(rejectedRefs)),
+	))
 
 	level.Debug(t.logger).Log("msg", "tracked series", "tenant", tenantID, "received_len", len(series), "created_len", len(createdRefs), "rejected_len", len(rejectedRefs), "now", timeNow.Unix(), "now_minutes", now)
-	if len(createdRefs) == 0 {
-		return rejectedRefs, nil
-	}
-
-	if err := t.events.publishCreatedSeries(ctx, tenantID, createdRefs, timeNow); err != nil {
-		level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(createdRefs), "now", timeNow.Unix(), "now_minutes", now)
-		return nil, err
+	if len(createdRefs) > 0 {
+		if err := t.events.publishCreatedSeries(ctx, tenantID, createdRefs, timeNow); err != nil {
+			span.AddEvent("trackSeries: failed to publishCreatedSeries", trace.WithAttributes(attribute.String("err", err.Error())))
+			level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(createdRefs), "now", timeNow.Unix(), "now_minutes", now)
+			return nil, err
+		}
+		span.AddEvent("trackerStore: publishedCreatedSeries")
 	}
 
 	return rejectedRefs, nil
@@ -217,6 +244,9 @@ func (t *trackerStore) getOrCreateTenant(tenantID string) *trackedTenant {
 }
 
 func (t *trackerStore) cleanup(now time.Time) {
+	_, span := tracer.Start(context.Background(), "trackerStore.cleanup")
+	defer span.End()
+
 	watermark := clock.ToMinutes(now.Add(-t.idleTimeout))
 
 	// We will work on a copy of tenants.
@@ -224,11 +254,16 @@ func (t *trackerStore) cleanup(now time.Time) {
 	tenantsClone := maps.Clone(t.tenants)
 	t.mtx.RUnlock()
 
+	cleanupMillisecondsPerShard := make([]int64, shards)
+	lockMillisecondsPerShard := make([]int64, shards)
 	var deletionCandidates []string
 	for tenantID, tenant := range tenantsClone {
-		for _, shard := range tenant.shards {
+		for sid, shard := range tenant.shards {
+			t0 := time.Now()
 			shard.Lock()
+			lockMillisecondsPerShard[sid], t0 = time.Since(t0).Milliseconds(), time.Now()
 			removed := shard.Cleanup(watermark)
+			cleanupMillisecondsPerShard[sid] = time.Since(t0).Milliseconds()
 			shard.Unlock()
 
 			// Update the tenant's counter when not holding the mutex anymore.
@@ -242,6 +277,8 @@ func (t *trackerStore) cleanup(now time.Time) {
 		}
 	}
 
+	span.AddEvent("cleanup finished", trace.WithAttributes(attribute.Int("deletion_candidates", len(deletionCandidates))))
+
 	if len(deletionCandidates) == 0 {
 		return
 	}
@@ -250,6 +287,7 @@ func (t *trackerStore) cleanup(now time.Time) {
 	for _, tenantID := range deletionCandidates {
 		tenant, ok := t.tenants[tenantID]
 		if !ok {
+			span.AddEvent("tenant not found in the map for deletion", trace.WithAttributes(attribute.String("tenant_id", tenantID)))
 			continue // weird, two concurrent cleanups maybe?
 		}
 		// Make sure nobody is appending.
@@ -262,6 +300,9 @@ func (t *trackerStore) cleanup(now time.Time) {
 				panic(fmt.Errorf("tenant %s not found in the sorted list: %v", tenantID, t.sortedTenants))
 			}
 			t.sortedTenants = slices.Delete(t.sortedTenants, index, index+1)
+			span.AddEvent("deleted tenant", trace.WithAttributes(attribute.String("tenant_id", tenantID)))
+		} else {
+			span.AddEvent("candidate for deletion has series again", trace.WithAttributes(attribute.String("tenant_id", tenantID)))
 		}
 		tenant.Unlock()
 	}
@@ -269,10 +310,15 @@ func (t *trackerStore) cleanup(now time.Time) {
 }
 
 func (t *trackerStore) updateLimits() {
+	_, span := tracer.Start(context.Background(), "trackerStore.updateLimits", trace.WithAttributes())
+	defer span.End()
+
 	t.mtx.RLock()
 	tenantsClone := maps.Clone(t.tenants)
 	sortedTenants := slices.Clone(t.sortedTenants)
 	t.mtx.RUnlock()
+
+	span.SetAttributes(attribute.Int("tenants", len(tenantsClone)))
 
 	zonesCount := t.limiter.zonesCount()
 	var sortedCloseToLimit []string
@@ -293,6 +339,7 @@ func (t *trackerStore) updateLimits() {
 			}
 		}
 	}
+	span.SetAttributes(attribute.Int("close_to_limit_users", len(sortedCloseToLimit)))
 
 	t.mtx.Lock()
 	t.sortedUsersCloseToLimit = sortedCloseToLimit

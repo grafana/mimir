@@ -22,6 +22,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -30,6 +33,8 @@ import (
 var (
 	// The ring operation used to track series.
 	TrackSeriesOp = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+
+	tracer = otel.Tracer("github.com/grafana/mimir/pkg/usagetracker/usagetrackerclient")
 )
 
 // limitsProvider provides access to user limits.
@@ -208,6 +213,11 @@ func (c *UsageTrackerClient) stopping(_ error) error {
 }
 
 func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64) (_ []uint64, returnErr error) {
+	ctx, span := tracer.Start(ctx, "UsageTrackerClient.TrackSeries", trace.WithAttributes(
+		attribute.Int("series_count", len(series)),
+	))
+	defer span.End()
+
 	// Nothing to do if there are no series to track.
 	if len(series) == 0 {
 		return nil, nil
@@ -296,9 +306,12 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 }
 
 func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64) ([]uint64, error) {
+	span := trace.SpanFromContext(ctx)
+
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
+		span.AddEvent("Can't get replication set for partition", trace.WithAttributes())
 		return nil, err
 	}
 
@@ -326,15 +339,29 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	res, err := ring.DoUntilQuorum[[]uint64](ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]uint64, error) {
 		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
 		if err != nil {
+			span.AddEvent("Can't get client for instance", trace.WithAttributes(
+				attribute.Int("partition_id", int(partitionID)),
+				attribute.String("instance_id", instance.Id),
+				attribute.String("instance_addr", instance.Addr),
+			))
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
 		}
 
 		trackerClient := poolClient.(usagetrackerpb.UsageTrackerClient)
 		trackerRes, err := trackerClient.TrackSeries(ctx, req)
 		if err != nil {
+			span.AddEvent("TrackSeries call failed", trace.WithAttributes(
+				attribute.Int("partition_id", int(partitionID)),
+				attribute.String("instance_id", instance.Id),
+				attribute.String("instance_addr", instance.Addr),
+			))
 			return nil, errors.Wrapf(err, "usage-tracker instance %s (%s)", instance.Id, instance.Addr)
 		}
 
+		span.AddEvent("TrackSeries succeeded", trace.WithAttributes(
+			attribute.Int("partition_id", int(partitionID)),
+			attribute.Int("rejected_series_count", len(trackerRes.RejectedSeriesHashes)),
+		))
 		return trackerRes.RejectedSeriesHashes, nil
 	}, func(_ []uint64) {
 		// No cleanup.
@@ -342,15 +369,26 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 
 	if err != nil {
 		if c.cfg.IgnoreErrors {
+			span.AddEvent("Tracking failed but errors are ignored", trace.WithAttributes(
+				attribute.Int("partition_id", int(partitionID)),
+				attribute.String("err", err.Error()),
+			))
 			return nil, nil
 		}
+		span.RecordError(err)
 		return nil, err
 	}
 	if len(res) == 0 {
 		if c.cfg.IgnoreErrors {
+			trace.SpanFromContext(ctx).AddEvent("Tracking resulted in empty result set but errors are ignored", trace.WithAttributes(
+				attribute.Int("partition_id", int(partitionID)),
+				attribute.String("err", err.Error()),
+			))
 			return nil, nil
 		}
-		return nil, errors.Errorf("unexpected no responses from usage-tracker for partition %d", partitionID)
+		err := errors.Errorf("unexpected no responses from usage-tracker for partition %d", partitionID)
+		span.RecordError(err)
+		return nil, err
 	}
 
 	return res[0], nil
