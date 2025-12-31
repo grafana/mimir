@@ -92,7 +92,6 @@
 * [ENHANCEMENT] Querier: `-querier.active-series-results-max-size-bytes` is now stable and no longer experimental. #13110
 * [ENHANCEMENT] API: The `/api/v1/cardinality/active_series` endpoint is now stable and no longer experimental. #13111
 * [ENHANCEMENT] Querier: Default to streaming active series responses to query-frontends via `querier.response-streaming-enabled`. #13883
-* [ENHANCEMENT] Docs: Document how ingest storage calculates partition ID from ingester instance ID, including requirements for FQDN hostnames. #13903
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
@@ -208,6 +207,7 @@
 * [ENHANCEMENT] Ruler: clarify that internal distributor applies to both operational modes. #13300
 * [ENHANCEMENT] Native histograms: Set expectations on querying classic histograms versus NHCBs. #13689
 * [ENHANCEMENT] Add a scenario to the MimirCompactorNotRunningCompaction runbook. #13874
+* [ENHANCEMENT] Document how ingesters calculate partition ID from ring's instance ID in ingest storage. #13903
 
 ### Tools
 
