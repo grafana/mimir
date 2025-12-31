@@ -672,14 +672,14 @@ func (t *UsageTracker) stop(_ error) error {
 }
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
 	if err != nil {
 		return nil, err
 	}
 
-	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	rejected, err := p.store.trackSeries(ctx, req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -687,7 +687,7 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 }
 
 // GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
-func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
+func (t *UsageTracker) GetUsersCloseToLimit(ctx context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
 	if err != nil {
