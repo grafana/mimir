@@ -139,16 +139,6 @@ func (b *FPointRingBuffer) ReplaceHead(point promql.FPoint) error {
 	return nil
 }
 
-// ReplaceValueAtPos will replace the value of the point at the given position.
-// An error will be returned if the position is out of bounds for the buffer size.
-func (b *FPointRingBuffer) ReplaceValueAtPos(position int, value float64) error {
-	if position >= b.size {
-		return fmt.Errorf("unable to replace value at position %d - position exceeds buffer size %d", position, b.size)
-	}
-	b.points[(b.firstIndex+position)&b.pointsIndexMask].F = value
-	return nil
-}
-
 // InsertHeadPoint will insert the given point into the head of this buffer, expanding if required.
 // Subsequently calling PointAt(0) will return this point.
 // It is the responsibility of the caller to ensure that inserting this point maintains chronological order of the buffer.

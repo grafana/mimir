@@ -708,67 +708,6 @@ func TestFPointRingBuffer_ReplaceHead(t *testing.T) {
 	}
 }
 
-func TestFPointRingBuffer_ReplaceValueAtPos(t *testing.T) {
-	testCases := map[string]struct {
-		position int
-		value    float64
-		err      string
-		buff     []promql.FPoint
-		expected []promql.FPoint
-	}{
-		"empty buffer": {
-			position: 0,
-			value:    10,
-			buff:     []promql.FPoint{},
-			err:      "unable to replace value at position 0 - position exceeds buffer size 0",
-		},
-		"position exceeds buffer size": {
-			position: 1,
-			value:    10,
-			buff:     []promql.FPoint{{T: 10, F: 20}},
-			err:      "unable to replace value at position 1 - position exceeds buffer size 1",
-		},
-		"single point": {
-			position: 0,
-			value:    30,
-			buff:     []promql.FPoint{{T: 10, F: 20}},
-			expected: []promql.FPoint{{T: 10, F: 30}},
-		},
-		"multiple points - head": {
-			position: 0,
-			value:    30,
-			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-			expected: []promql.FPoint{{T: 10, F: 30}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-		},
-		"multiple points - tail": {
-			position: 7,
-			value:    30,
-			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 30}},
-		},
-		"multiple points - mid": {
-			position: 3,
-			value:    30,
-			buff:     []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 20}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 20}, {T: 30, F: 20}, {T: 40, F: 30}, {T: 50, F: 20}, {T: 60, F: 20}, {T: 70, F: 20}, {T: 80, F: 20}},
-		},
-	}
-
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
-			require.NoError(t, buff.Use(tc.buff))
-			err := buff.ReplaceValueAtPos(tc.position, tc.value)
-			if len(tc.err) > 0 {
-				require.ErrorContains(t, err, tc.err)
-				return
-			}
-			require.NoError(t, err)
-			shouldHavePoints(t, &fPointRingBufferWrapper{FPointRingBuffer: buff}, tc.expected...)
-		})
-	}
-}
-
 func TestFPointRingBuffer_AppendSlice(t *testing.T) {
 
 	testCases := map[string]struct {

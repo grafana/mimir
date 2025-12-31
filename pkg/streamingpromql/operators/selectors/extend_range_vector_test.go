@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-func TestFPointRingBufferUndoModifications(t *testing.T) {
+func TestRevertibleExtendedPointsUtilityUndoModifications(t *testing.T) {
 	original := []promql.FPoint{
 		{T: 10, F: 20},
 		{T: 20, F: 30},
@@ -23,66 +23,66 @@ func TestFPointRingBufferUndoModifications(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		mods     AnchoredExtensionMetadata
+		mods     RevertibleExtendedPointsUtility
 		expected []promql.FPoint
 	}{
 		"no modifications": {
-			mods:     AnchoredExtensionMetadata{},
+			mods:     RevertibleExtendedPointsUtility{},
 			expected: original,
 		},
 		"no modifications - no undo": {
-			mods:     AnchoredExtensionMetadata{undoTailModifications: none},
+			mods:     RevertibleExtendedPointsUtility{undoTailModifications: none},
 			expected: original,
 		},
-		"remove tail": {
-			mods: AnchoredExtensionMetadata{
-				undoTailModifications: remove,
+		"removed tail": {
+			mods: RevertibleExtendedPointsUtility{
+				undoTailModifications: removed,
 			},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}},
 		},
-		"replace tail": {
-			mods: AnchoredExtensionMetadata{
-				undoTailModifications: replace,
+		"replaced tail": {
+			mods: RevertibleExtendedPointsUtility{
+				undoTailModifications: replaced,
 				last:                  promql.FPoint{T: 50, F: 70},
 			},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 50, F: 70}},
 		},
-		"remove head": {
-			mods: AnchoredExtensionMetadata{
-				undoHeadModifications: remove,
+		"removed head": {
+			mods: RevertibleExtendedPointsUtility{
+				undoHeadModifications: removed,
 			},
 			expected: []promql.FPoint{{T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}},
 		},
-		"replace head": {
-			mods: AnchoredExtensionMetadata{
-				undoHeadModifications: replace,
+		"replaced head": {
+			mods: RevertibleExtendedPointsUtility{
+				undoHeadModifications: replaced,
 				first:                 promql.FPoint{T: 5, F: 70},
 			},
 			expected: []promql.FPoint{{T: 5, F: 70}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}},
 		},
 		"restore excluded head": {
-			mods: AnchoredExtensionMetadata{
+			mods: RevertibleExtendedPointsUtility{
 				restoreExcludedFirst: true,
 				excludedFirst:        promql.FPoint{T: 5, F: 70},
 			},
 			expected: []promql.FPoint{{T: 5, F: 70}, {T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}},
 		},
 		"restore excluded tail": {
-			mods: AnchoredExtensionMetadata{
+			mods: RevertibleExtendedPointsUtility{
 				restoreExcludedLast: true,
 				excludedLast:        promql.FPoint{T: 100, F: 7000},
 			},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}, {T: 100, F: 7000}},
 		},
 		"combined": {
-			mods: AnchoredExtensionMetadata{
+			mods: RevertibleExtendedPointsUtility{
 				restoreExcludedFirst:  true,
 				excludedFirst:         promql.FPoint{T: 5, F: 70},
 				restoreExcludedLast:   true,
 				excludedLast:          promql.FPoint{T: 100, F: 7000},
-				undoHeadModifications: replace,
+				undoHeadModifications: replaced,
 				first:                 promql.FPoint{T: 8, F: 80},
-				undoTailModifications: replace,
+				undoTailModifications: replaced,
 				last:                  promql.FPoint{T: 50, F: 70},
 			},
 			expected: []promql.FPoint{{T: 5, F: 70}, {T: 8, F: 80}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 50, F: 70}, {T: 100, F: 7000}},
@@ -93,11 +93,102 @@ func TestFPointRingBufferUndoModifications(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			buff := types.NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(slices.Clone(original)))
-			require.NoError(t, tc.mods.UndoChanges(buff))
+			tc.mods.buff = buff
+			require.NoError(t, tc.mods.UndoChanges())
 			view := buff.ViewAll(nil)
 			actual, err := view.CopyPoints()
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, actual)
+
+			// idempotent test
+			require.NoError(t, tc.mods.UndoChanges())
+			view = buff.ViewAll(nil)
+			actual, err = view.CopyPoints()
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, actual)
+		})
+	}
+}
+
+func TestRevertibleExtendedPointsUtilityReset(t *testing.T) {
+	original := []promql.FPoint{
+		{T: 10, F: 20},
+		{T: 20, F: 30},
+		{T: 30, F: 40},
+		{T: 40, F: 60},
+	}
+
+	testCases := map[string]struct {
+		mods RevertibleExtendedPointsUtility
+	}{
+		"no modifications": {
+			mods: RevertibleExtendedPointsUtility{},
+		},
+		"removed tail": {
+			mods: RevertibleExtendedPointsUtility{
+				undoTailModifications: removed,
+			},
+		},
+		"replaced tail": {
+			mods: RevertibleExtendedPointsUtility{
+				undoTailModifications: replaced,
+				last:                  promql.FPoint{T: 50, F: 70},
+			},
+		},
+		"removed head": {
+			mods: RevertibleExtendedPointsUtility{
+				undoHeadModifications: removed,
+			},
+		},
+		"replaced head": {
+			mods: RevertibleExtendedPointsUtility{
+				undoHeadModifications: replaced,
+				first:                 promql.FPoint{T: 5, F: 70},
+			},
+		},
+		"restore excluded head": {
+			mods: RevertibleExtendedPointsUtility{
+				restoreExcludedFirst: true,
+				excludedFirst:        promql.FPoint{T: 5, F: 70},
+			},
+		},
+		"restore excluded tail": {
+			mods: RevertibleExtendedPointsUtility{
+				restoreExcludedLast: true,
+				excludedLast:        promql.FPoint{T: 100, F: 7000},
+			},
+		},
+		"combined": {
+			mods: RevertibleExtendedPointsUtility{
+				restoreExcludedFirst:  true,
+				excludedFirst:         promql.FPoint{T: 5, F: 70},
+				restoreExcludedLast:   true,
+				excludedLast:          promql.FPoint{T: 100, F: 7000},
+				undoHeadModifications: replaced,
+				first:                 promql.FPoint{T: 8, F: 80},
+				undoTailModifications: replaced,
+				last:                  promql.FPoint{T: 50, F: 70},
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			buff := types.NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+			require.NoError(t, buff.Use(slices.Clone(original)))
+			tc.mods.buff = buff
+
+			// clear the changelog
+			tc.mods.Reset()
+
+			// undo changes should now be a no-op
+			require.NoError(t, tc.mods.UndoChanges())
+
+			// the buffer should have no changes
+			view := buff.ViewAll(nil)
+			actual, err := view.CopyPoints()
+			require.NoError(t, err)
+			require.Equal(t, original, actual)
 		})
 	}
 }
