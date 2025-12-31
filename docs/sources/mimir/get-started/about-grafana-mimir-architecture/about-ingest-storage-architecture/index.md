@@ -81,8 +81,26 @@ For more information, refer to [Compactor](../../../references/architecture/comp
 
 Distributors write samples to Kafka on the write path, and ingesters consume them on the read path. Each partition is assigned to a single ingester from each zone, and each ingester consumes from exactly one partition. Multiple ingester zones provide high availability on the read path.
 
-Ingesters determine their partition assignment from their hostname suffix.
-For example, an ingester named `ingester-zone-a-13` consumes from partition 13.
+#### Partition assignment from instance ID
+
+Ingesters determine their partition assignment from their instance ID, which defaults to the system hostname.
+Mimir extracts the partition number by matching the instance ID against the regular expression `-([0-9]+)$`.
+This means the instance ID must end with a hyphen followed by a number.
+
+For example:
+
+- An ingester with instance ID `ingester-zone-a-13` consumes from partition 13.
+- An ingester with instance ID `mimir-write-zone-b-7` consumes from partition 7.
+- An ingester with instance ID `ingester-0` consumes from partition 0.
+
+{{< admonition type="warning" >}}
+If the instance ID doesn't match the required pattern, the ingester fails to start with an error like:
+`ingester ID <id> doesn't match regular expression "-([0-9]+)$"`.
+
+This can happen in environments where the system hostname returns a fully qualified domain name (FQDN), such as `ingester-zone-a-0.ingester.mimir.svc.cluster.local`.
+In such cases, you must explicitly set the `-ingester.ring.instance-id` flag to a value that ends with a hyphen followed by the partition number (for example, `-ingester.ring.instance-id=ingester-zone-a-0`).
+{{< /admonition >}}
+
 Each ingester persists the partition offset up to which it has consumed records in a dedicated Kafka consumer group.
 
 Ingesters continuously consume samples from Kafka and append them to the tenant-specific time series database (TSDB) stored on the local disk.
