@@ -28,16 +28,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
-const (
-	// intentionallyEmptyMetricName exists for annotations compatibility with prometheus.
-	// Now prometheus has delayed __name__ removal. Mimir doesn't yet, and we always remove __name__.
-	// Because of complication in implementing this in prometheus (see https://github.com/prometheus/prometheus/pull/16794),
-	// the name is always dropped if delayed __name__ removal is disabled.
-	// The name is dropped even if the function is the first one invoked on the vector selector.
-	// Mimir doesn't have delayed __name__ removal, so to stay close to prometheus, we never display the label in some annotations and warnings.
-	intentionallyEmptyMetricName = ""
-)
-
 // HistogramFunction performs a function over each series in an instant vector,
 // with special handling for classic and native histograms.
 // At the moment, it supports only histogram_quantile and histogram_fraction.
@@ -136,6 +126,7 @@ func NewHistogramQuantileFunction(
 			annotations:              annotations,
 			innerSeriesMetricNames:   innerSeriesMetricNames,
 			innerExpressionPosition:  inner.ExpressionPosition(),
+			enableDelayedNameRemoval: enableDelayedNameRemoval,
 		},
 		inner:                    inner,
 		memoryConsumptionTracker: memoryConsumptionTracker,
@@ -298,6 +289,16 @@ func (h *HistogramFunction) NextSeries(ctx context.Context) (types.InstantVector
 	return h.computeOutputSeriesForGroup(thisGroup)
 }
 
+// getMetricNameForSeries returns the metric name from innerSeriesMetricNames for the given series index.
+// If enableDelayedNameRemoval is not enabled, this func will return "" to maintain compatibility with Prometheus.
+func (h *HistogramFunction) getMetricNameForSeries(seriesIndex int) string {
+	if h.enableDelayedNameRemoval {
+		return h.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex)
+	} else {
+		return ""
+	}
+}
+
 // accumulateUntilGroupComplete gathers all the series associated with the given bucketGroup
 // As each inner series is selected, it is added into its respective groups.
 // This means a group other than the one we are focused on may get completed first, but we
@@ -346,7 +347,7 @@ func (h *HistogramFunction) saveFloatsToGroup(fPoints []promql.FPoint, le string
 	if err != nil {
 		// The le label was invalid. Record it:
 		h.annotations.Add(annotations.NewBadBucketLabelWarning(
-			intentionallyEmptyMetricName,
+			h.getMetricNameForSeries(g.lastInputSeriesIdx),
 			le,
 			h.inner.ExpressionPosition(),
 		))
@@ -427,7 +428,7 @@ func (h *HistogramFunction) computeOutputSeriesForGroup(g *bucketGroup) (types.I
 			// At this data point, we have classic histogram buckets and a native histogram with the same name and labels.
 			// No value is returned, so emit an annotation and continue.
 			h.annotations.Add(annotations.NewMixedClassicNativeHistogramsWarning(
-				intentionallyEmptyMetricName, h.inner.ExpressionPosition(),
+				h.getMetricNameForSeries(g.lastInputSeriesIdx), h.inner.ExpressionPosition(),
 			))
 			continue
 		}
@@ -546,6 +547,7 @@ type histogramQuantile struct {
 	annotations              *annotations.Annotations
 	innerSeriesMetricNames   *operators.MetricNames
 	innerExpressionPosition  posrange.PositionRange
+	enableDelayedNameRemoval bool
 }
 
 func (q *histogramQuantile) LoadArguments(ctx context.Context) error {
@@ -568,13 +570,23 @@ func (q *histogramQuantile) LoadArguments(ctx context.Context) error {
 	return nil
 }
 
+// getMetricNameForSeries returns the metric name from innerSeriesMetricNames for the given series index.
+// If enableDelayedNameRemoval is not enabled, this func will return "" to maintain compatibility with Prometheus.
+func (q *histogramQuantile) getMetricNameForSeries(seriesIndex int) string {
+	if q.enableDelayedNameRemoval {
+		return q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex)
+	} else {
+		return ""
+	}
+}
+
 func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64 {
 	ph := q.phValues.Samples[pointIndex].F
 	res, forcedMonotonicity, _ := promql.BucketQuantile(ph, buckets)
 
 	if forcedMonotonicity {
 		q.annotations.Add(annotations.NewHistogramQuantileForcedMonotonicityInfo(
-			intentionallyEmptyMetricName,
+			q.getMetricNameForSeries(seriesIndex),
 			q.innerExpressionPosition,
 		))
 	}
