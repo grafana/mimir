@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/user"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
@@ -16,6 +17,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+type limitsProvider interface {
+	OutOfOrderTimeWindow(userID string) time.Duration
+}
 
 // errNotApplied is a sentinel error returned by trySplitFunction when splitting cannot be applied
 // (but not due to an actual error condition).
@@ -29,20 +34,24 @@ func (e *errNotApplied) Error() string {
 
 // OptimizationPass identifies range vector function calls that can benefit from splitting
 // their computation into fixed-interval blocks for intermediate result caching.
-// TODO: does this affect other optimisation passes? e.g. query sharding
 type OptimizationPass struct {
 	splitInterval time.Duration
+	limits        limitsProvider
 
 	splitNodesIntroduced   prometheus.Counter
 	functionNodesInspected prometheus.Counter
 	functionNodesUnsplit   *prometheus.CounterVec
 
 	logger log.Logger
+
+	timeNow func() time.Time
 }
 
-func NewOptimizationPass(splitInterval time.Duration, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(splitInterval time.Duration, limits limitsProvider, timeNowFn func() time.Time, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
 		splitInterval: splitInterval,
+		limits:        limits,
+		timeNow:       timeNowFn,
 		splitNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_query_splitting_split_nodes_introduced_total",
 			Help: "Total number of query spltting nodes introduced by the query splitting optimization pass ",
@@ -64,13 +73,18 @@ func (o *OptimizationPass) Name() string {
 	return "Query splitting"
 }
 
+// TestOnlySetTimeNow sets the time function. For tests only.
+func (o *OptimizationPass) TestOnlySetTimeNow(timeNow func() time.Time) {
+	o.timeNow = timeNow
+}
+
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	if maximumSupportedQueryPlanVersion < planning.QueryPlanV5 {
 		return plan, nil
 	}
 
 	var err error
-	plan.Root, err = o.wrapSplittableRangeVectorFunctions(plan.Root, plan.Parameters.TimeRange)
+	plan.Root, err = o.wrapSplittableRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -78,10 +92,15 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
+func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
+	tenantID, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		level.Warn(o.logger).Log("msg", "failed to extract tenant ID for query splitting, skipping optimization", "err", err)
+		return n, nil
+	}
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
-		wrappedNode, err := o.trySplitFunction(functionCall, timeRange)
+		wrappedNode, err := o.trySplitFunction(functionCall, timeRange, tenantID)
 		if err != nil {
 			var notAppliedErr *errNotApplied
 			if errors.As(err, &notAppliedErr) {
@@ -100,7 +119,7 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, t
 
 	for i := range n.ChildCount() {
 		child := n.Child(i)
-		newChild, err := o.wrapSplittableRangeVectorFunctions(child, timeRange)
+		newChild, err := o.wrapSplittableRangeVectorFunctions(ctx, child, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -122,19 +141,19 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(n planning.Node, t
 // For range vector selectors, this also means we can align split ranges to block boundaries(ish - the split interval is
 // currently hardcoded, while blocks vary in size). This reduces unnecessary block reads.
 // TODO: consider if the modifier adjustments are worth it when the supported nodes/functions are expanded.
-//  - For subqueries the resulting time range might not be indicative of the actual queried timerange depending on the
-//    inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
-//  - Similar for smoothed and anchored modifiers - these will load more data than for the specified range so the
-//    adjustments won't work as well (as-is).
-//  - For functions that require timestamps (e.g. ts_of_min_over_time), we will need to shift the result timestamps to
-//    accommodate for the adjustment done for modifiers.
-//  - We probably shouldn't cache intermediate results queries for @ modifiers at all. Caching is good for cases like
-//    rules where the data being queried is partially the same as for previous executions. In the @ modifier case, the
-//    exact same result will be returned time after time (disregarding OOO or querying in the future), so we should just
-//    cache the entire result instead. We might still want to take advantage of the splitting part even if we don't want
-//    to cache the intermediate results though - if we could parallelise query splitting it can still be beneficial for
-//    queries with @ modifiers in terms of response time.
-func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange) (planning.Node, error) {
+//   - For subqueries the resulting time range might not be indicative of the actual queried timerange depending on the
+//     inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
+//   - Similar for smoothed and anchored modifiers - these will load more data than for the specified range so the
+//     adjustments won't work as well (as-is).
+//   - For functions that require timestamps (e.g. ts_of_min_over_time), we will need to shift the result timestamps to
+//     accommodate for the adjustment done for modifiers.
+//   - We probably shouldn't cache intermediate results queries for @ modifiers at all. Caching is good for cases like
+//     rules where the data being queried is partially the same as for previous executions. In the @ modifier case, the
+//     exact same result will be returned time after time (disregarding OOO or querying in the future), so we should just
+//     cache the entire result instead. We might still want to take advantage of the splitting part even if we don't want
+//     to cache the intermediate results though - if we could parallelise query splitting it can still be beneficial for
+//     queries with @ modifiers in terms of response time.
+func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, timeRange types.QueryTimeRange, tenantID string) (planning.Node, error) {
 	// For now, only support instant queries (range queries are more complex)
 	if !timeRange.IsInstant {
 		return nil, &errNotApplied{reason: "range_query"}
@@ -178,7 +197,24 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, &errNotApplied{reason: "no_complete_cache_block"}
 	}
 
-	splitRanges := computeSplitRanges(startTs, endTs, o.splitInterval)
+	var oooThreshold int64
+	oooWindow := o.limits.OutOfOrderTimeWindow(tenantID)
+	if oooWindow > 0 {
+		oooThreshold = o.timeNow().Add(-oooWindow).UnixMilli()
+	}
+
+	splitRanges := computeSplitRanges(startTs, endTs, o.splitInterval, oooThreshold)
+
+	hasCacheable := false
+	for _, r := range splitRanges {
+		if r.Cacheable {
+			hasCacheable = true
+			break
+		}
+	}
+	if !hasCacheable {
+		return nil, &errNotApplied{reason: "no_cacheable_blocks_after_ooo_filter"}
+	}
 
 	n := &SplittableFunctionCall{
 		SplittableFunctionCallDetails: &SplittableFunctionCallDetails{
@@ -217,14 +253,21 @@ func calculateInnerTimeRange(evalTime int64, timeParams types.TimeRangeParams) (
 //   - Split (7:59:59.999, 9:59:59.999] gets samples where 8:00:00.000 <= t <= 9:59:59.999
 //   - This would map exactly to a two hour block:
 //   - Block [8:00:00.000, 10:00:00.000) contains samples where 8:00:00.000 <= t < 10:00:00.000
-func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration) []SplitRange {
+func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration, oooThreshold int64) []SplitRange {
 	splitIntervalMs := splitInterval.Milliseconds()
 	alignedStart := computeBlockAlignedStart(startTs, splitInterval)
 
 	var ranges []SplitRange
 
-	// Add head range if start is before first aligned boundary
+	if alignedStart >= endTs {
+		return []SplitRange{{Start: startTs, End: endTs, Cacheable: false}}
+	}
+
 	if startTs < alignedStart {
+		// Check if range would be in ooo window
+		if oooThreshold > 0 && alignedStart > oooThreshold {
+			return []SplitRange{{Start: startTs, End: endTs, Cacheable: false}}
+		}
 		ranges = append(ranges, SplitRange{
 			Start:     startTs,
 			End:       alignedStart,
@@ -232,19 +275,31 @@ func computeSplitRanges(startTs, endTs int64, splitInterval time.Duration) []Spl
 		})
 	}
 
-	for splitStart := alignedStart; splitStart+splitIntervalMs <= endTs; splitStart += splitIntervalMs {
+	var splitStart int64
+	for splitStart = alignedStart; splitStart+splitIntervalMs <= endTs; splitStart += splitIntervalMs {
+		splitEnd := splitStart + splitIntervalMs
+
+		// Check if range would be in ooo window
+		if oooThreshold > 0 && splitEnd > oooThreshold {
+			ranges = append(ranges, SplitRange{
+				Start:     splitStart,
+				End:       endTs,
+				Cacheable: false,
+			})
+			return ranges
+		}
+
 		ranges = append(ranges, SplitRange{
 			Start:     splitStart,
-			End:       splitStart + splitIntervalMs,
+			End:       splitEnd,
 			Cacheable: true,
 		})
 	}
 
-	// Add tail range if there's a partial block at the end
-	lastAlignedEnd := alignedStart + ((endTs-alignedStart)/splitIntervalMs)*splitIntervalMs
-	if lastAlignedEnd < endTs {
+	// Add tail range if needed
+	if splitStart < endTs {
 		ranges = append(ranges, SplitRange{
-			Start:     lastAlignedEnd,
+			Start:     splitStart,
 			End:       endTs,
 			Cacheable: false,
 		})

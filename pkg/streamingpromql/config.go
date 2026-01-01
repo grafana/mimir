@@ -16,6 +16,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 )
 
+type Limits interface {
+	OutOfOrderTimeWindow(userID string) time.Duration
+}
+
 type EngineOpts struct {
 	CommonOpts promql.EngineOpts `yaml:"-"`
 
@@ -32,6 +36,8 @@ type EngineOpts struct {
 	// When sharding is just another optimization pass, we'll be able to trigger this eager loading from the sharding operator,
 	// but for now, we use this option to change the behavior of selectors.
 	EagerLoadSelectors bool `yaml:"-"`
+
+	Limits Limits `yaml:"-"`
 
 	EnablePruneToggles                                                            bool `yaml:"enable_prune_toggles" category:"experimental"`
 	EnableCommonSubexpressionElimination                                          bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
@@ -92,6 +98,10 @@ func (c *QuerySplittingConfig) Validate() error {
 	return nil
 }
 
+type noopLimits struct{}
+
+func (noopLimits) OutOfOrderTimeWindow(string) time.Duration { return 0 }
+
 func NewTestEngineOpts() EngineOpts {
 	return EngineOpts{
 		CommonOpts: promql.EngineOpts{
@@ -106,6 +116,7 @@ func NewTestEngineOpts() EngineOpts {
 
 		Pedantic: true,
 		Logger:   log.NewNopLogger(),
+		Limits:   noopLimits{},
 
 		EnablePruneToggles:                   true,
 		EnableCommonSubexpressionElimination: true,

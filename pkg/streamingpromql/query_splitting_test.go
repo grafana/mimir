@@ -20,9 +20,11 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -830,4 +832,101 @@ type queryWithOrgID struct {
 func (q *queryWithOrgID) Exec(ctx context.Context) *promql.Result {
 	ctx = user.InjectOrgID(ctx, q.orgID)
 	return q.Query.Exec(ctx)
+}
+
+func TestQuerySplitting_WithOOOWindow(t *testing.T) {
+	backend := newTestCacheBackend()
+	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
+
+	opts := NewTestEngineOpts()
+	opts.InstantQuerySplitting.Enabled = true
+	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+	opts.Limits = &mockOutOfOrderTimeWindowProvider{
+		oooWindow: 3 * time.Hour,
+	}
+
+	baseT := timestamp.Time(0)
+	fixedNow := baseT.Add(12 * time.Hour)
+
+	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	for _, pass := range queryPlanner.planOptimizationPasses {
+		if qsPass, ok := pass.(*querysplitting.OptimizationPass); ok {
+			qsPass.TestOnlySetTimeNow(func() time.Time { return fixedNow })
+			break
+		}
+	}
+
+	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	require.NoError(t, err)
+	// Query at 12h with 7h range: (5h, 12h]
+	// Expected splits:
+	// - Head: (5h, 6h-1ms]
+	// - Block: (6h-1ms, 8h-1ms] - cacheable (before OOO)
+	// - Tail: (8h-1ms, 12h] - non-cacheable (in OOO window)
+
+	oooWindowMs := int64(2 * time.Hour / time.Millisecond)
+	storage := teststorage.New(t, oooWindowMs)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	ctx := context.Background()
+	app := storage.Appender(ctx)
+	// Load in-order samples from 0h to 12h (every 10 minutes) for initial query
+	for i := 0; i <= 72; i++ {
+		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
+		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), ts, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	expr := "sum_over_time(test_metric[7h])"
+	ts := fixedNow
+
+	// First query: should cache the cacheable blocks, but not the OOO range
+	result1, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.NoError(t, result1.Err)
+	require.Len(t, result1.Value.(promql.Vector), 1)
+	// Expected: sum of values from 5h (exclusive) to 10h (inclusive)
+	// Samples at 5h10m (31) to 12h (72) = 42 samples
+	// Sum = 31+32+...+60 = (31+72)*42/2 = 2163
+	require.Equal(t, 2163.0, result1.Value.(promql.Vector)[0].F)
+
+	verifyCacheStats(t, backend, 1, 0, 1)
+	require.Equal(t, []storageQueryRange{
+		{mint: 5*hourInMs + 1, maxt: 12 * hourInMs},
+	}, ranges1)
+
+	app = storage.Appender(ctx)
+	// Add OOO sample at 9h
+	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"),
+		timestamp.FromTime(baseT.Add(10*time.Hour).Add(1*time.Minute)), 200.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	result2, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.NoError(t, result2.Err)
+	require.Len(t, result2.Value.(promql.Vector), 1)
+	require.Equal(t, 2363.0, result2.Value.(promql.Vector)[0].F)
+
+	verifyCacheStats(t, backend, 2, 1, 1)
+	require.Equal(t, []storageQueryRange{
+		{mint: 5*hourInMs + 1, maxt: 6*hourInMs - 1},
+		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
+	}, ranges2)
+
+	result3, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.NoError(t, result3.Err)
+	require.Equal(t, result2, result3)
+
+	verifyCacheStats(t, backend, 3, 2, 1)
+	require.Equal(t, ranges2, ranges3)
+}
+
+type mockOutOfOrderTimeWindowProvider struct {
+	oooWindow time.Duration
+}
+
+func (m *mockOutOfOrderTimeWindowProvider) OutOfOrderTimeWindow(userID string) time.Duration {
+	return m.oooWindow
 }

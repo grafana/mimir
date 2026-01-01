@@ -105,8 +105,104 @@ func TestComputeSplitRanges(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := computeSplitRanges(tt.startTs, tt.endTs, tt.splitInterval)
+			actual := computeSplitRanges(tt.startTs, tt.endTs, tt.splitInterval, 0) // No OOO window
 			require.Equal(t, tt.expectedRanges, actual)
+		})
+	}
+}
+
+func TestComputeSplitRangesWithOOOWindow(t *testing.T) {
+	hourInMs := int64(time.Hour / time.Millisecond)
+	minuteInMs := int64(time.Minute / time.Millisecond)
+
+	// Fixed "now" time for consistent testing: 10 hours
+	now := 10 * hourInMs
+
+	tests := []struct {
+		name           string
+		startTs        int64
+		endTs          int64
+		splitInterval  time.Duration
+		oooThreshold   int64 // 0 means no OOO window
+		expectedRanges []SplitRange
+	}{
+		{
+			name:          "no OOO window (threshold = 0)",
+			startTs:       1 * hourInMs,
+			endTs:         6 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  0,
+			expectedRanges: []SplitRange{
+				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},  // Head
+				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block
+				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block
+				{Start: 6*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},  // Tail
+			},
+		},
+		{
+			name:          "OOO window in middle - last cacheable block extends into OOO",
+			startTs:       1 * hourInMs,
+			endTs:         6 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  5 * hourInMs,
+			expectedRanges: []SplitRange{
+				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
+				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
+				{Start: 4*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
+			},
+		},
+		{
+			name:          "OOO window covers all - entire query in OOO",
+			startTs:       1 * hourInMs,
+			endTs:         6 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  1*hourInMs + 30*minuteInMs,
+			expectedRanges: []SplitRange{
+				{Start: 1 * hourInMs, End: 6 * hourInMs, Cacheable: false},
+			},
+		},
+		{
+			name:          "OOO window before start - entire query in OOO",
+			startTs:       1 * hourInMs,
+			endTs:         6 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  30 * minuteInMs,
+			expectedRanges: []SplitRange{
+				{Start: 1 * hourInMs, End: 6 * hourInMs, Cacheable: false},
+			},
+		},
+		{
+			name:          "OOO window exactly at block boundary",
+			startTs:       1 * hourInMs,
+			endTs:         6 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  4*hourInMs - 1,
+			expectedRanges: []SplitRange{
+				{Start: 1 * hourInMs, End: 2*hourInMs - 1, Cacheable: false},
+				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true},
+				{Start: 4*hourInMs - 1, End: 6 * hourInMs, Cacheable: false},
+			},
+		},
+		{
+			name:          "multiple cacheable blocks before OOO",
+			startTs:       0,
+			endTs:         9 * hourInMs,
+			splitInterval: 2 * time.Hour,
+			oooThreshold:  now - 1*hourInMs, // 9h threshold
+			expectedRanges: []SplitRange{
+				{Start: 0, End: 2*hourInMs - 1, Cacheable: false},             // Head
+				{Start: 2*hourInMs - 1, End: 4*hourInMs - 1, Cacheable: true}, // Block
+				{Start: 4*hourInMs - 1, End: 6*hourInMs - 1, Cacheable: true}, // Block
+				{Start: 6*hourInMs - 1, End: 8*hourInMs - 1, Cacheable: true}, // Block
+				{Start: 8*hourInMs - 1, End: 9 * hourInMs, Cacheable: false},  // Merged: last block + tail in OOO
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := computeSplitRanges(tt.startTs, tt.endTs, tt.splitInterval, tt.oooThreshold)
+			require.Equal(t, tt.expectedRanges, actual, "split ranges mismatch")
 		})
 	}
 }
