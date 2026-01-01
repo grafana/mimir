@@ -247,7 +247,7 @@ func TestOurTestCases(t *testing.T) {
 			testScript := string(b)
 
 			t.Run("Mimir's engine", func(t *testing.T) {
-				if strings.Contains(testFile, "name_label_dropping") {
+				if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
 					promqltest.RunTest(t, testScript, mimirEngineWithDelayedNameRemoval)
 					return
 				}
@@ -261,7 +261,7 @@ func TestOurTestCases(t *testing.T) {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
 				}
 
-				if strings.Contains(testFile, "name_label_dropping") {
+				if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
 					promqltest.RunTest(t, testScript, prometheusEngineWithDelayedNameRemoval)
 					return
 				}
