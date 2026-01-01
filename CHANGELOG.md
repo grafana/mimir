@@ -2,6 +2,10 @@
 
 ## main / unreleased
 
+### Grafana Mimir
+
+* [BUGFIX] Update to Go v1.25.5 to address [CVE-2025-61729](https://pkg.go.dev/vuln/GO-2025-4155). #13909
+
 ## 3.0.1
 
 ### Grafana Mimir
