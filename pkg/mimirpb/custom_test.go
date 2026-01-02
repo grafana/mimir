@@ -6,14 +6,13 @@
 package mimirpb
 
 import (
+	"fmt"
+	"runtime/debug"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/encoding"
-	"google.golang.org/grpc/encoding/proto"
-	"google.golang.org/grpc/mem"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -195,7 +194,7 @@ func TestIsFloatHistogram(t *testing.T) {
 }
 
 func TestCodecV2_Unmarshal(t *testing.T) {
-	c := codecV2{codec: fakeCodecV2{}}
+	c := codecV2{}
 
 	var origReq WriteRequest
 	data, err := c.Marshal(&origReq)
@@ -206,16 +205,8 @@ func TestCodecV2_Unmarshal(t *testing.T) {
 
 	require.True(t, origReq.Equal(req))
 
-	require.NotNil(t, req.buffer)
+	require.NotNil(t, req.Buffer())
 	req.FreeBuffer()
-}
-
-type fakeCodecV2 struct {
-	encoding.CodecV2
-}
-
-func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
-	return encoding.GetCodecV2(proto.Name).Marshal(v)
 }
 
 func TestHistogram_BucketsCount(t *testing.T) {
@@ -246,4 +237,37 @@ func TestHistogram_BucketsCount(t *testing.T) {
 			assert.Equal(t, tt.expected, tt.histogram.BucketCount())
 		})
 	}
+}
+
+func TestInstrumentRefLeaks(t *testing.T) {
+	prev := debug.SetPanicOnFault(true)
+	defer debug.SetPanicOnFault(prev)
+
+	src := WriteRequest{Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+		Labels:  []UnsafeMutableLabel{{Name: "labelName", Value: "labelValue"}},
+		Samples: []Sample{{TimestampMs: 1234, Value: 1337}},
+	}}}}
+	buf, err := src.Marshal()
+	require.NoError(t, err)
+
+	var leakingLabelName UnsafeMutableString
+
+	var req WriteRequest
+	err = Unmarshal(buf, &req)
+	require.NoError(t, err)
+
+	// Label names are UnsafeMutableStrings pointing to buf. They shouldn't outlive
+	// the call to req.FreeBuffer.
+	leakingLabelName = req.Timeseries[0].Labels[0].Name
+
+	req.FreeBuffer() // leakingLabelName becomes a leak here
+
+	var recovered any
+	func() {
+		defer func() {
+			recovered = recover()
+		}()
+		t.Log(leakingLabelName) // Just forcing a read on leakingLabelName here
+	}()
+	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
 }

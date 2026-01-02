@@ -72,6 +72,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/rw2util"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -9165,6 +9166,44 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 
 }
 
+func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.MetadataRetainPeriod = 20 * time.Second
+
+	ing, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, "", reg)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ing, r)
+
+	syms := rw2util.NewSymbolTableBuilder(nil)
+	orig := makeTestRW2WriteRequest(syms)
+	buf, err := orig.Marshal()
+	require.NoError(t, err)
+
+	var wr mimirpb.PreallocWriteRequest
+	wr.UnmarshalFromRW2 = true
+	wr.SkipNormalizeMetadataMetricName = true
+	wr.SkipDeduplicateMetadata = true
+	err = mimirpb.Unmarshal(buf, &wr)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err = ing.Push(ctx, &wr.WriteRequest)
+	require.NoError(t, err)
+
+	meta, err := ing.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
+		Metric: "test_metric_total",
+		Limit:  1, LimitPerMetric: 1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []*mimirpb.MetricMetadata{{
+		MetricFamilyName: "test_metric_total",
+		Type:             mimirpb.COUNTER,
+		Help:             "test_metric_help",
+		Unit:             "test_metric_unit",
+	}}, meta.Metadata)
+}
+
 func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
 	ing, r, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), nil, "", nil)
 	require.NoError(t, err)
@@ -12283,4 +12322,35 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 
 	// As there are three users, fsync should have been called at least three times
 	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
+}
+
+func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteRequest {
+	req := &mimirpb.WriteRequest{
+		TimeseriesRW2: []mimirpb.TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
+				Samples: []mimirpb.Sample{
+					{
+						Value:       123.456,
+						TimestampMs: 1234567890,
+					},
+				},
+				Exemplars: []mimirpb.ExemplarRW2{
+					{
+						Value:      123.456,
+						Timestamp:  1234567890,
+						LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("traceID"), syms.GetSymbol("1234567890abcdef")},
+					},
+				},
+				Metadata: mimirpb.MetadataRW2{
+					Type:    mimirpb.METRIC_TYPE_COUNTER,
+					HelpRef: syms.GetSymbol("test_metric_help"),
+					UnitRef: syms.GetSymbol("test_metric_unit"),
+				},
+			},
+		},
+	}
+	req.SymbolsRW2 = syms.GetSymbols()
+
+	return req
 }
