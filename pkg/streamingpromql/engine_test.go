@@ -43,6 +43,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
+	operatormetrics "github.com/grafana/mimir/pkg/streamingpromql/operators/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -4767,6 +4768,151 @@ func TestExtendedRangeSelectorsIrregular(t *testing.T) {
 			require.NoError(t, res.Err)
 			require.Equal(t, tc.expected, res.Value)
 
+		})
+	}
+}
+
+func TestStepInvariantMetricsTracker(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+	load 1m
+    	metric 0 1 2 3 4 5
+		nodata _ _ _ _ _ _
+		histogram {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x6
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	tc := []struct {
+		query    string
+		start    time.Time
+		end      time.Time
+		interval time.Duration
+
+		expectedNodes  int
+		expectedPoints map[operatormetrics.StepInvariantPointType]int
+	}{
+		{
+			query:         "metric @ 20",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 1,
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 5, // 6 steps
+				operatormetrics.HPoint: 0,
+			},
+		},
+		{
+			query:         "metric @ 20",
+			start:         time.Unix(0, 0).Add(time.Second * 50),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 0, // step invariant operation has been removed
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 0,
+				operatormetrics.HPoint: 0,
+			},
+		},
+		{
+			query:         "nodata @ 20",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 1,
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 0,
+				operatormetrics.HPoint: 0,
+			},
+		},
+		{
+			query:         "metric @ 20 + metric @ 30",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 1, // the left and right are all wrapped into a single step invariant
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 5,
+				operatormetrics.HPoint: 0,
+			},
+		},
+		{
+			query:         "metric @ 20 * metric + metric @ 30",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 2,
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 10,
+				operatormetrics.HPoint: 0,
+			},
+		},
+		{
+			query:         "abs(metric @ 20 * metric + metric @ 30)",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 2,
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 10,
+				operatormetrics.HPoint: 0,
+			},
+		},
+		{
+			query:         "scalar(metric @ 20)",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 1,
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 5,
+				operatormetrics.HPoint: 0,
+			},
+		},
+		{
+			query:         "histogram @ 20",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 1,
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 0,
+				operatormetrics.HPoint: 5,
+			},
+		},
+		{
+			query:         "(metric @ 20 or metric) or (histogram @ 20 or histogram) or (vector(scalar(metric @ 30)) or metric)",
+			start:         time.Unix(0, 0),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 3,
+			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
+				operatormetrics.FPoint: 10,
+				operatormetrics.HPoint: 5,
+			},
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.query, func(t *testing.T) {
+
+			tracker := operatormetrics.NewOperatorMetricsTracker(prometheus.NewRegistry())
+
+			opts := NewTestEngineOpts()
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			planner.RegisterOperatorMetrics(tracker)
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, tc.start, tc.end, tc.interval)
+			require.NoError(t, err)
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			require.Equal(t, float64(tc.expectedNodes), testutil.ToFloat64(tracker.StepInvariantTracker.NodeCounter()))
+
+			for pointType, expectedCount := range tc.expectedPoints {
+				require.Equal(t, float64(expectedCount), testutil.ToFloat64(tracker.StepInvariantTracker.Counter(pointType)))
+			}
 		})
 	}
 }
