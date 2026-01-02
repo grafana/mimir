@@ -3,6 +3,7 @@
 package mimirpb
 
 import (
+	"flag"
 	"fmt"
 	"math"
 	"sync"
@@ -15,20 +16,36 @@ import (
 )
 
 type InstrumentRefLeaksConfig struct {
-	Percentage                   float64
-	BeforeReusePeriod            time.Duration
-	MaxInflightInstrumentedBytes uint64
+	Percentage                   float64       `yaml:"percentage" category:"experimental"`
+	BeforeReusePeriod            time.Duration `yaml:"before_reuse_period" category:"experimental"`
+	MaxInflightInstrumentedBytes uint64        `yaml:"max_inflight_instrumented_bytes" category:"experimental"`
 }
 
-func (cfg InstrumentRefLeaksConfig) tracker() refLeaksTracker {
-	if cfg.Percentage <= 0 {
+func (c *InstrumentRefLeaksConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	f.Float64Var(&c.Percentage, prefix+"percentage", 0, `Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.`)
+	f.DurationVar(&c.BeforeReusePeriod, prefix+"before-reuse-period", 2*time.Minute, `Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection.`)
+	f.Uint64Var(&c.MaxInflightInstrumentedBytes, prefix+"max-inflight-instrumented-bytes", 0, `Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.`)
+}
+
+func (c InstrumentRefLeaksConfig) Validate() error {
+	if c.Percentage < 0 || c.Percentage > 100 {
+		return fmt.Errorf("percentage must be in [0-100], got: %v", c.Percentage)
+	}
+	if c.BeforeReusePeriod < 0 {
+		return fmt.Errorf("before-reuse-period must be positive, got: %v", c.BeforeReusePeriod)
+	}
+	return nil
+}
+
+func (c InstrumentRefLeaksConfig) tracker() refLeaksTracker {
+	if c.Percentage <= 0 {
 		return refLeaksTracker{}
 	}
 
 	var t refLeaksTracker
-	t.instrumentOneIn = uint64(math.Trunc(100 / cfg.Percentage))
-	t.waitBeforeReuse = cfg.BeforeReusePeriod
-	t.maxInflightInstrumentedBytes = cfg.MaxInflightInstrumentedBytes
+	t.instrumentOneIn = uint64(math.Trunc(100 / c.Percentage))
+	t.waitBeforeReuse = c.BeforeReusePeriod
+	t.maxInflightInstrumentedBytes = c.MaxInflightInstrumentedBytes
 	if t.maxInflightInstrumentedBytes == 0 {
 		t.maxInflightInstrumentedBytes = math.MaxUint64
 	}
@@ -124,8 +141,8 @@ type unmapTask struct {
 
 var unmapQueue chan unmapTask
 
-func (cfg InstrumentRefLeaksConfig) maybeStartFreeingInstrumentedBuffers() {
-	if cfg.Percentage > 0 && cfg.BeforeReusePeriod > 0 {
+func (c InstrumentRefLeaksConfig) maybeStartFreeingInstrumentedBuffers() {
+	if c.Percentage > 0 && c.BeforeReusePeriod > 0 {
 		startFreeingInstrumentedBuffers()
 	}
 }

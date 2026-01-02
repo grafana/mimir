@@ -353,6 +353,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
+	if err := c.Common.InstrumentRefLeaks.Validate(); err != nil {
+		return errors.Wrap(err, "invalid instrument-ref-leaks config")
+	}
 
 	// validate the default limits
 	if err := c.ValidateLimits(&c.LimitsConfig); err != nil {
@@ -792,25 +795,13 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
-	InstrumentRefLeaks      InstrumentRefLeaksConfig            `yaml:"instrument_ref_leaks" category:"experimental"`
-}
-
-type InstrumentRefLeaksConfig struct {
-	Percentage                   float64       `yaml:"percentage" category:"experimental"`
-	BeforeReusePeriod            time.Duration `yaml:"before_reuse_period" category:"experimental"`
-	MaxInflightInstrumentedBytes uint64        `yaml:"max_inflight_instrumented_bytes" category:"experimental"`
-}
-
-func (c *InstrumentRefLeaksConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
-	f.Float64Var(&c.Percentage, prefix+"percentage", 0, `Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.`)
-	f.DurationVar(&c.BeforeReusePeriod, prefix+"before-reuse-period", 2*time.Minute, `Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection.`)
-	f.Uint64Var(&c.MaxInflightInstrumentedBytes, prefix+"max-inflight-instrumented-bytes", 0, `Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.`)
+	InstrumentRefLeaks      mimirpb.InstrumentRefLeaksConfig    `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
 	Storage                  map[string]*bucket.StorageBackendConfig
 	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
-	InstrumentRefLeaksConfig map[string]*InstrumentRefLeaksConfig
+	InstrumentRefLeaksConfig map[string]*mimirpb.InstrumentRefLeaksConfig
 }
 
 // RegisterFlags registers flag.
