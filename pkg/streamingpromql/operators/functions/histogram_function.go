@@ -602,7 +602,7 @@ func (q *histogramQuantile) ComputeClassicHistogramResult(pointIndex int, series
 
 func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations) {
 	ph := q.phValues.Samples[pointIndex].F
-	return promql.HistogramQuantile(ph, h, q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex), q.innerExpressionPosition)
+	return promql.HistogramQuantile(ph, h, q.getMetricNameForSeries(seriesIndex), q.innerExpressionPosition)
 }
 
 func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PrepareParams) error {
