@@ -247,7 +247,7 @@ func TestOurTestCases(t *testing.T) {
 			testScript := string(b)
 
 			t.Run("Mimir's engine", func(t *testing.T) {
-				if strings.Contains(testFile, "name_label_dropping") {
+				if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
 					promqltest.RunTest(t, testScript, mimirEngineWithDelayedNameRemoval)
 					return
 				}
@@ -261,7 +261,7 @@ func TestOurTestCases(t *testing.T) {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
 				}
 
-				if strings.Contains(testFile, "name_label_dropping") {
+				if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
 					promqltest.RunTest(t, testScript, prometheusEngineWithDelayedNameRemoval)
 					return
 				}
@@ -2201,12 +2201,32 @@ func (t *timeoutTestingQueryTracker) Close() error {
 }
 
 type annotationTestCase struct {
-	data                               string
-	expr                               string
-	expectedWarningAnnotations         []string
-	expectedInfoAnnotations            []string
-	skipComparisonWithPrometheusReason string
-	instantEvaluationTimestamp         *time.Time
+	data                       string
+	expr                       string
+	expectedWarningAnnotations []string
+	// an alternate string for when delayed name removal is enabled.
+	// if not set the test will fall back to expectedWarningAnnotations
+	expectedWarningAnnotationsDelayedNameRemovalEnabled []string
+	expectedInfoAnnotations                             []string
+	// an alternate string for when delayed name removal is enabled.
+	// if not set the test will fall back to expectedInfoAnnotations
+	expectedInfoAnnotationsDelayedNameRemovalEnabled []string
+	skipComparisonWithPrometheusReason               string
+	instantEvaluationTimestamp                       *time.Time
+}
+
+func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedInfoAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedInfoAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedInfoAnnotations
+}
+
+func (a annotationTestCase) getExpectedWarningAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedWarningAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedWarningAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedWarningAnnotations
 }
 
 func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
@@ -2214,19 +2234,27 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	step := time.Minute
 	endT := startT.Add(2 * step)
 
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
 	const prometheusEngineName = "Prometheus' engine"
-	engines := map[string]promql.QueryEngine{
-		"Mimir's engine": mimirEngine,
+	const mimirEngineName = "Mimir's engine"
+
+	// create 2 sets of engines - one with EnableDelayedNameRemoval=true and the other with EnableDelayedNameRemoval=false
+	// there are some histogram annotation test cases which will emit a different warning/info annotation string depending on the delayed name removal setting
+	engines := make(map[bool]map[string]promql.QueryEngine, 2)
+	for _, delayedNameRemovalEnabled := range []bool{true, false} {
+		opts := NewTestEngineOpts()
+		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
+
+		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 		// Compare against Prometheus' engine to verify our test cases are valid.
-		prometheusEngineName: prometheusEngine,
+		engines[delayedNameRemovalEnabled] = map[string]promql.QueryEngine{
+			mimirEngineName:      mimirEngine,
+			prometheusEngineName: prometheusEngine,
+		}
 	}
 
 	for name, testCase := range testCases {
@@ -2251,33 +2279,35 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 
 			for queryType, generator := range queryTypes {
 				t.Run(queryType, func(t *testing.T) {
-					results := make([]*promql.Result, 0, 2)
+					for _, delayedNameRemovalEnabled := range []bool{true, false} {
+						results := make([]*promql.Result, 0, 2)
 
-					for engineName, engine := range engines {
-						if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
-							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
-							continue
+						for engineName, engine := range engines[delayedNameRemovalEnabled] {
+							if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
+								t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
+								continue
+							}
+							t.Run(engineName, func(t *testing.T) {
+								query, err := generator(engine)
+								require.NoError(t, err)
+								t.Cleanup(query.Close)
+
+								res := query.Exec(context.Background())
+								require.NoError(t, res.Err)
+								results = append(results, res)
+
+								warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+								require.ElementsMatch(t, testCase.getExpectedWarningAnnotations(delayedNameRemovalEnabled), warnings)
+								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(delayedNameRemovalEnabled), infos)
+							})
 						}
-						t.Run(engineName, func(t *testing.T) {
-							query, err := generator(engine)
-							require.NoError(t, err)
-							t.Cleanup(query.Close)
 
-							res := query.Exec(context.Background())
-							require.NoError(t, res.Err)
-							results = append(results, res)
-
-							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
-							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
-						})
-					}
-
-					// If both results are available, compare them (sometimes we skip prometheus)
-					if len(results) == 2 {
-						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
-						// or vice-versa where no result may be expected etc.
-						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+						// If both results are available, compare them (sometimes we skip prometheus)
+						if len(results) == 2 {
+							// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
+							// or vice-versa where no result may be expected etc.
+							testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+						}
 					}
 				})
 			}
@@ -3141,6 +3171,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="c"})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" for metric name "series" (1:25)`},
 		},
 		"invalid quantile warning": {
 			data:                       mixedClassicHistograms,
@@ -3151,17 +3182,23 @@ func TestHistogramAnnotations(t *testing.T) {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="a"})`,
 			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)`},
 		},
 		"forced monotonicity info": {
 			data:                    mixedClassicHistograms,
 			expr:                    `histogram_quantile(0.5, series{host="d"})`,
 			expectedInfoAnnotations: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabled: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
 			expr: `histogram_quantile(9, series{host="a"})`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of classic and native histograms (1:23)`,
+				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
+			},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{
+				`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:23)`,
 				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
 			},
 		},
@@ -3176,6 +3213,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
 		},
 		"extra entry in series without le label": {
 			data: `
@@ -3184,6 +3222,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
 		},
 	}
 
