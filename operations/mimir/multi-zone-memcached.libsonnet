@@ -5,6 +5,10 @@
     single_zone_memcached_enabled: !$._config.multi_zone_memcached_enabled,
     multi_zone_memcached_enabled: $._config.multi_zone_read_path_enabled,
 
+    // Controls whether the traffic should be routed to multi-zone memcached.
+    // This setting can be used by downstream projects during migrations from single to multi-zone.
+    multi_zone_memcached_routing_enabled: $._config.multi_zone_memcached_enabled,
+
     // Per-zone replica counts for memcached deployments. Each defaults to the single-zone value.
     memcached_frontend_zone_a_replicas: $._config.memcached_frontend_replicas,
     memcached_frontend_zone_b_replicas: $._config.memcached_frontend_replicas,
@@ -156,7 +160,7 @@
   local memcachedMetadataClientMultiZoneAddress() =
     'dnssrvnoa+memcached-metadata-multi-zone.%(namespace)s.svc.%(cluster_domain)s:11211' % $._config,
 
-  local queryFrontendZoneCachingConfig(zone) = if !$._config.cache_frontend_enabled then {} else {
+  local queryFrontendZoneCachingConfig(zone) = if !$._config.cache_frontend_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
     'query-frontend.results-cache.memcached.addresses': memcachedFrontendClientZoneAddress(zone),
   },
 
@@ -164,7 +168,7 @@
   query_frontend_zone_b_caching_config:: queryFrontendZoneCachingConfig('b'),
   query_frontend_zone_c_caching_config:: queryFrontendZoneCachingConfig('c'),
 
-  local blocksMetadataZoneCachingConfig(zone) = if !$._config.cache_metadata_enabled then {} else {
+  local blocksMetadataZoneCachingConfig(zone) = if !$._config.cache_metadata_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
     'blocks-storage.bucket-store.metadata-cache.memcached.addresses': memcachedMetadataClientZoneAddress(zone),
   },
 
@@ -173,11 +177,11 @@
   blocks_metadata_zone_c_caching_config:: blocksMetadataZoneCachingConfig('c'),
 
   local blocksChunksZoneCachingConfig(zone) = (
-    if !$._config.cache_index_queries_enabled then {} else {
+    if !$._config.cache_index_queries_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
       'blocks-storage.bucket-store.index-cache.memcached.addresses': memcachedIndexQueriesClientZoneAddress(zone),
     }
   ) + (
-    if !$._config.cache_chunks_enabled then {} else {
+    if !$._config.cache_chunks_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
       'blocks-storage.bucket-store.chunks-cache.memcached.addresses': memcachedChunksClientZoneAddress(zone),
     }
   ),
@@ -186,7 +190,7 @@
   blocks_chunks_zone_b_caching_config:: blocksChunksZoneCachingConfig('b'),
   blocks_chunks_zone_c_caching_config:: blocksChunksZoneCachingConfig('c'),
 
-  local rulerStorageZoneCachingConfig(zone) = if !$._config.cache_metadata_enabled then {} else {
+  local rulerStorageZoneCachingConfig(zone) = if !$._config.cache_metadata_enabled || !$._config.multi_zone_memcached_routing_enabled then {} else {
     // When memcached is deployed multi-zone, the rulers still need a cross-zone cache because
     // of the rules' explicit cache invalidation.
     'ruler-storage.cache.memcached.addresses': memcachedMetadataClientMultiZoneAddress(),
