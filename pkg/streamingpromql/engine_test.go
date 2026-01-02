@@ -2215,44 +2215,46 @@ type annotationTestCase struct {
 	instantEvaluationTimestamp                       *time.Time
 }
 
+func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedInfoAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedInfoAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedInfoAnnotations
+}
+
+func (a annotationTestCase) getExpectedWarningAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedWarningAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedWarningAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedWarningAnnotations
+}
+
 func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	startT := timestamp.Time(0).Add(time.Minute)
 	step := time.Minute
 	endT := startT.Add(2 * step)
 
-	// create 2 sets of engines - one with 	EnableDelayedNameRemoval=true and the other with EnableDelayedNameRemoval=false
-	// there are some histogram annotation test cases will be return a different warning/info depending on whether delayed name removal is enabled or not
-	optsDelayedNameRemovalEnabled := NewTestEngineOpts()
-	optsDelayedNameRemovalEnabled.CommonOpts.EnableDelayedNameRemoval = true
-
-	plannerDelayedNameRemovalEnabled, err := NewQueryPlanner(optsDelayedNameRemovalEnabled, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	mimirEngineDelayedNameRemovalEnabled, err := NewEngine(optsDelayedNameRemovalEnabled, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), plannerDelayedNameRemovalEnabled)
-	require.NoError(t, err)
-	prometheusEngineDelayedNameRemovalEnabled := promql.NewEngine(optsDelayedNameRemovalEnabled.CommonOpts)
-
-	optsDelayedNameRemovalDisabled := NewTestEngineOpts()
-	optsDelayedNameRemovalDisabled.CommonOpts.EnableDelayedNameRemoval = false
-
-	plannerDelayedNameRemovalDisabled, err := NewQueryPlanner(optsDelayedNameRemovalDisabled, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	mimirEngineDelayedNameRemovalDisabled, err := NewEngine(optsDelayedNameRemovalDisabled, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), plannerDelayedNameRemovalDisabled)
-	require.NoError(t, err)
-	prometheusEngineDelayedNameRemovalDisabled := promql.NewEngine(optsDelayedNameRemovalDisabled.CommonOpts)
-
 	const prometheusEngineName = "Prometheus' engine"
-	enginesDelayedNameRemovalDisabled := map[string]promql.QueryEngine{
-		"Mimir's engine": mimirEngineDelayedNameRemovalDisabled,
+	const mimirEngineName = "Mimir's engine"
+
+	// create 2 sets of engines - one with EnableDelayedNameRemoval=true and the other with EnableDelayedNameRemoval=false
+	// there are some histogram annotation test cases which will emit a different warning/info annotation string depending on the delayed name removal setting
+	engines := make(map[bool]map[string]promql.QueryEngine, 2)
+	for _, delayedNameRemovalEnabled := range []bool{true, false} {
+		opts := NewTestEngineOpts()
+		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
+
+		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
 		// Compare against Prometheus' engine to verify our test cases are valid.
-		prometheusEngineName: prometheusEngineDelayedNameRemovalDisabled,
-	}
-
-	enginesDelayedNameRemovalEnabled := map[string]promql.QueryEngine{
-		"Mimir's engine": mimirEngineDelayedNameRemovalEnabled,
-
-		// Compare against Prometheus' engine to verify our test cases are valid.
-		prometheusEngineName: prometheusEngineDelayedNameRemovalEnabled,
+		engines[delayedNameRemovalEnabled] = map[string]promql.QueryEngine{
+			mimirEngineName:      mimirEngine,
+			prometheusEngineName: prometheusEngine,
+		}
 	}
 
 	for name, testCase := range testCases {
@@ -2277,68 +2279,35 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 
 			for queryType, generator := range queryTypes {
 				t.Run(queryType, func(t *testing.T) {
-					results := make([]*promql.Result, 0, 2)
+					for _, delayedNameRemovalEnabled := range []bool{true, false} {
+						results := make([]*promql.Result, 0, 2)
 
-					for engineName, engine := range enginesDelayedNameRemovalDisabled {
-						if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
-							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
-							continue
-						}
-						t.Run(engineName, func(t *testing.T) {
-							query, err := generator(engine)
-							require.NoError(t, err)
-							t.Cleanup(query.Close)
-
-							res := query.Exec(context.Background())
-							require.NoError(t, res.Err)
-							results = append(results, res)
-
-							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
-							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
-						})
-					}
-
-					// If both results are available, compare them (sometimes we skip prometheus)
-					if len(results) == 2 {
-						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
-						// or vice-versa where no result may be expected etc.
-						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
-					}
-
-					for engineName, engine := range enginesDelayedNameRemovalEnabled {
-						if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
-							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
-							continue
-						}
-						t.Run(engineName, func(t *testing.T) {
-							query, err := generator(engine)
-							require.NoError(t, err)
-							t.Cleanup(query.Close)
-
-							res := query.Exec(context.Background())
-							require.NoError(t, res.Err)
-							results = append(results, res)
-
-							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-							expectedWarningAnnotations := testCase.expectedWarningAnnotationsDelayedNameRemovalEnabled
-							if expectedWarningAnnotations == nil {
-								expectedWarningAnnotations = testCase.expectedWarningAnnotations
+						for engineName, engine := range engines[delayedNameRemovalEnabled] {
+							if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
+								t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
+								continue
 							}
-							expectedInfoAnnotations := testCase.expectedInfoAnnotationsDelayedNameRemovalEnabled
-							if expectedInfoAnnotations == nil {
-								expectedInfoAnnotations = testCase.expectedInfoAnnotations
-							}
-							require.ElementsMatch(t, expectedWarningAnnotations, warnings)
-							require.ElementsMatch(t, expectedInfoAnnotations, infos)
-						})
-					}
+							t.Run(engineName, func(t *testing.T) {
+								query, err := generator(engine)
+								require.NoError(t, err)
+								t.Cleanup(query.Close)
 
-					// If both results are available, compare them (sometimes we skip prometheus)
-					if len(results) == 2 {
-						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
-						// or vice-versa where no result may be expected etc.
-						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+								res := query.Exec(context.Background())
+								require.NoError(t, res.Err)
+								results = append(results, res)
+
+								warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+								require.ElementsMatch(t, testCase.getExpectedWarningAnnotations(delayedNameRemovalEnabled), warnings)
+								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(delayedNameRemovalEnabled), infos)
+							})
+						}
+
+						// If both results are available, compare them (sometimes we skip prometheus)
+						if len(results) == 2 {
+							// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
+							// or vice-versa where no result may be expected etc.
+							testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+						}
 					}
 				})
 			}

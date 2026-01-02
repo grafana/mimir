@@ -28,6 +28,12 @@ import (
 	"github.com/grafana/mimir/pkg/util/pool"
 )
 
+const (
+	// intentionallyEmptyMetricName exists for annotations compatibility with prometheus.
+	// This is only used for backwards compatibility when delayed __name__ removal is not enabled.
+	intentionallyEmptyMetricName = ""
+)
+
 // HistogramFunction performs a function over each series in an instant vector,
 // with special handling for classic and native histograms.
 // At the moment, it supports only histogram_quantile and histogram_fraction.
@@ -295,7 +301,7 @@ func (h *HistogramFunction) getMetricNameForSeries(seriesIndex int) string {
 	if h.enableDelayedNameRemoval {
 		return h.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex)
 	} else {
-		return ""
+		return intentionallyEmptyMetricName
 	}
 }
 
@@ -576,7 +582,7 @@ func (q *histogramQuantile) getMetricNameForSeries(seriesIndex int) string {
 	if q.enableDelayedNameRemoval {
 		return q.innerSeriesMetricNames.GetMetricNameForSeries(seriesIndex)
 	} else {
-		return ""
+		return intentionallyEmptyMetricName
 	}
 }
 
