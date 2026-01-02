@@ -1400,7 +1400,7 @@
   "overrides-exporter.ring.wait-stability-min-duration": 0,
   "overrides-exporter.ring.wait-stability-max-duration": 300000000000,
   "overrides-exporter.ring.auto-forget-unhealthy-periods": 4,
-  "overrides-exporter.enabled-metrics": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
+  "overrides-exporter.enabled-metrics": "ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group",
   "common.storage.backend": "filesystem",
   "common.storage.s3.endpoint": "",
   "common.storage.s3.region": "",
