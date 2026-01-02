@@ -994,7 +994,7 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 		},
 	}
 
-	for _, numTenants := range []int{1, 10, 100, 1000} {
+	for _, numTenants := range []int{1, 10, 100} {
 		for configName, testCfg := range testConfigs {
 			b.Run(fmt.Sprintf("tenants=%d/%s", numTenants, configName), func(b *testing.B) {
 				// Create a fake Kafka cluster for this sub-benchmark.
