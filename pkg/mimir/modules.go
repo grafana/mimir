@@ -877,6 +877,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	promOpts.ActiveQueryTracker = nil
 	// Always eagerly load selectors so that they are loaded in parallel in the background.
 	mqeOpts.EagerLoadSelectors = true
+	mqeOpts.Limits = t.Overrides
 
 	t.Cfg.Frontend.QueryMiddleware.InternalFunctionNames.Add(sharding.ConcatFunction.Name)
 
