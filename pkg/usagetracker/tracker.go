@@ -28,6 +28,8 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/ingest"
@@ -673,6 +675,8 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+	span := trace.SpanFromContext(ctx)
+	span.AddEvent("Serving request", trace.WithAttributes(attribute.String("partition", fmt.Sprint(req.Partition))))
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
 	if err != nil {

@@ -79,17 +79,19 @@ func newTrackerStore(idleTimeout time.Duration, userCloseToLimitPercentageThresh
 // trackSeries is used in tests so we can provide custom time.Now() value.
 // trackSeries will modify and reuse the input series slice.
 func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series []uint64, timeNow time.Time) (rejectedRefs []uint64, err error) {
+	ctx, span := tracer.Start(ctx, "trackerStore.trackSeries")
+	defer span.End()
+	
 	tenant := t.getOrCreateTenant(tenantID)
 	defer tenant.RUnlock()
-	span := trace.SpanFromContext(ctx)
-	span.AddEvent("trackerStore: got tenant", trace.WithAttributes(
+	span.AddEvent("got tenant", trace.WithAttributes(
 		attribute.Int64("tenant_series", int64(tenant.series.Load())),
 		attribute.Int64("tenant_limit", int64(tenant.currentLimit.Load())),
 	))
 
 	// Sort series by shard to minimize lock contention by taking mutex once for each shard.
 	slices.SortFunc(series, func(a, b uint64) int { return int(a%shards) - int(b%shards) })
-	span.AddEvent("trackerStore: sorted series", trace.WithAttributes(
+	span.AddEvent("sorted series", trace.WithAttributes(
 		attribute.Int("series", len(series)),
 	))
 
@@ -125,7 +127,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 			i0 = i
 		}
 	}
-	span.AddEvent("trackerStore: tracked series", trace.WithAttributes(
+	span.AddEvent("tracked series", trace.WithAttributes(
 		attribute.Int64Slice("lock_milliseconds_per_shard", trackingMillisecondsPerShard),
 		attribute.Int64Slice("tracking_milliseconds_per_shard", trackingMillisecondsPerShard),
 		attribute.Int("created_series", len(createdRefs)),
@@ -139,7 +141,7 @@ func (t *trackerStore) trackSeries(ctx context.Context, tenantID string, series 
 			level.Error(t.logger).Log("msg", "failed to publish created series", "tenant", tenantID, "err", err, "created_len", len(createdRefs), "now", timeNow.Unix(), "now_minutes", now)
 			return nil, err
 		}
-		span.AddEvent("trackerStore: publishedCreatedSeries")
+		span.AddEvent("publishedCreatedSeries")
 	}
 
 	return rejectedRefs, nil
