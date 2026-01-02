@@ -2844,7 +2844,7 @@ func newKafkaProduceClient(t *testing.T, addrs string, opts ...writerTestCfgOpt)
 	cfg := KafkaConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.Address = addrs
-	cfg.disableLinger = true
+	cfg.DisableLinger = true
 
 	for _, opt := range opts {
 		opt(&cfg)

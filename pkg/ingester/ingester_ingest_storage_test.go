@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -966,4 +967,154 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	require.NoError(t, err)
 
 	return ingester, kafkaCluster, prw
+}
+
+func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
+	// This benchmark tests the ingester replaying records from Kafka at startup,
+	// varying the number of unique tenants owning the records and ingestion config.
+
+	const (
+		timeseriesPerRecord = 10
+		kafkaTopic          = "mimir"
+	)
+
+	type testConfig struct {
+		ingestionConcurrencyBatchSize             int
+		ingestionConcurrencyTargetFlushesPerShard int
+	}
+
+	testConfigs := map[string]testConfig{
+		"batch=150,flushes=40": {
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 40,
+		},
+		"batch=40,flushes=20": {
+			ingestionConcurrencyBatchSize:             40,
+			ingestionConcurrencyTargetFlushesPerShard: 20,
+		},
+	}
+
+	for _, numTenants := range []int{1, 10, 100, 1000} {
+		for configName, testCfg := range testConfigs {
+			b.Run(fmt.Sprintf("tenants=%d/%s", numTenants, configName), func(b *testing.B) {
+				// Create a fake Kafka cluster for this sub-benchmark.
+				_, kafkaAddr := testkafka.CreateCluster(b, 1, kafkaTopic)
+
+				// Create a minimal KafkaConfig for the writer.
+				writerCfg := ingest.KafkaConfig{}
+				flagext.DefaultValues(&writerCfg)
+				writerCfg.Topic = kafkaTopic
+				writerCfg.Address = kafkaAddr
+				writerCfg.DisableLinger = true
+
+				// Create and start the Kafka writer.
+				ctx := context.Background()
+				writer := ingest.NewWriter(writerCfg, log.NewNopLogger(), nil)
+				require.NoError(b, services.StartAndAwaitRunning(ctx, writer))
+				b.Cleanup(func() {
+					require.NoError(b, services.StopAndAwaitTerminated(ctx, writer))
+				})
+
+				cfg := defaultIngesterTestConfig(b)
+
+				// Configure the ingester with Kafka settings.
+				cfg.IngestStorageConfig.Enabled = true
+				cfg.IngestStorageConfig.KafkaConfig.Topic = kafkaTopic
+				cfg.IngestStorageConfig.KafkaConfig.Address = kafkaAddr
+				cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 8
+				cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyBatchSize = testCfg.ingestionConcurrencyBatchSize
+				cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
+				cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
+				cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = testCfg.ingestionConcurrencyTargetFlushesPerShard
+
+				// Start consuming from the end so the ingester doesn't replay anything at startup.
+				cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "end"
+
+				// Disable TSDB head compaction jitter.
+				cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+
+				// Always disable gRPC Push API when testing ingest store.
+				cfg.PushGrpcMethodEnabled = false
+
+				// The ingest storage requires the ingester ID to have a well known format.
+				cfg.IngesterRing.InstanceID = "ingester-zone-a-0"
+
+				// Each sub-benchmark needs a fresh TSDB directory.
+				cfg.BlocksStorageConfig.TSDB.Dir = b.TempDir()
+				cfg.BlocksStorageConfig.Bucket.Filesystem.Directory = b.TempDir()
+
+				// Create the partition ring store.
+				kv, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+				b.Cleanup(func() { _ = closer.Close() })
+				cfg.IngesterPartitionRing.KVStore.Mock = kv
+				cfg.IngesterPartitionRing.MinOwnersDuration = 0
+				cfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
+
+				// Create and start the partition ring watcher.
+				prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kv, log.NewNopLogger(), nil)
+				require.NoError(b, services.StartAndAwaitRunning(ctx, prw))
+				b.Cleanup(func() {
+					require.NoError(b, services.StopAndAwaitTerminated(ctx, prw))
+				})
+
+				// Create and start the ingester. Since ConsumeFromPositionAtStartup="end",
+				// it won't consume any existing records at startup.
+				overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+				ingester, err := New(cfg, overrides, nil, prw, nil, nil, nil, log.NewNopLogger())
+				require.NoError(b, err)
+				require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
+				b.Cleanup(func() {
+					require.NoError(b, services.StopAndAwaitTerminated(ctx, ingester))
+				})
+
+				// Pre-create TSDBs for all tenants by pushing a dummy sample for each.
+				// This ensures TSDB creation time is not included in the benchmark.
+				for t := 0; t < numTenants; t++ {
+					tenantID := fmt.Sprintf("tenant-%d", t)
+					tenantCtx := user.InjectOrgID(ctx, tenantID)
+
+					req := &mimirpb.WriteRequest{
+						Timeseries: []mimirpb.PreallocTimeseries{{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "dummy")),
+								Samples: []mimirpb.Sample{{TimestampMs: 1, Value: 1}},
+							},
+						}},
+						Source: mimirpb.API,
+					}
+					err := ingester.PushWithCleanup(tenantCtx, req, func() {})
+					require.NoError(b, err)
+				}
+
+				// Write b.N records to Kafka in a goroutine.
+				const partitionID = 0
+				go func() {
+					for r := 0; r < b.N; r++ {
+						tenantID := fmt.Sprintf("tenant-%d", r%numTenants)
+
+						timeseries := make([]mimirpb.PreallocTimeseries, timeseriesPerRecord)
+						for j := range timeseries {
+							timeseries[j] = mimirpb.PreallocTimeseries{
+								TimeSeries: &mimirpb.TimeSeries{
+									Labels:  mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("series_%d_%d", r, j))),
+									Samples: []mimirpb.Sample{{TimestampMs: int64(1000 + r), Value: float64(r)}},
+								},
+							}
+						}
+
+						req := &mimirpb.WriteRequest{Timeseries: timeseries, Source: mimirpb.API}
+						if err := writer.WriteSync(ctx, partitionID, tenantID, req); err != nil {
+							return
+						}
+					}
+				}()
+
+				b.ResetTimer()
+
+				// Wait for the ingester to consume all b.N records.
+				err = ingester.ingestReader.WaitReadConsistencyUntilOffset(ctx, int64(b.N-1))
+				require.NoError(b, err)
+			})
+		}
+	}
 }

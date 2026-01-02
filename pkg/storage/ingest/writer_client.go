@@ -31,7 +31,7 @@ func NewKafkaWriterClient(kafkaCfg KafkaConfig, maxInflightProduceRequests int, 
 
 	// Allow to disable linger in tests.
 	linger := 50 * time.Millisecond
-	if kafkaCfg.disableLinger {
+	if kafkaCfg.DisableLinger {
 		linger = 0
 	}
 

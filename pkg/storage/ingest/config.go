@@ -146,8 +146,8 @@ type KafkaConfig struct {
 	// is just used to change the default backoff in tests.
 	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
 
-	// Disable producer linger. This setting is just used in tests.
-	disableLinger bool `yaml:"-"`
+	// DisableLinger disables producer linger. This setting is just used in tests.
+	DisableLinger bool `yaml:"-"`
 }
 
 func (cfg *KafkaConfig) RegisterFlags(f *flag.FlagSet) {
