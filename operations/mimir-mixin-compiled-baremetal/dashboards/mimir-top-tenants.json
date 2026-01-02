@@ -1785,7 +1785,7 @@
                            "properties": [
                               {
                                  "id": "displayName",
-                                 "value": "per-pod disk usage"
+                                 "value": "per-instance disk usage"
                               },
                               {
                                  "id": "decimals",
@@ -1849,7 +1849,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  max by (user) (sum by (user, pod) (cortex_bucket_store_blocks_loaded_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}))\n)\n",
+                        "expr": "topk($limit,\n  max by (user) (sum by (user, instance) (cortex_bucket_store_blocks_loaded_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}))\n)\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "",
@@ -1859,7 +1859,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Top $limit users by per-store-gateway-pod disk utilization",
+                  "title": "Top $limit users by per-store-gateway disk utilization",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,

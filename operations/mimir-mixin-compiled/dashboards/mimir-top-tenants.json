@@ -1785,7 +1785,7 @@
                            "properties": [
                               {
                                  "id": "displayName",
-                                 "value": "per-pod disk usage"
+                                 "value": "per-instance disk usage"
                               },
                               {
                                  "id": "decimals",
@@ -1859,7 +1859,7 @@
                   "thresholds": [ ],
                   "timeFrom": null,
                   "timeShift": null,
-                  "title": "Top $limit users by per-store-gateway-pod disk utilization",
+                  "title": "Top $limit users by per-store-gateway disk utilization",
                   "tooltip": {
                      "shared": false,
                      "sort": 0,
