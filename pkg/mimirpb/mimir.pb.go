@@ -290,6 +290,11 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
 type WriteRequest struct {
 	// Keep reference to buffer for unsafe references.
 	BufferHolder
+	// sourceBufferHolders is populated when the WriteRequest is synthesized
+	// from other WriteRequests, e. g. when batching, and thus holds references
+	// to those source buffers. The WriteRequest must hold a strong reference to
+	// each of these buffers.
+	sourceBufferHolders map[*BufferHolder]struct{}
 
 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`
