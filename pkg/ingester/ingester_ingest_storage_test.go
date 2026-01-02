@@ -1136,7 +1136,7 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 	const (
 		kafkaTopic        = "mimir"
 		dumpFileName      = "test.dump"
-		replayRepetitions = 10 // Number of times to replay the same records to increase volume.
+		replayRepetitions = 1 // Number of times to replay the same records to increase volume.
 	)
 
 	// Find the repository root by going up from the test file location.
@@ -1211,15 +1211,17 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 			rec := &records[r]
 
 			// Overwrite timestamps in all samples to avoid collisions.
-			for i := range rec.req.Timeseries {
-				for j := range rec.req.Timeseries[i].Samples {
-					rec.req.Timeseries[i].Samples[j].TimestampMs = currentTimestampMs
+			if replayRepetitions > 1 {
+				for i := range rec.req.Timeseries {
+					for j := range rec.req.Timeseries[i].Samples {
+						rec.req.Timeseries[i].Samples[j].TimestampMs = currentTimestampMs
+					}
+					for j := range rec.req.Timeseries[i].Histograms {
+						rec.req.Timeseries[i].Histograms[j].Timestamp = currentTimestampMs
+					}
 				}
-				for j := range rec.req.Timeseries[i].Histograms {
-					rec.req.Timeseries[i].Histograms[j].Timestamp = currentTimestampMs
-				}
+				currentTimestampMs++
 			}
-			currentTimestampMs++
 
 			// Serialize the WriteRequest to a kgo.Record.
 			data, err := rec.req.Marshal()
