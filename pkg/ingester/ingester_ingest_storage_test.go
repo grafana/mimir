@@ -3,14 +3,18 @@
 package ingester
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -31,6 +35,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
@@ -1116,5 +1121,211 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 				require.NoError(b, err)
 			})
 		}
+	}
+}
+
+// dumpRecord holds a parsed record from the dump file along with its deserialized WriteRequest.
+type dumpRecord struct {
+	tenantID string
+	req      mimirpb.WriteRequest
+}
+
+// TestIngester_ReplayFromKafka_RealData tests the ingester replaying real production
+// data from a dump file created using "kafkatool dump export".
+func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
+	const (
+		kafkaTopic        = "mimir"
+		dumpFileName      = "test.dump"
+		replayRepetitions = 10 // Number of times to replay the same records to increase volume.
+	)
+
+	// Find the repository root by going up from the test file location.
+	_, thisFile, _, ok := runtime.Caller(0)
+	require.True(t, ok, "failed to get caller info")
+	repoRoot := filepath.Join(filepath.Dir(thisFile), "..", "..")
+	dumpFile := filepath.Join(repoRoot, dumpFileName)
+
+	// Skip the test if the dump file doesn't exist.
+	if _, err := os.Stat(dumpFile); os.IsNotExist(err) {
+		t.Skipf("dump file %s not found, skipping test", dumpFile)
+	}
+
+	// Parse the dump file to load all records and extract unique tenant IDs.
+	file, err := os.Open(dumpFile)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = file.Close() })
+
+	var records []dumpRecord
+	var totalTimeseries int
+	tenantIDs := make(map[string]struct{})
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 10_000_000), 10_000_000) // 10MB buffer for large records
+	for scanner.Scan() {
+		record := &kgo.Record{}
+		err := json.Unmarshal(scanner.Bytes(), record)
+		require.NoError(t, err)
+
+		// Deserialize the WriteRequest from the record.
+		prealloc := mimirpb.PreallocWriteRequest{}
+		version := ingest.ParseRecordVersion(record)
+		err = ingest.DeserializeRecordContent(record.Value, &prealloc, version)
+		require.NoError(t, err)
+
+		tenantID := string(record.Key)
+		records = append(records, dumpRecord{
+			tenantID: tenantID,
+			req:      prealloc.WriteRequest,
+		})
+		tenantIDs[tenantID] = struct{}{}
+		totalTimeseries += len(prealloc.Timeseries)
+	}
+	require.NoError(t, scanner.Err())
+
+	t.Logf("Loaded %d records with %d timeseries from dump file with %d unique tenants", len(records), totalTimeseries, len(tenantIDs))
+
+	// Create a fake Kafka cluster.
+	_, kafkaAddr := testkafka.CreateCluster(t, 1, kafkaTopic)
+
+	// Create a minimal KafkaConfig for the writer.
+	writerCfg := ingest.KafkaConfig{}
+	flagext.DefaultValues(&writerCfg)
+	writerCfg.Topic = kafkaTopic
+	writerCfg.Address = kafkaAddr
+	writerCfg.DisableLinger = true
+
+	// Create a Kafka client directly for async batch production.
+	ctx := context.Background()
+	client, err := ingest.NewKafkaWriterClient(writerCfg, 20, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { client.Close() })
+
+	// Write all records to Kafka upfront using async Produce(), repeating them to increase volume.
+	// Each record gets an increasing timestamp to avoid sample collisions.
+	const partitionID int32 = 0
+	var currentTimestampMs int64
+	totalRecordsWritten := 0
+
+	for rep := 0; rep < replayRepetitions; rep++ {
+		for r := 0; r < len(records); r++ {
+			rec := &records[r]
+
+			// Overwrite timestamps in all samples to avoid collisions.
+			for i := range rec.req.Timeseries {
+				for j := range rec.req.Timeseries[i].Samples {
+					rec.req.Timeseries[i].Samples[j].TimestampMs = currentTimestampMs
+				}
+				for j := range rec.req.Timeseries[i].Histograms {
+					rec.req.Timeseries[i].Histograms[j].Timestamp = currentTimestampMs
+				}
+			}
+			currentTimestampMs++
+
+			// Serialize the WriteRequest to a kgo.Record.
+			data, err := rec.req.Marshal()
+			require.NoError(t, err)
+
+			kgoRecord := &kgo.Record{
+				Key:       []byte(rec.tenantID),
+				Value:     data,
+				Partition: partitionID,
+			}
+
+			// Produce asynchronously (nil callback = fire-and-forget).
+			client.Produce(ctx, kgoRecord, nil)
+			totalRecordsWritten++
+		}
+	}
+
+	// Wait for all records to be sent.
+	err = client.Flush(ctx)
+	require.NoError(t, err)
+	t.Logf("Finished writing %d records to Kafka (%d records x %d repetitions)", totalRecordsWritten, len(records), replayRepetitions)
+
+	// Define test configs to compare different ingestion concurrency settings.
+	type testConfig struct {
+		ingestionConcurrencyBatchSize             int
+		ingestionConcurrencyTargetFlushesPerShard int
+	}
+
+	testConfigs := map[string]testConfig{
+		"batch=150,flushes=40": {
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 40,
+		},
+		"batch=40,flushes=20": {
+			ingestionConcurrencyBatchSize:             40,
+			ingestionConcurrencyTargetFlushesPerShard: 20,
+		},
+	}
+
+	totalTimeseriesWritten := totalTimeseries * replayRepetitions
+
+	for configName, testCfg := range testConfigs {
+		t.Run(configName, func(t *testing.T) {
+			cfg := defaultIngesterTestConfig(t)
+
+			// Configure the ingester with Kafka settings.
+			cfg.IngestStorageConfig.Enabled = true
+			cfg.IngestStorageConfig.KafkaConfig.Topic = kafkaTopic
+			cfg.IngestStorageConfig.KafkaConfig.Address = kafkaAddr
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 8
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyBatchSize = testCfg.ingestionConcurrencyBatchSize
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = testCfg.ingestionConcurrencyTargetFlushesPerShard
+
+			// Start consuming from the beginning so the ingester replays all records at startup.
+			cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
+
+			// Disable TSDB head compaction jitter.
+			cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = false
+
+			// Always disable gRPC Push API when testing ingest store.
+			cfg.PushGrpcMethodEnabled = false
+
+			// The ingest storage requires the ingester ID to have a well known format.
+			cfg.IngesterRing.InstanceID = "ingester-zone-a-0"
+
+			// Each test run needs a fresh TSDB directory.
+			cfg.BlocksStorageConfig.TSDB.Dir = t.TempDir()
+			cfg.BlocksStorageConfig.Bucket.Filesystem.Directory = t.TempDir()
+
+			// Create the partition ring store.
+			kv, closer := consul.NewInMemoryClient(ring.GetPartitionRingCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { _ = closer.Close() })
+			cfg.IngesterPartitionRing.KVStore.Mock = kv
+			cfg.IngesterPartitionRing.MinOwnersDuration = 0
+			cfg.IngesterPartitionRing.lifecyclerPollingInterval = 10 * time.Millisecond
+
+			// Create and start the partition ring watcher.
+			prw := ring.NewPartitionRingWatcher(PartitionRingName, PartitionRingKey, kv, log.NewNopLogger(), nil)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, prw))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, prw))
+			})
+
+			// Create the ingester (not started yet).
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			ingester, err := New(cfg, overrides, nil, prw, nil, nil, nil, log.NewNopLogger())
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			// Measure the time to start the ingester and replay all records.
+			targetOffset := int64(totalRecordsWritten - 1)
+			startTime := time.Now()
+
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+			err = ingester.ingestReader.WaitReadConsistencyUntilOffset(ctx, targetOffset)
+			require.NoError(t, err)
+
+			elapsed := time.Since(startTime)
+
+			t.Logf("Replayed %d records (%d timeseries) in %s (%.2f records/sec, %.2f timeseries/sec)",
+				totalRecordsWritten, totalTimeseriesWritten, elapsed,
+				float64(totalRecordsWritten)/elapsed.Seconds(), float64(totalTimeseriesWritten)/elapsed.Seconds())
+		})
 	}
 }
