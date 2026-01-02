@@ -337,5 +337,25 @@ local filename = 'mimir-top-tenants.json';
           }
         )
       ),
+    )
+
+    .addRow(
+      ($.row('By store-gateway disk utilization') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by per-store-gateway-pod disk utilization') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            |||
+              topk($limit,
+                max by (user) (sum by (user, pod) (cortex_bucket_store_blocks_loaded_size_bytes{%s}))
+              )
+            ||| % [$.jobMatcher($._config.job_names.store_gateway)],
+          ], {
+            user: { alias: 'user', unit: 'string' },
+            Value: { alias: 'per-pod disk usage', unit: 'bytes' },
+          }
+        )
+      ),
     ),
 }
