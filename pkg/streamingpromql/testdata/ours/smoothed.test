@@ -732,3 +732,49 @@ eval instant at 2m increase(metric[1m30s] smoothed)
 
 eval instant at 2m31s increase(metric[1m] smoothed)
   {} 0.9666666666666668
+
+clear
+load 1m
+  metric 1 10 2 20 3 30 4 40
+
+# These are specific tests related to common subexpression elimination safety.
+# The range vectors created for rate(metric[1m1s] smoothed) and delta(metric[1m1s] smoothed)
+# will have different boundary values. We can not reduce to a single selector for these
+# binary operations
+
+eval instant at 30s rate(metric[1m1s] smoothed)
+  {} 0.07377049180327869
+
+eval instant at 30s delta(metric[1m1s] smoothed)
+  {} 4.5
+
+eval instant at 30s rate(metric[1m1s] smoothed) / delta(metric[1m1s] smoothed)
+  {} 0.01639344262295082
+
+eval instant at 1m rate(metric[1m1s] smoothed)
+  {} 0.14754098360655737
+
+eval instant at 1m delta(metric[1m1s] smoothed)
+  {} 9
+
+eval instant at 1m rate(metric[1m1s] smoothed) / delta(metric[1m1s] smoothed)
+  {} 0.01639344262295082
+
+eval instant at 2m rate(metric[1m1s] smoothed)
+  {} 0.03524590163934427
+
+eval instant at 2m delta(metric[1m1s] smoothed)
+  {} -7.85
+
+eval instant at 2m rate(metric[1m1s] smoothed) / delta(metric[1m1s] smoothed)
+  {} -0.004489923775712646
+
+eval instant at 182s rate(metric[1m1s] smoothed)
+  {} 0.2918032786885246
+
+eval instant at 182s delta(metric[1m1s] smoothed)
+  {} 17.133333333333333
+
+eval instant at 182s rate(metric[1m1s] smoothed) / delta(metric[1m1s] smoothed)
+  {} 0.017031319767812723
+
