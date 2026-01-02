@@ -160,8 +160,7 @@ func newChunkedIndexReader(ctx context.Context, bkt objstore.BucketReader, id ul
 	}
 
 	version := int(b[4:5][0])
-
-	if version != index.FormatV1 && version != index.FormatV2 {
+	if version != index.FormatV2 {
 		return nil, 0, errors.Errorf("not supported index file version %d of %s", version, indexFilepath)
 	}
 
