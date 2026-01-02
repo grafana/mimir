@@ -1257,6 +1257,25 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 			ingestionConcurrencyBatchSize:             40,
 			ingestionConcurrencyTargetFlushesPerShard: 20,
 		},
+
+		// Going from "batch=150,flushes=40" to "batch=40,flushes=20" the number of shards
+		// factor changed from 150/40=3,75 to 40/20=2.
+		// Theoretically we should get the same impact keep using a batch size of 150,
+		// and decreasing target flushed per shard by the same ratio:
+		"batch=150,flushes=21": {
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 21,
+		},
+
+		// Other experiments
+		"batch=150,flushes=20": {
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 20,
+		},
+		"batch=150,flushes=10": {
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 10,
+		},
 	}
 
 	totalTimeseriesWritten := totalTimeseries * replayRepetitions
