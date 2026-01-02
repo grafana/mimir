@@ -70,6 +70,9 @@ const (
 type BucketStoreStats struct {
 	// BlocksLoadedTotal is the total number of blocks currently loaded in the bucket store.
 	BlocksLoadedTotal int
+	// BlocksLoadedSizeBytes is the total size in bytes of loaded blocks on local disk.
+	// This includes index-header and sparse-index-header files, but not the actual block data in the object storage.
+	BlocksLoadedSizeBytes int64
 }
 
 // BucketStore implements the store API backed by a bucket. It loads all index
@@ -290,7 +293,8 @@ func (s *BucketStore) RemoveBlocksAndClose() error {
 // Stats returns statistics about the BucketStore instance.
 func (s *BucketStore) Stats() BucketStoreStats {
 	return BucketStoreStats{
-		BlocksLoadedTotal: s.blockSet.len(),
+		BlocksLoadedTotal:     s.blockSet.len(),
+		BlocksLoadedSizeBytes: s.blockSet.sizeBytes(),
 	}
 }
 
@@ -1871,6 +1875,28 @@ func (s *bucketBlockSet) timerange() (mint, maxt int64) {
 	return mint, maxt
 }
 
+// sizeBytes returns the total bytes size of all blocks in the set which are not closed.
+func (s *bucketBlockSet) sizeBytes() (v int64) {
+	s.forEach(func(b *bucketBlock) {
+		v += b.blockStats.SizeBytes()
+	})
+	return v
+}
+
+type bucketBlockStats struct {
+	Files []block.File
+}
+
+func (m *bucketBlockStats) SizeBytes() int64 {
+	var b int64
+	for _, f := range m.Files {
+		if f.SizeBytes > 0 {
+			b += f.SizeBytes
+		}
+	}
+	return b
+}
+
 // bucketBlock represents a block that is located in a bucket. It holds intermediate
 // state for the block on local disk.
 type bucketBlock struct {
@@ -1894,6 +1920,9 @@ type bucketBlock struct {
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
 	blockLabels labels.Labels
+	// Block's stats includes details about on-local disk files (e.g. index-header). The data is different from block.Meta above,
+	// which contains the block's metadata in the bucket.
+	blockStats bucketBlockStats
 
 	expandedPostingsPromises sync.Map
 
@@ -1925,6 +1954,12 @@ func newBucketBlock(
 		indexHeaderReader: indexHeadReader,
 		// Inject the block ID as a label to allow to match blocks by ID.
 		blockLabels: labels.FromStrings(block.BlockIDLabel, meta.ULID.String()),
+	}
+
+	b.blockStats.Files, err = collectBucketBlockFileStats(dir)
+	if err != nil {
+		// Block stats are optional.
+		level.Warn(logger).Log("msg", "failed to collect on-disk stats", "err", err)
 	}
 
 	// Get object handles for all chunk files (segment files) from meta.json, if available.
@@ -2036,6 +2071,31 @@ func (b *bucketBlock) Close() error {
 	b.pendingReaders.Wait()
 
 	return b.indexHeaderReader.Close()
+}
+
+// collectBucketBlockFileStats collects the files of the on-disk block representation.
+func collectBucketBlockFileStats(blockDir string) (res []block.File, _ error) {
+	indexHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.IndexHeaderFilename))
+	if err != nil {
+		return nil, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.IndexHeaderFilename), err)
+	}
+	mf := block.File{
+		RelPath:   indexHeaderInfo.Name(),
+		SizeBytes: indexHeaderInfo.Size(),
+	}
+	res = append(res, mf)
+
+	// Sparse index headers are optional and may not exist on disk.
+	sparseHeaderInfo, err := os.Stat(filepath.Join(blockDir, block.SparseIndexHeaderFilename))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("stat %v: %w", filepath.Join(blockDir, block.SparseIndexHeaderFilename), err)
+		}
+	} else {
+		res = append(res, block.File{RelPath: sparseHeaderInfo.Name(), SizeBytes: sparseHeaderInfo.Size()})
+	}
+
+	return res, err
 }
 
 type Part struct {

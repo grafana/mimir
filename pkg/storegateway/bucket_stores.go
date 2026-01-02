@@ -81,11 +81,12 @@ type BucketStores struct {
 	allowedTenants *util.AllowList
 
 	// Metrics.
-	syncTimes         prometheus.Histogram
-	syncLastSuccess   prometheus.Gauge
-	tenantsDiscovered prometheus.Gauge
-	tenantsSynced     prometheus.Gauge
-	blocksLoaded      *prometheus.Desc
+	syncTimes             prometheus.Histogram
+	syncLastSuccess       prometheus.Gauge
+	tenantsDiscovered     prometheus.Gauge
+	tenantsSynced         prometheus.Gauge
+	blocksLoaded          *prometheus.Desc
+	blocksLoadedSizeBytes *prometheus.Desc
 }
 
 // NewBucketStores makes a new BucketStores. After starting the returned BucketStores
@@ -161,6 +162,11 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		"cortex_bucket_store_blocks_loaded",
 		"Number of currently loaded blocks.",
 		nil, nil,
+	)
+	u.blocksLoadedSizeBytes = prometheus.NewDesc(
+		"cortex_bucket_store_blocks_loaded_size_bytes",
+		"Size in bytes used by loaded blocks of discovered tenants.",
+		[]string{"user"}, nil,
 	)
 
 	// Init the index cache.
@@ -601,28 +607,34 @@ func (u *BucketStores) closeBucketStoreAndDeleteLocalFilesForExcludedTenants(inc
 	}
 }
 
-// countBlocksLoaded returns the total number of blocks loaded, summed for all users.
-func (u *BucketStores) countBlocksLoaded() int {
-	total := 0
-
-	u.storesMu.RLock()
-	defer u.storesMu.RUnlock()
-
-	for _, store := range u.stores {
-		stats := store.Stats()
-		total += stats.BlocksLoadedTotal
-	}
-
-	return total
-}
-
 func (u *BucketStores) Describe(descs chan<- *prometheus.Desc) {
 	descs <- u.blocksLoaded
+	descs <- u.blocksLoadedSizeBytes
 }
 
 func (u *BucketStores) Collect(metrics chan<- prometheus.Metric) {
-	total := u.countBlocksLoaded()
-	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(total))
+	u.storesMu.RLock()
+	// Total number of blocks loaded, summed for all users.
+	loadedTotal := 0
+	// Block sizes by userID.
+	blockSizes := make(map[string]int64, len(u.stores))
+	for userID, store := range u.stores {
+		stats := store.Stats()
+		loadedTotal += stats.BlocksLoadedTotal
+		blockSizes[userID] = stats.BlocksLoadedSizeBytes
+	}
+	u.storesMu.RUnlock()
+
+	metrics <- prometheus.MustNewConstMetric(u.blocksLoaded, prometheus.GaugeValue, float64(loadedTotal))
+
+	for userID, size := range blockSizes {
+		metrics <- prometheus.MustNewConstMetric(
+			u.blocksLoadedSizeBytes,
+			prometheus.GaugeValue,
+			float64(size),
+			userID,
+		)
+	}
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {
