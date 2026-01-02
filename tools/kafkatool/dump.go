@@ -48,11 +48,13 @@ func (c *DumpCommand) Register(app *kingpin.Application, getKafkaClient func() *
 	exportCmd := cmd.Command("export", "Export records from a Kafka topic into a file").Action(c.doExport)
 	exportCmd.Flag("topic", "Kafka topic to dump.").Required().StringVar(&c.topic)
 	exportCmd.Flag("partition", "Kafka partition to dump.").Required().IntVar(&c.partition)
-	exportCmd.Flag("offset", "Offset to start exporting from.").Default("0").Int64Var(&c.exportOffsetStart)
+	exportCmd.Flag("offset", "Offset to start exporting from. Set it to -2 to start consuming from the end of the partition.").Default("0").Int64Var(&c.exportOffsetStart)
 	exportCmd.Flag("export-max-records", "Maximum number of records to export.").Default("1000000").IntVar(&c.exportMaxRecords)
 
 	printCmd := cmd.Command("print", "Print the write requests inside records dumped using this tool").Action(c.doPrint)
 	printCmd.Flag("format", "Output format").Default("pretty").EnumVar(&c.printFormat, "pretty", "json")
+
+	cmd.Command("analyse", "Analyse dump file and compute statistics").Action(c.doAnalyse)
 }
 
 type key int
@@ -137,7 +139,7 @@ func (c *DumpCommand) doImport(*kingpin.ParseContext) error {
 
 	produceErr := atomic.NewError(nil)
 
-	parseErr := c.parseDumpFile(
+	parseErr := c.parseRecordsFromDumpFile(
 		func(_ int, record *kgo.Record) {
 			client.Produce(context.Background(), record, func(record *kgo.Record, err error) {
 				recordCount.Inc()
@@ -171,21 +173,12 @@ func (c *DumpCommand) doImport(*kingpin.ParseContext) error {
 }
 
 func (c *DumpCommand) doPrint(*kingpin.ParseContext) error {
-	return c.parseDumpFile(
-		func(recordIdx int, record *kgo.Record) {
-			req := mimirpb.PreallocWriteRequest{}
-			defer mimirpb.ReuseSlice(req.Timeseries)
-			version := ingest.ParseRecordVersion(record)
-			err := ingest.DeserializeRecordContent(record.Value, &req, version)
-			if err != nil {
-				c.printer.PrintLine(fmt.Sprintf("failed to unmarshal write request from record %d: %v", recordIdx, err))
-				return
-			}
-
+	return c.parseWriteRequestsFromDumpFile(
+		func(recordIdx int, record *kgo.Record, req *mimirpb.WriteRequest) {
 			switch c.printFormat {
 			case "json":
 				// Print the entire write request as json.
-				lineBytes, err := json.Marshal(req.WriteRequest)
+				lineBytes, err := json.Marshal(req)
 				if err != nil {
 					c.printer.PrintLine(fmt.Sprintf("failed to marshal write request: %v", err))
 					return
@@ -210,11 +203,12 @@ func (c *DumpCommand) doPrint(*kingpin.ParseContext) error {
 			}
 		},
 		func(recordIdx int, err error) {
-			c.printer.PrintLine(fmt.Sprintf("corrupted JSON record %d: %v", recordIdx, err))
-		})
+			c.printer.PrintLine(fmt.Sprintf("corrupted record %d: %v", recordIdx, err))
+		},
+	)
 }
 
-func (c *DumpCommand) parseDumpFile(onRecordParsed func(recordIdx int, record *kgo.Record), onRecordCorrupted func(recordIdx int, err error)) error {
+func (c *DumpCommand) parseRecordsFromDumpFile(onRecordParsed func(recordIdx int, record *kgo.Record), onRecordCorrupted func(recordIdx int, err error)) error {
 	separator := bufio.NewScanner(c.inOutFile)
 	separator.Buffer(make([]byte, 10_000_000), 10_000_000) // 10MB buffer because we can have large records
 
@@ -241,4 +235,28 @@ func (c *DumpCommand) parseDumpFile(onRecordParsed func(recordIdx int, record *k
 	}
 
 	return nil
+}
+
+// parseWriteRequestsFromDumpFile parses all records from the dump file and deserializes each WriteRequest.
+// It calls onRequestParsed for each successfully parsed request, and onCorrupted when either the JSON
+// record is malformed or the WriteRequest cannot be deserialized.
+func (c *DumpCommand) parseWriteRequestsFromDumpFile(
+	onParsed func(recordIdx int, record *kgo.Record, req *mimirpb.WriteRequest),
+	onCorrupted func(recordIdx int, err error),
+) error {
+	return c.parseRecordsFromDumpFile(
+		func(recordIdx int, record *kgo.Record) {
+			req := mimirpb.PreallocWriteRequest{}
+			defer mimirpb.ReuseSlice(req.Timeseries)
+
+			version := ingest.ParseRecordVersion(record)
+			if err := ingest.DeserializeRecordContent(record.Value, &req, version); err != nil {
+				onCorrupted(recordIdx, fmt.Errorf("failed to deserialize write request: %w", err))
+				return
+			}
+
+			onParsed(recordIdx, record, &req.WriteRequest)
+		},
+		onCorrupted,
+	)
 }
