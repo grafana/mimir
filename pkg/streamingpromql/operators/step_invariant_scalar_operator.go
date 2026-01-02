@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
+	operatormetrics "github.com/grafana/mimir/pkg/streamingpromql/operators/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -17,13 +18,15 @@ type StepInvariantScalarOperator struct {
 	inner                    types.ScalarOperator
 	originalTimeRange        types.QueryTimeRange
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	metricsTracker           *operatormetrics.StepInvariantExpressionMetricsTracker
 }
 
-func NewStepInvariantScalarOperator(op types.ScalarOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *StepInvariantScalarOperator {
+func NewStepInvariantScalarOperator(op types.ScalarOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, metricsTracker *operatormetrics.StepInvariantExpressionMetricsTracker) *StepInvariantScalarOperator {
 	return &StepInvariantScalarOperator{
 		inner:                    op,
 		originalTimeRange:        originalTimeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		metricsTracker:           metricsTracker,
 	}
 }
 
@@ -36,6 +39,7 @@ func (s *StepInvariantScalarOperator) Close() {
 }
 
 func (s *StepInvariantScalarOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	s.metricsTracker.OnStepInvariantNodeObserved()
 	return s.inner.Prepare(ctx, params)
 }
 
@@ -63,6 +67,8 @@ func (s *StepInvariantScalarOperator) GetValues(ctx context.Context) (types.Scal
 		if err != nil {
 			return types.ScalarData{}, err
 		}
+
+		s.metricsTracker.OnStepInvariantStepsSaved(operatormetrics.FPoint, s.originalTimeRange.StepCount)
 
 		floats = append(floats, data.Samples[0])
 
