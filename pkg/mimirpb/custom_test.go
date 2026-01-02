@@ -240,6 +240,9 @@ func TestHistogram_BucketsCount(t *testing.T) {
 }
 
 func TestInstrumentRefLeaks(t *testing.T) {
+	prev := debug.SetPanicOnFault(true)
+	defer debug.SetPanicOnFault(prev)
+
 	src := WriteRequest{Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
 		Labels:  []UnsafeMutableLabel{{Name: "labelName", Value: "labelValue"}},
 		Samples: []Sample{{TimestampMs: 1234, Value: 1337}},
@@ -259,7 +262,6 @@ func TestInstrumentRefLeaks(t *testing.T) {
 
 	req.FreeBuffer() // leakingLabelName becomes a leak here
 
-	debug.SetPanicOnFault(true)
 	var recovered any
 	func() {
 		defer func() {
