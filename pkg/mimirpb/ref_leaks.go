@@ -92,7 +92,9 @@ func (b *instrumentLeaksBuf) Ref() {
 func (b *instrumentLeaksBuf) Free() {
 	b.Buffer.Free()
 
-	if b.refCount.Dec() == 0 {
+	refCount := b.refCount.Dec()
+	switch {
+	case refCount == 0:
 		buf := b.ReadOnlyData()
 		ptr := unsafe.SliceData(buf)
 		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
@@ -109,6 +111,8 @@ func (b *instrumentLeaksBuf) Free() {
 			}
 		}
 		unmap(allPages, b.inflightInstrumentedBytes)
+	case refCount < 0:
+		panic("instrumentLeaksBuf reference count below zero")
 	}
 }
 
