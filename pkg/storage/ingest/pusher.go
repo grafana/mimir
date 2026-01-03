@@ -107,12 +107,20 @@ func (c PusherConsumer) Consume(ctx context.Context, records iter.Seq[*kgo.Recor
 		offset   int64
 	}
 
-	recordsChannel := make(chan parsedRecord)
+	// Buffer the channel to allow the unmarshal goroutine to work ahead while the main loop
+	// is busy pushing to storage. Without buffering, the goroutine blocks on send after each
+	// record, preventing any real pipelining. With a buffer, unmarshalling can overlap with
+	// storage operations, hiding deserialization latency.
+	//
+	// On cancellation (e.g., pushToStorage error), any records remaining in the buffer won't
+	// be processed. This is acceptable because errors trigger a retry of the entire batch,
+	// and the memory will be freed by GC.
+	recordsChannel := make(chan parsedRecord, 128)
 
 	// Create a cancellable context to let the unmarshalling goroutine know when to stop.
 	ctx, cancel := context.WithCancelCause(ctx)
 
-	// Now, unmarshal the records into the channel.
+	// Unmarshal records in a separate goroutine, sending to the buffered channel.
 	go func(unmarshalCtx context.Context, records iter.Seq[*kgo.Record], ch chan<- parsedRecord) {
 		defer close(ch)
 
@@ -368,21 +376,28 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 
 	idealShards := c.idealShardsFor(userID)
 	var p PusherCloser
-	if idealShards <= 1 {
-		// If we're going to push only one shard, then we can use the sequential pusher.
-		// This means that pushes will now be synchronous.
-		// The idea is that if we don't see a reason to parallelize,
-		// then the pushes to this pusher are likely small in absolute terms and speeding them up will have marginal gains.
-		// So we choose the lower overhead and simpler sequential pusher.
-		p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
-	} else {
-		p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
-	}
+	/*
+		if idealShards <= 1 {
+			// If we're going to push only one shard, then we can use the sequential pusher.
+			// This means that pushes will now be synchronous.
+			// The idea is that if we don't see a reason to parallelize,
+			// then the pushes to this pusher are likely small in absolute terms and speeding them up will have marginal gains.
+			// So we choose the lower overhead and simpler sequential pusher.
+			p = newSequentialStoragePusherWithErrorHandler(c.metrics, c.upstreamPusher, c.errorHandler)
+		} else {
+			p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
+		}
+	*/
+
+	// TODO TEST
+	p = newParallelStorageShards(c.metrics, c.errorHandler, idealShards, c.batchSize, c.queueCapacity, c.upstreamPusher)
+
 	c.pushers[userID+"|"+requestSource.String()] = p
 	return p
 }
 
 // idealShardsFor returns the number of shards that should be used for the given userID.
+// The returned number of shards is guaranteed to be between 1 and maxShards.
 func (c *parallelStoragePusher) idealShardsFor(userID string) int {
 	// Get bytes per sample: from tracker if dynamic is enabled, otherwise use static value.
 	var bytesPerSample int
