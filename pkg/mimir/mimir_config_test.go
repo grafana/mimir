@@ -10,7 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -240,7 +240,7 @@ func (c *customExtendedConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	type plain customExtendedConfig
-	return value.DecodeWithOptions((*plain)(c), yaml.DecodeOptions{KnownFields: true})
+	return value.Load((*plain)(c), yaml.WithKnownFields(true))
 }
 
 func TestMimirConfigCanBeInlined(t *testing.T) {

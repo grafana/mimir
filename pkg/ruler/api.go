@@ -23,8 +23,9 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
+	"go.yaml.in/yaml/v4"
 	"google.golang.org/api/googleapi"
-	"gopkg.in/yaml.v3"
+	yamlv3 "gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -661,8 +662,9 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 	// Prometheus' validation methods require access to the original YAML nodes to produce errors with
 	// position (line and column) information, but we want to work with the non-YAML rulefmt.RuleGroup type.
 	// See https://github.com/prometheus/prometheus/pull/16252 for more discussion of this.
+	// Note: We must use yaml.v3 here because rulefmt.RuleGroupNode contains yaml.v3's yaml.Node types.
 	node := rulefmt.RuleGroupNode{}
-	if err = yaml.Unmarshal(payload, &node); err != nil {
+	if err = yamlv3.Unmarshal(payload, &node); err != nil {
 		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
 		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
 		return

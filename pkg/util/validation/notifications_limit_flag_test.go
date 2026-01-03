@@ -13,7 +13,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestNotificationLimitsMap(t *testing.T) {
@@ -97,7 +97,7 @@ func TestUnknownIntegrationWhenLoadingYaml(t *testing.T) {
 
 	err := yaml.Unmarshal([]byte(yamlInput), &s)
 	require.NotNil(t, err)
-	require.Equal(t, "unknown integration name: unknown_integration", err.Error())
+	require.Equal(t, "yaml: unmarshal errors:\n  line 2: unknown integration name: unknown_integration", err.Error())
 }
 
 func TestWrongYamlStructureWhenLoadingYaml(t *testing.T) {
