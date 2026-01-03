@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"runtime/trace"
 	"slices"
 	"strconv"
 	"sync"
@@ -676,7 +677,10 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 		return nil, err
 	}
 
-	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	var rejected []uint64
+	trace.WithRegion(context.Background(), fmt.Sprintf("trackSeries:user=%s", req.UserID), func() {
+		rejected, err = p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	})
 	if err != nil {
 		return nil, err
 	}
