@@ -82,6 +82,12 @@ message TimeSeries {
   // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
   // Zero value means value not set. If you need to use exactly zero value for
   // the timestamp, use 1 millisecond before or after.
+  //
+  // In https://github.com/prometheus/prometheus/pull/17411 this field was deprecated
+  // in favor of start_timestamp on samples/histograms. This was done in a compatibility
+  // breaking manner. In order to preserve an easier transition across the breaking change,
+  // we keep the old field around for older clients.
+  // In general, prefer start_timestamp fields instead.
   int64 created_timestamp = 6;
 }
 
@@ -94,6 +100,17 @@ message Sample {
   // Fields order MUST match promql.FPoint so that we can cast types between them.
   int64 timestamp_ms = 2;
   double value = 1;
+  // Copy from remote write 2.0.
+  //
+  // start_timestamp represents an optional start timestamp for the sample,
+  // in ms format. This information is typically used for counter, histogram (cumulative)
+  // or delta type metrics.
+  //
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 3;
 }
 
 message MetricMetadata {
@@ -187,6 +204,19 @@ message Histogram {
   // Used only for converting from OpenTelemetry to Prometheus internally and
   // to unmarshal Remote Write 2.0 messages.
   repeated double custom_values = 16;
+
+  // Copy from Remote Write 2.0.
+  //
+  // start_timestamp represents an optional start timestamp for the histogram sample,
+  // in ms format. The start timestamp represents the time when the histogram
+  // started counting, which can increase the accuracy of certain processing and
+  // query semantics (e.g. rates).
+  //
+  // Note that the "optional" keyword is omitted due to
+  // https://cloud.google.com/apis/design/design_patterns.md#optional_primitive_fields
+  // Zero value means value not set. If you need to use exactly zero value for
+  // the timestamp, use 1 millisecond before or after.
+  int64 start_timestamp = 17;
 }
 
 // FloatHistogram is based on https://github.com/prometheus/prometheus/blob/main/model/histogram/float_histogram.go.
