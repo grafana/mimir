@@ -1140,7 +1140,8 @@ func TestParallelStoragePusher(t *testing.T) {
 			}
 
 			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 5, 500, 80, logger)
+			tracker := newBytesPerSampleTracker(500, 100, 1000)
+			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 5, 500, tracker, 80, logger)
 
 			// Process requests
 			for _, req := range tc.requests {
@@ -1220,13 +1221,15 @@ func TestParallelStoragePusher_idealShardsFor(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
+			// Create a tracker with the test's bytesPerSample as default and wide min/max bounds.
+			tracker := newBytesPerSampleTracker(tc.bytesPerSample, 1, 10000)
 			psp := &parallelStoragePusher{
-				bytesPerTenant: map[string]int{"tenant1": tc.bytesPerTenant},
-				bytesPerSample: tc.bytesPerSample,
-				batchSize:      tc.batchSize,
-				targetFlushes:  tc.targetFlushes,
-				maxShards:      tc.maxShards,
-				metrics:        newStoragePusherMetrics(prometheus.NewPedanticRegistry()),
+				bytesPerTenant:        map[string]int{"tenant1": tc.bytesPerTenant},
+				dynamicBytesPerSample: tracker,
+				batchSize:             tc.batchSize,
+				targetFlushes:         tc.targetFlushes,
+				maxShards:             tc.maxShards,
+				metrics:               newStoragePusherMetrics(prometheus.NewPedanticRegistry()),
 			}
 
 			idealShards := psp.idealShardsFor("tenant1")
@@ -1297,7 +1300,9 @@ func TestParallelStoragePusher_Fuzzy(t *testing.T) {
 	}
 
 	metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-	psp := newParallelStoragePusher(metrics, pusher, bytesPerTenant, 0, maxShards, batchSize, queueCapacity, bytesPerSample, targetFlushes, nil)
+	// Use a tracker with low min/max values to match the test's bytesPerSample expectations.
+	tracker := newBytesPerSampleTracker(bytesPerSample, 1, 1000)
+	psp := newParallelStoragePusher(metrics, pusher, bytesPerTenant, 0, maxShards, batchSize, queueCapacity, bytesPerSample, tracker, targetFlushes, nil)
 
 	// Keep pushing batches of write requests until we hit an error.
 	for batchID := 0; batchID < numWriteRequests; batchID++ {

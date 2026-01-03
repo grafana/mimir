@@ -33,7 +33,8 @@ var (
 	ErrInvalidMaxConsumerLagAtStartup    = fmt.Errorf("the configured max consumer lag at startup must greater or equal than the configured target consumer lag")
 	ErrInconsistentSASLCredentials       = fmt.Errorf("the SASL username and password must be both configured to enable SASL authentication")
 	ErrInvalidIngestionConcurrencyMax    = errors.New("ingest-storage.kafka.ingestion-concurrency-max must either be set to 0 or to a value greater than 0")
-	ErrInvalidIngestionConcurrencyParams = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
+	ErrInvalidIngestionConcurrencyParams                = errors.New("ingest-storage.kafka.ingestion-concurrency-queue-capacity, ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample, ingest-storage.kafka.ingestion-concurrency-batch-size and ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard must be greater than 0")
+	ErrInvalidDynamicBytesPerSampleParams               = errors.New("ingest-storage.kafka.ingestion-concurrency-dynamic-bytes-per-sample-min must be greater than 0 and ingest-storage.kafka.ingestion-concurrency-dynamic-bytes-per-sample-max must be greater than or equal to min")
 	ErrInvalidAutoCreateTopicParams      = errors.New("ingest-storage.kafka.auto-create-topic-default-partitions must be -1 or greater than 0 when ingest-storage.kafka.auto-create-topic-default-partitions=true")
 	ErrInvalidFetchMaxWait               = errors.New("the Kafka fetch max wait must be between 5s and 30s")
 	ErrInvalidRecordVersion              = errors.New("invalid record format version")
@@ -142,6 +143,19 @@ type KafkaConfig struct {
 	// Our data indicates that the average sample size is somewhere between ~250 and ~500 bytes. We'll use 500 bytes as a conservative estimate.
 	IngestionConcurrencyEstimatedBytesPerSample int `yaml:"ingestion_concurrency_estimated_bytes_per_sample"`
 
+	// IngestionConcurrencyDynamicBytesPerSampleEnabled enables dynamic bytes per sample estimation.
+	// When enabled, the actual bytes per sample is tracked per tenant as a 1-minute moving average
+	// and used instead of IngestionConcurrencyEstimatedBytesPerSample.
+	IngestionConcurrencyDynamicBytesPerSampleEnabled bool `yaml:"ingestion_concurrency_dynamic_bytes_per_sample_enabled"`
+
+	// IngestionConcurrencyDynamicBytesPerSampleMin is the minimum bytes per sample when dynamic estimation is enabled.
+	// This protects against underestimation leading to too many shards.
+	IngestionConcurrencyDynamicBytesPerSampleMin int `yaml:"ingestion_concurrency_dynamic_bytes_per_sample_min"`
+
+	// IngestionConcurrencyDynamicBytesPerSampleMax is the maximum bytes per sample when dynamic estimation is enabled.
+	// This protects against overestimation leading to too few shards.
+	IngestionConcurrencyDynamicBytesPerSampleMax int `yaml:"ingestion_concurrency_dynamic_bytes_per_sample_max"`
+
 	// The fetch backoff config to use in the concurrent fetchers (when enabled). This setting
 	// is just used to change the default backoff in tests.
 	concurrentFetchersFetchBackoffConfig backoff.Config `yaml:"-"`
@@ -202,6 +216,9 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 	f.IntVar(&cfg.IngestionConcurrencyQueueCapacity, prefix+"ingestion-concurrency-queue-capacity", 5, "The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyTargetFlushesPerShard, prefix+"ingestion-concurrency-target-flushes-per-shard", 80, "The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
 	f.IntVar(&cfg.IngestionConcurrencyEstimatedBytesPerSample, prefix+"ingestion-concurrency-estimated-bytes-per-sample", 500, "The estimated number of bytes a sample has at time of ingestion. This value is used to estimate the timeseries without decompressing them. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.BoolVar(&cfg.IngestionConcurrencyDynamicBytesPerSampleEnabled, prefix+"ingestion-concurrency-dynamic-bytes-per-sample-enabled", false, "When enabled, the actual bytes per sample is tracked per tenant as a 1-minute moving average and used instead of the static estimated value. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0.")
+	f.IntVar(&cfg.IngestionConcurrencyDynamicBytesPerSampleMin, prefix+"ingestion-concurrency-dynamic-bytes-per-sample-min", 100, "The minimum bytes per sample when dynamic estimation is enabled. Protects against underestimation leading to too many shards. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-dynamic-bytes-per-sample-enabled is true.")
+	f.IntVar(&cfg.IngestionConcurrencyDynamicBytesPerSampleMax, prefix+"ingestion-concurrency-dynamic-bytes-per-sample-max", 1000, "The maximum bytes per sample when dynamic estimation is enabled. Protects against overestimation leading to too few shards. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-dynamic-bytes-per-sample-enabled is true.")
 }
 
 func (cfg *KafkaConfig) Validate() error {
@@ -264,6 +281,12 @@ func (cfg *KafkaConfig) Validate() error {
 	if cfg.IngestionConcurrencyMax >= 1 {
 		if cfg.IngestionConcurrencyBatchSize <= 0 || cfg.IngestionConcurrencyQueueCapacity <= 0 || cfg.IngestionConcurrencyEstimatedBytesPerSample <= 0 || cfg.IngestionConcurrencyTargetFlushesPerShard <= 0 {
 			return ErrInvalidIngestionConcurrencyParams
+		}
+
+		if cfg.IngestionConcurrencyDynamicBytesPerSampleEnabled {
+			if cfg.IngestionConcurrencyDynamicBytesPerSampleMin <= 0 || cfg.IngestionConcurrencyDynamicBytesPerSampleMax < cfg.IngestionConcurrencyDynamicBytesPerSampleMin {
+				return ErrInvalidDynamicBytesPerSampleParams
+			}
 		}
 	}
 

@@ -1157,6 +1157,7 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 
 	var records []dumpRecord
 	var totalTimeseries int
+	var minRecordTimestamp, maxRecordTimestamp time.Time
 	tenantIDs := make(map[string]struct{})
 
 	scanner := bufio.NewScanner(file)
@@ -1165,6 +1166,14 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 		record := &kgo.Record{}
 		err := json.Unmarshal(scanner.Bytes(), record)
 		require.NoError(t, err)
+
+		// Track min/max record timestamps.
+		if minRecordTimestamp.IsZero() || record.Timestamp.Before(minRecordTimestamp) {
+			minRecordTimestamp = record.Timestamp
+		}
+		if maxRecordTimestamp.IsZero() || record.Timestamp.After(maxRecordTimestamp) {
+			maxRecordTimestamp = record.Timestamp
+		}
 
 		// Deserialize the WriteRequest from the record.
 		prealloc := mimirpb.PreallocWriteRequest{}
@@ -1182,7 +1191,8 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 	}
 	require.NoError(t, scanner.Err())
 
-	t.Logf("Loaded %d records with %d timeseries from dump file with %d unique tenants", len(records), totalTimeseries, len(tenantIDs))
+	recordTimeSpan := maxRecordTimestamp.Sub(minRecordTimestamp)
+	t.Logf("Loaded %d records with %d timeseries from dump file with %d unique tenants (time span: %s)", len(records), totalTimeseries, len(tenantIDs), recordTimeSpan)
 
 	// Create a fake Kafka cluster.
 	_, kafkaAddr := testkafka.CreateCluster(t, 1, kafkaTopic)
@@ -1248,42 +1258,85 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 	type testConfig struct {
 		ingestionConcurrencyBatchSize             int
 		ingestionConcurrencyTargetFlushesPerShard int
+		dynamicBytesPerSampleEnabled              bool
 	}
 
-	testConfigs := map[string]testConfig{
-		"batch=150,flushes=40": {
+	testConfigs := []testConfig{
+		// Current default values in Grafana Cloud.
+		{
 			ingestionConcurrencyBatchSize:             150,
 			ingestionConcurrencyTargetFlushesPerShard: 40,
 		},
-		"batch=40,flushes=20": {
+		// Current overrides in the Mimir cell we're investigating.
+		{
 			ingestionConcurrencyBatchSize:             40,
 			ingestionConcurrencyTargetFlushesPerShard: 20,
 		},
-
-		// Going from "batch=150,flushes=40" to "batch=40,flushes=20" the number of shards
-		// factor changed from 150/40=3,75 to 40/20=2.
-		// Theoretically we should get the same impact keep using a batch size of 150,
-		// and decreasing target flushed per shard by the same ratio:
-		"batch=150,flushes=21": {
-			ingestionConcurrencyBatchSize:             150,
-			ingestionConcurrencyTargetFlushesPerShard: 21,
-		},
-
-		// Other experiments
-		"batch=150,flushes=20": {
+		// Smaller flushes per shard (that means a higher number of shards).
+		{
 			ingestionConcurrencyBatchSize:             150,
 			ingestionConcurrencyTargetFlushesPerShard: 20,
 		},
-		"batch=150,flushes=10": {
+		{
 			ingestionConcurrencyBatchSize:             150,
 			ingestionConcurrencyTargetFlushesPerShard: 10,
+		},
+		// Smaller batch size, that means smaller batches and a higher number of shards.
+		{
+			ingestionConcurrencyBatchSize:             75,
+			ingestionConcurrencyTargetFlushesPerShard: 40,
+		},
+		{
+			ingestionConcurrencyBatchSize:             35,
+			ingestionConcurrencyTargetFlushesPerShard: 40,
+		},
+		// Bigger batch size, that means bigger batches and a lower number of shards.
+		{
+			ingestionConcurrencyBatchSize:             300,
+			ingestionConcurrencyTargetFlushesPerShard: 40,
+		},
+		{
+			ingestionConcurrencyBatchSize:             600,
+			ingestionConcurrencyTargetFlushesPerShard: 40,
+		},
+		// Bigger batch size, but adjusting flushes per shard to keep the same number of shards compared
+		// to the default Grafana Cloud settings (batch=150 and flushes=40).
+		{
+			ingestionConcurrencyBatchSize:             300,
+			ingestionConcurrencyTargetFlushesPerShard: 20,
+		},
+		{
+			ingestionConcurrencyBatchSize:             600,
+			ingestionConcurrencyTargetFlushesPerShard: 10,
+		},
+		// Dynamic bytes per sample enabled.
+		{
+			dynamicBytesPerSampleEnabled:              true,
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 40,
+		},
+		{
+			dynamicBytesPerSampleEnabled:              true,
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 20,
+		},
+		{
+			dynamicBytesPerSampleEnabled:              true,
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 10,
+		},
+		{
+			dynamicBytesPerSampleEnabled:              true,
+			ingestionConcurrencyBatchSize:             150,
+			ingestionConcurrencyTargetFlushesPerShard: 1,
 		},
 	}
 
 	totalTimeseriesWritten := totalTimeseries * replayRepetitions
 
-	for configName, testCfg := range testConfigs {
-		t.Run(configName, func(t *testing.T) {
+	for _, testCfg := range testConfigs {
+		testName := fmt.Sprintf("batch=%d,flushes=%d,dynamic=%v", testCfg.ingestionConcurrencyBatchSize, testCfg.ingestionConcurrencyTargetFlushesPerShard, testCfg.dynamicBytesPerSampleEnabled)
+		t.Run(testName, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 
 			// Configure the ingester with Kafka settings.
@@ -1295,6 +1348,7 @@ func TestIngester_ReplayFromKafka_RealData(t *testing.T) {
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
 			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = testCfg.ingestionConcurrencyTargetFlushesPerShard
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyDynamicBytesPerSampleEnabled = testCfg.dynamicBytesPerSampleEnabled
 
 			// Start consuming from the beginning so the ingester replays all records at startup.
 			cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"

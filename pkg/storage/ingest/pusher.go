@@ -61,6 +61,10 @@ type PusherConsumer struct {
 	kafkaConfig KafkaConfig
 
 	pusher Pusher
+
+	// dynamicBytesPerSample tracks actual bytes per sample per tenant as a moving average.
+	// When nil, the static IngestionConcurrencyEstimatedBytesPerSample config value is used.
+	dynamicBytesPerSample *bytesPerSampleTracker
 }
 
 // NewPusherConsumer creates a new PusherConsumer instance.
@@ -68,11 +72,22 @@ func NewPusherConsumer(pusher Pusher, kafkaCfg KafkaConfig, metrics *PusherConsu
 	// The layer below (parallelStoragePusher, parallelStorageShards, sequentialStoragePusher) will return all errors they see
 	// and potentially ingesting a batch if they encounter any error.
 	// We can safely ignore client errors and continue ingesting. We abort ingesting if we get any other error.
+
+	var dynamicBytesPerSample *bytesPerSampleTracker
+	if kafkaCfg.IngestionConcurrencyDynamicBytesPerSampleEnabled {
+		dynamicBytesPerSample = newBytesPerSampleTracker(
+			kafkaCfg.IngestionConcurrencyEstimatedBytesPerSample,
+			kafkaCfg.IngestionConcurrencyDynamicBytesPerSampleMin,
+			kafkaCfg.IngestionConcurrencyDynamicBytesPerSampleMax,
+		)
+	}
+
 	return &PusherConsumer{
-		pusher:      pusher,
-		kafkaConfig: kafkaCfg,
-		metrics:     metrics,
-		logger:      logger,
+		pusher:                pusher,
+		kafkaConfig:           kafkaCfg,
+		metrics:               metrics,
+		logger:                logger,
+		dynamicBytesPerSample: dynamicBytesPerSample,
 	}
 }
 
@@ -189,6 +204,7 @@ func (c PusherConsumer) newStorageWriter(bytesPerTenant map[string]int) PusherCl
 		c.kafkaConfig.IngestionConcurrencyBatchSize,
 		c.kafkaConfig.IngestionConcurrencyQueueCapacity,
 		c.kafkaConfig.IngestionConcurrencyEstimatedBytesPerSample,
+		c.dynamicBytesPerSample,
 		c.kafkaConfig.IngestionConcurrencyTargetFlushesPerShard,
 		c.logger,
 	)
@@ -266,25 +282,38 @@ type parallelStoragePusher struct {
 	bytesPerTenant map[string]int
 
 	queueCapacity   int
-	bytesPerSample  int
 	targetFlushes   int
 	numActiveShards int
+
+	// dynamicBytesPerSample tracks actual bytes per sample per tenant as a moving average.
+	// When nil, staticBytesPerSample is used instead.
+	dynamicBytesPerSample *bytesPerSampleTracker
+
+	// staticBytesPerSample is used when dynamicBytesPerSample is nil (dynamic disabled).
+	staticBytesPerSample int
+
+	// actualTimeseriesPerTenant tracks the actual number of timeseries per tenant
+	// to compare with the estimated timeseries based on bytesPerSample.
+	actualTimeseriesPerTenant map[string]int
 }
 
 // newParallelStoragePusher creates a new parallelStoragePusher instance.
-func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, loggerSampleRate int64, maxShards int, batchSize int, queueCapacity int, bytesPerSample int, targetFlushes int, logger log.Logger) *parallelStoragePusher {
+// dynamicBytesPerSample can be nil when dynamic bytes per sample is disabled, in which case staticBytesPerSample is used.
+func newParallelStoragePusher(metrics *storagePusherMetrics, pusher Pusher, bytesPerTenant map[string]int, loggerSampleRate int64, maxShards int, batchSize int, queueCapacity int, staticBytesPerSample int, dynamicBytesPerSample *bytesPerSampleTracker, targetFlushes int, logger log.Logger) *parallelStoragePusher {
 	return &parallelStoragePusher{
-		logger:         log.With(logger, "component", "parallel-storage-pusher"),
-		pushers:        make(map[string]PusherCloser),
-		upstreamPusher: pusher,
-		maxShards:      maxShards,
-		bytesPerTenant: bytesPerTenant,
-		errorHandler:   newPushErrorHandler(metrics, util_log.NewSampler(loggerSampleRate), logger),
-		batchSize:      batchSize,
-		queueCapacity:  queueCapacity,
-		bytesPerSample: bytesPerSample,
-		targetFlushes:  targetFlushes,
-		metrics:        metrics,
+		logger:                    log.With(logger, "component", "parallel-storage-pusher"),
+		pushers:                   make(map[string]PusherCloser),
+		upstreamPusher:            pusher,
+		maxShards:                 maxShards,
+		bytesPerTenant:            bytesPerTenant,
+		errorHandler:              newPushErrorHandler(metrics, util_log.NewSampler(loggerSampleRate), logger),
+		batchSize:                 batchSize,
+		queueCapacity:             queueCapacity,
+		targetFlushes:             targetFlushes,
+		dynamicBytesPerSample:     dynamicBytesPerSample,
+		staticBytesPerSample:      staticBytesPerSample,
+		metrics:                   metrics,
+		actualTimeseriesPerTenant: make(map[string]int),
 	}
 }
 
@@ -294,6 +323,9 @@ func (c *parallelStoragePusher) PushToStorageAndReleaseRequest(ctx context.Conte
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to extract tenant ID from context", "err", err)
 	}
+
+	// Track actual timeseries count for accuracy comparison with bytesPerSample estimate.
+	c.actualTimeseriesPerTenant[userID] += len(wr.Timeseries)
 
 	shards := c.shardsFor(userID, wr.Source)
 	return shards.PushToStorageAndReleaseRequest(ctx, wr)
@@ -305,6 +337,20 @@ func (c *parallelStoragePusher) Close() []error {
 	for _, p := range c.pushers {
 		errs = append(errs, p.Close()...)
 	}
+
+	// Only record bytes per sample if:
+	// 1. Dynamic tracking is enabled (tracker is not nil)
+	// 2. There were no errors during push (if there were errors, the timeseries count
+	//    may be inaccurate as some timeseries may not have been processed)
+	if c.dynamicBytesPerSample != nil && len(errs) == 0 {
+		for tenantID, actualTimeseries := range c.actualTimeseriesPerTenant {
+			bytesForTenant := c.bytesPerTenant[tenantID]
+			if actualTimeseries > 0 && bytesForTenant > 0 {
+				c.dynamicBytesPerSample.RecordSamples(tenantID, bytesForTenant, actualTimeseries)
+			}
+		}
+	}
+
 	c.metrics.shardsPerPush.Observe(float64(c.numActiveShards))
 	c.metrics.pushersPerPush.Observe(float64(len(c.pushers)))
 	clear(c.pushers)
@@ -338,8 +384,16 @@ func (c *parallelStoragePusher) shardsFor(userID string, requestSource mimirpb.W
 
 // idealShardsFor returns the number of shards that should be used for the given userID.
 func (c *parallelStoragePusher) idealShardsFor(userID string) int {
+	// Get bytes per sample: from tracker if dynamic is enabled, otherwise use static value.
+	var bytesPerSample int
+	if c.dynamicBytesPerSample != nil {
+		bytesPerSample = c.dynamicBytesPerSample.GetBytesPerSample(userID)
+	} else {
+		bytesPerSample = c.staticBytesPerSample
+	}
+
 	// First, determine the number of timeseries we expect to receive based on the bytes of WriteRequest's we received.
-	expectedTimeseries := c.bytesPerTenant[userID] / c.bytesPerSample
+	expectedTimeseries := c.bytesPerTenant[userID] / bytesPerSample
 
 	c.metrics.estimatedTimeseries.Add(float64(expectedTimeseries))
 
