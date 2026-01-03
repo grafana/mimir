@@ -678,7 +678,7 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 	}
 
 	var rejected []uint64
-	trace.WithRegion(context.Background(), fmt.Sprintf("trackSeries:user=%s", req.UserID), func() {
+	trace.WithRegion(context.Background(), "trackSeries", func() {
 		rejected, err = p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	})
 	if err != nil {
