@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -247,10 +246,6 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 
 	err := ring.DoBatchWithOptions(ctx, TrackSeriesOp, partitionBatchRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
-			// Add jitter to spread RPCs across ~200ms to avoid a storm of concurrent requests.
-			jitter := util.DurationWithJitter(100*time.Millisecond, 1.0)
-			time.Sleep(jitter)
-
 			// The partition ID is stored in the ring.InstanceDesc.Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
 			if err != nil {
