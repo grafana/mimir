@@ -57,15 +57,16 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	ctx := context.Background()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	enableDelayedNameRemoval := false
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {
-		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, 1, nil)
+		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, 1, nil)
 	}
 
 	createQueryRequestWithBatchSize := func(expr string, timeRange types.QueryTimeRange, batchSize uint64) *prototypes.Any {
-		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, batchSize, nil)
+		return createQueryRequestForSpecificNodes(t, ctx, planner, expr, timeRange, enableDelayedNameRemoval, batchSize, nil)
 	}
 
 	createQueryRequestWithNoNodes := func() *prototypes.Any {
@@ -131,7 +132,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 		},
 
 		"request with the same node provided multiple times": {
-			req: createQueryRequestForSpecificNodes(t, ctx, planner, `my_series`, types.NewInstantQueryTimeRange(startT), 1, nil, nil),
+			req: createQueryRequestForSpecificNodes(t, ctx, planner, `my_series`, types.NewInstantQueryTimeRange(startT), enableDelayedNameRemoval, 1, nil, nil),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newErrorMessage(mimirpb.QUERY_ERROR_TYPE_BAD_DATA, `request contains at least one node multiple times: have 2 requested node(s), but only 1 unique node(s)`),
 			},
@@ -325,6 +326,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				t, ctx, planner,
 				`max_over_time(my_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				enableDelayedNameRemoval,
 				1,
 				[]string{"FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
 			),
@@ -497,6 +499,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				t, ctx, planner,
 				`my_series + my_other_series`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				enableDelayedNameRemoval,
 				1,
 				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_series"}`},
 				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_other_series"}`},
@@ -559,6 +562,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				t, ctx, planner,
 				`my_three_item_series{idx=~"(0|1|2)"} + my_three_item_series{idx=~".*"}`, // Make the selectors different so that CSE doesn't deduplicate them.
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				enableDelayedNameRemoval,
 				2,
 				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_three_item_series", idx=~"(0|1|2)"}`},
 				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_three_item_series", idx=~".*"}`},
@@ -648,6 +652,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				t, ctx, planner,
 				`max_over_time(my_series[11s:10s]) + min_over_time(my_other_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				enableDelayedNameRemoval,
 				1,
 				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
 				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
@@ -776,6 +781,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				t, ctx, planner,
 				`10 + foo + 20`, // We can't just use '10 + 20' here because the planner will collapse that to a constant.
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				enableDelayedNameRemoval,
 				1,
 				[]string{"DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 10"},
 				[]string{"DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "RHS: NumberLiteral: 20"},
@@ -807,6 +813,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				t, ctx, planner,
 				`12 + my_series + min_over_time(my_other_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
+				enableDelayedNameRemoval,
 				1,
 				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
 				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
@@ -1016,10 +1023,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	}
 }
 
-func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, planner *streamingpromql.QueryPlanner, expr string, timeRange types.QueryTimeRange, batchSize uint64, nodePaths ...[]string) *prototypes.Any {
+func createQueryRequestForSpecificNodes(t *testing.T, ctx context.Context, planner *streamingpromql.QueryPlanner, expr string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool, batchSize uint64, nodePaths ...[]string) *prototypes.Any {
 	require.NotEmpty(t, nodePaths, "invalid test case: must provide at least one node path to evaluate")
 
-	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, streamingpromql.NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, enableDelayedNameRemoval, streamingpromql.NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	nodes := make([]planning.Node, 0, len(nodePaths))
@@ -1111,13 +1118,13 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	opts := streamingpromql.NewTestEngineOpts()
-	opts.CommonOpts.EnableDelayedNameRemoval = true
 	// Disable the optimization pass, since it requires delayed name removal to be enabled.
 	opts.EnableEliminateDeduplicateAndMerge = false
 	ctx := context.Background()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	enableDelayedNameRemoval := true
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	startT := timestamp.Time(0)
@@ -1132,6 +1139,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
+				enableDelayedNameRemoval,
 				1,
 				[]string{"DeduplicateAndMerge", "DropName", "FunctionCall: rate(...)"}, // Evaluate the rate() directly, rather than the root node, which is the deduplicate and merge operation that removes the metric name.
 			),
@@ -1159,6 +1167,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 				t, ctx, planner,
 				`rate(some_total[5s])`,
 				types.NewInstantQueryTimeRange(startT.Add(9*time.Second)),
+				enableDelayedNameRemoval,
 				1,
 				nil, // The root of the query
 			),

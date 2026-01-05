@@ -750,24 +750,20 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			runTest := func(t *testing.T, enableDelayedNameRemoval bool) {
-				opts1 := streamingpromql.NewTestEngineOpts()
-				opts1.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
-
 				// First, create a plan without optimization to count original nodes
+				opts1 := streamingpromql.NewTestEngineOpts()
 				plannerNoOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				planBefore, err := plannerNoOpt.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+				planBefore, err := plannerNoOpt.NewQueryPlan(ctx, testCase.expr, timeRange, enableDelayedNameRemoval, observer)
 				require.NoError(t, err)
 				nodesBefore := countDeduplicateAndMergeNodes(planBefore.Root)
 
-				opts2 := streamingpromql.NewTestEngineOpts()
-				opts2.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
-
 				// Then, create a plan with optimization
+				opts2 := streamingpromql.NewTestEngineOpts()
 				plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
-				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, enableDelayedNameRemoval, observer)
 				require.NoError(t, err)
 				nodesAfter := countDeduplicateAndMergeNodes(planAfter.Root)
 
@@ -950,7 +946,6 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 
 			runTest := func(t *testing.T, withOptimization bool, enableDelayedNameRemoval bool) {
 				opts := streamingpromql.NewTestEngineOpts()
-				opts.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
 				planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
 
@@ -958,7 +953,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
 				}
 
-				engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+				engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)
 				require.NoError(t, err)
 
 				q, err := engine.NewInstantQuery(ctx, storage, nil, testCase.expr, end)
@@ -1037,10 +1032,9 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 
 			testScript := string(b)
 			opts := streamingpromql.NewTestEngineOpts()
-			opts.CommonOpts.EnableDelayedNameRemoval = false
 			planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)
 			promqltest.RunTest(t, testScript, engine)
 		})

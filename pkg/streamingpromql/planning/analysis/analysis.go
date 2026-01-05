@@ -98,7 +98,7 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpr
 	querymiddleware.DecodeOptions(r, &options)
 	ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, nil, options) // FIXME: populate hints as well (need cardinality estimation middleware for this)
 
-	result, err := Analyze(ctx, planner, qs, timeRange)
+	result, err := Analyze(ctx, planner, qs, timeRange, false) // FIXME: populate enableDelayedNameRemoval properly
 	if err != nil {
 		var perr parser.ParseErrors
 		if errors.As(err, &perr) {
@@ -168,9 +168,9 @@ type PlanningStage struct {
 }
 
 // Analyze performs query planning and produces a report on the query planning process.
-func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange) (*Result, error) {
+func Analyze(ctx context.Context, planner *streamingpromql.QueryPlanner, qs string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool) (*Result, error) {
 	observer := NewAnalysisPlanningObserver(qs, timeRange)
-	_, err := planner.NewQueryPlan(ctx, qs, timeRange, observer)
+	_, err := planner.NewQueryPlan(ctx, qs, timeRange, enableDelayedNameRemoval, observer)
 	if err != nil {
 		return nil, err
 	}

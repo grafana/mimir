@@ -56,7 +56,6 @@ func (e ErrSmoothedIncompatibleFunction) Error() string {
 type QueryPlanner struct {
 	activeQueryTracker       QueryTracker
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
-	enableDelayedNameRemoval bool
 	astOptimizationPasses    []optimize.ASTOptimizationPass
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
@@ -93,9 +92,10 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
 	// which would make the elimination logic more complex.
-	if opts.EnableEliminateDeduplicateAndMerge {
-		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts.CommonOpts.EnableDelayedNameRemoval))
-	}
+	// Remove for now as it does not work with per-tenant delayed name removal.
+	// if opts.EnableEliminateDeduplicateAndMerge {
+	// 	planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(false))
+	// }
 
 	if opts.EnableSkippingHistogramDecoding {
 		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
@@ -129,7 +129,6 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 	return &QueryPlanner{
 		activeQueryTracker:       activeQueryTracker,
 		noStepSubqueryIntervalFn: opts.CommonOpts.NoStepSubqueryIntervalFn,
-		enableDelayedNameRemoval: opts.CommonOpts.EnableDelayedNameRemoval,
 		planStageLatency: promauto.With(opts.CommonOpts.Reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                        "cortex_mimir_query_engine_plan_stage_latency_seconds",
 			Help:                        "Latency of each stage of the query planning process.",
@@ -213,7 +212,7 @@ func (p *QueryPlanner) ParseAndApplyASTOptimizationPasses(ctx context.Context, q
 	return expr, nil
 }
 
-func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, observer PlanningObserver) (*planning.QueryPlan, error) {
+func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange types.QueryTimeRange, enableDelayedNameRemoval bool, observer PlanningObserver) (*planning.QueryPlan, error) {
 	spanLogger, ctx := spanlogger.New(ctx, p.logger, tracer, "QueryPlanner.NewQueryPlan")
 	defer spanLogger.Finish()
 	spanLogger.SetTag("query", qs)
@@ -245,7 +244,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			return nil, err
 		}
 
-		if p.enableDelayedNameRemoval {
+		if enableDelayedNameRemoval {
 			var err error
 			root, err = p.insertDropNameOperator(root)
 			if err != nil {
@@ -258,7 +257,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 			Parameters: &planning.QueryParameters{
 				TimeRange:                timeRange,
 				OriginalExpression:       qs,
-				EnableDelayedNameRemoval: p.enableDelayedNameRemoval,
+				EnableDelayedNameRemoval: enableDelayedNameRemoval,
 			},
 		}
 
