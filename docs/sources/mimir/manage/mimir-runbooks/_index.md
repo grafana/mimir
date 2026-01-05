@@ -1577,7 +1577,13 @@ How to **investigate** and **fix** it:
 
 - Check if disk utilization unbalance is caused by shuffle sharding
 
-  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
+  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. You can query the `cortex_bucket_store_blocks_loaded_size_bytes` metric to see per-tenant disk utilization across all store-gateway replicas. For example, to find the top 10 tenants by disk utilization on a specific store-gateway pod:
+
+    ```
+    topk(10, cortex_bucket_store_blocks_loaded_size_bytes{pod="$POD"})
+    ```
+
+  - Alternatively, you can run the following command for a given store-gateway replica to check disk utilization directly on the pod. The command returns the top 10 tenants by disk utilization (in megabytes):
 
     ```
     kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'
