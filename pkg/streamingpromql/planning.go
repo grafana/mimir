@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	operatormetrics "github.com/grafana/mimir/pkg/streamingpromql/operators/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
@@ -61,6 +62,7 @@ type QueryPlanner struct {
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
 	generatedPlans           *prometheus.CounterVec
+	operatorMetricsTracker   *operatormetrics.MetricsTracker
 	versionProvider          QueryPlanVersionProvider
 
 	logger log.Logger
@@ -139,12 +141,18 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 			Name: "cortex_mimir_query_engine_plans_generated_total",
 			Help: "Total number of query plans generated.",
 		}, []string{"version"}),
-
-		versionProvider: versionProvider,
+		operatorMetricsTracker: operatormetrics.NewOperatorMetricsTracker(opts.CommonOpts.Reg),
+		versionProvider:        versionProvider,
 
 		logger:    opts.Logger,
 		TimeSince: time.Since,
 	}, nil
+}
+
+// RegisterOperatorMetrics replaces the operatorMetricsTracker with the given tracker.
+// This is only needed for unit tests
+func (p *QueryPlanner) RegisterOperatorMetrics(tracker *operatormetrics.MetricsTracker) {
+	p.operatorMetricsTracker = tracker
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
