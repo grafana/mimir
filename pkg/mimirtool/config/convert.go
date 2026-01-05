@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 type ConversionNotices struct {
@@ -67,7 +67,7 @@ func Convert(
 
 	source, target := sourceFactory(), targetFactory()
 
-	err = yaml.Unmarshal(contents, &source)
+	err = yaml.Load(contents, &source)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not unmarshal old Cortex configuration file")
 	}
@@ -113,7 +113,7 @@ func Convert(
 		return nil, nil, ConversionNotices{}, err
 	}
 
-	yamlBytes, err := yaml.Marshal(target)
+	yamlBytes, err := yaml.Dump(target)
 	if err != nil {
 		return nil, nil, ConversionNotices{}, errors.Wrap(err, "could not marshal converted config to YAML")
 	}
@@ -338,7 +338,7 @@ func reportDeletedFlags(contents []byte, flags []string, sourceFactory Inspected
 	{
 		s := sourceFactory()
 
-		if err := yaml.Unmarshal(contents, &s); err != nil {
+		if err := yaml.Load(contents, &s); err != nil {
 			return nil, nil, errors.Wrap(err, "could not unmarshal Cortex configuration file")
 		}
 

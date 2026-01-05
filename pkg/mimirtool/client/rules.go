@@ -14,14 +14,14 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
 // CreateRuleGroup creates a new rule group
 func (c *MimirClient) CreateRuleGroup(ctx context.Context, namespace string, rg rwrulefmt.RuleGroup) error {
-	payload, err := yaml.Marshal(&rg)
+	payload, err := yaml.Dump(&rg)
 	if err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func (c *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	}
 
 	rg := rwrulefmt.RuleGroup{}
-	err = yaml.Unmarshal(body, &rg)
+	err = yaml.Load(body, &rg)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"body": string(body),
@@ -107,7 +107,7 @@ func (c *MimirClient) ListRules(ctx context.Context, namespace string) (map[stri
 	}
 
 	ruleSet := map[string][]rwrulefmt.RuleGroup{}
-	err = yaml.Unmarshal(body, &ruleSet)
+	err = yaml.Load(body, &ruleSet)
 	if err != nil {
 		return nil, err
 	}

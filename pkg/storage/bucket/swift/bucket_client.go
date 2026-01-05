@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/swift"
-	yaml "gopkg.in/yaml.v3"
+	yaml "go.yaml.in/yaml/v4"
 )
 
 // NewBucketClient creates a new Swift bucket client
@@ -45,7 +45,7 @@ func NewBucketClient(cfg Config, _ string, logger log.Logger) (objstore.Bucket, 
 
 	// Thanos currently doesn't support passing the config as is, but expects a YAML,
 	// so we're going to serialize it.
-	serialized, err := yaml.Marshal(bucketConfig)
+	serialized, err := yaml.Dump(bucketConfig)
 	if err != nil {
 		return nil, err
 	}

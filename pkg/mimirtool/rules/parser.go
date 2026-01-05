@@ -17,7 +17,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
-	yaml "gopkg.in/yaml.v3"
+	yaml "go.yaml.in/yaml/v4"
+	yamlv3 "gopkg.in/yaml.v3"
 )
 
 const (
@@ -84,13 +85,15 @@ func Parse(f string, scheme model.ValidationScheme) ([]RuleNamespace, []error) {
 }
 
 func ParseBytes(content []byte, scheme model.ValidationScheme) ([]RuleNamespace, []error) {
-	decoder := yaml.NewDecoder(bytes.NewReader(content))
-	decoder.KnownFields(true)
+	loader, err := yaml.NewLoader(bytes.NewReader(content), yaml.WithKnownFields())
+	if err != nil {
+		return nil, []error{err}
+	}
 
 	var nss []RuleNamespace
 	for {
 		var ns RuleNamespace
-		err := decoder.Decode(&ns)
+		err := loader.Load(&ns)
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -103,14 +106,14 @@ func ParseBytes(content []byte, scheme model.ValidationScheme) ([]RuleNamespace,
 
 	// And now validate the rule groups, but first parse again, this time to YAML nodes so we have position information for error messages emitted by Validate.
 	// See https://github.com/prometheus/prometheus/pull/16252 for more explanation for why we do this.
-	decoder = yaml.NewDecoder(bytes.NewReader(content))
-	decoder.KnownFields(false)
+	// Note: We must use yaml.v3 here because rulefmt.RuleGroupNode contains yaml.v3's yaml.Node types.
+	decoderV3 := yamlv3.NewDecoder(bytes.NewReader(content))
 
 	for i := range nss {
 		ns := &nss[i]
 
 		var node ruleNamespaceNode
-		err := decoder.Decode(&node)
+		err := decoderV3.Decode(&node)
 		if errors.Is(err, io.EOF) {
 			return nil, []error{fmt.Errorf("received unexpected EOF while parsing rules a second time for namespace %v", i)}
 		}

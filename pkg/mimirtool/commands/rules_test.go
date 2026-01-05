@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
@@ -194,7 +194,9 @@ func TestRuleCommand_checkRules(t *testing.T) {
 						},
 					}},
 				}
-				require.NoError(t, yaml.NewEncoder(f).Encode(contents))
+				dumper, err := yaml.NewDumper(f)
+				require.NoError(t, err)
+				require.NoError(t, dumper.Dump(contents))
 				require.NoError(t, f.Close())
 			}
 
@@ -254,10 +256,10 @@ func TestRuleSaveToFile_NamespaceRuleGroup(t *testing.T) {
 	t.Run("Successful save and load", func(t *testing.T) {
 		expected := `namespace: ns1
 groups:
-    - name: group-1
-      rules:
-        - alert: up
-          expr: up==1
+- name: group-1
+  rules:
+  - alert: up
+    expr: up==1
 `
 		namespace := "ns1"
 		rule1 := []rwrulefmt.RuleGroup{{

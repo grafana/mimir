@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -294,11 +294,13 @@ func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 		buf = expandEnvironmentVariables(buf)
 	}
 
-	dec := yaml.NewDecoder(bytes.NewReader(buf))
-	dec.KnownFields(true)
+	dec, err := yaml.NewLoader(bytes.NewReader(buf), yaml.WithKnownFields(true))
+	if err != nil {
+		return fmt.Errorf("error creating yaml loader: %w", err)
+	}
 
 	// Unmarshal with common config unmarshaler.
-	if err := dec.Decode((*mimir.ConfigWithCommon)(cfg)); err != nil {
+	if err := dec.Load((*mimir.ConfigWithCommon)(cfg)); err != nil {
 		return fmt.Errorf("error parsing config file: %w", err)
 	}
 
@@ -306,7 +308,7 @@ func LoadConfig(filename string, expandEnv bool, cfg *mimir.Config) error {
 }
 
 func DumpYaml(cfg *mimir.Config) {
-	out, err := yaml.Marshal(cfg)
+	out, err := yaml.Dump(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	} else {

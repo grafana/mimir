@@ -16,7 +16,7 @@ import (
 
 	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/mitchellh/colorstring"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
@@ -83,7 +83,7 @@ func (p *Printer) PrintAlertmanagerConfig(config string, templates map[string]st
 
 // PrintRuleGroups prints the current alertmanager config
 func (p *Printer) PrintRuleGroups(rules map[string][]rwrulefmt.RuleGroup) error {
-	encodedRules, err := yaml.Marshal(&rules)
+	encodedRules, err := yaml.Dump(&rules)
 	if err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func (p *Printer) PrintRuleGroups(rules map[string][]rwrulefmt.RuleGroup) error 
 
 // PrintRuleGroup prints the current alertmanager config
 func (p *Printer) PrintRuleGroup(rule rwrulefmt.RuleGroup) error {
-	encodedRule, err := yaml.Marshal(&rule)
+	encodedRule, err := yaml.Dump(&rule)
 	if err != nil {
 		return err
 	}
@@ -157,13 +157,13 @@ func (p *Printer) PrintComparisonResult(results []rules.NamespaceChange, verbose
 
 				// Print the full diff of the rules if verbose is set
 				if verbose {
-					newYaml, _ := yaml.Marshal(c.New)
+					newYaml, _ := yaml.Dump(c.New)
 					separated := strings.Split(string(newYaml), "\n")
 					for _, l := range separated {
 						p.Printf("[green]+ %v\n", l)
 					}
 
-					oldYaml, _ := yaml.Marshal(c.Original)
+					oldYaml, _ := yaml.Dump(c.Original)
 					separated = strings.Split(string(oldYaml), "\n")
 					for _, l := range separated {
 						p.Printf("[red]- %v\n", l)
@@ -223,7 +223,7 @@ func (p *Printer) PrintRuleSet(rules map[string][]rwrulefmt.RuleGroup, format st
 
 		fmt.Fprint(writer, string(output))
 	case "yaml":
-		output, err := yaml.Marshal(items)
+		output, err := yaml.Dump(items)
 		if err != nil {
 			return err
 		}

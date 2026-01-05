@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func mustNewCustomTrackersConfigFromMap(t require.TestingT, source map[string]string) CustomTrackersConfig {
@@ -30,7 +30,7 @@ func mustNewCustomTrackersConfigFromString(t *testing.T, source string) CustomTr
 
 func mustNewCustomTrackersConfigDeserializedFromYaml(t *testing.T, yamlString string) CustomTrackersConfig {
 	m := CustomTrackersConfig{}
-	err := yaml.Unmarshal([]byte(yamlString), &m)
+	err := yaml.Load([]byte(yamlString), &m)
 	require.NoError(t, err)
 	return m
 }
@@ -220,7 +220,7 @@ func TestTrackersConfigs_Deserialization(t *testing.T) {
     `
 	t.Run("ShouldDeserializeCorrectInput", func(t *testing.T) {
 		config := CustomTrackersConfig{}
-		err := yaml.Unmarshal([]byte(correctInput), &config)
+		err := yaml.Load([]byte(correctInput), &config)
 		assert.NoError(t, err, "failed do deserialize Matchers")
 		expectedConfig, err := NewCustomTrackersConfig(map[string]string{
 			"baz": "{baz='bar'}",
@@ -232,7 +232,7 @@ func TestTrackersConfigs_Deserialization(t *testing.T) {
 
 	t.Run("ShouldErrorOnMalformedInput", func(t *testing.T) {
 		config := CustomTrackersConfig{}
-		err := yaml.Unmarshal([]byte(malformedInput), &config)
+		err := yaml.Load([]byte(malformedInput), &config)
 		assert.Error(t, err, "should not deserialize malformed input")
 	})
 }
@@ -246,10 +246,10 @@ func TestTrackersConfigs_SerializeDeserialize(t *testing.T) {
 	obj := mustNewCustomTrackersConfigDeserializedFromYaml(t, sourceYAML)
 
 	t.Run("ShouldSerializeDeserializeResultsTheSame", func(t *testing.T) {
-		out, err := yaml.Marshal(obj)
+		out, err := yaml.Dump(obj)
 		require.NoError(t, err, "failed do serialize Custom trackers config")
 		reSerialized := CustomTrackersConfig{}
-		err = yaml.Unmarshal(out, &reSerialized)
+		err = yaml.Load(out, &reSerialized)
 		require.NoError(t, err, "Failed to deserialize serialized object")
 		assert.Equal(t, obj, reSerialized)
 	})

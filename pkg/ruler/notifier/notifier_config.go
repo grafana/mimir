@@ -9,7 +9,7 @@ import (
 
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/flagext"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -39,7 +39,7 @@ func (acc *AlertmanagerClientConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (acc *AlertmanagerClientConfig) String() string {
-	out, err := yaml.Marshal(acc)
+	out, err := yaml.Dump(acc)
 	if err != nil {
 		return fmt.Sprintf("failed to marshal: %v", err)
 	}
@@ -48,7 +48,7 @@ func (acc *AlertmanagerClientConfig) String() string {
 
 func (acc *AlertmanagerClientConfig) Set(s string) error {
 	cfg := AlertmanagerClientConfig{}
-	if err := yaml.Unmarshal([]byte(s), &cfg); err != nil {
+	if err := yaml.Load([]byte(s), &cfg); err != nil {
 		return err
 	}
 	*acc = cfg
@@ -87,7 +87,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (cfg *Config) String() string {
-	out, err := yaml.Marshal(cfg)
+	out, err := yaml.Dump(cfg)
 	if err != nil {
 		return fmt.Sprintf("failed to marshal: %v", err)
 	}

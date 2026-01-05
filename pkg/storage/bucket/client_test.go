@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -86,7 +86,7 @@ func TestNewClient(t *testing.T) {
 			cfg := Config{}
 			flagext.DefaultValues(&cfg)
 
-			err := yaml.Unmarshal([]byte(testData.config), &cfg)
+			err := yaml.Load([]byte(testData.config), &cfg)
 			require.NoError(t, err)
 
 			// Instance a new bucket client from the config

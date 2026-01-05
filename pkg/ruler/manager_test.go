@@ -29,7 +29,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	rulernotifier "github.com/grafana/mimir/pkg/ruler/notifier"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -559,7 +559,7 @@ func assertRuleGroupsMappedOnDisk(t *testing.T, m *DefaultMultiTenantManager, us
 			return strings.Compare(b.Name, a.Name)
 		})
 
-		expectedYAML, err := yaml.Marshal(rulefmt.RuleGroups{Groups: expectedFormattedRuleGroups})
+		expectedYAML, err := yaml.Dump(rulefmt.RuleGroups{Groups: expectedFormattedRuleGroups})
 		require.NoError(t, err)
 
 		path := filepath.Join(m.mapper.Path, userID, namespace)

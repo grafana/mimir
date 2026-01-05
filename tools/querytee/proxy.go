@@ -28,7 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/util/propagation"
@@ -222,7 +222,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		if err != nil {
 			return nil, fmt.Errorf("failed to read backend config file (%s): %w", cfg.BackendConfigFile, err)
 		}
-		err = yaml.Unmarshal(configBytes, &cfg.parsedBackendConfig)
+		err = yaml.Load(configBytes, &cfg.parsedBackendConfig)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse backend YAML config: %w", err)
 		}

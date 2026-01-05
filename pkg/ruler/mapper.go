@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/spf13/afero"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // mapper is designed to enusre the provided rule sets are identical
@@ -149,7 +149,7 @@ func (m *mapper) writeRuleGroupsIfNewer(groups []rulefmt.RuleGroup, filename str
 
 	rgs := rulefmt.RuleGroups{Groups: groups}
 
-	d, err := yaml.Marshal(&rgs)
+	d, err := yaml.Dump(&rgs)
 	if err != nil {
 		return false, err
 	}

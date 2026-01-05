@@ -20,8 +20,8 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/sync/semaphore"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -343,8 +343,9 @@ func TestGroupAtRisk(t *testing.T) {
 	groupFile := t.TempDir() + "/test.rules"
 	f, err := os.Create(groupFile)
 	require.NoError(t, err)
-	encoder := yaml.NewEncoder(f)
-	require.NoError(t, encoder.Encode(groupFileContent))
+	dumper, err := yaml.NewDumper(f)
+	require.NoError(t, err)
+	require.NoError(t, dumper.Dump(groupFileContent))
 	require.NoError(t, f.Close())
 
 	createAndEvalTestGroup := func(interval time.Duration, evalConcurrently bool) *rules.Group {

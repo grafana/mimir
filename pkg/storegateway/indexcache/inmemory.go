@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
@@ -70,7 +70,7 @@ type InMemoryIndexCacheConfig struct {
 // parseInMemoryIndexCacheConfig unmarshals a buffer into a InMemoryIndexCacheConfig with default values.
 func parseInMemoryIndexCacheConfig(conf []byte) (InMemoryIndexCacheConfig, error) {
 	config := DefaultInMemoryIndexCacheConfig
-	if err := yaml.Unmarshal(conf, &config); err != nil {
+	if err := yaml.Load(conf, &config); err != nil {
 		return InMemoryIndexCacheConfig{}, err
 	}
 

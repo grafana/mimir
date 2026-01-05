@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	promRules "github.com/prometheus/prometheus/rules"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
@@ -46,7 +46,7 @@ func TestClient_LoadRuleGroups(t *testing.T) {
 		},
 	}
 
-	b, err := yaml.Marshal(ruleGroups)
+	b, err := yaml.Dump(ruleGroups)
 	require.NoError(t, err)
 
 	err = os.MkdirAll(path.Join(dir, user1), 0777)

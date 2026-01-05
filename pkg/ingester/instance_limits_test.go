@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -28,9 +28,9 @@ func TestInstanceLimitsUnmarshal(t *testing.T) {
 max_ingestion_rate: 125.678
 max_tenants: 50000
 `
-	dec := yaml.NewDecoder(strings.NewReader(input))
-	dec.KnownFields(true)
-	require.NoError(t, dec.Decode(&l))
+	loader, err := yaml.NewLoader(strings.NewReader(input), yaml.WithKnownFields())
+	require.NoError(t, err)
+	require.NoError(t, loader.Load(&l))
 	require.Equal(t, float64(125.678), l.MaxIngestionRate)
 	require.Equal(t, int64(50000), l.MaxInMemoryTenants)
 	require.Equal(t, int64(30), l.MaxInMemorySeries)       // default value

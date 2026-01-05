@@ -27,8 +27,8 @@ import (
 	"github.com/pierrec/lz4/v4"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.yaml.in/yaml/v4"
 	"google.golang.org/grpc/codes"
-	"gopkg.in/yaml.v3"
 )
 
 // IsRequestBodyTooLarge returns true if the error is "http: request body too large".
@@ -74,7 +74,7 @@ func WriteYAMLResponse(w http.ResponseWriter, v interface{}) {
 	// YAML is displayed in the browser instead of offered as a download
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
-	data, err := yaml.Marshal(v)
+	data, err := yaml.Dump(v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -122,7 +122,7 @@ func RenderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Templa
 func StreamWriteYAMLResponse(w http.ResponseWriter, iter chan interface{}, logger log.Logger) {
 	w.Header().Set("Content-Type", "application/yaml")
 	for v := range iter {
-		data, err := yaml.Marshal(v)
+		data, err := yaml.Dump(v)
 		if err != nil {
 			level.Error(logger).Log("msg", "yaml marshal failed", "err", err)
 			continue

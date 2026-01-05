@@ -31,8 +31,8 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v4"
 	"google.golang.org/api/googleapi"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"
@@ -361,7 +361,7 @@ func TestRuler_ListRules(t *testing.T) {
 			require.Equal(t, tc.expectedStatusCode, resp.StatusCode)
 
 			if tc.expectedStatusCode >= 200 && tc.expectedStatusCode < 300 {
-				expectedYAML, err := yaml.Marshal(tc.expectedRules)
+				expectedYAML, err := yaml.Dump(tc.expectedRules)
 				require.NoError(t, err)
 				require.YAMLEq(t, string(expectedYAML), string(body))
 			} else {
@@ -1591,18 +1591,18 @@ func TestAPI_CreateRuleGroupWithCaching(t *testing.T) {
 	ruleGroupVersion1 := `name: group1
 interval: 15s
 rules:
-    - record: up_rule
-      expr: up
-    - alert: up_alert
-      expr: up < 1
+- record: up_rule
+  expr: up
+- alert: up_alert
+  expr: up < 1
 `
 	ruleGroupVersion2 := `name: group1
 interval: 15s
 rules:
-    - record: up_rule
-      expr: up
-    - alert: up_alert
-      expr: up <= 1
+- record: up_rule
+  expr: up
+- alert: up_alert
+  expr: up <= 1
 `
 
 	mockCache, store := newInMemoryRuleStore(t)
@@ -1789,7 +1789,7 @@ func TestAPI_DeleteNamespace(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "name: group1\ninterval: 1m\nrules:\n    - record: UP_RULE\n      expr: up\n    - alert: UP_ALERT\n      expr: up < 1\n", w.Body.String())
+	require.Equal(t, "name: group1\ninterval: 1m\nrules:\n- record: UP_RULE\n  expr: up\n- alert: UP_ALERT\n  expr: up < 1\n", w.Body.String())
 
 	// Delete namespace1
 	req = requestFor(t, http.MethodDelete, "https://localhost:8080/prometheus/config/v1/rules/namespace1", nil, "user1")

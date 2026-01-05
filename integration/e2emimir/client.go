@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/prometheus/prompb" // OTLP protos are not compatible with gogo
 	promRW2 "github.com/prometheus/prometheus/prompb/io/prometheus/write/v2"
 	"github.com/prometheus/prometheus/storage/remote"
-	yaml "gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/integration/e2emimir/rw2/rc3"
 	"github.com/grafana/mimir/pkg/alertmanager"
@@ -877,7 +877,7 @@ func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup
 		return nil, nil, err
 	}
 
-	err = yaml.Unmarshal(data, rgs)
+	err = yaml.Load(data, rgs)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -888,7 +888,7 @@ func (c *Client) GetRuleGroups() (*http.Response, map[string][]rulefmt.RuleGroup
 // SetRuleGroup configures the provided rulegroup to the ruler.
 func (c *Client) SetRuleGroup(rulegroup rulefmt.RuleGroup, namespace string) error {
 	// Create write request
-	data, err := yaml.Marshal(rulegroup)
+	data, err := yaml.Dump(rulegroup)
 	if err != nil {
 		return err
 	}
@@ -1090,7 +1090,7 @@ func (c *Client) GetAlertmanagerConfig(ctx context.Context) (*alertConfig.Config
 	}
 
 	cfg := &alertConfig.Config{}
-	err = yaml.Unmarshal([]byte(ss.Config.Original), cfg)
+	err = yaml.Load([]byte(ss.Config.Original), cfg)
 
 	return cfg, err
 }
@@ -1099,7 +1099,7 @@ func (c *Client) GetAlertmanagerConfig(ctx context.Context) (*alertConfig.Config
 func (c *Client) SetAlertmanagerConfig(ctx context.Context, amConfig string, templates map[string]string) error {
 	u := c.alertmanagerClient.URL("/api/v1/alerts", nil)
 
-	data, err := yaml.Marshal(&userConfig{
+	data, err := yaml.Dump(&userConfig{
 		AlertmanagerConfig: amConfig,
 		TemplateFiles:      templates,
 	})

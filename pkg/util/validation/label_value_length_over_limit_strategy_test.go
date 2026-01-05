@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestLabelValueLengthOverLimitStrategy_Unmarshal(t *testing.T) {
@@ -51,9 +51,9 @@ func TestLabelValueLengthOverLimitStrategy_Unmarshal(t *testing.T) {
 				}},
 				{name: "yaml", set: func(t *testing.T, v *LabelValueLengthOverLimitStrategy, input string) error {
 					t.Helper()
-					b, err := yaml.Marshal(input)
+					b, err := yaml.Dump(input)
 					require.NoError(t, err)
-					return yaml.Unmarshal(b, &v)
+					return yaml.Load(b, &v)
 				}},
 				{name: "flag", set: func(_ *testing.T, v *LabelValueLengthOverLimitStrategy, input string) error {
 					return v.Set(input)

@@ -12,7 +12,7 @@ import (
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 const alertmanagerAPIPath = "/api/v1/alerts"
@@ -24,7 +24,7 @@ type configCompat struct {
 
 // CreateAlertmanagerConfig creates a new alertmanager config
 func (c *MimirClient) CreateAlertmanagerConfig(ctx context.Context, cfg string, templates map[string]string) error {
-	payload, err := yaml.Marshal(&configCompat{
+	payload, err := yaml.Dump(&configCompat{
 		TemplateFiles:      templates,
 		AlertmanagerConfig: cfg,
 	})
@@ -69,7 +69,7 @@ func (c *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[st
 	}
 
 	compat := configCompat{}
-	err = yaml.Unmarshal(body, &compat)
+	err = yaml.Load(body, &compat)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"body": string(body),

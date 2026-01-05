@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util/configdoc"
@@ -307,7 +307,7 @@ func testSingle(t *testing.T, arguments []string, configYAML string, stdoutMessa
 	}
 	if assertConfig != nil {
 		var cfg mimir.Config
-		require.NoError(t, yaml.Unmarshal([]byte(stdout), &cfg), "Can't unmarshal stdout as yaml config")
+		require.NoError(t, yaml.Load([]byte(stdout), &cfg), "Can't unmarshal stdout as yaml config")
 		assertConfig(t, &cfg)
 	}
 }

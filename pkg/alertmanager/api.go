@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/util"
@@ -86,7 +86,7 @@ func (am *MultitenantAlertmanager) GetUserConfig(w http.ResponseWriter, r *http.
 		return
 	}
 
-	d, err := yaml.Marshal(&UserConfig{
+	d, err := yaml.Dump(&UserConfig{
 		TemplateFiles:      alertspb.ParseTemplates(cfg),
 		AlertmanagerConfig: cfg.RawConfig,
 	})
@@ -138,7 +138,7 @@ func (am *MultitenantAlertmanager) SetUserConfig(w http.ResponseWriter, r *http.
 	}
 
 	cfg := &UserConfig{}
-	err = yaml.Unmarshal(payload, cfg)
+	err = yaml.Load(payload, cfg)
 	if err != nil {
 		level.Error(logger).Log("msg", errMarshallingYAML, "err", err.Error())
 		http.Error(w, fmt.Sprintf("%s: %s", errMarshallingYAML, err.Error()), http.StatusBadRequest)

@@ -39,8 +39,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	prom_storage "github.com/prometheus/prometheus/storage"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v4"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -256,7 +256,7 @@ func (c *ConfigWithCommon) UnmarshalYAML(value *yaml.Node) error {
 	// Then unmarshal config in a standard way.
 	// This will override previously set common values by the specific ones, if they're provided.
 	// (YAML specific takes precedence over YAML common)
-	return value.DecodeWithOptions((*Config)(c), yaml.DecodeOptions{KnownFields: true})
+	return value.Load((*Config)(c), yaml.WithKnownFields(true))
 }
 
 // Validate the mimir config and return an error if the validation
@@ -721,7 +721,7 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 			},
 		}
 
-		if err := value.DecodeWithOptions(&common, yaml.DecodeOptions{KnownFields: true}); err != nil {
+		if err := value.Load(&common, yaml.WithKnownFields(true)); err != nil {
 			return fmt.Errorf("can't unmarshal common config: %w", err)
 		}
 	}
@@ -823,7 +823,7 @@ type specificLocationsUnmarshaler map[string]interface{}
 
 func (m specificLocationsUnmarshaler) UnmarshalYAML(value *yaml.Node) error {
 	for l, v := range m {
-		if err := value.DecodeWithOptions(v, yaml.DecodeOptions{KnownFields: true}); err != nil {
+		if err := value.Load(v, yaml.WithKnownFields(true)); err != nil {
 			return fmt.Errorf("key %q: %w", l, err)
 		}
 	}
@@ -901,7 +901,10 @@ type Mimir struct {
 // New makes a new Mimir.
 func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	if cfg.PrintConfig {
-		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
+		dumper, err := yaml.NewDumper(os.Stdout)
+		if err != nil {
+			fmt.Println("Error creating yaml dumper:", err)
+		} else if err := dumper.Dump(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
 		}
 		os.Exit(0)

@@ -23,8 +23,8 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v4"
 	"golang.org/x/time/rate"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
@@ -118,9 +118,9 @@ func TestLimitsLoadingFromYaml(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			l := Limits{}
-			dec := yaml.NewDecoder(strings.NewReader(tc.input))
-			dec.KnownFields(true)
-			require.NoError(t, dec.Decode(&l))
+			loader, err := yaml.NewLoader(strings.NewReader(tc.input), yaml.WithKnownFields())
+			require.NoError(t, err)
+			require.NoError(t, loader.Load(&l))
 			tc.testFunc(t, l)
 		})
 	}
@@ -218,7 +218,7 @@ max_partial_query_length: 1s
 	inputJSON := `{"max_query_lookback": "1s", "max_partial_query_length": "1s"}`
 
 	limitsYAML := getDefaultLimits()
-	err := yaml.Unmarshal([]byte(inputYAML), &limitsYAML)
+	err := yaml.Load([]byte(inputYAML), &limitsYAML)
 	require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
 	limitsJSON := getDefaultLimits()
@@ -262,9 +262,9 @@ metric_relabel_configs:
 	exp.NameValidationScheme = model.LegacyValidation
 
 	l := Limits{}
-	dec := yaml.NewDecoder(strings.NewReader(inp))
-	dec.KnownFields(true)
-	require.NoError(t, dec.Decode(&l))
+	loader, err := yaml.NewLoader(strings.NewReader(inp), yaml.WithKnownFields())
+	require.NoError(t, err)
+	require.NoError(t, loader.Load(&l))
 
 	assert.Equal(t, []*relabel.Config{&exp}, l.MetricRelabelConfigs)
 }
@@ -583,7 +583,7 @@ alertmanager_notification_rate_limit_per_integration:
 	} {
 		t.Run(name, func(t *testing.T) {
 			limitsYAML := Limits{}
-			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
+			err := yaml.Load([]byte(tc.inputYAML), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
 			ov := NewOverrides(limitsYAML, nil)
@@ -721,13 +721,13 @@ testuser:
 			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 			var limitsYAML Limits
-			err := yaml.Unmarshal([]byte(baseYaml), &limitsYAML)
+			err := yaml.Load([]byte(baseYaml), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
 			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
 
 			overrides := map[string]*Limits{}
-			err = yaml.Unmarshal([]byte(tc.overrides), &overrides)
+			err = yaml.Load([]byte(tc.overrides), &overrides)
 			require.NoError(t, err, "parsing overrides")
 
 			tl := NewMockTenantLimits(overrides)
@@ -778,7 +778,7 @@ ruler_max_rules_per_rule_group_by_namespace:
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
 			limitsYAML := Limits{}
-			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
+			require.NoError(t, yaml.Load([]byte(tt.inputYAML), &limitsYAML))
 
 			ov := NewOverrides(limitsYAML, nil)
 
@@ -885,13 +885,13 @@ differentuser:
 			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 			var limitsYAML Limits
-			err := yaml.Unmarshal([]byte(baseYaml), &limitsYAML)
+			err := yaml.Load([]byte(baseYaml), &limitsYAML)
 			require.NoError(t, err)
 
 			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
 
 			overrides := map[string]*Limits{}
-			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			err = yaml.Load([]byte(tt.overrides), &overrides)
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
@@ -940,7 +940,7 @@ ruler_max_rule_groups_per_tenant_by_namespace:
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
 			limitsYAML := Limits{}
-			require.NoError(t, yaml.Unmarshal([]byte(tt.inputYAML), &limitsYAML))
+			require.NoError(t, yaml.Load([]byte(tt.inputYAML), &limitsYAML))
 
 			ov := NewOverrides(limitsYAML, nil)
 
@@ -1046,13 +1046,13 @@ differentuser:
 			SetDefaultLimitsForYAMLUnmarshalling(getDefaultLimits())
 
 			var limitsYAML Limits
-			err := yaml.Unmarshal([]byte(baseYaml), &limitsYAML)
+			err := yaml.Load([]byte(baseYaml), &limitsYAML)
 			require.NoError(t, err)
 
 			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
 
 			overrides := map[string]*Limits{}
-			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			err = yaml.Load([]byte(tt.overrides), &overrides)
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
@@ -1100,13 +1100,13 @@ user1:
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
 			var LimitsYAML Limits
-			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			err := yaml.Load([]byte(tt.inputYAML), &LimitsYAML)
 			require.NoError(t, err)
 
 			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
 
 			overrides := map[string]*Limits{}
-			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			err = yaml.Load([]byte(tt.overrides), &overrides)
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
@@ -1154,13 +1154,13 @@ user1:
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
 			var LimitsYAML Limits
-			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			err := yaml.Load([]byte(tt.inputYAML), &LimitsYAML)
 			require.NoError(t, err)
 
 			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
 
 			overrides := map[string]*Limits{}
-			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			err = yaml.Load([]byte(tt.overrides), &overrides)
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
@@ -1208,13 +1208,13 @@ user1:
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
 			var LimitsYAML Limits
-			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			err := yaml.Load([]byte(tt.inputYAML), &LimitsYAML)
 			require.NoError(t, err)
 
 			SetDefaultLimitsForYAMLUnmarshalling(LimitsYAML)
 
 			overrides := map[string]*Limits{}
-			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			err = yaml.Load([]byte(tt.overrides), &overrides)
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
@@ -1268,12 +1268,12 @@ user1:
 	for name, tt := range tc {
 		t.Run(name, func(t *testing.T) {
 			LimitsYAML := Limits{}
-			err := yaml.Unmarshal([]byte(tt.inputYAML), &LimitsYAML)
+			err := yaml.Load([]byte(tt.inputYAML), &LimitsYAML)
 			require.NoError(t, err)
 
 			var overrides map[string]*Limits
 			if tt.overrides != "" {
-				err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+				err = yaml.Load([]byte(tt.overrides), &overrides)
 				require.NoError(t, err)
 			}
 
@@ -1372,13 +1372,13 @@ user1:
 
 			var limitsYAML Limits
 			limitsYAML.RulerAlertmanagerClientConfig.NotifierConfig.OAuth2.EndpointParams = flagext.NewLimitsMap[string](nil)
-			err := yaml.Unmarshal([]byte(tt.baseYAML), &limitsYAML)
+			err := yaml.Load([]byte(tt.baseYAML), &limitsYAML)
 			require.NoError(t, err)
 
 			SetDefaultLimitsForYAMLUnmarshalling(limitsYAML)
 
 			overrides := map[string]*Limits{}
-			err = yaml.Unmarshal([]byte(tt.overrides), &overrides)
+			err = yaml.Load([]byte(tt.overrides), &overrides)
 			require.NoError(t, err)
 
 			tl := NewMockTenantLimits(overrides)
@@ -1446,7 +1446,7 @@ active_series_additional_custom_trackers:
 					if withDefaultValues {
 						flagext.DefaultValues(&limitsYAML)
 					}
-					require.NoError(t, yaml.Unmarshal([]byte(testData.cfg), &limitsYAML))
+					require.NoError(t, yaml.Load([]byte(testData.cfg), &limitsYAML))
 
 					overrides := NewOverrides(limitsYAML, nil)
 
@@ -1480,7 +1480,7 @@ active_series_additional_custom_trackers:
 
 	for r := 0; r < numRuns; r++ {
 		limitsYAML := Limits{}
-		require.NoError(t, yaml.Unmarshal([]byte(cfg), &limitsYAML))
+		require.NoError(t, yaml.Load([]byte(cfg), &limitsYAML))
 
 		overrides := NewOverrides(limitsYAML, nil)
 
@@ -1544,7 +1544,7 @@ metric_relabel_configs:
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			limits := getDefaultLimits()
-			err := yaml.Unmarshal([]byte(testData.cfg), &limits)
+			err := yaml.Load([]byte(testData.cfg), &limits)
 
 			if testData.expectedErr != "" {
 				require.ErrorContains(t, err, testData.expectedErr)
@@ -1938,7 +1938,7 @@ func TestExtensions(t *testing.T) {
 	cfg := `{"user": {"test_extension_struct": {"foo": 1}, "test_extension_string": "bar"}}`
 	t.Run("yaml", func(t *testing.T) {
 		overrides := map[string]*Limits{}
-		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+		require.NoError(t, yaml.Load([]byte(cfg), &overrides), "parsing overrides")
 
 		// Check that getExtensionStruct(*Limits) actually returns the proper type with filled extensions.
 		assert.Equal(t, structExtension{Foo: 1}, getExtensionStruct(overrides["user"]))
@@ -2000,7 +2000,7 @@ func TestExtensions(t *testing.T) {
 		})
 		var limits map[string]Limits
 
-		require.NoError(t, yaml.Unmarshal([]byte(`foo:`), &limits), "parsing overrides")
+		require.NoError(t, yaml.Load([]byte(`foo:`), &limits), "parsing overrides")
 
 		fooLimits, ok := limits["foo"]
 		require.True(t, ok, "foo limits should be present")
@@ -2028,13 +2028,13 @@ func TestExtensions(t *testing.T) {
 
 		cfg := `{"one": {"test_extension_string": "one"}, "two": {"test_extension_string": "two"}}`
 		overrides := map[string]*Limits{}
-		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides), "parsing overrides")
+		require.NoError(t, yaml.Load([]byte(cfg), &overrides), "parsing overrides")
 		require.Equal(t, stringExtension("one"), getExtensionString(overrides["one"]))
 		require.Equal(t, stringExtension("two"), getExtensionString(overrides["two"]))
 
 		cfg = `{"three": {"test_extension_string": "three"}}`
 		overrides2 := map[string]*Limits{}
-		require.NoError(t, yaml.Unmarshal([]byte(cfg), &overrides2), "parsing overrides")
+		require.NoError(t, yaml.Load([]byte(cfg), &overrides2), "parsing overrides")
 		require.Equal(t, stringExtension("three"), getExtensionString(overrides2["three"]))
 
 		// Previous values did not change.
@@ -2064,15 +2064,15 @@ func TestExtensionMarshalling(t *testing.T) {
 			"test": {},
 		}
 
-		val, err := yaml.Marshal(overrides)
+		val, err := yaml.Dump(overrides)
 		require.NoError(t, err)
 		require.Contains(t, string(val),
 			`test:
-    test_extension_struct:
-        foo: 0
-    test_extension_string: ""
-    max_active_series_per_user: 0
-    request_rate: 0`)
+  test_extension_struct:
+    foo: 0
+  test_extension_string: ""
+  max_active_series_per_user: 0
+  request_rate: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
@@ -2088,16 +2088,16 @@ func TestExtensionMarshalling(t *testing.T) {
 			},
 		}
 
-		val, err := yaml.Marshal(overrides)
+		val, err := yaml.Dump(overrides)
 		require.NoError(t, err)
 		require.Contains(t, string(val),
 			`test:
-    test_extension_struct:
-        foo: 421237
-    test_extension_string: ""
-    max_active_series_per_user: 0
-    request_rate: 0
-    request_burst_size: 0`)
+  test_extension_struct:
+    foo: 421237
+  test_extension_string: ""
+  max_active_series_per_user: 0
+  request_rate: 0
+  request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
@@ -2106,18 +2106,18 @@ func TestExtensionMarshalling(t *testing.T) {
 
 	t.Run("marshal limits with default extension values", func(t *testing.T) {
 		overrides := map[string]*Limits{}
-		require.NoError(t, yaml.Unmarshal([]byte(`{"user": {}}`), &overrides), "parsing overrides")
+		require.NoError(t, yaml.Load([]byte(`{"user": {}}`), &overrides), "parsing overrides")
 
-		val, err := yaml.Marshal(overrides)
+		val, err := yaml.Dump(overrides)
 		require.NoError(t, err)
 		require.Contains(t, string(val),
 			`user:
-    test_extension_struct:
-        foo: 42
-    test_extension_string: default string extension value
-    max_active_series_per_user: 0
-    request_rate: 0
-    request_burst_size: 0`)
+  test_extension_struct:
+    foo: 42
+  test_extension_string: default string extension value
+  max_active_series_per_user: 0
+  request_rate: 0
+  request_burst_size: 0`)
 
 		val, err = json.Marshal(overrides)
 		require.NoError(t, err)
@@ -2181,7 +2181,7 @@ alertmanager_max_grafana_state_size_bytes: "0"
 	} {
 		t.Run(name, func(t *testing.T) {
 			limitsYAML := Limits{}
-			err := yaml.Unmarshal([]byte(tc.inputYAML), &limitsYAML)
+			err := yaml.Load([]byte(tc.inputYAML), &limitsYAML)
 			require.NoError(t, err, "expected to be able to unmarshal from YAML")
 
 			ov := NewOverrides(limitsYAML, nil)
@@ -2210,7 +2210,7 @@ user1:
           is_regexp: false
 `
 	overrides := map[string]*Limits{}
-	err := yaml.Unmarshal([]byte(inputYAML), &overrides)
+	err := yaml.Load([]byte(inputYAML), &overrides)
 	require.NoError(t, err)
 	tl := NewMockTenantLimits(overrides)
 	ov := NewOverrides(getDefaultLimits(), tl)
