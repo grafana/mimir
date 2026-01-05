@@ -252,6 +252,10 @@ func NewFixtureGenerator(cfg FixtureConfig, numTenants int, seed int64) (*Fixtur
 	}
 	g.totalWeight = cumulative
 
+	if g.totalWeight == 0 {
+		return nil, fmt.Errorf("configuration results in zero total timeseries across all tenants")
+	}
+
 	return g, nil
 }
 

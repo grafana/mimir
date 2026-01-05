@@ -71,6 +71,21 @@ func TestNewFixtureGenerator(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, gen)
 	})
+
+	t.Run("should return error when all tenants have zero timeseries", func(t *testing.T) {
+		// Config where 100% of tenants are small but 0% of timeseries go to small tenants.
+		cfg := createTestFixtureConfig(100, 200)
+		cfg.SmallTenants.TenantPercent = 100
+		cfg.SmallTenants.TimeseriesPercent = 0
+		cfg.MediumTenants.TenantPercent = 0
+		cfg.MediumTenants.TimeseriesPercent = 50
+		cfg.LargeTenants.TenantPercent = 0
+		cfg.LargeTenants.TimeseriesPercent = 50
+
+		gen, err := NewFixtureGenerator(cfg, 10, 12345)
+		assert.ErrorContains(t, err, "zero total timeseries")
+		assert.Nil(t, gen)
+	})
 }
 
 func TestFixtureGenerator_GenerateNextWriteRequest(t *testing.T) {
