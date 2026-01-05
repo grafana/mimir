@@ -30,7 +30,15 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       '-memberlist.join',
       // Alertmanager is not deployed per-zone.
       '-ruler.alertmanager-url',
-    ],
+    ] + (
+      if $._config.multi_zone_memcached_routing_enabled then [] else [
+        '-blocks-storage.bucket-store.chunks-cache.memcached.addresses',
+        '-blocks-storage.bucket-store.index-cache.memcached.addresses',
+        '-blocks-storage.bucket-store.metadata-cache.memcached.addresses',
+        '-query-frontend.results-cache.memcached.addresses',
+        '-ruler-storage.cache.memcached.addresses',
+      ]
+    ),
 
     // Environment variables to exclude from multi-zone config validation.
     multi_zone_config_validation_excluded_env_vars: [
