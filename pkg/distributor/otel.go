@@ -494,18 +494,16 @@ func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCo
 }
 
 func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
-	// Per the OTLP spec (https://opentelemetry.io/docs/specs/otlp/#otlphttp-response), the server MUST use the same
-	// Content-Type in the response as it received in the request. Content-Type is validated in the OTLPparser, which
-	// only accepts application/json or application/x-protobuf. For successful requests, we mirror the validated Content-Type.
-	// For error responses where the parser rejected an unsupported Content-Type (e.g., text/plain), we cannot mirror
-	// the invalid Content-Type and encode the response body as a protobuf Status message. In such cases, we default to
-	// application/x-protobuf as a fallback.
+	// Per OTLP spec (see: https://opentelemetry.io/docs/specs/otlp/#otlphttp-response), the server MUST mirror
+	// the request Content-Type in responses. The parser validates Content-Type and only accepts
+	// application/json or application/x-protobuf. For requests with unsupported Content-Type that are rejected by the parser,
+	// we default to application/x-protobuf.
 	contentType := r.Header.Get("Content-Type")
 	switch contentType {
 	case jsonContentType, pbContentType:
 		// Valid Content-Type, mirror it in the response.
 	default:
-		// Invalid or unsupported Content-Type, default to protobuf encoding.
+		// Unsupported Content-Type, default to protobuf.
 		contentType = pbContentType
 	}
 
@@ -515,22 +513,16 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 	if err != nil {
 		httpCode = http.StatusInternalServerError
 		level.Error(logger).Log("msg", "failed to marshal payload", "err", err, "payload", payload, "content_type", contentType)
+		// Retry with a minimal Status message. If this also fails, marshaling is fundamentally broken.
 		var format string
 		body, format, err = marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto(), contentType)
 		err = errors.Wrapf(err, "marshalling %T to %s", payload, format)
 	}
 	if err != nil {
-		level.Error(logger).Log("msg", "OTLP response marshal failed, using fallback encoding", "err", err, "content_type", contentType)
-		// Both marshal attempts failed (extremely rare - indicates protobuf marshaling is broken).
-		// Return a minimal valid error response to avoid client parse errors.
-		// For JSON: manually encode a Status message as JSON. For protobuf: use standard library encoding as last resort.
-		if contentType == jsonContentType {
-			// Manually encode Status message as JSON to avoid json.Marshal dependency
-			body = []byte(`{"code":13,"message":"internal error: failed to encode response"}`)
-		} else {
-			// Fall back to standard library proto.Marshal
-			body, _ = proto.Marshal(status.New(codes.Internal, "internal error: failed to encode response").Proto())
-		}
+		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
+		// If marshalling both the original and fallback message fails, return empty body with text/plain to signal the failure
+		contentType = "text/plain"
+		body = nil
 	}
 
 	w.Header().Set("Content-Type", contentType)
