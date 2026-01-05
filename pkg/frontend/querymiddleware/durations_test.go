@@ -72,7 +72,7 @@ func TestDurationMiddleware(t *testing.T) {
 						nil,
 						2000,
 						3000,
-						60,
+						60000,
 						0,
 						expr,
 						Options{},
