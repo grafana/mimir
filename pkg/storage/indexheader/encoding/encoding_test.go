@@ -516,7 +516,7 @@ func TestDecbuf_UnsafeUvarintBytesSkipDoesNotCauseBufferFill(t *testing.T) {
 		expectedBytes  = 983
 	)
 
-	// This test verifies that when bytes are read in UnsafeUvarintBytes, the peek(n) and
+	// This test verifies that when bytes are read in UnsafeUvarintBytes, the Peek(n) and
 	// subsequent skip(len(b)) does not cause a read from disk that invalidates the slice
 	// returned. It does this by creating multiple uvarint byte slices in the encoding
 	// buffer each with different content _and_ by ensuring there are more bytes written

@@ -71,7 +71,7 @@ func (df *DecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decb
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
 	}
 
-	// If we return early and don't include a Reader for our Decbuf, we are responsible
+	// If we return early and don't include a BufReader for our Decbuf, we are responsible
 	// for putting the file handle back in the pool.
 	closeFile := true
 	defer func() {
@@ -136,7 +136,7 @@ func (df *DecbufFactory) NewRawDecbuf() Decbuf {
 		return Decbuf{E: errors.Wrap(err, "open file for decbuf")}
 	}
 
-	// If we return early and don't include a Reader for our Decbuf, we are responsible
+	// If we return early and don't include a BufReader for our Decbuf, we are responsible
 	// for putting the file handle back in the pool.
 	closeFile := true
 	defer func() {
