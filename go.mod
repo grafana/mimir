@@ -385,3 +385,7 @@ replace github.com/prometheus/alertmanager => github.com/grafana/prometheus-aler
 // Use Mimir fork of prometheus/otlptranslator to allow for higher velocity of upstream development,
 // while allowing Mimir to move at a more conservative pace.
 replace github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
+
+// Replace v0.258.0 with the previous version due to https://github.com/googleapis/google-cloud-go/issues/13503, which
+// will be fixed in v0.259.0.
+replace google.golang.org/api v0.258.0 => google.golang.org/api v0.257.0
