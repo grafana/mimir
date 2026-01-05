@@ -19,11 +19,12 @@ var (
 	ErrInvalidChecksum = errors.New("invalid checksum")
 )
 
-// Decbuf provides safe methods to extract data from a binary file. It does all
-// necessary bounds checking and advancing of the binary file. Several datums can
-// be extracted without checking for errors. However, before using any datum, the
-// Err() method must be checked. New file-backed Decbuf instances must be created
-// via DecbufFactory
+// Decbuf provides safe methods to extract data from a big-endian binary data.
+// It the Prometheus encoding.Decbuf type, but for a generic BufReader rather than []byte.
+// Decbuf handles all necessary bounds checking and advancing of the underlying reader.
+// Consumers may extract multiple datums without checking for errors,
+// but the Err() must be checked before using the extracted data.
+// New Decbuf instances must be created via a DecbufFactory.
 type Decbuf struct {
 	r BufReader
 	E error
@@ -105,7 +106,7 @@ func (d *Decbuf) ResetAt(off int) {
 
 	// If we are trying to reset at an offset which is already buffered,
 	// we can avoid resetting the BufReader and just discard some of the buffer instead.
-	if dist := off - d.Position(); dist >= 0 && dist < d.r.Buffered() {
+	if dist := off - d.Offset(); dist >= 0 && dist < d.r.Buffered() {
 		d.E = d.r.Skip(dist)
 		return
 	}
@@ -276,9 +277,9 @@ func (d *Decbuf) Err() error { return d.E }
 // Len returns the remaining number of bytes in the underlying BufReader.
 func (d *Decbuf) Len() int { return d.r.Len() }
 
-// Position returns the current offset of the underlying BufReader.
-// Calling d.ResetAt(d.Position()) is effectively a no-op.
-func (d *Decbuf) Position() int { return d.r.Offset() }
+// Offset returns the current offset of the underlying BufReader.
+// Calling d.ResetAt(d.Offset()) is effectively a no-op.
+func (d *Decbuf) Offset() int { return d.r.Offset() }
 
 func (d *Decbuf) Close() error {
 	if d.r != nil {

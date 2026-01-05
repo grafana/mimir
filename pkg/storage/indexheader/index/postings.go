@@ -63,7 +63,7 @@ type PostingOffsetTableV1 struct {
 	postings map[string]map[string]index.Range
 }
 
-func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (PostingOffsetTable, error) {
+func NewPostingOffsetTable(factory streamencoding.DecbufFactory, tableOffset int, indexVersion int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (PostingOffsetTable, error) {
 	switch indexVersion {
 	case index.FormatV1:
 		return newV1PostingOffsetTable(factory, tableOffset, indexLastPostingListEndBound)
@@ -74,7 +74,7 @@ func NewPostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset in
 	return nil, fmt.Errorf("unknown index version %v", indexVersion)
 }
 
-func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64) (*PostingOffsetTableV1, error) {
+func newV1PostingOffsetTable(factory streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64) (*PostingOffsetTableV1, error) {
 	t := PostingOffsetTableV1{
 		postings: map[string]map[string]index.Range{},
 	}
@@ -114,7 +114,7 @@ func newV1PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (table *PostingOffsetTableV2, err error) {
+func newV2PostingOffsetTable(factory streamencoding.DecbufFactory, tableOffset int, indexLastPostingListEndBound uint64, postingOffsetsInMemSampling int, doChecksum bool) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -138,7 +138,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 
 	for d.Err() == nil && remainingCount > 0 {
 		lastName := currentName
-		offsetInTable := d.Position()
+		offsetInTable := d.Offset()
 		keyCount := d.Uvarint()
 
 		// The Postings offset table takes only 2 keys per entry (name and value of label).
@@ -154,7 +154,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 			if lastEntryOffsetInTable != -1 {
 				// We haven't recorded the last offset for the last value of the previous name.
 				// Go back and read the last value for the previous name.
-				newValueOffsetInTable := d.Position()
+				newValueOffsetInTable := d.Offset()
 				d.ResetAt(lastEntryOffsetInTable)
 				d.Uvarint()          // Skip the key count
 				d.SkipUvarintBytes() // Skip the name
@@ -162,7 +162,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 				t.postings[lastName].offsets = append(t.postings[lastName].offsets, postingOffset{value: value, tableOff: lastEntryOffsetInTable})
 
 				// Skip ahead to where we were before we called ResetAt() above.
-				d.Skip(newValueOffsetInTable - d.Position())
+				d.Skip(newValueOffsetInTable - d.Offset())
 			}
 
 			currentName = newName
@@ -231,7 +231,7 @@ func newV2PostingOffsetTable(factory *streamencoding.DecbufFactory, tableOffset 
 	return &t, nil
 }
 
-func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
+func NewPostingOffsetTableFromSparseHeader(factory streamencoding.DecbufFactory, postingsOffsetTable *indexheaderpb.PostingOffsetTable, tableOffset int, postingOffsetsInMemSampling int) (table *PostingOffsetTableV2, err error) {
 	t := PostingOffsetTableV2{
 		factory:                     factory,
 		tableOffset:                 tableOffset,
@@ -280,7 +280,7 @@ func NewPostingOffsetTableFromSparseHeader(factory *streamencoding.DecbufFactory
 
 // readOffsetTable reads an offset table and at the given position calls f for each
 // found entry. If f returns an error it stops decoding and returns the received error.
-func readOffsetTable(factory *streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64) error) (err error) {
+func readOffsetTable(factory streamencoding.DecbufFactory, tableOffset int, f func(string, string, uint64) error) (err error) {
 	d := factory.NewDecbufAtChecked(tableOffset, castagnoliTable)
 	defer runutil.CloseWithErrCapture(&err, &d, "read offset table")
 
@@ -374,7 +374,7 @@ type PostingOffsetTableV2 struct {
 
 	postingOffsetsInMemSampling int
 
-	factory     *streamencoding.DecbufFactory
+	factory     streamencoding.DecbufFactory
 	tableOffset int
 }
 
