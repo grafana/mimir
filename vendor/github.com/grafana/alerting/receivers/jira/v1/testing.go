@@ -24,5 +24,5 @@ const FullValidConfigForTesting = `{
 // FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets
 const FullValidSecretsForTesting = `{
 	"user": "test-user",
-	"password": "test-password"    
+	"password": "test-password"
 }`

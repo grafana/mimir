@@ -130,7 +130,7 @@ func (am *GrafanaAlertmanager) UpsertSilence(ps *PostableSilence) (string, error
 func (am *GrafanaAlertmanager) validateSilence(sil *silencepb.Silence) error {
 	if sil.StartsAt.After(sil.EndsAt) || sil.StartsAt.Equal(sil.EndsAt) {
 		msg := "start time must be before end time"
-		level.Error(am.logger).Log("msg", msg, "err", "starts_at", sil.StartsAt, "ends_at", sil.EndsAt)
+		level.Error(am.logger).Log("msg", msg, "starts_at", sil.StartsAt, "ends_at", sil.EndsAt)
 		return fmt.Errorf("%s: %w", msg, ErrCreateSilenceBadPayload)
 	}
 
