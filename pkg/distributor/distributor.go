@@ -1200,14 +1200,14 @@ func (d *Distributor) replicaObserved(ctx context.Context, userID string, replic
 	return replicaNotHA, nil
 }
 
-func getReplicasFromRequest(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLabel string) []haReplica {
-	replicas := make([]haReplica, len(req.Timeseries))
-	for i, ts := range req.Timeseries {
-		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
-		replicas[i] = findHALabels(haReplicaLabel, haClusterLabel, ts.Labels)
-	}
-	return replicas
-}
+// func getReplicasFromRequest(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLabel string) []haReplica {
+// 	replicas := make([]haReplica, len(req.Timeseries))
+// 	for i, ts := range req.Timeseries {
+// 		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+// 		replicas[i] = findHALabels(haReplicaLabel, haClusterLabel, ts.Labels)
+// 	}
+// 	return replicas
+// }
 
 func getEarliestSampleTimestamp(req *mimirpb.WriteRequest, defaultTimestamp int64) int64 {
 	earliestSampleTimestamp := defaultTimestamp
@@ -1244,49 +1244,91 @@ func (d *Distributor) processHaReplicas(ctx context.Context, userID string, samp
 	return samplesPerState, errs.Err()
 }
 
-func getReplicaInfos(req *mimirpb.WriteRequest, replicas []haReplica) map[haReplica]*replicaInfo {
+func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLabel string) ([]haReplica, map[haReplica]*replicaInfo) {
+	count := len(req.Timeseries)
+	replicas := make([]haReplica, count)
 	replicaInfos := make(map[haReplica]*replicaInfo)
-	// Check if all timeseries belong to the same replica
-	firstReplica := replicas[0]
-	isOneReplica := true
-	for i := 1; i < len(req.Timeseries); i++ {
-		if replicas[i] != firstReplica {
-			isOneReplica = false
-			break
-		}
-	}
 
-	// Count samples per replica
-	if isOneReplica {
-		numSamples := 0
-		for _, ts := range req.Timeseries {
-			numSamples += len(ts.Samples) + len(ts.Histograms)
-		}
-		// The replica info is stored in a map where the key is the replica itself.
-		// The replica labels are references to the request buffer, which will be reused.
-		// To safely use the replica as map key, we need to clone its labels.
-		firstReplica.cluster = strings.Clone(firstReplica.cluster)
-		firstReplica.replica = strings.Clone(firstReplica.replica)
-		replicaInfos[firstReplica] = &replicaInfo{sampleCount: numSamples}
-	} else {
-		for i, ts := range req.Timeseries {
-			r := replicas[i]
-			info := replicaInfos[r]
-			if info == nil {
-				// The replica info is stored in a map where the key is the replica itself.
-				// The replica labels are references to the request buffer, which will be reused.
-				// To safely use the replica as map key, we need to clone its labels.
-				r.cluster = strings.Clone(r.cluster)
-				r.replica = strings.Clone(r.replica)
+	var previousReplica haReplica
+	var lastInfo *replicaInfo
 
-				info = &replicaInfo{}
-				replicaInfos[r] = info
-			}
-			info.sampleCount += len(ts.Samples) + len(ts.Histograms)
+	for i, ts := range req.Timeseries {
+		currentReplica := findHALabels(haReplicaLabel, haClusterLabel, ts.Labels)
+		replicas[i] = currentReplica
+
+		// If the current replica is the same as the previous one
+		// we skip the map lookup and update the count directly.
+		if i > 0 && currentReplica == previousReplica {
+			lastInfo.sampleCount += len(ts.Samples) + len(ts.Histograms)
+			continue
 		}
+
+		info := replicaInfos[currentReplica]
+		if info == nil {
+			// The replica info is stored in a map where the key is the replica itself.
+			// The replica labels are references to the request buffer, which will be reused.
+			// To safely use the replica as map key, we need to clone its labels.
+			rKey := currentReplica
+			rKey.cluster = strings.Clone(currentReplica.cluster)
+			rKey.replica = strings.Clone(currentReplica.replica)
+			info = &replicaInfo{}
+			replicaInfos[rKey] = info
+		}
+		info.sampleCount += len(ts.Samples) + len(ts.Histograms)
+		previousReplica = currentReplica
+		lastInfo = info
 	}
-	return replicaInfos
+	return replicas, replicaInfos
 }
+
+// func getReplicaInfos(req *mimirpb.WriteRequest, replicas []haReplica) map[haReplica]*replicaInfo {
+// 	replicaInfos := make(map[haReplica]*replicaInfo)
+
+// 	if len(replicas) == 0 {
+// 		return replicaInfos
+// 	}
+
+// 	// Check if all timeseries belong to the same replica
+// 	firstReplica := replicas[0]
+// 	isOneReplica := true
+// 	for i := 1; i < len(replicas); i++ {
+// 		if replicas[i] != firstReplica {
+// 			isOneReplica = false
+// 			break
+// 		}
+// 	}
+
+// 	// Count samples per replica
+// 	if isOneReplica {
+// 		numSamples := 0
+// 		for _, ts := range req.Timeseries {
+// 			numSamples += len(ts.Samples) + len(ts.Histograms)
+// 		}
+// 		// The replica info is stored in a map where the key is the replica itself.
+// 		// The replica labels are references to the request buffer, which will be reused.
+// 		// To safely use the replica as map key, we need to clone its labels.
+// 		firstReplica.cluster = strings.Clone(firstReplica.cluster)
+// 		firstReplica.replica = strings.Clone(firstReplica.replica)
+// 		replicaInfos[firstReplica] = &replicaInfo{sampleCount: numSamples}
+// 	} else {
+// 		for i, ts := range req.Timeseries {
+// 			r := replicas[i]
+// 			info := replicaInfos[r]
+// 			if info == nil {
+// 				// The replica info is stored in a map where the key is the replica itself.
+// 				// The replica labels are references to the request buffer, which will be reused.
+// 				// To safely use the replica as map key, we need to clone its labels.
+// 				r.cluster = strings.Clone(r.cluster)
+// 				r.replica = strings.Clone(r.replica)
+
+// 				info = &replicaInfo{}
+// 				replicaInfos[r] = info
+// 			}
+// 			info.sampleCount += len(ts.Samples) + len(ts.Histograms)
+// 		}
+// 	}
+// 	return replicaInfos
+// }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 	return WithCleanup(next, func(next PushFunc, ctx context.Context, pushReq *Request) error {
@@ -1307,7 +1349,7 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
 		haClusterLabel := d.limits.HAClusterLabel(userID)
 
-		replicas := getReplicasFromRequest(req, haReplicaLabel, haClusterLabel)
+		replicas, replicaInfos := getReplicasAndInfos(req, haReplicaLabel, haClusterLabel)
 
 		span := trace.SpanFromContext(ctx)
 
@@ -1320,18 +1362,25 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		}
 
 		var errs multierror.MultiError
-		replicaInfos := getReplicaInfos(req, replicas)
+		// replicaInfos := getReplicaInfos(req, replicas)
 
-		var clusters []string
-		var replicasAsStrings []string
-		for replicaKey := range replicaInfos {
-			clusters = append(clusters, replicaKey.cluster)
-			replicasAsStrings = append(replicasAsStrings, replicaKey.replica)
+		if span.IsRecording() {
+			var clustersAsStrings, replicasAsStrings strings.Builder
+			isFirst := true
+			for replicaKey := range replicaInfos {
+				if !isFirst {
+					clustersAsStrings.WriteString(", ")
+					replicasAsStrings.WriteString(", ")
+				}
+				clustersAsStrings.WriteString(replicaKey.cluster)
+				replicasAsStrings.WriteString(replicaKey.replica)
+				isFirst = false
+			}
+			span.SetAttributes(
+				attribute.String("clusters", clustersAsStrings.String()),
+				attribute.String("replicas", replicasAsStrings.String()),
+			)
 		}
-		span.SetAttributes(
-			attribute.StringSlice("clusters", clusters),
-			attribute.StringSlice("replicas", replicasAsStrings),
-		)
 
 		samplesPerState, processErr := d.processHaReplicas(ctx, userID, sampleTimestamp, replicaInfos)
 		if processErr != nil {
