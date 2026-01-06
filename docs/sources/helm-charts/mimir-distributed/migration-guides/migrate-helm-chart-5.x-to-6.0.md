@@ -27,13 +27,24 @@ If your values file contains a top-level `nginx` section, you must migrate to th
 
 Follow the [Migrate to unified proxy deployment](https://grafana.com/docs/helm-charts/mimir-distributed/v5.8.x/migration-guides/migrate-to-unified-proxy-deployment/) guide to complete this migration.
 
-### Install rollout-operator CRDs (if using rollout-operator)
+### Account for the rollout-operator
+
+#### If using, install CRDs
 
 If you're using the rollout-operator, install the CRDs from the rollout-operator chart:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/replica-templates-custom-resource-definition.yaml
 kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/zone-aware-pod-disruption-budget-custom-resource-definition.yaml
+```
+
+#### If not using, disable webhooks
+
+If you've opted not to use the rollout-operator, disable it in your values file:
+
+```yaml
+rollout_operator:
+  enabled: false
 ```
 
 ### Choose your ingest storage strategy
