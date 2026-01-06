@@ -1648,7 +1648,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, (*bucketindex.Metadata)(nil), testData.finderErr)
+			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, &bucketindex.Metadata{}, testData.finderErr)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
@@ -1774,7 +1774,7 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	finderResult := bucketindex.Blocks{
 		{ID: block},
 	}
-	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(finderResult, (*bucketindex.Metadata)(nil), nil)
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(finderResult, &bucketindex.Metadata{}, nil)
 
 	reg := prometheus.NewPedanticRegistry()
 	ctx := user.InjectOrgID(context.Background(), "user-1")
@@ -1833,7 +1833,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		// Mock the blocks finder.
 		finder := &blocksFinderMock{}
-		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, (*bucketindex.Metadata)(nil), nil)
+		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, &bucketindex.Metadata{}, nil)
 
 		// Create a real gRPC client connecting to the gRPC server we control in this test.
 		clientCfg := grpcclient.Config{}
@@ -2067,7 +2067,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 				{ID: block},
-			}, (*bucketindex.Metadata)(nil), nil)
+			}, &bucketindex.Metadata{}, nil)
 
 			q := &blocksStoreQuerier{
 				minT:               minT,
@@ -2581,7 +2581,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 				finder := &blocksFinderMock{}
-				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, (*bucketindex.Metadata)(nil), testData.finderErr)
+				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, &bucketindex.Metadata{}, testData.finderErr)
 
 				q := &blocksStoreQuerier{
 					minT:               minT,
@@ -2653,7 +2653,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder := &blocksFinderMock{}
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 					{ID: block1},
-				}, (*bucketindex.Metadata)(nil), nil)
+				}, &bucketindex.Metadata{}, nil)
 
 				q := &blocksStoreQuerier{
 					minT:               minT,
@@ -2726,7 +2726,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), (*bucketindex.Metadata)(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, error(nil))
 
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
@@ -2832,7 +2832,7 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), (*bucketindex.Metadata)(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, error(nil))
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
@@ -2972,7 +2972,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
 				{ID: block1},
 				{ID: block2},
-			}, (*bucketindex.Metadata)(nil), error(nil))
+			}, &bucketindex.Metadata{}, error(nil))
 
 			// Mock the store-gateway response, to simulate the case each block is queried from a different gateway.
 			gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: testData.storeGateway1Responses}
