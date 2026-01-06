@@ -176,7 +176,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		series4Partition2 := uint64(partitions[1].Tokens[0] - 1)
 		series5Partition2 := uint64(partitions[1].Tokens[1] - 1)
 
-		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2}, false)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 
@@ -238,7 +238,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
 		series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
 
-		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1})
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1}, false)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 
@@ -298,7 +298,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		series4Partition2 := uint64(partitions[1].Tokens[0] - 1)
 		series5Partition2 := uint64(partitions[1].Tokens[1] - 1)
 
-		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2}, false)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 
@@ -376,7 +376,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
 			})
 
-			rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
+			rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2}, false)
 			require.NoError(t, err)
 			if returnRejectedSeries {
 				require.ElementsMatch(t, []uint64{series2Partition1, series4Partition2, series5Partition2}, rejected)
@@ -448,7 +448,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
 		})
 
-		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2}, false)
 		require.NoError(t, err)
 		require.ElementsMatch(t, []uint64{series2Partition1}, rejected)
 
@@ -504,7 +504,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
 		})
 
-		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{})
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{}, false)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 	})
@@ -556,7 +556,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 		series5Partition2 := uint64(partitions[1].Tokens[1] - 1)
 
 		// Despite all instances failing, the client should not return an error when IgnoreErrors is enabled.
-		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2})
+		rejected, err := c.TrackSeries(user.InjectOrgID(ctx, userID), userID, []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition2, series5Partition2}, false)
 		require.NoError(t, err)
 		require.Empty(t, rejected)
 
