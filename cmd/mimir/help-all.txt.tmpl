@@ -2521,8 +2521,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Set to true to use the zero-allocation response decoder for active series queries.
   -query-frontend.use-mimir-query-engine-for-sharding
     	[experimental] Set to true to enable performing query sharding inside the Mimir query engine (MQE). This setting has no effect if sharding is disabled. Requires remote execution and MQE to be enabled.
-  -query-scheduler.graceful-shutdown-timeout duration
-    	Maximum time that the scheduler waits for the queue to drain on shutdown. (default 2m15s)
   -query-scheduler.grpc-client-config.backoff-max-period duration
     	Maximum delay when backing off. (default 10s)
   -query-scheduler.grpc-client-config.backoff-min-period duration

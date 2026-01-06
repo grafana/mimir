@@ -19180,10 +19180,9 @@
           "kind": "field",
           "name": "graceful_shutdown_timeout",
           "required": false,
-          "desc": "Maximum time that the scheduler waits for the queue to drain on shutdown.",
+          "desc": "",
           "fieldValue": null,
-          "fieldDefaultValue": 135000000000,
-          "fieldFlag": "query-scheduler.graceful-shutdown-timeout",
+          "fieldDefaultValue": null,
           "fieldType": "duration"
         }
       ],

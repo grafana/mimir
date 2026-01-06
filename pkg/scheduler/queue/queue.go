@@ -316,7 +316,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			isStopping = true
 		case <-q.stopCompleted:
-			// We still check if q.stopCompleted is closed or else we'd be leaving this goroutine running in a timeout exit condition
+			// We still check if q.stopCompleted is closed or else we'd be leaving this goroutine running if something else marks it as done
 			return
 
 		case querierWorkerOp := <-q.querierWorkerOperations:
