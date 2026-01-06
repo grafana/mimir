@@ -138,9 +138,9 @@ func (c *usageTrackerClient) AsyncTrackSeries(ctx context.Context, req *usagetra
 	if len(c.pending) >= c.maxBatchSize {
 		c.mu.Unlock()
 		c.flush()
+	} else {
+		c.mu.Unlock()
 	}
-
-	c.mu.Unlock()
 }
 
 func (c *usageTrackerClient) flusher() {
