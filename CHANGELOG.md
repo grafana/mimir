@@ -129,6 +129,7 @@
 * [BUGFIX] Ruler: Fixed `-ruler.max-rule-groups-per-tenant-by-namespace` to only count rule groups in the specified namespace instead of all namespaces. #13743
 * [BUGFIX] Query-frontend: Fix race condition that could sometimes cause unnecessary resharding of queriers if querier shuffle sharding and remote execution is enabled. #13794 #13838
 * [BUGFIX] Query-frontend: Fix `step()` duration expression returning 1000x larger value. #13920
+* [BUGFIX] Store-gateway: Fix parent-child relationship in LabelNames and LabelValues trace spans. #13932
 
 ### Mixin
 
