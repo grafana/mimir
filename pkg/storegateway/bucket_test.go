@@ -58,6 +58,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/fixtures"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	"github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -313,7 +314,10 @@ func TestBlockLabelNames(t *testing.T) {
 	sl := NewLimiter(math.MaxUint64, promauto.With(nil).NewCounter(prometheus.CounterOpts{Name: "test"}), func(limit uint64) validation.LimitError {
 		return validation.NewLimitError(fmt.Sprintf("exceeded unlimited limit of %v", limit))
 	})
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
+
+	tb := test.NewTB(t)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -420,7 +424,9 @@ func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(string, ulid.ULID, i
 func TestBlockLabelValues(t *testing.T) {
 	const series = 100_000
 
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(series))
+	tb := test.NewTB(t)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
 
 	t.Run("happy case with no matchers", func(t *testing.T) {
 		b := newTestBucketBlock()
@@ -578,7 +584,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
 	const series = 50000
 
-	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
 
 	t.Run("happy cases", func(t *testing.T) {
 		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
@@ -1040,54 +1047,46 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	tb := test.NewTB(b)
 	const series = 50e5
 
-	newTestBucketBlock := prepareTestBlock(tb, appendTestSeries(series))
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(series))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
 	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
 }
 
-func prepareTestBlock(tb test.TB, dataSetup ...testBlockDataSetup) func() *bucketBlock {
-	tmpDir := tb.TempDir()
-	bucketDir := filepath.Join(tmpDir, "bkt")
-
-	ubkt, err := filesystem.NewBucket(bucketDir)
-	assert.NoError(tb, err)
-
-	bkt := objstore.WithNoopInstr(ubkt)
-
-	tb.Cleanup(func() {
-		assert.NoError(tb, ubkt.Close())
-		assert.NoError(tb, bkt.Close())
-	})
-
-	id, minT, maxT := uploadTestBlock(tb, tmpDir, bkt, dataSetup)
-
-	r, err := indexheader.NewStreamBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling, indexheader.NewStreamBinaryReaderMetrics(nil), indexheader.Config{})
-	require.NoError(tb, err)
-
+func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) func() *bucketBlock {
 	return func() *bucketBlock {
 		var chunkObjects []string
-		err := bkt.Iter(context.Background(), path.Join(id.String(), "chunks"), func(s string) error {
-			chunkObjects = append(chunkObjects, s)
-			return nil
-		})
+		err := testBlock.InstrBkt.Iter(
+			context.Background(),
+			path.Join(testBlock.Meta.ULID.String(), "chunks"), func(s string) error {
+				chunkObjects = append(chunkObjects, s)
+				return nil
+			})
+		require.NoError(tb, err)
+
+		indexReader, err := indexheader.NewStreamBinaryReader(
+			context.Background(),
+			log.NewNopLogger(),
+			testBlock.InstrBkt,
+			testBlock.InstrBkt.RootDir(),
+			testBlock.Meta.ULID,
+			mimir_tsdb.DefaultPostingOffsetInMemorySampling,
+			indexheader.NewStreamBinaryReaderMetrics(nil),
+			indexheader.Config{},
+		)
 		require.NoError(tb, err)
 
 		return &bucketBlock{
 			userID:            "tenant",
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
-			indexHeaderReader: r,
+			indexHeaderReader: indexReader,
 			indexCache:        noopCache{},
 			chunkObjs:         chunkObjects,
-			bkt:               localBucket{Bucket: ubkt, dir: bucketDir},
-			meta:              &block.Meta{BlockMeta: tsdb.BlockMeta{ULID: id, MinTime: minT, MaxTime: maxT}},
+			bkt:               testBlock.InstrBkt,
+			meta:              testBlock.Meta,
 			partitioners:      newGapBasedPartitioners(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
 	}
-}
-
-type localBucket struct {
-	*filesystem.Bucket
-	dir string
 }
 
 type testBlockDataSetup = func(tb testing.TB, appenderFactory func() storage.Appender)
