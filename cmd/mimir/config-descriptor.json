@@ -19175,15 +19175,6 @@
           "fieldDefaultValue": 0,
           "fieldFlag": "query-scheduler.max-used-instances",
           "fieldType": "int"
-        },
-        {
-          "kind": "field",
-          "name": "graceful_shutdown_timeout",
-          "required": false,
-          "desc": "",
-          "fieldValue": null,
-          "fieldDefaultValue": null,
-          "fieldType": "duration"
         }
       ],
       "fieldValue": null,
