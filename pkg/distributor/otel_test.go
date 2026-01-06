@@ -2182,7 +2182,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest()
 				return err
-			}, nil, nil, util_log.Logger)
+			}, nil, nil, log.NewNopLogger())
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, tc.req)
 
