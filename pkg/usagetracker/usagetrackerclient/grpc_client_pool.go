@@ -79,7 +79,7 @@ func dialUsageTracker(clientCfg grpcclient.Config, instance ring.InstanceDesc, r
 		return nil, errors.Wrapf(err, "failed to dial usage-tracker %s %s", instance.Id, instance.Addr)
 	}
 
-	return &usageTrackerClient{
+	c := &usageTrackerClient{
 		UsageTrackerClient: usagetrackerpb.NewUsageTrackerClient(conn),
 		HealthClient:       grpc_health_v1.NewHealthClient(conn),
 		conn:               conn,
@@ -88,7 +88,11 @@ func dialUsageTracker(clientCfg grpcclient.Config, instance ring.InstanceDesc, r
 
 		flushDelay:   100 * time.Millisecond,
 		maxBatchSize: 1000, // Flush when batch reaches this size
-	}, nil
+	}
+
+	go c.flusher()
+
+	return c, nil
 }
 
 type usageTrackerClient struct {
@@ -120,9 +124,6 @@ func (c *usageTrackerClient) RemoteAddress() string {
 // AsyncTrackSeries queues a TrackSeries request to be batched and flushed on a timer.
 // This method is non-blocking and does not return rejected series.
 func (c *usageTrackerClient) AsyncTrackSeries(ctx context.Context, req *usagetrackerpb.TrackSeriesRequest) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	// Convert the request to a subrequest for batching.
 	subreq := &usagetrackerpb.TrackSeriesSubrequest{
 		UserID:       req.UserID,
@@ -130,33 +131,33 @@ func (c *usageTrackerClient) AsyncTrackSeries(ctx context.Context, req *usagetra
 		SeriesHashes: req.SeriesHashes,
 	}
 
+	c.mu.Lock()
 	c.pending = append(c.pending, subreq)
-
-	// Start the flush timer if it's not already running.
-	if c.flushTimer == nil {
-		c.flushTimer = time.AfterFunc(c.flushDelay, func() {
-			c.mu.Lock()
-			c.flush()
-			// flush() unlocks the mutex, so we don't need to unlock here
-		})
-	}
 
 	// Flush if batch size is reached.
 	if len(c.pending) >= c.maxBatchSize {
-		c.flushTimer.Stop()
-		c.flushTimer = nil
+		c.mu.Unlock()
+		c.flush()
+	}
+
+	c.mu.Unlock()
+}
+
+func (c *usageTrackerClient) flusher() {
+	// Dangles for now. Fix later.
+
+	for {
+		time.Sleep(util.DurationWithJitter(c.flushDelay, 0.15))
 		c.flush()
 	}
 }
 
 // flush sends all pending requests as a single batched request.
-// This method must be called with the mutex locked.
 func (c *usageTrackerClient) flush() {
+	c.mu.Lock()
+
 	if len(c.pending) == 0 {
-		if c.flushTimer != nil {
-			c.flushTimer.Stop()
-			c.flushTimer = nil
-		}
+		c.mu.Unlock()
 		return
 	}
 
@@ -168,33 +169,26 @@ func (c *usageTrackerClient) flush() {
 	// Clear pending requests and reset timer.
 	pending := c.pending
 	c.pending = nil
-	if c.flushTimer != nil {
-		c.flushTimer.Stop()
-		c.flushTimer = nil
-	}
 
 	// Release the lock before making the gRPC call.
 	c.mu.Unlock()
 
-	// Send the batched request asynchronously.
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-		_, err := c.TrackSeries(ctx, batchReq)
-		if err != nil {
-			level.Warn(c.logger).Log(
-				"msg", "failed to send batched TrackSeries request",
-				"batch_size", len(pending),
-				"err", err,
-			)
-		} else {
-			level.Debug(c.logger).Log(
-				"msg", "successfully sent batched TrackSeries request",
-				"batch_size", len(pending),
-			)
-		}
-	}()
+	_, err := c.TrackSeries(ctx, batchReq)
+	if err != nil {
+		level.Warn(c.logger).Log(
+			"msg", "failed to send batched TrackSeries request",
+			"batch_size", len(pending),
+			"err", err,
+		)
+	} else {
+		level.Debug(c.logger).Log(
+			"msg", "successfully sent batched TrackSeries request",
+			"batch_size", len(pending),
+		)
+	}
 }
 
 // grpcclientInstrument is a copy of grpcclient.Instrument, but it doesn't add the ClientUserHeaderInterceptor for the method that doesn't need auth.
