@@ -337,10 +337,10 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 // Series implements the storegatewaypb.StoreGatewayServer interface, making a series request to the underlying user bucket store.
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
-	spanLog, spanCtx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.Series")
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.Series")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return fmt.Errorf("no userID")
 	}
@@ -352,16 +352,16 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 
 	return store.Series(req, spanSeriesServer{
 		StoreGateway_SeriesServer: srv,
-		ctx:                       spanCtx,
+		ctx:                       ctx,
 	})
 }
 
 // LabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelNames")
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelNames")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return nil, fmt.Errorf("no userID")
 	}
@@ -376,10 +376,10 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 
 // LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelValues")
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelValues")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return nil, fmt.Errorf("no userID")
 	}
