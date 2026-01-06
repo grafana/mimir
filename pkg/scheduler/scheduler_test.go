@@ -369,6 +369,7 @@ func TestTracingContext(t *testing.T) {
 		require.Equal(t, sp.SpanContext().TraceID().String(), r.ParentSpanContext.TraceID().String())
 	}
 
+	scheduler.requestQueue.AllowUncleanStop()
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 }
 
@@ -415,6 +416,7 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	_, err = querierLoop.Recv()
 	require.NoError(t, err)
 
+	scheduler.requestQueue.AllowUncleanStop()
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
 	// Unblock scheduler loop, to find next request.
@@ -427,7 +429,12 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 }
 
 func TestSchedulerMaxOutstandingRequests(t *testing.T) {
-	_, frontendClient, _ := setupScheduler(t, nil)
+	scheduler, frontendClient, _ := setupScheduler(t, nil)
+
+	t.Cleanup(func() {
+		scheduler.requestQueue.AllowUncleanStop()
+		services.StopAndAwaitTerminated(context.Background(), scheduler)
+	})
 
 	for i := 0; i < testMaxOutstandingPerTenant; i++ {
 		// coming from different frontends
@@ -536,6 +543,11 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 	scheduler, frontendClient, _ := setupScheduler(t, reg)
 
+	t.Cleanup(func() {
+		scheduler.requestQueue.AllowUncleanStop()
+		services.StopAndAwaitTerminated(context.Background(), scheduler)
+	})
+
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
@@ -568,7 +580,12 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 func TestSchedulerQuerierMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	_, frontendClient, querierClient := setupScheduler(t, reg)
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
+
+	t.Cleanup(func() {
+		scheduler.requestQueue.AllowUncleanStop()
+		services.StopAndAwaitTerminated(context.Background(), scheduler)
+	})
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{

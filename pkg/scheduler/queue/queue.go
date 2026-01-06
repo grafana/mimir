@@ -121,7 +121,7 @@ type RequestQueue struct {
 	stopRequested      chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
 	stopCompleted      chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 	closeStopCompleted func()
-	stopTimeout        time.Duration
+	allowUncleanStop   bool
 
 	requestsToEnqueue                     chan requestToEnqueue
 	requestsSent                          chan *SchedulerRequest
@@ -225,7 +225,6 @@ func NewRequestQueue(
 	enqueueDuration prometheus.Histogram,
 	schedulerInflightRequests *atomic.Int64,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
-	stopTimeout time.Duration,
 ) (*RequestQueue, error) {
 	queryComponentCapacity, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
 	if err != nil {
@@ -247,7 +246,6 @@ func NewRequestQueue(
 		// channels must not be buffered so that we can detect when dispatcherLoop() has finished.
 		stopRequested: make(chan struct{}),
 		stopCompleted: make(chan struct{}),
-		stopTimeout:   stopTimeout,
 
 		requestsToEnqueue:                     make(chan requestToEnqueue),
 		requestsSent:                          make(chan *SchedulerRequest),
@@ -353,6 +351,11 @@ func (q *RequestQueue) dispatcherLoop() {
 
 				currentElement = nextElement
 			}
+		}
+
+		if isStopping && q.allowUncleanStop {
+			level.Warn(q.log).Log("msg", "unclean stop requested")
+			return
 		}
 
 		if isStopping {
@@ -526,6 +529,11 @@ func (q *RequestQueue) AwaitRequestForQuerier(dequeueReq *QuerierWorkerDequeueRe
 	}
 }
 
+// This function exists to enable unclean testing of logic surrounding the queue, it should never be used in runtime code.
+func (q *RequestQueue) AllowUncleanStop() {
+	q.allowUncleanStop = true
+}
+
 func (q *RequestQueue) stop(_ error) error {
 	// Do not close the stopRequested channel;
 	// this would cause the read from stopRequested to preempt all other select cases in dispatcherLoop.
@@ -533,25 +541,8 @@ func (q *RequestQueue) stop(_ error) error {
 	// The loop needs to keep executing other select branches while stopping in order to clear the queue.
 	q.stopRequested <- struct{}{}
 
-	// We set a context with a timeout to ensure that in the event the scheduler is the last component
-	// running we do not hang forever waiting for the queue to be drained.
-	// This timeout is set using -query-scheduler.graceful-shutdown-timeout and defaults to 30 seconds
-	ctx, cancel := context.WithTimeout(context.Background(), q.stopTimeout)
-
-	for {
-		select {
-		case <-q.stopCompleted:
-			cancel()
-			return nil
-		case <-ctx.Done():
-			level.Warn(q.log).Log("msg", "queue stop timeout reached: query queue is not empty but queries have not been handled before the timeout", "stopTimeout", q.stopTimeout)
-
-			cancel()
-			q.closeStopCompleted()
-
-			return nil
-		}
-	}
+	<-q.stopCompleted
+	return nil
 }
 
 func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {

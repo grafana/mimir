@@ -179,7 +179,6 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		enqueueDuration,
 		s.schedulerInflightRequestCount,
 		querierInflightRequestsMetric,
-		cfg.SchedulerGracefulShutdownTimeout,
 	)
 	if err != nil {
 		return nil, err
