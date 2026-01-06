@@ -29,7 +29,9 @@ Follow the [Migrate to unified proxy deployment](https://grafana.com/docs/helm-c
 
 ### Account for the rollout-operator
 
-#### If using, install CRDs
+If your deployment uses the rollout-operator, you must ensure that the required CustomResourceDefinitions (CRDs) are installed. If you don't use the rollout-operator, you must explicitly disable it in your values file to avoid unnecessary components and issues with subsequent rollouts.
+
+#### Install CRDs if using the rollout-operator
 
 If you're using the rollout-operator, install the CRDs from the rollout-operator chart:
 
@@ -38,9 +40,9 @@ kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/char
 kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/zone-aware-pod-disruption-budget-custom-resource-definition.yaml
 ```
 
-#### If not using, disable webhooks
+#### Disable the rollout-operator if not in use
 
-If you've opted not to use the rollout-operator, disable it in your values file:
+If you don't use the rollout-operator, disable it in your values file to prevent the installation of related webhooks which will interfere with subsequent rollouts:
 
 ```yaml
 rollout_operator:
