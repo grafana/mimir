@@ -371,7 +371,7 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 		return &storepb.LabelNamesResponse{}, nil
 	}
 
-	return store.LabelNames(ctx, req)
+	return store.LabelNames(spanCtx, req)
 }
 
 // LabelValues implements the storegatewaypb.StoreGatewayServer interface.
@@ -389,7 +389,7 @@ func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValues
 		return &storepb.LabelValuesResponse{}, nil
 	}
 
-	return store.LabelValues(ctx, req)
+	return store.LabelValues(spanCtx, req)
 }
 
 // scanUsers in the bucket and return the list of found users, respecting any specifically
