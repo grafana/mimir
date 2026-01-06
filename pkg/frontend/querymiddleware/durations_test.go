@@ -48,6 +48,11 @@ func TestDurationMiddleware(t *testing.T) {
 			expectInstant: "rate(http_requests_total[5m])",
 			expectRange:   "rate(http_requests_total[6m])",
 		},
+		"valid duration expression with range() should be rewritten": {
+			query:         "rate(http_requests_total[range() + 30s])",
+			expectInstant: "rate(http_requests_total[30s])",
+			expectRange:   "rate(http_requests_total[31s])",
+		},
 	}
 	for name, tc := range testCases {
 		for _, instant := range []bool{false, true} {
