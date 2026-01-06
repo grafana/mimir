@@ -108,8 +108,6 @@ type Config struct {
 
 	GRPCClientConfig grpcclient.Config         `yaml:"grpc_client_config" doc:"description=This configures the gRPC client used to report errors back to the query-frontend."`
 	ServiceDiscovery schedulerdiscovery.Config `yaml:",inline"`
-
-	SchedulerGracefulShutdownTimeout time.Duration `yaml:"graceful_shutdown_timeout"`
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {

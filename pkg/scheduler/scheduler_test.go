@@ -75,7 +75,6 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.MaxOutstandingPerTenant = testMaxOutstandingPerTenant
-	cfg.SchedulerGracefulShutdownTimeout = 5 * time.Second
 
 	s, err := NewScheduler(cfg, &limits{queriers: 2}, log.NewNopLogger(), reg)
 	require.NoError(t, err)
