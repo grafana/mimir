@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	gogostatus "github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -2192,11 +2193,10 @@ func TestOTLPResponseContentType(t *testing.T) {
 }
 
 func TestOTLPJSONEnumEncoding(t *testing.T) {
-	st := grpcstatus.New(codes.Internal, "msg").Proto()
+	// Verify the marshaled JSON contains integer code, not string
+	st := gogostatus.New(codes.Internal, "msg").Proto()
 	data, err := json.Marshal(st)
 	require.NoError(t, err)
-
-	// Verify the marshaled JSON contains integer code, not string
 	assert.Contains(t, string(data), `"code":13`, "code field must be encoded as integer (13), not string")
 }
 
