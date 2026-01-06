@@ -15,7 +15,7 @@ service UsageTracker {
   rpc GetUsersCloseToLimit(GetUsersCloseToLimitRequest) returns (GetUsersCloseToLimitResponse);
 }
 
-message TrackSeriesRequest {
+message TrackSeriesSubrequest {
   // The tenant owning the series.
   string userID = 1;
 
@@ -26,9 +26,30 @@ message TrackSeriesRequest {
   repeated uint64 seriesHashes = 3;
 }
 
+message TrackSeriesRequest {
+  // The tenant owning the series.
+  string userID = 1;
+
+  // Partition that this series belong to.
+  int32 partition = 2;
+
+  // The hashes of the series to track.
+  repeated uint64 seriesHashes = 3;
+
+  repeated TrackSeriesSubrequest subrequests = 4;
+}
+
+message TrackSeriesSubresponse {
+  // The hashes of the series that have been rejected because the tenant is over the limit.
+  repeated uint64 rejectedSeriesHashes = 1;
+}
+
+
 message TrackSeriesResponse {
   // The hashes of the series that have been rejected because the tenant is over the limit.
   repeated uint64 rejectedSeriesHashes = 1;
+
+  repeated TrackSeriesSubresponse subresponses = 2;
 }
 
 message SeriesCreatedEvent {

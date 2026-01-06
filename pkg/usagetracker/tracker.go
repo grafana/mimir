@@ -671,6 +671,30 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
+
+	if req.Subrequests != nil {
+		resps := make([]*usagetrackerpb.TrackSeriesSubresponse, 0, len(req.Subrequests))
+		now := time.Now()
+		// a batch request.
+		for _, sr := range req.Subrequests {
+			p, err := t.runningPartition(sr.Partition)
+			if err != nil {
+				return nil, err
+			}
+			rej, err := p.store.trackSeries(context.Background(), sr.UserID, sr.SeriesHashes, now)
+			if err != nil {
+				return nil, err
+			}
+			resp := usagetrackerpb.TrackSeriesSubresponse{}
+			resp.RejectedSeriesHashes = rej
+			resps = append(resps, &resp)
+		}
+
+		return &usagetrackerpb.TrackSeriesResponse{
+			Subresponses: resps,
+		}, nil
+	}
+
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
 	if err != nil {

@@ -329,13 +329,12 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
 		}
 
-		trackerClient := poolClient.(usagetrackerpb.UsageTrackerClient)
-		trackerRes, err := trackerClient.TrackSeries(ctx, req)
-		if err != nil {
-			return nil, errors.Wrapf(err, "usage-tracker instance %s (%s)", instance.Id, instance.Addr)
-		}
+		trackerClient := poolClient.(*usageTrackerClient)
+		trackerClient.AsyncTrackSeries(ctx, req)
 
-		return trackerRes.RejectedSeriesHashes, nil
+		// AsyncTrackSeries is non-blocking and doesn't return rejected series.
+		// Return empty slice since we're tracking asynchronously.
+		return nil, nil
 	}, func(_ []uint64) {
 		// No cleanup.
 	})
