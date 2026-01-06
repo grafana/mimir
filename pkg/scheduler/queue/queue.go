@@ -390,7 +390,7 @@ func (q *RequestQueue) dispatcherLoop() {
 				return
 			}
 
-			level.Info(q.log).Log(
+			level.Debug(q.log).Log(
 				"msg", "queue stop is stopping but query queue is not empty, waiting for query workers to complete remaining requests",
 				"queued_requests", q.queueBroker.itemCount(),
 				"scheduler_inflight", q.schedulerInflightRequests.Load(),
