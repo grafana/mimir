@@ -2139,8 +2139,6 @@ ring:
 # available query-scheduler instances.
 # CLI flag: -query-scheduler.max-used-instances
 [max_used_instances: <int> | default = 0]
-
-[graceful_shutdown_timeout: <duration> | default = ]
 ```
 
 ### ruler
