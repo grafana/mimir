@@ -433,7 +433,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	t.Cleanup(func() {
 		scheduler.requestQueue.AllowUncleanStop()
-		services.StopAndAwaitTerminated(context.Background(), scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 	})
 
 	for i := 0; i < testMaxOutstandingPerTenant; i++ {
@@ -545,7 +545,7 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 	t.Cleanup(func() {
 		scheduler.requestQueue.AllowUncleanStop()
-		services.StopAndAwaitTerminated(context.Background(), scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 	})
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
@@ -584,7 +584,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 
 	t.Cleanup(func() {
 		scheduler.requestQueue.AllowUncleanStop()
-		services.StopAndAwaitTerminated(context.Background(), scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 	})
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
