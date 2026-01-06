@@ -1875,8 +1875,8 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 
 	for name, setup := range testSetups {
 		b.Run(name, func(b *testing.B) {
-			for _, testCase := range seriesSelectionTestCases(test.NewTB(b), series) {
-				b.Run(testCase.name, func(b *testing.B) {
+			for _, testCase := range fixtures.SeriesSelectorTestCases(test.NewTB(b), series) {
+				b.Run(testCase.Name, func(b *testing.B) {
 					ctx, cancel := context.WithCancel(context.Background())
 					b.Cleanup(cancel)
 
@@ -1897,7 +1897,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 							indexReader,
 							setup.indexCache,
 							block.meta,
-							testCase.matchers,
+							testCase.Matchers,
 							nil,
 							cachedSeriesHasher{hashCache},
 							defaultStrategy, // we don't skip chunks, so we can measure impact in loading chunk refs too
@@ -1910,7 +1910,7 @@ func BenchmarkOpenBlockSeriesChunkRefsSetsIterator(b *testing.B) {
 						require.NoError(b, err)
 
 						actualSeriesSets := readAllSeriesChunkRefs(newFlattenedSeriesChunkRefsIterator(iterator))
-						assert.Len(b, actualSeriesSets, testCase.expectedSeriesLen)
+						assert.Len(b, actualSeriesSets, testCase.ExpectedCount)
 						assert.NoError(b, iterator.Err())
 					}
 				})
