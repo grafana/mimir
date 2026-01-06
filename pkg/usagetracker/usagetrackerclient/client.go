@@ -207,7 +207,7 @@ func (c *UsageTrackerClient) stopping(_ error) error {
 	return nil
 }
 
-func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64) (_ []uint64, returnErr error) {
+func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, series []uint64, async bool) (_ []uint64, returnErr error) {
 	// Nothing to do if there are no series to track.
 	if len(series) == 0 {
 		return nil, nil
@@ -259,7 +259,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 			}
 
 			// Track the series for this partition.
-			partitionRejected, err := c.trackSeriesPerPartition(ctx, userID, int32(partitionID), partitionSeries)
+			partitionRejected, err := c.trackSeriesPerPartition(ctx, userID, int32(partitionID), partitionSeries, async)
 			if err != nil {
 				return errors.Wrapf(err, "partition %d", partitionID)
 			}
@@ -295,7 +295,7 @@ func (c *UsageTrackerClient) TrackSeries(ctx context.Context, userID string, ser
 	return rejectedCopy, nil
 }
 
-func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64) ([]uint64, error) {
+func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID string, partitionID int32, series []uint64, async bool) ([]uint64, error) {
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
@@ -330,11 +330,20 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 		}
 
 		trackerClient := poolClient.(*usageTrackerClient)
-		trackerClient.AsyncTrackSeries(ctx, req)
 
-		// AsyncTrackSeries is non-blocking and doesn't return rejected series.
-		// Return empty slice since we're tracking asynchronously.
-		return nil, nil
+		if async {
+			trackerClient.AsyncTrackSeries(ctx, req)
+
+			// AsyncTrackSeries is non-blocking and doesn't return rejected series.
+			// Return empty slice since we're tracking asynchronously.
+			return nil, nil
+		} else {
+			res, err := trackerClient.TrackSeries(ctx, req)
+			if err != nil {
+				return nil, err
+			}
+			return res.RejectedSeriesHashes, nil
+		}
 	}, func(_ []uint64) {
 		// No cleanup.
 	})
