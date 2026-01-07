@@ -1586,7 +1586,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 
 					// Create the bucket store.
 					store, err := NewBucketStore(
-						"test-user",
+						"tenant",
 						instrumentedBucket,
 						metaFetcher,
 						tmpDir,

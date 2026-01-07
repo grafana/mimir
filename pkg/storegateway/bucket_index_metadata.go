@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -26,36 +27,80 @@ const (
 	noBucketIndex        = "no-bucket-index"
 )
 
-// BucketIndexMetadataFetcher is a Thanos MetadataFetcher implementation leveraging on the Mimir bucket index.
-type BucketIndexMetadataFetcher struct {
+// BucketIndexLoader is an in-memory cache, that fetches tenant's bucket index from bucket.
+type BucketIndexLoader struct {
 	userID      string
 	bkt         objstore.Bucket
 	cfgProvider bucket.TenantConfigProvider
 	logger      log.Logger
-	filters     []block.MetadataFilter
-	metrics     *block.FetcherMetrics
+
+	mu  sync.RWMutex
+	idx *bucketindex.Index
 }
 
-func NewBucketIndexMetadataFetcher(
-	userID string,
+func NewBucketIndexLoader(userID string,
 	bkt objstore.Bucket,
 	cfgProvider bucket.TenantConfigProvider,
 	logger log.Logger,
-	reg prometheus.Registerer,
-	filters []block.MetadataFilter,
-) *BucketIndexMetadataFetcher {
-	return &BucketIndexMetadataFetcher{
+) *BucketIndexLoader {
+	return &BucketIndexLoader{
 		userID:      userID,
 		bkt:         bkt,
 		cfgProvider: cfgProvider,
 		logger:      logger,
-		filters:     filters,
-		metrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
+	}
+}
+
+// FetchIndex retrieves the bucket index from bucket, updating the cached instance.
+func (l *BucketIndexLoader) FetchIndex(ctx context.Context) (*bucketindex.Index, error) {
+	idx, err := bucketindex.ReadIndex(ctx, l.bkt, l.userID, l.cfgProvider, l.logger)
+	if err != nil {
+		return nil, err
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.idx = idx
+
+	return idx, nil
+}
+
+// Index returns the last read instance of bucket index. If the bucket index hasn't been read successfully yet, the returned
+// instance is nil.
+func (l *BucketIndexLoader) Index() *bucketindex.Index {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.idx
+}
+
+// BucketIndexBlockMetadataFetcher is a Thanos block.MetadataFetcher implementation leveraging on the Mimir bucket index.
+type BucketIndexBlockMetadataFetcher struct {
+	userID  string
+	loader  *BucketIndexLoader
+	logger  log.Logger
+	filters []block.MetadataFilter
+	metrics *block.FetcherMetrics
+}
+
+func NewBucketIndexBlockMetadataFetcher(
+	userID string,
+	loader *BucketIndexLoader,
+	logger log.Logger,
+	reg prometheus.Registerer,
+	filters []block.MetadataFilter,
+) *BucketIndexBlockMetadataFetcher {
+	return &BucketIndexBlockMetadataFetcher{
+		userID:  userID,
+		loader:  loader,
+		logger:  logger,
+		filters: filters,
+		metrics: block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
 	}
 }
 
 // Fetch implements block.MetadataFetcher. Not goroutine-safe.
-func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*block.Meta, partial map[ulid.ULID]error, err error) {
+func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.ULID]*block.Meta, partial map[ulid.ULID]error, err error) {
 	f.metrics.ResetTx()
 
 	start := time.Now()
@@ -67,8 +112,7 @@ func (f *BucketIndexMetadataFetcher) Fetch(ctx context.Context) (metas map[ulid.
 	}()
 	f.metrics.Syncs.Inc()
 
-	// Fetch the bucket index.
-	idx, err := bucketindex.ReadIndex(ctx, f.bkt, f.userID, f.cfgProvider, f.logger)
+	idx, err := f.loader.FetchIndex(ctx)
 	if errors.Is(err, bucketindex.ErrIndexNotFound) {
 		// This is a legit case happening when the first blocks of a tenant have recently been uploaded by ingesters
 		// and their bucket index has not been created yet.

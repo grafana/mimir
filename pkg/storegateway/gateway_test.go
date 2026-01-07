@@ -1667,7 +1667,7 @@ func (m *mockShardingStrategy) FilterBlocks(ctx context.Context, userID string, 
 	return args.Error(0)
 }
 
-func createBucketIndex(t *testing.T, bkt objstore.Bucket, userID string) *bucketindex.Index {
+func createBucketIndex(t testing.TB, bkt objstore.Bucket, userID string) *bucketindex.Index {
 	updater := bucketindex.NewUpdater(bkt, userID, nil, 16, 16, log.NewNopLogger())
 	idx, _, err := updater.UpdateIndex(context.Background(), nil)
 	require.NoError(t, err)

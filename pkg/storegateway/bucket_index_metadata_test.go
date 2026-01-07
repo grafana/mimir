@@ -28,7 +28,7 @@ import (
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
-func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
+func TestBucketIndexBlockMetadataFetcher_Fetch(t *testing.T) {
 	const userID = "user-1"
 
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
@@ -60,7 +60,8 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		newMinTimeMetaFilter(1 * time.Hour),
 	}
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, nil, logger, reg, filters)
+	loader := NewBucketIndexLoader(userID, bkt, nil, logger)
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, reg, filters)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, map[ulid.ULID]*block.Meta{
@@ -100,7 +101,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	))
 }
 
-func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
+func TestBucketIndexBlockMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	const userID = "user-1"
 
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
@@ -109,7 +110,8 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, nil, logger, reg, nil)
+	loader := NewBucketIndexLoader(userID, bkt, nil, logger)
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, reg, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -147,7 +149,7 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	))
 }
 
-func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
+func TestBucketIndexBlockMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	const userID = "user-1"
 
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
@@ -159,7 +161,8 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	// Upload a corrupted bucket index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
-	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, nil, logger, reg, nil)
+	loader := NewBucketIndexLoader(userID, bkt, nil, logger)
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, reg, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)

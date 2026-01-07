@@ -525,14 +525,8 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	fetcher := NewBucketIndexMetadataFetcher(
-		userID,
-		u.bucket,
-		u.limits,
-		u.logger,
-		fetcherReg,
-		filters,
-	)
+	loader := NewBucketIndexLoader(userID, u.bucket, u.limits, u.logger)
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, u.logger, fetcherReg, filters)
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
