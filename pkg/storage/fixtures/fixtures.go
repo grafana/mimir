@@ -39,8 +39,9 @@ const (
 // which is generally formed with filepath.Join(<test root TmpDir>, "bkt").
 // The directory is consumed by tests to check bucket objects via filesystem access.
 type FsInstrumentedBucket struct {
-	objstore.InstrumentedBucket
 	rootDir string
+	fsBkt   *filesystem.Bucket
+	objstore.InstrumentedBucket
 }
 
 func NewFsInstrumentedBucket(rootDir string) (*FsInstrumentedBucket, error) {
@@ -51,13 +52,19 @@ func NewFsInstrumentedBucket(rootDir string) (*FsInstrumentedBucket, error) {
 
 	instrBkt := objstore.WithNoopInstr(fsBkt)
 	return &FsInstrumentedBucket{
-		InstrumentedBucket: instrBkt,
 		rootDir:            rootDir,
+		fsBkt:              fsBkt,
+		InstrumentedBucket: instrBkt,
 	}, nil
 }
 
 func (b *FsInstrumentedBucket) RootDir() string {
 	return b.rootDir
+}
+
+func (b *FsInstrumentedBucket) Close() error {
+	_ = b.fsBkt.Close() // Close is a no-op on filesystem bucket
+	return b.InstrumentedBucket.Close()
 }
 
 type BucketTestBlock struct {
@@ -66,10 +73,11 @@ type BucketTestBlock struct {
 
 	InstrBkt *FsInstrumentedBucket
 
-	// StoreGatewayDir represents local disk storage for index-headers
-	StoreGatewayDir string
-
 	logger log.Logger
+}
+
+func (b *BucketTestBlock) Close() error {
+	return b.InstrBkt.Close()
 }
 
 type AppendFunc = func(tb testing.TB, appenderFactory func() storage.Appender)
@@ -118,16 +126,9 @@ func SetupTestBlock(tb testing.TB, appendFuncs ...AppendFunc) *BucketTestBlock {
 	// Dir to underlie the filesystem-based test bucket
 	bucketDir := filepath.Join(testTmpDir, "bkt")
 
-	// Dir to represent the store-gateway local disk storage for index-headers
-	localStoreGatewayDir := filepath.Join(testTmpDir, "store-gateway")
-
 	// Setup temp bucket from test filesystem & apply instrumentation
 	instrBkt, err := NewFsInstrumentedBucket(bucketDir)
 	assert.NoError(tb, err)
-
-	tb.Cleanup(func() {
-		assert.NoError(tb, instrBkt.Close())
-	})
 
 	// Initialize in-memory block
 	headOpts := tsdb.DefaultHeadOptions()
@@ -146,7 +147,6 @@ func SetupTestBlock(tb testing.TB, appendFuncs ...AppendFunc) *BucketTestBlock {
 	}
 
 	// Compact block to temporary location on disk
-	// compactedDir := filepath.Join(testTmpDir, "block")
 	assert.NoError(tb, os.MkdirAll(localBlockBuilderDir, os.ModePerm))
 	// Put a 4 MiB limit on segment files so we can test with many segment files without creating too big blocks.
 	opts := tsdb.LeveledCompactorOptions{
@@ -173,14 +173,16 @@ func SetupTestBlock(tb testing.TB, appendFuncs ...AppendFunc) *BucketTestBlock {
 	_, err = block.Upload(context.Background(), log.NewNopLogger(), instrBkt, compactedBlockDir, nil)
 	assert.NoError(tb, err)
 
-	assert.NoError(tb, os.MkdirAll(filepath.Join(localStoreGatewayDir, blockID.String()), os.ModePerm))
-	return &BucketTestBlock{
-		Meta:            meta,
-		UserID:          "",
-		InstrBkt:        instrBkt,
-		StoreGatewayDir: localStoreGatewayDir,
-		logger:          nil,
+	testBlock := &BucketTestBlock{
+		Meta:     meta,
+		UserID:   "",
+		InstrBkt: instrBkt,
+		logger:   nil,
 	}
+	tb.Cleanup(func() {
+		assert.NoError(tb, testBlock.Close())
+	})
+	return testBlock
 }
 
 type SeriesSelectionTestCase struct {

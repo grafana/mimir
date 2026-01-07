@@ -1067,7 +1067,7 @@ func testBlockToBucketBlock(tb testing.TB, testBlock *fixtures.BucketTestBlock) 
 			context.Background(),
 			log.NewNopLogger(),
 			testBlock.InstrBkt,
-			testBlock.InstrBkt.RootDir(),
+			tb.TempDir(),
 			testBlock.Meta.ULID,
 			mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 			indexheader.NewStreamBinaryReaderMetrics(nil),
