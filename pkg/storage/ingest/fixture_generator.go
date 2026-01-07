@@ -294,10 +294,11 @@ func (g *FixtureGenerator) GetNumTenants() int {
 
 // GenerateNextWriteRequest selects the next tenant using weighted random selection
 // and returns a WriteRequest for that tenant along with the tenant ID.
-func (g *FixtureGenerator) GenerateNextWriteRequest(timestampMs int64) (string, *mimirpb.WriteRequest) {
+func (g *FixtureGenerator) GenerateNextWriteRequest(timestampMs int64) (string, *mimirpb.WriteRequest, error) {
 	tenantIdx := g.selectNextTenant()
 	tenantID := g.tenants[tenantIdx].id
-	return tenantID, g.generateWriteRequest(tenantIdx, timestampMs)
+	req, err := g.generateWriteRequest(tenantIdx, timestampMs)
+	return tenantID, req, err
 }
 
 // selectNextTenant returns the next tenant index using weighted random selection.
@@ -311,10 +312,10 @@ func (g *FixtureGenerator) selectNextTenant() int {
 }
 
 // generateWriteRequest returns a WriteRequest for the given tenant.
-func (g *FixtureGenerator) generateWriteRequest(tenantIdx int, timestampMs int64) *mimirpb.WriteRequest {
+func (g *FixtureGenerator) generateWriteRequest(tenantIdx int, timestampMs int64) (*mimirpb.WriteRequest, error) {
 	tenant := &g.tenants[tenantIdx]
 	if tenant.uniqueSeries == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Calculate number of timeseries for this request with +/- 20% variance.
@@ -339,10 +340,24 @@ func (g *FixtureGenerator) generateWriteRequest(tenantIdx int, timestampMs int64
 		tenant.nextSeriesIdx = (tenant.nextSeriesIdx + 1) % tenant.uniqueSeries
 	}
 
-	return &mimirpb.WriteRequest{
+	req := &mimirpb.WriteRequest{
 		Timeseries: timeseries,
 		Source:     mimirpb.API,
 	}
+
+	// Marshal and then unmarshal the write request to get the buffer holder properly initialized.
+	// This way we can also assert on use-after-free bugs in tests using the fixture generator.
+	marshalled, err := req.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal WriteRequest: %w", err)
+	}
+
+	unmarshalled := &mimirpb.WriteRequest{}
+	if err := unmarshalled.Unmarshal(marshalled); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal WriteRequest: %w", err)
+	}
+
+	return unmarshalled, nil
 }
 
 // ProduceWriteRequests generates WriteRequests and produces them to Kafka.
@@ -368,7 +383,10 @@ func (g *FixtureGenerator) ProduceWriteRequests(ctx context.Context, kafkaAddres
 	serializer := versionOneRecordSerializer{}
 
 	for totalSamplesGenerated < g.cfg.TotalSamples {
-		tenantID, req := g.GenerateNextWriteRequest(int64(totalSamplesGenerated))
+		tenantID, req, err := g.GenerateNextWriteRequest(int64(totalSamplesGenerated))
+		if err != nil {
+			return numRecordsProduced, fmt.Errorf("failed to generate WriteRequest: %w", err)
+		}
 		if req == nil {
 			continue
 		}

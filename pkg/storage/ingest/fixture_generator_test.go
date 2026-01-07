@@ -102,8 +102,10 @@ func TestFixtureGenerator_GenerateNextWriteRequest(t *testing.T) {
 
 		// Generate requests and verify they are identical.
 		for i := 0; i < 20; i++ {
-			tenantID1, req1 := gen1.GenerateNextWriteRequest(int64(1000 + i))
-			tenantID2, req2 := gen2.GenerateNextWriteRequest(int64(1000 + i))
+			tenantID1, req1, err1 := gen1.GenerateNextWriteRequest(int64(1000 + i))
+			require.NoError(t, err1)
+			tenantID2, req2, err2 := gen2.GenerateNextWriteRequest(int64(1000 + i))
+			require.NoError(t, err2)
 
 			assert.Equal(t, tenantID1, tenantID2, "Same seed should produce same tenant selection at iteration %d", i)
 			require.NotNil(t, req1)
@@ -143,7 +145,8 @@ func TestFixtureGenerator_GenerateNextWriteRequest(t *testing.T) {
 		// which should cover all 100 unique series.
 		allMetricNames := make(map[string]bool)
 		for i := 0; i < 30; i++ {
-			_, req := gen.GenerateNextWriteRequest(int64(1000 + i))
+			_, req, err := gen.GenerateNextWriteRequest(int64(1000 + i))
+			require.NoError(t, err)
 			require.NotNil(t, req)
 
 			for _, ts := range req.Timeseries {
@@ -171,7 +174,8 @@ func TestFixtureGenerator_GenerateNextWriteRequest(t *testing.T) {
 		tenantSequence := make([]string, numRecords)
 
 		for i := 0; i < numRecords; i++ {
-			tenantID, _ := gen.GenerateNextWriteRequest(int64(i))
+			tenantID, _, err := gen.GenerateNextWriteRequest(int64(i))
+			require.NoError(t, err)
 			tenantSequence[i] = tenantID
 		}
 

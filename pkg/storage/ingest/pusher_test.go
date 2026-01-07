@@ -1644,6 +1644,7 @@ func setupQueue(t *testing.T, capacity, batchSize int, series []mimirpb.Prealloc
 
 func BenchmarkPusherConsumer(b *testing.B) {
 	pusher := pusherFunc(func(ctx context.Context, request *mimirpb.WriteRequest) error {
+		request.FreeBuffer()
 		mimirpb.ReuseSlice(request.Timeseries)
 		return nil
 	})
@@ -1707,6 +1708,7 @@ func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
 
 	// Create a no-op pusher that just releases the request (shared across all runs).
 	pusher := pusherFunc(func(_ context.Context, request *mimirpb.WriteRequest) error {
+		request.FreeBuffer()
 		mimirpb.ReuseSlice(request.Timeseries)
 		return nil
 	})
