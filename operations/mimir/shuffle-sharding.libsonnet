@@ -14,6 +14,8 @@
       // Enables store-gateway per-zone shard size configuration
       // (when enabled it takes precedence over the global shard size).
       store_gateway_shard_size_per_zone_enabled: false,
+      store_gateway_shard_size_per_zone_defaults_enabled: $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled,
+      store_gateway_shard_size_per_zone_overrides_enabled: $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled,
 
       // Default shard sizes. We want the shard size to be divisible by the number of zones.
       // We typically run 3 zones
@@ -93,7 +95,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(3, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       }),
 
@@ -104,7 +106,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(6, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       }),
 
@@ -115,7 +117,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(9, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(2, $._config.shuffle_sharding.ruler_shard_size),
       }),
 
@@ -126,7 +128,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(12, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(3, $._config.shuffle_sharding.ruler_shard_size),
       }),
 
@@ -137,7 +139,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(18, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(6, $._config.shuffle_sharding.ruler_shard_size),
       }),
 
@@ -148,7 +150,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(24, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       }),
 
@@ -159,7 +161,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(30, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(8, $._config.shuffle_sharding.ruler_shard_size),
       }),
 
@@ -170,7 +172,7 @@
         ingestion_tenant_shard_size: ingesterTenantShardSize(series),
         ingestion_partitions_tenant_shard_size: ingesterPartitionsTenantShardSize(series),
         store_gateway_tenant_shard_size: std.max(42, $._config.shuffle_sharding.store_gateway_shard_size),
-        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
+        store_gateway_tenant_shard_size_per_zone: if $._config.shuffle_sharding.store_gateway_shard_size_per_zone_overrides_enabled then std.ceil(self.store_gateway_tenant_shard_size / 3) else null,
         ruler_tenant_shard_size: std.max(12, $._config.shuffle_sharding.ruler_shard_size),
       }),
     },
@@ -202,7 +204,7 @@
       'store-gateway.tenant-shard-size': $._config.shuffle_sharding.store_gateway_shard_size,
     }
   ) + (
-    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then {} else {
+    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_defaults_enabled then {} else {
       'store-gateway.tenant-shard-size-per-zone': $._config.shuffle_sharding.store_gateway_shard_size_per_zone,
     }
   ) + (
@@ -223,7 +225,7 @@
       'store-gateway.tenant-shard-size': $._config.shuffle_sharding.store_gateway_shard_size,
     }
   ) + (
-    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then {} else {
+    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_defaults_enabled then {} else {
       'store-gateway.tenant-shard-size-per-zone': $._config.shuffle_sharding.store_gateway_shard_size_per_zone,
     }
   ),
@@ -255,7 +257,7 @@
       'store-gateway.tenant-shard-size': $._config.shuffle_sharding.store_gateway_shard_size,
     }
   ) + (
-    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then {} else {
+    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_defaults_enabled then {} else {
       'store-gateway.tenant-shard-size-per-zone': $._config.shuffle_sharding.store_gateway_shard_size_per_zone,
     }
   ),
@@ -265,7 +267,7 @@
       'store-gateway.tenant-shard-size': $._config.shuffle_sharding.store_gateway_shard_size,
     }
   ) + (
-    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_enabled then {} else {
+    if !$._config.shuffle_sharding.store_gateway_enabled || !$._config.shuffle_sharding.store_gateway_shard_size_per_zone_defaults_enabled then {} else {
       'store-gateway.tenant-shard-size-per-zone': $._config.shuffle_sharding.store_gateway_shard_size_per_zone,
     }
   ),
