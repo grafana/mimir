@@ -9,7 +9,6 @@ import (
 	"container/list"
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -118,10 +117,8 @@ type RequestQueue struct {
 	discardedRequests *prometheus.CounterVec // per user
 	enqueueDuration   prometheus.Histogram
 
-	stopRequested      chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
-	stopCompleted      chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
-	closeStopCompleted func()
-	allowUncleanStop   bool
+	stopRequested chan struct{} // Written to by stop() to wake up dispatcherLoop() in response to a stop request.
+	stopCompleted chan struct{} // Closed by dispatcherLoop() after a stop is requested and the dispatcher has stopped.
 
 	requestsToEnqueue                     chan requestToEnqueue
 	requestsSent                          chan *SchedulerRequest
@@ -260,10 +257,6 @@ func NewRequestQueue(
 		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
 	}
 
-	q.closeStopCompleted = sync.OnceFunc(func() {
-		close(q.stopCompleted)
-	})
-
 	q.Service = services.NewBasicService(q.starting, q.running, q.stop).WithName("request queue")
 
 	return q, nil
@@ -304,7 +297,7 @@ func (q *RequestQueue) running(ctx context.Context) error {
 
 func (q *RequestQueue) dispatcherLoop() {
 	// The only way for this loop to exit is for a valid stop state to have been reached, or for it to have crashed.
-	defer q.closeStopCompleted()
+	defer close(q.stopCompleted)
 
 	isStopping := false
 
@@ -315,9 +308,6 @@ func (q *RequestQueue) dispatcherLoop() {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
 			isStopping = true
-		case <-q.stopCompleted:
-			// We still check if q.stopCompleted is closed or else we'd be leaving this goroutine running if something else marks it as done
-			return
 
 		case querierWorkerOp := <-q.querierWorkerOperations:
 			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
@@ -353,11 +343,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
-		if isStopping && q.allowUncleanStop {
-			level.Warn(q.log).Log("msg", "unclean stop requested")
-			return
-		}
-
 		if isStopping {
 			if q.schedulerInflightRequests.Load() == 0 && q.queueBroker.itemCount() == 0 {
 				// If the queue is stopping and theres no connected query workers,
@@ -391,7 +376,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 
 			level.Debug(q.log).Log(
-				"msg", "queue stop is stopping but query queue is not empty, waiting for query workers to complete remaining requests",
+				"msg", "queue is stopping but query queue is not empty, waiting for query workers to complete remaining requests",
 				"queued_requests", q.queueBroker.itemCount(),
 				"scheduler_inflight", q.schedulerInflightRequests.Load(),
 			)
@@ -529,11 +514,6 @@ func (q *RequestQueue) AwaitRequestForQuerier(dequeueReq *QuerierWorkerDequeueRe
 	}
 }
 
-// This function exists to enable unclean testing of logic surrounding the queue, it should never be used in runtime code.
-func (q *RequestQueue) AllowUncleanStop() {
-	q.allowUncleanStop = true
-}
-
 func (q *RequestQueue) stop(_ error) error {
 	// Do not close the stopRequested channel;
 	// this would cause the read from stopRequested to preempt all other select cases in dispatcherLoop.
@@ -650,6 +630,19 @@ func (q *RequestQueue) processUnregisterQuerierWorkerConn(conn *QuerierWorkerCon
 
 func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
+}
+
+// Clears the internal queueBroker Tree, this is intended to allow partial tests to stop the queue and should not be used in runtime code.
+func (q *RequestQueue) Clear() {
+	for {
+		if q.queueBroker.isEmpty() {
+			return
+		}
+
+		time.Sleep(1 * time.Millisecond) // Avoids concurrent map read from rapid iteration
+
+		q.queueBroker.tree.Dequeue(nil)
+	}
 }
 
 // TenantIndex is opaque type that allows to resume iteration over tenants

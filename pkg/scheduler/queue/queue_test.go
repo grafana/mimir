@@ -374,7 +374,9 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		// or else StopAndAwaitTerminated will never complete.
 		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
 		queue.SubmitUnregisterQuerierWorkerConn(querier3Conn)
-		queue.AllowUncleanStop()
+
+		queue.Clear()
+
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 

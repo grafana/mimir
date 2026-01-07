@@ -309,6 +309,11 @@ func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *t
 func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
+	t.Cleanup(func() {
+		scheduler.requestQueue.Clear()
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
@@ -368,7 +373,7 @@ func TestTracingContext(t *testing.T) {
 		require.Equal(t, sp.SpanContext().TraceID().String(), r.ParentSpanContext.TraceID().String())
 	}
 
-	scheduler.requestQueue.AllowUncleanStop()
+	scheduler.requestQueue.Clear()
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 }
 
@@ -415,7 +420,7 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	_, err = querierLoop.Recv()
 	require.NoError(t, err)
 
-	scheduler.requestQueue.AllowUncleanStop()
+	scheduler.requestQueue.Clear()
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
 	// Unblock scheduler loop, to find next request.
@@ -431,7 +436,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 	scheduler, frontendClient, _ := setupScheduler(t, nil)
 
 	t.Cleanup(func() {
-		scheduler.requestQueue.AllowUncleanStop()
+		scheduler.requestQueue.Clear()
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 	})
 
@@ -543,7 +548,7 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 	scheduler, frontendClient, _ := setupScheduler(t, reg)
 
 	t.Cleanup(func() {
-		scheduler.requestQueue.AllowUncleanStop()
+		scheduler.requestQueue.Clear()
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 	})
 
@@ -582,7 +587,7 @@ func TestSchedulerQuerierMetrics(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
 
 	t.Cleanup(func() {
-		scheduler.requestQueue.AllowUncleanStop()
+		scheduler.requestQueue.Clear()
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 	})
 
