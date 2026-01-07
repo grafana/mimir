@@ -3,7 +3,7 @@
     // Allow to configure whether the ruler's remote evaluation stack should be deployed in single or multi-zone.
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_ruler_remote_evaluation_enabled: !$._config.multi_zone_ruler_remote_evaluation_enabled,
-    multi_zone_ruler_remote_evaluation_enabled: false,
+    multi_zone_ruler_remote_evaluation_enabled: $._config.multi_zone_read_path_enabled,
   },
 
   local container = $.core.v1.container,
@@ -30,7 +30,7 @@
 
   local rulerQuerierZoneArgs(zone) = {
     // Prefer querying ingesters and store-gateways in the same zone, to reduce cross-AZ data transfer.
-    'querier.prefer-availability-zone': 'zone-%s' % zone,
+    'querier.prefer-availability-zones': 'zone-%s' % zone,
   },
 
   rulerQuerierClientZoneArgs(zone):: {

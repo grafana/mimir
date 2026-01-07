@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/sync/errgroup"
@@ -786,4 +787,60 @@ func (l *bucketIndexLoadedSeries) unsafeLoadSeries(ref storage.SeriesRef, chks *
 	stats.seriesProcessed++
 	stats.seriesProcessedSizeSum += len(b)
 	return decodeSeries(b, lsetPool, chks, skipChunks)
+}
+
+type symbolizedLabel struct {
+	name, value uint32
+}
+
+// decodeSeries decodes a series entry from the given byte slice decoding all chunk metas of the series.
+// If skipChunks is specified decodeSeries does not return any chunks, but only labels and only if there is at least a single chunk.
+// decodeSeries returns false, when there are no chunks for the series.
+func decodeSeries(b []byte, lsetPool *pool.SlabPool[symbolizedLabel], chks *[]chunks.Meta, skipChunks bool) (ok bool, lset []symbolizedLabel, err error) {
+	*chks = (*chks)[:0]
+
+	d := encoding.Decbuf{B: b}
+
+	// Read labels without looking up symbols.
+	k := d.Uvarint()
+	lset = lsetPool.Get(k)[:0]
+	for i := 0; i < k; i++ {
+		lno := uint32(d.Uvarint())
+		lvo := uint32(d.Uvarint())
+		lset = append(lset, symbolizedLabel{name: lno, value: lvo})
+	}
+	// Read the chunks meta data.
+	k = d.Uvarint()
+	if k == 0 {
+		return false, nil, d.Err()
+	}
+
+	// First t0 is absolute, rest is just diff so different type is used (Uvarint64).
+	mint := d.Varint64()
+	maxt := int64(d.Uvarint64()) + mint
+	// Similar for first ref.
+	ref := int64(d.Uvarint64())
+
+	for i := 0; i < k; i++ {
+		if i > 0 {
+			mint += int64(d.Uvarint64())
+			maxt = int64(d.Uvarint64()) + mint
+			ref += d.Varint64()
+		}
+
+		// Found a chunk.
+		if skipChunks {
+			// We are not interested in chunks and we know there is at least one, that's enough to return series.
+			return true, lset, nil
+		}
+
+		*chks = append(*chks, chunks.Meta{
+			Ref:     chunks.ChunkRef(ref),
+			MinTime: mint,
+			MaxTime: maxt,
+		})
+
+		mint = maxt
+	}
+	return len(*chks) > 0, lset, d.Err()
 }

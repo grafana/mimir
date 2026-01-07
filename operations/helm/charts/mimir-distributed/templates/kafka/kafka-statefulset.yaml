@@ -100,7 +100,7 @@ spec:
             - name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR
               value: "{{ min 2 $replicas }}"
             - name: KAFKA_LOG_RETENTION_HOURS
-              value: "24"
+              value: "{{ .logRetentionHours | default 24 }}"
             {{- with .extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

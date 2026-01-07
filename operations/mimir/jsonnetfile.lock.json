@@ -38,8 +38,18 @@
           "subdir": "operations/rollout-operator"
         }
       },
-      "version": "e6aa01b8577b3cc4101f3d620f85e12511cee346",
-      "sum": "nA48/yfkgwE+QWlT/jWDxwmS1291QbpPSM60lZzG5Fg="
+      "version": "ee4822b061cb7497b7e8a716161dfa0e3230c0ca",
+      "sum": "rBfx/ffgMo6MBNt8+CqJToKEUCdANJU9xMb2KGXEjW4="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/jsonnet-libs/xtd.git",
+          "subdir": ""
+        }
+      },
+      "version": "4d7f8cb24d613430799f9d56809cc6964f35cea9",
+      "sum": "hOrwkOx34tOXqoDVnwuI/Uf/dr9HFFSPWpDPOvnEGrk="
     }
   ],
   "legacyImports": false

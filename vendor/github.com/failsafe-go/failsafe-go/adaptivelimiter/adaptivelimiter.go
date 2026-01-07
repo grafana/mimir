@@ -84,8 +84,13 @@ type Metrics interface {
 	// Limit returns the concurrent execution limit, as calculated by the adaptive limiter.
 	Limit() int
 
-	// Inflight returns the current number of inflight executions.
+	// Inflight returns the current number of inflight executions. The limit is adjusted using the max inflight requests for
+	// a sampling period, which may be higher than the amount at a given point in time.
 	Inflight() int
+
+	// MaxInflight returns the max number of inflight executions during the most recent sampling period. This is used to
+	// adjust the limit at the end of the sampling period, and should reflect how the current limit was set.
+	MaxInflight() int
 
 	// Queued returns the current number of queued executions when the limiter is full.
 	Queued() int
@@ -398,6 +403,7 @@ type adaptiveLimiter[R any] struct {
 	// Guarded by mu
 	limit                 float64       // The current concurrency limit
 	recentRTT             tdigestSample // Recent execution times
+	lastMaxInflight       int           // The max inflight requests for the last sampling period
 	medianFilter          util.MedianFilter
 	smoothedRecentRTT     util.Ewma
 	baselineRTT           util.Ewma              // Tracks baseline execution time
@@ -455,6 +461,12 @@ func (l *adaptiveLimiter[R]) Inflight() int {
 	return l.semaphore.Used()
 }
 
+func (l *adaptiveLimiter[R]) MaxInflight() int {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.lastMaxInflight
+}
+
 func (l *adaptiveLimiter[R]) Queued() int {
 	return l.semaphore.Waiters()
 }
@@ -485,6 +497,7 @@ func (l *adaptiveLimiter[R]) record(now time.Time, rtt time.Duration, inflight i
 		quantile := l.recentRTT.Quantile(l.recentQuantile)
 		filteredRTT := l.medianFilter.Add(quantile)
 		smoothedRTT := l.smoothedRecentRTT.Add(filteredRTT)
+		l.lastMaxInflight = l.recentRTT.MaxInflight
 		l.updateLimit(smoothedRTT, l.recentRTT.MaxInflight)
 		minRTT := l.recentRTT.MinRTT
 		l.recentRTT.Reset()
@@ -518,35 +531,45 @@ func (l *adaptiveLimiter[R]) updateLimit(recentRTT float64, inflight int) {
 
 	change, reason := computeChange(queueSize, alpha, beta, overloaded, throughputCorr, throughputCV, rttCorr)
 
-	newLimit := l.limit
+	oldLimit := l.limit
+	newLimit := oldLimit
 	var direction string
 	switch change {
 	case decrease:
 		direction = "decrease"
-		newLimit = l.limit - float64(decreaseFunc(int(l.limit)))
+		newLimit = oldLimit - float64(decreaseFunc(int(oldLimit)))
 	case increase:
 		direction = "increase"
-		newLimit = l.limit + float64(increaseFunc(int(l.limit)))
+		newLimit = oldLimit + float64(increaseFunc(int(oldLimit)))
 	default:
 		direction = "hold"
 	}
 
-	// Decrease the limit if needed, based on the max limit factor
-	if newLimit > float64(inflight)*l.maxLimitFactor {
-		direction = "decrease"
+	// Clamp the limit based on max limit factor
+	maxLimit := float64(inflight) * l.maxLimitFactor
+	if newLimit > maxLimit {
+		if oldLimit > maxLimit {
+			direction = "decrease"
+			newLimit = oldLimit - float64(decreaseFunc(int(oldLimit))) // Decrease gradually to avoid noise if inflights fluctuate
+		} else if oldLimit < maxLimit {
+			direction = "increase"
+			newLimit = maxLimit
+		} else {
+			direction = "hold"
+			newLimit = maxLimit
+		}
 		reason = "max"
-		newLimit = l.limit - float64(decreaseFunc(int(l.limit)))
 	}
 
-	// Clamp the limit
+	// Clamp the limit based on absolute min and max
 	if newLimit > l.maxLimit {
-		if l.limit == l.maxLimit {
+		if oldLimit == l.maxLimit {
 			direction = "hold"
 			reason = "max"
 		}
 		newLimit = l.maxLimit
 	} else if newLimit < l.minLimit {
-		if l.limit == l.minLimit {
+		if oldLimit == l.minLimit {
 			direction = "hold"
 			reason = "min"
 		}
@@ -555,11 +578,13 @@ func (l *adaptiveLimiter[R]) updateLimit(recentRTT float64, inflight int) {
 
 	l.logLimit(direction, reason, newLimit, gradient, queueSize, inflight, recentRTT, baselineRTT, rttCorr, throughput, throughputCorr, throughputCV)
 
-	if uint(l.limit) != uint(newLimit) && l.onLimitChanged != nil {
+	if uint(oldLimit) != uint(newLimit) && l.onLimitChanged != nil {
+		l.mu.Unlock()
 		l.onLimitChanged(LimitChangedEvent{
-			OldLimit: uint(l.limit),
+			OldLimit: uint(oldLimit),
 			NewLimit: uint(newLimit),
 		})
+		l.mu.Lock()
 	}
 
 	l.semaphore.SetSize(int(newLimit))

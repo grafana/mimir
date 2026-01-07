@@ -48,11 +48,11 @@ message SampleStream {
   ];
   repeated cortexpb.Sample samples = 2 [
     (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "values"
+    (gogoproto.jsontag) = "values,omitempty"
   ];
   repeated cortexpb.FloatHistogramPair histograms = 3 [
     (gogoproto.nullable) = false,
-    (gogoproto.jsontag) = "histograms"
+    (gogoproto.jsontag) = "histograms,omitempty"
   ];
 }
 

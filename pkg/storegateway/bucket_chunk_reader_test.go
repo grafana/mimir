@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/fixtures"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -35,7 +36,10 @@ func TestBucketChunkReader_refetchChunks(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	newTestBucketBlock := prepareTestBlock(test.NewTB(t), appendTestSeries(1000))
+	tb := test.NewTB(t)
+	testBlock := fixtures.SetupTestBlock(tb, fixtures.AppendTestSeries(1000))
+	newTestBucketBlock := testBlockToBucketBlock(tb, testBlock)
+
 	block := newTestBucketBlock()
 	seriesRefsIterator, err := openBlockSeriesChunkRefsSetsIterator(
 		ctx,

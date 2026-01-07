@@ -92,11 +92,12 @@ func (c *storeGatewayClient) RemoteZone() string {
 	return c.instance.Zone
 }
 
-func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig grpcclient.Config, logger log.Logger, reg prometheus.Registerer) *client.Pool {
+func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConfig StoreGatewayClientConfig, logger log.Logger, reg prometheus.Registerer) *client.Pool {
 	poolCfg := client.PoolConfig{
-		CheckInterval:      10 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 10 * time.Second,
+		CheckInterval:          10 * time.Second,
+		HealthCheckEnabled:     true,
+		HealthCheckTimeout:     10 * time.Second,
+		HealthCheckGracePeriod: clientConfig.HealthCheckGracePeriod,
 	}
 
 	clientsCount := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -105,5 +106,5 @@ func newStoreGatewayClientPool(discovery client.PoolServiceDiscovery, clientConf
 		ConstLabels: map[string]string{"client": "querier"},
 	})
 
-	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientConfig, reg, logger), clientsCount, logger)
+	return client.NewPool("store-gateway", poolCfg, discovery, newStoreGatewayClientFactory(clientConfig.Config, reg, logger), clientsCount, logger)
 }

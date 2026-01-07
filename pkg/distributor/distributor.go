@@ -265,7 +265,7 @@ type Config struct {
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
-	PreferAvailabilityZone                     string        `yaml:"-"`
+	PreferAvailabilityZones                    []string      `yaml:"-"`
 
 	// IngestStorageConfig is dynamically injected because defined outside of distributor config.
 	IngestStorageConfig ingest.Config `yaml:"-"`
@@ -933,7 +933,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg sampleValidationConfig) error {
 	if len(ts.Samples) == 0 {
 		return nil
 	}
@@ -942,7 +942,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 	if len(ts.Samples) == 1 {
 		delta := now - model.Time(ts.Samples[0].TimestampMs)
 		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
-		return validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, ts.Samples[0], cat)
+		return validateSample(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, ts.Samples[0], cat)
 	}
 
 	timestamps := make(map[int64]struct{}, min(len(ts.Samples), 100))
@@ -960,7 +960,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 		delta := now - model.Time(s.TimestampMs)
 		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
 
-		if err := validateSample(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, s, cat); err != nil {
+		if err := validateSample(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, s, cat); err != nil {
 			return err
 		}
 
@@ -980,7 +980,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
-func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
+func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg sampleValidationConfig) error {
 	if len(ts.Histograms) == 0 {
 		return nil
 	}
@@ -990,7 +990,7 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		delta := now - model.Time(ts.Histograms[0].Timestamp)
 		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
 
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[0], cat)
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, &ts.Histograms[0], cat)
 		if err != nil {
 			return err
 		}
@@ -1015,7 +1015,7 @@ func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTim
 		delta := now - model.Time(ts.Histograms[idx].Timestamp)
 		d.sampleDelay.WithLabelValues(userID).Observe(float64(delta) / 1000)
 
-		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, d.limits, userID, group, ts.Labels, &ts.Histograms[idx], cat)
+		updated, err := validateSampleHistogram(d.sampleValidationMetrics, now, cfg, userID, group, ts.Labels, &ts.Histograms[idx], cat)
 		if err != nil {
 			return err
 		}
@@ -1078,21 +1078,21 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
 // The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, cfg validationConfig, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64, valueTooLongSummaries *labelValueTooLongSummaries) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
 
-	if err := validateLabels(d.sampleValidationMetrics, d.limits, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
+	if err := validateLabels(d.sampleValidationMetrics, cfg.labels, userID, group, ts.Labels, skipLabelValidation, skipLabelCountValidation, cat, nowt, valueTooLongSummaries); err != nil {
 		return err
 	}
 
 	now := model.TimeFromUnixNano(nowt.UnixNano())
 	totalSamplesAndHistograms := len(ts.Samples) + len(ts.Histograms)
 
-	if err := d.validateSamples(now, ts, userID, group); err != nil {
+	if err := d.validateSamples(now, ts, userID, group, cfg.samples); err != nil {
 		return err
 	}
 
-	if err := d.validateHistograms(now, ts, userID, group); err != nil {
+	if err := d.validateHistograms(now, ts, userID, group, cfg.samples); err != nil {
 		return err
 	}
 
@@ -1328,6 +1328,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		d.activeUsers.UpdateUserTimestamp(userID, now)
 
 		pushReq.group = d.activeGroups.UpdateActiveGroupTimestamp(userID, validation.GroupLabel(d.limits, userID, req.Timeseries), now)
+		cfg := newValidationConfig(userID, d.limits)
 
 		// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 		validatedMetadata := 0
@@ -1393,7 +1394,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 			// Note that validateSeries may drop some data in ts.
 			rawSamples := len(ts.Samples)
 			rawHistograms := len(ts.Histograms)
-			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries)
+			validationErr := d.validateSeries(now, &req.Timeseries[tsIdx], userID, pushReq.group, cfg, skipLabelValidation, skipLabelCountValidation, minExemplarTS, maxExemplarTS, &valueTooLongSummaries)
 
 			if countDroppedNativeHistograms {
 				droppedNativeHistograms += len(ts.Histograms)
@@ -1467,7 +1468,7 @@ func (d *Distributor) prePushValidationMiddleware(next PushFunc) PushFunc {
 		}
 
 		for mIdx, m := range req.Metadata {
-			if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, d.limits, userID, m); validationErr != nil {
+			if validationErr := cleanAndValidateMetadata(d.metadataValidationMetrics, cfg.metadata, userID, m); validationErr != nil {
 				if firstPartialErr == nil {
 					// The series are never retained by validationErr. This is guaranteed by the way the latter is built.
 					firstPartialErr = newValidationError(validationErr)
@@ -1618,7 +1619,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(userID))
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
@@ -1627,7 +1628,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(userID))
 		}
 
 		return nil
@@ -2378,7 +2379,7 @@ func (d *Distributor) queryQuorumConfigForReplicationSets(ctx context.Context, r
 	var zoneSorter ring.ZoneSorter
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZone)
+		zoneSorter = queryIngesterPartitionsRingZoneSorter(d.cfg.PreferAvailabilityZones)
 	} else {
 		// We expect to always have exactly 1 replication set when ingest storage is disabled.
 		// To keep the code safer, we run with no zone sorter if that's not the case.
@@ -2419,22 +2420,25 @@ func queryIngestersRingZoneSorter(replicationSet ring.ReplicationSet) ring.ZoneS
 // queryIngesterPartitionsRingZoneSorter returns a ring.ZoneSorter that should be used to sort
 // ingester zones to attempt to query first, when ingest storage is enabled.
 //
-// The sorter gives preference to preferredZone if non empty, and then randomize the other zones.
-func queryIngesterPartitionsRingZoneSorter(preferredZone string) ring.ZoneSorter {
+// The sorter gives preference to preferredZones if non empty, and then randomizes the other zones.
+// All preferred zones are given equal priority.
+func queryIngesterPartitionsRingZoneSorter(preferredZones []string) ring.ZoneSorter {
 	return func(zones []string) []string {
 		// Shuffle the zones to distribute load evenly.
-		if len(zones) > 2 || (preferredZone == "" && len(zones) > 1) {
+		if len(zones) > 2 || (len(preferredZones) == 0 && len(zones) > 1) {
 			rand.Shuffle(len(zones), func(i, j int) {
 				zones[i], zones[j] = zones[j], zones[i]
 			})
 		}
 
-		if preferredZone != "" {
-			// Give priority to the preferred zone.
-			for i, z := range zones {
-				if z == preferredZone {
-					zones[0], zones[i] = zones[i], zones[0]
-					break
+		if len(preferredZones) > 0 {
+			// Move all preferred zones to the front.
+			// This gives equal priority to all preferred zones (since they were already shuffled).
+			nextPos := 0
+			for idx, zone := range zones {
+				if slices.Contains(preferredZones, zone) {
+					zones[nextPos], zones[idx] = zones[idx], zones[nextPos]
+					nextPos++
 				}
 			}
 		}

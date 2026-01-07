@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	gogostatus "github.com/gogo/status"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
@@ -1094,8 +1096,9 @@ func BenchmarkOTLPHandler(b *testing.B) {
 			})
 		}
 		sampleMetadata = append(sampleMetadata, mimirpb.MetricMetadata{
-			Help: "metric_help_" + strconv.Itoa(i),
-			Unit: "metric_unit_" + strconv.Itoa(i),
+			MetricFamilyName: "foo" + strconv.Itoa(i),
+			Help:             "metric_help_" + strconv.Itoa(i),
+			Unit:             "metric_unit_" + strconv.Itoa(i),
 		})
 	}
 
@@ -1132,6 +1135,88 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+}
+
+func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
+	const numberOfMetrics = 150
+	const numberOfResourceMetrics = 300
+	const numberOfDatapoints = 4
+	const stepDuration = 10 * time.Second
+
+	startTime := time.Date(2020, time.October, 30, 23, 0, 0, 0, time.UTC)
+
+	createMetrics := func(mts pmetric.MetricSlice) {
+		mts.EnsureCapacity(numberOfMetrics)
+		for idx := range numberOfMetrics {
+			mt := mts.AppendEmpty()
+			mt.SetName(fmt.Sprintf("metric-%d", idx))
+			datapoints := mt.SetEmptyGauge().DataPoints()
+			datapoints.EnsureCapacity(numberOfDatapoints)
+
+			sampleTime := startTime
+			for j := range numberOfDatapoints {
+				datapoint := datapoints.AppendEmpty()
+				datapoint.SetTimestamp(pcommon.NewTimestampFromTime(sampleTime))
+				datapoint.SetIntValue(int64(j))
+				attrs := datapoint.Attributes()
+				attrs.PutStr("route", "/hello")
+				attrs.PutStr("status", "200")
+				sampleTime = sampleTime.Add(stepDuration)
+			}
+		}
+	}
+
+	createScopedMetrics := func(rm pmetric.ResourceMetrics) {
+		sms := rm.ScopeMetrics()
+
+		sm := sms.AppendEmpty()
+		scope := sm.Scope()
+		scope.SetName("scope")
+		metrics := sm.Metrics()
+		createMetrics(metrics)
+	}
+
+	createResourceMetrics := func(md pmetric.Metrics) {
+		rms := md.ResourceMetrics()
+		rms.EnsureCapacity(numberOfResourceMetrics)
+		for idx := range numberOfResourceMetrics {
+			rm := rms.AppendEmpty()
+			attrs := rm.Resource().Attributes()
+			attrs.PutStr("env", "dev")
+			attrs.PutStr("region", "us-east-1")
+			attrs.PutStr("pod", fmt.Sprintf("pod-%d", idx))
+			createScopedMetrics(rm)
+		}
+	}
+
+	pushFunc := func(_ context.Context, pushReq *Request) error {
+		if _, err := pushReq.WriteRequest(); err != nil {
+			return err
+		}
+
+		pushReq.CleanUp()
+		return nil
+	}
+	limits := validation.MockDefaultOverrides()
+	handler := OTLPHandler(
+		200000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+	)
+
+	b.Run("protobuf", func(b *testing.B) {
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+
+		b.ResetTimer()
+		for range b.N {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
@@ -1235,8 +1320,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 	// Sample Metadata needs to contain metadata for every series in the sampleSeries
 	sampleMetadata := []mimirpb.MetricMetadata{
 		{
-			Help: "metric_help",
-			Unit: "metric_unit",
+			MetricFamilyName: "foo",
+			Help:             "metric_help",
+			Unit:             "metric_unit",
 		},
 	}
 
@@ -1484,8 +1570,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			metadata: []mimirpb.MetricMetadata{
 				{
-					Help: "metric_help",
-					Unit: "metric_unit",
+					MetricFamilyName: "foo",
+					Help:             "metric_help",
+					Unit:             "metric_unit",
 				},
 			},
 			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
@@ -1527,8 +1614,9 @@ func TestHandlerOTLPPush(t *testing.T) {
 			},
 			metadata: []mimirpb.MetricMetadata{
 				{
-					Help: "metric_help",
-					Unit: "metric_unit",
+					MetricFamilyName: "foo",
+					Help:             "metric_help",
+					Unit:             "metric_unit",
 				},
 			},
 			verifyFunc: func(t *testing.T, _ context.Context, pushReq *Request, _ testCase) error {
@@ -2132,6 +2220,67 @@ func TestHttpRetryableToOTLPRetryable(t *testing.T) {
 			require.Equal(t, testCase.expectedOtlpHTTPStatusCode, otlpHTTPStatusCode)
 		})
 	}
+}
+
+func TestOTLPResponseContentType(t *testing.T) {
+
+	exportReq := TimeseriesToOTLPRequest([]prompb.TimeSeries{{
+		Labels:  []prompb.Label{{Name: "__name__", Value: "value"}},
+		Samples: []prompb.Sample{{Value: 1, Timestamp: time.Now().UnixMilli()}},
+	}}, nil)
+
+	tests := map[string]struct {
+		req        *http.Request
+		expectCode int
+		expectType string
+	}{
+		"protobuf": {
+			req:        createOTLPProtoRequest(t, exportReq, ""),
+			expectCode: http.StatusOK,
+			expectType: "application/x-protobuf",
+		},
+		"json": {
+			req:        createOTLPJSONRequest(t, exportReq, ""),
+			expectCode: http.StatusOK,
+			expectType: "application/json",
+		},
+		"valid_json_wrong_content_type": {
+			req: func() *http.Request {
+				body, _ := exportReq.MarshalJSON()
+				return createOTLPRequest(t, body, "", "text/plain")
+			}(),
+			expectCode: http.StatusUnsupportedMediaType,
+			expectType: "application/x-protobuf",
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			limits := validation.NewOverrides(
+				validation.Limits{},
+				validation.NewMockTenantLimits(map[string]*validation.Limits{
+					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: false},
+				}),
+			)
+			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
+				_, err := req.WriteRequest()
+				return err
+			}, nil, nil, log.NewNopLogger())
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, tc.req)
+
+			require.Equal(t, tc.expectCode, resp.Code)
+			require.Equal(t, tc.expectType, resp.Header().Get("Content-Type"))
+		})
+	}
+}
+
+func TestOTLPJSONEnumEncoding(t *testing.T) {
+	// Verify the marshaled JSON contains integer code, not string
+	st := gogostatus.New(codes.Internal, "msg").Proto()
+	data, err := json.Marshal(st)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"code":13`, "code field must be encoded as integer (13), not string")
 }
 
 type fakeResourceAttributePromotionConfig struct {

@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/features"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -85,6 +86,7 @@ func DefaultEvalIterationFunc(ctx context.Context, g *Group, evalTimestamp time.
 	timeSinceStart := time.Since(start)
 
 	g.metrics.IterationDuration.Observe(timeSinceStart.Seconds())
+	g.metrics.IterationDurationHistogram.Observe(timeSinceStart.Seconds())
 	g.updateRuleEvaluationTimeSum()
 	g.setEvaluationTime(timeSinceStart)
 	g.setLastEvaluation(start)
@@ -156,6 +158,9 @@ type ManagerOptions struct {
 	// OperatorControllableErrorClassifier classifies rule evaluation errors as operator-controllable
 	// or user-controllable. If nil, defaults to treating all errors as user errors.
 	OperatorControllableErrorClassifier OperatorControllableErrorClassifier
+
+	// FeatureRegistry is used to register rule manager features.
+	FeatureRegistry features.Collector
 }
 
 // NewManager returns an implementation of Manager, ready to be started
@@ -198,6 +203,13 @@ func NewManager(o *ManagerOptions) *Manager {
 
 	if o.OperatorControllableErrorClassifier == nil {
 		o.OperatorControllableErrorClassifier = &DefaultOperatorControllableErrorClassifier{}
+	}
+
+	// Register rule manager features if a registry is provided.
+	if o.FeatureRegistry != nil {
+		o.FeatureRegistry.Set(features.Rules, "concurrent_rule_eval", o.ConcurrentEvalsEnabled)
+		o.FeatureRegistry.Enable(features.Rules, "query_offset")
+		o.FeatureRegistry.Enable(features.Rules, "keep_firing_for")
 	}
 
 	m := &Manager{

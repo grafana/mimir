@@ -1652,9 +1652,10 @@ func TestDistributor_ValidateSeries(t *testing.T) {
 			require.Len(t, ds, 1)
 			require.Len(t, regs, 1)
 
+			cfg := newValidationConfig("user", ds[0].limits)
 			now := mtime.Now()
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, true, true, 0, 0, nil)
 				require.NoError(t, err)
 			}
 
@@ -1826,11 +1827,12 @@ func BenchmarkDistributor_SampleDuplicateTimestamp(b *testing.B) {
 	for name, tc := range testCases {
 		b.Run(name, func(b *testing.B) {
 			timeseries := tc.setup(b.N)
+			cfg := newValidationConfig("user", ds[0].limits)
 			b.ReportAllocs()
 			b.ResetTimer()
 			for n := 0; n < b.N; n++ {
 				for _, ts := range timeseries[n] {
-					err := ds[0].validateSeries(now, &ts, "user", "test-group", true, true, 0, 0, nil)
+					err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, true, true, 0, 0, nil)
 					if err != nil {
 						b.Fatal(err)
 					}
@@ -2072,8 +2074,9 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 			require.Len(t, ds, 1)
 			require.Len(t, regs, 1)
 
+			cfg := newValidationConfig("user", ds[0].limits)
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, tc.minExemplarTS, tc.maxExemplarTS, nil)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, false, false, tc.minExemplarTS, tc.maxExemplarTS, nil)
 				assert.NoError(t, err)
 			}
 
@@ -2179,8 +2182,9 @@ func TestDistributor_HistogramReduction(t *testing.T) {
 			require.Len(t, ds, 1)
 			require.Len(t, regs, 1)
 
+			cfg := newValidationConfig("user", ds[0].limits)
 			for _, ts := range tc.req.Timeseries {
-				err := ds[0].validateSeries(now, &ts, "user", "test-group", false, false, 0, 0, nil)
+				err := ds[0].validateSeries(now, &ts, "user", "test-group", cfg, false, false, 0, 0, nil)
 				if tc.expectedError != nil {
 					require.ErrorAs(t, err, &tc.expectedError)
 				} else {
@@ -2319,7 +2323,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				return metrics, samples
 			},
-			expectedErr: "received a series whose label value length exceeds the limit",
+			expectedErr: "received a series whose label value length of 204 exceeds the limit of 200",
 		},
 		"timestamp too new": {
 			prepareConfig: func(limits *validation.Limits) {
@@ -8999,9 +9003,9 @@ func TestQueryIngestersRingZoneSorter(t *testing.T) {
 
 func TestQueryIngesterPartitionsRingZoneSorter(t *testing.T) {
 	testCases := map[string]struct {
-		zones         []string
-		preferredZone string
-		verify        func(t *testing.T, sortedZones []string)
+		zones          []string
+		preferredZones []string
+		verify         func(t *testing.T, sortedZones []string)
 	}{
 		"no zones": {
 			zones: []string{},
@@ -9009,52 +9013,78 @@ func TestQueryIngesterPartitionsRingZoneSorter(t *testing.T) {
 				require.Empty(t, sortedZones)
 			},
 		},
-		"one zone, without preferred zone": {
+		"one zone, without preferred zones": {
 			zones: []string{"zone-a"},
 			verify: func(t *testing.T, sortedZones []string) {
 				require.Equal(t, []string{"zone-a"}, sortedZones)
 			},
 		},
 		"one zone, with preferred zone": {
-			zones:         []string{"zone-a"},
-			preferredZone: "zone-a",
+			zones:          []string{"zone-a"},
+			preferredZones: []string{"zone-a"},
 			verify: func(t *testing.T, sortedZones []string) {
 				require.Equal(t, []string{"zone-a"}, sortedZones)
 			},
 		},
-		"two zones, without preferred zone": {
+		"two zones, without preferred zones": {
 			zones: []string{"zone-a", "zone-b"},
 			verify: func(t *testing.T, sortedZones []string) {
 				require.ElementsMatch(t, []string{"zone-a", "zone-b"}, sortedZones)
 			},
 		},
-		"two zones, with preferred zone": {
-			zones:         []string{"zone-a", "zone-b"},
-			preferredZone: "zone-b",
+		"two zones, with one preferred zone": {
+			zones:          []string{"zone-a", "zone-b"},
+			preferredZones: []string{"zone-b"},
 			verify: func(t *testing.T, sortedZones []string) {
 				require.Equal(t, []string{"zone-b", "zone-a"}, sortedZones)
 			},
 		},
-		"many zones, without preferred zone": {
+		"many zones, without preferred zones": {
 			zones: []string{"zone-a", "zone-b", "zone-c", "zone-d"},
 			verify: func(t *testing.T, sortedZones []string) {
 				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c", "zone-d"}, sortedZones)
 			},
 		},
-		"many zones, with preferred zone": {
-			zones:         []string{"zone-a", "zone-b", "zone-c", "zone-d"},
-			preferredZone: "zone-b",
+		"many zones, with one preferred zone": {
+			zones:          []string{"zone-a", "zone-b", "zone-c", "zone-d"},
+			preferredZones: []string{"zone-b"},
 			verify: func(t *testing.T, sortedZones []string) {
 				require.Len(t, sortedZones, 4)
 				require.Equal(t, "zone-b", sortedZones[0])
 				require.ElementsMatch(t, []string{"zone-a", "zone-c", "zone-d"}, sortedZones[1:])
 			},
 		},
+		"many zones, with two preferred zones": {
+			zones:          []string{"zone-a", "zone-b", "zone-c", "zone-d"},
+			preferredZones: []string{"zone-b", "zone-d"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.Len(t, sortedZones, 4)
+				// First two should be the preferred zones (in any order)
+				require.ElementsMatch(t, []string{"zone-b", "zone-d"}, sortedZones[:2])
+				// Last two should be the non-preferred zones (in any order)
+				require.ElementsMatch(t, []string{"zone-a", "zone-c"}, sortedZones[2:])
+			},
+		},
+		"many zones, with all zones preferred": {
+			zones:          []string{"zone-a", "zone-b", "zone-c"},
+			preferredZones: []string{"zone-a", "zone-b", "zone-c"},
+			verify: func(t *testing.T, sortedZones []string) {
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
+		"many zones, with non-existent preferred zone": {
+			zones:          []string{"zone-a", "zone-b", "zone-c"},
+			preferredZones: []string{"zone-x"},
+			verify: func(t *testing.T, sortedZones []string) {
+				// Should just shuffle all zones since preferred zone doesn't exist
+				require.ElementsMatch(t, []string{"zone-a", "zone-b", "zone-c"}, sortedZones)
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			sorted := queryIngesterPartitionsRingZoneSorter(testCase.preferredZone)(testCase.zones)
+			sorted := queryIngesterPartitionsRingZoneSorter(testCase.preferredZones)(testCase.zones)
 			testCase.verify(t, sorted)
 		})
 	}

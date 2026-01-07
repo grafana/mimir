@@ -3,7 +3,7 @@
     // Allow to configure whether the querier should be deployed in single or multi-zone.
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_querier_enabled: !$._config.multi_zone_querier_enabled,
-    multi_zone_querier_enabled: false,
+    multi_zone_querier_enabled: $._config.multi_zone_read_path_enabled,
   },
 
   local container = $.core.v1.container,
@@ -24,7 +24,7 @@
 
   local querierZoneArgs(zone) = {
     // Prefer querying ingesters and store-gateways in the same zone, to reduce cross-AZ data transfer.
-    'querier.prefer-availability-zone': 'zone-%s' % zone,
+    'querier.prefer-availability-zones': 'zone-%s' % zone,
   },
 
   querierClientZoneArgs(zone):: {

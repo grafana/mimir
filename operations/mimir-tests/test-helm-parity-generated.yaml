@@ -572,7 +572,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -641,12 +641,13 @@ spec:
         - -ingester.max-global-metadata-per-metric=10
         - -ingester.max-global-metadata-per-user=30000
         - -ingester.max-global-series-per-user=150000
+        - -overrides-exporter.enabled-metrics=ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group
         - -ruler.max-rule-groups-per-tenant=85
         - -ruler.max-rules-per-rule-group=20
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.http-listen-port=8080
         - -target=overrides-exporter
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: overrides-exporter
         ports:
@@ -727,7 +728,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -808,7 +809,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -880,7 +881,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -971,7 +972,7 @@ spec:
         - -store-gateway.sharding-ring.store=memberlist
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -1050,7 +1051,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1154,7 +1155,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1264,7 +1265,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1628,7 +1629,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "536870912"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

@@ -111,6 +111,19 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      name: overrides-exporter
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
     name: querier
   name: querier
   namespace: default
@@ -364,6 +377,21 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  ports:
+  - name: overrides-exporter-http-metrics
+    port: 8080
+    targetPort: 8080
+  selector:
+    name: overrides-exporter
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
     name: querier
   name: querier
   namespace: default
@@ -533,7 +561,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "8"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
@@ -566,6 +594,69 @@ spec:
         maxSkew: 1
         topologyKey: kubernetes.io/hostname
         whenUnsatisfiable: ScheduleAnyway
+      volumes:
+      - configMap:
+          name: overrides
+        name: overrides
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    name: overrides-exporter
+  name: overrides-exporter
+  namespace: default
+spec:
+  minReadySeconds: 10
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      name: overrides-exporter
+  strategy:
+    rollingUpdate:
+      maxSurge: 15%
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        name: overrides-exporter
+    spec:
+      containers:
+      - args:
+        - -compactor.blocks-retention-period=0
+        - -distributor.ingestion-burst-size=200000
+        - -distributor.ingestion-rate-limit=10000
+        - -ingester.max-global-metadata-per-metric=10
+        - -ingester.max-global-metadata-per-user=30000
+        - -ingester.max-global-series-per-user=150000
+        - -overrides-exporter.enabled-metrics=ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group
+        - -querier.max-partial-query-length=768h
+        - -ruler.max-rule-groups-per-tenant=85
+        - -ruler.max-rules-per-rule-group=20
+        - -runtime-config.file=/etc/mimir/overrides.yaml
+        - -server.http-listen-port=8080
+        - -store-gateway.tenant-shard-size=3
+        - -target=overrides-exporter
+        image: grafana/mimir:3.0.2
+        imagePullPolicy: IfNotPresent
+        name: overrides-exporter
+        ports:
+        - containerPort: 8080
+          name: http-metrics
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: http-metrics
+          initialDelaySeconds: 15
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: "0.5"
+            memory: 0.5Gi
+        volumeMounts:
+        - mountPath: /etc/mimir
+          name: overrides
       volumes:
       - configMap:
           name: overrides
@@ -631,7 +722,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "5"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
@@ -710,7 +801,7 @@ spec:
         - -shutdown-delay=90s
         - -target=query-frontend
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
@@ -783,7 +874,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=query-scheduler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
@@ -878,7 +969,7 @@ spec:
         - -store-gateway.tenant-shard-size=3
         - -target=ruler
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
@@ -956,7 +1047,7 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
@@ -1055,7 +1146,7 @@ spec:
         - -server.http-listen-port=8080
         - -target=compactor
         - -usage-stats.installation-mode=jsonnet
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
@@ -1166,7 +1257,7 @@ spec:
         env:
         - name: GOMAXPROCS
           value: "9"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
@@ -1531,7 +1622,7 @@ spec:
           value: "5"
         - name: GOMEMLIMIT
           value: "12884901888"
-        image: grafana/mimir:3.0.0
+        image: grafana/mimir:3.0.2
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:

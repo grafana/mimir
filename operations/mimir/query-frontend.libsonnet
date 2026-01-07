@@ -79,6 +79,9 @@
 
   local deployment = $.apps.v1.deployment,
 
+  // Leave enough time to finish serving a 5m query after the shutdown delay expired.
+  query_frontend_termination_grace_period_seconds:: shutdown_delay_seconds + 300,
+
   newQueryFrontendDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
     $.mimirVolumeMounts +
@@ -87,9 +90,7 @@
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('15%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
-
-    // Leave enough time to finish serving a 5m query after the shutdown delay expired.
-    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(shutdown_delay_seconds + 300),
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.query_frontend_termination_grace_period_seconds),
 
   query_frontend_deployment:
     self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container, $.query_frontend_node_affinity_matchers),

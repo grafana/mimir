@@ -56,3 +56,21 @@ func createTestRequest(t *testing.T, qs string) *PrometheusInstantQueryRequest {
 
 	return NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, expr, Options{}, nil, "")
 }
+
+func TestBlockInternalFunctionsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	blockedFunctions := FunctionNamesSet{}
+	blockedFunctions.Add("sin")
+
+	inner := mockHandlerWith(nil, nil)
+	middleware := newBlockInternalFunctionsMiddleware(blockedFunctions, log.NewNopLogger())
+	handler := middleware.Wrap(inner)
+
+	// Create a request with a nil queryExpr to simulate a failed parse.
+	req := NewPrometheusInstantQueryRequest("/", nil, timestamp.FromTime(time.Now()), 5*time.Minute, nil, Options{}, nil, "")
+
+	require.NotPanics(t, func() {
+		resp, err := handler.Do(context.Background(), req)
+		require.Equal(t, errRequestNoQuery, err)
+		require.Nil(t, resp)
+	})
+}

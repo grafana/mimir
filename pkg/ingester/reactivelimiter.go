@@ -98,7 +98,7 @@ func registerReactiveLimiterMetrics(limiterMetrics adaptivelimiter.Metrics, requ
 		Help:        "Ingester reactive limiter inflight requests.",
 		ConstLabels: map[string]string{reactiveLimiterRequestTypeLabel: requestType},
 	}, func() float64 {
-		return float64(limiterMetrics.Inflight())
+		return float64(limiterMetrics.MaxInflight())
 	})
 	promauto.With(r).NewGaugeFunc(prometheus.GaugeOpts{
 		Name:        "cortex_ingester_reactive_limiter_queued_requests",

@@ -434,19 +434,16 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return false, nil, err
 	}
 
-	// Optionally build sparse-index-headers. Building sparse-index-headers is best effort, we do not skip uploading a
+	// Building sparse-index-headers is best-effort, we do not skip uploading a
 	// compacted block if there's an error affecting sparse-index-headers.
-	switch c.uploadSparseIndexHeaders {
-	case true:
-		// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
-		// construct sparse-index-headers without making requests to object storage.
-		fsbkt, err := filesystem.NewBucket(subDir)
-		if err != nil {
-			c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
-			level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
-			break
-		}
-
+	//
+	// Create a bucket backed by the local compaction directory, allows calls to prepareSparseIndexHeader to
+	// construct sparse-index-headers without making requests to object storage.
+	fsbkt, err := filesystem.NewBucket(subDir)
+	if err != nil {
+		c.metrics.compactionBlocksBuildSparseHeadersFailed.Add(float64(uploadBlocksCount))
+		level.Warn(jobLogger).Log("msg", "failed to create filesystem bucket, skipping sparse header upload", "err", err)
+	} else {
 		// instrument filesystem.Bucket to objstore.InstrumentedBucket
 		fsInstrBkt := objstore.WithNoopInstr(fsbkt)
 		_ = concurrency.ForEachJob(ctx, uploadBlocksCount, c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
@@ -677,6 +674,23 @@ func IsCriticalError(err error) (bool, CriticalError) {
 	return ok, criticalErr
 }
 
+// IsPostingsOffsetTableSizeError returns true if the error indicates the postings offset
+// table size of the result block would exceed 4GB. This uses string matching because
+// Prometheus TSDB does not expose this as a structured error type.
+//
+// The error originates from vendor/github.com/prometheus/prometheus/tsdb/index/index.go (writeLengthAndHash).
+func IsPostingsOffsetTableSizeError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	errStr := err.Error()
+	hasLengthError := strings.Contains(errStr, "length size exceeds 4 bytes")
+	hasPostingsTable := strings.Contains(errStr, "postings offset table")
+
+	return hasLengthError && hasPostingsTable
+}
+
 // repairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
 func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blocksMarkedForDeletion prometheus.Counter, ie issue347Error) error {
 	level.Info(logger).Log("msg", "Repairing block broken by https://github.com/prometheus/tsdb/issues/347", "id", ie.id, "err", ie)
@@ -844,6 +858,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	}
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason).Add(0)
 
 	return bcm
 }
@@ -866,7 +881,6 @@ type BucketCompactor struct {
 	bkt                           objstore.Bucket
 	concurrency                   int
 	skipUnhealthyBlocks           bool
-	uploadSparseIndexHeaders      bool
 	sparseIndexHeaderSamplingRate int
 	maxPerBlockUploadConcurrency  int
 	sparseIndexHeaderconfig       indexheader.Config
@@ -895,7 +909,6 @@ func NewBucketCompactor(
 	skipFutureMaxTime bool,
 	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
-	uploadSparseIndexHeaders bool,
 	sparseIndexHeaderSamplingRate int,
 	sparseIndexHeaderconfig indexheader.Config,
 	maxPerBlockUploadConcurrency int,
@@ -924,7 +937,6 @@ func NewBucketCompactor(
 		skipFutureMaxTime:             skipFutureMaxTime,
 		blockSyncConcurrency:          blockSyncConcurrency,
 		metrics:                       metrics,
-		uploadSparseIndexHeaders:      uploadSparseIndexHeaders,
 		sparseIndexHeaderSamplingRate: sparseIndexHeaderSamplingRate,
 		sparseIndexHeaderconfig:       sparseIndexHeaderconfig,
 		maxPerBlockUploadConcurrency:  maxPerBlockUploadConcurrency,
@@ -1044,6 +1056,48 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 							c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
 						)
 						if err == nil {
+							mtx.Lock()
+							finishedAllJobs = false
+							mtx.Unlock()
+							continue
+						}
+					}
+
+					// Handle postings offset table size errors by marking all input blocks as no-compact.
+					// This error indicates the blocks have extremely high label cardinality and cannot be
+					// compacted together without exceeding the 4GB offset table size limit.
+					if IsPostingsOffsetTableSizeError(err) && c.skipUnhealthyBlocks {
+						blockIDs := g.IDs()
+						level.Warn(c.logger).Log(
+							"msg", "compaction failed due to postings offset table size limit; marking input blocks as no-compact",
+							"groupKey", g.Key(),
+							"block_count", len(blockIDs),
+							"blocks", fmt.Sprintf("%v", blockIDs),
+							"err", err,
+						)
+
+						allMarked := true
+						for _, blockID := range blockIDs {
+							markErr := block.MarkForNoCompact(
+								ctx,
+								c.logger,
+								c.bkt,
+								blockID,
+								block.PostingsOffsetTableTooLargeNoCompactReason,
+								"PostingsOffsetTableTooLarge: marking input block as no compact to unblock compaction",
+								c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason),
+							)
+							if markErr != nil {
+								level.Error(c.logger).Log(
+									"msg", "failed to mark block as no-compact after postings offset table size error",
+									"block", blockID,
+									"err", markErr,
+								)
+								allMarked = false
+							}
+						}
+
+						if allMarked {
 							mtx.Lock()
 							finishedAllJobs = false
 							mtx.Unlock()

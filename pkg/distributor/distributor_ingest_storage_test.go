@@ -985,7 +985,7 @@ func TestDistributor_UserStats_ShouldSupportIngestStorage(t *testing.T) {
 						ingesterDataByZone:   testData.ingesterDataByZone,
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 						limits: func() *validation.Limits {
@@ -1283,7 +1283,7 @@ func TestDistributor_LabelValuesCardinality_AvailabilityAndConsistencyWithIngest
 						ingesterDataByZone:   testData.ingesterDataByZone,
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
 						},
 						limits: func() *validation.Limits {
@@ -1573,7 +1573,7 @@ func TestDistributor_ActiveSeries_AvailabilityAndConsistencyWithIngestStorage(t 
 						ingestStorageEnabled: true,
 						configure: func(config *Config) {
 							config.MinimizeIngesterRequests = minimizeIngesterRequests
-							config.PreferAvailabilityZone = preferredZone
+							config.PreferAvailabilityZones = []string{preferredZone}
 						},
 						limits: func() *validation.Limits {
 							limits := prepareDefaultLimits()

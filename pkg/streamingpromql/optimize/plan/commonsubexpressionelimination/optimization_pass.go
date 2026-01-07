@@ -90,7 +90,7 @@ func (e *OptimizationPass) accumulatePaths(plan *planning.QueryPlan) []path {
 		{
 			node:       plan.Root,
 			childIndex: 0,
-			timeRange:  plan.TimeRange,
+			timeRange:  plan.Parameters.TimeRange,
 		},
 	})
 }

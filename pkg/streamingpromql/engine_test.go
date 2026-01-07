@@ -59,6 +59,7 @@ func init() {
 	types.EnableManglingReturnedSlices = true
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExperimentalFunctions = true
+	parser.EnableExtendedRangeSelectors = true
 
 	// Set a tracer provider with in memory span exporter so we can check the spans later.
 	otel.SetTracerProvider(
@@ -221,7 +222,6 @@ func TestOurTestCases(t *testing.T) {
 
 		return mimirEngine, prometheusEngine
 	}
-
 	opts := NewTestEngineOpts()
 	mimirEngine, prometheusEngine := makeEngines(t, opts)
 
@@ -1633,8 +1633,8 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			expr:          "sum(some_histogram)",
 			shouldSucceed: true,
 
-			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
-			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize,
+			rangeQueryExpectedPeak: 8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
+			rangeQueryLimit:        8*types.HistogramPointerSize + 8*types.HPointSize + types.SeriesMetadataSize + 8*types.CounterResetHintSize,
 
 			instantQueryExpectedPeak: types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
 			instantQueryLimit:        types.HPointSize + types.VectorSampleSize + types.SeriesMetadataSize,
@@ -1656,7 +1656,7 @@ func TestMemoryConsumptionLimit_SingleQueries(t *testing.T) {
 			//  - the next series from the selector,
 			//  - and the output sample.
 			// The last thing to be allocated is the vector slice for the final result (after the sum()'s running total has been returned), so those won't contribute to the peak before the query is aborted.
-			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + types.HistogramPointerSize,
+			instantQueryExpectedPeak: types.HPointSize + types.SeriesMetadataSize + types.HistogramPointerSize + types.CounterResetHintSize,
 			instantQueryLimit:        types.HPointSize + types.SeriesMetadataSize + types.VectorSampleSize - 1,
 		},
 	}
@@ -1773,6 +1773,7 @@ func assertEstimatedPeakMemoryConsumption(
 		attribute.Int64("estimatedPeakMemoryConsumption", int64(expectedMemoryConsumptionEstimate)),
 		attribute.String("originalExpression", expr),
 		attribute.String("timeRangeType", queryType),
+		attribute.Int("nodeCount", 1),
 	}
 
 	switch queryType {
@@ -1876,7 +1877,7 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
 	require.NoError(t, err)
 
-	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan, plan.Root, plan.TimeRange)
+	evaluator, err := engine.NewEvaluator(ctx, storage, nil, plan.Parameters, []NodeEvaluationRequest{{Node: plan.Root, TimeRange: plan.Parameters.TimeRange}})
 	require.NoError(t, err)
 
 	err = evaluator.Evaluate(ctx, noopEvaluationObserver{})
@@ -1903,23 +1904,23 @@ func TestEvaluator_ReportsMemoryConsumptionLimit(t *testing.T) {
 
 type noopEvaluationObserver struct{}
 
-func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, series []types.SeriesMetadata) error {
+func (n noopEvaluationObserver) SeriesMetadataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, series []types.SeriesMetadata) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, seriesData types.InstantVectorSeriesData) error {
+func (n noopEvaluationObserver) InstantVectorSeriesDataEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, seriesCount int, seriesData types.InstantVectorSeriesData) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
+func (n noopEvaluationObserver) RangeVectorStepSamplesEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, seriesIndex int, stepIndex int, stepData *types.RangeVectorStepData) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, data types.ScalarData) error {
+func (n noopEvaluationObserver) ScalarEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data types.ScalarData) error {
 	return nil
 }
 
-func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *Evaluator, data string) error {
+func (n noopEvaluationObserver) StringEvaluated(ctx context.Context, evaluator *Evaluator, node planning.Node, data string) error {
 	return nil
 }
 
@@ -2088,7 +2089,7 @@ func (qt *testQueryTracker) GetMaxConcurrent() int {
 	return 0
 }
 
-func (qt *testQueryTracker) InsertWithDetails(_ context.Context, query string, stage string, timeRange types.QueryTimeRange) (int, error) {
+func (qt *testQueryTracker) InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error) {
 	qt.queries = append(qt.queries, trackedQuery{
 		expr:      query,
 		stage:     stage,
@@ -2179,7 +2180,7 @@ func (t *timeoutTestingQueryTracker) GetMaxConcurrent() int {
 	return 0
 }
 
-func (t *timeoutTestingQueryTracker) InsertWithDetails(ctx context.Context, _ string, _ string, _ types.QueryTimeRange) (int, error) {
+func (t *timeoutTestingQueryTracker) InsertWithDetails(ctx context.Context, query string, stage string, includeTimeRange bool, timeRange types.QueryTimeRange) (int, error) {
 	if !t.shouldWaitForTimeout {
 		return 0, nil
 	}
@@ -4381,6 +4382,393 @@ func TestEngine_RegisterNodeMaterializer(t *testing.T) {
 	require.NoError(t, engine.RegisterNodeMaterializer(nodeType, materializer), "should not fail to register new node type")
 
 	require.EqualError(t, engine.RegisterNodeMaterializer(nodeType, materializer), "materializer for node type 1234 already registered", "should fail to register materializer again if already registered")
+}
+
+// TestExtendedRangeSelectors has tests specific to the anchored and smoothed range modifiers.
+// The results can have points which are not aligned to the step interval, and as such creating promql *.test scripts which inspect the raw range result is not possible.
+func TestExtendedRangeSelectors(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+	load 1m
+    	metric 1 2 _ 4 5
+		another_metric{id="1"} 1+1x4 1+1x4
+    	another_metric{id="2"} 3 2+2x9
+    	another_metric{id="3"} 5+3x2 3+3x6
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	tc := []struct {
+		query    string
+		t        time.Time
+		expected promql.Matrix
+	}{
+		{
+			// There is no values within the range of 1m-2m (left-open / right-closed).
+			// Because of that no back-filling from the look-back is used
+			query:    "metric[1m] anchored",
+			t:        time.Unix(120, 0),
+			expected: types.GetMatrix(0),
+		},
+
+		{
+			// The range is 59s - 2m
+			// The value of 1 (T=0) is picked up in the look-back <= 59s
+			// The value of 2 (T=1m) is picked up as it's in this time range
+			// The value of 2 (T=1m) is re-used for the value at the end of the range
+			query: "metric[1m1s] anchored",
+			t:     time.Unix(120, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 59000}, {F: 2, T: 60000}, {F: 2, T: 120000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+
+		{
+			// There is no values within the range of 1m-2m (left-open / right-closed).
+			// Because of that no back-filling from the look-back is used
+			query:    "metric[59s] anchored",
+			t:        time.Unix(120, 0),
+			expected: types.GetMatrix(0),
+		},
+
+		{
+			// Without the anchored modifier, these range queries only return a single point
+			query: "another_metric[1m]",
+			t:     time.Unix(90, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 2, T: 60000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "1"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 2, T: 60000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "2"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 8, T: 60000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "3"),
+				},
+			},
+		},
+
+		{
+			query: "another_metric[1m] anchored",
+			t:     time.Unix(90, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 30000}, {F: 2, T: 60000}, {F: 2, T: 90000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "1"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 3, T: 30000}, {F: 2, T: 60000}, {F: 2, T: 90000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "2"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 30000}, {F: 8, T: 60000}, {F: 8, T: 90000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "3"),
+				},
+			},
+		},
+
+		{
+			query: "another_metric[1m] anchored",
+			t:     time.Unix(60*3, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 3, T: 120000}, {F: 4, T: 180000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "1"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4, T: 120000}, {F: 6, T: 180000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "2"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 11, T: 120000}, {F: 3, T: 180000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "3"),
+				},
+			},
+		},
+
+		{
+			query: "another_metric[1m] anchored",
+			t:     time.Unix(60*3-1, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 2, T: 119000}, {F: 3, T: 120000}, {F: 3, T: 179000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "1"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 2, T: 119000}, {F: 4, T: 120000}, {F: 4, T: 179000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "2"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 8, T: 119000}, {F: 11, T: 120000}, {F: 11, T: 179000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "3"),
+				},
+			},
+		},
+
+		{
+			query: "another_metric[1m] anchored",
+			t:     time.Unix(60*3+1, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 3, T: 121000}, {F: 4, T: 180000}, {F: 4, T: 181000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "1"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4, T: 121000}, {F: 6, T: 180000}, {F: 6, T: 181000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "2"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 11, T: 121000}, {F: 3, T: 180000}, {F: 3, T: 181000}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "3"),
+				},
+			},
+		},
+
+		{
+			query: "another_metric[1m] smoothed",
+			t:     time.Unix(90, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1.5, T: 30000}, {T: 60000, F: 2}, {T: 90000, F: 2.5}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "1"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 2.5, T: 30000}, {T: 60000, F: 2}, {T: 90000, F: 3}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "2"),
+				},
+				promql.Series{
+					Floats: []promql.FPoint{{F: 6.5, T: 30000}, {T: 60000, F: 8}, {T: 90000, F: 9.5}},
+					Metric: labels.FromStrings("__name__", "another_metric", "id", "3"),
+				},
+			},
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.query, func(t *testing.T) {
+
+			opts := NewTestEngineOpts()
+			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, tc.t)
+			require.NoError(t, err)
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			require.Equal(t, tc.expected, res.Value)
+		})
+	}
+}
+
+// TestExtendedRangeSelectorsIrregular has tests specific to the anchored and smoothed range modifiers.
+// The results can have points which are not aligned to the step interval, and as such creating promql *.test scripts which inspect the raw range result is not possible.
+// These tests also cover the anchored and smoothed errors. These errors are returned during the planning phase, rather than the execution phase so the *.test promql test harness does not handle this correctly.
+func TestExtendedRangeSelectorsIrregular(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+	load 10s
+		metric 1+1x10
+		withreset 1+1x4 1+1x5
+		notregular 0 5 100 2 8
+		nans 1 2 3 NaN -NaN 4 5 6
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	tc := []struct {
+		query    string
+		t        time.Time
+		expected promql.Matrix
+		error    string
+	}{
+
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(10, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(15, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1.5, T: 5000}, {F: 2, T: 10000}, {F: 2.5, T: 15000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(5, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: -5000}, {F: 1, T: 0}, {F: 1.5, T: 5000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] smoothed",
+			t:     time.Unix(105, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10.5, T: 95000}, {F: 11, T: 100000}, {F: 11, T: 105000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "withreset[10s] smoothed",
+			t:     time.Unix(45, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4.5, T: 35000}, {F: 5, T: 40000}, {F: 3, T: 45000}},
+					Metric: labels.FromStrings("__name__", "withreset"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(10, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 2, T: 10000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(15, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: 5000}, {F: 2, T: 10000}, {F: 2, T: 15000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(5, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 1, T: -5000}, {F: 1, T: 0}, {F: 1, T: 5000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "metric[10s] anchored",
+			t:     time.Unix(105, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 10, T: 95000}, {F: 11, T: 100000}, {F: 11, T: 105000}},
+					Metric: labels.FromStrings("__name__", "metric"),
+				},
+			},
+		},
+		{
+			query: "withreset[10s] anchored",
+			t:     time.Unix(45, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 4, T: 35000}, {F: 5, T: 40000}, {F: 5, T: 45000}},
+					Metric: labels.FromStrings("__name__", "withreset"),
+				},
+			},
+		},
+		{
+			query: "notregular[20s] smoothed",
+			t:     time.Unix(30, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 10000}, {F: 100, T: 20000}, {F: 2, T: 30000}},
+					Metric: labels.FromStrings("__name__", "notregular"),
+				},
+			},
+		},
+		{
+			query: "notregular[20s] anchored",
+			t:     time.Unix(30, 0),
+			expected: promql.Matrix{
+				promql.Series{
+					Floats: []promql.FPoint{{F: 5, T: 10000}, {F: 100, T: 20000}, {F: 2, T: 30000}},
+					Metric: labels.FromStrings("__name__", "notregular"),
+				},
+			},
+		},
+
+		{
+			query: "deriv(notregular[20s] anchored)",
+			t:     time.Unix(30, 0),
+			error: "anchored modifier can only be used with: changes, delta, increase, rate, resets - not with deriv",
+		},
+
+		{
+			query: "max_over_time(notregular[20s] anchored)",
+			t:     time.Unix(30, 0),
+			error: "anchored modifier can only be used with: changes, delta, increase, rate, resets - not with max_over_time",
+		},
+
+		{
+			query: "predict_linear(notregular[20s] anchored, 4)",
+			t:     time.Unix(30, 0),
+			error: "anchored modifier can only be used with: changes, delta, increase, rate, resets - not with predict_linear",
+		},
+
+		{
+			query: "deriv(notregular[20s] smoothed)",
+			t:     time.Unix(30, 0),
+			error: "smoothed modifier can only be used with: delta, increase, rate - not with deriv",
+		},
+
+		{
+			query: "changes(notregular[20s] smoothed)",
+			t:     time.Unix(30, 0),
+			error: "smoothed modifier can only be used with: delta, increase, rate - not with changes",
+		},
+
+		{
+			query: "resets(notregular[20s] smoothed)",
+			t:     time.Unix(30, 0),
+			error: "smoothed modifier can only be used with: delta, increase, rate - not with resets",
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.query, func(t *testing.T) {
+
+			opts := NewTestEngineOpts()
+			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, tc.t)
+			if len(tc.error) > 0 {
+				require.ErrorContains(t, err, tc.error)
+			} else {
+				require.NoError(t, err)
+			}
+			if err != nil {
+				return
+			}
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+			require.Equal(t, tc.expected, res.Value)
+
+		})
+	}
 }
 
 type dummyMaterializer struct{}

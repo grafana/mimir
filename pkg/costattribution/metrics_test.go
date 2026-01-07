@@ -38,7 +38,7 @@ func TestNewDescriptor(t *testing.T) {
 			help:        "Metric with invalid label",
 			labels:      []string{"__bad_label__"},
 			constLabels: nil,
-			expectedErr: fmt.Errorf(`descriptor Desc{fqName: "test_metric", help: "Metric with invalid label", constLabels: {}, variableLabels: {__bad_label__}} is invalid: "__bad_label__" is not a valid label name for metric "test_metric"`),
+			expectedErr: fmt.Errorf(`"__bad_label__" is not a valid label name for metric "test_metric"`),
 		},
 	}
 

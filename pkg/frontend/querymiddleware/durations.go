@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -56,14 +55,14 @@ func (d *durationsMiddleware) rewriteIfNeeded(ctx context.Context, req MetricsQu
 	defer spanLog.Finish()
 
 	origQuery := req.GetQuery()
-	expr, err := astmapper.CloneExpr(req.GetParsedQuery())
+	expr, err := req.GetClonedParsedQuery()
 	if err != nil {
 		// This middleware focuses on duration expressions, so if the query is
 		// not valid, we just fall through to the next handler.
 		return req, nil
 	}
 
-	expr, err = promql.PreprocessExpr(expr, time.UnixMilli(req.GetStart()), time.UnixMilli(req.GetEnd()), time.Duration(req.GetStep())*time.Second)
+	expr, err = promql.PreprocessExpr(expr, time.UnixMilli(req.GetStart()), time.UnixMilli(req.GetEnd()), time.Duration(req.GetStep())*time.Millisecond)
 	if err != nil {
 		level.Warn(spanLog).Log("msg", "failed to evaluate duration expressions in query", "err", err)
 		return nil, apierror.New(apierror.TypeBadData, DecorateWithParamName(err, "query").Error())
@@ -162,6 +161,8 @@ func checkDuration(expr parser.Expr) error {
 
 		switch n.Op {
 		case parser.STEP:
+			return nil
+		case parser.RANGE:
 			return nil
 		case parser.MIN:
 			return nil

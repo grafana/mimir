@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
@@ -33,17 +35,22 @@ import (
 )
 
 type StreamBinaryReaderMetrics struct {
-	decbufFactory *streamencoding.DecbufFactoryMetrics
+	decbufFactory      *streamencoding.DecbufFactoryMetrics
+	indexVersionLoaded *prometheus.CounterVec
 }
 
 func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReaderMetrics {
 	return &StreamBinaryReaderMetrics{
 		decbufFactory: streamencoding.NewDecbufFactoryMetrics(reg),
+		indexVersionLoaded: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "indexheader_tsdb_index_loaded_total",
+			Help: "Total number of index headers loaded by TSDB index file format version.",
+		}, []string{"version"}),
 	}
 }
 
 type StreamBinaryReader struct {
-	factory *streamencoding.DecbufFactory
+	factory streamencoding.DecbufFactory
 	toc     *BinaryTOC
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
@@ -87,7 +94,7 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	sparseHeadersPath := filepath.Join(dir, block.SparseIndexHeaderFilename)
 
 	// First, try to initialize from the binary header file
-	br, err := newFileStreamBinaryReader(ctx, binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, bkt, metrics, cfg)
+	br, err := NewFileStreamBinaryReader(ctx, binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, bkt, metrics, cfg)
 	if err == nil {
 		return br, nil
 	}
@@ -100,15 +107,15 @@ func NewStreamBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.
 	}
 
 	level.Debug(spanLog).Log("msg", "built index-header file", "path", binPath, "elapsed", time.Since(start))
-	return newFileStreamBinaryReader(ctx, binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, bkt, metrics, cfg)
+	return NewFileStreamBinaryReader(ctx, binPath, id, sparseHeadersPath, postingOffsetsInMemSampling, spanLog, bkt, metrics, cfg)
 }
 
-// newFileStreamBinaryReader loads sparse index-headers from disk, then from the bucket, or constructs it from the index-header if neither of the two available.
-func newFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID, sparseHeadersPath string, postingOffsetsInMemSampling int, logger log.Logger, bkt objstore.InstrumentedBucketReader, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
+// NewFileStreamBinaryReader loads sparse index-headers from disk, then from the bucket, or constructs it from the index-header if neither of the two available.
+func NewFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID, sparseHeadersPath string, postingOffsetsInMemSampling int, logger log.Logger, bkt objstore.InstrumentedBucketReader, metrics *StreamBinaryReaderMetrics, cfg Config) (bw *StreamBinaryReader, err error) {
 	logger = log.With(logger, "id", id, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
 	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
+		factory: streamencoding.NewFilePoolDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
 	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
@@ -145,6 +152,15 @@ func newFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 
 	if r.version != BinaryFormatV1 {
 		return nil, fmt.Errorf("unknown index-header file version %d", r.version)
+	}
+
+	// Keep track of the TSDB index file format version. We want to remove support for
+	// the v1 format but need to confirm that we don't have any uses of it. Mimir has
+	// never written the v1 format but it's possible that instances of it were uploaded
+	// via the compactor. See https://github.com/grafana/mimir/issues/13808
+	metrics.indexVersionLoaded.WithLabelValues(strconv.Itoa(r.indexVersion)).Inc()
+	if r.indexVersion != index.FormatV2 {
+		level.Warn(logger).Log("msg", "deprecated TSDB index version loaded for index-header", "version", r.indexVersion)
 	}
 
 	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
@@ -368,7 +384,7 @@ func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, re
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
 // configured to access the entirety of the index-header file.
 func newBinaryTOCFromFile(d streamencoding.Decbuf, indexHeaderSize int) (*BinaryTOC, error) {
-	tocOffset := indexHeaderSize - binaryTOCLen
+	tocOffset := indexHeaderSize - BinaryTOCLen
 	if d.ResetAt(tocOffset); d.Err() != nil {
 		return nil, d.Err()
 	}
@@ -410,7 +426,7 @@ func (r *StreamBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, 
 	if r.indexVersion == index.FormatV1 {
 		// For v1 little trick is needed. Refs are actual offset inside index, not index-header. This is different
 		// of the header length difference between two files.
-		o += headerLen - index.HeaderLen
+		o += HeaderLen - index.HeaderLen
 	}
 
 	if s, ok := r.nameSymbols[o]; ok {
@@ -471,6 +487,15 @@ func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 }
 
 func (r *StreamBinaryReader) Close() error {
-	r.factory.Stop()
-	return nil
+	return r.factory.Close()
+}
+
+// TOC returns the table of contents for the index-header.
+func (r *StreamBinaryReader) TOC() *BinaryTOC {
+	return r.toc
+}
+
+// IndexHeaderVersion returns the version of the index-header file format.
+func (r *StreamBinaryReader) IndexHeaderVersion() int {
+	return r.version
 }

@@ -524,6 +524,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       }, '{{%s}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -549,6 +550,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -570,6 +572,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       '{{%s}} - {{device}}' % $._config.per_instance_label
     ) +
     $.stack +
+    $.showAllTooltip +
     { fieldConfig+: { defaults+: { unit: 'Bps' } } },
 
   // The provided componentName should be the name of a component among the ones defined in $._config.instance_names.
@@ -590,6 +593,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         instanceDataDir: $._config.instance_data_mountpoint,
       }, label
     ) +
+    $.showAllTooltip +
     {
       fieldConfig+: {
         defaults+: { unit: 'percentunit' },
@@ -1282,15 +1286,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.timeseriesPanel('Latency (getmulti)') +
-      $.latencyPanel(
+      $.ncLatencyPanel(
         'thanos_cache_operation_duration_seconds',
         |||
-          {
-            %(jobMatcher)s,
-            operation="getmulti",
-            component="%(component)s",
-            name="%(cacheName)s"
-          }
+          %(jobMatcher)s, operation="getmulti", component="%(component)s", name="%(cacheName)s"
         ||| % config
       )
     )
@@ -1322,38 +1321,54 @@ local utils = import 'mixin-utils/utils.libsonnet';
   latencyPanelLabelBreakout(
     metricName,
     selector,
-    percentiles=['0.99', '0.50'],
+    percentiles=['0.99'],
     includeAverage=true,
     labels=[],
     labelReplaceArgSets=[{}],
     multiplier='1e3',
   )::
-    local averageExprTmpl = $.wrapMultiLabelReplace(
-      query='sum(rate(%s_sum%s[$__rate_interval])) by (%s) * %s / sum(rate(%s_count%s[$__rate_interval])) by (%s)',
-      labelReplaceArgSets=labelReplaceArgSets,
-    );
-    local histogramExprTmpl = $.wrapMultiLabelReplace(
-      query='histogram_quantile(%s, sum(rate(%s_bucket%s[$__rate_interval])) by (%s)) * %s',
-      labelReplaceArgSets=labelReplaceArgSets,
-    );
-    local labelBreakouts = '%s' % std.join(', ', labels);
-    local histogramLabelBreakouts = '%s' % std.join(', ', ['le'] + labels);
+    assert 0 <= std.length(percentiles) && std.length(percentiles) <= 1 : 'latencyPanelLabelBreakout currently only supports a single percentile due to fixed refId';
+    local labelReplace = $.wrapMultiLabelReplace(labelReplaceArgSets=labelReplaceArgSets);
+    local labelBreakouts = std.join(', ', labels);
 
-    local percentileTargets = [
-      {
-        expr: histogramExprTmpl % [percentile, metricName, selector, histogramLabelBreakouts, multiplier],
-        format: 'time_series',
-        legendFormat: '%sth Percentile: {{ %s }}' % [std.lstripChars(percentile, '0.'), labelBreakouts],
-        refId: 'A',
-      }
+    local percentileTargets = std.flattenArrays([
+      local query = utils.ncHistogramApplyTemplate(
+        labelReplace,
+        utils.ncHistogramQuantile(percentile, metricName, selector, sum_by=labels, multiplier=multiplier),
+      );
+      [
+        {
+          expr: utils.showNativeHistogramQuery(query),
+          format: 'time_series',
+          legendFormat: '%sth Percentile: {{ %s }}' % [std.lstripChars(percentile, '0.'), labelBreakouts],
+          refId: 'A',
+        },
+        {
+          expr: utils.showClassicHistogramQuery(query),
+          format: 'time_series',
+          legendFormat: '%sth Percentile: {{ %s }}' % [std.lstripChars(percentile, '0.'), labelBreakouts],
+          refId: 'A_classic',
+        },
+      ]
       for percentile in percentiles
-    ];
+    ]);
+
+    local averageQuery = utils.ncHistogramApplyTemplate(
+      labelReplace,
+      utils.ncHistogramAverageRate(metricName, selector, multiplier=multiplier, sum_by=labels),
+    );
     local averageTargets = [
       {
-        expr: averageExprTmpl % [metricName, selector, labelBreakouts, multiplier, metricName, selector, labelBreakouts],
+        expr: utils.showNativeHistogramQuery(averageQuery),
         format: 'time_series',
         legendFormat: 'Average: {{ %s }}' % [labelBreakouts],
         refId: 'C',
+      },
+      {
+        expr: utils.showClassicHistogramQuery(averageQuery),
+        format: 'time_series',
+        legendFormat: 'Average: {{ %s }}' % [labelBreakouts],
+        refId: 'C_classic',
       },
     ];
 
@@ -1572,7 +1587,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       replaceFields: replaceFields,
     }),
 
-  wrapMultiLabelReplace(query, labelReplaceArgSets=[{}])::
+  wrapMultiLabelReplace(query='%s', labelReplaceArgSets=[{}])::
     std.foldl(
       function(query, labelReplaceArgSet) $.wrapLabelReplace(query, labelReplaceArgSet),
       labelReplaceArgSets,
@@ -1643,10 +1658,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
         $.queryPanel(
-          |||
-            sum(rate(cortex_query_scheduler_queue_duration_seconds_count{%s}[$__rate_interval]))
-          ||| % $.jobMatcher(querySchedulerJobName),
-          'Requests/s'
+          local query = utils.ncHistogramSumBy(utils.ncHistogramCountRate(
+            metric='cortex_query_scheduler_queue_duration_seconds',
+            selector=$.jobMatcher(querySchedulerJobName)
+          ));
+
+          [utils.showNativeHistogramQuery(query), utils.showClassicHistogramQuery(query)],
+          ['Requests/s', 'Requests/s']
         ) +
         $.stack +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } },
@@ -1655,7 +1673,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Latency (Time in Queue)';
         $.timeseriesPanel(title) +
         $.onlyRelevantIfQuerySchedulerEnabled(title) +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher(querySchedulerJobName))
+        $.ncLatencyPanel('cortex_query_scheduler_queue_duration_seconds', $.jobMatcher(querySchedulerJobName))
       )
       .addPanel(
         local title = 'Queue length';
@@ -1685,7 +1703,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         </p>
       |||;
       local metricName = 'cortex_query_scheduler_queue_duration_seconds';
-      local selector = '{%s}' % $.jobMatcher(querySchedulerJobName);
+      local selector = $.jobMatcher(querySchedulerJobName);
       local labels = ['additional_queue_dimensions'];
       local labelReplaceArgSets = [
         {
@@ -1798,9 +1816,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
         .addPanel(
           $.timeseriesPanel('Latency') +
-          $.latencyPanel(
+          $.ncLatencyPanel(
             'thanos_cache_operation_duration_seconds',
-            '{%s, name="frontend-cache"}' % $.jobMatcher(queryFrontendJobName)
+            '%s, name="frontend-cache"' % $.jobMatcher(queryFrontendJobName)
           )
         ),
       ]
@@ -1808,16 +1826,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row($.capitalize(rowTitlePrefix + 'querier'))
       .addPanel(
         $.timeseriesPanel('Requests / sec') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher(querierJobName), $.queries.querier_read_routes_regex])
+        $.qpsPanelNativeHistogram('cortex_querier_request_duration_seconds', '%s, route=~"%s"' % [$.jobMatcher(querierJobName), $.queries.querier_read_routes_regex])
       )
       .addPanel(
         $.timeseriesPanel('Latency') +
-        $.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)])
+        $.latencyRecordingRulePanelNativeHistogram('cortex_querier_request_duration_seconds', $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)])
       )
       .addPanel(
         $.timeseriesPanel('Per %s p99 latency' % $._config.per_instance_label) +
-        $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"%s"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher(querierJobName), $.queries.querier_read_routes_regex], ''
+        $.perInstanceLatencyPanelNativeHistogram(
+          '0.99',
+          'cortex_querier_request_duration_seconds',
+          $.jobSelector(querierJobName) + [utils.selector.re('route', $.queries.querier_read_routes_regex)],
         )
       ),
     ] +
@@ -1894,7 +1914,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addPanel(
       $.timeseriesPanel('Latency') +
       $.panelDescription('Latency', description) +
-      $.latencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelector(selectors))
+      $.ncLatencyPanel(querierRequestsPerSecondMetric, utils.toPrometheusSelectorNaked(selectors))
     )
     .addPanel(
       $.timeseriesPanel('Per querier %s p99 latency' % $._config.per_instance_label) +

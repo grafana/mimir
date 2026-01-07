@@ -177,14 +177,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 1
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -258,14 +256,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 1
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -342,14 +338,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 1
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -424,14 +418,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 2
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -507,14 +499,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 2
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -587,14 +577,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 3
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -716,14 +704,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 0
 				cortex_querier_storegateway_instances_hit_per_query_sum 0
 				cortex_querier_storegateway_instances_hit_per_query_count 0
@@ -795,14 +781,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 0
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 0
 				cortex_querier_storegateway_instances_hit_per_query_sum 0
 				cortex_querier_storegateway_instances_hit_per_query_count 0
@@ -886,14 +870,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 4
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -984,14 +966,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 6
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -1075,14 +1055,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 1
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -1145,14 +1123,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 1
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -1215,14 +1191,12 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_instances_hit_per_query_sum 1
 					cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -1372,17 +1346,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_instances_hit_per_query_sum 1
 					cortex_querier_storegateway_instances_hit_per_query_count 1
+
 					# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
 					# TYPE cortex_querier_storegateway_refetches_per_query histogram
 					cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
@@ -1451,17 +1424,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_instances_hit_per_query_sum 1
 					cortex_querier_storegateway_instances_hit_per_query_count 1
+
 					# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
 					# TYPE cortex_querier_storegateway_refetches_per_query histogram
 					cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
@@ -1530,17 +1502,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 					cortex_querier_storegateway_instances_hit_per_query_sum 2
 					cortex_querier_storegateway_instances_hit_per_query_count 1
+
 					# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
 					# TYPE cortex_querier_storegateway_refetches_per_query histogram
 					cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 0
@@ -1677,7 +1648,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
+			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, &bucketindex.Metadata{}, testData.finderErr)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			t.Cleanup(cancel)
@@ -1803,7 +1774,7 @@ func TestBlocksStoreQuerier_Select_ClosedBeforeSelectFinishes(t *testing.T) {
 	finderResult := bucketindex.Blocks{
 		{ID: block},
 	}
-	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(finderResult, nil)
+	finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(finderResult, &bucketindex.Metadata{}, nil)
 
 	reg := prometheus.NewPedanticRegistry()
 	ctx := user.InjectOrgID(context.Background(), "user-1")
@@ -1862,7 +1833,7 @@ func TestBlocksStoreQuerier_ShouldReturnContextCanceledIfContextWasCanceledWhile
 
 		// Mock the blocks finder.
 		finder := &blocksFinderMock{}
-		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, nil)
+		finder.On("GetBlocks", mock.Anything, tenantID, minT, maxT).Return(bucketindex.Blocks{{ID: block1}}, &bucketindex.Metadata{}, nil)
 
 		// Create a real gRPC client connecting to the gRPC server we control in this test.
 		clientCfg := grpcclient.Config{}
@@ -2096,7 +2067,7 @@ func TestBlocksStoreQuerier_Select_cancelledContext(t *testing.T) {
 			finder := &blocksFinderMock{}
 			finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 				{ID: block},
-			}, nil)
+			}, &bucketindex.Metadata{}, nil)
 
 			q := &blocksStoreQuerier{
 				minT:               minT,
@@ -2333,14 +2304,12 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 3
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -2506,14 +2475,12 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 0
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 4
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -2567,14 +2534,12 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 0
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
-				cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="16"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="32"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="64"} 1
+				cortex_querier_storegateway_instances_hit_per_query_bucket{le="128"} 1
 				cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_instances_hit_per_query_sum 2
 				cortex_querier_storegateway_instances_hit_per_query_count 1
@@ -2616,7 +2581,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				reg := prometheus.NewPedanticRegistry()
 				stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 				finder := &blocksFinderMock{}
-				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, testData.finderErr)
+				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(testData.finderResult, &bucketindex.Metadata{}, testData.finderErr)
 
 				q := &blocksStoreQuerier{
 					minT:               minT,
@@ -2688,7 +2653,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 				finder := &blocksFinderMock{}
 				finder.On("GetBlocks", mock.Anything, "user-1", minT, maxT).Return(bucketindex.Blocks{
 					{ID: block1},
-				}, nil)
+				}, &bucketindex.Metadata{}, nil)
 
 				q := &blocksStoreQuerier{
 					minT:               minT,
@@ -2761,7 +2726,7 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, error(nil))
 
 			const tenantID = "user-1"
 			ctx = user.InjectOrgID(ctx, tenantID)
@@ -2867,7 +2832,7 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			finder := &blocksFinderMock{}
-			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), error(nil))
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), &bucketindex.Metadata{}, error(nil))
 
 			ctx := user.InjectOrgID(context.Background(), "user-1")
 			q := &blocksStoreQuerier{
@@ -3007,7 +2972,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
 				{ID: block1},
 				{ID: block2},
-			}, error(nil))
+			}, &bucketindex.Metadata{}, error(nil))
 
 			// Mock the store-gateway response, to simulate the case each block is queried from a different gateway.
 			gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: testData.storeGateway1Responses}
@@ -3181,9 +3146,9 @@ type blocksFinderMock struct {
 	mock.Mock
 }
 
-func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error) {
+func (m *blocksFinderMock) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
 	args := m.Called(ctx, userID, minT, maxT)
-	return args.Get(0).(bucketindex.Blocks), args.Error(1)
+	return args.Get(0).(bucketindex.Blocks), args.Get(1).(*bucketindex.Metadata), args.Error(2)
 }
 
 type storeGatewayClientMock struct {
@@ -3307,10 +3272,11 @@ func (m *cancelerStoreGatewayClientMock) RemoteZone() string {
 }
 
 type blocksStoreLimitsMock struct {
-	maxLabelsQueryLength            time.Duration
-	maxChunksPerQuery               int
-	storeGatewayTenantShardSize     int
-	storeGatewayExpandedReplication bool
+	maxLabelsQueryLength               time.Duration
+	maxChunksPerQuery                  int
+	storeGatewayTenantShardSize        int
+	storeGatewayTenantShardSizePerZone int
+	storeGatewayExpandedReplication    bool
 }
 
 func (m *blocksStoreLimitsMock) MaxLabelsQueryLength(_ string) time.Duration {
@@ -3323,6 +3289,10 @@ func (m *blocksStoreLimitsMock) MaxChunksPerQuery(_ string) int {
 
 func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSize(_ string) int {
 	return m.storeGatewayTenantShardSize
+}
+
+func (m *blocksStoreLimitsMock) StoreGatewayTenantShardSizePerZone(_ string) int {
+	return m.storeGatewayTenantShardSizePerZone
 }
 
 func (m *blocksStoreLimitsMock) StoreGatewayExpandedReplication(_ string) bool {

@@ -8,6 +8,7 @@ package indexcache
 import (
 	"encoding/base64"
 	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -25,10 +26,25 @@ func TestMain(m *testing.M) {
 }
 
 func TestCanonicalLabelMatchersKey(t *testing.T) {
-	foo := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
-	bar := labels.MustNewMatcher(labels.MatchEqual, "bar", "foo")
+	m1 := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	m2 := labels.MustNewMatcher(labels.MatchEqual, "bar", "foo")
+	m3 := labels.MustNewMatcher(labels.MatchNotEqual, "foo", "bar")
+	m4 := labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")
+	m5 := labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "bar")
 
-	assert.Equal(t, CanonicalLabelMatchersKey([]*labels.Matcher{foo, bar}), CanonicalLabelMatchersKey([]*labels.Matcher{bar, foo}))
+	// No matter what order we combine these matchers in, they should always generate the same key.
+	const expected = LabelMatchersKey("bar=foo\x00foo=bar\x00foo!=bar\x00foo=~bar\x00foo!~bar\x00")
+	allMatchers := []*labels.Matcher{m1, m2, m3, m4, m5}
+
+	for range 10 {
+		rand.Shuffle(len(allMatchers), func(i, j int) {
+			allMatchers[i], allMatchers[j] = allMatchers[j], allMatchers[i]
+		})
+
+		t.Run(fmt.Sprintf("input=%s", allMatchers), func(t *testing.T) {
+			assert.Equal(t, expected, CanonicalLabelMatchersKey(allMatchers), "did not get expected key %s from input %s", expected, allMatchers)
+		})
+	}
 }
 
 func BenchmarkCanonicalLabelMatchersKey(b *testing.B) {

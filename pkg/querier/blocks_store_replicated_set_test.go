@@ -15,7 +15,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -357,7 +356,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), "", limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
 			require.NoError(t, err)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 			defer services.StopAndAwaitTerminated(ctx, s) //nolint:errcheck
@@ -422,13 +421,13 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	flagext.DefaultValues(&ringCfg)
 	ringCfg.ReplicationFactor = numInstances
 
-	setupBlocksStoreReplicationSet := func(t *testing.T, preferredZone string) *blocksStoreReplicationSet {
+	setupBlocksStoreReplicationSet := func(t *testing.T, preferredZones []string) *blocksStoreReplicationSet {
 		r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
 		require.NoError(t, err)
 
 		limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
 		reg := prometheus.NewPedanticRegistry()
-		s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZone, limits, grpcclient.Config{}, log.NewNopLogger(), reg)
+		s, err := newBlocksStoreReplicationSet(r, randomLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), preferredZones, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 		t.Cleanup(func() {
@@ -445,7 +444,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	}
 
 	t.Run("no preferred zone configured", func(t *testing.T) {
-		s := setupBlocksStoreReplicationSet(t, "")
+		s := setupBlocksStoreReplicationSet(t, nil)
 
 		// Request the same block multiple times and ensure the distribution of
 		// requests across store-gateways is balanced.
@@ -478,7 +477,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 	t.Run("preferred zone configured", func(t *testing.T) {
 		const preferredZone = "zone-1"
-		s := setupBlocksStoreReplicationSet(t, preferredZone)
+		s := setupBlocksStoreReplicationSet(t, []string{preferredZone})
 
 		// Request the same block multiple times. We expect we always get the store-gateway in the preferred zone.
 		for n := 0; n < numRuns; n++ {
@@ -493,7 +492,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 
 			require.Len(t, clients, 1)
 			for client := range clients {
-				assert.Equal(t, preferredZone, client.RemoteZone())
+				require.Equal(t, preferredZone, client.RemoteZone(), "should always return store-gateway from preferred zone")
 			}
 		}
 
@@ -523,6 +522,86 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 			// Ensure that the number of times each client is returned is above
 			// the 80% of the perfect even distribution.
 			assert.Greaterf(t, float64(count), (float64(numRuns)/float64(numInstances-1))*0.8, "store-gateway address: %s", addr)
+		}
+	})
+
+	t.Run("multiple preferred zones configured", func(t *testing.T) {
+		preferredZones := []string{"zone-1", "zone-2"}
+		s := setupBlocksStoreReplicationSet(t, preferredZones)
+
+		// Count which zones are hit across multiple requests.
+		zoneDistribution := make(map[string]int)
+
+		// Request the same block multiple times. We expect we always get a store-gateway in one of the preferred zones.
+		for n := 0; n < numRuns; n++ {
+			clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				// Close all clients to ensure no goroutines are leaked.
+				for c := range clients {
+					c.(io.Closer).Close() //nolint:errcheck
+				}
+			})
+
+			require.Len(t, clients, 1)
+			for client := range clients {
+				zone := client.RemoteZone()
+				zoneDistribution[zone]++
+
+				// We should always get one of the preferred zones
+				assert.Contains(t, preferredZones, zone, "should always query a store-gateway in one of the preferred zones")
+			}
+		}
+
+		// Verify only the preferred zones were used (zone-3 should never be selected)
+		assert.Len(t, zoneDistribution, 2, "only the 2 preferred zones should be selected")
+		assert.NotContains(t, zoneDistribution, "zone-3", "non-preferred zone-3 should never be selected")
+
+		// Verify both preferred zones get approximately equal distribution (due to random shuffling)
+		zone1Hits := zoneDistribution["zone-1"]
+		zone2Hits := zoneDistribution["zone-2"]
+		require.Greater(t, zone1Hits, 0, "zone-1 should be selected at least once")
+		require.Greater(t, zone2Hits, 0, "zone-2 should be selected at least once")
+
+		ratio := float64(zone1Hits) / float64(zone2Hits)
+		// Allow reasonable deviation from perfect 1:1 ratio due to randomness
+		assert.Greater(t, ratio, 0.5, "zone-1 and zone-2 should have roughly equal distribution")
+		assert.Less(t, ratio, 2.0, "zone-1 and zone-2 should have roughly equal distribution")
+
+		// Request the same block multiple times, excluding zone-1 (127.0.0.1).
+		// We expect to always get zone-2 (the remaining preferred zone).
+		for n := 0; n < numRuns; n++ {
+			clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, map[ulid.ULID][]string{block1.ID: {"127.0.0.1"}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				// Close all clients to ensure no goroutines are leaked.
+				for c := range clients {
+					c.(io.Closer).Close() //nolint:errcheck
+				}
+			})
+
+			require.Len(t, clients, 1)
+			for client := range clients {
+				require.Equal(t, "zone-2", client.RemoteZone(), "with zone-1 excluded, should always return zone-2 (remaining preferred zone)")
+			}
+		}
+
+		// Request the same block multiple times, excluding both preferred zones (zone-1 and zone-2).
+		// We expect to fall back to zone-3 (non-preferred zone).
+		for n := 0; n < numRuns; n++ {
+			clients, err := s.GetClientsFor(userID, []*bucketindex.Block{block1}, map[ulid.ULID][]string{block1.ID: {"127.0.0.1", "127.0.0.2"}})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				// Close all clients to ensure no goroutines are leaked.
+				for c := range clients {
+					c.(io.Closer).Close() //nolint:errcheck
+				}
+			})
+
+			require.Len(t, clients, 1)
+			for client := range clients {
+				require.Equal(t, "zone-3", client.RemoteZone(), "with both preferred zones excluded, should fall back to zone-3")
+			}
 		}
 	})
 }

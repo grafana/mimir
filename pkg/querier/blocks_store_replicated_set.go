@@ -12,7 +12,6 @@ import (
 	"slices"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -43,8 +42,8 @@ type blocksStoreReplicationSet struct {
 	dynamicReplication storegateway.DynamicReplication
 	limits             BlocksStoreLimits
 
-	// When non empty, the querier prioritise querying blocks from store-gateways in this zone.
-	preferredZone string
+	// When non empty, the querier prioritises querying blocks from store-gateways in these zones with equal priority.
+	preferredZones []string
 
 	// Subservices manager.
 	subservices        *services.Manager
@@ -55,9 +54,9 @@ func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
 	balancingStrategy loadBalancingStrategy,
 	dynamicReplication storegateway.DynamicReplication,
-	preferredZone string,
+	preferredZones []string,
 	limits BlocksStoreLimits,
-	clientConfig grpcclient.Config,
+	clientConfig StoreGatewayClientConfig,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {
@@ -66,7 +65,7 @@ func newBlocksStoreReplicationSet(
 		clientsPool:        newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
 		dynamicReplication: dynamicReplication,
 		balancingStrategy:  balancingStrategy,
-		preferredZone:      preferredZone,
+		preferredZones:     preferredZones,
 		limits:             limits,
 		subservicesWatcher: services.NewFailureWatcher(),
 	}
@@ -126,7 +125,7 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 		}
 
 		// Pick a non excluded store-gateway instance.
-		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZone)
+		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones)
 		if inst == nil {
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block.ID)
 		}
@@ -150,7 +149,7 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	return clients, nil
 }
 
-func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy, preferredZone string) *ring.InstanceDesc {
+func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancingStrategy loadBalancingStrategy, preferredZones []string) *ring.InstanceDesc {
 	if balancingStrategy == randomLoadBalancing {
 		// Randomize the list of instances to not always query the same one.
 		rand.Shuffle(len(set.Instances), func(i, j int) {
@@ -158,12 +157,14 @@ func getNonExcludedInstance(set ring.ReplicationSet, exclude []string, balancing
 		})
 	}
 
-	if preferredZone != "" {
-		// Give priority to the preferred zone.
+	if len(preferredZones) > 0 {
+		// Move all instances from preferred zones to the front.
+		// This gives equal priority to all preferred zones (since they were already shuffled).
+		nextPos := 0
 		for idx, instance := range set.Instances {
-			if instance.Zone == preferredZone {
-				set.Instances[0], set.Instances[idx] = set.Instances[idx], set.Instances[0]
-				break
+			if slices.Contains(preferredZones, instance.Zone) {
+				set.Instances[nextPos], set.Instances[idx] = set.Instances[idx], set.Instances[nextPos]
+				nextPos++
 			}
 		}
 	}

@@ -754,11 +754,11 @@ How to **fix** it:
   ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "focus on newer blocks" -blocks "<block 1>,<block 2>..."
   ```
 
-### MimirCompactorSkippedUnhealthyBlocks
+### MimirCompactorSkippedBlocks
 
-This alert fires when compactor tries to compact a block, but finds that given block is unhealthy. This indicates a bug in Prometheus TSDB library and should be investigated.
+This alert fires when compactor tries to compact a block, fails, and automatically marks one or more blocks as `no-compact` to unblock future compactions. There are several reasons this can happen, each meriting investigation.
 
-#### Compactor is failing because of `not healthy index found`
+#### Compaction is failing because of `not healthy index found` (reason: `critical`)
 
 The compactor may fail to compact blocks due to a corrupted block index found in one of the source blocks:
 
@@ -787,9 +787,22 @@ Where:
 - `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
 - `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
+#### Compaction is failing because of `postings offset table size limit` (reason: `postings-offset-table-too-large`)
+
+The compactor may fail to compact blocks due to the size of the postings offset table of the result block exceeding 4GiB (its length exceeds 4 bytes):
+
+```
+ts=2025-12-23T00:37:18.252772Z caller=bucket_compactor.go:272 level=error component=compactor user=test groupKey=0@17241709254077376921-merge-7_of_16-1765497600000-1765584000000 job_type=merge minTime="2025-12-12 00:00:00 +0000 UTC" maxTime="2025-12-13 00:00:00 +0000 UTC" msg="compaction job failed" duration=5m54.874925125s duration_ms=354874 err="compact blocks 01KCA08M9RP54T810CKNQ0H4TZ,01KCBGA8D2WD2HV431NTFZ1M84: writing block: closing index writer: postings offset table length/crc32 write error: length size exceeds 4 bytes: 4460043400" block_count=2
+
+```
+
+The cause is high label cardinality in the source blocks. When this happens, the input blocks will be marked as `no-compact` by the compactor in order to prevent the next execution from being blocked.
+
+If this happens once for a tenant when compacting 12 hour blocks into 24 hour blocks, it's possible they had increased cardinality just on that one day and we don't need to take corrective action. However, if this happens multiple times for a tenant, or is happening in earlier stages of compaction, you should increase the `compactor_split_and_merge_shards` for the tenant.
+
 ### MimirCompactorBuildingSparseIndexFailed
 
-This alert fires when `-compactor.upload-sparse-index-headers` is set to `true` but the compactor fails to build some sparse index headers.
+This alert fires when the compactor fails to build some sparse index headers.
 
 How to **investigate**:
 
@@ -1115,7 +1128,8 @@ How it **works**:
 
 - The memberlist-bridge is deployed in multiple zones (e.g. zone-a, zone-b, zone-c) to facilitate gossip protocol communication across zones.
 - When memberlist zone-aware routing is enabled (`-memberlist.zone-aware-routing.enabled`), each zone must have at least one healthy memberlist-bridge pod running to guarantee inter-AZ communication, and avoid network partitioning issues.
-- This alert triggers when a zone has a memberlist-bridge deployment configured but no pods are in ready state.
+- If a zone has no alive bridge running, the memberlist client automatically temporarily disables the zone-aware routing in order to reduce the likelihood of network partitioning. However, detecting that bridges are unhealthy may take a while, and during this period of time, one or more zones could fail to receive memberlist updates. For this reason, you should always have at least one healthy bridge per zone.
+- This alert triggers when a zone has a memberlist-bridge deployment configured but no bridge pods are in ready state in that zone.
 
 How to **investigate**:
 
@@ -1126,6 +1140,21 @@ How to **investigate**:
     memberlist_zone_aware_routing_enabled: false,
   }
   ```
+
+### MimirMemberlistZoneAwareRoutingAutoFailover
+
+This alert fires when memberlist zone-aware routing auto-failover triggers because it detects missing memberlist bridges in any of the zones where members are running.
+
+How it **works**:
+
+- When memberlist zone-aware routing is enabled and a zone has no healthy memberlist-bridge pods, the memberlist client automatically temporarily disables zone-aware routing to reduce the likelihood of network partitioning.
+- When the failover triggers, inter-AZ data transfer will occur. Inter-AZ data transfer is billed in most cloud providers.
+- This alert triggers when the auto-failover mechanism is actively skipping nodes due to missing bridges.
+
+How to **investigate**:
+
+- Ensure memberlist-bridge is running in every zone where Mimir is running.
+- Refer to the [MimirMemberlistBridgeZoneUnavailable](#mimirmemberlistbridgezoneunavailable) runbook for detailed investigation steps.
 
 ### MimirAlertmanagerSyncConfigsFailing
 
@@ -1443,6 +1472,18 @@ How to **investigate**:
   {name="rollout-operator",namespace="<namespace>"}
   ```
 
+### MimirBadZoneAwarePodDisruptionBudgetConfiguration
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#incorrectwebhookconfigurationfailurepolicy)
+
+### MimirIncorrectWebhookConfigurationFailurePolicy
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#badzoneawarepoddisruptionbudgetconfiguration)
+
+### MimirHighNumberInflightZpdbRequests
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#highnumberinflightzpdbrequests)
+
 ### MimirIngestedDataTooFarInTheFuture
 
 This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
@@ -1536,7 +1577,13 @@ How to **investigate** and **fix** it:
 
 - Check if disk utilization unbalance is caused by shuffle sharding
 
-  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
+  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. You can query the `cortex_bucket_store_blocks_loaded_size_bytes` metric to see per-tenant disk utilization across all store-gateway replicas. For example, to find the top 10 tenants by disk utilization on a specific store-gateway pod:
+
+    ```
+    topk(10, cortex_bucket_store_blocks_loaded_size_bytes{pod="$POD"})
+    ```
+
+  - Alternatively, you can run the following command for a given store-gateway replica to check disk utilization directly on the pod. The command returns the top 10 tenants by disk utilization (in megabytes):
 
     ```
     kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'
@@ -3009,8 +3056,6 @@ The limit protects the system’s stability from potential abuse or mistakes. To
 - `prometheus_rules_namespace`
 - `prometheus_rules`
 
-## Mimir blocks storage - What to do when things go wrong
-
 ## Recovering from a potential data loss incident
 
 The ingested series data that could be lost during an incident can be stored in two places:
@@ -3269,7 +3314,7 @@ container to the existing container's namespace. This allows us to bring in all 
 tools we may need and to not disturb the existing environment.
 That is, we do not need to restart the running container to attach our debug tools.
 
-## Creating a debug container
+### Creating a debug container
 
 Kubernetes gives us a command that allows us to start an ephemeral debug container in a pre-existing pod,
 attaching it to the same namespace as other containers in that pod. More detail about the command and
@@ -3303,7 +3348,7 @@ The root filesystem of the target container is available in `/proc/1/root`. For
 example, `/data` would be found at `/proc/1/root/data`, and
 binaries of the target container would be somewhere like `/proc/1/root/usr/bin/mimir`.
 
-## Copying files from a distroless container
+### Copying files from a distroless container
 
 Because distroless images do not have `tar` in them, it is not possible to copy files using `kubectl cp`.
 
@@ -3329,6 +3374,62 @@ kubectl --namespace mimir exec compactor-0 -c mimir-debug-container -- tar cf - 
 ```
 
 Note that the container that you're copying files from must still be running. If you have already exited your debugging container before, that container has stopped, and it cannot be used to copy files. In that case you need to start a new container.
+
+## Mimir components deletion protection
+
+Mimir jsonnet-based deployment supports deletion protection for specific critical components, implemented using [Validating Admission Policies](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
+The supported components are:
+
+- Ingesters
+- Store-gateways
+
+### Ingesters deletion protection
+
+Deleting the ingesters StatefulSet is highly destructive and can lead to a difficult-to-recover outage with potential data loss.
+This operation should be avoided except in extremely rare circumstances and only when following well-tested procedures.
+
+#### Potential side effects
+
+Deleting an ingesters zone StatefulSet may have unexpected side effects, including but not limited to:
+
+- Cascading scale-down with autoscaling enabled<br />
+  When ingesters autoscaling is enabled and the StatefulSet is manually deleted in a Flux-managed environment, Flux recreates it with a single replica because the replicas field is not managed in the manifest and Kubernetes defaults to one replica. If the leader zone (zone-a by default) is deleted, other zones follow the leader, causing a cascading scale-down to 1 replica across the cluster.
+- Pod Disruption Budget enforcement is bypassed<br />
+  When an ingesters zone StatefulSet is deleted, the ingesters Pod Disruption Budget (PDB), including the Zone Pod Disruption Budget (ZPDB), does not correctly enforce the maximum unavailable instances. The deleted zone is not treated as a disruption, which can result in excessive unavailability. For this reason, set maxUnavailable to 0 in the PDB before proceeding.
+
+#### Proceeding with deletion
+
+If you must delete an ingesters StatefulSet, first disable the deletion protection by setting:
+
+```
+_config+:: {
+  ingester_deletion_protection_enabled: false,
+}
+```
+
+### Store-gateways deletion protection
+
+Deleting the store-gateways StatefulSet can lead to a slow-to-recover outage.
+This operation should be avoided except in extremely rare circumstances and only when following well-tested procedures.
+
+#### Potential side effects
+
+Deleting an store-gateways zone StatefulSet may have unexpected side effects, including but not limited to:
+
+- Cascading scale-down with autoscaling enabled<br />
+  When store-gateways autoscaling is enabled and the StatefulSet is manually deleted in a Flux-managed environment, Flux recreates it with a single replica because the replicas field is not managed in the manifest and Kubernetes defaults to one replica. Store-gateway autoscaling is cascading (zone-b follows zone-a, zone-c follows zone-b), so even a short-lived recreation of the leader zone StatefulSet with a single replica can trigger an unexpected cascading scale-down in other zones.
+- Slow recovery times<br />
+  Deleting the StatefulSet may also delete the store-gateway pods' persistent volumes. In this case, recreating store-gateways can take a long time because all block index-headers must be fully resynced.
+
+#### Proceeding with deletion
+
+If you must delete an store-gateways StatefulSet, first disable the deletion protection by setting:
+
+```
+_config+:: {
+  store_gateway_deletion_protection_enabled: false,
+}
+```
 
 ## Cleanup and Limitations
 

@@ -494,11 +494,16 @@ func writeErrorToHTTPResponseBody(r *http.Request, w http.ResponseWriter, httpCo
 }
 
 func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, payload proto.Message, logger log.Logger) {
+	// Per OTLP spec (see: https://opentelemetry.io/docs/specs/otlp/#otlphttp-response), the server MUST mirror
+	// the request Content-Type in responses. The parser validates Content-Type and only accepts
+	// application/json or application/x-protobuf. For requests with unsupported Content-Type that are rejected by the parser,
+	// we default to application/x-protobuf.
 	contentType := r.Header.Get("Content-Type")
 	switch contentType {
 	case jsonContentType, pbContentType:
+		// Valid Content-Type, mirror it in the response.
 	default:
-		// Default to protobuf encoding.
+		// Unsupported Content-Type, default to protobuf.
 		contentType = pbContentType
 	}
 
@@ -508,12 +513,14 @@ func writeOTLPResponse(r *http.Request, w http.ResponseWriter, httpCode int, pay
 	if err != nil {
 		httpCode = http.StatusInternalServerError
 		level.Error(logger).Log("msg", "failed to marshal payload", "err", err, "payload", payload, "content_type", contentType)
+		// Retry with a minimal Status message. If this also fails, marshaling is fundamentally broken.
 		var format string
 		body, format, err = marshal(status.New(codes.Internal, "failed to marshal OTLP response").Proto(), contentType)
 		err = errors.Wrapf(err, "marshalling %T to %s", payload, format)
 	}
 	if err != nil {
 		level.Error(logger).Log("msg", "OTLP response marshal failed, responding without payload", "err", err, "content_type", contentType)
+		// If marshalling both the original and fallback message fails, return empty body with text/plain to signal the failure
 		contentType = "text/plain"
 		body = nil
 	}
@@ -646,7 +653,7 @@ func (c *otlpMimirConverter) Err() error {
 func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.MetricMetadata) pmetricotlp.ExportRequest {
 	d := pmetric.NewMetrics()
 
-	for i, ts := range timeseries {
+	for _, ts := range timeseries {
 		name := ""
 		attributes := pcommon.NewMap()
 
@@ -668,9 +675,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyGauge()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			for i, sample := range ts.Samples {
 				datapoint := metric.Gauge().DataPoints().AppendEmpty()
@@ -695,9 +704,11 @@ func TimeseriesToOTLPRequest(timeseries []prompb.TimeSeries, metadata []mimirpb.
 			metric := sm.AppendEmpty().Metrics().AppendEmpty()
 			metric.SetName(name)
 			metric.SetEmptyExponentialHistogram()
-			if metadata != nil {
-				metric.SetDescription(metadata[i].GetHelp())
-				metric.SetUnit(metadata[i].GetUnit())
+			for _, m := range metadata {
+				if m.MetricFamilyName == name {
+					metric.SetDescription(m.GetHelp())
+					metric.SetUnit(m.GetUnit())
+				}
 			}
 			metric.ExponentialHistogram().SetAggregationTemporality(pmetric.AggregationTemporalityCumulative)
 			for i, histogram := range ts.Histograms {

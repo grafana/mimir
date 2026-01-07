@@ -48,6 +48,11 @@ func TestDurationMiddleware(t *testing.T) {
 			expectInstant: "rate(http_requests_total[5m])",
 			expectRange:   "rate(http_requests_total[6m])",
 		},
+		"valid duration expression with range() should be rewritten": {
+			query:         "rate(http_requests_total[range() + 30s])",
+			expectInstant: "rate(http_requests_total[30s])",
+			expectRange:   "rate(http_requests_total[31s])",
+		},
 	}
 	for name, tc := range testCases {
 		for _, instant := range []bool{false, true} {
@@ -72,7 +77,7 @@ func TestDurationMiddleware(t *testing.T) {
 						nil,
 						2000,
 						3000,
-						60,
+						60000,
 						0,
 						expr,
 						Options{},
@@ -143,4 +148,21 @@ type captureMiddleware struct {
 func (c *captureMiddleware) Do(_ context.Context, req MetricsQueryRequest) (Response, error) {
 	c.query = req.GetQuery()
 	return &PrometheusResponse{}, nil
+}
+
+func TestDurationsMiddleware_ShouldNotPanicOnNilQueryExpression(t *testing.T) {
+	capture := &captureMiddleware{}
+	middleware := newDurationsMiddleware(log.NewNopLogger())
+	handler := middleware.Wrap(capture)
+
+	// Create a request with a nil queryExpr to simulate a failed parse.
+	req := NewPrometheusInstantQueryRequest("", nil, 1000, 0, nil, Options{}, nil, "")
+
+	// This should not panic, should pass through to the next handler.
+	require.NotPanics(t, func() {
+		resp, err := handler.Do(context.Background(), req)
+		// With nil expr, the middleware falls through to the next handler.
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+	})
 }

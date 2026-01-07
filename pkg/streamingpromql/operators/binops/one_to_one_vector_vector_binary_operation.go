@@ -488,47 +488,43 @@ func (b *OneToOneVectorVectorBinaryOperation) NextSeries(ctx context.Context) (t
 
 	// We don't need to return thisSeries.rightSide.mergedData here - computeResult will return it below if this is the last output series that references this right side.
 	rightSide.outputSeriesCount--
-	canMutateRightSide := rightSide.outputSeriesCount == 0
+	isLastUseOfRightSide := rightSide.outputSeriesCount == 0
 
 	allLeftSeries, err := b.leftBuffer.GetSeries(ctx, thisSeries.leftSeriesIndices)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	for i, leftSeries := range allLeftSeries {
-		isLastLeftSeries := i == len(allLeftSeries)-1
-
-		passOwnershipOfRight := canMutateRightSide && isLastLeftSeries
-		allLeftSeries[i], err = b.evaluator.computeResult(leftSeries, rightSide.mergedData, true, passOwnershipOfRight)
-		if err != nil {
-			return types.InstantVectorSeriesData{}, err
-		}
-
-		if passOwnershipOfRight {
-			// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool later.
-			rightSide.mergedData = types.InstantVectorSeriesData{}
-		}
-
-		// If the right side matches to many output series, check for conflicts between those left side series.
-		if rightSide.leftSidePresence != nil {
+	// If the right side matches to many output series, check for conflicts between those left side series
+	// before we apply any filtering operations (https://github.com/prometheus/prometheus/pull/17668).
+	if rightSide.leftSidePresence != nil {
+		for i, leftSeries := range allLeftSeries {
 			seriesIdx := thisSeries.leftSeriesIndices[i]
 
-			if err := b.updateLeftSidePresence(rightSide, allLeftSeries[i], seriesIdx); err != nil {
+			if err := b.updateLeftSidePresence(rightSide, leftSeries, seriesIdx); err != nil {
 				return types.InstantVectorSeriesData{}, err
 			}
 		}
 	}
 
-	mergedResult, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
+	mergedLeftSide, err := b.mergeSingleSide(allLeftSeries, thisSeries.leftSeriesIndices, b.leftMetadata, "left")
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
 
-	if rightSide.outputSeriesCount == 0 {
+	finalResult, err := b.evaluator.computeResult(mergedLeftSide, rightSide.mergedData, true, isLastUseOfRightSide)
+	if err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	if isLastUseOfRightSide {
+		// We've passed ownership of mergedData to the evaluator, so clear it now to avoid returning it to the pool in Close().
+		rightSide.mergedData = types.InstantVectorSeriesData{}
+
 		rightSide.Close(b.MemoryConsumptionTracker)
 	}
 
-	return mergedResult, nil
+	return finalResult, nil
 }
 
 func (b *OneToOneVectorVectorBinaryOperation) populateRightSide(ctx context.Context, rightSide *oneToOneBinaryOperationRightSide) error {

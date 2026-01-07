@@ -130,7 +130,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # Other options are documented in https://docs.docker.com/engine/reference/commandline/buildx_build/#output.
 # CI workflow uses PUSH_MULTIARCH_TARGET="type=oci,dest=file.oci" to store images locally for next steps in the pipeline.
 PUSH_MULTIARCH_TARGET ?= type=registry
-PUSH_MULTIARCH_TARGET_CONTINUOUS_TEST ?= type=registry
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # We don't do separate building of single-platform and multiplatform images here (as we do for push-multiarch-build-image), as
@@ -225,7 +224,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr13661-d739e63a97
+LATEST_BUILD_IMAGE_TAG ?= pr13755-74bc46444f
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -628,6 +627,18 @@ check-helm-tests: build-helm-tests helm-conftest-test
 
 endif
 
+%.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
+%.pb.go.expdiff: %.pb.go
+	@echo "Regenerating $@"
+	$(eval PBGO_FILE := $(patsubst %.pb.go.expdiff,%.pb.go,$@))
+	$(eval PROTO_FILE := $(patsubst %.pb.go.expdiff,%.proto,$@))
+	@cp $(PBGO_FILE) $(PBGO_FILE).bak
+	@touch $(PROTO_FILE)
+	@$(MAKE) -B $(PBGO_FILE)
+	@git diff --no-index $(PBGO_FILE).bak $(PBGO_FILE) | sed 's/.pb.go.bak/.pb.go/g' > $@ || true
+	@rm $(PBGO_FILE).bak
+	@./tools/apply-expected-diffs.sh $(PBGO_FILE)
+
 .PHONY: check-makefiles
 check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
@@ -753,6 +764,7 @@ check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-j
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
 build-jsonnet-tests: ## Build the jsonnet tests.
+	@rm -f ./operations/mimir-tests/*-generated.yaml
 	@./operations/mimir-tests/build.sh
 
 jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that

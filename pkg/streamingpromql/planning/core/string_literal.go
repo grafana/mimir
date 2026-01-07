@@ -72,7 +72,7 @@ func (s *StringLiteral) ChildrenLabels() []string {
 }
 
 func MaterializeStringLiteral(s *StringLiteral, _ *planning.Materializer, _ types.QueryTimeRange, _ *planning.OperatorParameters) (planning.OperatorFactory, error) {
-	o := operators.NewStringLiteral(s.Value, s.ExpressionPosition())
+	o := operators.NewStringLiteral(s.Value, s.GetExpressionPosition().ToPrometheusType())
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }
@@ -81,12 +81,12 @@ func (s *StringLiteral) ResultType() (parser.ValueType, error) {
 	return parser.ValueTypeString, nil
 }
 
-func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) planning.QueriedTimeRange {
-	return planning.NoDataQueried()
+func (s *StringLiteral) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return planning.NoDataQueried(), nil
 }
 
-func (s *StringLiteral) ExpressionPosition() posrange.PositionRange {
-	return s.GetExpressionPosition().ToPrometheusType()
+func (s *StringLiteral) ExpressionPosition() (posrange.PositionRange, error) {
+	return s.GetExpressionPosition().ToPrometheusType(), nil
 }
 
 func (s *StringLiteral) MinimumRequiredPlanVersion() planning.QueryPlanVersion {

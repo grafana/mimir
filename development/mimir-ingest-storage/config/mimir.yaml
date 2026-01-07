@@ -104,6 +104,9 @@ overrides_exporter:
 
 usage_tracker:
   enabled: false
+  idle_timeout: 20m
+  partitions: 16
+  max_partitions_to_create_per_reconcile: 16
   snapshots_storage:
     s3:
       bucket_name: usage-tracker-snapshots
@@ -111,7 +114,7 @@ usage_tracker:
     address: kafka_1:9092
     topic: usage-tracker-events
     auto_create_topic_enabled: true
-    auto_create_topic_default_partitions: 64
+    auto_create_topic_default_partitions: 16
   events_storage_reader:
     address: kafka_1:9092
     topic: usage-tracker-events
@@ -119,10 +122,18 @@ usage_tracker:
     address: kafka_1:9092
     topic: usage-tracker-snapshots-metadata
     auto_create_topic_enabled: true
-    auto_create_topic_default_partitions: 64
+    auto_create_topic_default_partitions: 16
   snapshots_metadata_reader:
     address: kafka_1:9092
     topic: usage-tracker-snapshots-metadata
+  instance_ring:
+    kvstore:
+      prefix: ''
+    heartbeat_period: 30s
+    heartbeat_timeout: 2m
+  partition_ring:
+    kvstore:
+      prefix: ''
 
 limits:
   native_histograms_ingestion_enabled: true

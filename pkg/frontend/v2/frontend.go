@@ -447,17 +447,28 @@ func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.M
 		select {
 		case <-freq.protobufResponseDone:
 			freq.spanLogger.DebugLog("msg", "finished receiving response")
-			return
 
 		default:
-			freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request, aborting", "cause", context.Cause(streamContext))
-
 			select {
-			case cancelCh <- freq.queryID:
-				// cancellation sent.
+			case <-freq.protobufResponseStream.responseStarted:
+				// If we've already received some of the response from the querier, close the stream from the querier to signal that
+				// the request has been cancelled.
+				// This avoids sending an unnecessary cancellation message to query-schedulers (which can trigger shuffling of
+				// queriers) if we've read the last response message from queriers but streamContext is canceled before
+				// receiveResultForProtobufRequest observes the end of the stream.
+				freq.spanLogger.DebugLog("msg", "request context cancelled after querier started sending response, cancelling by closing querier response stream", "cause", context.Cause(streamContext))
+				freq.protobufResponseStream.Close()
+
 			default:
-				// failed to cancel, ignore.
-				level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+				freq.spanLogger.DebugLog("msg", "request context cancelled or response stream closed by caller after enqueuing request but before querier started sending response, cancelling by sending notification to scheduler", "cause", context.Cause(streamContext))
+
+				select {
+				case cancelCh <- freq.queryID:
+					// cancellation sent.
+				default:
+					// failed to cancel, ignore.
+					level.Warn(freq.spanLogger).Log("msg", "failed to send cancellation request to scheduler, queue full")
+				}
 			}
 		}
 	}()
@@ -614,12 +625,7 @@ func (s *ProtobufResponseStream) errorFromMessage(msg *frontendv2pb.QueryResultS
 func (s *ProtobufResponseStream) Close() {
 	defer func() {
 		// Unblock any pending write() calls, if we haven't already.
-
-		select {
-		case <-s.notifyClosed:
-			// Already closed, nothing to do.
-		default:
-			s.isClosed.Store(true)
+		if s.isClosed.CompareAndSwap(false, true) {
 			close(s.notifyClosed)
 		}
 	}()
@@ -743,7 +749,11 @@ func (f *Frontend) QueryResult(ctx context.Context, qrReq *frontendv2pb.QueryRes
 	}
 
 	if req.httpResponse == nil {
-		return nil, errUnexpectedHTTPResponse
+		if req.httpRequest != nil {
+			return nil, fmt.Errorf("%w: QueryResult called for HTTP %v to %v, but httpResponse channel is nil (this is a bug)", errUnexpectedHTTPResponse, req.httpRequest.Method, req.httpRequest.Url)
+		}
+
+		return nil, fmt.Errorf("%w: QueryResult called for Protobuf request of type %T (this is a bug)", errUnexpectedHTTPResponse, req.protobufRequest)
 	}
 
 	select {
@@ -811,7 +821,7 @@ func (f *Frontend) QueryResultStream(stream frontendv2pb.FrontendForQuerier_Quer
 	switch d := firstMessage.Data.(type) {
 	case *frontendv2pb.QueryResultStreamRequest_Metadata:
 		if req.httpResponse == nil {
-			return errUnexpectedHTTPResponse
+			return fmt.Errorf("%w: QueryResultStream called with data of type %T, but httpResponse channel is nil (this is a bug)", errUnexpectedHTTPResponse, d)
 		}
 
 		return f.receiveResultForHTTPRequest(req, firstMessage, d, stream)

@@ -46,7 +46,10 @@ Create chart name and version as used by the chart label.
 {{- end -}}
 
 {{/*
-Build mimir image reference. The component local values always take precedence.
+Build mimir image reference. The order of precedence:
+1. Component tag (e.g., .Values.ingester.image.tag)
+2. Global tag (.Values.image.tag)
+3. Chart AppVersion (.Chart.AppVersion)
 Params:
   ctx = . context
   component = component name
@@ -55,7 +58,7 @@ Params:
 {{- $componentSection := include "mimir.componentSectionFromName" . | fromYaml -}}
 {{- $image := $componentSection.image | default dict -}}
 {{- $image = mustMerge $image .ctx.Values.image -}}
-{{ $image.repository }}:{{ $image.tag }}
+{{ $image.repository }}:{{ $image.tag | default .ctx.Chart.AppVersion }}
 {{- end -}}
 
 {{/*

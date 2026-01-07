@@ -3,7 +3,7 @@
     // Allow to configure whether the distributor should be deployed in single or multi-zone.
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_distributor_enabled: !$._config.multi_zone_distributor_enabled,
-    multi_zone_distributor_enabled: false,
+    multi_zone_distributor_enabled: $._config.multi_zone_write_path_enabled,
     multi_zone_distributor_replicas: std.length($._config.multi_zone_availability_zones),
   },
 
@@ -87,6 +87,14 @@
     $.newDistributorDeployment(name, container, nodeAffinityMatchers) +
     deployment.mixin.spec.withReplicas(std.ceil($._config.multi_zone_distributor_replicas / std.length($._config.multi_zone_availability_zones))) +
     deployment.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()),
+
+  // Ensure all configured addresses are zonal ones.
+  local distributorMultiZoneConfigError = $.validateMimirMultiZoneConfig([
+    'distributor_zone_a_deployment',
+    'distributor_zone_b_deployment',
+    'distributor_zone_c_deployment',
+  ]),
+  assert distributorMultiZoneConfigError == null : distributorMultiZoneConfigError,
 
   // Remove single-zone deployment when multi-zone is enabled.
   distributor_deployment: if !isSingleZoneEnabled then null else

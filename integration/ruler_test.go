@@ -1364,6 +1364,10 @@ func TestRulerRemoteEvaluationErrorClassification(t *testing.T) {
 	require.NoError(t, s.WaitReady(queryFrontend))
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
+	// Wait until both the distributor and ruler have updated the ring.
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
+	// Ruler will see 512 tokens from ingester, and 128 tokens from itself.
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512+128), "cortex_ring_tokens_total"))
 
 	const user = "user"

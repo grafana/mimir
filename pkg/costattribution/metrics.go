@@ -11,8 +11,7 @@ import (
 // descriptor wraps a prometheus.Desc with additional metadata for metric validation and creation.
 // This wrapper is needed because prometheus.Desc doesn't expose important information about the
 // descriptor itself, such as metric name, label names, and a possible error obtained during the
-// descriptor construction. The first two are accessible via the name and labels fields, while
-// construction error can be obtained by calling validate().
+// descriptor construction. The first two are accessible via the name and labels fields.
 type descriptor struct {
 	desc   *prometheus.Desc
 	name   string
@@ -23,30 +22,15 @@ type descriptor struct {
 // It returns an error if a creation of the underlying prometheus.Desc is not successful, for example when the metric name
 // or any of the label names don't conform to Prometheus naming conventions.
 func newDescriptor(name string, help string, labels []string, constLabels prometheus.Labels) (*descriptor, error) {
-	desc := &descriptor{
-		desc:   prometheus.NewDesc(name, help, labels, constLabels),
+	desc := prometheus.NewDesc(name, help, labels, constLabels)
+	if desc.Err() != nil {
+		return nil, desc.Err()
+	}
+	return &descriptor{
+		desc:   desc,
 		name:   name,
 		labels: labels,
-	}
-	if err := desc.validate(); err != nil {
-		return nil, err
-	}
-	return desc, nil
-}
-
-// validate checks whether the underlying prometheus.Desc is valid.
-//
-// A prometheus.Desc may contain an internal error if created with invalid
-// metric or label names. Since this error is unexported, validate detects
-// such cases and returns the underlying error if present. Otherwise, it
-// returns nil.
-func (d *descriptor) validate() error {
-	reg := prometheus.NewRegistry()
-	if err := reg.Register(d); err != nil {
-		return err
-	}
-
-	return nil
+	}, nil
 }
 
 // Describe implements the prometheus.Collector interface by sending this descriptor to the provided channel.
