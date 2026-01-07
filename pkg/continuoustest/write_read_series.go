@@ -451,8 +451,8 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			return
 		}
 
-		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step)
-		level.Debug(logger).Log("msg", "Executing query to find previously written samples", "metric_name", metricName)
+		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step, "metric_name", metricName)
+		level.Debug(logger).Log("msg", "Executing query to find previously written samples")
 
 		matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(false))
 		if err != nil {
@@ -485,8 +485,9 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither")
 			return
 		}
-		lastMatchingIdx, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
+		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
 		if lastMatchingIdx == -1 {
+			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no timestamps where the returned value matched the expected value", "err", err)
 			return
 		}
 
@@ -498,6 +499,8 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			from = samples[lastMatchingIdx].Timestamp.Time()
 			to = samples[len(samples)-1].Timestamp.Time()
 		}
+
+		level.Info(logger).Log("msg", "Found previously written samples", "from", from, "to", to, "issue_with_earlier_data", err)
 
 		// If the last matching sample is not the one at the beginning of the queried time range
 		// then it means we've found the oldest previously written sample and we can stop searching it.
