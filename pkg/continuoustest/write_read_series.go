@@ -456,7 +456,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 
 		matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(false))
 		if err != nil {
-			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "query", query, "err", err)
+			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "err", err)
 			return
 		}
 
@@ -466,7 +466,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 		}
 
 		if len(matrix) != 1 {
-			level.Error(logger).Log("msg", "The range query used to find previously written samples returned an unexpected number of series", "query", query, "expected", 1, "returned", len(matrix))
+			level.Error(logger).Log("msg", "The range query used to find previously written samples returned an unexpected number of series", "expected", 1, "returned", len(matrix))
 			return
 		}
 
@@ -482,7 +482,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			fullMatrix = model.Matrix{{Histograms: histograms}}
 			useHistograms = true
 		} else {
-			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither", "query", query)
+			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither")
 			return
 		}
 		lastMatchingIdx, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
