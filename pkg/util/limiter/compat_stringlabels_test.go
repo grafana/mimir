@@ -22,7 +22,7 @@ func requireSameLabels(t *testing.T, a, b labels.Labels) {
 	aStr := aVal.FieldByName("data").String()
 	bStr := bVal.FieldByName("data").String()
 
-	require.Equal(t, len(aStr), len(aStr))
+	require.Equal(t, len(aStr), len(bStr))
 
 	if len(aStr) > 0 && len(bStr) > 0 && len(aStr) == len(bStr) {
 		aPtr := unsafe.Pointer(unsafe.StringData(aStr))
