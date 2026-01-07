@@ -602,7 +602,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		}
 	}
 
-	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+	logSeriesRequestToSpan(ctx, spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize, s.bucketIndexMeta.Metadata())
 
 	defer s.recordBucketIndexDiscoveryLatency(ctx)
 
@@ -956,15 +956,25 @@ func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, st
 	return nil
 }
 
-func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
+func logSeriesRequestToSpan(
+	ctx context.Context,
+	spanLogger *spanlogger.SpanLogger,
+	minT, maxT int64,
+	matchers, blockMatchers []*labels.Matcher,
+	shardSelector *sharding.ShardSelector,
+	streamingChunksBatchSize uint64,
+	meta *bucketindex.Metadata,
+) {
 	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
 		"request max time", time.UnixMilli(maxT).UTC().Format(time.RFC3339Nano),
 		"request matchers", util.MatchersStringer(matchers),
+		"request bucket index", getBucketIndexUpdatedAtFromGRPCContext(ctx),
 		"request block matchers", util.MatchersStringer(blockMatchers),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 		"streaming chunks batch size", streamingChunksBatchSize,
+		"bucket index", meta.UpdatedAt,
 	)
 }
 
