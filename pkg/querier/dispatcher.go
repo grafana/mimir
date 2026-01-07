@@ -295,12 +295,12 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apier
 	msg := err.Error()
 
 	if typ == mimirpb.QUERY_ERROR_TYPE_CANCELED {
-		level.Debug(w.logger).Log("msg", "returning cancelled status", "type", typ.String(), "msg", msg)
+		level.Debug(w.logger).Log("msg", "returning cancelled status", "type", typ.String(), "err", msg)
 	} else {
 		span := trace.SpanFromContext(ctx)
 		span.SetStatus(codes.Error, msg)
 
-		level.Warn(w.logger).Log("msg", "returning error", "type", typ.String(), "msg", msg)
+		level.Warn(w.logger).Log("msg", "returning error", "type", typ.String(), "err", msg)
 	}
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
