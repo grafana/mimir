@@ -461,7 +461,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 		}
 
 		if len(matrix) == 0 {
-			// No samples found, so we'll keep the last computed valid time range (if any).
+			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no series, this should only happen if continuous-test has not ever run or has not run since the start of the query window")
 			return
 		}
 
