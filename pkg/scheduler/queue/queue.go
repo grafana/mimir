@@ -344,6 +344,10 @@ func (q *RequestQueue) dispatcherLoop() {
 		}
 
 		if isStopping {
+			// We need to check both the inflight requests at the scheduler level, and the items remaining in the local queue
+			// to ensure that we do not terminate the querier and frontend connections before everything has been cleanly processed.
+			// If we exit while there are inflight requests, the queriers will receive a context cancellation and return an error to the frontend/user
+			// And if there are pending items in the queue that are not yet inflight, we still need to dispatch them to the queriers.
 			if q.schedulerInflightRequests.Load() == 0 && q.queueBroker.itemCount() == 0 {
 				// If the queue is stopping and theres no connected query workers,
 				// we exit immediately because there is no way for (any) remaining queries to be processed
