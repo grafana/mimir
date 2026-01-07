@@ -301,10 +301,10 @@ func (s *BucketStore) Stats() BucketStoreStats {
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
-	return s.syncBlocks(ctx, false)
+	return s.syncBlocks(ctx)
 }
 
-func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
+func (s *BucketStore) syncBlocks(ctx context.Context) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -318,7 +318,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
-				if err := s.addBlock(ctx, meta, initialSync); err != nil {
+				if err := s.addBlock(ctx, meta); err != nil {
 					continue
 				}
 			}
@@ -370,7 +370,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	// so we need to read the pre-shutdown snapshot before the sync.
 	previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
 
-	if err := s.syncBlocks(ctx, true); err != nil {
+	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
 	if s.indexHeaderCfg.LazyLoadingEnabled {
@@ -438,7 +438,7 @@ func (s *BucketStore) cleanUpUnownedBlocks() error {
 	return nil
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -452,13 +452,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
 			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
-
-			// Record block discovery latency as time from block creation (ULID timestamp) to now.
-			// Don't track the metric on initial sync; otherwise, it is skewed by the old blocks on restart.
-			if !initialSync {
-				blockCreationTime := time.UnixMilli(int64(meta.ULID.Time()))
-				s.metrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
-			}
 		}
 	}()
 	s.metrics.blockLoads.Inc()

@@ -15,6 +15,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -74,13 +75,18 @@ func (l *BucketIndexLoader) Index() *bucketindex.Index {
 	return l.idx
 }
 
+type bucketIndexBlockMetadataFetcherMetrics struct {
+	*block.FetcherMetrics
+	blockDiscoveryLatency prometheus.Histogram
+}
+
 // BucketIndexBlockMetadataFetcher is a Thanos block.MetadataFetcher implementation leveraging on the Mimir bucket index.
 type BucketIndexBlockMetadataFetcher struct {
 	userID  string
 	loader  *BucketIndexLoader
 	logger  log.Logger
 	filters []block.MetadataFilter
-	metrics *block.FetcherMetrics
+	metrics *bucketIndexBlockMetadataFetcherMetrics
 }
 
 func NewBucketIndexBlockMetadataFetcher(
@@ -95,7 +101,17 @@ func NewBucketIndexBlockMetadataFetcher(
 		loader:  loader,
 		logger:  logger,
 		filters: filters,
-		metrics: block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
+		metrics: &bucketIndexBlockMetadataFetcherMetrics{
+			FetcherMetrics: block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
+			blockDiscoveryLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+				Name: "cortex_bucket_store_block_discovery_latency_seconds",
+				Help: "Time elapsed from when a block was created, based on its ULID timestamp, to when it was discovered.",
+
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
+			}),
+		},
 	}
 }
 
@@ -111,6 +127,15 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 		}
 	}()
 	f.metrics.Syncs.Inc()
+
+	// Keep track of previously discovered blocks to record blocks discovery latency down below.
+	var knownBlocks map[ulid.ULID]struct{}
+	if oldIdx := f.loader.Index(); oldIdx != nil {
+		knownBlocks = make(map[ulid.ULID]struct{}, len(oldIdx.Blocks))
+		for _, b := range oldIdx.Blocks {
+			knownBlocks[b.ID] = struct{}{}
+		}
+	}
 
 	idx, err := f.loader.FetchIndex(ctx)
 	if errors.Is(err, bucketindex.ErrIndexNotFound) {
@@ -144,6 +169,12 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 	metas = make(map[ulid.ULID]*block.Meta, len(idx.Blocks))
 	for _, b := range idx.Blocks {
 		metas[b.ID] = b.ThanosMeta()
+
+		if _, ok := knownBlocks[b.ID]; !ok {
+			// This is a newly discovered blocks. Record its discovery latency as time from block creation (ULID timestamp) to now.
+			blockCreationTime := time.UnixMilli(int64(b.ID.Time()))
+			f.metrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
+		}
 	}
 
 	for _, filter := range f.filters {
