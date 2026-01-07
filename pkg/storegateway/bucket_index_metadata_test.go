@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -33,7 +34,7 @@ func TestBucketIndexBlockMetadataFetcher_Fetch(t *testing.T) {
 
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	reg := prometheus.NewPedanticRegistry()
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now()
 	logs := &concurrency.SyncBuffer{}
 	logger := log.NewLogfmtLogger(logs)
@@ -198,6 +199,49 @@ func TestBucketIndexBlockMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T
 		"blocks_meta_synced",
 		"blocks_meta_syncs_total",
 	))
+}
+
+func TestBucketIndexLoader(t *testing.T) {
+	const userID = "user-1"
+
+	ctx := t.Context()
+	now := time.Now()
+
+	bkt := objstore.NewInMemBucket()
+
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
+		Version:   bucketindex.IndexVersion1,
+		UpdatedAt: now.Unix(),
+	}))
+
+	loader := NewBucketIndexLoader(userID, bkt, nil, log.NewNopLogger())
+
+	// Call to Index before fetch always return nil.
+	require.Nil(t, loader.Index())
+
+	idx1, err := loader.FetchIndex(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, bucketindex.IndexVersion1, idx1.Version)
+	require.Equal(t, now.Unix(), idx1.UpdatedAt)
+
+	// Update index in the bucket.
+	now2 := now.Add(time.Hour)
+	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
+		Version:   bucketindex.IndexVersion1,
+		UpdatedAt: now2.Unix(),
+	}))
+
+	// Subsequent calls to Index return previously fetched version.
+	require.Equal(t, idx1, loader.Index())
+
+	idx2, err := loader.FetchIndex(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, bucketindex.IndexVersion1, idx2.Version)
+	require.Equal(t, now2.Unix(), idx2.UpdatedAt)
+
+	require.Equal(t, idx2, loader.Index())
 }
 
 // noShardingStrategy is a no-op strategy. When this strategy is used, no tenant/block is filtered out.
