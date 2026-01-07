@@ -415,6 +415,7 @@
   * `$.memcached_chunks_node_affinity_matchers`
   * `$.memcached_metadata_node_affinity_matchers`
 * [ENHANCEMENT] Rollout-operator: expose `rollout_operator_enabled` in `$._config`. #12419
+* [ENHANCEMENT] Allow tenant configuration in ScaledObject specification for metric queries. #13750
 
 ### Documentation
 
