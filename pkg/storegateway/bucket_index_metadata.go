@@ -7,7 +7,7 @@ package storegateway
 
 import (
 	"context"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -35,15 +35,10 @@ type BucketIndexLoader struct {
 	cfgProvider bucket.TenantConfigProvider
 	logger      log.Logger
 
-	mu  sync.RWMutex
-	idx *bucketindex.Index
+	idx atomic.Pointer[bucketindex.Index]
 }
 
-func NewBucketIndexLoader(userID string,
-	bkt objstore.Bucket,
-	cfgProvider bucket.TenantConfigProvider,
-	logger log.Logger,
-) *BucketIndexLoader {
+func NewBucketIndexLoader(userID string, bkt objstore.Bucket, cfgProvider bucket.TenantConfigProvider, logger log.Logger) *BucketIndexLoader {
 	return &BucketIndexLoader{
 		userID:      userID,
 		bkt:         bkt,
@@ -59,20 +54,15 @@ func (l *BucketIndexLoader) FetchIndex(ctx context.Context) (*bucketindex.Index,
 		return nil, err
 	}
 
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	l.idx = idx
+	l.idx.Store(idx)
 
 	return idx, nil
 }
 
-// Index returns the last read instance of bucket index. If the bucket index hasn't been read successfully yet, the returned
-// instance is nil.
+// Index returns the last read instance of bucket index. If the bucket index hasn't been read successfully yet,
+// the returned instance is nil.
 func (l *BucketIndexLoader) Index() *bucketindex.Index {
-	l.mu.RLock()
-	defer l.mu.RUnlock()
-	return l.idx
+	return l.idx.Load()
 }
 
 type bucketIndexBlockMetadataFetcherMetrics struct {
