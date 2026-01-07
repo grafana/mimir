@@ -100,7 +100,7 @@
 * [BUGFIX] Query-frontend: Fix incorrect query results when running sharding inside MQE is enabled and the query contains a subquery eligible for subquery spin-off wrapped in a shardable aggregation. #13619
 * [BUGFIX] Memberlist: Fix occasional nil pointer dereference panics. #13635
 * [BUGFIX] Query-frontend: Fix silent panic when executing a remote read API request if the request has no matchers. #13745
-* [BUGFIX] MQE: Map remote execution storage errors correctly. #13944
+* [BUGFIX] MQE: Map remote execution storage errors correctly. #13946
 
 ### Mixin
 
