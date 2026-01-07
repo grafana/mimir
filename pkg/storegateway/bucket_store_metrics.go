@@ -17,26 +17,31 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 )
 
+const (
+	labelDiscoveryDiffOlder = "older"
+	labelDiscoveryDiffNewer = "newer"
+)
+
 // BucketStoreMetrics holds all the metrics tracked by BucketStore. These metrics
 // MUST be monotonic (counter, summary, histogram) because a single metrics instance
 // can be passed to multiple BucketStore and metrics MUST be correct even after a
 // BucketStore is offloaded.
 type BucketStoreMetrics struct {
-	blockLoads                  prometheus.Counter
-	blockLoadFailures           prometheus.Counter
-	blockDrops                  prometheus.Counter
-	blockDropFailures           prometheus.Counter
-	blockDiscoveryLatency       prometheus.Histogram
-	bucketIndexDiscoveryLatency prometheus.Histogram
-	seriesDataTouched           *prometheus.SummaryVec
-	seriesDataFetched           *prometheus.SummaryVec
-	seriesDataSizeTouched       *prometheus.SummaryVec
-	seriesDataSizeFetched       *prometheus.SummaryVec
-	seriesBlocksQueried         *prometheus.SummaryVec
-	resultSeriesCount           prometheus.Summary
-	chunkSizeBytes              prometheus.Histogram
-	queriesDropped              *prometheus.CounterVec
-	seriesRefetches             prometheus.Counter
+	blockLoads                prometheus.Counter
+	blockLoadFailures         prometheus.Counter
+	blockDrops                prometheus.Counter
+	blockDropFailures         prometheus.Counter
+	blockDiscoveryLatency     prometheus.Histogram
+	bucketIndexDiscoveryDiffs *prometheus.CounterVec
+	seriesDataTouched         *prometheus.SummaryVec
+	seriesDataFetched         *prometheus.SummaryVec
+	seriesDataSizeTouched     *prometheus.SummaryVec
+	seriesDataSizeFetched     *prometheus.SummaryVec
+	seriesBlocksQueried       *prometheus.SummaryVec
+	resultSeriesCount         prometheus.Summary
+	chunkSizeBytes            prometheus.Histogram
+	queriesDropped            *prometheus.CounterVec
+	seriesRefetches           prometheus.Counter
 
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
@@ -86,14 +91,13 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
-	m.bucketIndexDiscoveryLatency = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-		Name: "cortex_bucket_store_bucket_index_discovery_latency_seconds",
-		Help: "Time difference between store-gateway bucket index UpdatedAt and querier's bucket index UpdatedAt. Positive values indicate store-gateway is ahead; negative values indicate querier is ahead.",
+	m.bucketIndexDiscoveryDiffs = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_bucket_store_bucket_index_discovery_difference_total",
+		Help: "Total number of cases of difference between store-gateway and querier versions of bucket index UpdatedAt. diff=older|newer is from the store-gateway side, meaning its version of bucket index is behind/ahead of querier.",
+	}, []string{"diff"})
+	m.bucketIndexDiscoveryDiffs.WithLabelValues(labelDiscoveryDiffOlder)
+	m.bucketIndexDiscoveryDiffs.WithLabelValues(labelDiscoveryDiffNewer)
 
-		NativeHistogramBucketFactor:     1.1,
-		NativeHistogramMaxBucketNumber:  100,
-		NativeHistogramMinResetDuration: 1 * time.Hour,
-	})
 	m.seriesDataTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_touched",
 		Help: "How many items of a data type in a block were touched for a single Series/LabelValues/LabelNames request.",

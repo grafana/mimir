@@ -602,9 +602,9 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 		}
 	}
 
-	logSeriesRequestToSpan(ctx, spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize, s.bucketIndexMeta.Metadata())
+	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
-	defer s.recordBucketIndexDiscoveryLatency(ctx)
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
@@ -956,25 +956,15 @@ func (s *BucketStore) sendStats(srv storegatewaypb.StoreGateway_SeriesServer, st
 	return nil
 }
 
-func logSeriesRequestToSpan(
-	ctx context.Context,
-	spanLogger *spanlogger.SpanLogger,
-	minT, maxT int64,
-	matchers, blockMatchers []*labels.Matcher,
-	shardSelector *sharding.ShardSelector,
-	streamingChunksBatchSize uint64,
-	meta *bucketindex.Metadata,
-) {
+func logSeriesRequestToSpan(spanLogger *spanlogger.SpanLogger, minT, maxT int64, matchers, blockMatchers []*labels.Matcher, shardSelector *sharding.ShardSelector, streamingChunksBatchSize uint64) {
 	spanLogger.DebugLog(
 		"msg", "BucketStore.Series",
 		"request min time", time.UnixMilli(minT).UTC().Format(time.RFC3339Nano),
 		"request max time", time.UnixMilli(maxT).UTC().Format(time.RFC3339Nano),
 		"request matchers", util.MatchersStringer(matchers),
-		"request bucket index", getBucketIndexUpdatedAtFromGRPCContext(ctx),
 		"request block matchers", util.MatchersStringer(blockMatchers),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 		"streaming chunks batch size", streamingChunksBatchSize,
-		"store bucket index", meta.UpdatedAt,
 	)
 }
 
@@ -1221,15 +1211,25 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
-func (s *BucketStore) recordBucketIndexDiscoveryLatency(ctx context.Context) {
-	inUpdatedAt := getBucketIndexUpdatedAtFromGRPCContext(ctx)
+func (s *BucketStore) recordBucketIndexDiscoveryDiff(ctx context.Context) {
+	reqUpdatedAt := getBucketIndexUpdatedAtFromGRPCContext(ctx)
 	meta := s.bucketIndexMeta.Metadata()
 
-	latencySec := float64(meta.UpdatedAt - inUpdatedAt)
-	if latencySec != 0 {
-		level.Warn(spanlogger.FromContext(ctx, s.logger)).Log("msg", "bucket index updated at", "ours", meta.UpdatedAt, "received", inUpdatedAt, "diff", latencySec)
+	diff := meta.UpdatedAt - reqUpdatedAt
+
+	level.Debug(spanlogger.FromContext(ctx, s.logger)).Log("msg", "bucket index versions (updated_at)", "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
+
+	if diff == 0 {
+		// Skip recording the difference in metrics when versions are the same.
+		return
 	}
-	s.metrics.bucketIndexDiscoveryLatency.Observe(latencySec)
+	var group string
+	if diff > 0 {
+		group = labelDiscoveryDiffNewer
+	} else {
+		group = labelDiscoveryDiffOlder
+	}
+	s.metrics.bucketIndexDiscoveryDiffs.WithLabelValues(group).Inc()
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
@@ -1297,7 +1297,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		}
 	}
 
-	defer s.recordBucketIndexDiscoveryLatency(ctx)
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -1492,7 +1492,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		}
 	}
 
-	defer s.recordBucketIndexDiscoveryLatency(ctx)
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	var setsMtx sync.Mutex
 	var sets [][]string
