@@ -16,10 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-type LabelsMemoryTrackerIncreaser interface {
-	IncreaseMemoryConsumptionForLabels(labels labels.Labels) error
-}
-
 type queryLimiterCtxKey struct{}
 
 const (
@@ -78,7 +74,7 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 }
 
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker LabelsMemoryTrackerIncreaser) (labels.Labels, error) {
+func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
 	fingerprint := seriesLabels.Hash()
 
 	ql.uniqueSeriesMx.Lock()
