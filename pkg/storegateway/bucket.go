@@ -974,7 +974,7 @@ func logSeriesRequestToSpan(
 		"request block matchers", util.MatchersStringer(blockMatchers),
 		"request shard selector", maybeNilShard(shardSelector).LabelValue(),
 		"streaming chunks batch size", streamingChunksBatchSize,
-		"bucket index", meta.UpdatedAt,
+		"store bucket index", meta.UpdatedAt,
 	)
 }
 
@@ -1223,10 +1223,12 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 
 func (s *BucketStore) recordBucketIndexDiscoveryLatency(ctx context.Context) {
 	inUpdatedAt := getBucketIndexUpdatedAtFromGRPCContext(ctx)
-
 	meta := s.bucketIndexMeta.Metadata()
 
 	latencySec := float64(meta.UpdatedAt - inUpdatedAt)
+	if latencySec != 0 {
+		level.Warn(spanlogger.FromContext(ctx, s.logger)).Log("msg", "bucket index updated at", "ours", meta.UpdatedAt, "received", inUpdatedAt, "diff", latencySec)
+	}
 	s.metrics.bucketIndexDiscoveryLatency.Observe(latencySec)
 }
 
