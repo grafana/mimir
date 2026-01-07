@@ -92,7 +92,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker *MemoryCon
 	// labels and not counting up the memory consumption.
 	if found && labels.Equal(existing, seriesLabels) {
 		// Still return error if the duplicated labels had been exceeding the limit.
-		if ql.maxSeriesPerQuery != 0 && len(ql.uniqueSeries) > ql.maxSeriesPerQuery {
+		if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
 			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 		}
 		return existing, nil
