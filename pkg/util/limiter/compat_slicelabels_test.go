@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/stretchr/testify/require"
 )
 
-func assertSameLabels(t *testing.T, a, b labels.Labels) {
+func requireSameLabels(t *testing.T, a, b labels.Labels) {
 	t.Helper()
 	aVal := reflect.ValueOf(a)
 	bVal := reflect.ValueOf(b)
@@ -27,6 +28,6 @@ func assertSameLabels(t *testing.T, a, b labels.Labels) {
 	if aSlice.Len() > 0 && bSlice.Len() > 0 && aSlice.Leng() == bSlice.Len() {
 		aPtr := aSlice.Pointer()
 		bPtr := bSlice.Pointer()
-		assert.Equal(t, aPtr, bPtr, "labels should share the same slice backing array (slicelabels)")
+		require.Equal(t, aPtr, bPtr, "labels should share the same slice backing array (slicelabels)")
 	}
 }

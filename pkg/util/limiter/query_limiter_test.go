@@ -46,32 +46,32 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 	returnedSeries1, err := limiter.AddSeries(series1, memoryTracker)
 	assert.NoError(t, err)
-	assertSameLabels(t, returnedSeries1, series1)
+	requireSameLabels(t, returnedSeries1, series1)
 	returnedSeries2, err := limiter.AddSeries(series2, memoryTracker)
 	assert.NoError(t, err)
-	assertSameLabels(t, returnedSeries2, series2)
+	requireSameLabels(t, returnedSeries2, series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
 	returnedSeries1Dup, err := limiter.AddSeries(series1, memoryTracker)
 	assert.NoError(t, err)
-	assertSameLabels(t, returnedSeries1Dup, series1)
+	requireSameLabels(t, returnedSeries1Dup, series1)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Re-add previous series to make sure it's not double counted
 	returnedSeries2Dup, err := limiter.AddSeries(series2, memoryTracker)
 	assert.NoError(t, err)
-	assertSameLabels(t, returnedSeries2Dup, series2)
+	requireSameLabels(t, returnedSeries2Dup, series2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	// Add different instance of series with same labels
 	returnedSeries2NewInstance, err := limiter.AddSeries(series2NewInstance, memoryTracker)
 	assert.NoError(t, err)
-	assertSameLabels(t, returnedSeries2NewInstance, returnedSeries2Dup)
-	assertSameLabels(t, returnedSeries2NewInstance, returnedSeries2)
+	requireSameLabels(t, returnedSeries2NewInstance, returnedSeries2Dup)
+	requireSameLabels(t, returnedSeries2NewInstance, returnedSeries2)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 }
@@ -104,7 +104,7 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 	returnedSeries1, err := limiter.AddSeries(series1, memoryTracker)
 	require.NoError(t, err)
-	assertSameLabels(t, returnedSeries1, series1)
+	requireSameLabels(t, returnedSeries1, series1)
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
 
 	returnedSeries2, err := limiter.AddSeries(series2, memoryTracker)

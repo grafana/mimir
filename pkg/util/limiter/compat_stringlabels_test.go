@@ -10,10 +10,10 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func assertSameLabels(t *testing.T, a, b labels.Labels) {
+func requireSameLabels(t *testing.T, a, b labels.Labels) {
 	t.Helper()
 	aVal := reflect.ValueOf(a)
 	bVal := reflect.ValueOf(b)
@@ -29,7 +29,7 @@ func assertSameLabels(t *testing.T, a, b labels.Labels) {
 	if len(aStr) > 0 && len(bStr) > 0 && len(aStr) == len(bStr) {
 		aPtr := unsafe.Pointer(unsafe.StringData(aStr))
 		bPtr := unsafe.Pointer(unsafe.StringData(bStr))
-		assert.Equal(t, aPtr, bPtr, "labels should share the same internal data pointer (stringlabels)")
+		require.Equal(t, aPtr, bPtr, "labels should share the same internal data pointer (stringlabels)")
 	}
 
 }
