@@ -95,11 +95,13 @@ type SplitCodec[T any] interface {
 
 type ReadEntry[T any] interface {
 	ReadSeriesMetadata(*limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
+	ReadAnnotations() []Annotation
 	ReadResultAt(idx int) (T, error)
 }
 
 type WriteEntry[T any] interface {
-	WriteSeriesMetadata([]types.SeriesMetadata) error
+	WriteSeriesMetadata(metadata []types.SeriesMetadata) error
+	WriteAnnotations(annotations []Annotation)
 	WriteNextResult(T) error
 	Finalize() error
 }
@@ -221,6 +223,10 @@ func (e *bufferedReadEntry[T]) ReadSeriesMetadata(memoryTracker *limiter.MemoryC
 	return series, nil
 }
 
+func (e *bufferedReadEntry[T]) ReadAnnotations() []Annotation {
+	return e.cached.Annotations
+}
+
 type bufferedWriteEntry[T any] struct {
 	cache     Backend
 	cached    CachedSeries
@@ -238,6 +244,10 @@ func (e *bufferedWriteEntry[T]) WriteSeriesMetadata(metadata []types.SeriesMetad
 		}
 	}
 	return nil
+}
+
+func (e *bufferedWriteEntry[T]) WriteAnnotations(annotations []Annotation) {
+	e.cached.Annotations = annotations
 }
 
 func (e *bufferedWriteEntry[T]) WriteNextResult(result T) error {

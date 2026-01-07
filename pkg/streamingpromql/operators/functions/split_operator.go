@@ -8,8 +8,10 @@ package functions
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -38,8 +40,8 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	timeRange                types.QueryTimeRange
 	enableDelayedNameRemoval bool
 	expressionPosition       posrange.PositionRange
-	emitAnnotationFunc       types.EmitAnnotationFunc
-	seriesValidationFunc     RangeVectorSeriesValidationFunction
+
+	seriesValidationFunc RangeVectorSeriesValidationFunction
 
 	cache *cache.Cache
 	codec cache.SplitCodec[T]
@@ -122,8 +124,6 @@ func NewSplittingFunctionOverRangeVector[T any](
 	if funcDef.NeedsSeriesNamesForAnnotations {
 		o.metricNames = &operators.MetricNames{}
 	}
-
-	o.emitAnnotationFunc = o.emitAnnotation
 
 	return o, nil
 }
@@ -377,14 +377,14 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (resul
 
 	var pieces []T
 	for _, splitSeries := range splitSeriesList {
-		results, err := m.splits[splitSeries.SplitIdx].ReadResultsAt(ctx, splitSeries.SplitLocalIdx)
+		results, err := m.splits[splitSeries.SplitIdx].GetResultsAt(ctx, splitSeries.SplitLocalIdx)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
 		pieces = append(pieces, results...)
 	}
 
-	f, hasFloat, h, err := m.combineFunc(pieces, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
+	f, hasFloat, h, err := m.combineFunc(pieces, m.emitAnnotation, m.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -410,7 +410,7 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (resul
 
 	// Validation after single step, won't work for range queries if we supported them for splitting.
 	if m.seriesValidationFunc != nil {
-		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotationFunc)
+		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotation)
 	}
 
 	return data, nil
@@ -452,7 +452,6 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		}
 	}
 
-	// Finalize all splits to ensure cache writes are complete
 	for _, split := range m.splits {
 		if err := split.Finalize(ctx); err != nil {
 			return err
@@ -500,7 +499,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Close() {
 type Split[T any] interface {
 	Prepare(ctx context.Context, params *types.PrepareParams) error
 	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
-	ReadResultsAt(ctx context.Context, idx int) ([]T, error)
+	GetResultsAt(ctx context.Context, idx int) ([]T, error)
 	Finalize(ctx context.Context) error
 	Close()
 	IsCached() bool
@@ -528,11 +527,10 @@ func (p *CachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParam
 }
 
 func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	// TODO: is matchers important here?
 	return c.cachedResults.ReadSeriesMetadata(c.parent.MemoryConsumptionTracker)
 }
 
-func (c *CachedSplit[T]) ReadResultsAt(_ context.Context, idx int) ([]T, error) {
+func (c *CachedSplit[T]) GetResultsAt(_ context.Context, idx int) ([]T, error) {
 	result, err := c.cachedResults.ReadResultAt(idx)
 	if err != nil {
 		return nil, err
@@ -542,6 +540,15 @@ func (c *CachedSplit[T]) ReadResultsAt(_ context.Context, idx int) ([]T, error) 
 }
 
 func (c *CachedSplit[T]) Finalize(ctx context.Context) error {
+	for _, ann := range c.cachedResults.ReadAnnotations() {
+		var wrappedErr error
+		if ann.Type == cache.INFO {
+			wrappedErr = fmt.Errorf("%w: %s", annotations.PromQLInfo, ann.Message)
+		} else {
+			wrappedErr = fmt.Errorf("%w: %s", annotations.PromQLWarning, ann.Message)
+		}
+		c.parent.Annotations.Add(wrappedErr)
+	}
 	return nil
 }
 
@@ -562,6 +569,8 @@ type UncachedSplit[T any] struct {
 	finalized         bool
 
 	resultGetter *ResultGetter[T]
+
+	rangeToAnnotationMap []map[string]cache.Annotation
 }
 
 func NewUncachedSplit[T any](
@@ -584,13 +593,19 @@ func NewUncachedSplit[T any](
 		}
 	}
 
+	rangeToAnnotationMap := make([]map[string]cache.Annotation, len(ranges))
+	for i := range ranges {
+		rangeToAnnotationMap[i] = make(map[string]cache.Annotation)
+	}
+
 	return &UncachedSplit[T]{
 		ranges:   ranges,
 		operator: operator,
 		parent:   parent,
 
-		cacheWriteEntries: cacheEntries,
-		finalized:         false,
+		cacheWriteEntries:    cacheEntries,
+		finalized:            false,
+		rangeToAnnotationMap: rangeToAnnotationMap,
 	}, nil
 }
 
@@ -611,17 +626,17 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 			continue
 		}
 
-		err = p.cacheWriteEntries[rangeIdx].WriteSeriesMetadata(seriesMetadata)
-		if err != nil {
+		if err := p.cacheWriteEntries[rangeIdx].WriteSeriesMetadata(seriesMetadata); err != nil {
 			return nil, err
 		}
 	}
+
 	p.resultGetter = NewResultGetter(p.NextSeries)
 
 	return seriesMetadata, nil
 }
 
-func (p *UncachedSplit[T]) ReadResultsAt(ctx context.Context, idx int) ([]T, error) {
+func (p *UncachedSplit[T]) GetResultsAt(ctx context.Context, idx int) ([]T, error) {
 	if p.resultGetter == nil {
 		return nil, fmt.Errorf("resultGetter not initialized - SeriesMetadata may have failed")
 	}
@@ -643,7 +658,11 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 			return nil, err
 		}
 
-		result, err := p.parent.generateFunc(rangeStep, []types.ScalarData{}, p.parent.emitAnnotationFunc, p.parent.MemoryConsumptionTracker)
+		capturingEmitAnnotation := func(generator types.AnnotationGenerator) {
+			p.emitAndCaptureAnnotation(rangeIdx, generator)
+		}
+
+		result, err := p.parent.generateFunc(rangeStep, []types.ScalarData{}, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -658,6 +677,48 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 	return results, nil
 }
 
+func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, generator types.AnnotationGenerator) {
+	metricName := p.parent.metricNames.GetMetricNameForSeries(p.parent.currentSeriesIdx)
+	pos, err := p.parent.innerNode.ExpressionPosition()
+	if err != nil {
+		level.Warn(p.parent.logger).Log("msg", "failed to get expression position for annotation", "err", err)
+		return
+	}
+
+	annotationErr := generator(metricName, pos)
+	p.parent.Annotations.Add(annotationErr)
+
+	annotationsMap := p.rangeToAnnotationMap[rangeIdx]
+	errMsg := annotationErr.Error()
+	if _, exists := annotationsMap[errMsg]; !exists {
+		var annotationType cache.AnnotationType
+		var messageWithoutPrefix string
+
+		// Strip the sentinel error prefix so we can re-wrap it cleanly on replay
+		if errors.Is(annotationErr, annotations.PromQLInfo) {
+			annotationType = cache.INFO
+			messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLInfo.Error()+": ")
+		} else {
+			annotationType = cache.WARNING
+			messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLWarning.Error()+": ")
+		}
+
+		annotationsMap[errMsg] = cache.Annotation{
+			Type:    annotationType,
+			Message: messageWithoutPrefix,
+		}
+	}
+}
+
+func (p *UncachedSplit[T]) getAnnotations(rangeIdx int) []cache.Annotation {
+	annotationsMap := p.rangeToAnnotationMap[rangeIdx]
+	annotations := make([]cache.Annotation, 0, len(annotationsMap))
+	for _, ann := range annotationsMap {
+		annotations = append(annotations, ann)
+	}
+	return annotations
+}
+
 func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 	if p.finalized {
 		return nil
@@ -667,6 +728,9 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 		if !splitRange.Cacheable {
 			continue
 		}
+
+		annotations := p.getAnnotations(rangeIdx)
+		p.cacheWriteEntries[rangeIdx].WriteAnnotations(annotations)
 
 		if err := p.cacheWriteEntries[rangeIdx].Finalize(); err != nil {
 			return err

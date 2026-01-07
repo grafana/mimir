@@ -73,3 +73,102 @@ eval instant at 6h increase(test_counter_total[5h])
 clear
 
 # TODO: test histograms
+
+# Mixed floats and histograms warning
+# Query at 6h with 5h range spans [1h, 6h]
+# Splits: Head (1h, 2h] floats, Middle (2h, 4h] mixed, Middle2 (4h, 6h] floats
+# Mixed data (histogram at 3h) is ONLY in middle split (2h, 4h]
+load 1m
+	mixed_metric{env="prod"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+
+# First run: uncached, middle split writes annotation to cache
+eval instant at 6h rate(mixed_metric[5h])
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+
+# Second run: cached, middle split reads annotation from cache
+eval instant at 6h rate(mixed_metric[5h])
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+
+clear
+
+# Native histogram counter detection
+# Query at 6h with 5h range spans [1h, 6h]
+# Splits: Head (1h, 2h] no data, Middle (2h, 4h] gauge histogram, Middle2 (4h, 6h] no data
+# Single gauge histogram at 3h is ONLY in middle split (2h, 4h]
+load 1m
+	gauge_histogram{env="prod"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}
+
+# First run: uncached, middle split writes annotation to cache
+eval instant at 6h rate(gauge_histogram[5h])
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"
+	{env="prod"} {{counter_reset_hint:gauge}}
+
+# Second run: cached, middle split reads annotation from cache
+eval instant at 6h rate(gauge_histogram[5h])
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"
+	{env="prod"} {{counter_reset_hint:gauge}}
+
+clear
+
+# Annotation deduplication across series
+# Query at 6h with 5h range spans [1h, 6h]
+# Splits: Head (1h, 2h] floats, Middle (2h, 4h] mixed, Middle2 (4h, 6h] floats
+# Mixed data (histogram at 3h) is ONLY in middle split (2h, 4h]
+# All three series emit the same annotation, should be deduplicated
+load 1m
+	mixed_metric{series="1"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+	mixed_metric{series="2"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+	mixed_metric{series="3"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+
+# First run: uncached, middle split writes annotation to cache (deduplicated from 3 series)
+eval instant at 6h rate(mixed_metric[5h])
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+
+# Second run: cached, middle split reads annotation from cache
+eval instant at 6h rate(mixed_metric[5h])
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+
+clear
+
+# Multiple unique annotations
+# Query at 6h with 5h range spans [1h, 6h]
+# Splits: Head (1h, 2h] floats, Middle (2h, 4h] mixed data, Middle2 (4h, 6h] floats
+# Series 1 & 2: Mixed floats/histogram with histogram at 3h (middle split only)
+# Series 3: Gauge histogram at 3h (middle split only)
+load 1m
+	dedup_test{series="1"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+	dedup_test{series="2"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+	dedup_test{series="3"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}
+
+# First run: uncached, middle split writes both annotations to cache
+eval instant at 6h rate(dedup_test[5h])
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_test"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "dedup_test"
+	{series="3"} {{counter_reset_hint:gauge}}
+
+# Second run: cached, middle split reads both annotations from cache
+eval instant at 6h rate(dedup_test[5h])
+	expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_test"
+	expect warn msg: PromQL warning: this native histogram metric is not a counter: "dedup_test"
+	{series="3"} {{counter_reset_hint:gauge}}
+
+clear
+
+# Info annotation type preservation
+# Query at 5h with 4h range spans [1h, 5h]
+# Splits: Head (1h, 2h] floats, Middle (2h, 4h] floats, Tail (4h, 5h] floats
+# All splits contain data, info annotation emitted from middle cacheable split
+load 1m
+	non_counter_metric 0+60x360
+
+# First run: uncached, middle split writes info annotation to cache
+eval instant at 5h rate(non_counter_metric[4h])
+	expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "non_counter_metric"
+	{} 1.0
+
+# Second run: cached, middle split reads info annotation from cache
+eval instant at 5h rate(non_counter_metric[4h])
+	expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "non_counter_metric"
+	{} 1.0
+
+clear

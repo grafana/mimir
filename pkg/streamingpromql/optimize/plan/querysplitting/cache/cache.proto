@@ -17,12 +17,28 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.sizer_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
+enum AnnotationType {
+  WARNING = 0;
+  INFO = 1;
+}
+
+// Annotation represents a cached PromQL annotation (warning or info).
+// We must store the type separately from the message because:
+// - Type is encoded via Go error wrapping (errors.Is), not string parsing
+// - String format ("PromQL info:") is an implementation detail that could change
+// - We need to reconstruct proper error chains with sentinel errors when replaying
+// - AsStrings() uses errors.Is() to separate warnings/infos into different lists
+message Annotation {
+  AnnotationType type = 1;
+  string message = 2;
+}
+
 message CachedSeries {
   // cacheKey contains the non-hashed cache key, to detect hash collision.
   string cacheKey = 1;
   int64 start = 2;
   int64 end = 3;
   repeated cortexpb.Metric series = 4 [(gogoproto.nullable) = false];
-  // results stores all marshaled intermediate results as a single byte blob.
   bytes results = 5;
+  repeated Annotation annotations = 6 [(gogoproto.nullable) = false];
 }
