@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
+	"github.com/grafana/dskit/user"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -176,7 +177,10 @@ func (c *usageTrackerClient) flush() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := c.TrackSeries(ctx, batchReq)
+	// Just trying to make things succeed.
+	tctx := user.InjectOrgID(ctx, "100")
+
+	_, err := c.TrackSeries(tctx, batchReq)
 	if err != nil {
 		level.Warn(c.logger).Log(
 			"msg", "failed to send batched TrackSeries request",
