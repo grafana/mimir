@@ -158,7 +158,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
-		if err := t.writeSamples(ctx, typeLabel, timestamp, series, metricMetadata, records); err != nil {
+		if err := t.writeSamples(ctx, typeLabel, timestamp, series, metricName, metricMetadata, records); err != nil {
 			errs.Add(err)
 			break
 		}
@@ -187,10 +187,10 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 	errs.Add(err)
 }
 
-func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metadata []prompb.MetricMetadata, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metricName string, metadata []prompb.MetricMetadata, records *MetricHistory) error {
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
-	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
+	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
 
 	start := time.Now()
 	statusCode, err := t.client.WriteSeries(ctx, series, metadata)
@@ -201,7 +201,7 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
 	} else {
-		level.Debug(logger).Log("msg", "Remote write series succeeded")
+		level.Info(logger).Log("msg", "Remote write series succeeded")
 	}
 
 	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
