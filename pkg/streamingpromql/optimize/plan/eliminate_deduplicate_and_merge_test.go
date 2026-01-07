@@ -598,33 +598,29 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
 			nodesEliminatedWithDelayedNameRemoval:    0,
 		},
-		"or operator with functions - should keep DeduplicateAndMerge": {
+		"or operator with functions - should keep top-level DeduplicateAndMerge": {
 			// Note: we could remove the DeduplicateAndMerge nodes on each side of the binary operation,
 			// but we currently don't for simplicity.
 			expr: `rate(foo[5m]) or rate(bar[5m])`,
 			expectedPlanWithoutDelayedNameRemoval: `
 				- DeduplicateAndMerge
 					- BinaryExpression: LHS or RHS
-						- LHS: DeduplicateAndMerge
-							- FunctionCall: rate(...)
-								- MatrixSelector: {__name__="foo"}[5m0s]
-						- RHS: DeduplicateAndMerge
-							- FunctionCall: rate(...)
-								- MatrixSelector: {__name__="bar"}[5m0s]
+						- LHS: FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[5m0s]
+						- RHS: FunctionCall: rate(...)
+							- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
 			expectedPlanWithDelayedNameRemoval: `
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS or RHS
-							- LHS: DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
-							- RHS: DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="bar"}[5m0s]
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[5m0s]
+							- RHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
-			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithoutDelayedNameRemoval: 2,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
 		"vector-scalar comparison with bool modifier should keep DeduplicateAndMerge": {
 			expr: `foo == bool 6`,
@@ -662,84 +658,94 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
 			nodesEliminatedWithDelayedNameRemoval:    0,
 		},
-		"binary operation with nested rate functions - should skip optimization entirely": {
+		"binary operation with nested rate functions": {
 			expr: `rate(foo[5m]) + rate(bar[5m])`,
 			expectedPlanWithoutDelayedNameRemoval: `
 				- BinaryExpression: LHS + RHS
-					- LHS: DeduplicateAndMerge
-						- FunctionCall: rate(...)
-							- MatrixSelector: {__name__="foo"}[5m0s]
-					- RHS: DeduplicateAndMerge
-						- FunctionCall: rate(...)
-							- MatrixSelector: {__name__="bar"}[5m0s]
+					- LHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
 			expectedPlanWithDelayedNameRemoval: `
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS + RHS
-							- LHS: DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
-							- RHS: DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="bar"}[5m0s]
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[5m0s]
+							- RHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
-			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithoutDelayedNameRemoval: 2,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
-		"binary operation with aggregations - should skip optimization entirely": {
+		"binary operation with aggregations": {
 			expr: `sum(rate(foo[5m])) / sum(rate(bar[5m]))`,
 			expectedPlanWithoutDelayedNameRemoval: `
 				- BinaryExpression: LHS / RHS
 					- LHS: AggregateExpression: sum
-						- DeduplicateAndMerge
-							- FunctionCall: rate(...)
-								- MatrixSelector: {__name__="foo"}[5m0s]
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="foo"}[5m0s]
 					- RHS: AggregateExpression: sum
-						- DeduplicateAndMerge
-							- FunctionCall: rate(...)
-								- MatrixSelector: {__name__="bar"}[5m0s]
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
 			expectedPlanWithDelayedNameRemoval: `
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS / RHS
 							- LHS: AggregateExpression: sum
-								- DeduplicateAndMerge
-									- FunctionCall: rate(...)
-										- MatrixSelector: {__name__="foo"}[5m0s]
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
 							- RHS: AggregateExpression: sum
-								- DeduplicateAndMerge
-									- FunctionCall: rate(...)
-										- MatrixSelector: {__name__="bar"}[5m0s]
+								- FunctionCall: rate(...)
+									- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
-			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithoutDelayedNameRemoval: 2,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
-		"binary operation and expression - should skip optimization entirely": {
+		"binary operation and expression": {
 			expr: `rate(foo[5m]) and rate(bar[5m])`,
 			expectedPlanWithoutDelayedNameRemoval: `
 				- BinaryExpression: LHS and RHS
-					- LHS: DeduplicateAndMerge
-						- FunctionCall: rate(...)
-							- MatrixSelector: {__name__="foo"}[5m0s]
-					- RHS: DeduplicateAndMerge
-						- FunctionCall: rate(...)
-							- MatrixSelector: {__name__="bar"}[5m0s]
+					- LHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
 			expectedPlanWithDelayedNameRemoval: `
 				- DeduplicateAndMerge
 					- DropName
 						- BinaryExpression: LHS and RHS
-							- LHS: DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="foo"}[5m0s]
-							- RHS: DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__="bar"}[5m0s]
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[5m0s]
+							- RHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
 				`,
-			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithoutDelayedNameRemoval: 2,
+			nodesEliminatedWithDelayedNameRemoval:    2,
+		},
+		"binary operation with nested rate functions and non-name equal matcher": {
+			expr: `rate(foo[5m]) + rate({__name__=~"bar.*"}[5m])`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__=~"bar.*"}[5m0s]
+				`,
+			expectedPlanWithDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- DropName
+						- BinaryExpression: LHS + RHS
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[5m0s]
+							- RHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__=~"bar.*"}[5m0s]
+				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 1,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
 	}
 
@@ -766,7 +772,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				// Then, create a plan with optimization
 				plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
+				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval, opts1.CommonOpts.Reg))
 				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
 				require.NoError(t, err)
 				nodesAfter := countDeduplicateAndMergeNodes(planAfter.Root)
@@ -955,7 +961,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 				require.NoError(t, err)
 
 				if withOptimization {
-					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
+					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval, opts.CommonOpts.Reg))
 				}
 
 				engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
