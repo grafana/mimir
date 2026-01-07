@@ -676,6 +676,7 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 		resps := make([]*usagetrackerpb.TrackSeriesSubresponse, 0, len(req.Subrequests))
 		now := time.Now()
 		// a batch request.
+		level.Info(t.logger).Log("msg", "logging bulk series", "count", len(req.Subrequests))
 		for _, sr := range req.Subrequests {
 			p, err := t.runningPartition(sr.Partition)
 			if err != nil {
