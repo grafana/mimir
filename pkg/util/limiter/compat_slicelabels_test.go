@@ -20,10 +20,7 @@ func requireSameLabels(t *testing.T, a, b labels.Labels) {
 	aSlice := aVal.FieldByName("labels")
 	bSlice := bVal.FieldByName("labels")
 
-	if aSlice.Len() == 0 && bSlice.Len() == 0 {
-		// Both empty
-		return
-	}
+	require.Equal(t, aData.Len(), bData.Len())
 
 	if aSlice.Len() > 0 && bSlice.Len() > 0 && aSlice.Leng() == bSlice.Len() {
 		aPtr := aSlice.Pointer()

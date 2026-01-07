@@ -19,9 +19,9 @@ func requireSameLabels(t *testing.T, a, b labels.Labels) {
 	// We don't validate the reflection because the runtime guaranteed the correct type by the build tag.
 	aData := aVal.FieldByName("data")
 	bData := bVal.FieldByName("data")
-	if aData.Len() == 0 && bData.Len() == 0 {
-		return
-	}
+
+	require.Equal(t, aData.Len(), bData.Len())
+
 	if aData.Len() > 0 && bData.Len() > 0 && aData.Len() == bData.Len() {
 		aPtr := aData.Pointer()
 		bPtr := bData.Pointer()
