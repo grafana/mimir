@@ -632,17 +632,8 @@ func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
 }
 
-// Clears the internal queueBroker Tree, this is intended to allow partial tests to stop the queue and should not be used in runtime code.
-func (q *RequestQueue) Clear() {
-	for {
-		if q.queueBroker.isEmpty() {
-			return
-		}
-
-		time.Sleep(1 * time.Millisecond) // Avoids concurrent map read from rapid iteration
-
-		q.queueBroker.tree.Dequeue(nil)
-	}
+func (q *RequestQueue) IsEmpty() bool {
+	return q.queueBroker.isEmpty()
 }
 
 // TenantIndex is opaque type that allows to resume iteration over tenants

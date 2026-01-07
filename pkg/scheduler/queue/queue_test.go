@@ -331,6 +331,29 @@ func queueConsume(
 	return lastTenantIdx, err
 }
 
+func (q *RequestQueue) EmptyQueue(t *testing.T) {
+	lastTenantIndex := FirstTenant()
+	querierID := "emptying-consumer"
+
+	querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, q.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
+	defer q.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+
+	consumer := func(request QueryRequest) error {
+		return nil
+	}
+
+	for {
+		if q.queueBroker.isEmpty() {
+			return
+		}
+
+		idx, err := queueConsume(q, querierWorkerConn, lastTenantIndex, consumer)
+		require.NoError(t, err)
+		lastTenantIndex = idx
+	}
+}
+
 // TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker tests a scenario which previously caused a panic.
 // When a querier-worker submits a dequeue request while there are no queue items sharded to that querier,
 // The waiting dequeue request is held in an internal queue until a reshard or enqueue operation occurs.
@@ -375,7 +398,7 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
 		queue.SubmitUnregisterQuerierWorkerConn(querier3Conn)
 
-		queue.Clear()
+		queue.EmptyQueue(t)
 
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
