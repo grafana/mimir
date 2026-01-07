@@ -292,15 +292,15 @@ func (w *queryResponseWriter) Write(ctx context.Context, r querierpb.EvaluateQue
 
 func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apierror.Type, err error) {
 	typ := errorTypeForError(err, fallbackType)
-	msg := err.Error()
+	errMsg := err.Error()
 
 	if typ == mimirpb.QUERY_ERROR_TYPE_CANCELED {
-		level.Debug(w.logger).Log("msg", "returning cancelled status", "type", typ.String(), "msg", msg)
+		level.Debug(w.logger).Log("msg", "returning cancelled status", "type", typ.String(), "err", errMsg)
 	} else {
 		span := trace.SpanFromContext(ctx)
-		span.SetStatus(codes.Error, msg)
+		span.SetStatus(codes.Error, errMsg)
 
-		level.Warn(w.logger).Log("msg", "returning error", "type", typ.String(), "msg", msg)
+		level.Warn(w.logger).Log("msg", "returning error", "type", typ.String(), "err", errMsg)
 	}
 
 	w.status = "ERROR_" + strings.TrimPrefix(typ.String(), "QUERY_ERROR_TYPE_")
@@ -309,16 +309,16 @@ func (w *queryResponseWriter) WriteError(ctx context.Context, fallbackType apier
 		Data: &frontendv2pb.QueryResultStreamRequest_Error{
 			Error: &querierpb.Error{
 				Type:    typ,
-				Message: msg,
+				Message: errMsg,
 			},
 		},
 	}
 
 	if err := w.write(ctx, resp); err != nil {
 		if grpcutil.IsCanceled(err) {
-			level.Debug(w.logger).Log("msg", "failed to write error to query-frontend stream because the request was canceled", "writeErr", err, "originalErr", msg)
+			level.Debug(w.logger).Log("msg", "failed to write error to query-frontend stream because the request was canceled", "writeErr", err, "originalErr", errMsg)
 		} else {
-			level.Warn(w.logger).Log("msg", "failed to write error to query-frontend stream", "writeErr", err, "originalErr", msg)
+			level.Warn(w.logger).Log("msg", "failed to write error to query-frontend stream", "writeErr", err, "originalErr", errMsg)
 		}
 	}
 }
