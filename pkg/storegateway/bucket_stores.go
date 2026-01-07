@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -644,6 +645,16 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 	}
 
 	return values[0]
+}
+
+func getBucketIndexUpdatedAtFromGRPCContext(ctx context.Context) int64 {
+	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataBucketIndexUpdatedAt)
+	if len(values) != 1 {
+		return 0
+	}
+	// Ignore any parsing errors because BucketIndexUpdatedAt is best-effort.
+	value, _ := strconv.ParseInt(values[0], 10, 64)
+	return value
 }
 
 type spanSeriesServer struct {

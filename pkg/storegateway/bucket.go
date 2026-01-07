@@ -604,6 +604,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 
 	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
 
+	defer s.recordBucketIndexDiscoveryLatency(ctx)
+
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
 	defer func() {
@@ -1209,6 +1211,15 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
+func (s *BucketStore) recordBucketIndexDiscoveryLatency(ctx context.Context) {
+	inUpdatedAt := getBucketIndexUpdatedAtFromGRPCContext(ctx)
+
+	meta := s.bucketIndexMeta.Metadata()
+
+	latencySec := float64(meta.UpdatedAt - inUpdatedAt)
+	s.metrics.bucketIndexDiscoveryLatency.Observe(latencySec)
+}
+
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	spanCtx, span := tracer.Start(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.End()
@@ -1273,6 +1284,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	defer s.recordBucketIndexDiscoveryLatency(ctx)
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -1466,6 +1479,8 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	defer s.recordBucketIndexDiscoveryLatency(ctx)
 
 	var setsMtx sync.Mutex
 	var sets [][]string

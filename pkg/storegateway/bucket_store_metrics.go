@@ -22,20 +22,21 @@ import (
 // can be passed to multiple BucketStore and metrics MUST be correct even after a
 // BucketStore is offloaded.
 type BucketStoreMetrics struct {
-	blockLoads            prometheus.Counter
-	blockLoadFailures     prometheus.Counter
-	blockDrops            prometheus.Counter
-	blockDropFailures     prometheus.Counter
-	blockDiscoveryLatency prometheus.Histogram
-	seriesDataTouched     *prometheus.SummaryVec
-	seriesDataFetched     *prometheus.SummaryVec
-	seriesDataSizeTouched *prometheus.SummaryVec
-	seriesDataSizeFetched *prometheus.SummaryVec
-	seriesBlocksQueried   *prometheus.SummaryVec
-	resultSeriesCount     prometheus.Summary
-	chunkSizeBytes        prometheus.Histogram
-	queriesDropped        *prometheus.CounterVec
-	seriesRefetches       prometheus.Counter
+	blockLoads                  prometheus.Counter
+	blockLoadFailures           prometheus.Counter
+	blockDrops                  prometheus.Counter
+	blockDropFailures           prometheus.Counter
+	blockDiscoveryLatency       prometheus.Histogram
+	bucketIndexDiscoveryLatency prometheus.Histogram
+	seriesDataTouched           *prometheus.SummaryVec
+	seriesDataFetched           *prometheus.SummaryVec
+	seriesDataSizeTouched       *prometheus.SummaryVec
+	seriesDataSizeFetched       *prometheus.SummaryVec
+	seriesBlocksQueried         *prometheus.SummaryVec
+	resultSeriesCount           prometheus.Summary
+	chunkSizeBytes              prometheus.Histogram
+	queriesDropped              *prometheus.CounterVec
+	seriesRefetches             prometheus.Counter
 
 	// Metrics tracked when streaming store-gateway is enabled.
 	streamingSeriesRequestDurationByStage      *prometheus.HistogramVec
@@ -80,6 +81,14 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 	m.blockDiscoveryLatency = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 		Name: "cortex_bucket_store_block_discovery_latency_seconds",
 		Help: "Time elapsed from when a block was created, based on its ULID timestamp, to when it was discovered.",
+
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
+	})
+	m.bucketIndexDiscoveryLatency = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name: "cortex_bucket_store_bucket_index_discovery_latency_seconds",
+		Help: "Time difference between store-gateway bucket index UpdatedAt and querier's bucket index UpdatedAt. Positive values indicate store-gateway is ahead; negative values indicate querier is ahead.",
 
 		NativeHistogramBucketFactor:     1.1,
 		NativeHistogramMaxBucketNumber:  100,
