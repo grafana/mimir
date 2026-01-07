@@ -1456,6 +1456,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		st, err := NewBucketStore(
 			"test",
 			ibkt,
+			newTestBucketIndexMetadataReader(t, bkt, "test"),
 			f,
 			tmpDir,
 			mimir_tsdb.BucketStoreConfig{
@@ -1588,6 +1589,7 @@ func TestBucketStore_Series_Concurrency(t *testing.T) {
 					store, err := NewBucketStore(
 						"tenant",
 						instrumentedBucket,
+						newTestBucketIndexMetadataReader(t, instrumentedBucket, "tenant"),
 						metaFetcher,
 						tmpDir,
 						mimir_tsdb.BucketStoreConfig{
@@ -1920,6 +1922,7 @@ func TestBucketStore_Series_ErrorUnmarshallingRequestHints(t *testing.T) {
 	store, err := NewBucketStore(
 		"test",
 		instrBkt,
+		newTestBucketIndexMetadataReader(t, bkt, "test"),
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
@@ -1977,6 +1980,7 @@ func TestBucketStore_Series_CanceledRequest(t *testing.T) {
 	store, err := NewBucketStore(
 		"test",
 		instrBkt,
+		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
@@ -2049,6 +2053,7 @@ func TestBucketStore_Series_TimeoutGate(t *testing.T) {
 	store, err := NewBucketStore(
 		"test",
 		instrBkt,
+		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
@@ -2127,6 +2132,7 @@ func TestBucketStore_Series_InvalidRequest(t *testing.T) {
 	store, err := NewBucketStore(
 		"test",
 		instrBkt,
+		newTestBucketIndexMetadataReader(t, instrBkt, "test"),
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
@@ -2253,6 +2259,7 @@ func testBucketStoreSeriesBlockWithMultipleChunks(
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
+		newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{
@@ -2414,6 +2421,7 @@ func TestBucketStore_Series_Limits(t *testing.T) {
 					store, err := NewBucketStore(
 						"tenant",
 						instrBkt,
+						newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
 						fetcher,
 						tmpDir,
 						mimir_tsdb.BucketStoreConfig{
@@ -2533,6 +2541,7 @@ func setupStoreForHintsTest(t *testing.T, maxSeriesPerBatch int, opts ...BucketS
 	store, err := NewBucketStore(
 		"tenant",
 		instrBkt,
+		newTestBucketIndexMetadataReader(t, instrBkt, "tenant"),
 		fetcher,
 		tmpDir,
 		mimir_tsdb.BucketStoreConfig{

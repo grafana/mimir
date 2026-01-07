@@ -538,6 +538,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	bs, err := NewBucketStore(
 		userID,
 		userBkt,
+		newBucketIndexMetadataReaderFromLoader(loader),
 		fetcher,
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore,

@@ -49,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -88,6 +89,7 @@ type BucketStore struct {
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
 	bkt             objstore.InstrumentedBucketReader
+	bucketIndexMeta BucketIndexMetadataReader
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
@@ -203,6 +205,7 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 func NewBucketStore(
 	userID string,
 	bkt objstore.InstrumentedBucketReader,
+	bucketIndexMeta BucketIndexMetadataReader,
 	fetcher block.MetadataFetcher,
 	dir string,
 	bucketStoreConfig tsdb.BucketStoreConfig,
@@ -217,6 +220,7 @@ func NewBucketStore(
 	s := &BucketStore{
 		logger:                      log.NewNopLogger(),
 		bkt:                         bkt,
+		bucketIndexMeta:             bucketIndexMeta,
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
@@ -2111,4 +2115,8 @@ func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {
 		return sharding.ShardSelector{}
 	}
 	return *shard
+}
+
+type BucketIndexMetadataReader interface {
+	Metadata() *bucketindex.Metadata
 }
