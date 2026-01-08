@@ -59,7 +59,7 @@ message BatchRejectedHashes {
 }
 
 message TrackSeriesBatchResponse {
-  repeated BatchRejectedHashes rejectedSeriesHashes = 1;
+  repeated BatchRejectedHashes rejections = 1;
 }
 
 message SeriesCreatedEvent {
