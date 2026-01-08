@@ -168,13 +168,13 @@ func run(cfg *Config) error {
 	fmt.Println("\nTop labels by query coverage:")
 	printLabelStatsTable(labelStats, 30)
 
-	// Identify good segmentation candidates: >50% series coverage AND >10% query coverage.
+	// Identify good segmentation candidates: score > 0.5.
 	fmt.Printf("\n--- Segmentation Label Candidates ---\n")
-	fmt.Printf("Labels with >50%% series coverage AND >10%% query coverage:\n\n")
+	fmt.Printf("Labels with score > 0.5:\n\n")
 
 	var candidates []LabelStats
 	for _, ls := range labelStats {
-		if ls.SeriesCoverage >= 50 && ls.QueryCoverage >= 10 {
+		if ls.Score > 0.5 {
 			candidates = append(candidates, ls)
 		}
 	}

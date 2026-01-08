@@ -41,6 +41,7 @@ type LabelStats struct {
 	RuleQueryCoverage float64
 
 	// Score is a weighted score (0-1) for ranking candidates.
+	// Composed of 50% series coverage + 50% query coverage.
 	Score float64
 }
 
@@ -170,11 +171,11 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]struct {
 	result := make([]LabelStats, 0, len(statsMap))
 	for _, stats := range statsMap {
 		// Score is weighted combination of:
-		// - The % of series having that label
-		//   We need to shard the series to compartments by the segmentation label, so to have an effective
-		//   sharding we need that the majority of series have the label.
-		// - The % of queries for which we can deterministically know the compartment when series are sharded by that label
-		stats.Score = 0.75*(stats.SeriesCoverage/100) + 0.25*(stats.QueryCoverage/100)
+		// - 50% series coverage: we need to shard the series to compartments by the segmentation label,
+		//   so to have an effective sharding we need that the majority of series have the label.
+		// - 50% query coverage: the % of queries for which we can deterministically know the compartment
+		//   when series are sharded by that label.
+		stats.Score = 0.50*(stats.SeriesCoverage/100) + 0.50*(stats.QueryCoverage/100)
 		result = append(result, *stats)
 	}
 
