@@ -1427,7 +1427,7 @@ func generateConcurrencyTestResponse(idx uint64) *frontendv2pb.QueryResultStream
 		series = append(series, labels.FromStrings(lbls...))
 	}
 
-	return newSeriesMetadata(false, series...)
+	return newSeriesMetadata(0, false, series...)
 }
 
 func TestFrontendStreamingResponse(t *testing.T) {

@@ -69,10 +69,10 @@ type remoteExecutionNodeStreamState struct {
 	node      planning.Node
 	timeRange types.QueryTimeRange
 	finished  bool
-
-	// The following fields are only populated once the request is sent:
-	nodeIndex int64
 	buffer    *responseStreamBuffer
+
+	// The following field is only populated once the request is sent:
+	nodeIndex int64
 }
 
 // remoteExecutionNodeStreamIndex represents the index of a node stream in a group (ie. index into RemoteExecutionGroupEvaluator.nodeStreamState)
@@ -97,6 +97,7 @@ func (g *RemoteExecutionGroupEvaluator) enqueueEvaluation(node planning.Node, ti
 	g.nodeStreamState = append(g.nodeStreamState, remoteExecutionNodeStreamState{
 		node:      node,
 		timeRange: timeRange,
+		buffer:    &responseStreamBuffer{},
 	})
 
 	return remoteExecutionNodeStreamIndex(len(g.nodeStreamState) - 1), nil
@@ -223,11 +224,69 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	return nil
 }
 
-func (g *RemoteExecutionGroupEvaluator) closeOneStream() {
-	// TODO:
-	// Pass node index
-	// If only some nodes have closed: return
-	// If last node closed: close stream, if request sent
+func (g *RemoteExecutionGroupEvaluator) readEvaluationCompleted(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
+	nodeState := &g.nodeStreamState[streamIndex]
+	if nodeState.finished {
+		return nil, stats.Stats{}, fmt.Errorf("can't read evaluation completed message for node %v, as it is already finished", nodeState.nodeIndex)
+	}
+
+	g.markStreamAsFinished(streamIndex)
+	if !g.allNodesFinished() {
+		// We'll return the actual evaluation information when the last node calls GetEvaluationInfo().
+		return nil, stats.Stats{}, nil
+	}
+
+	defer g.onAllStreamsFinished()
+
+	// Keep reading the stream until we get to an evaluation completed message.
+	for {
+		resp, releaseMessage, err := g.readNextMessage(ctx, streamIndex)
+		if err != nil {
+			return nil, stats.Stats{}, err
+		}
+
+		completion := resp.GetEvaluationCompleted()
+		if completion == nil {
+			releaseMessage()
+			continue // Try the next message.
+		}
+
+		annos, stats := decodeEvaluationCompletedMessage(completion)
+		releaseMessage()
+		return annos, stats, nil
+	}
+}
+
+func (g *RemoteExecutionGroupEvaluator) allNodesFinished() bool {
+	for _, state := range g.nodeStreamState {
+		if !state.finished {
+			return false
+		}
+	}
+
+	return true
+}
+
+func (g *RemoteExecutionGroupEvaluator) closeStream(streamIndex remoteExecutionNodeStreamIndex) {
+	g.markStreamAsFinished(streamIndex)
+
+	if g.allNodesFinished() {
+		g.onAllStreamsFinished()
+	}
+}
+
+func (g *RemoteExecutionGroupEvaluator) markStreamAsFinished(streamIndex remoteExecutionNodeStreamIndex) {
+	nodeState := &g.nodeStreamState[streamIndex]
+	if nodeState.finished {
+		return
+	}
+
+	nodeState.finished = true
+
+	// TODO: discard any buffered messages
+}
+
+func (g *RemoteExecutionGroupEvaluator) onAllStreamsFinished() {
 	g.stream.Close()
 }
 
@@ -286,7 +345,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 }
 
 func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return readEvaluationCompleted(ctx, r.group, r.streamIndex)
+	return r.group.readEvaluationCompleted(ctx, r.streamIndex)
 }
 
 func (r *scalarExecutionResponse) Close() {
@@ -294,7 +353,7 @@ func (r *scalarExecutionResponse) Close() {
 		return
 	}
 
-	r.group.closeOneStream()
+	r.group.closeStream(r.streamIndex)
 	r.closed = true
 }
 
@@ -373,7 +432,7 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 }
 
 func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return readEvaluationCompleted(ctx, r.group, r.streamIndex)
+	return r.group.readEvaluationCompleted(ctx, r.streamIndex)
 }
 
 func (r *instantVectorExecutionResponse) Close() {
@@ -381,7 +440,7 @@ func (r *instantVectorExecutionResponse) Close() {
 		return
 	}
 
-	r.group.closeOneStream()
+	r.group.closeStream(r.streamIndex)
 	r.currentBatch = nil
 	r.closed = true
 }
@@ -479,7 +538,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 }
 
 func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return readEvaluationCompleted(ctx, r.group, r.streamIndex)
+	return r.group.readEvaluationCompleted(ctx, r.streamIndex)
 }
 
 func (r *rangeVectorExecutionResponse) Close() {
@@ -487,7 +546,7 @@ func (r *rangeVectorExecutionResponse) Close() {
 		return
 	}
 
-	r.group.closeOneStream()
+	r.group.closeStream(r.streamIndex)
 	r.floats.Close()
 	r.histograms.Close()
 	r.closed = true
@@ -526,26 +585,6 @@ func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluato
 	}
 
 	return mqeSeries, nil
-}
-
-func readEvaluationCompleted(ctx context.Context, group *RemoteExecutionGroupEvaluator, streamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
-	// Keep reading the stream until we get to an evaluation completed message.
-	for {
-		resp, releaseMessage, err := group.readNextMessage(ctx, streamIndex)
-		if err != nil {
-			return nil, stats.Stats{}, err
-		}
-
-		completion := resp.GetEvaluationCompleted()
-		if completion == nil {
-			releaseMessage()
-			continue // Try the next message.
-		}
-
-		annos, stats := decodeEvaluationCompletedMessage(completion)
-		releaseMessage()
-		return annos, stats, nil
-	}
 }
 
 func decodeEvaluationCompletedMessage(msg *querierpb.EvaluateQueryResponseEvaluationCompleted) (*annotations.Annotations, stats.Stats) {

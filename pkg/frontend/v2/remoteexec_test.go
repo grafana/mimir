@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -38,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -94,22 +96,17 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
 				),
 			},
 			{
-				msg: newInstantVectorSeriesData(
-					generateFPoints(1000, 2, 0),
-					generateHPoints(3000, 2, 0),
-				),
+				msg: newInstantVectorSeriesData(0, generateFPoints(1000, 2, 0), generateHPoints(3000, 2, 0)),
 			},
 			{
-				msg: newInstantVectorSeriesData(
-					generateFPoints(1000, 2, 1),
-					generateHPoints(3000, 2, 1),
-				),
+				msg: newInstantVectorSeriesData(0, generateFPoints(1000, 2, 1), generateHPoints(3000, 2, 1)),
 			},
 		},
 	}
@@ -168,6 +165,7 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -261,6 +259,7 @@ func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					true,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -295,16 +294,10 @@ func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testin
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
-				msg: newSeriesMetadata(
-					false,
-					labels.FromStrings("series", "1"),
-				),
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
 			},
 			{
-				msg: newInstantVectorSeriesData(
-					generateFPoints(1000, 3, 0),
-					generateHPoints(4000, 9, 0),
-				),
+				msg: newInstantVectorSeriesData(0, generateFPoints(1000, 3, 0), generateHPoints(4000, 9, 0)),
 			},
 		},
 	}
@@ -352,6 +345,7 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -469,6 +463,7 @@ func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					true,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -504,6 +499,7 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -578,10 +574,7 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
-				msg: newSeriesMetadata(
-					false,
-					labels.FromStrings("series", "1"),
-				),
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
 			},
 			{
 				msg: newRangeVectorStepData(
@@ -904,6 +897,10 @@ func (m *mockResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResul
 		<-m.release
 	}
 
+	if m.closed {
+		return nil, errors.New("mock response stream is closed")
+	}
+
 	if len(m.responses) == 0 {
 		return nil, errors.New("exhausted mock response stream")
 	}
@@ -964,7 +961,7 @@ func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRe
 	}
 }
 
-func newSeriesMetadata(dropName bool, series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
+func newSeriesMetadata(nodeIndex int64, dropName bool, series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
 	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
 	for _, series := range series {
 		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
@@ -978,7 +975,8 @@ func newSeriesMetadata(dropName bool, series ...labels.Labels) *frontendv2pb.Que
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-						Series: protoSeries,
+						NodeIndex: nodeIndex,
+						Series:    protoSeries,
 					},
 				},
 			},
@@ -986,7 +984,7 @@ func newSeriesMetadata(dropName bool, series ...labels.Labels) *frontendv2pb.Que
 	}
 }
 
-func newInstantVectorSeriesData(floats []promql.FPoint, histograms []promql.HPoint) *frontendv2pb.QueryResultStreamRequest {
+func newInstantVectorSeriesData(nodeIndex int64, floats []promql.FPoint, histograms []promql.HPoint) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
@@ -1095,6 +1093,106 @@ func requireEqualHPointRingBuffer(t *testing.T, buffer *types.HPointRingBufferVi
 
 	for i := range expected {
 		require.Equalf(t, buffer.PointAt(i), expected[i], "expected points at index %v to be equal", i)
+	}
+}
+
+func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the data in order, confirm nothing is buffered.
+	series, err := resp1.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "1")}), series)
+	requireNoBufferedData(t, evaluator)
+
+	data, err := resp1.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedData(t, evaluator)
+
+	annos, returnedStats, err := resp1.GetEvaluationInfo(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls GetEvaluationInfo")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
+	requireNoBufferedData(t, evaluator)
+
+	series, err = resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2")}), series)
+	requireNoBufferedData(t, evaluator)
+
+	data, err = resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData = types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedData(t, evaluator)
+
+	annos, returnedStats, err = resp2.GetEvaluationInfo(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedData(t, evaluator)
+
+	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+}
+
+func requireNoBufferedData(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
+	for idx, nodeState := range evaluator.nodeStreamState {
+		require.Falsef(t, nodeState.buffer.Any(), "expected node at index %v to have nothing buffered, but it has %v buffered messages", idx, nodeState.buffer.length)
 	}
 }
 
@@ -1537,7 +1635,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 
 			// Simulate doing some work, then send an empty response.
 			time.Sleep(20 * time.Millisecond)
-			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(0, false), newEvaluationCompleted(0, nil, nil))
 			require.NoError(t, err)
 		}()
 
@@ -1662,7 +1760,7 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 		series = append(series, labels.FromStrings(model.MetricNameLabel, "my_metric", "idx", strconv.Itoa(i)))
 	}
 
-	msgs = append(msgs, newSeriesMetadata(false, series...))
+	msgs = append(msgs, newSeriesMetadata(0, false, series...))
 
 	pendingSeriesData := make([]querierpb.InstantVectorSeriesData, 0, batchSize)
 	appendSeriesDataMessage := func() {
