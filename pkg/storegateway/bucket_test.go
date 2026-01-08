@@ -1759,10 +1759,11 @@ func TestBucketStore_Series_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	}
 
 	store := &BucketStore{
-		userID:     "test",
-		bkt:        objstore.WithNoopInstr(bkt),
-		logger:     logger,
-		indexCache: indexCache,
+		userID:          "test",
+		bkt:             objstore.WithNoopInstr(bkt),
+		bucketIndexMeta: newTestBucketIndexMetadataReader(t, bkt, "test"),
+		logger:          logger,
+		indexCache:      indexCache,
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), indexheader.Config{
 			LazyLoadingEnabled:     false,
 			LazyLoadingIdleTimeout: 0,
