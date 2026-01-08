@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -614,7 +615,7 @@ func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t 
 				}
 
 				overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, registry)
+				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, registry, util_test.NewTestingLogger(t))
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 				defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
