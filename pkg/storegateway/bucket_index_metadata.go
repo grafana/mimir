@@ -157,8 +157,12 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 	for _, b := range idx.Blocks {
 		metas[b.ID] = b.ThanosMeta()
 
-		if _, ok := knownBlocks[b.ID]; !ok {
-			// This is a newly discovered blocks. Record its discovery latency as time from block creation (ULID timestamp) to now.
+		if len(knownBlocks) != 0 {
+			// If we have blocks from previous fetch, and the block isn't in the set, we track its discovery latency as time from block creation (ULID timestamp) to now.
+			_, ok := knownBlocks[b.ID]
+			if ok {
+				continue
+			}
 			blockCreationTime := time.UnixMilli(int64(b.ID.Time()))
 			f.metrics.bucketStoreMetrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
 		}
