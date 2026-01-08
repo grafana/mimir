@@ -1229,7 +1229,7 @@ github.com/prometheus/alertmanager/timeinterval
 github.com/prometheus/alertmanager/tracing
 github.com/prometheus/alertmanager/types
 github.com/prometheus/alertmanager/ui
-# github.com/prometheus/client_golang v1.23.3-0.20260108101519-fb0838f53562
+# github.com/prometheus/client_golang v1.23.3-0.20251212205219-7ba246a648ca => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
 ## explicit; go 1.24.0
 github.com/prometheus/client_golang/api
 github.com/prometheus/client_golang/api/prometheus/v1
@@ -1275,7 +1275,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20260105042900-3b527c17e102
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20260108092311-aac6008d285e
 ## explicit; go 1.24.9
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1562,8 +1562,9 @@ go.opentelemetry.io/collector/consumer/internal
 # go.opentelemetry.io/collector/featuregate v1.49.0
 ## explicit; go 1.24.0
 go.opentelemetry.io/collector/featuregate
-# go.opentelemetry.io/collector/pdata v1.49.0
+# go.opentelemetry.io/collector/pdata v1.48.0 => github.com/grafana/opentelemetry-collector/pdata v0.0.0-20260108084235-108d2328e29a
 ## explicit; go 1.24.0
+go.opentelemetry.io/collector/pdata
 go.opentelemetry.io/collector/pdata/internal
 go.opentelemetry.io/collector/pdata/internal/json
 go.opentelemetry.io/collector/pdata/internal/otelgrpc
@@ -2227,7 +2228,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260105042900-3b527c17e102
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260108092311-aac6008d285e
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
@@ -2236,3 +2237,5 @@ sigs.k8s.io/yaml
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
+# github.com/prometheus/client_golang => github.com/colega/prometheus-client_golang v1.19.1-0.20251204143415-11cda2079634
+# go.opentelemetry.io/collector/pdata => github.com/grafana/opentelemetry-collector/pdata v0.0.0-20260108084235-108d2328e29a
