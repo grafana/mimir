@@ -46,6 +46,10 @@ type LabelStats struct {
 	// RuleQueryCoverage is the percentage of rule queries where this label is a segmentation candidate.
 	RuleQueryCoverage float64
 
+	// AvgDistinctValuesPerQuery is the average number of distinct values for this label per query.
+	// Lower is better - a value of 1 means queries typically reference a single value for this label.
+	AvgDistinctValuesPerQuery float64
+
 	// LabelValuesDistribution is the normalized Shannon entropy of series distribution across label values.
 	// Range 0-1: 0 = all series have one value (bad for sharding), 1 = evenly distributed (ideal for sharding).
 	LabelValuesDistribution float64
@@ -118,6 +122,10 @@ type Analyzer struct {
 	// ruleQueriesCountBySegmentationLabel tracks rule queries per label.
 	ruleQueriesCountBySegmentationLabel map[string]int
 
+	// totalDistinctValuesPerLabel tracks the sum of distinct values per query for each label.
+	// Used to compute average distinct values per query for penalty calculation.
+	totalDistinctValuesPerLabel map[string]int
+
 	// totalQueries is the total number of queries analyzed.
 	totalQueries int
 
@@ -134,6 +142,7 @@ func NewAnalyzer() *Analyzer {
 		queriesCountBySegmentationLabel:     make(map[string]int),
 		userQueriesCountBySegmentationLabel: make(map[string]int),
 		ruleQueriesCountBySegmentationLabel: make(map[string]int),
+		totalDistinctValuesPerLabel:         make(map[string]int),
 	}
 }
 
@@ -156,14 +165,15 @@ func (a *Analyzer) ProcessQuery(query string, queryType QueryType) {
 	}
 
 	// Update counts for each segment label candidate.
-	for _, label := range candidates {
-		a.queriesCountBySegmentationLabel[label]++
+	for _, candidate := range candidates {
+		a.queriesCountBySegmentationLabel[candidate.Name]++
+		a.totalDistinctValuesPerLabel[candidate.Name] += candidate.DistinctValueCount
 
 		switch queryType {
 		case UserQuery:
-			a.userQueriesCountBySegmentationLabel[label]++
+			a.userQueriesCountBySegmentationLabel[candidate.Name]++
 		case RuleQuery:
-			a.ruleQueriesCountBySegmentationLabel[label]++
+			a.ruleQueriesCountBySegmentationLabel[candidate.Name]++
 		}
 	}
 }
@@ -225,6 +235,14 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 				float64(a.ruleQueriesCountBySegmentationLabel[label])*ruleScale
 			stats.QueryCoverage = min(100, max(0, scaledMatchingQueries/scaledTotalQueries*100))
 		}
+
+		// Calculate average distinct values per query.
+		// If queries typically reference multiple values for this label, the label is
+		// less effective for query routing.
+		queriesWithLabel := a.queriesCountBySegmentationLabel[label]
+		if queriesWithLabel > 0 {
+			stats.AvgDistinctValuesPerQuery = float64(a.totalDistinctValuesPerLabel[label]) / float64(queriesWithLabel)
+		}
 	}
 
 	// Calculate scores and convert to slice.
@@ -234,10 +252,24 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 		// - 40% series coverage: we need to shard the series to compartments by the segmentation label,
 		//   so to have an effective sharding we need that the majority of series have the label.
 		// - 40% query coverage: the % of queries for which we can deterministically know the compartment
-		//   when series are sharded by that label.
+		//   when series are sharded by that label. Penalized by avg distinct values per query.
 		// - 20% distribution uniformity: series should be evenly distributed across label values
 		//   to ensure balanced sharding. A label where 99% of series have one value is bad for sharding.
-		baseScore := 0.40*(stats.SeriesCoverage/100) + 0.40*(stats.QueryCoverage/100) + 0.20*stats.LabelValuesDistribution
+
+		// Apply penalty to query coverage score if queries typically reference multiple values.
+		// Exponential decay: 0.8^(avg-1). Penalty table:
+		//   avg=1 → 1.00 (no penalty)    avg=6 → 0.33
+		//   avg=2 → 0.80 (20% penalty)   avg=7 → 0.26
+		//   avg=3 → 0.64                 avg=8 → 0.21
+		//   avg=4 → 0.51                 avg=9 → 0.17
+		//   avg=5 → 0.41                 avg=10 → 0.13
+		queryCoverageScore := stats.QueryCoverage / 100
+		if stats.AvgDistinctValuesPerQuery > 0 {
+			queryValuesPenalty := math.Pow(0.8, stats.AvgDistinctValuesPerQuery-1)
+			queryCoverageScore *= queryValuesPenalty
+		}
+
+		baseScore := 0.40*(stats.SeriesCoverage/100) + 0.40*queryCoverageScore + 0.20*stats.LabelValuesDistribution
 
 		// Apply penalty if the label has fewer unique values than the minimum required for effective sharding.
 		// A label with only 5 values can't support 10-way sharding regardless of distribution.
@@ -266,8 +298,19 @@ func (a *Analyzer) TotalRuleQueries() int {
 	return a.totalRuleQueries
 }
 
+// SegmentLabelCandidate represents a label that is a valid segmentation candidate for a query.
+type SegmentLabelCandidate struct {
+	// Name is the label name.
+	Name string
+	// DistinctValueCount is the number of distinct values for this label across all selectors in the query.
+	// For example, if a query has `metric1{cluster="a"} + metric2{cluster="b"}`, the cluster label
+	// has 2 distinct values. Lower is better for query routing (fewer compartments to hit).
+	DistinctValueCount int
+}
+
 // FindSegmentLabelCandidates analyzes a PromQL query and returns label names that
-// are valid segmentation label candidates.
+// are valid segmentation label candidates, along with the count of distinct values
+// for each label in the query.
 //
 // A label is a valid segment label candidate if:
 //  1. Every vector selector in the query has a matcher on that label
@@ -275,9 +318,9 @@ func (a *Analyzer) TotalRuleQueries() int {
 //     matcher with set matches (e.g., =~"a|b|c")
 //  3. The query does not use the info() function (which implicitly queries additional metrics)
 //
-// Returns a slice of label names that meet all criteria, or an error if the
+// Returns a slice of candidates that meet all criteria, or an error if the
 // query cannot be parsed.
-func FindSegmentLabelCandidates(query string) ([]string, error) {
+func FindSegmentLabelCandidates(query string) ([]SegmentLabelCandidate, error) {
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return nil, err
@@ -296,13 +339,23 @@ func FindSegmentLabelCandidates(query string) ([]string, error) {
 
 	// For each selector, find labels with equality or set matchers.
 	// We want labels that appear in ALL selectors with valid matchers.
+	// Also track the distinct values for each label.
 	var selectorLabels []map[string]struct{}
+	labelValues := make(map[string]map[string]struct{}) // label -> set of distinct values
 
 	for _, matchers := range selectors {
 		labelsInSelector := make(map[string]struct{})
 		for _, m := range matchers {
 			if isValidSegmentMatcher(m) {
 				labelsInSelector[m.Name] = struct{}{}
+
+				// Track distinct values for this label.
+				if labelValues[m.Name] == nil {
+					labelValues[m.Name] = make(map[string]struct{})
+				}
+				for _, v := range getMatcherValues(m) {
+					labelValues[m.Name][v] = struct{}{}
+				}
 			}
 		}
 		selectorLabels = append(selectorLabels, labelsInSelector)
@@ -328,13 +381,30 @@ func FindSegmentLabelCandidates(query string) ([]string, error) {
 		}
 	}
 
-	// Convert to slice.
-	result := make([]string, 0, len(candidates))
+	// Convert to slice with value counts.
+	result := make([]SegmentLabelCandidate, 0, len(candidates))
 	for label := range candidates {
-		result = append(result, label)
+		result = append(result, SegmentLabelCandidate{
+			Name:               label,
+			DistinctValueCount: len(labelValues[label]),
+		})
 	}
 
 	return result, nil
+}
+
+// getMatcherValues returns the distinct values matched by a matcher.
+// For equal matchers, returns the single value.
+// For regex set matchers (e.g., =~"a|b|c"), returns all values in the set.
+func getMatcherValues(m *labels.Matcher) []string {
+	switch m.Type {
+	case labels.MatchEqual:
+		return []string{m.Value}
+	case labels.MatchRegexp:
+		return m.SetMatches()
+	default:
+		return nil
+	}
 }
 
 // isValidSegmentMatcher returns true if the matcher is valid for segmentation:

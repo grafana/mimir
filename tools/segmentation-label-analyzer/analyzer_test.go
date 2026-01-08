@@ -124,7 +124,13 @@ func TestFindSegmentLabelCandidates(t *testing.T) {
 			}
 
 			require.NoError(t, err)
-			assert.ElementsMatch(t, tc.expected, result)
+
+			// Extract label names from result.
+			names := make([]string, len(result))
+			for i, c := range result {
+				names[i] = c.Name
+			}
+			assert.ElementsMatch(t, tc.expected, names)
 		})
 	}
 }
@@ -369,4 +375,65 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 			assert.InDelta(t, tc.expectedScore, testStats.Score, 0.02, "score mismatch")
 		})
 	}
+}
+
+func TestGetLabelStats_QueryValuesPenalty(t *testing.T) {
+	// Test that query coverage score (not QueryCoverage itself) is penalized when
+	// queries reference multiple values for a label.
+	//
+	// Setup:
+	// - Query 1: metric1{cluster="a"} + metric2{cluster="a"} (cluster: 1 value, __name__: 2 values)
+	// - Query 2: metric3{cluster="b"} + metric4{cluster="b"} (cluster: 1 value, __name__: 2 values)
+	//
+	// For "cluster": avg 1 value/query → no penalty on score
+	// For "__name__": avg 2 values/query → 0.5x penalty on query coverage portion of score
+
+	analyzer := NewAnalyzer()
+	analyzer.ProcessQuery(`metric1{cluster="a"} + metric2{cluster="a"}`, UserQuery)
+	analyzer.ProcessQuery(`metric3{cluster="b"} + metric4{cluster="b"}`, UserQuery)
+
+	require.Equal(t, 2, analyzer.TotalQueries())
+
+	labelSeriesStats := map[string]LabelSeriesStats{
+		"cluster": {
+			SeriesCount:         1000,
+			ValuesCount:         10,
+			SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+		},
+		"__name__": {
+			SeriesCount:         1000,
+			ValuesCount:         100,
+			SeriesCountPerValue: []uint64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+		},
+	}
+
+	stats := analyzer.GetLabelStats(labelSeriesStats, 1000, time.Hour, time.Hour)
+
+	// Find cluster and __name__ stats.
+	var clusterStats, nameStats *LabelStats
+	for i := range stats {
+		switch stats[i].Name {
+		case "cluster":
+			clusterStats = &stats[i]
+		case "__name__":
+			nameStats = &stats[i]
+		}
+	}
+	require.NotNil(t, clusterStats, "cluster label not found")
+	require.NotNil(t, nameStats, "__name__ label not found")
+
+	// Cluster: 2 queries with cluster, each with 1 distinct value → avg 1.0
+	assert.InDelta(t, 1.0, clusterStats.AvgDistinctValuesPerQuery, 0.01, "cluster AvgDistinctValuesPerQuery")
+	// QueryCoverage is NOT penalized (raw coverage).
+	assert.InDelta(t, 100.0, clusterStats.QueryCoverage, 0.1, "cluster QueryCoverage")
+	// Score: 0.40*(100/100) + 0.40*(100/100)*1.0 + 0.20*1.0 = 1.0
+	assert.InDelta(t, 1.0, clusterStats.Score, 0.01, "cluster Score")
+
+	// __name__: 2 queries with __name__, each with 2 distinct values → avg 2.0
+	assert.InDelta(t, 2.0, nameStats.AvgDistinctValuesPerQuery, 0.01, "__name__ AvgDistinctValuesPerQuery")
+	// QueryCoverage is NOT penalized (raw coverage stays 100%).
+	assert.InDelta(t, 100.0, nameStats.QueryCoverage, 0.1, "__name__ QueryCoverage")
+	// Score: 0.40*(100/100) + 0.40*(100/100)*0.8 + 0.20*1.0 = 0.40 + 0.32 + 0.20 = 0.92
+	// (penalty = 0.8^(2-1) = 0.8)
+	assert.InDelta(t, 0.92, nameStats.Score, 0.01, "__name__ Score (penalized)")
 }

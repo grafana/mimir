@@ -205,7 +205,7 @@ func printLabelStatsTable(stats []LabelStats, limit int) {
 	columns := []TableColumn{
 		{Header: "Label name", Align: AlignLeft},
 		{Header: "Series", Align: AlignRight},
-		{Header: "Unique label values", Align: AlignRight},
+		{Header: "Unique values", Align: AlignRight},
 		{Header: "All queries", Align: AlignRight},
 	}
 
@@ -233,8 +233,9 @@ func printCandidatesTable(candidates []LabelStats) {
 		{Header: "All queries", Align: AlignRight},
 		{Header: "User queries", Align: AlignRight},
 		{Header: "Rule queries", Align: AlignRight},
-		{Header: "Label values distribution", Align: AlignRight},
-		{Header: "Unique label values", Align: AlignRight},
+		{Header: "Unique values", Align: AlignRight},
+		{Header: "Values distribution", Align: AlignRight},
+		{Header: "Avg values/query", Align: AlignRight},
 	}
 
 	rows := make([]TableRow, 0, len(candidates))
@@ -246,8 +247,9 @@ func printCandidatesTable(candidates []LabelStats) {
 			fmt.Sprintf("%.2f%%", ls.QueryCoverage),
 			fmt.Sprintf("%.2f%%", ls.UserQueryCoverage),
 			fmt.Sprintf("%.2f%%", ls.RuleQueryCoverage),
-			fmt.Sprintf("%.2f", ls.LabelValuesDistribution),
 			fmt.Sprintf("%d", ls.ValuesCount),
+			fmt.Sprintf("%.2f", ls.LabelValuesDistribution),
+			fmt.Sprintf("%.2f", ls.AvgDistinctValuesPerQuery),
 		})
 	}
 
