@@ -7,7 +7,6 @@ package storegateway
 
 import (
 	"context"
-	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -16,6 +15,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/objstore"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
