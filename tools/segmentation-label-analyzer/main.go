@@ -52,21 +52,16 @@ func run(cfg *Config) error {
 
 	// Step 1: Get all label names.
 	fmt.Println("Fetching label names from Mimir...")
-	labelNamesResp, err := mimirClient.GetLabelNamesCardinality(ctx, 500)
+	labelNames, err := mimirClient.GetLabelNames(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get label names cardinality: %w", err)
+		return fmt.Errorf("failed to get label names: %w", err)
 	}
 
-	fmt.Printf("Found %d label names\n", labelNamesResp.LabelNamesCount)
+	fmt.Printf("Found %d label names\n", len(labelNames))
 
 	// Step 2: Get series count for each label by querying label_values.
 	// We query in batches of 100 (API limit).
 	fmt.Println("Fetching series counts per label...")
-
-	labelNames := make([]string, 0, len(labelNamesResp.Cardinality))
-	for _, item := range labelNamesResp.Cardinality {
-		labelNames = append(labelNames, item.LabelName)
-	}
 
 	// Query label values in batches to get series counts.
 	const batchSize = 100

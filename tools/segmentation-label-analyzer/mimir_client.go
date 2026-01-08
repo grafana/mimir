@@ -36,14 +36,15 @@ func NewMimirClient(address, username, password string) *MimirClient {
 	}
 }
 
-// GetLabelNamesCardinality returns label names sorted by cardinality (number of unique values).
-func (c *MimirClient) GetLabelNamesCardinality(ctx context.Context, limit int) (*api.LabelNamesCardinalityResponse, error) {
-	body := make(url.Values)
-	if limit > 0 {
-		body.Set("limit", strconv.Itoa(limit))
-	}
+// labelsResponse is the response from /api/v1/labels.
+type labelsResponse struct {
+	Status string   `json:"status"`
+	Data   []string `json:"data"`
+}
 
-	resp, err := c.doRequest(ctx, http.MethodPost, "/prometheus/api/v1/cardinality/label_names", body)
+// GetLabelNames returns all label names.
+func (c *MimirClient) GetLabelNames(ctx context.Context) ([]string, error) {
+	resp, err := c.doRequest(ctx, http.MethodGet, "/prometheus/api/v1/labels", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -54,12 +55,12 @@ func (c *MimirClient) GetLabelNamesCardinality(ctx context.Context, limit int) (
 		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
 	}
 
-	var result api.LabelNamesCardinalityResponse
+	var result labelsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("error decoding response: %w", err)
 	}
 
-	return &result, nil
+	return result.Data, nil
 }
 
 // GetLabelValuesCardinality returns series counts for each value of the specified label names.
