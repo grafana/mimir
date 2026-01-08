@@ -148,7 +148,9 @@ func run(cfg *Config) error {
 	fmt.Printf("Total queries analyzed: %d (user: %d, rules: %d)\n\n",
 		analyzer.TotalQueries(), analyzer.TotalUserQueries(), analyzer.TotalRuleQueries())
 
-	labelStats := analyzer.GetLabelStats(allLabelStats, totalSeriesCount)
+	userQueryDuration := userQueriesEnd.Sub(userQueriesStart)
+	ruleQueryDuration := ruleQueriesEnd.Sub(ruleQueriesStart)
+	labelStats := analyzer.GetLabelStats(allLabelStats, totalSeriesCount, userQueryDuration, ruleQueryDuration)
 
 	// Sort by series coverage descending.
 	sort.Slice(labelStats, func(i, j int) bool {

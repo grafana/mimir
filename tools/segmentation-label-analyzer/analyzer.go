@@ -3,6 +3,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -104,10 +106,12 @@ func (a *Analyzer) ProcessQuery(query string, queryType QueryType) {
 }
 
 // GetLabelStats returns combined statistics for all labels.
+// The userQueryDuration and ruleQueryDuration are used to weight the "All queries" coverage,
+// since user and rule queries may cover different time ranges.
 func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]struct {
 	seriesCount uint64
 	valuesCount uint64
-}, totalSeriesCount uint64) []LabelStats {
+}, totalSeriesCount uint64, userQueryDuration, ruleQueryDuration time.Duration) []LabelStats {
 	// Combine data from Mimir (series stats) and query analysis.
 	statsMap := make(map[string]*LabelStats)
 
@@ -122,8 +126,23 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]struct {
 		}
 	}
 
+	// Calculate scale factors to normalize query counts to the longer observation window.
+	// If user queries cover 1h and rule queries cover 5m, we extrapolate rule query counts
+	// by 12x to estimate what we'd see over 1h.
+	var userScale, ruleScale float64 = 1, 1
+	if userQueryDuration > 0 && ruleQueryDuration > 0 {
+		if userQueryDuration > ruleQueryDuration {
+			ruleScale = float64(userQueryDuration) / float64(ruleQueryDuration)
+		} else {
+			userScale = float64(ruleQueryDuration) / float64(userQueryDuration)
+		}
+	}
+
+	// Calculate extrapolated totals for "All queries" coverage.
+	scaledTotalQueries := float64(a.totalUserQueries)*userScale + float64(a.totalRuleQueries)*ruleScale
+
 	// Add query coverage stats.
-	for label, count := range a.queriesCountBySegmentationLabel {
+	for label := range a.queriesCountBySegmentationLabel {
 		if _, exists := statsMap[label]; !exists {
 			// Label appears in queries but not in series stats.
 			statsMap[label] = &LabelStats{
@@ -132,14 +151,18 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]struct {
 		}
 
 		stats := statsMap[label]
-		if a.totalQueries > 0 {
-			stats.QueryCoverage = min(100, max(0, float64(count)/float64(a.totalQueries)*100))
-		}
 		if a.totalUserQueries > 0 {
 			stats.UserQueryCoverage = min(100, max(0, float64(a.userQueriesCountBySegmentationLabel[label])/float64(a.totalUserQueries)*100))
 		}
 		if a.totalRuleQueries > 0 {
 			stats.RuleQueryCoverage = min(100, max(0, float64(a.ruleQueriesCountBySegmentationLabel[label])/float64(a.totalRuleQueries)*100))
+		}
+
+		// Calculate "All queries" coverage by extrapolating counts to the longer observation window.
+		if scaledTotalQueries > 0 {
+			scaledMatchingQueries := float64(a.userQueriesCountBySegmentationLabel[label])*userScale +
+				float64(a.ruleQueriesCountBySegmentationLabel[label])*ruleScale
+			stats.QueryCoverage = min(100, max(0, scaledMatchingQueries/scaledTotalQueries*100))
 		}
 	}
 
