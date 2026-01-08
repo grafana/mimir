@@ -1115,7 +1115,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		10000000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1204,12 +1204,33 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
-	handler := OTLPHandler(
-		200000000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
-	)
 
-	b.Run("protobuf", func(b *testing.B) {
+	b.Run("not-lazy", func(b *testing.B) {
+		handler := OTLPHandler(
+			200000000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, false, pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+
+		b.ResetTimer()
+		for range b.N {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("lazy", func(b *testing.B) {
+		handler := OTLPHandler(
+			200000000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, true, pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
 		md := pmetric.NewMetrics()
 		createResourceMetrics(md)
 		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
@@ -1753,7 +1774,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			handler := OTLPHandler(
 				tt.maxMsgSize, nil, nil, limits,
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
-				retryConfig, nil, pusher, nil, nil,
+				retryConfig, nil, false, pusher, nil, nil,
 				util_log.MakeLeveledLogger(logs, "info"),
 			)
 
@@ -1847,7 +1868,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			assert.NoError(t, err)
 			assert.Len(t, request.Timeseries, 3)
@@ -1892,7 +1913,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -1921,7 +1942,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -1952,7 +1973,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	handler := OTLPHandler(
 		140, nil, nil, nil, nil, nil,
-		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
@@ -2262,10 +2283,13 @@ func TestOTLPResponseContentType(t *testing.T) {
 					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: false},
 				}),
 			)
-			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
-				_, err := req.WriteRequest()
-				return err
-			}, nil, nil, log.NewNopLogger())
+			handler := OTLPHandler(
+				100000, nil, nil, limits, nil, nil,
+				RetryConfig{}, nil, false, func(_ context.Context, req *Request) error {
+					_, err := req.WriteRequest()
+					return err
+				}, nil, nil, log.NewNopLogger(),
+			)
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, tc.req)
 
