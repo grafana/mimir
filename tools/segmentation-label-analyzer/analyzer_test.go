@@ -154,12 +154,17 @@ func TestGetLabelStats_WeightedQueryCoverage(t *testing.T) {
 	require.Equal(t, 10, analyzer.TotalUserQueries())
 	require.Equal(t, 10, analyzer.TotalRuleQueries())
 
-	labelSeriesStats := map[string]struct {
-		seriesCount uint64
-		valuesCount uint64
-	}{
-		"cluster":  {seriesCount: 1000, valuesCount: 10},
-		"__name__": {seriesCount: 1000, valuesCount: 100},
+	labelSeriesStats := map[string]LabelSeriesStats{
+		"cluster": {
+			SeriesCount:         1000,
+			ValuesCount:         10,
+			SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100}, // uniform
+		},
+		"__name__": {
+			SeriesCount:         1000,
+			ValuesCount:         100,
+			SeriesCountPerValue: []uint64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}, // only top 10 values
+		},
 	}
 
 	// User queries: 1 hour, Rule queries: 5 minutes.
@@ -186,4 +191,63 @@ func TestGetLabelStats_WeightedQueryCoverage(t *testing.T) {
 	// ruleScale = 12, scaledTotal = 10 + 120 = 130, scaledMatching = 5 + 96 = 101
 	// coverage = 101/130 * 100 = 77.69%
 	assert.InDelta(t, 77.69, clusterStats.QueryCoverage, 0.1, "ExtrapolatedQueryCoverage")
+
+	// Verify LabelValuesDistribution for uniform distribution (10 values, all equal) = 1.0
+	assert.InDelta(t, 1.0, clusterStats.LabelValuesDistribution, 0.01, "LabelValuesDistribution for uniform distribution")
+}
+
+func TestComputeNormalizedEntropy(t *testing.T) {
+	tests := []struct {
+		name         string
+		seriesCounts []uint64
+		expected     float64
+	}{
+		{
+			name:         "empty slice",
+			seriesCounts: []uint64{},
+			expected:     0,
+		},
+		{
+			name:         "single value",
+			seriesCounts: []uint64{1000},
+			expected:     0,
+		},
+		{
+			name:         "two equal values",
+			seriesCounts: []uint64{500, 500},
+			expected:     1.0,
+		},
+		{
+			name:         "uniform distribution (10 values)",
+			seriesCounts: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+			expected:     1.0,
+		},
+		{
+			name:         "highly skewed (99% in one value)",
+			seriesCounts: []uint64{990, 10},
+			expected:     0.08, // approximately
+		},
+		{
+			name:         "moderately skewed",
+			seriesCounts: []uint64{500, 250, 125, 125},
+			expected:     0.875, // H = 1.75 bits, maxH = 2 bits
+		},
+		{
+			name:         "all zeros except one",
+			seriesCounts: []uint64{0, 0, 1000, 0, 0},
+			expected:     0,
+		},
+		{
+			name:         "all zeros",
+			seriesCounts: []uint64{0, 0, 0},
+			expected:     0,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := computeNormalizedEntropy(tc.seriesCounts)
+			assert.InDelta(t, tc.expected, result, 0.02, "entropy mismatch")
+		})
+	}
 }
