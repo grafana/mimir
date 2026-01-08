@@ -541,6 +541,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				if !supported {
 					return nil, ErrSmoothedIncompatibleFunction{functionName: expr.Func.Name}
 				}
+				matrixSelector.OuterFunc = expr.Func.Name
 			}
 
 			args = append(args, node)

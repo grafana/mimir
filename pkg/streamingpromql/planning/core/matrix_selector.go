@@ -66,7 +66,8 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
-		m.Smoothed == otherMatrixSelector.Smoothed
+		m.Smoothed == otherMatrixSelector.Smoothed &&
+		m.OuterFunc == otherMatrixSelector.OuterFunc
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {
@@ -97,13 +98,14 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
+		OuterFunc:                m.OuterFunc,
 	}
 
 	if m.Anchored || m.Smoothed {
 		selector.LookbackDelta = params.LookbackDelta
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, m.Anchored, m.Smoothed)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

@@ -57,7 +57,7 @@ func rate(isRate bool) RangeVectorStepFunction {
 
 		if fCount >= 2 {
 			// TODO: just pass step here? (and below)
-			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored, step.SmoothedBasisForHeadPointSet, step.SmoothedBasisForTailPointSet, step.SmoothedBasisForHeadPoint, step.SmoothedBasisForTailPoint)
+			val := floatRate(isRate, fCount, fHead, fTail, step.RangeStart, step.RangeEnd, rangeSeconds, step.Smoothed || step.Anchored)
 			return val, true, nil, nil
 		}
 
@@ -184,7 +184,7 @@ func histogramRate(isRate bool, hCount int, hHead []promql.HPoint, hTail []promq
 	return val, err
 }
 
-func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothedOrAnchored bool, smoothedBasisForHeadPointSet, smoothedBasisForTailPointSet bool, smoothedBasisForHeadPoint, smoothedBasisForTailPoint promql.FPoint) float64 {
+func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FPoint, rangeStart int64, rangeEnd int64, rangeSeconds float64, smoothedOrAnchored bool) float64 {
 	firstPoint := fHead[0]
 	fHead = fHead[1:]
 
@@ -193,32 +193,6 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 		lastPoint = fTail[len(fTail)-1]
 	} else {
 		lastPoint = fHead[len(fHead)-1]
-	}
-
-	if smoothedOrAnchored {
-		// We only need to consider samples exactly within the range as the pre-calculated smoothedBasisForHeadPoint & smoothedBasisForTailPoint have already handled the resets at boundaries.
-		// For smoothed rate/increase range queries, the interpolated points at the range boundaries are treated differently to not incorrectly introduce counter resets.
-		// These alternate boundary points have been pre-calculated by the range vector selector.
-		// Note that the rate() which calls this floatRate() has already tested that fCount >= 2, so we should not have issues pruning the head and tail of these slices.
-
-		if smoothedBasisForHeadPointSet {
-			firstPoint = smoothedBasisForHeadPoint
-		}
-
-		if smoothedBasisForTailPointSet {
-			lastPoint = smoothedBasisForTailPoint
-		}
-
-		// We are essentially replacing the last point in the slices with the basis for the smoothed tail point
-		// We could achieve the same thing by setting the last value.F in the slice to the smoothedBasisForTailPoint.F,
-		// and not pruning the slice. This would then avoid the need for the extra delta addition after the accumulations.
-		// However, we do not want to edit values in these slices.
-		// We still do this even if the smoothedBasisForTailPoint is not set, as this last point still handled in the same manner.
-		if len(fTail) > 0 {
-			fTail = fTail[:len(fTail)-1]
-		} else {
-			fHead = fHead[:len(fHead)-1]
-		}
 	}
 
 	delta := lastPoint.F - firstPoint.F
@@ -237,11 +211,6 @@ func floatRate(isRate bool, fCount int, fHead []promql.FPoint, fTail []promql.FP
 
 	accumulate(fHead)
 	accumulate(fTail)
-
-	// Compensate for the pruning of the last value above
-	if smoothedOrAnchored && lastPoint.F < previousValue {
-		delta += previousValue
-	}
 
 	val := calculateFloatRate(true, isRate, rangeStart, rangeEnd, rangeSeconds, firstPoint, lastPoint, delta, fCount, smoothedOrAnchored)
 	return val
