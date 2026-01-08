@@ -5,9 +5,11 @@ package usagetrackerclient
 import (
 	"context"
 	"flag"
+	"fmt"
 	"math/rand/v2"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,6 +110,8 @@ type UsageTrackerClient struct {
 	// trackSeriesWorkersPool is the pool of workers used to send requests to usage-tracker instances.
 	trackSeriesWorkersPool *concurrency.ReusableGoroutinesPool
 
+	batchTrackingClient *batchTrackingClient
+
 	// Cache for users close to their limits.
 	usersCloseToLimitsMtx   sync.RWMutex
 	usersCloseToLimit       []string
@@ -121,12 +125,15 @@ type UsageTrackerClient struct {
 }
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
+	clientsPool := newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer)
+
 	c := &UsageTrackerClient{
 		cfg:                    clientCfg,
 		logger:                 logger,
 		limits:                 limits,
 		partitionRing:          partitionRing,
-		clientsPool:            newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer),
+		clientsPool:            clientsPool,
+		batchTrackingClient:    newBatchTrackingClient(clientsPool, 1000, 200*time.Millisecond, logger),
 		trackSeriesWorkersPool: concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
 		trackSeriesDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_usage_tracker_client_track_series_duration_seconds",
@@ -323,7 +330,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 		IsTerminalError: func(_ error) bool { return false },
 	}
 
-	res, err := ring.DoUntilQuorum[[]uint64](ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]uint64, error) {
+	res, err := ring.DoUntilQuorum(ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]uint64, error) {
 		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
 		if err != nil {
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
@@ -499,4 +506,121 @@ func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 	// Can track async if it's not in the list of users close to their limit.
 	_, found := slices.BinarySearch(c.usersCloseToLimit, userID)
 	return !found
+}
+
+type batchTrackingClient struct {
+	maxRequestsPerBatch int
+	batchDelay          time.Duration
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	clientsPool *client.Pool
+	workers     *concurrency.ReusableGoroutinesPool
+	logger      log.Logger
+
+	mu             sync.Mutex
+	replicaRecords map[*ring.InstanceDesc][]*usagetrackerpb.TrackSeriesBatchRecord
+}
+
+func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, batchDelay time.Duration, logger log.Logger) *batchTrackingClient {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	c := &batchTrackingClient{
+		maxRequestsPerBatch: maxRequestsPerBatch,
+		batchDelay:          batchDelay,
+
+		ctx:    ctx,
+		cancel: cancel,
+
+		clientsPool: clientsPool,
+		workers:     concurrency.NewReusableGoroutinesPool(16),
+		logger:      logger,
+
+		replicaRecords: make(map[*ring.InstanceDesc][]*usagetrackerpb.TrackSeriesBatchRecord),
+	}
+
+	go c.flushWorker()
+
+	return c
+}
+
+func (c *batchTrackingClient) TrackSeries(replica *ring.InstanceDesc, userID string, partitionID int32, series []uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.replicaRecords[replica] = append(c.replicaRecords[replica], &usagetrackerpb.TrackSeriesBatchRecord{
+		UserID:       userID,
+		Partition:    partitionID,
+		SeriesHashes: series,
+	})
+}
+
+func (c *batchTrackingClient) flushWorker() {
+	ticker := time.NewTicker(c.batchDelay)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			err := c.flushBatch()
+			if err != nil {
+				level.Error(c.logger).Log(
+					"component", "usage-tracker-client",
+					"msg", "failed to flush batch",
+					"err", err,
+				)
+			}
+		case <-c.ctx.Done():
+			return
+		}
+	}
+}
+
+func (c *batchTrackingClient) flushBatch() error {
+	c.mu.Lock()
+	records := c.replicaRecords
+	c.replicaRecords = make(map[*ring.InstanceDesc][]*usagetrackerpb.TrackSeriesBatchRecord)
+	c.mu.Unlock()
+
+	for replica, records := range records {
+		c.workers.Go(func() {
+			c.flush(replica, records)
+		})
+	}
+
+	return nil
+}
+
+func (c *batchTrackingClient) flush(replica *ring.InstanceDesc, records []*usagetrackerpb.TrackSeriesBatchRecord) error {
+	client, err := c.clientsPool.GetClientForInstance(*replica)
+	if err != nil {
+		return errors.Wrapf(err, "failed to get client for replica %s", replica.Addr)
+	}
+
+	trackerClient := client.(usagetrackerpb.UsageTrackerClient)
+	resp, err := trackerClient.TrackSeriesBatch(c.ctx, &usagetrackerpb.TrackSeriesBatchRequest{
+		BatchRequests: records,
+	})
+	if err != nil {
+		return err
+	}
+
+	if len(resp.Rejections) > 0 {
+		var sb strings.Builder
+		for i, rejection := range resp.Rejections {
+			sb.WriteString(fmt.Sprintf("%s (%d rejected)", rejection.UserID, len(rejection.RejectedSeriesHashes)))
+			if i < len(resp.Rejections)-1 {
+				sb.WriteString(", ")
+			}
+		}
+		level.Warn(c.logger).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "rejections", sb.String())
+	}
+
+	return nil
+}
+
+func (c *batchTrackingClient) Stop() {
+	// We flush any outstanding records.
+	c.cancel()
 }
