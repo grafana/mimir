@@ -1098,6 +1098,36 @@ func requireEqualHPointRingBuffer(t *testing.T, buffer *types.HPointRingBufferVi
 	}
 }
 
+func TestRemoteExecutionGroupEvaluator_AddingNodesAfterRequestSent(t *testing.T) {
+	ctx := context.Background()
+	frontend := &mockFrontend{}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	executor := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	resp1, err := executor.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	resp2, err := executor.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Try to queue up evaluation of further nodes, which should fail.
+	_, err = executor.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.Equal(t, err, errRequestAlreadySent)
+
+	_, err = executor.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.Equal(t, err, errRequestAlreadySent)
+
+	_, err = executor.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.Equal(t, err, errRequestAlreadySent)
+}
+
 func TestRemoteExecutionGroupEvaluator_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *testing.T) {
 	frontendMock := &timeRangeCapturingFrontend{}
 	cfg := Config{LookBackDelta: 7 * time.Minute}
@@ -1693,10 +1723,12 @@ func encode(t testing.TB, msgs []*frontendv2pb.QueryResultStreamRequest) [][]byt
 }
 
 type mockFrontend struct {
-	stream ResponseStream
+	requestCount int
+	stream       ResponseStream
 }
 
 func (m *mockFrontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (ResponseStream, error) {
+	m.requestCount++
 	return m.stream, nil
 }
 
