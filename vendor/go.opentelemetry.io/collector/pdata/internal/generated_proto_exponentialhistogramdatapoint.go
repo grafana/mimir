@@ -12,6 +12,7 @@ import (
 	"math"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -443,6 +444,10 @@ func (orig *ExponentialHistogramDataPoint) MarshalProto(buf []byte) int {
 }
 
 func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -468,7 +473,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -554,7 +559,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Positive.UnmarshalProto(buf[startPos:pos])
+			err = orig.Positive.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -570,7 +575,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Negative.UnmarshalProto(buf[startPos:pos])
+			err = orig.Negative.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -597,7 +602,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Exemplars = append(orig.Exemplars, Exemplar{})
-			err = orig.Exemplars[len(orig.Exemplars)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Exemplars[len(orig.Exemplars)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -644,55 +649,193 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProto(buf []byte) error {
 	return nil
 }
 
-const fieldBlockExponentialHistogramDataPointSum = uint64(0 >> 6)
-const fieldBitExponentialHistogramDataPointSum = uint64(1 << 0 & 0x3F)
+func SkipExponentialHistogramDataPointProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
 
-func (m *ExponentialHistogramDataPoint) SetSum(value float64) {
-	m.Sum = value
-	m.metadata[fieldBlockExponentialHistogramDataPointSum] |= fieldBitExponentialHistogramDataPointSum
-}
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
 
-func (m *ExponentialHistogramDataPoint) RemoveSum() {
-	m.Sum = float64(0)
-	m.metadata[fieldBlockExponentialHistogramDataPointSum] &^= fieldBitExponentialHistogramDataPointSum
-}
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Attributes", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
 
-func (m *ExponentialHistogramDataPoint) HasSum() bool {
-	return m.metadata[fieldBlockExponentialHistogramDataPointSum]&fieldBitExponentialHistogramDataPointSum != 0
-}
+			err = SkipKeyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
 
-const fieldBlockExponentialHistogramDataPointMin = uint64(1 >> 6)
-const fieldBitExponentialHistogramDataPointMin = uint64(1 << 1 & 0x3F)
+		case 2:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartTimeUnixNano", wireType)
+			}
 
-func (m *ExponentialHistogramDataPoint) SetMin(value float64) {
-	m.Min = value
-	m.metadata[fieldBlockExponentialHistogramDataPointMin] |= fieldBitExponentialHistogramDataPointMin
-}
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
 
-func (m *ExponentialHistogramDataPoint) RemoveMin() {
-	m.Min = float64(0)
-	m.metadata[fieldBlockExponentialHistogramDataPointMin] &^= fieldBitExponentialHistogramDataPointMin
-}
+		case 3:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TimeUnixNano", wireType)
+			}
 
-func (m *ExponentialHistogramDataPoint) HasMin() bool {
-	return m.metadata[fieldBlockExponentialHistogramDataPointMin]&fieldBitExponentialHistogramDataPointMin != 0
-}
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
 
-const fieldBlockExponentialHistogramDataPointMax = uint64(2 >> 6)
-const fieldBitExponentialHistogramDataPointMax = uint64(1 << 2 & 0x3F)
+		case 4:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Count", wireType)
+			}
 
-func (m *ExponentialHistogramDataPoint) SetMax(value float64) {
-	m.Max = value
-	m.metadata[fieldBlockExponentialHistogramDataPointMax] |= fieldBitExponentialHistogramDataPointMax
-}
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
 
-func (m *ExponentialHistogramDataPoint) RemoveMax() {
-	m.Max = float64(0)
-	m.metadata[fieldBlockExponentialHistogramDataPointMax] &^= fieldBitExponentialHistogramDataPointMax
-}
+		case 5:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sum", wireType)
+			}
 
-func (m *ExponentialHistogramDataPoint) HasMax() bool {
-	return m.metadata[fieldBlockExponentialHistogramDataPointMax]&fieldBitExponentialHistogramDataPointMax != 0
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 6:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Scale", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 7:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ZeroCount", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 8:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Positive", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipExponentialHistogramDataPointBucketsProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 9:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Negative", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipExponentialHistogramDataPointBucketsProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 10:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Flags", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 11:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Exemplars", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipExemplarProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 12:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Min", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 13:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Max", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 14:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ZeroThreshold", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func GenTestExponentialHistogramDataPoint() *ExponentialHistogramDataPoint {
