@@ -4,6 +4,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,4 +117,73 @@ func TestFindSegmentLabelCandidates(t *testing.T) {
 			assert.ElementsMatch(t, tc.expected, result)
 		})
 	}
+}
+
+func TestGetLabelStats_WeightedQueryCoverage(t *testing.T) {
+	// Test that QueryCoverage extrapolates query counts to the longer observation window.
+	//
+	// Setup:
+	// - 10 user queries over 1 hour, 5 with "cluster" label (50% user coverage)
+	// - 10 rule queries over 5 minutes, 8 with "cluster" label (80% rule coverage)
+	//
+	// Expected extrapolated coverage:
+	// - ruleScale = 60min/5min = 12 (extrapolate rule queries to 1h)
+	// - scaledTotalQueries = 10 + 10*12 = 130
+	// - scaledMatchingQueries = 5 + 8*12 = 101
+	// - coverage = 101/130 * 100 = 77.69%
+
+	analyzer := NewAnalyzer()
+
+	// Process 10 user queries: 5 with cluster label.
+	for i := 0; i < 5; i++ {
+		analyzer.ProcessQuery(`metric{cluster="a"}`, UserQuery)
+	}
+	for i := 0; i < 5; i++ {
+		analyzer.ProcessQuery(`metric`, UserQuery)
+	}
+
+	// Process 10 rule queries: 8 with cluster label.
+	for i := 0; i < 8; i++ {
+		analyzer.ProcessQuery(`metric{cluster="b"}`, RuleQuery)
+	}
+	for i := 0; i < 2; i++ {
+		analyzer.ProcessQuery(`metric`, RuleQuery)
+	}
+
+	// Verify raw counts.
+	require.Equal(t, 10, analyzer.TotalUserQueries())
+	require.Equal(t, 10, analyzer.TotalRuleQueries())
+
+	labelSeriesStats := map[string]struct {
+		seriesCount uint64
+		valuesCount uint64
+	}{
+		"cluster":  {seriesCount: 1000, valuesCount: 10},
+		"__name__": {seriesCount: 1000, valuesCount: 100},
+	}
+
+	// User queries: 1 hour, Rule queries: 5 minutes.
+	userDuration := 1 * time.Hour
+	ruleDuration := 5 * time.Minute
+
+	stats := analyzer.GetLabelStats(labelSeriesStats, 1000, userDuration, ruleDuration)
+
+	// Find cluster stats.
+	var clusterStats *LabelStats
+	for i := range stats {
+		if stats[i].Name == "cluster" {
+			clusterStats = &stats[i]
+			break
+		}
+	}
+	require.NotNil(t, clusterStats, "cluster label not found in stats")
+
+	// Verify individual coverages.
+	assert.InDelta(t, 50.0, clusterStats.UserQueryCoverage, 0.01, "UserQueryCoverage")
+	assert.InDelta(t, 80.0, clusterStats.RuleQueryCoverage, 0.01, "RuleQueryCoverage")
+
+	// Verify extrapolated coverage.
+	// ruleScale = 12, scaledTotal = 10 + 120 = 130, scaledMatching = 5 + 96 = 101
+	// coverage = 101/130 * 100 = 77.69%
+	assert.InDelta(t, 77.69, clusterStats.QueryCoverage, 0.1, "ExtrapolatedQueryCoverage")
 }
