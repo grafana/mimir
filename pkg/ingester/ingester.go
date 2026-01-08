@@ -3911,6 +3911,14 @@ func (i *Ingester) PreparePartitionDownscaleHandler(w http.ResponseWriter, r *ht
 			return
 		}
 
+		// Don't leave inactive state if there is any compaction pending or in progress.
+		if state == ring.PartitionInactive && i.numCompactionsInProgress.Load() != 0 {
+			msg := "cannot change partition to active state while compaction is pending or in progress"
+			level.Warn(logger).Log("msg", msg)
+			http.Error(w, msg, http.StatusConflict)
+			return
+		}
+
 		// If partition is inactive, make it active. We ignore other states Active and especially Pending.
 		if state == ring.PartitionInactive {
 			// We don't switch it back to PENDING state if there are not enough owners because we want to guarantee consistency

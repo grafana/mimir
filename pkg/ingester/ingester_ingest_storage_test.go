@@ -620,6 +620,41 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 			return watcher.PartitionRing().InactivePartitionIDs()
 		})
 	})
+
+	t.Run("DELETE request should return error when trying to clear inactive state while compaction is in progress", func(t *testing.T) {
+		t.Parallel()
+
+		ingester, watcher, _ := setup(t, defaultIngesterTestConfig(t))
+
+		// Pre-condition: the partition is ACTIVE.
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().ActivePartitionIDs()
+		})
+
+		// Switch partition to INACTIVE.
+		res := httptest.NewRecorder()
+		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+		require.Equal(t, http.StatusOK, res.Code)
+
+		// We expect the partition to switch to INACTIVE.
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().InactivePartitionIDs()
+		})
+
+		// Simulate a compaction in progress.
+		ingester.numCompactionsInProgress.Inc()
+		defer ingester.numCompactionsInProgress.Dec()
+
+		// Try to switch back to ACTIVE while compaction is in progress
+		res = httptest.NewRecorder()
+		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
+		require.Equal(t, http.StatusConflict, res.Code)
+
+		// Post-condition: partition should still be INACTIVE
+		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+			return watcher.PartitionRing().InactivePartitionIDs()
+		})
+	})
 }
 
 func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) {

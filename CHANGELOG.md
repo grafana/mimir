@@ -132,6 +132,7 @@
 * [BUGFIX] Query-frontend: Fix `step()` duration expression returning 1000x larger value. #13920
 * [BUGFIX] Store-gateway: Fix parent-child relationship in LabelNames and LabelValues trace spans. #13932
 * [BUGFIX] MQE: Map remote execution storage errors correctly. #13944
+* [BUGFIX] Ingester: Fix issue where partitions can exit INACTIVE state during idle compactions, resulting in write errors. #13964
 
 ### Mixin
 
