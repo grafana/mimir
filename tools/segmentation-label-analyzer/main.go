@@ -182,9 +182,9 @@ func run(cfg *Config) error {
 		}
 	}
 
-	// Sort candidates by query coverage descending.
+	// Sort candidates by score descending.
 	sort.Slice(candidates, func(i, j int) bool {
-		return candidates[i].QueryCoverage > candidates[j].QueryCoverage
+		return candidates[i].Score > candidates[j].Score
 	})
 
 	if len(candidates) == 0 {
@@ -223,6 +223,7 @@ func printLabelStatsTable(stats []LabelStats, limit int) {
 func printCandidatesTable(candidates []LabelStats) {
 	columns := []TableColumn{
 		{Header: "Label name", Align: AlignLeft},
+		{Header: "Score", Align: AlignRight},
 		{Header: "Series", Align: AlignRight},
 		{Header: "All queries", Align: AlignRight},
 		{Header: "User queries", Align: AlignRight},
@@ -234,6 +235,7 @@ func printCandidatesTable(candidates []LabelStats) {
 	for _, ls := range candidates {
 		rows = append(rows, TableRow{
 			ls.Name,
+			fmt.Sprintf("%.2f", ls.Score),
 			fmt.Sprintf("%.2f%%", ls.SeriesCoverage),
 			fmt.Sprintf("%.2f%%", ls.QueryCoverage),
 			fmt.Sprintf("%.2f%%", ls.UserQueryCoverage),

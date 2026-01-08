@@ -37,6 +37,9 @@ type LabelStats struct {
 
 	// RuleQueryCoverage is the percentage of rule queries where this label is a segmentation candidate.
 	RuleQueryCoverage float64
+
+	// Score is a weighted score (0-1) for ranking candidates.
+	Score float64
 }
 
 // Analyzer performs segmentation label analysis.
@@ -140,9 +143,15 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]struct {
 		}
 	}
 
-	// Convert to slice.
+	// Calculate scores and convert to slice.
 	result := make([]LabelStats, 0, len(statsMap))
 	for _, stats := range statsMap {
+		// Score is weighted combination of:
+		// - The % of series having that label
+		//   We need to shard the series to compartments by the segmentation label, so to have an effective
+		//   sharding we need that the majority of series have the label.
+		// - The % of queries for which we can deterministically know the compartment when series are sharded by that label
+		stats.Score = 0.75*(stats.SeriesCoverage/100) + 0.25*(stats.QueryCoverage/100)
 		result = append(result, *stats)
 	}
 
@@ -168,9 +177,9 @@ func (a *Analyzer) TotalRuleQueries() int {
 // are valid segmentation label candidates.
 //
 // A label is a valid segment label candidate if:
-// 1. Every vector selector in the query has a matcher on that label
-// 2. Each matcher on that label is either an equal matcher (=) or a regexp
-//    matcher with set matches (e.g., =~"a|b|c")
+//  1. Every vector selector in the query has a matcher on that label
+//  2. Each matcher on that label is either an equal matcher (=) or a regexp
+//     matcher with set matches (e.g., =~"a|b|c")
 //
 // Returns a slice of label names that meet both criteria, or an error if the
 // query cannot be parsed.
