@@ -232,7 +232,14 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 		//   when series are sharded by that label.
 		// - 20% distribution uniformity: series should be evenly distributed across label values
 		//   to ensure balanced sharding. A label where 99% of series have one value is bad for sharding.
-		stats.Score = 0.40*(stats.SeriesCoverage/100) + 0.40*(stats.QueryCoverage/100) + 0.20*stats.LabelValuesDistribution
+		baseScore := 0.40*(stats.SeriesCoverage/100) + 0.40*(stats.QueryCoverage/100) + 0.20*stats.LabelValuesDistribution
+
+		// Apply penalty if the label has fewer unique values than the minimum required for effective sharding.
+		// A label with only 5 values can't support 10-way sharding regardless of distribution.
+		const minRequiredValues = 10
+		valueSufficiency := min(1.0, float64(stats.ValuesCount)/float64(minRequiredValues))
+		stats.Score = baseScore * valueSufficiency
+
 		result = append(result, *stats)
 	}
 

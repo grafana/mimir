@@ -251,3 +251,112 @@ func TestComputeNormalizedEntropy(t *testing.T) {
 		})
 	}
 }
+
+func TestGetLabelStats_ScoreCalculation(t *testing.T) {
+	tests := []struct {
+		name          string
+		seriesCount   uint64
+		valuesCount   uint64
+		distribution  []uint64
+		queryMatches  int
+		totalQueries  int
+		expectedScore float64
+	}{
+		{
+			name:         "perfect candidate with enough values",
+			seriesCount:  1000,
+			valuesCount:  20, // >= 10, no penalty
+			distribution: []uint64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, // uniform
+			queryMatches: 10,
+			totalQueries: 10,
+			// baseScore = 0.40*(100/100) + 0.40*(100/100) + 0.20*1.0 = 1.0
+			// valueSufficiency = min(1.0, 20/10) = 1.0
+			// score = 1.0 * 1.0 = 1.0
+			expectedScore: 1.0,
+		},
+		{
+			name:         "perfect candidate with few values - penalized",
+			seriesCount:  1000,
+			valuesCount:  5, // < 10, penalty applies
+			distribution: []uint64{200, 200, 200, 200, 200}, // uniform
+			queryMatches: 10,
+			totalQueries: 10,
+			// baseScore = 0.40*(100/100) + 0.40*(100/100) + 0.20*1.0 = 1.0
+			// valueSufficiency = min(1.0, 5/10) = 0.5
+			// score = 1.0 * 0.5 = 0.5
+			expectedScore: 0.5,
+		},
+		{
+			name:         "50% series coverage, 50% query coverage, uniform distribution, enough values",
+			seriesCount:  500,
+			valuesCount:  10,
+			distribution: []uint64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50},
+			queryMatches: 5,
+			totalQueries: 10,
+			// baseScore = 0.40*(50/100) + 0.40*(50/100) + 0.20*1.0 = 0.60
+			// valueSufficiency = 1.0
+			// score = 0.60
+			expectedScore: 0.60,
+		},
+		{
+			name:         "high coverage but skewed distribution",
+			seriesCount:  1000,
+			valuesCount:  10,
+			distribution: []uint64{910, 10, 10, 10, 10, 10, 10, 10, 10, 10}, // 91% in one value
+			queryMatches: 10,
+			totalQueries: 10,
+			// entropy ≈ 0.22 (heavily skewed)
+			// baseScore = 0.40*(100/100) + 0.40*(100/100) + 0.20*0.22 ≈ 0.844
+			// valueSufficiency = 1.0
+			// score ≈ 0.844
+			expectedScore: 0.84,
+		},
+		{
+			name:         "single value - heavily penalized",
+			seriesCount:  1000,
+			valuesCount:  1,
+			distribution: []uint64{1000},
+			queryMatches: 10,
+			totalQueries: 10,
+			// baseScore = 0.40 + 0.40 + 0.20*0 = 0.80
+			// valueSufficiency = 1/10 = 0.1
+			// score = 0.80 * 0.1 = 0.08
+			expectedScore: 0.08,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			analyzer := NewAnalyzer()
+
+			// Process queries.
+			for i := 0; i < tc.queryMatches; i++ {
+				analyzer.ProcessQuery(`metric{test="value"}`, UserQuery)
+			}
+			for i := 0; i < tc.totalQueries-tc.queryMatches; i++ {
+				analyzer.ProcessQuery(`metric`, UserQuery)
+			}
+
+			labelSeriesStats := map[string]LabelSeriesStats{
+				"test": {
+					SeriesCount:         tc.seriesCount,
+					ValuesCount:         tc.valuesCount,
+					SeriesCountPerValue: tc.distribution,
+				},
+			}
+
+			stats := analyzer.GetLabelStats(labelSeriesStats, 1000, time.Hour, time.Hour)
+
+			var testStats *LabelStats
+			for i := range stats {
+				if stats[i].Name == "test" {
+					testStats = &stats[i]
+					break
+				}
+			}
+			require.NotNil(t, testStats, "test label not found")
+
+			assert.InDelta(t, tc.expectedScore, testStats.Score, 0.02, "score mismatch")
+		})
+	}
+}
