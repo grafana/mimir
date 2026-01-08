@@ -103,6 +103,70 @@ func TestUsageTracker_Tracking(t *testing.T) {
 	})
 }
 
+func TestUsageTracker_BatchTracking(t *testing.T) {
+	limits := map[string]*validation.Limits{
+		"tenant1": {
+			MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+			MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+		},
+		"tenant2": {
+			MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+			MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+		},
+	}
+	t.Run("batch tracking empty", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			BatchRequests: nil,
+		})
+
+		require.NoError(t, err)
+		require.Empty(t, resp.Rejections)
+	})
+	t.Run("batch tracking happy-case series", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			BatchRequests: []*usagetrackerpb.TrackSeriesBatchRecord{
+				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{0, 1}},
+				{UserID: "tenant2", Partition: 0, SeriesHashes: []uint64{2, 3}},
+			},
+		})
+
+		require.NoError(t, err)
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejectedHashes{
+			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{1}},
+			{UserID: "tenant2", Partition: 0, RejectedSeriesHashes: []uint64{3}},
+		})
+	})
+
+	t.Run("batch tracking redundant user", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			BatchRequests: []*usagetrackerpb.TrackSeriesBatchRecord{
+				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{0}},
+				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{1}},
+				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{2}},
+				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{3}},
+			},
+		})
+
+		require.NoError(t, err)
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejectedHashes{
+			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{1}},
+			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{2}},
+			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{3}},
+		})
+	})
+
+}
+
 func TestUsageTracker_PartitionAssignment(t *testing.T) {
 	t.Run("happy-case initial assignment of all partitions", func(t *testing.T) {
 		t.Parallel()

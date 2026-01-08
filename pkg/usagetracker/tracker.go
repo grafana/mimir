@@ -670,17 +670,42 @@ func (t *UsageTracker) stop(_ error) error {
 
 // TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	partition := req.Partition
-	p, err := t.runningPartition(partition)
-	if err != nil {
-		return nil, err
-	}
-
-	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
+	rejected, err := t.trackPartitionSeries(context.Background(), req.Partition, req.UserID, req.SeriesHashes)
 	if err != nil {
 		return nil, err
 	}
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
+}
+
+// TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
+	response := usagetrackerpb.TrackSeriesBatchResponse{}
+
+	for _, b := range req.BatchRequests {
+		rejected, err := t.trackPartitionSeries(context.Background(), b.Partition, b.UserID, b.SeriesHashes)
+		if err != nil {
+			return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", b.Partition, b.UserID)
+		}
+		if len(rejected) > 0 {
+			response.Rejections = append(response.Rejections, &usagetrackerpb.BatchRejectedHashes{
+				UserID:               b.UserID,
+				Partition:            b.Partition,
+				RejectedSeriesHashes: rejected,
+			})
+		}
+	}
+
+	return &response, nil
+}
+
+// trackPartitionSeries performs series-tracking under a given partition.
+// It returns the rejected series hashes.
+func (t *UsageTracker) trackPartitionSeries(ctx context.Context, partition int32, userID string, seriesHashes []uint64) ([]uint64, error) {
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
+	}
+	return p.store.trackSeries(ctx, userID, seriesHashes, time.Now())
 }
 
 // GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
@@ -697,6 +722,8 @@ func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetracker
 		Partition:     partition,
 	}, nil
 }
+
+var _ usagetrackerpb.UsageTrackerServer = (*UsageTracker)(nil)
 
 func (t *UsageTracker) runningPartition(partition int32) (*partitionHandler, error) {
 	t.partitionsMtx.RLock()
