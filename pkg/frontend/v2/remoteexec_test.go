@@ -1102,13 +1102,13 @@ func TestRemoteExecutionGroupEvaluator_AddingNodesAfterRequestSent(t *testing.T)
 	ctx := context.Background()
 	frontend := &mockFrontend{}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-	executor := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	// Queue up evaluation of two nodes.
-	resp1, err := executor.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	resp1, err := evaluator.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
-	resp2, err := executor.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.NoError(t, err)
 
 	// Start the request - the first Start() call should send the request, and the second should be a no-op.
@@ -1118,13 +1118,13 @@ func TestRemoteExecutionGroupEvaluator_AddingNodesAfterRequestSent(t *testing.T)
 	require.Equal(t, 1, frontend.requestCount)
 
 	// Try to queue up evaluation of further nodes, which should fail.
-	_, err = executor.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	_, err = evaluator.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.Equal(t, err, errRequestAlreadySent)
 
-	_, err = executor.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	_, err = evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.Equal(t, err, errRequestAlreadySent)
 
-	_, err = executor.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	_, err = evaluator.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
 	require.Equal(t, err, errRequestAlreadySent)
 }
 
@@ -1132,7 +1132,7 @@ func TestRemoteExecutionGroupEvaluator_CorrectlyPassesQueriedTimeRangeAndUpdates
 	frontendMock := &timeRangeCapturingFrontend{}
 	cfg := Config{LookBackDelta: 7 * time.Minute}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-	executor := NewRemoteExecutionGroupEvaluator(frontendMock, cfg, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, cfg, false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
@@ -1143,9 +1143,9 @@ func TestRemoteExecutionGroupEvaluator_CorrectlyPassesQueriedTimeRangeAndUpdates
 	timeRange2 := types.NewRangeQueryTimeRange(endT.Add(-10*time.Minute), endT, time.Minute)
 
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.CreateInstantVectorExecution(ctx, node, timeRange1)
+	_, err := evaluator.CreateInstantVectorExecution(ctx, node, timeRange1)
 	require.NoError(t, err)
-	resp, err := executor.CreateInstantVectorExecution(ctx, node, timeRange2)
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, timeRange2)
 	require.NoError(t, err)
 	require.NoError(t, resp.Start(ctx)) // It doesn't matter which response we call Start on.
 
@@ -1168,7 +1168,7 @@ func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req 
 func TestRemoteExecutionGroupEvaluator_SendsQueryPlanVersion(t *testing.T) {
 	frontendMock := &requestCapturingFrontendMock{}
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-	executor := NewRemoteExecutionGroupEvaluator(frontendMock, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
@@ -1189,9 +1189,9 @@ func TestRemoteExecutionGroupEvaluator_SendsQueryPlanVersion(t *testing.T) {
 		version: 43,
 	}
 
-	_, err := executor.CreateInstantVectorExecution(ctx, node1, timeRange)
+	_, err := evaluator.CreateInstantVectorExecution(ctx, node1, timeRange)
 	require.NoError(t, err)
-	resp, err := executor.CreateInstantVectorExecution(ctx, node2, timeRange)
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node2, timeRange)
 	require.NoError(t, err)
 	require.NoError(t, resp.Start(ctx)) // It doesn't matter which response we call Start on.
 
