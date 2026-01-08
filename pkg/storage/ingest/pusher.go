@@ -433,11 +433,18 @@ func LabelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 // PushToStorageAndReleaseRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
 // PushToStorageAndReleaseRequest aborts the request if it encounters an error.
 func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
-	hashBuf := make([]byte, 0, 1024)
+	// Shard series by the hash of their labels. Skip sharding and always append series to
+	// the first shard when there's only one shard.
+	var hashBuf []byte
+	if p.numShards > 1 {
+		hashBuf = make([]byte, 0, 1024)
+	}
 	for i := range request.Timeseries {
-		var shard uint64
-		hashBuf, shard = LabelAdaptersHash(hashBuf, request.Timeseries[i].Labels)
-		shard = shard % uint64(p.numShards)
+		shard := uint64(0)
+		if p.numShards > 1 {
+			hashBuf, shard = LabelAdaptersHash(hashBuf, request.Timeseries[i].Labels)
+			shard = shard % uint64(p.numShards)
+		}
 
 		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i]); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
@@ -450,15 +457,20 @@ func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Conte
 	mimirpb.ReuseSliceOnly(request.Timeseries)
 	request.Timeseries = nil
 
-	// Push metadata to every shard in a round-robin fashion.
-	// Start from a random shard to avoid hotspots in the first few shards when there are not many metadata pieces in each request.
-	shard := rand.IntN(p.numShards)
+	// Push metadata to every shard in a round-robin fashion. Start from a random shard to avoid hotspots in the first
+	// few shards when there are not many metadata pieces in each request. Skip the sharding if there's only one shard.'
+	shard := 0
+	if p.numShards > 1 {
+		shard = rand.IntN(p.numShards)
+	}
 	for mdIdx := range request.Metadata {
 		if err := p.shards[shard].AddMetadataToBatch(ctx, request.Source, request.Metadata[mdIdx]); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
-		shard++
-		shard %= p.numShards
+		if p.numShards > 1 {
+			shard++
+			shard %= p.numShards
+		}
 	}
 
 	// We might have some data left in some of the queues in the shards, but they will be flushed eventually once Stop is called, and we're certain that no more data is coming.
