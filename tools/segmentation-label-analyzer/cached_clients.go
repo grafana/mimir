@@ -26,18 +26,18 @@ func NewCachedMimirClient(client *MimirClient, cache *FileCache, namespace, tena
 	return &CachedMimirClient{client: client, cache: cache, namespace: namespace, tenantID: tenantID}
 }
 
-// GetLabelNamesCardinality returns label names sorted by cardinality, using cache if available.
-func (c *CachedMimirClient) GetLabelNamesCardinality(ctx context.Context, limit int) (*api.LabelNamesCardinalityResponse, error) {
-	key := buildKey("mimir-label-names", c.namespace, c.tenantID, strconv.Itoa(limit))
+// GetLabelNames returns all label names, using cache if available.
+func (c *CachedMimirClient) GetLabelNames(ctx context.Context) ([]string, error) {
+	key := buildKey("mimir-label-names", c.namespace, c.tenantID)
 
-	var cached api.LabelNamesCardinalityResponse
+	var cached []string
 	if found, err := c.cache.Get(key, &cached); err != nil {
 		return nil, err
 	} else if found {
-		return &cached, nil
+		return cached, nil
 	}
 
-	result, err := c.client.GetLabelNamesCardinality(ctx, limit)
+	result, err := c.client.GetLabelNames(ctx)
 	if err != nil {
 		return nil, err
 	}
