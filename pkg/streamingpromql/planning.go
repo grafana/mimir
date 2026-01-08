@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -537,13 +538,13 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				}
 				hasMetricNameMatcher := false
 				for _, m := range dataLabelMatchersExpr.LabelMatchers {
-					if m.Name == labels.MetricName {
+					if m.Name == model.MetricNameLabel {
 						hasMetricNameMatcher = true
 						break
 					}
 				}
 				if !hasMetricNameMatcher {
-					dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"))
+					dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "target_info"))
 				}
 			}
 		}

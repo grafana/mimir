@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -93,16 +94,14 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	}
 	defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 
-	infoSigs, err := f.processSamplesFromInfoSeries(ctx, infoMetadata)
-	if err != nil {
+	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata); err != nil {
 		return nil, err
 	}
 	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, ivs.Selector.Matchers)
-	innerSigs := f.generateInnerSignatures(innerMetadata, infoMetadata)
-	return f.combineSeriesMetadata(innerMetadata, infoMetadata, innerSigs, infoSigs, ignoreSeries, ivs.Selector.Matchers)
+	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, ivs.Selector.Matchers)
 }
 
-func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) (map[uint64]string, error) {
+func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
 	buf := make([]byte, 0, 1024)
 	lb := labels.NewScratchBuilder(0)
 
@@ -110,7 +109,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		// Signature is the info metric name + identifying labels.
 		return func(lset labels.Labels) string {
 			lb.Reset()
-			lb.Add(labels.MetricName, name)
+			lb.Add(model.MetricNameLabel, name)
 			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
 				lb.Add(l.Name, l.Value)
 			})
@@ -130,34 +129,30 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	}
 
 	f.sigFunctions = make(map[string]func(labels.Labels) string)
-	// hash:signature
-	infoSigs := make(map[uint64]string)
 	// timestamp:(signature:labels + timestamp)
 	sigTimestamps := make(map[int64]map[string]labelsTime)
 	f.sigLabelsOnlyTimestamps = make(map[int64]map[string][]labels.Labels)
 	f.labelSets = make(map[string]map[string][]labels.Labels)
 
 	for _, metadata := range infoMetadata {
-		metricName := metadata.Labels.Get(labels.MetricName)
+		metricName := metadata.Labels.Get(model.MetricNameLabel)
 		sigFunc, exists := f.sigFunctions[metricName]
 		if !exists {
 			sigFunc = sigFunction(metricName)
 			f.sigFunctions[metricName] = sigFunc
 		}
-		hash := metadata.Labels.Hash()
 		sig := sigFunc(metadata.Labels)
-		infoSigs[hash] = sig
 		sigLabelsOnly := f.sigFunctionLabelsOnly(metadata.Labels)
 
 		// Read all samples for this info series.
 		d, err := f.Info.NextSeries(ctx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		// Error out if we get histograms for an info metric.
 		if len(d.Histograms) > 0 {
-			return nil, fmt.Errorf("this should be an info metric, with float samples: %s", metadata.Labels)
+			return fmt.Errorf("this should be an info metric, with float samples: %s", metadata.Labels)
 		}
 
 		timestamps := make(map[int64]struct{})
@@ -174,7 +169,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			}
 			if metricLabels, exists := sigsAtTimestamp[sig]; exists {
 				if metricLabels.time == origTs {
-					return nil, fmt.Errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d", metricLabels.labels.String(), sample.T, metadata.Labels.String(), sample.T)
+					return fmt.Errorf("found duplicate series for info metric: existing %s @ %d, new %s @ %d", metricLabels.labels.String(), sample.T, metadata.Labels.String(), sample.T)
 				} else if metricLabels.time > origTs {
 					continue
 				}
@@ -206,10 +201,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	// exponentially.
 	for _, sigLabelsOnlyAtTimestamp := range f.sigLabelsOnlyTimestamps {
 		for sigLabelsOnly, labelSets := range sigLabelsOnlyAtTimestamp {
-			labelsArr := make([]labels.Labels, 0, len(labelSets))
-			for _, labels := range labelSets {
-				labelsArr = append(labelsArr, labels)
-			}
+			labelsArr := append([]labels.Labels(nil), labelSets...)
 			if _, exists := f.labelSets[sigLabelsOnly]; !exists {
 				f.labelSets[sigLabelsOnly] = make(map[string][]labels.Labels)
 			}
@@ -217,7 +209,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		}
 	}
 
-	return infoSigs, nil
+	return nil
 }
 
 // makeLabelSetsHash creates a hash string to identify a unique set of label sets.
@@ -247,7 +239,7 @@ func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata
 
 	var infoMatcher *labels.Matcher
 	for _, m := range dataLabelMatchers {
-		if m.Name == labels.MetricName {
+		if m.Name == model.MetricNameLabel {
 			infoMatcher, _ = m.ToPrometheusType()
 			break
 		}
@@ -257,7 +249,7 @@ func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata
 	}
 
 	for i, s := range innerMetadata {
-		name := s.Labels.Get(labels.MetricName)
+		name := s.Labels.Get(model.MetricNameLabel)
 		if infoMatcher.Matches(name) {
 			ignoreSeries[i] = struct{}{}
 		}
@@ -266,26 +258,12 @@ func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata
 	return ignoreSeries
 }
 
-// generateInnerSignatures computes signatures of the inner series for matching with each info series.
-func (f *InfoFunction) generateInnerSignatures(innerMetadata, infoMetadata []types.SeriesMetadata) []map[string]string {
-	innerSigs := make([]map[string]string, len(innerMetadata))
-	for i, s := range innerMetadata {
-		sigs := make(map[string]string, len(f.sigFunctions))
-		for infoName, sigFunc := range f.sigFunctions {
-			sigs[infoName] = sigFunc(s.Labels)
-		}
-		innerSigs[i] = sigs
-	}
-
-	return innerSigs
-}
-
 // combineSeriesMetadata combines inner series metadata with info series labels.
-func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types.SeriesMetadata, innerSigs []map[string]string, infoSigs map[uint64]string, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
+func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Store user-specified label matchers in a map for easy retrieval.
 	dataLabelMatchersMap := make(map[string]*labels.Matcher)
 	for _, m := range dataLabelMatchers {
-		if m.Name == labels.MetricName {
+		if m.Name == model.MetricNameLabel {
 			continue
 		}
 		matcher, err := m.ToPrometheusType()
@@ -387,7 +365,7 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 			// Add requested labels to inner series.
 			infoLabels.Range(func(l labels.Label) {
 				// Ignore metric name.
-				if l.Name == labels.MetricName {
+				if l.Name == model.MetricNameLabel {
 					return
 				}
 
@@ -484,8 +462,8 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 			storedResults, exists := storedSeriesResults[labelSetsHash]
 			if !exists {
 				storedResults = types.InstantVectorSeriesData{
-					Floats:     make([]promql.FPoint, 0),
-					Histograms: make([]promql.HPoint, 0),
+					Floats:     nil,
+					Histograms: nil,
 				}
 			}
 			f.storedSeriesResults[i] = storedResults
