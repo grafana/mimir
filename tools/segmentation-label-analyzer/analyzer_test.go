@@ -92,6 +92,16 @@ func TestFindSegmentLabelCandidates(t *testing.T) {
 			expected: []string{"__name__"},
 		},
 		{
+			name:     "group_left join only __name__ is candidate",
+			query:    `rate(http_server_request_duration_seconds_count{cluster="prod"}[2m]) * on (job, instance) group_left (k8s_cluster_name) target_info`,
+			expected: []string{"__name__"},
+		},
+		{
+			name:     "query with info function has no candidates",
+			query:    `info(rate(http_server_request_duration_seconds_count[2m]), {k8s_cluster_name=~".+"})`,
+			expected: []string{}, // info() implicitly queries additional metrics, so no label is a valid candidate
+		},
+		{
 			name:     "empty query returns error",
 			query:    ``,
 			expected: nil,
