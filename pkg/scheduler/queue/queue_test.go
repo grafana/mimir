@@ -923,11 +923,12 @@ func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testin
 	// Stop the Queue
 	queue.StopAsync()
 
-	// Consume the existing request from the queue
+	// Consume the existing request from the queue and ensure it matches the one we queued
 	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
 	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
 	require.NoError(t, err)
 	require.NotNil(t, r)
+	require.Equal(t, r, req)
 
 	// Ensure the request has been removed from the queue and remove it from inflight tracking
 	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
