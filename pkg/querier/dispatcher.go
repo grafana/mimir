@@ -46,7 +46,7 @@ var errZeroBatchSize = errors.New("requested batch size cannot be 0 for an insta
 
 type Dispatcher struct {
 	engine    *streamingpromql.Engine
-	queryable storage.Queryable
+	queryable storage.SampleAndChunkQueryable
 	extractor propagation.Extractor
 	logger    log.Logger
 
@@ -60,7 +60,9 @@ type Dispatcher struct {
 	timeNow func() time.Time
 }
 
-func NewDispatcher(engine *streamingpromql.Engine, queryable storage.Queryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, extractor propagation.Extractor, logger log.Logger) *Dispatcher {
+func NewDispatcher(engine *streamingpromql.Engine, queryable storage.SampleAndChunkQueryable, querierMetrics *RequestMetrics, serverMetrics *server.Metrics, extractor propagation.Extractor, logger log.Logger) *Dispatcher {
+	queryable = NewErrorTranslateSampleAndChunkQueryable(queryable)
+
 	return &Dispatcher{
 		engine:         engine,
 		queryable:      queryable,
