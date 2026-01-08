@@ -1691,20 +1691,7 @@ func BenchmarkPusherConsumer(b *testing.B) {
 }
 
 func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
-	// This benchmark tests PusherConsumer.Consume() with parallelStoragePusher
-	// under the hood, varying the number of unique tenants owning the records.
-	//
-	// Config values matching production settings (CLI flags):
-	// -ingest-storage.kafka.ingestion-concurrency-batch-size=150
-	// -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample=200
-	// -ingest-storage.kafka.ingestion-concurrency-max=8
-	// -ingest-storage.kafka.ingestion-concurrency-queue-capacity=3
-	// -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard=40
-
-	const (
-		totalRecords        = 1000
-		timeseriesPerRecord = 10
-	)
+	const timeseriesPerRecord = 10
 
 	// Create a no-op pusher that just releases the request (shared across all runs).
 	pusher := pusherFunc(func(_ context.Context, request *mimirpb.WriteRequest) error {
@@ -1713,7 +1700,7 @@ func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
 		return nil
 	})
 
-	// Configure KafkaConfig with production-like values (shared across all runs).
+	// Configure the ingester with Kafka settings using the same settings used in Grafana Cloud.
 	kcfg := KafkaConfig{}
 	flagext.DefaultValues(&kcfg)
 	kcfg.IngestionConcurrencyMax = 8
@@ -1721,33 +1708,36 @@ func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
 	kcfg.IngestionConcurrencyEstimatedBytesPerSample = 200
 	kcfg.IngestionConcurrencyQueueCapacity = 3
 	kcfg.IngestionConcurrencyTargetFlushesPerShard = 40
+	kcfg.IngestionConcurrencySequentialPusherEnabled = false
 
-	for _, numTenants := range []int{1, 10, 100, 1000} {
-		// Create records upfront, outside b.Run(), so record creation doesn't affect timing.
-		records := make([]*kgo.Record, totalRecords)
-		for i := range records {
-			tenantID := fmt.Sprintf("tenant-%d", i%numTenants)
-			wr := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, timeseriesPerRecord)}
-			for j := range wr.Timeseries {
-				wr.Timeseries[j] = mockPreallocTimeseries(fmt.Sprintf("series_%d_%d", i, j))
-			}
-			content, err := wr.Marshal()
-			require.NoError(b, err)
-
-			records[i] = createRecord("test-topic", 1, content, 1)
-			records[i].Key = []byte(tenantID)
-			records[i].Context = context.Background()
-		}
-
-		b.Run(fmt.Sprintf("tenants=%d", numTenants), func(b *testing.B) {
-			metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
-			c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
-
-			b.ResetTimer()
-			for range b.N {
-				err := c.Consume(context.Background(), slices.Values(records))
+	for _, numRecords := range []int{1, 10, 100, 1000} {
+		for _, numTenants := range []int{1, 10, 100, 1000} {
+			// Create records upfront, outside b.Run(), so record creation doesn't affect timing.
+			records := make([]*kgo.Record, numRecords)
+			for i := range records {
+				tenantID := fmt.Sprintf("tenant-%d", i%numTenants)
+				wr := &mimirpb.WriteRequest{Timeseries: make([]mimirpb.PreallocTimeseries, timeseriesPerRecord)}
+				for j := range wr.Timeseries {
+					wr.Timeseries[j] = mockPreallocTimeseries(fmt.Sprintf("series_%d_%d", i, j))
+				}
+				content, err := wr.Marshal()
 				require.NoError(b, err)
+
+				records[i] = createRecord("test-topic", 1, content, 1)
+				records[i].Key = []byte(tenantID)
+				records[i].Context = context.Background()
 			}
-		})
+
+			b.Run(fmt.Sprintf("records=%d,tenants=%d", numRecords, numTenants), func(b *testing.B) {
+				metrics := NewPusherConsumerMetrics(prometheus.NewPedanticRegistry())
+				c := NewPusherConsumer(pusher, kcfg, metrics, log.NewNopLogger())
+
+				b.ResetTimer()
+				for range b.N {
+					err := c.Consume(context.Background(), slices.Values(records))
+					require.NoError(b, err)
+				}
+			})
+		}
 	}
 }
