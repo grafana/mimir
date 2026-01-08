@@ -115,14 +115,8 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 	}()
 	f.metrics.Syncs.Inc()
 
-	// Keep track of previously discovered blocks to record blocks discovery latency down below.
-	var knownBlocks map[ulid.ULID]struct{}
-	if oldIdx := f.loader.Index(); oldIdx != nil {
-		knownBlocks = make(map[ulid.ULID]struct{}, len(oldIdx.Blocks))
-		for _, b := range oldIdx.Blocks {
-			knownBlocks[b.ID] = struct{}{}
-		}
-	}
+	// Keep reference to previously fetched index to compare which blocks were added below.
+	oldIdx := f.loader.Index()
 
 	idx, err := f.loader.FetchIndex(ctx)
 	if errors.Is(err, bucketindex.ErrIndexNotFound) {
@@ -152,13 +146,24 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 
 	level.Info(f.logger).Log("msg", "loaded bucket index", "user", f.userID, "updatedAt", idx.UpdatedAt)
 
+	// If we successfully got a new index, and it is different from what was fetched on a previous sync,
+	// collect the set of "known blocks" to track block discovery latency below.
+	var knownBlocks map[ulid.ULID]struct{}
+	if oldIdx != nil && oldIdx.UpdatedAt != idx.UpdatedAt {
+		knownBlocks = make(map[ulid.ULID]struct{}, len(oldIdx.Blocks))
+		for _, b := range oldIdx.Blocks {
+			knownBlocks[b.ID] = struct{}{}
+		}
+	}
+
 	// Build block metas out of the index.
 	metas = make(map[ulid.ULID]*block.Meta, len(idx.Blocks))
 	for _, b := range idx.Blocks {
 		metas[b.ID] = b.ThanosMeta()
 
 		if len(knownBlocks) != 0 {
-			// If we have blocks from previous fetch, and the block isn't in the set, we track its discovery latency as time from block creation (ULID timestamp) to now.
+			// If we have blocks from previous fetch, and the block isn't in the set, we track its discovery latency
+			// as time from block creation (ULID timestamp) to now.
 			_, ok := knownBlocks[b.ID]
 			if ok {
 				continue
