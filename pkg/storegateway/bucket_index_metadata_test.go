@@ -62,7 +62,8 @@ func TestBucketIndexBlockMetadataFetcher_Fetch(t *testing.T) {
 	}
 
 	loader := NewBucketIndexLoader(userID, bkt, nil, logger)
-	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, reg, filters)
+	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(reg, NewBucketStoreMetrics(reg))
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, fetcherMetrics, filters)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, map[ulid.ULID]*block.Meta{
@@ -112,7 +113,8 @@ func TestBucketIndexBlockMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	logger := log.NewLogfmtLogger(logs)
 
 	loader := NewBucketIndexLoader(userID, bkt, nil, logger)
-	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, reg, nil)
+	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(reg, NewBucketStoreMetrics(reg))
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, fetcherMetrics, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)
@@ -163,7 +165,8 @@ func TestBucketIndexBlockMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, bucketindex.IndexCompressedFilename), strings.NewReader("invalid}!")))
 
 	loader := NewBucketIndexLoader(userID, bkt, nil, logger)
-	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, reg, nil)
+	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(reg, NewBucketStoreMetrics(reg))
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, logger, fetcherMetrics, nil)
 	metas, partials, err := fetcher.Fetch(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, metas)

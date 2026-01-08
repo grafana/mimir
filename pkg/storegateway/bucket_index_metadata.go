@@ -15,7 +15,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -65,9 +64,17 @@ func (l *BucketIndexLoader) Index() *bucketindex.Index {
 	return l.idx.Load()
 }
 
-type bucketIndexBlockMetadataFetcherMetrics struct {
+type BucketIndexBlockMetadataFetcherMetrics struct {
 	*block.FetcherMetrics
-	blockDiscoveryLatency prometheus.Histogram
+
+	bucketStoreMetrics *BucketStoreMetrics
+}
+
+func NewBucketIndexBlockMetadataFetcherMetrics(reg prometheus.Registerer, bucketStoreMetrics *BucketStoreMetrics) *BucketIndexBlockMetadataFetcherMetrics {
+	return &BucketIndexBlockMetadataFetcherMetrics{
+		FetcherMetrics:     block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
+		bucketStoreMetrics: bucketStoreMetrics,
+	}
 }
 
 // BucketIndexBlockMetadataFetcher is a Thanos block.MetadataFetcher implementation leveraging on the Mimir bucket index.
@@ -76,14 +83,14 @@ type BucketIndexBlockMetadataFetcher struct {
 	loader  *BucketIndexLoader
 	logger  log.Logger
 	filters []block.MetadataFilter
-	metrics *bucketIndexBlockMetadataFetcherMetrics
+	metrics *BucketIndexBlockMetadataFetcherMetrics
 }
 
 func NewBucketIndexBlockMetadataFetcher(
 	userID string,
 	loader *BucketIndexLoader,
 	logger log.Logger,
-	reg prometheus.Registerer,
+	metrics *BucketIndexBlockMetadataFetcherMetrics,
 	filters []block.MetadataFilter,
 ) *BucketIndexBlockMetadataFetcher {
 	return &BucketIndexBlockMetadataFetcher{
@@ -91,17 +98,7 @@ func NewBucketIndexBlockMetadataFetcher(
 		loader:  loader,
 		logger:  logger,
 		filters: filters,
-		metrics: &bucketIndexBlockMetadataFetcherMetrics{
-			FetcherMetrics: block.NewFetcherMetrics(reg, [][]string{{corruptedBucketIndex}, {noBucketIndex}, {minTimeExcludedMeta}}),
-			blockDiscoveryLatency: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-				Name: "cortex_bucket_store_block_discovery_latency_seconds",
-				Help: "Time elapsed from when a block was created, based on its ULID timestamp, to when it was discovered.",
-
-				NativeHistogramBucketFactor:     1.1,
-				NativeHistogramMaxBucketNumber:  100,
-				NativeHistogramMinResetDuration: 1 * time.Hour,
-			}),
-		},
+		metrics: metrics,
 	}
 }
 
@@ -163,7 +160,7 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 		if _, ok := knownBlocks[b.ID]; !ok {
 			// This is a newly discovered blocks. Record its discovery latency as time from block creation (ULID timestamp) to now.
 			blockCreationTime := time.UnixMilli(int64(b.ID.Time()))
-			f.metrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
+			f.metrics.bucketStoreMetrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
 		}
 	}
 
