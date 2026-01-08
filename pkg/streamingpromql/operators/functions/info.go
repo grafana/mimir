@@ -37,6 +37,9 @@ type InfoFunction struct {
 
 	// function to generate signature from labels without metric name
 	sigFunctionLabelsOnly func(labels.Labels) string
+	// dedicated buffer and scratch builder for sigFunctionLabelsOnly
+	sigLabelsOnlyBuf []byte
+	sigLabelsOnlyLb  labels.ScratchBuilder
 	// labels hash:function to generate signature from labels
 	sigFunctions map[string]func(labels.Labels) string
 	// timestamp:(labels only signature:array of labels)
@@ -115,14 +118,20 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		}
 	}
 
+	// Initialize dedicated buffer and scratch builder for sigFunctionLabelsOnly,
+	// since this closure is stored on the struct and called later when the local
+	// buf and lb would be out of scope.
+	f.sigLabelsOnlyBuf = make([]byte, 0, 1024)
+	f.sigLabelsOnlyLb = labels.NewScratchBuilder(0)
+
 	f.sigFunctionLabelsOnly = func(lset labels.Labels) string {
 		// Signature is only the identifying labels without metric names.
-		lb.Reset()
+		f.sigLabelsOnlyLb.Reset()
 		lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
-			lb.Add(l.Name, l.Value)
+			f.sigLabelsOnlyLb.Add(l.Name, l.Value)
 		})
-		lb.Sort()
-		return string(lb.Labels().Bytes(buf))
+		f.sigLabelsOnlyLb.Sort()
+		return string(f.sigLabelsOnlyLb.Labels().Bytes(f.sigLabelsOnlyBuf))
 	}
 
 	f.sigFunctions = make(map[string]func(labels.Labels) string)

@@ -42,7 +42,6 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
-	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -67,59 +66,6 @@ func init() {
 			tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spanExporter)),
 		),
 	)
-}
-
-func TestUnsupportedPromQLFeatures(t *testing.T) {
-	parser.Functions["info"].Experimental = false
-
-	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
-	// different cases and make sure we produce a reasonable error message when these cases are encountered.
-	unsupportedExpressions := map[string]string{
-		"info(metric{})": "'info' function",
-	}
-
-	for expression, expectedError := range unsupportedExpressions {
-		t.Run(expression, func(t *testing.T) {
-			requireQueryIsUnsupported(t, expression, expectedError)
-		})
-	}
-}
-
-func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
-	t.Run("range query", func(t *testing.T) {
-		requireRangeQueryIsUnsupported(t, expression, expectedError)
-	})
-
-	t.Run("instant query", func(t *testing.T) {
-		requireInstantQueryIsUnsupported(t, expression, expectedError)
-	})
-}
-
-func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
-
-	qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
-	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-	require.ErrorIs(t, err, compat.NotSupportedError{})
-	require.Nil(t, qry)
-}
-
-func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
-
-	qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
-	require.Error(t, err)
-	require.ErrorIs(t, err, compat.NotSupportedError{})
-	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
-	require.Nil(t, qry)
 }
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
