@@ -36,8 +36,19 @@ func main() {
 func run(cfg *Config) error {
 	ctx := context.Background()
 
-	// Create Mimir client.
-	mimirClient := NewMimirClient(cfg.MimirAddress, cfg.MimirUsername, cfg.MimirPassword)
+	// Create file cache.
+	cache, err := NewFileCache(cfg.CacheEnabled, cfg.CacheDir)
+	if err != nil {
+		return fmt.Errorf("failed to create cache: %w", err)
+	}
+
+	// Create Mimir client (with caching wrapper).
+	mimirClient := NewCachedMimirClient(
+		NewMimirClient(cfg.MimirAddress, cfg.MimirUsername, cfg.MimirPassword),
+		cache,
+		cfg.Namespace,
+		cfg.TenantID,
+	)
 
 	// Step 1: Get all label names.
 	fmt.Println("Fetching label names from Mimir...")
@@ -99,17 +110,19 @@ func run(cfg *Config) error {
 
 	// Step 3: Query Loki for query stats logs and analyze queries.
 	fmt.Printf("\n--- Querying Loki for query stats logs ---\n")
-	lokiClient := NewLokiClient(cfg.LokiAddress, cfg.LokiUsername, cfg.LokiPassword)
+	lokiClient := NewCachedLokiClient(
+		NewLokiClient(cfg.LokiAddress, cfg.LokiUsername, cfg.LokiPassword),
+		cache,
+	)
 	analyzer := NewAnalyzer()
 
-	now := time.Now()
-
-	// Query user queries from query-frontend (longer time range since they're more varied).
-	userQueriesStart := now.Add(-cfg.UserQueriesDuration)
+	// Query user queries from query-frontend.
+	userQueriesStart := time.Time(cfg.UserQueriesStart)
+	userQueriesEnd := time.Time(cfg.UserQueriesEnd)
 	fmt.Printf("Querying user queries from %s to %s (namespace: %s, tenant: %s)\n",
-		userQueriesStart.Format(time.RFC3339), now.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
+		userQueriesStart.Format(time.RFC3339), userQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
 
-	err = lokiClient.QueryQueryStats(ctx, cfg.Namespace, cfg.TenantID, "query-frontend", userQueriesStart, now, func(entry QueryStatsEntry) error {
+	err = lokiClient.QueryQueryStats(ctx, cfg.Namespace, cfg.TenantID, "query-frontend", userQueriesStart, userQueriesEnd, func(entry QueryStatsEntry) error {
 		analyzer.ProcessQuery(entry.Query, UserQuery)
 		return nil
 	})
@@ -117,12 +130,13 @@ func run(cfg *Config) error {
 		return fmt.Errorf("failed to query Loki for user queries: %w", err)
 	}
 
-	// Query rule queries from ruler-query-frontend (shorter time range since they're repetitive).
-	ruleQueriesStart := now.Add(-cfg.RuleQueriesDuration)
+	// Query rule queries from ruler-query-frontend.
+	ruleQueriesStart := time.Time(cfg.RuleQueriesStart)
+	ruleQueriesEnd := time.Time(cfg.RuleQueriesEnd)
 	fmt.Printf("Querying rule queries from %s to %s (namespace: %s, tenant: %s)\n",
-		ruleQueriesStart.Format(time.RFC3339), now.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
+		ruleQueriesStart.Format(time.RFC3339), ruleQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
 
-	err = lokiClient.QueryQueryStats(ctx, cfg.Namespace, cfg.TenantID, "ruler-query-frontend", ruleQueriesStart, now, func(entry QueryStatsEntry) error {
+	err = lokiClient.QueryQueryStats(ctx, cfg.Namespace, cfg.TenantID, "ruler-query-frontend", ruleQueriesStart, ruleQueriesEnd, func(entry QueryStatsEntry) error {
 		analyzer.ProcessQuery(entry.Query, RuleQuery)
 		return nil
 	})
