@@ -427,6 +427,13 @@ func TestTracingContext(t *testing.T) {
 	frontendToScheduler(t, frontendLoop, req)
 
 	scheduler.inflightRequestsMu.Lock()
+	defer scheduler.inflightRequestsMu.Unlock()
+
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
 	require.Equal(t, 1, len(scheduler.schedulerInflightRequests))
 
 	for _, r := range scheduler.schedulerInflightRequests {
@@ -434,11 +441,6 @@ func TestTracingContext(t *testing.T) {
 		require.True(t, r.ParentSpanContext.IsValid())
 		require.Equal(t, sp.SpanContext().TraceID().String(), r.ParentSpanContext.TraceID().String())
 	}
-
-	scheduler.inflightRequestsMu.Unlock()
-
-	drainScheduler(t, scheduler)
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 }
 
 func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
