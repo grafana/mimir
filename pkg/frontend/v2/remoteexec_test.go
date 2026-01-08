@@ -1104,16 +1104,20 @@ func TestRemoteExecutionGroupEvaluator_CorrectlyPassesQueriedTimeRangeAndUpdates
 	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 	executor := NewRemoteExecutionGroupEvaluator(frontendMock, cfg, false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
-	endT := time.Now().Truncate(time.Minute).UTC()
-	startT := endT.Add(-time.Hour)
-	timeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
-
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
+
+	endT := time.Now().Truncate(time.Minute).UTC()
+	startT := endT.Add(-time.Hour)
+	timeRange1 := types.NewRangeQueryTimeRange(startT, startT.Add(5*time.Minute), time.Minute)
+	timeRange2 := types.NewRangeQueryTimeRange(endT.Add(-10*time.Minute), endT, time.Minute)
+
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	resp, err := executor.CreateInstantVectorExecution(ctx, node, timeRange)
+	_, err := executor.CreateInstantVectorExecution(ctx, node, timeRange1)
 	require.NoError(t, err)
-	require.NoError(t, resp.Start(ctx))
+	resp, err := executor.CreateInstantVectorExecution(ctx, node, timeRange2)
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx)) // It doesn't matter which response we call Start on.
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
 	require.Equal(t, endT, frontendMock.maxT)
@@ -1139,7 +1143,7 @@ func TestRemoteExecutionGroupEvaluator_SendsQueryPlanVersion(t *testing.T) {
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
-	node := &nodeWithOverriddenVersion{
+	node1 := &nodeWithOverriddenVersion{
 		child: &nodeWithOverriddenVersion{
 			child:   &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
 			version: 55,
@@ -1147,14 +1151,24 @@ func TestRemoteExecutionGroupEvaluator_SendsQueryPlanVersion(t *testing.T) {
 		version: 44,
 	}
 
-	resp, err := executor.CreateInstantVectorExecution(ctx, node, timeRange)
+	node2 := &nodeWithOverriddenVersion{
+		child: &nodeWithOverriddenVersion{
+			child:   &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
+			version: 56,
+		},
+		version: 43,
+	}
+
+	_, err := executor.CreateInstantVectorExecution(ctx, node1, timeRange)
 	require.NoError(t, err)
-	require.NoError(t, resp.Start(ctx))
+	resp, err := executor.CreateInstantVectorExecution(ctx, node2, timeRange)
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx)) // It doesn't matter which response we call Start on.
 
 	require.NotNil(t, frontendMock.request)
 	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
 	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
-	require.Equal(t, planning.QueryPlanVersion(55), request.Plan.Version, "should set request plan version to match the highest version required by all nodes")
+	require.Equal(t, planning.QueryPlanVersion(56), request.Plan.Version, "should set request plan version to match the highest version required by all nodes and their children")
 }
 
 type nodeWithOverriddenVersion struct {
