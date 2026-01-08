@@ -11,9 +11,11 @@ import (
 )
 
 type PrepareParams struct {
-	// This struct used to contain values, but they are now passed by other means.
-	// We kept it here to avoid making a big disruptive change.
+	// PostPrepareCallbacks are called after Prepare has been called on all operators for this evaluation request.
+	PostPrepareCallbacks []PostPrepareCallback
 }
+
+type PostPrepareCallback func(ctx context.Context) error
 
 // Operator represents all operators.
 type Operator interface {
