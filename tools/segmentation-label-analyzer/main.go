@@ -64,12 +64,16 @@ func run(cfg *Config) error {
 	fmt.Println("Fetching series counts per label...")
 
 	// Query label values in batches to get series counts.
+	// We use limit=20 to get per-value cardinality for distribution uniformity calculation.
+	// The API returns values sorted by series count (highest first), so the top 20 values
+	// capture the most significant portion of the distribution. If a label is skewed
+	// (e.g., 99% of series in one value), this will be evident in the top values.
+	// If series are evenly distributed, the top 20 will show similar counts.
+	// The long tail of small values contributes minimally to the entropy calculation.
 	const batchSize = 100
+	const cardinalityLimit = 20
 	var totalSeriesCount uint64
-	allLabelStats := make(map[string]struct {
-		seriesCount uint64
-		valuesCount uint64
-	})
+	allLabelStats := make(map[string]LabelSeriesStats)
 
 	for i := 0; i < len(labelNames); i += batchSize {
 		end := i + batchSize
@@ -78,7 +82,7 @@ func run(cfg *Config) error {
 		}
 		batch := labelNames[i:end]
 
-		labelValuesResp, err := mimirClient.GetLabelValuesCardinality(ctx, batch, 1)
+		labelValuesResp, err := mimirClient.GetLabelValuesCardinality(ctx, batch, cardinalityLimit)
 		if err != nil {
 			return fmt.Errorf("failed to get label values cardinality: %w", err)
 		}
@@ -89,12 +93,16 @@ func run(cfg *Config) error {
 		}
 
 		for _, label := range labelValuesResp.Labels {
-			allLabelStats[label.LabelName] = struct {
-				seriesCount uint64
-				valuesCount uint64
-			}{
-				seriesCount: label.SeriesCount,
-				valuesCount: label.LabelValuesCount,
+			// Extract per-value series counts for entropy calculation.
+			seriesCountPerValue := make([]uint64, 0, len(label.Cardinality))
+			for _, v := range label.Cardinality {
+				seriesCountPerValue = append(seriesCountPerValue, v.SeriesCount)
+			}
+
+			allLabelStats[label.LabelName] = LabelSeriesStats{
+				SeriesCount:         label.SeriesCount,
+				ValuesCount:         label.LabelValuesCount,
+				SeriesCountPerValue: seriesCountPerValue,
 			}
 		}
 
@@ -225,6 +233,7 @@ func printCandidatesTable(candidates []LabelStats) {
 		{Header: "All queries", Align: AlignRight},
 		{Header: "User queries", Align: AlignRight},
 		{Header: "Rule queries", Align: AlignRight},
+		{Header: "Label values distribution", Align: AlignRight},
 		{Header: "Unique label values", Align: AlignRight},
 	}
 
@@ -237,6 +246,7 @@ func printCandidatesTable(candidates []LabelStats) {
 			fmt.Sprintf("%.2f%%", ls.QueryCoverage),
 			fmt.Sprintf("%.2f%%", ls.UserQueryCoverage),
 			fmt.Sprintf("%.2f%%", ls.RuleQueryCoverage),
+			fmt.Sprintf("%.2f", ls.LabelValuesDistribution),
 			fmt.Sprintf("%d", ls.ValuesCount),
 		})
 	}

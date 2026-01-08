@@ -3,6 +3,7 @@
 package main
 
 import (
+	"math"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -40,9 +41,65 @@ type LabelStats struct {
 	// RuleQueryCoverage is the percentage of rule queries where this label is a segmentation candidate.
 	RuleQueryCoverage float64
 
+	// LabelValuesDistribution is the normalized Shannon entropy of series distribution across label values.
+	// Range 0-1: 0 = all series have one value (bad for sharding), 1 = evenly distributed (ideal for sharding).
+	LabelValuesDistribution float64
+
 	// Score is a weighted score (0-1) for ranking candidates.
-	// Composed of 50% series coverage + 50% query coverage.
+	// Composed of 40% series coverage + 40% query coverage + 20% distribution uniformity (entropy).
 	Score float64
+}
+
+// LabelSeriesStats holds series statistics for a label from Mimir.
+type LabelSeriesStats struct {
+	// SeriesCount is the total number of series with this label.
+	SeriesCount uint64
+	// ValuesCount is the number of unique values for this label.
+	ValuesCount uint64
+	// SeriesCountPerValue is the series count for the label values with the highest number of series.
+	// Used for distribution uniformity calculation.
+	SeriesCountPerValue []uint64
+}
+
+// computeNormalizedEntropy calculates the normalized Shannon entropy of series distribution.
+// It measures how evenly series are distributed across label values.
+// Returns a value between 0 and 1:
+//   - 0: all series have the same value (worst for sharding)
+//   - 1: series are evenly distributed across all values (ideal for sharding)
+func computeNormalizedEntropy(seriesCounts []uint64) float64 {
+	n := len(seriesCounts)
+	if n <= 1 {
+		// With 0 or 1 values, entropy is undefined/meaningless.
+		// Return 0 as there's no distribution diversity.
+		return 0
+	}
+
+	// Calculate total series count.
+	var totalSeries uint64
+	for _, count := range seriesCounts {
+		totalSeries += count
+	}
+	if totalSeries == 0 {
+		return 0
+	}
+
+	// Calculate Shannon entropy: H = -Σ(p_i × log₂(p_i))
+	var entropy float64
+	for _, count := range seriesCounts {
+		if count == 0 {
+			continue
+		}
+		p := float64(count) / float64(totalSeries)
+		entropy -= p * math.Log2(p)
+	}
+
+	// Normalize by maximum possible entropy: log₂(n)
+	maxEntropy := math.Log2(float64(n))
+	if maxEntropy == 0 {
+		return 0
+	}
+
+	return entropy / maxEntropy
 }
 
 // Analyzer performs segmentation label analysis.
@@ -109,21 +166,19 @@ func (a *Analyzer) ProcessQuery(query string, queryType QueryType) {
 // GetLabelStats returns combined statistics for all labels.
 // The userQueryDuration and ruleQueryDuration are used to weight the "All queries" coverage,
 // since user and rule queries may cover different time ranges.
-func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]struct {
-	seriesCount uint64
-	valuesCount uint64
-}, totalSeriesCount uint64, userQueryDuration, ruleQueryDuration time.Duration) []LabelStats {
+func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, totalSeriesCount uint64, userQueryDuration, ruleQueryDuration time.Duration) []LabelStats {
 	// Combine data from Mimir (series stats) and query analysis.
 	statsMap := make(map[string]*LabelStats)
 
 	// Add series stats from Mimir.
 	for name, stats := range labelSeriesStats {
-		coverage := min(100, max(0, float64(stats.seriesCount)/float64(totalSeriesCount)*100))
+		coverage := min(100, max(0, float64(stats.SeriesCount)/float64(totalSeriesCount)*100))
 		statsMap[name] = &LabelStats{
-			Name:           name,
-			SeriesCount:    stats.seriesCount,
-			ValuesCount:    stats.valuesCount,
-			SeriesCoverage: coverage,
+			Name:                    name,
+			SeriesCount:             stats.SeriesCount,
+			ValuesCount:             stats.ValuesCount,
+			SeriesCoverage:          coverage,
+			LabelValuesDistribution: computeNormalizedEntropy(stats.SeriesCountPerValue),
 		}
 	}
 
@@ -171,11 +226,13 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]struct {
 	result := make([]LabelStats, 0, len(statsMap))
 	for _, stats := range statsMap {
 		// Score is weighted combination of:
-		// - 50% series coverage: we need to shard the series to compartments by the segmentation label,
+		// - 40% series coverage: we need to shard the series to compartments by the segmentation label,
 		//   so to have an effective sharding we need that the majority of series have the label.
-		// - 50% query coverage: the % of queries for which we can deterministically know the compartment
+		// - 40% query coverage: the % of queries for which we can deterministically know the compartment
 		//   when series are sharded by that label.
-		stats.Score = 0.50*(stats.SeriesCoverage/100) + 0.50*(stats.QueryCoverage/100)
+		// - 20% distribution uniformity: series should be evenly distributed across label values
+		//   to ensure balanced sharding. A label where 99% of series have one value is bad for sharding.
+		stats.Score = 0.40*(stats.SeriesCoverage/100) + 0.40*(stats.QueryCoverage/100) + 0.20*stats.LabelValuesDistribution
 		result = append(result, *stats)
 	}
 
