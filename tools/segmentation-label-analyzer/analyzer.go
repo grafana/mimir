@@ -10,6 +10,11 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+func init() {
+	// Enable experimental PromQL functions (like info()) so we can parse all queries.
+	parser.EnableExperimentalFunctions = true
+}
+
 // QueryType represents the type of query (user or rule).
 type QueryType int
 
@@ -268,13 +273,20 @@ func (a *Analyzer) TotalRuleQueries() int {
 //  1. Every vector selector in the query has a matcher on that label
 //  2. Each matcher on that label is either an equal matcher (=) or a regexp
 //     matcher with set matches (e.g., =~"a|b|c")
+//  3. The query does not use the info() function (which implicitly queries additional metrics)
 //
-// Returns a slice of label names that meet both criteria, or an error if the
+// Returns a slice of label names that meet all criteria, or an error if the
 // query cannot be parsed.
 func FindSegmentLabelCandidates(query string) ([]string, error) {
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check if query uses info() function - if so, no labels are valid candidates
+	// because info() implicitly queries additional metrics under the hood.
+	if containsInfoFunction(expr) {
+		return nil, nil
 	}
 
 	selectors := parser.ExtractSelectors(expr)
@@ -339,4 +351,19 @@ func isValidSegmentMatcher(m *labels.Matcher) bool {
 	default:
 		return false
 	}
+}
+
+// containsInfoFunction returns true if the expression contains an info() function call.
+// The info() function implicitly queries additional metrics, so queries using it
+// cannot have deterministic segmentation label candidates.
+func containsInfoFunction(expr parser.Expr) bool {
+	var found bool
+	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
+		if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
+			found = true
+			return nil
+		}
+		return nil
+	})
+	return found
 }

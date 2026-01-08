@@ -21,3 +21,9 @@ The score (0-1) considers these factors:
 | **Label values distribution** | 20% | How evenly series are distributed across label values (normalized entropy). A label where 99% of series have one value is bad for balanced sharding. |
 
 **Penalty**: Labels with fewer than 10 unique values are penalized proportionally (e.g., 5 values = 0.5x score) since they can't support fine-grained sharding.
+
+**Note**: Queries using the `info()` function are analyzed but have no valid segmentation label candidates, since `info()` implicitly queries additional metrics making compartment determination impossible.
+
+## TODOs
+
+- [ ] Investigate how to properly support the `info()` function. Currently, queries using `info()` have no valid segmentation label candidates. See [Prometheus info function docs](https://prometheus.io/docs/prometheus/latest/querying/functions/#info).
