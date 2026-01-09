@@ -3,6 +3,7 @@
 ## main / unreleased
 
 ### Grafana Mimir
+* [CHANGE] Compactor: Add readiness probe health check which periodically tests read/write access to the data volume. #13067
 
 * [CHANGE] Ingester: Changed default value of `-include-tenant-id-in-profile-labels` from false to true. #13375
 * [CHANGE] Hash ring: removed experimental support for disabling heartbeats (setting `-*.ring.heartbeat-period=0`) and heartbeat timeouts (setting `-*.ring.heartbeat-timeout=0`). These configurations are now invalid. #13104
