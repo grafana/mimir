@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/user"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -725,7 +726,9 @@ func (c *batchTrackingClient) flush(partition int32, records map[string][]uint64
 		})
 	}
 
-	rejections, err := c.trackerClient.trackSeriesPerPartitionBatch(context.Background(), partition, users)
+	// We're making a batch call across potentially many users, so we inject an arbitrary org ID.
+	batchCtx := user.InjectOrgID(context.Background(), "batch")
+	rejections, err := c.trackerClient.trackSeriesPerPartitionBatch(batchCtx, partition, users)
 	if err != nil {
 		return err
 	}
