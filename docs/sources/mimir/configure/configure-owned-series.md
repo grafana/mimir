@@ -21,7 +21,7 @@ Additionally, since each ingester enforces only a fraction of a tenant's in-memo
 - The local limit on each ingester drops to 25k; the tenant's 30k series on the original 3 ingesters exceed the new local limit, and those ingesters immediately start to discard samples.
 
 <div align="center">
-  <img src="/media/docs/mimir/scale-up-owned-series.png" alt="Changing limits with in-memory series" width="400">
+  <img src="/media/docs/mimir/scale-up-owned-series.png" alt="Changing limits with in-memory series" width="700">
 </div>
 
 Owned series tracking addresses these problems by counting, per tenant, the subset of in-memory series that hash to a particular ingester or partition, based on the current ring state and shard configuration. When you enable owned series tracking and use owned series for series limits, Mimir ingesters enforce limits against a tenant's owned series count rather than the full count of in-memory series.
@@ -50,7 +50,7 @@ Because owned series are recomputed shortly after a change in the ring state, fo
 Additionally, if the recomputation is triggered by a series limit decrease, the owned series are recomputed before the new series limit takes effect. Series limit increases take effect immediately. This allows graceful handling of this situation, without dropping samples while the owned series are being recomputed.
 
 <div align="center">
-  <img src="/media/docs/mimir/scale-up-memory-series.png" alt="Changing limits with owned series" width="400">
+  <img src="/media/docs/mimir/scale-up-memory-series.png" alt="Changing limits with owned series" width="700">
 </div>
 
 ## Before you begin
