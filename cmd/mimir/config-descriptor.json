@@ -5291,6 +5291,28 @@
         },
         {
           "kind": "field",
+          "name": "early_head_compaction_owned_series_threshold",
+          "required": false,
+          "desc": "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.early-head-compaction-owned-series-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_head_compaction_min_estimated_series_reduction_percentage",
+          "required": false,
+          "desc": "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15,
+          "fieldFlag": "ingester.early-head-compaction-min-estimated-series-reduction-percentage",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "native_histograms_ingestion_enabled",
           "required": false,
           "desc": "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.",

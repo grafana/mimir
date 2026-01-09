@@ -367,6 +367,8 @@
   "ingester.max-global-metadata-per-user": 0,
   "ingester.max-global-metadata-per-metric": 0,
   "ingester.max-global-exemplars-per-user": 0,
+  "ingester.early-head-compaction-owned-series-threshold": 0,
+  "ingester.early-head-compaction-min-estimated-series-reduction-percentage": 15,
   "ingester.native-histograms-ingestion-enabled": true,
   "ingester.active-series-custom-trackers": {},
   "ingester.out-of-order-time-window": 0,
