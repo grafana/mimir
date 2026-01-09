@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 )
 
@@ -60,53 +62,13 @@ func run(cfg *Config) error {
 	fmt.Printf("Found %d label names\n", len(labelNames))
 
 	// Step 2: Get series count for each label by querying label_values.
-	// We query in batches of 100 (API limit).
 	fmt.Println("Fetching series counts per label...")
 
-	// Query label values in batches to get series counts.
-	// We use limit=20 to get per-value cardinality for distribution uniformity calculation.
-	// The API returns values sorted by series count (highest first), so the top 20 values
-	// capture the most significant portion of the distribution. If a label is skewed
-	// (e.g., 99% of series in one value), this will be evident in the top values.
-	// If series are evenly distributed, the top 20 will show similar counts.
-	// The long tail of small values contributes minimally to the entropy calculation.
-	const batchSize = 100
-	const cardinalityLimit = 20
-	var totalSeriesCount uint64
-	allLabelStats := make(map[string]LabelSeriesStats)
+	allLabelStats, totalSeriesCount, failedLabels := fetchLabelValuesStats(ctx, mimirClient, labelNames)
 
-	for i := 0; i < len(labelNames); i += batchSize {
-		end := i + batchSize
-		if end > len(labelNames) {
-			end = len(labelNames)
-		}
-		batch := labelNames[i:end]
-
-		labelValuesResp, err := mimirClient.GetLabelValuesCardinality(ctx, batch, cardinalityLimit)
-		if err != nil {
-			return fmt.Errorf("failed to get label values cardinality: %w", err)
-		}
-
-		// Use the total series count from the first batch (it's the same for all).
-		if totalSeriesCount == 0 {
-			totalSeriesCount = labelValuesResp.SeriesCountTotal
-		}
-
-		for _, label := range labelValuesResp.Labels {
-			// Extract per-value series counts for entropy calculation.
-			seriesCountPerValue := make([]uint64, 0, len(label.Cardinality))
-			for _, v := range label.Cardinality {
-				seriesCountPerValue = append(seriesCountPerValue, v.SeriesCount)
-			}
-
-			allLabelStats[label.LabelName] = LabelSeriesStats{
-				SeriesCount:         label.SeriesCount,
-				ValuesCount:         label.LabelValuesCount,
-				SeriesCountPerValue: seriesCountPerValue,
-			}
-		}
-
-		fmt.Printf("  Processed %d/%d labels...\n", end, len(labelNames))
+	// Report failures.
+	if len(failedLabels) > 0 {
+		fmt.Printf("\nWarning: failed to fetch cardinality for %d labels: %v\n", len(failedLabels), failedLabels)
 	}
 
 	fmt.Printf("Total series count: %d\n", totalSeriesCount)
@@ -199,6 +161,101 @@ func run(cfg *Config) error {
 	}
 
 	return nil
+}
+
+// fetchLabelValuesStats fetches label values cardinality for all labels in parallel.
+// It returns a map of label name to stats, total series count, and any labels that failed to fetch.
+func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, labelNames []string) (map[string]LabelSeriesStats, uint64, []string) {
+	// Query label values in batches to get series counts.
+	// We use limit=20 to get per-value cardinality for distribution uniformity calculation.
+	// The API returns values sorted by series count (highest first), so the top 20 values
+	// capture the most significant portion of the distribution. If a label is skewed
+	// (e.g., 99% of series in one value), this will be evident in the top values.
+	// If series are evenly distributed, the top 20 will show similar counts.
+	// The long tail of small values contributes minimally to the entropy calculation.
+	const batchSize = 20
+	const cardinalityLimit = 20
+	const fetchConcurrency = 4
+
+	// Create batches of label names.
+	var batches [][]string
+	for i := 0; i < len(labelNames); i += batchSize {
+		end := min(i+batchSize, len(labelNames))
+		batches = append(batches, labelNames[i:end])
+	}
+
+	// Track results and failures.
+	var (
+		resultsMx        sync.Mutex
+		allLabelStats    = make(map[string]LabelSeriesStats)
+		totalSeriesCount uint64
+		failedMx         sync.Mutex
+		failedLabels     []string
+		completedBatches int
+	)
+
+	// Start a ticker to print progress periodically.
+	ticker := time.NewTicker(5 * time.Second)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				resultsMx.Lock()
+				completed := completedBatches
+				resultsMx.Unlock()
+				pct := float64(completed) * 100 / float64(len(batches))
+				fmt.Printf("Progress: %.0f%% (%d/%d batches)\n", pct, completed, len(batches))
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	// Fetch label values in parallel.
+	_ = concurrency.ForEachJob(ctx, len(batches), fetchConcurrency, func(ctx context.Context, idx int) error {
+		batch := batches[idx]
+
+		labelValuesResp, err := mimirClient.GetLabelValuesCardinality(ctx, batch, cardinalityLimit)
+		if err != nil {
+			failedMx.Lock()
+			failedLabels = append(failedLabels, batch...)
+			failedMx.Unlock()
+		} else {
+			resultsMx.Lock()
+			// Use the total series count from the first successful batch (it's the same for all).
+			if totalSeriesCount == 0 {
+				totalSeriesCount = labelValuesResp.SeriesCountTotal
+			}
+
+			for _, label := range labelValuesResp.Labels {
+				// Extract per-value series counts for entropy calculation.
+				seriesCountPerValue := make([]uint64, 0, len(label.Cardinality))
+				for _, v := range label.Cardinality {
+					seriesCountPerValue = append(seriesCountPerValue, v.SeriesCount)
+				}
+
+				allLabelStats[label.LabelName] = LabelSeriesStats{
+					SeriesCount:         label.SeriesCount,
+					ValuesCount:         label.LabelValuesCount,
+					SeriesCountPerValue: seriesCountPerValue,
+				}
+			}
+			resultsMx.Unlock()
+		}
+
+		resultsMx.Lock()
+		completedBatches++
+		resultsMx.Unlock()
+
+		return nil
+	})
+
+	// Stop the ticker.
+	ticker.Stop()
+	close(done)
+
+	return allLabelStats, totalSeriesCount, failedLabels
 }
 
 func printLabelStatsTable(stats []LabelStats, limit int) {

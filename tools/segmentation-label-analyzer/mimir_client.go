@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/mimir/pkg/querier/api"
 )
 
@@ -30,7 +31,7 @@ type MimirClient struct {
 func NewMimirClient(address, authType, tenantID, username, password string) *MimirClient {
 	return &MimirClient{
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 15 * time.Second,
 		},
 		address:  strings.TrimSuffix(address, "/"),
 		authType: authType,
@@ -96,29 +97,55 @@ func (c *MimirClient) GetLabelValuesCardinality(ctx context.Context, labelNames 
 	return &result, nil
 }
 
-// doRequest performs an HTTP request with authentication and form-encoded body.
+// doRequest performs an HTTP request with authentication, form-encoded body, and retry logic.
 func (c *MimirClient) doRequest(ctx context.Context, method, path string, body url.Values) (*http.Response, error) {
 	reqURL := c.address + path
-
-	var reqBody io.Reader
+	bodyEncoded := ""
 	if len(body) > 0 {
-		reqBody = strings.NewReader(body.Encode())
+		bodyEncoded = body.Encode()
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
+	const maxRetries = 3
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 1 * time.Second,
+		MaxBackoff: 5 * time.Second,
+		MaxRetries: maxRetries,
+	})
+
+	var lastErr error
+	for boff.Ongoing() {
+		var reqBody io.Reader
+		if bodyEncoded != "" {
+			reqBody = strings.NewReader(bodyEncoded)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, method, reqURL, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("error creating request: %w", err)
+		}
+
+		if c.authType == AuthTypeTrust {
+			req.Header.Set("X-Scope-OrgID", c.tenantID)
+		} else if c.username != "" && c.password != "" {
+			req.SetBasicAuth(c.username, c.password)
+		}
+
+		if reqBody != nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err == nil {
+			return resp, nil
+		}
+
+		lastErr = err
+		boff.Wait()
 	}
 
-	if c.authType == AuthTypeTrust {
-		req.Header.Set("X-Scope-OrgID", c.tenantID)
-	} else if c.username != "" && c.password != "" {
-		req.SetBasicAuth(c.username, c.password)
+	// All retries failed - include request details in error message.
+	if bodyEncoded != "" {
+		return nil, fmt.Errorf("request failed after %d attempts: %s %s (body: %s): %w", maxRetries, method, reqURL, bodyEncoded, lastErr)
 	}
-
-	if reqBody != nil {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	}
-
-	return c.httpClient.Do(req)
+	return nil, fmt.Errorf("request failed after %d attempts: %s %s: %w", maxRetries, method, reqURL, lastErr)
 }
