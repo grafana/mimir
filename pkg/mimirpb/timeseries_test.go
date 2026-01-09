@@ -41,44 +41,6 @@ func TestLabelAdapter_Marshal(t *testing.T) {
 	}
 }
 
-func TestPreallocTimeseriesSliceFromPool(t *testing.T) {
-	t.Run("new instance is provided when not available to reuse", func(t *testing.T) {
-		first := PreallocTimeseriesSliceFromPool()
-		second := PreallocTimeseriesSliceFromPool()
-
-		assert.NotSame(t, unsafe.SliceData(first), unsafe.SliceData(second))
-	})
-
-	t.Run("instance is cleaned before reusing", func(t *testing.T) {
-		slice := PreallocTimeseriesSliceFromPool()
-		slice = append(slice, PreallocTimeseries{TimeSeries: &TimeSeries{}})
-		ReuseSlice(slice)
-
-		reused := PreallocTimeseriesSliceFromPool()
-		assert.Len(t, reused, 0)
-	})
-}
-
-func TestTimeseriesFromPool(t *testing.T) {
-	t.Run("new instance is provided when not available to reuse", func(t *testing.T) {
-		first := TimeseriesFromPool()
-		second := TimeseriesFromPool()
-
-		assert.NotSame(t, first, second)
-	})
-
-	t.Run("instance is cleaned before reusing", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Labels = []LabelAdapter{{Name: "foo", Value: "bar"}}
-		ts.Samples = []Sample{{Value: 1, TimestampMs: 2}}
-		ReuseTimeseries(ts)
-
-		reused := TimeseriesFromPool()
-		assert.Len(t, reused.Labels, 0)
-		assert.Len(t, reused.Samples, 0)
-	})
-}
-
 func TestCopyToYoloString(t *testing.T) {
 	stringByteArray := func(val string) uintptr {
 		// Ignore deprecation warning for now
@@ -152,7 +114,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 		},
 	}
 	dst := PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, true, true)
+	dst = DeepCopyTimeseries(nil, dst, src, true, true)
 
 	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
@@ -265,7 +227,7 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	}
 
 	dst = PreallocTimeseries{}
-	dst = DeepCopyTimeseries(dst, src, false, false)
+	dst = DeepCopyTimeseries(nil, dst, src, false, false)
 	assert.NotNil(t, dst.Exemplars)
 	assert.Len(t, dst.Exemplars, 0)
 	assert.Len(t, dst.Histograms, 0)
@@ -297,10 +259,10 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	}
 
 	dst1 := PreallocTimeseries{}
-	dst1 = DeepCopyTimeseries(dst1, src, false, false)
+	dst1 = DeepCopyTimeseries(nil, dst1, src, false, false)
 
 	dst2 := PreallocTimeseries{}
-	dst2 = DeepCopyTimeseries(dst2, src, false, true)
+	dst2 = DeepCopyTimeseries(nil, dst2, src, false, true)
 
 	// dst1 should use much smaller buffer than dst2.
 	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))
@@ -332,13 +294,13 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 
 		TimeseriesUnmarshalCachingEnabled = false
 
-		require.NoError(t, msg.Unmarshal(data, nil, nil, false))
+		require.NoError(t, msg.Unmarshal(nil, data, nil, nil, false))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.Nil(t, msg.marshalledData)
 
 		TimeseriesUnmarshalCachingEnabled = true
 
-		require.NoError(t, msg.Unmarshal(data, nil, nil, false))
+		require.NoError(t, msg.Unmarshal(nil, data, nil, nil, false))
 		require.True(t, src.Equal(msg.TimeSeries))
 		require.NotNil(t, msg.marshalledData)
 	}

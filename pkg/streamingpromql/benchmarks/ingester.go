@@ -238,7 +238,7 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 		}
 
 		for metricIdx, m := range metrics {
-			series := mimirpb.PreallocTimeseries{TimeSeries: mimirpb.TimeseriesFromPool()}
+			series := mimirpb.PreallocTimeseries{TimeSeries: &mimirpb.TimeSeries{}}
 			series.Labels = mimirpb.FromLabelsToLabelAdapters(m.Copy())
 
 			if strings.HasPrefix(m.Get("__name__"), "nh_") {

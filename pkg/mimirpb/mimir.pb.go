@@ -4,6 +4,7 @@
 package mimirpb
 
 import (
+	arena "github.com/grafana/mimir/pkg/util/arena"
 	bytes "bytes"
 	encoding_binary "encoding/binary"
 	fmt "fmt"
@@ -303,6 +304,8 @@ type WriteRequest struct {
 	// Skip label count validation.
 	SkipLabelCountValidation bool `protobuf:"varint,1001,opt,name=skip_label_count_validation,json=skipLabelCountValidation,proto3" json:"skip_label_count_validation,omitempty"`
 
+	arena *arena.Arena
+
 	// Skip unmarshaling of exemplars.
 	skipUnmarshalingExemplars bool
 	// Skip normalization of metadata metric names when unmarshalling the request.
@@ -320,7 +323,7 @@ func (*WriteRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_86d4d7485f544059, []int{0}
 }
 func (m *WriteRequest) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
+	return m.Unmarshal( b)
 }
 func (m *WriteRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
@@ -7452,7 +7455,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(m.arena, dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -7588,7 +7591,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if metadata == nil {
 				metadata = metadataSetFromSettings(m.skipDeduplicateMetadata)
 			}
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(m.arena, dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex

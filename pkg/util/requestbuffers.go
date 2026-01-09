@@ -74,39 +74,3 @@ func NewRequestBuffers(p Pool, cfg ...func(*RequestBuffers)) *RequestBuffers {
 	rb.buffers = rb.buffersBacking[:0]
 	return rb
 }
-
-// Get obtains a buffer from the pool. It will be returned back to the pool when CleanUp is called.
-func (rb *RequestBuffers) Get(size int) *bytes.Buffer {
-	if rb == nil || rb.p == nil {
-		if size < 0 {
-			size = 0
-		}
-		return bytes.NewBuffer(make([]byte, 0, size))
-	}
-
-	b := rb.p.Get()
-	buf := bytes.NewBuffer(b)
-	buf.Reset()
-	if size > 0 {
-		buf.Grow(size)
-	}
-
-	rb.buffers = append(rb.buffers, buf)
-	return buf
-}
-
-// CleanUp releases buffers back to the pool.
-func (rb *RequestBuffers) CleanUp() {
-	for i, b := range rb.buffers {
-		// Make sure the backing array doesn't retain a reference
-		rb.buffers[i] = nil
-		buf := b.Bytes()
-		if len(rb.taintOnCleanUp) > 0 {
-			for i := range buf {
-				buf[i] = rb.taintOnCleanUp[i%len(rb.taintOnCleanUp)]
-			}
-		}
-		rb.p.Put(buf)
-	}
-	rb.buffers = rb.buffers[:0]
-}

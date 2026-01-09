@@ -41,7 +41,6 @@ import (
 	grpcstatus "google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/mimirpb/testutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -615,7 +614,7 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 					tc.appendCustomMetric(metrics)
 				}
 			}
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			converter := newOTLPMimirConverter(nil)
 			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
@@ -691,7 +690,7 @@ func TestConvertOTelHistograms(t *testing.T) {
 	}
 
 	for _, convertHistogramsToNHCB := range []bool{false, true} {
-		converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+		converter := newOTLPMimirConverter(nil)
 		mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 			context.Background(),
 			converter,
@@ -902,7 +901,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			converter := newOTLPMimirConverter(nil)
 			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,
@@ -992,7 +991,7 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			converter := newOTLPMimirConverter(nil)
 			mimirTS, _, dropped, err := otelMetricsToSeriesAndMetadata(
 				context.Background(),
 				converter,

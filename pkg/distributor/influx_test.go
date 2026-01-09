@@ -51,7 +51,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			push: func(t *testing.T) PushFunc {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
-					assert.Equal(t, defaultExpectedWriteRequest, req)
+					assert.Equal(t, defaultExpectedWriteRequest.Timeseries, req.Timeseries)
 					assert.Nil(t, err)
 					return err
 				}
@@ -66,7 +66,7 @@ func TestInfluxHandleSeriesPush(t *testing.T) {
 			push: func(t *testing.T) PushFunc {
 				return func(_ context.Context, pushReq *Request) error {
 					req, err := pushReq.WriteRequest()
-					assert.Equal(t, defaultExpectedWriteRequest, req)
+					assert.Equal(t, defaultExpectedWriteRequest.Timeseries, req.Timeseries)
 					assert.Nil(t, err)
 					return err
 				}

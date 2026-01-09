@@ -29,6 +29,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/codes"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/pkg/util/arena"
 )
 
 // IsRequestBodyTooLarge returns true if the error is "http: request body too large".
@@ -153,7 +155,7 @@ const (
 func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, req proto.Message, compression CompressionType) (actualSize int, err error) {
 	sp := trace.SpanFromContext(ctx)
 	sp.AddEvent("util.ParseProtoReader[start reading]")
-	body, err := decompressRequest(buffers, reader, expectedSize, maxSize, compression, sp)
+	body, err := decompressRequest(arena.FromContext(ctx), buffers, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
 		return 0, err
 	}
@@ -210,7 +212,7 @@ func (e MsgSizeTooLargeErr) Is(err error) bool {
 	return ok1 || ok2
 }
 
-func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
+func decompressRequest(a *arena.Arena, buffers *RequestBuffers, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp trace.Span) ([]byte, error) {
 	if expectedSize > maxSize {
 		if compression == NoCompression {
 			return nil, NewMsgUncompressedSizeTooLargeErr(expectedSize, maxSize)
@@ -229,7 +231,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 				return buf.Bytes(), nil
 			}
 
-			return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
+			return decompressSnappyFromBuffer(a, buffers, buf, maxSize, sp)
 		}
 	case Gzip:
 		gzReader, err := gzip.NewReader(reader)
@@ -263,7 +265,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 		// Extra space guarantees no reallocation
 		sz += bytes.MinRead
 	}
-	buf := buffers.Get(sz)
+	buf := buffers.Get(a, sz)
 	sp.AddEvent("util.ParseProtoReader[started_reading]")
 
 	if _, err := buf.ReadFrom(reader); err != nil {
@@ -281,7 +283,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	sp.AddEvent("util.ParseProtoReader[finished_reading]")
 
 	if compression == RawSnappy {
-		return decompressSnappyFromBuffer(buffers, buf, maxSize, sp)
+		return decompressSnappyFromBuffer(a, buffers, buf, maxSize, sp)
 	}
 
 	if buf.Len() > maxSize {
@@ -290,7 +292,7 @@ func decompressRequest(buffers *RequestBuffers, reader io.Reader, expectedSize, 
 	return buf.Bytes(), nil
 }
 
-func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, maxSize int, sp trace.Span) ([]byte, error) {
+func decompressSnappyFromBuffer(a *arena.Arena, buffers *RequestBuffers, buffer *bytes.Buffer, maxSize int, sp trace.Span) ([]byte, error) {
 	sp.AddEvent("util.ParseProtoReader[decompressSnappy]", trace.WithAttributes(attribute.Int("size", buffer.Len())))
 
 	size, err := snappy.DecodedLen(buffer.Bytes())
@@ -301,7 +303,7 @@ func decompressSnappyFromBuffer(buffers *RequestBuffers, buffer *bytes.Buffer, m
 		return nil, MsgSizeTooLargeErr{Actual: size, Limit: maxSize}
 	}
 
-	decBuf := buffers.Get(size)
+	decBuf := buffers.Get(a, size)
 	// Snappy bases itself on the target buffer's length, not capacity
 	decBufBytes := decBuf.Bytes()[0:size]
 

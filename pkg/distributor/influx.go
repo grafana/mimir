@@ -24,11 +24,12 @@ import (
 	"github.com/grafana/mimir/pkg/distributor/influxpush"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/arena"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, _ *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
+func influxRequestParser(ctx context.Context, r *http.Request, maxSize int, buffers *util.RequestBuffers, req *mimirpb.PreallocWriteRequest, logger log.Logger) (int, error) {
 	spanLogger, ctx := spanlogger.New(ctx, logger, tracer, "Distributor.InfluxHandler.decodeAndConvert")
 	defer spanLogger.Finish()
 
@@ -59,6 +60,16 @@ func InfluxHandler(
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		a := arena.NewArena()
+		shouldFreeArenaInDefer := true
+		defer func() {
+			if shouldFreeArenaInDefer {
+				a.Free()
+			}
+		}()
+		ctx = arena.ContextWithArena(ctx, a)
+
 		logger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
@@ -79,9 +90,9 @@ func InfluxHandler(
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
-			var req mimirpb.PreallocWriteRequest
+			req := mimirpb.NewPreallocWriteRequest(a)
 
-			if bytesRead, err = influxRequestParser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if bytesRead, err = influxRequestParser(ctx, r, maxRecvMsgSize, rb, req, logger); err != nil {
 				err = httpgrpc.Error(http.StatusBadRequest, err.Error())
 				rb.CleanUp()
 				return nil, nil, err
@@ -97,6 +108,8 @@ func InfluxHandler(
 		pushMetrics.ObserveInfluxUncompressedBodySize(tenantID, float64(bytesRead))
 
 		req := newRequest(supplier)
+		req.AddCleanup(a.Free)
+		shouldFreeArenaInDefer = false
 		req.contentLength = r.ContentLength
 		// https://docs.influxdata.com/influxdb/cloud/api/v2/#tag/Response-codes
 		if err := push(ctx, req); err != nil {

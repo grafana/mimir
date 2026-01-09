@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/arena"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -156,6 +157,16 @@ func handler(
 ) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
+
+		a := arena.NewArena()
+		shouldFreeArenaInDefer := true
+		defer func() {
+			if shouldFreeArenaInDefer {
+				a.Free()
+			}
+		}()
+		ctx = arena.ContextWithArena(ctx, a)
+
 		logger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
@@ -175,7 +186,7 @@ func handler(
 			} else {
 				rb = util.NewRequestBuffers(nil)
 			}
-			var req mimirpb.PreallocWriteRequest
+			req := mimirpb.NewPreallocWriteRequest(a)
 
 			req.UnmarshalFromRW2 = isRW2
 
@@ -191,7 +202,7 @@ func handler(
 				req.SkipUnmarshalingExemplars = true
 			}
 
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if err := parser(ctx, r, maxRecvMsgSize, rb, req, logger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
@@ -220,6 +231,8 @@ func handler(
 			return &req.WriteRequest, cleanup, nil
 		}
 		req := newRequest(supplier)
+		req.AddCleanup(a.Free)
+		shouldFreeArenaInDefer = false
 		req.contentLength = r.ContentLength
 		if isRW2 {
 			ctx = contextWithWriteResponseStats(ctx)

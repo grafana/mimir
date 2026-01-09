@@ -53,7 +53,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/grafana/mimir/pkg/distributor/otlpappender"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -130,7 +129,7 @@ func TestOTelMetricsToMetadata(t *testing.T) {
 					MetricFamilyName: "test" + countSfx,
 				},
 			}
-			converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+			converter := newOTLPMimirConverter(nil)
 			_, res, _, err := otelMetricsToSeriesAndMetadata(context.Background(), converter, otelMetrics, conversionOptions{
 				addSuffixes: tc.enableSuffixes,
 			}, log.NewNopLogger())
@@ -482,28 +481,30 @@ func TestHandler_SkipExemplarUnmarshalingBasedOnLimits(t *testing.T) {
 			defaults.MaxGlobalExemplarsPerUser = tc.maxGlobalExemplarsPerUser
 			limits := validation.NewOverrides(*defaults, nil)
 
-			var gotReqEncoded *Request
+			called := false
 			handler := Handler(100000, nil, nil, true, false, limits, RetryConfig{}, func(_ context.Context, pushReq *Request) error {
-				gotReqEncoded = pushReq
+				called = true
+
+				gotReq, err := pushReq.WriteRequest()
+				require.NoError(t, err)
+
+				assert.Len(t, gotReq.Timeseries, 1)
+				gotTimeseries := *(gotReq.Timeseries[0].TimeSeries)
+
+				if gotTimeseries.Exemplars == nil {
+					// To fix equality if the empty slice is nil.
+					gotTimeseries.Exemplars = []mimirpb.Exemplar{}
+				}
+
+				assert.EqualValues(t, tc.expectTimeseries, gotTimeseries)
+
 				return nil
 			}, nil, log.NewNopLogger())
 
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, reqHTTP)
 			require.Equal(t, http.StatusOK, resp.Code)
-
-			gotReq, err := gotReqEncoded.WriteRequest()
-			require.NoError(t, err)
-
-			assert.Len(t, gotReq.Timeseries, 1)
-			gotTimeseries := *(gotReq.Timeseries[0].TimeSeries)
-
-			if gotTimeseries.Exemplars == nil {
-				// To fix equality if the empty slice is nil.
-				gotTimeseries.Exemplars = []mimirpb.Exemplar{}
-			}
-
-			assert.EqualValues(t, tc.expectTimeseries, gotTimeseries)
+			require.True(t, called)
 		})
 	}
 }
