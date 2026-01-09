@@ -4157,6 +4157,16 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ignore-ooo-exemplars
 [ignore_ooo_exemplars: <boolean> | default = false]
 
+# (experimental) When the number of owned series for a tenant exceeds this
+# threshold, trigger early head compaction. 0 to disable.
+# CLI flag: -ingester.early-head-compaction-owned-series-threshold
+[early_head_compaction_owned_series_threshold: <int> | default = 0]
+
+# (experimental) Minimum estimated series reduction percentage (0-100) required
+# to trigger per-tenant early compaction.
+# CLI flag: -ingester.early-head-compaction-min-estimated-series-reduction-percentage
+[early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
+
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error. To query native histograms
 # with query-sharding enabled make sure to set
