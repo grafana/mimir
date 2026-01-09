@@ -61,6 +61,25 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.Len(t, resp.RejectedSeriesHashes, 1)
 	})
 
+	t.Run("no series hashes", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"tenant": {
+				MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+				MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+			},
+		})
+
+		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+			UserID:       "tenant",
+			Partition:    0,
+			SeriesHashes: []uint64{},
+		})
+		require.NoError(t, err)
+		require.Empty(t, resp.RejectedSeriesHashes)
+	})
+
 	t.Run("should not use partitions that are not in running state", func(t *testing.T) {
 		t.Parallel()
 
@@ -100,6 +119,79 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Len(t, resp.RejectedSeriesHashes, 2)
+	})
+}
+
+func TestUsageTracker_BatchTracking(t *testing.T) {
+	limits := map[string]*validation.Limits{
+		"tenant1": {
+			MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+			MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+		},
+		"tenant2": {
+			MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+			MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+		},
+	}
+
+	t.Run("batch tracking empty", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{},
+		})
+
+		require.NoError(t, err)
+		require.Empty(t, resp.Rejections)
+	})
+
+	t.Run("batch tracking happy-case series", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{
+					{UserID: "tenant1", SeriesHashes: []uint64{0, 1}},
+					{UserID: "tenant2", SeriesHashes: []uint64{2, 3}},
+				}},
+			},
+		})
+
+		require.NoError(t, err)
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
+				{UserID: "tenant2", RejectedSeriesHashes: []uint64{3}},
+			}},
+		})
+	})
+
+	t.Run("batch tracking redundant user", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{
+					{UserID: "tenant1", SeriesHashes: []uint64{0}},
+					{UserID: "tenant1", SeriesHashes: []uint64{1}},
+					{UserID: "tenant1", SeriesHashes: []uint64{2}},
+					{UserID: "tenant1", SeriesHashes: []uint64{3}},
+				}},
+			},
+		})
+
+		require.NoError(t, err)
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{2}},
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{3}},
+			}},
+		})
 	})
 }
 

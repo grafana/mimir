@@ -683,6 +683,44 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 	return &usagetrackerpb.TrackSeriesResponse{RejectedSeriesHashes: rejected}, nil
 }
 
+// TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
+func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
+	response := usagetrackerpb.TrackSeriesBatchResponse{}
+	now := time.Now()
+
+	for _, rp := range req.Partitions {
+		p, err := t.runningPartition(rp.Partition)
+		if err != nil {
+			return nil, err
+		}
+
+		userRejections := []*usagetrackerpb.TrackSeriesBatchRejectionUser{}
+
+		for _, r := range rp.Users {
+			rejected, err := p.store.trackSeries(context.Background(), r.UserID, r.SeriesHashes, now)
+			if err != nil {
+				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, r.UserID)
+			}
+			if len(rejected) > 0 {
+				userRejections = append(userRejections, &usagetrackerpb.TrackSeriesBatchRejectionUser{
+					UserID:               r.UserID,
+					RejectedSeriesHashes: rejected,
+				})
+			}
+		}
+
+		if len(userRejections) > 0 {
+			response.Rejections = append(response.Rejections, &usagetrackerpb.TrackSeriesBatchRejection{
+				Partition: rp.Partition,
+				Users:     userRejections,
+			})
+			userRejections = nil
+		}
+	}
+
+	return &response, nil
+}
+
 // GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetrackerpb.GetUsersCloseToLimitRequest) (*usagetrackerpb.GetUsersCloseToLimitResponse, error) {
 	partition := req.Partition
@@ -697,6 +735,8 @@ func (t *UsageTracker) GetUsersCloseToLimit(_ context.Context, req *usagetracker
 		Partition:     partition,
 	}, nil
 }
+
+var _ usagetrackerpb.UsageTrackerServer = (*UsageTracker)(nil)
 
 func (t *UsageTracker) runningPartition(partition int32) (*partitionHandler, error) {
 	t.partitionsMtx.RLock()
