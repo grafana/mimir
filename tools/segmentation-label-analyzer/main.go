@@ -93,13 +93,11 @@ func run(cfg *Config) error {
 	fmt.Printf("Querying user queries from %s to %s (namespace: %s, tenant: %s)\n",
 		userQueriesStart.Format(time.RFC3339), userQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
 
-	err = lokiClient.QueryQueryStats(ctx, cfg.Namespace, cfg.TenantID, "query-frontend", userQueriesStart, userQueriesEnd, func(entry QueryStatsEntry) error {
-		analyzer.ProcessQuery(entry.Query, UserQuery)
-		return nil
-	})
+	userQueriesCount, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "query-frontend", userQueriesStart, userQueriesEnd, UserQuery)
 	if err != nil {
 		return fmt.Errorf("failed to query Loki for user queries: %w", err)
 	}
+	fmt.Printf("Processed %d user queries\n", userQueriesCount)
 
 	// Query rule queries from ruler-query-frontend.
 	ruleQueriesStart := time.Time(cfg.RuleQueriesStart)
@@ -107,13 +105,11 @@ func run(cfg *Config) error {
 	fmt.Printf("Querying rule queries from %s to %s (namespace: %s, tenant: %s)\n",
 		ruleQueriesStart.Format(time.RFC3339), ruleQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
 
-	err = lokiClient.QueryQueryStats(ctx, cfg.Namespace, cfg.TenantID, "ruler-query-frontend", ruleQueriesStart, ruleQueriesEnd, func(entry QueryStatsEntry) error {
-		analyzer.ProcessQuery(entry.Query, RuleQuery)
-		return nil
-	})
+	ruleQueriesCount, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "ruler-query-frontend", ruleQueriesStart, ruleQueriesEnd, RuleQuery)
 	if err != nil {
 		return fmt.Errorf("failed to query Loki for rule queries: %w", err)
 	}
+	fmt.Printf("Processed %d rule queries\n", ruleQueriesCount)
 
 	fmt.Printf("\nTotal queries analyzed: %d (user: %d, rules: %d)\n",
 		analyzer.TotalQueries(), analyzer.TotalUserQueries(), analyzer.TotalRuleQueries())
@@ -288,6 +284,113 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 	close(done)
 
 	return allLabelStats, totalSeriesCount, failedLabels
+}
+
+// splitTimeRangeUTC splits a time range into UTC-aligned chunks.
+// Split duration is dynamic: <=10m range uses 1m chunks, <=60m uses 10m chunks, otherwise 1h chunks.
+func splitTimeRangeUTC(start, end time.Time) []struct{ Start, End time.Time } {
+	var chunks []struct{ Start, End time.Time }
+
+	// Determine chunk duration based on total time range.
+	totalDuration := end.Sub(start)
+	var chunkDuration time.Duration
+	switch {
+	case totalDuration <= 10*time.Minute:
+		chunkDuration = time.Minute
+	case totalDuration <= 60*time.Minute:
+		chunkDuration = 10 * time.Minute
+	default:
+		chunkDuration = time.Hour
+	}
+
+	current := start
+	for current.Before(end) {
+		// Next boundary aligned to chunk duration (or end if sooner).
+		nextBoundary := current.Truncate(chunkDuration).Add(chunkDuration)
+		chunkEnd := nextBoundary
+		if end.Before(nextBoundary) {
+			chunkEnd = end
+		}
+
+		chunks = append(chunks, struct{ Start, End time.Time }{current, chunkEnd})
+		current = chunkEnd
+	}
+	return chunks
+}
+
+// queryLokiStats queries Loki for query stats and processes them with the analyzer.
+// Returns the number of queries processed.
+func queryLokiStats(
+	ctx context.Context,
+	lokiClient *CachedLokiClient,
+	analyzer *Analyzer,
+	namespace, tenantID, container string,
+	start, end time.Time,
+	queryType QueryType,
+) (int, error) {
+	const fetchConcurrency = 4
+
+	// Split time range into UTC-aligned chunks.
+	chunks := splitTimeRangeUTC(start, end)
+
+	var (
+		resultsMx        sync.Mutex
+		queriesProcessed int
+		completedChunks  int
+		errorsMx         sync.Mutex
+		errs             []error
+	)
+
+	// Progress ticker.
+	ticker := time.NewTicker(5 * time.Second)
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				resultsMx.Lock()
+				completed := completedChunks
+				resultsMx.Unlock()
+				pct := float64(completed) * 100 / float64(len(chunks))
+				fmt.Printf("Progress: %.0f%% (%d/%d chunks)\n", pct, completed, len(chunks))
+			case <-done:
+				return
+			}
+		}
+	}()
+
+	_ = concurrency.ForEachJob(ctx, len(chunks), fetchConcurrency, func(ctx context.Context, idx int) error {
+		chunk := chunks[idx]
+
+		err := lokiClient.QueryQueryStats(ctx, namespace, tenantID, container, chunk.Start, chunk.End, func(entry QueryStatsEntry) error {
+			resultsMx.Lock()
+			analyzer.ProcessQuery(entry.Query, queryType)
+			queriesProcessed++
+			resultsMx.Unlock()
+			return nil
+		})
+
+		if err != nil {
+			errorsMx.Lock()
+			errs = append(errs, err)
+			errorsMx.Unlock()
+		}
+
+		resultsMx.Lock()
+		completedChunks++
+		resultsMx.Unlock()
+
+		return nil
+	})
+
+	ticker.Stop()
+	close(done)
+
+	if len(errs) > 0 {
+		return queriesProcessed, fmt.Errorf("some chunks failed: %v", errs)
+	}
+
+	return queriesProcessed, nil
 }
 
 func printLabelStatsTable(stats []LabelStats, limit int) {
