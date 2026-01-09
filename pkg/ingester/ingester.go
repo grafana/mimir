@@ -431,6 +431,13 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	if err != nil {
 		return nil, err
 	}
+
+	// Validate per-tenant early compaction configuration.
+	if defaultThreshold := limits.EarlyHeadCompactionOwnedSeriesThreshold(""); defaultThreshold > 0 {
+		if !cfg.UseIngesterOwnedSeriesForLimits && !cfg.UpdateIngesterOwnedSeries {
+			return nil, fmt.Errorf("per-tenant early compaction (ingester.early-head-compaction-owned-series-threshold) requires owned series tracking to be enabled (either -ingester.use-ingester-owned-series-for-limits or -ingester.track-ingester-owned-series)")
+		}
+	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
@@ -3168,6 +3175,9 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			// Check if any TSDB Head should be compacted to reduce the number of in-memory series.
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
+			// Check if any TSDB Head should be compacted based on per-tenant owned series thresholds.
+			i.compactBlocksToReduceOwnedSeries(ctx, time.Now())
+
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()
 
@@ -3420,6 +3430,96 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 	forcedCompactionMaxTime := now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
 	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList(usersToCompact, nil))
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", totalMemorySeries, "after_in_memory_series", i.seriesCount.Load())
+}
+
+// compactBlocksToReduceOwnedSeries compacts the TSDB Head for tenants that exceed their per-tenant early compaction threshold.
+func (i *Ingester) compactBlocksToReduceOwnedSeries(ctx context.Context, now time.Time) {
+	// Early return if active series metrics are not enabled (required for series reduction estimation)
+	if !i.cfg.ActiveSeriesMetrics.Enabled {
+		return
+	}
+
+	idleTimeout := i.cfg.ActiveSeriesMetrics.IdleTimeout
+	forcedCompactionMaxTime := now.Add(-idleTimeout).UnixMilli()
+
+	for _, userID := range i.getTSDBUsers() {
+		if ctx.Err() != nil {
+			return
+		}
+
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
+		}
+
+		// Get per-tenant limits
+		threshold := i.limits.EarlyHeadCompactionOwnedSeriesThreshold(userID)
+		if threshold <= 0 {
+			continue // Per-tenant early compaction disabled for this tenant
+		}
+
+		minReductionPercentage := i.limits.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage(userID)
+
+		// Check cooldown - don't trigger if compacted less than IdleTimeout ago
+		lastCompaction := db.getLastPerTenantEarlyCompaction()
+		if !lastCompaction.IsZero() && now.Sub(lastCompaction) < idleTimeout {
+			continue
+		}
+
+		// Get owned series count
+		ownedState := db.ownedSeriesState()
+		ownedSeriesCount := ownedState.ownedSeriesCount
+
+		// Check if owned series exceeds threshold
+		if ownedSeriesCount < threshold {
+			continue
+		}
+
+		// Estimate series reduction
+		userMemorySeries := db.Head().NumSeries()
+		if userMemorySeries == 0 {
+			continue
+		}
+
+		// Purge active series to get accurate count
+		idx := db.Head().MustIndex()
+		db.activeSeries.Purge(now, idx)
+		idx.Close()
+
+		totalActiveSeries, _, _, _ := db.activeSeries.Active()
+		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
+		estimatedPercentage := int((uint64(estimatedSeriesReduction) * 100) / userMemorySeries)
+
+		// Check if estimated reduction meets threshold
+		if estimatedPercentage < minReductionPercentage {
+			continue
+		}
+
+		level.Info(i.logger).Log(
+			"msg", "triggering per-tenant early head compaction",
+			"user", userID,
+			"owned_series", ownedSeriesCount,
+			"threshold", threshold,
+			"estimated_series_reduction", estimatedSeriesReduction,
+			"estimated_reduction_percentage", estimatedPercentage,
+		)
+
+		// Trigger compaction for this user
+		i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList([]string{userID}, nil))
+
+		// Update last compaction time
+		db.setLastPerTenantEarlyCompaction(now)
+
+		// Trigger owned series recomputation
+		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
+
+		level.Info(i.logger).Log(
+			"msg", "per-tenant early head compaction completed",
+			"user", userID,
+			"before_in_memory_series", userMemorySeries,
+			"after_in_memory_series", db.Head().NumSeries(),
+		)
+	}
 }
 
 type seriesReductionEstimation struct {
