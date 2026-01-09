@@ -369,7 +369,7 @@ func newIngesterMetrics(
 		}),
 		forcedCompactionInProgress: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_tsdb_forced_compactions_in_progress",
-			Help: "Reports 1 if there's a forced TSDB head compaction in progress, 0 otherwise.",
+			Help: "Reports 1 if there's a forced or idle TSDB head compaction in progress, 0 otherwise.",
 		}),
 
 		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
