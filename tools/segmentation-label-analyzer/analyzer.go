@@ -4,6 +4,7 @@ package main
 
 import (
 	"math"
+	"sort"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -61,6 +62,10 @@ type LabelStats struct {
 	// TopValuesSeriesPercent is the percentage of series for the top 3 label values (by cardinality).
 	// E.g., [45.0, 20.0, 10.0] means the top value has 45% of series, second has 20%, etc.
 	TopValuesSeriesPercent []float64
+
+	// TopValuesQueriesPercent is the percentage of queries for the top 3 label values.
+	// E.g., [45.0, 20.0, 10.0] means the top value has 45% of queries, second has 20%, etc.
+	TopValuesQueriesPercent []float64
 
 	// Score is a weighted score (0-1) for ranking candidates.
 	// Composed of 40% series coverage + 30% query coverage + 15% query values distribution + 15% series values distribution.
@@ -283,6 +288,25 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 				queryCounts = append(queryCounts, uint64(count))
 			}
 			stats.QueryValuesDistribution = computeNormalizedEntropy(queryCounts)
+
+			// Compute top 3 values queries percentages.
+			totalQueries := 0
+			for _, c := range counts {
+				totalQueries += c
+			}
+			if totalQueries > 0 {
+				// Sort counts descending.
+				sortedCounts := make([]int, 0, len(counts))
+				for _, c := range counts {
+					sortedCounts = append(sortedCounts, c)
+				}
+				sort.Sort(sort.Reverse(sort.IntSlice(sortedCounts)))
+
+				for i := 0; i < min(3, len(sortedCounts)); i++ {
+					pct := float64(sortedCounts[i]) / float64(totalQueries) * 100
+					stats.TopValuesQueriesPercent = append(stats.TopValuesQueriesPercent, pct)
+				}
+			}
 		}
 	}
 

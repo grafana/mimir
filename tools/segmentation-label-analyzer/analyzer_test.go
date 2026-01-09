@@ -606,3 +606,111 @@ func TestGetLabelStats_QueryValuesDistribution(t *testing.T) {
 		})
 	}
 }
+
+func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
+	tests := []struct {
+		name              string
+		queries           []string
+		expectedTopValues []float64
+	}{
+		{
+			name: "more than 3 values - returns top 3",
+			queries: []string{
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`, // 5 queries with "a"
+				`metric{cluster="b"}`,
+				`metric{cluster="b"}`,
+				`metric{cluster="b"}`, // 3 queries with "b"
+				`metric{cluster="c"}`,
+				`metric{cluster="c"}`, // 2 queries with "c"
+				`metric{cluster="d"}`, // 1 query with "d"
+			},
+			// Total: 11 queries. Top 3: a=5 (45.45%), b=3 (27.27%), c=2 (18.18%)
+			expectedTopValues: []float64{45.45, 27.27, 18.18},
+		},
+		{
+			name: "exactly 3 values",
+			queries: []string{
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`, // 3
+				`metric{cluster="b"}`,
+				`metric{cluster="b"}`, // 2
+				`metric{cluster="c"}`, // 1
+			},
+			// Total: 6 queries. a=3 (50%), b=2 (33.33%), c=1 (16.67%)
+			expectedTopValues: []float64{50.0, 33.33, 16.67},
+		},
+		{
+			name: "only 2 values",
+			queries: []string{
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`, // 3
+				`metric{cluster="b"}`, // 1
+			},
+			// Total: 4 queries. a=3 (75%), b=1 (25%)
+			expectedTopValues: []float64{75.0, 25.0},
+		},
+		{
+			name: "only 1 value",
+			queries: []string{
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+			},
+			// Total: 2 queries. a=2 (100%)
+			expectedTopValues: []float64{100.0},
+		},
+		{
+			name: "query with multiple values counts each separately",
+			queries: []string{
+				`metric{cluster=~"a|b"}`, // a=1, b=1
+				`metric{cluster="a"}`,    // a=1
+				`metric{cluster="a"}`,    // a=1
+			},
+			// Total value references: a=3, b=1 (4 total)
+			// a=3 (75%), b=1 (25%)
+			expectedTopValues: []float64{75.0, 25.0},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			analyzer := NewAnalyzer()
+			for _, q := range tc.queries {
+				analyzer.ProcessQuery(q, UserQuery)
+			}
+
+			labelSeriesStats := map[string]LabelSeriesStats{
+				"cluster": {
+					SeriesCount:         1000,
+					ValuesCount:         10,
+					SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+				},
+			}
+
+			stats := analyzer.GetLabelStats(labelSeriesStats, 1000, time.Hour, time.Hour)
+
+			var clusterStats *LabelStats
+			for i := range stats {
+				if stats[i].Name == "cluster" {
+					clusterStats = &stats[i]
+					break
+				}
+			}
+			require.NotNil(t, clusterStats, "cluster label not found")
+
+			if tc.expectedTopValues == nil {
+				assert.Empty(t, clusterStats.TopValuesQueriesPercent, "expected empty TopValuesQueriesPercent")
+			} else {
+				require.Len(t, clusterStats.TopValuesQueriesPercent, len(tc.expectedTopValues), "TopValuesQueriesPercent length mismatch")
+				for i, expected := range tc.expectedTopValues {
+					assert.InDelta(t, expected, clusterStats.TopValuesQueriesPercent[i], 0.1, "TopValuesQueriesPercent[%d] mismatch", i)
+				}
+			}
+		})
+	}
+}

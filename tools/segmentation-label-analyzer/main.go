@@ -426,10 +426,11 @@ func printCandidatesTable(candidates []LabelStats) {
 		{Header: "User queries", Align: AlignRight},
 		{Header: "Rule queries", Align: AlignRight},
 		{Header: "Unique values", Align: AlignRight},
-		{Header: "Top values series %", Align: AlignRight},
-		{Header: "Series values distribution", Align: AlignRight},
-		{Header: "Query values distribution", Align: AlignRight},
 		{Header: "Avg values/query", Align: AlignRight},
+		{Header: "Series values dist", Align: AlignRight},
+		{Header: "Top values series %", Align: AlignRight},
+		{Header: "Query values dist", Align: AlignRight},
+		{Header: "Top values queries %", Align: AlignRight},
 	}
 
 	rows := make([]TableRow, 0, len(candidates))
@@ -442,10 +443,11 @@ func printCandidatesTable(candidates []LabelStats) {
 			fmt.Sprintf("%.2f%%", ls.UserQueryCoverage),
 			fmt.Sprintf("%.2f%%", ls.RuleQueryCoverage),
 			fmt.Sprintf("%d", ls.ValuesCount),
-			formatTopValuesPercent(ls.TopValuesSeriesPercent),
-			fmt.Sprintf("%.2f", ls.SeriesValuesDistribution),
-			fmt.Sprintf("%.2f", ls.QueryValuesDistribution),
 			fmt.Sprintf("%.2f", ls.AvgDistinctValuesPerQuery),
+			fmt.Sprintf("%.2f", ls.SeriesValuesDistribution),
+			formatTopValuesPercent(ls.TopValuesSeriesPercent),
+			fmt.Sprintf("%.2f", ls.QueryValuesDistribution),
+			formatTopValuesPercent(ls.TopValuesQueriesPercent),
 		})
 	}
 
