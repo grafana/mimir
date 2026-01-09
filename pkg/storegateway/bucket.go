@@ -1212,24 +1212,23 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 }
 
 func (s *BucketStore) recordBucketIndexDiscoveryDiff(ctx context.Context) {
-	reqUpdatedAt := getBucketIndexUpdatedAtFromGRPCContext(ctx)
-	meta := s.bucketIndexMeta.Metadata()
-
-	diff := meta.UpdatedAt - reqUpdatedAt
-
-	level.Debug(spanlogger.FromContext(ctx, s.logger)).Log("msg", "bucket index versions (updated_at)", "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
-
-	if diff == 0 {
-		// Skip recording the difference in metrics when versions are the same.
+	reqUpdatedAt, err := getBucketIndexUpdatedAtFromGRPCContext(ctx)
+	if err != nil {
+		// This is not a problem by itself.
+		level.Warn(spanlogger.FromContext(ctx, s.logger)).Log("msg", "can't get bucket index versions (updated_at) from request", "err", err)
 		return
 	}
-	var group string
-	if diff > 0 {
-		group = labelDiscoveryDiffNewer
+
+	meta := s.bucketIndexMeta.Metadata()
+	diff := meta.UpdatedAt - reqUpdatedAt
+
+	logger := log.With(s.logger, "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
+
+	if diff < 0 {
+		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "bucket index version (updated_at) is older than requested")
 	} else {
-		group = labelDiscoveryDiffOlder
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "bucket index versions (updated_at)")
 	}
-	s.metrics.bucketIndexDiscoveryDiffs.WithLabelValues(group).Inc()
 }
 
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {

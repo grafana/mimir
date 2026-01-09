@@ -647,14 +647,16 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 	return values[0]
 }
 
-func getBucketIndexUpdatedAtFromGRPCContext(ctx context.Context) int64 {
+func getBucketIndexUpdatedAtFromGRPCContext(ctx context.Context) (int64, error) {
 	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataBucketIndexUpdatedAt)
 	if len(values) != 1 {
-		return 0
+		return 0, fmt.Errorf("no bucket index updated at")
 	}
-	// Ignore any parsing errors because BucketIndexUpdatedAt is best-effort.
-	value, _ := strconv.ParseInt(values[0], 10, 64)
-	return value
+	value, err := strconv.ParseInt(values[0], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse bucket index updated at value %q: %w", values[0], err)
+	}
+	return value, nil
 }
 
 type spanSeriesServer struct {
