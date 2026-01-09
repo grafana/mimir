@@ -10,6 +10,23 @@ Analyzes a Mimir tenant to identify good segmentation label candidates. A segmen
 4. **Analyzes which labels** appear in queries as valid segmentation candidates (labels with equality or set matchers in all selectors)
 5. **Computes a score** for each label and outputs ranked candidates
 
+## Output columns
+
+| Column | Description |
+|--------|-------------|
+| **Label name** | The label being evaluated as a segmentation candidate |
+| **Score** | Overall score (0-1) combining all factors. Higher is better. |
+| **Series** | Percentage of total series that have this label |
+| **All queries** | Percentage of queries where compartment can be determined (weighted avg of user + rule) |
+| **User queries** | Percentage of user queries (from query-frontend) where compartment can be determined |
+| **Rule queries** | Percentage of rule queries (from ruler-query-frontend) where compartment can be determined |
+| **Unique values** | Number of distinct values for this label |
+| **Avg values/query** | Average number of distinct values referenced per query. Lower is better (ideally 1.0). |
+| **Series values dist** | Normalized entropy (0-1) of series distribution across values. Higher = more uniform. |
+| **Top values series %** | Series percentage for top 3 values (shows concentration) |
+| **Query values dist** | Normalized entropy (0-1) of query distribution across values. Higher = more uniform. |
+| **Top values queries %** | Query percentage for top 3 values (shows concentration) |
+
 ## Score computation
 
 The score (0-1) considers these factors:
