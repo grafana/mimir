@@ -684,7 +684,7 @@ func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
 	}
 
 	// If the fields of WriteRequest have changed, then you will probably need to modify
-	// the FromWriteRequestToRW2Request() implementation accordingly!
+	// the [FromWriteRequestToRW2Request] implementation accordingly!
 	assert.ElementsMatch(t, []string{
 		"Timeseries",
 		"Source",
@@ -699,5 +699,6 @@ func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
 		"unmarshalFromRW2",
 		"rw2symbols",
 		"BufferHolder",
+		"sourceBufferHolders",
 	}, fieldNames)
 }

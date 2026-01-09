@@ -432,7 +432,15 @@ func LabelAdaptersHash(b []byte, ls []mimirpb.LabelAdapter) ([]byte, uint64) {
 // PushToStorageAndReleaseRequest hashes each time series in the write requests and sends them to the appropriate shard which is then handled by the current batchingQueue in that shard.
 // PushToStorageAndReleaseRequest ignores SkipLabelNameValidation because that field is only used in the distributor and not in the ingester.
 // PushToStorageAndReleaseRequest aborts the request if it encounters an error.
+//
+// Even though it's called "...AndReleaseRequest", while it does release the WriteRequest itself, the underlying buffer's
+// ownership is transferred to one or more shards's currentBatch. This is required since those currentBatches will still
+// reference the underlying buffer. As a result, the WriteRequest:buffer ownership changes from 1:1 to M:N, as one buffer
+// will possibly be referenced from multiple shards, end each shard will possibly reference multiple buffers. The buffer's
+// ownership is tracked via mem.Buffer's reference counting, and finally freed once all shards's currentBatches are pushed.
 func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Context, request *mimirpb.WriteRequest) error {
+	defer request.FreeBuffer()
+
 	// Shard series by the hash of their labels. Skip sharding and always append series to
 	// the first shard when there's only one shard.
 	var hashBuf []byte
@@ -446,7 +454,7 @@ func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Conte
 			shard = shard % uint64(p.numShards)
 		}
 
-		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i]); err != nil {
+		if err := p.shards[shard].AddToBatch(ctx, request.Source, request.Timeseries[i], &request.BufferHolder); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
 		// We're transferring ownership of the timeseries to the batch, clear the slice as we go so we can reuse it.
@@ -464,7 +472,7 @@ func (p *parallelStorageShards) PushToStorageAndReleaseRequest(ctx context.Conte
 		shard = rand.IntN(p.numShards)
 	}
 	for mdIdx := range request.Metadata {
-		if err := p.shards[shard].AddMetadataToBatch(ctx, request.Source, request.Metadata[mdIdx]); err != nil {
+		if err := p.shards[shard].AddMetadataToBatch(ctx, request.Source, request.Metadata[mdIdx], &request.BufferHolder); err != nil {
 			return fmt.Errorf("encountered a non-client error when ingesting; this error was for a previous write request for the same tenant: %w", err)
 		}
 		if p.numShards > 1 {
@@ -646,25 +654,33 @@ func newBatchingQueue(capacity int, batchSize int, metrics *batchingQueueMetrics
 
 // AddToBatch adds a time series to the current batch. If the batch size is reached, the batch is pushed to the Channel().
 // If an error occurs while pushing the batch, it returns the error and ensures the batch is pushed.
-func (q *batchingQueue) AddToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, ts mimirpb.PreallocTimeseries) error {
+func (q *batchingQueue) AddToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, ts mimirpb.PreallocTimeseries, bufh *mimirpb.BufferHolder) error {
 	if q.currentBatch.startedAt.IsZero() {
 		q.currentBatch.startedAt = time.Now()
 	}
 	q.currentBatch.Timeseries = append(q.currentBatch.Timeseries, ts)
 	q.currentBatch.Context = ctx
 	q.currentBatch.Source = source
+	// Because currentBatch now contains references to the original buffer, we
+	// need to add it as a source buffer (which adds a strong reference) to
+	// avoid use-after-free.
+	q.currentBatch.AddSourceBufferHolder(bufh)
 
 	return q.pushIfFull()
 }
 
 // AddMetadataToBatch adds metadata to the current batch.
-func (q *batchingQueue) AddMetadataToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, metadata *mimirpb.MetricMetadata) error {
+func (q *batchingQueue) AddMetadataToBatch(ctx context.Context, source mimirpb.WriteRequest_SourceEnum, metadata *mimirpb.MetricMetadata, bufh *mimirpb.BufferHolder) error {
 	if q.currentBatch.startedAt.IsZero() {
 		q.currentBatch.startedAt = time.Now()
 	}
 	q.currentBatch.Metadata = append(q.currentBatch.Metadata, metadata)
 	q.currentBatch.Context = ctx
 	q.currentBatch.Source = source
+	// Because currentBatch now contains references to the original buffer, we
+	// need to add it as a source buffer (which adds a strong reference) to
+	// avoid use-after-free.
+	q.currentBatch.AddSourceBufferHolder(bufh)
 
 	return q.pushIfFull()
 }
