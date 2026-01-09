@@ -208,8 +208,8 @@ func TestGetLabelStats_WeightedQueryCoverage(t *testing.T) {
 	// coverage = 101/130 * 100 = 77.69%
 	assert.InDelta(t, 77.69, clusterStats.QueryCoverage, 0.1, "ExtrapolatedQueryCoverage")
 
-	// Verify LabelValuesDistribution for uniform distribution (10 values, all equal) = 1.0
-	assert.InDelta(t, 1.0, clusterStats.LabelValuesDistribution, 0.01, "LabelValuesDistribution for uniform distribution")
+	// Verify SeriesValuesDistribution for uniform distribution (10 values, all equal) = 1.0
+	assert.InDelta(t, 1.0, clusterStats.SeriesValuesDistribution, 0.01, "SeriesValuesDistribution for uniform distribution")
 }
 
 func TestComputeNormalizedEntropy(t *testing.T) {
@@ -285,10 +285,11 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 			distribution: []uint64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, // uniform
 			queryMatches: 10,
 			totalQueries: 10,
-			// baseScore = 0.40*(100/100) + 0.40*(100/100) + 0.20*1.0 = 1.0
+			// All queries use same value "value", so QueryValuesDistribution = 0
+			// baseScore = 0.40*(100/100) + 0.30*(100/100) + 0.15*0 + 0.15*1.0 = 0.85
 			// valueSufficiency = min(1.0, 20/10) = 1.0
-			// score = 1.0 * 1.0 = 1.0
-			expectedScore: 1.0,
+			// score = 0.85 * 1.0 = 0.85
+			expectedScore: 0.85,
 		},
 		{
 			name:         "perfect candidate with few values - penalized",
@@ -297,10 +298,10 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 			distribution: []uint64{200, 200, 200, 200, 200}, // uniform
 			queryMatches: 10,
 			totalQueries: 10,
-			// baseScore = 0.40*(100/100) + 0.40*(100/100) + 0.20*1.0 = 1.0
+			// baseScore = 0.40*(100/100) + 0.30*(100/100) + 0.15*0 + 0.15*1.0 = 0.85
 			// valueSufficiency = min(1.0, 5/10) = 0.5
-			// score = 1.0 * 0.5 = 0.5
-			expectedScore: 0.5,
+			// score = 0.85 * 0.5 = 0.425
+			expectedScore: 0.425,
 		},
 		{
 			name:         "50% series coverage, 50% query coverage, uniform distribution, enough values",
@@ -309,10 +310,10 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 			distribution: []uint64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50},
 			queryMatches: 5,
 			totalQueries: 10,
-			// baseScore = 0.40*(50/100) + 0.40*(50/100) + 0.20*1.0 = 0.60
+			// baseScore = 0.40*(50/100) + 0.30*(50/100) + 0.15*0 + 0.15*1.0 = 0.50
 			// valueSufficiency = 1.0
-			// score = 0.60
-			expectedScore: 0.60,
+			// score = 0.50
+			expectedScore: 0.50,
 		},
 		{
 			name:         "high coverage but skewed distribution",
@@ -322,10 +323,10 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 			queryMatches: 10,
 			totalQueries: 10,
 			// entropy ≈ 0.22 (heavily skewed)
-			// baseScore = 0.40*(100/100) + 0.40*(100/100) + 0.20*0.22 ≈ 0.844
+			// baseScore = 0.40*(100/100) + 0.30*(100/100) + 0.15*0 + 0.15*0.22 ≈ 0.733
 			// valueSufficiency = 1.0
-			// score ≈ 0.844
-			expectedScore: 0.84,
+			// score ≈ 0.733
+			expectedScore: 0.733,
 		},
 		{
 			name:         "single value - heavily penalized",
@@ -334,10 +335,10 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 			distribution: []uint64{1000},
 			queryMatches: 10,
 			totalQueries: 10,
-			// baseScore = 0.40 + 0.40 + 0.20*0 = 0.80
+			// baseScore = 0.40 + 0.30 + 0.15*0 + 0.15*0 = 0.70
 			// valueSufficiency = 1/10 = 0.1
-			// score = 0.80 * 0.1 = 0.08
-			expectedScore: 0.08,
+			// score = 0.70 * 0.1 = 0.07
+			expectedScore: 0.07,
 		},
 	}
 
@@ -506,14 +507,102 @@ func TestGetLabelStats_QueryValuesPenalty(t *testing.T) {
 	assert.InDelta(t, 1.0, clusterStats.AvgDistinctValuesPerQuery, 0.01, "cluster AvgDistinctValuesPerQuery")
 	// QueryCoverage is NOT penalized (raw coverage).
 	assert.InDelta(t, 100.0, clusterStats.QueryCoverage, 0.1, "cluster QueryCoverage")
-	// Score: 0.40*(100/100) + 0.40*(100/100)*1.0 + 0.20*1.0 = 1.0
+	// QueryValuesDistribution = 1.0 (uniform: values "a" and "b" each used once)
+	// Score: 0.40*1 + 0.30*1 + 0.15*1 + 0.15*1 = 1.0
 	assert.InDelta(t, 1.0, clusterStats.Score, 0.01, "cluster Score")
 
 	// __name__: 2 queries with __name__, each with 2 distinct values → avg 2.0
 	assert.InDelta(t, 2.0, nameStats.AvgDistinctValuesPerQuery, 0.01, "__name__ AvgDistinctValuesPerQuery")
 	// QueryCoverage is NOT penalized (raw coverage stays 100%).
 	assert.InDelta(t, 100.0, nameStats.QueryCoverage, 0.1, "__name__ QueryCoverage")
-	// Score: 0.40*(100/100) + 0.40*(100/100)*0.8 + 0.20*1.0 = 0.40 + 0.32 + 0.20 = 0.92
+	// QueryValuesDistribution = 1.0 (uniform: 4 metric names each used once)
+	// Score: 0.40*1 + 0.30*1*0.8 + 0.15*1 + 0.15*1 = 0.40 + 0.24 + 0.15 + 0.15 = 0.94
 	// (penalty = 0.8^(2-1) = 0.8)
-	assert.InDelta(t, 0.92, nameStats.Score, 0.01, "__name__ Score (penalized)")
+	assert.InDelta(t, 0.94, nameStats.Score, 0.01, "__name__ Score (penalized)")
+}
+
+func TestGetLabelStats_QueryValuesDistribution(t *testing.T) {
+	tests := []struct {
+		name                        string
+		queries                     []string
+		expectedQueryValuesDistCluster float64
+	}{
+		{
+			name: "uniform distribution - all queries use different values",
+			queries: []string{
+				`metric{cluster="a"}`,
+				`metric{cluster="b"}`,
+				`metric{cluster="c"}`,
+			},
+			// 3 values, each used by 1 query: uniform distribution → entropy = 1.0
+			expectedQueryValuesDistCluster: 1.0,
+		},
+		{
+			name: "skewed distribution - most queries use one value",
+			queries: []string{
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+				`metric{cluster="b"}`,
+			},
+			// 2 values: "a" used 4 times, "b" used 1 time → skewed
+			// Entropy: p_a=0.8, p_b=0.2 → H = -0.8*log2(0.8) - 0.2*log2(0.2) ≈ 0.72
+			// Normalized: 0.72 / log2(2) = 0.72
+			expectedQueryValuesDistCluster: 0.72,
+		},
+		{
+			name: "single value - no distribution",
+			queries: []string{
+				`metric{cluster="a"}`,
+				`metric{cluster="a"}`,
+			},
+			// Only 1 unique value → entropy = 0
+			expectedQueryValuesDistCluster: 0,
+		},
+		{
+			name: "query with multiple values counts each",
+			queries: []string{
+				`metric{cluster=~"a|b|c"}`, // references 3 values
+				`metric{cluster="a"}`,      // references 1 value
+			},
+			// Values: a=2, b=1, c=1 (4 total references)
+			// p_a=0.5, p_b=0.25, p_c=0.25
+			// H = -0.5*log2(0.5) - 0.25*log2(0.25) - 0.25*log2(0.25)
+			// H = 0.5 + 0.5 + 0.5 = 1.5
+			// Normalized: 1.5 / log2(3) ≈ 0.95
+			expectedQueryValuesDistCluster: 0.95,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			analyzer := NewAnalyzer()
+			for _, q := range tt.queries {
+				analyzer.ProcessQuery(q, UserQuery)
+			}
+
+			labelSeriesStats := map[string]LabelSeriesStats{
+				"cluster": {
+					SeriesCount:         1000,
+					ValuesCount:         10,
+					SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+				},
+			}
+
+			stats := analyzer.GetLabelStats(labelSeriesStats, 1000, time.Hour, time.Hour)
+
+			var clusterStats *LabelStats
+			for i := range stats {
+				if stats[i].Name == "cluster" {
+					clusterStats = &stats[i]
+					break
+				}
+			}
+			require.NotNil(t, clusterStats, "cluster label not found")
+
+			assert.InDelta(t, tt.expectedQueryValuesDistCluster, clusterStats.QueryValuesDistribution, 0.02,
+				"QueryValuesDistribution mismatch")
+		})
+	}
 }

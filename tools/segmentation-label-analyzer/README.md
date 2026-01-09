@@ -17,8 +17,9 @@ The score (0-1) considers these factors:
 | Factor | Weight | Description |
 |--------|--------|-------------|
 | **Series coverage** | 40% | Percentage of total series that have this label. Higher is better - we need most series to have the label for effective sharding. |
-| **Query coverage** | 40% | Percentage of queries where we can deterministically identify the compartment. Extrapolated across user and rule query observation windows. Penalized by average distinct values per query (see below). |
-| **Label values distribution** | 20% | How evenly series are distributed across label values (normalized entropy). A label where 99% of series have one value is bad for balanced sharding. |
+| **Query coverage** | 30% | Percentage of queries where we can deterministically identify the compartment. Extrapolated across user and rule query observation windows. Penalized by average distinct values per query (see below). |
+| **Query values distribution** | 15% | How evenly queries are distributed across label values (normalized entropy). A label where 99% of queries use one value means unbalanced query load. |
+| **Series values distribution** | 15% | How evenly series are distributed across label values (normalized entropy). A label where 99% of series have one value is bad for balanced sharding. |
 
 ### Penalties
 
@@ -36,6 +37,28 @@ The score (0-1) considers these factors:
 | 10 | 0.13 |
 
 **Note**: Queries using the `info()` function are analyzed but have no valid segmentation label candidates, since `info()` implicitly queries additional metrics making compartment determination impossible.
+
+### Understanding distribution values
+
+The distribution columns ("Series values distribution" and "Query values distribution") show normalized entropy values from 0 to 1:
+- **1.0** = perfectly uniform distribution (ideal for balanced sharding/load)
+- **0.0** = all items concentrated in a single value (worst case)
+
+To interpret these values practically, consider how much the top value dominates. The table below shows approximate percentages for the most popular value, assuming a "power-law" style distribution:
+
+| Entropy | Interpretation | Top value share (10 values) | Top value share (100 values) | Top value share (1000 values) |
+|---------|----------------|----------------------------|-----------------------------|-----------------------------|
+| 1.0 | Uniform | 10% | 1% | 0.1% |
+| 0.9 | Near uniform | ~15-20% | ~3-5% | ~0.5-1% |
+| 0.8 | Slight skew | ~25-30% | ~8-12% | ~2-4% |
+| 0.7 | Moderate skew | ~35-45% | ~15-25% | ~5-10% |
+| 0.5 | Significant skew | ~60-70% | ~40-50% | ~20-30% |
+| 0.3 | Heavy skew | ~80-85% | ~65-75% | ~50-60% |
+| 0.0 | Single value | 100% | 100% | 100% |
+
+**Example**: If you see "Query values distribution = 0.8" for a label with 1000 unique values, the top ~2-4% of values likely account for a disproportionate share of queries. This is still reasonably good for load balancing.
+
+**Note**: These are approximate guidelines. The exact distribution shape affects the percentages.
 
 ## TODOs
 
