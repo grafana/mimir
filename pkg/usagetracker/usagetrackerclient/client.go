@@ -62,6 +62,10 @@ type Config struct {
 	// Set to 0 to disable this check (all users eligible for async tracking based on proximity to limit).
 	MinSeriesLimitForAsyncTracking int `yaml:"min_series_limit_for_async_tracking" category:"advanced"`
 
+	UseBatchedTracking bool          `yaml:"use_batched_tracking" category:"experimental"`
+	BatchDelay         time.Duration `yaml:"batch_delay" category:"advanced"`
+	MaxBatchItems      int           `yaml:"max_batch_items" category:"advanced"`
+
 	// Allow to inject custom client factory in tests.
 	ClientFactory client.PoolFactory `yaml:"-"`
 }
@@ -92,6 +96,10 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 
 	f.DurationVar(&cfg.MaxTimeToWaitForAsyncTrackingResponseAfterIngestion, prefix+"max-time-to-wait-for-async-tracking-response-after-ingestion", 250*time.Millisecond, "Maximum time to wait for an asynchronous tracking response after ingestion request is completed.")
 	f.IntVar(&cfg.MinSeriesLimitForAsyncTracking, prefix+"min-series-limit-for-async-tracking", 0, "Minimum series limit for a user to be eligible for async tracking. Users with a series limit below this threshold will always be tracked synchronously. Set to 0 to disable this check.")
+
+	f.BoolVar(&cfg.UseBatchedTracking, prefix+"use-batched-tracking", false, "Use batched tracking for series. If enabled, the client will track series in batches to reduce RPC traffic.")
+	f.DurationVar(&cfg.BatchDelay, prefix+"batch-delay", 150*time.Millisecond, "Delay between batches. If 0, no delay is used.")
+	f.IntVar(&cfg.MaxBatchItems, prefix+"max-batch-items", 1000, "Maximum number of series to track in a single batch. If 0, no maximum is used.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
@@ -128,12 +136,12 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 	clientsPool := newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer)
 
 	c := &UsageTrackerClient{
-		cfg:                    clientCfg,
-		logger:                 logger,
-		limits:                 limits,
-		partitionRing:          partitionRing,
-		clientsPool:            clientsPool,
-		batchTrackingClient:    newBatchTrackingClient(clientsPool, 1000, 200*time.Millisecond, logger),
+		cfg:           clientCfg,
+		logger:        logger,
+		limits:        limits,
+		partitionRing: partitionRing,
+		clientsPool:   clientsPool,
+
 		trackSeriesWorkersPool: concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
 		trackSeriesDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_usage_tracker_client_track_series_duration_seconds",
@@ -157,6 +165,7 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 		}),
 	}
 
+	c.batchTrackingClient = newBatchTrackingClient(clientsPool, clientCfg.MaxBatchItems, clientCfg.BatchDelay, logger, c)
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
 	return c
 }
@@ -363,6 +372,109 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	return res[0], nil
 }
 
+func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) (returnErr error) {
+	// Nothing to do if there are no series to track.
+	if len(series) == 0 {
+		return nil
+	}
+
+	var (
+		batchOptions = ring.DoBatchOptions{
+			Cleanup:       nil,
+			IsClientError: func(error) bool { return false },
+			Go:            c.trackSeriesWorkersPool.Go,
+		}
+	)
+
+	// Create the partition ring view as late as possible, because we want to get the most updated
+	// snapshot of the ring.
+	partitionBatchRing := ring.NewActivePartitionBatchRing(c.partitionRing.PartitionRing())
+
+	// Series hashes are 64bit but the hash ring tokens are 32bit, so we truncate
+	// hashes to 32bit to get keys to lookup in the ring.
+	keys := make([]uint32, len(series))
+	for i, hash := range series {
+		keys[i] = uint32(hash)
+	}
+
+	return ring.DoBatchWithOptions(ctx, TrackSeriesOp, partitionBatchRing, keys,
+		func(partition ring.InstanceDesc, indexes []int) error {
+			// The partition ID is stored in the ring.InstanceDesc.Id.
+			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)
+			if err != nil {
+				return err
+			}
+
+			// Build the list of series hashes that belong to this partition.
+			partitionSeries := make([]uint64, len(indexes))
+			for i, idx := range indexes {
+				partitionSeries[i] = series[idx]
+			}
+
+			c.batchTrackingClient.TrackSeries(int32(partitionID), userID, partitionSeries)
+			return nil
+		}, batchOptions,
+	)
+}
+
+func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, records []*usagetrackerpb.TrackSeriesBatchRecord) ([]*usagetrackerpb.BatchRejectedHashes, error) {
+	// Get the usage-tracker instances for the input partition.
+	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
+	if err != nil {
+		return nil, err
+	}
+
+	req := &usagetrackerpb.TrackSeriesBatchRequest{
+		BatchRequests: records,
+	}
+
+	cfg := ring.DoUntilQuorumConfig{
+		Logger: spanlogger.FromContext(ctx, log.With(c.logger, "component", "usage-tracker-client", "op", "track-series-per-partition-batch", "partition", partitionID)),
+
+		MinimizeRequests: true,
+		HedgingDelay:     c.cfg.RequestsHedgingDelay,
+
+		// Give precedence to the client's zone.
+		ZoneSorter: c.sortZones,
+
+		// No error is a terminal error, and a failing request should be retried on another usage-tracker
+		// replica for the same partition (if available).
+		IsTerminalError: func(_ error) bool { return false },
+	}
+
+	res, err := ring.DoUntilQuorum(ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]*usagetrackerpb.BatchRejectedHashes, error) {
+		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
+		if err != nil {
+			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
+		}
+
+		trackerClient := poolClient.(usagetrackerpb.UsageTrackerClient)
+		trackerRes, err := trackerClient.TrackSeriesBatch(ctx, req)
+		if err != nil {
+			return nil, errors.Wrapf(err, "usage-tracker instance %s (%s)", instance.Id, instance.Addr)
+		}
+
+		return trackerRes.Rejections, nil
+	}, func(_ []*usagetrackerpb.BatchRejectedHashes) {
+		// No cleanup.
+	})
+
+	if err != nil {
+		if c.cfg.IgnoreErrors {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if len(res) == 0 {
+		if c.cfg.IgnoreErrors {
+			return nil, nil
+		}
+		return nil, errors.Errorf("unexpected no responses from usage-tracker for partition %d", partitionID)
+	}
+
+	return res[0], nil
+}
+
 func (c *UsageTrackerClient) sortZones(zones []string) []string {
 	// Shuffle the zones to distribute load evenly.
 	if len(zones) > 2 || (c.cfg.PreferAvailabilityZone == "" && len(zones) > 1) {
@@ -515,15 +627,16 @@ type batchTrackingClient struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	clientsPool *client.Pool
-	workers     *concurrency.ReusableGoroutinesPool
-	logger      log.Logger
+	trackerClient *UsageTrackerClient
+	clientsPool   *client.Pool
+	workers       *concurrency.ReusableGoroutinesPool
+	logger        log.Logger
 
 	mu             sync.Mutex
-	replicaRecords map[*ring.InstanceDesc][]*usagetrackerpb.TrackSeriesBatchRecord
+	replicaRecords map[int32][]*usagetrackerpb.TrackSeriesBatchRecord
 }
 
-func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, batchDelay time.Duration, logger log.Logger) *batchTrackingClient {
+func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batchTrackingClient {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &batchTrackingClient{
@@ -533,11 +646,12 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, b
 		ctx:    ctx,
 		cancel: cancel,
 
-		clientsPool: clientsPool,
-		workers:     concurrency.NewReusableGoroutinesPool(16),
-		logger:      logger,
+		clientsPool:   clientsPool,
+		trackerClient: trackerClient,
+		workers:       concurrency.NewReusableGoroutinesPool(16),
+		logger:        logger,
 
-		replicaRecords: make(map[*ring.InstanceDesc][]*usagetrackerpb.TrackSeriesBatchRecord),
+		replicaRecords: make(map[int32][]*usagetrackerpb.TrackSeriesBatchRecord),
 	}
 
 	go c.flushWorker()
@@ -545,13 +659,14 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, b
 	return c
 }
 
-func (c *batchTrackingClient) TrackSeries(replica *ring.InstanceDesc, userID string, partitionID int32, series []uint64) {
+// TrackSeries notes a
+func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series []uint64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.replicaRecords[replica] = append(c.replicaRecords[replica], &usagetrackerpb.TrackSeriesBatchRecord{
+	c.replicaRecords[partition] = append(c.replicaRecords[partition], &usagetrackerpb.TrackSeriesBatchRecord{
 		UserID:       userID,
-		Partition:    partitionID,
+		Partition:    partition,
 		SeriesHashes: series,
 	})
 }
@@ -580,37 +695,29 @@ func (c *batchTrackingClient) flushWorker() {
 func (c *batchTrackingClient) flushBatch() error {
 	c.mu.Lock()
 	records := c.replicaRecords
-	c.replicaRecords = make(map[*ring.InstanceDesc][]*usagetrackerpb.TrackSeriesBatchRecord)
+	c.replicaRecords = make(map[int32][]*usagetrackerpb.TrackSeriesBatchRecord)
 	c.mu.Unlock()
 
-	for replica, records := range records {
+	for partition, records := range records {
 		c.workers.Go(func() {
-			c.flush(replica, records)
+			c.flush(partition, records)
 		})
 	}
 
 	return nil
 }
 
-func (c *batchTrackingClient) flush(replica *ring.InstanceDesc, records []*usagetrackerpb.TrackSeriesBatchRecord) error {
-	client, err := c.clientsPool.GetClientForInstance(*replica)
-	if err != nil {
-		return errors.Wrapf(err, "failed to get client for replica %s", replica.Addr)
-	}
-
-	trackerClient := client.(usagetrackerpb.UsageTrackerClient)
-	resp, err := trackerClient.TrackSeriesBatch(c.ctx, &usagetrackerpb.TrackSeriesBatchRequest{
-		BatchRequests: records,
-	})
+func (c *batchTrackingClient) flush(partition int32, records []*usagetrackerpb.TrackSeriesBatchRecord) error {
+	rejections, err := c.trackerClient.trackSeriesPerPartitionBatch(context.TODO(), partition, records)
 	if err != nil {
 		return err
 	}
 
-	if len(resp.Rejections) > 0 {
+	if len(rejections) > 0 {
 		var sb strings.Builder
-		for i, rejection := range resp.Rejections {
+		for i, rejection := range rejections {
 			sb.WriteString(fmt.Sprintf("%s (%d rejected)", rejection.UserID, len(rejection.RejectedSeriesHashes)))
-			if i < len(resp.Rejections)-1 {
+			if i < len(rejections)-1 {
 				sb.WriteString(", ")
 			}
 		}
