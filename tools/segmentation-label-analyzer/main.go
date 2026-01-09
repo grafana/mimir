@@ -93,11 +93,14 @@ func run(cfg *Config) error {
 	fmt.Printf("Querying user queries from %s to %s (namespace: %s, tenant: %s)\n",
 		userQueriesStart.Format(time.RFC3339), userQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
 
-	userQueriesCount, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "query-frontend", userQueriesStart, userQueriesEnd, UserQuery)
+	userQueriesCount, userSkipped, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "query-frontend", userQueriesStart, userQueriesEnd, UserQuery)
 	if err != nil {
 		return fmt.Errorf("failed to query Loki for user queries: %w", err)
 	}
 	fmt.Printf("Processed %d user queries\n", userQueriesCount)
+	if userSkipped > 0 {
+		fmt.Printf("Warning: skipped %d malformed log entries for user queries\n", userSkipped)
+	}
 
 	// Query rule queries from ruler-query-frontend.
 	ruleQueriesStart := time.Time(cfg.RuleQueriesStart)
@@ -105,11 +108,14 @@ func run(cfg *Config) error {
 	fmt.Printf("Querying rule queries from %s to %s (namespace: %s, tenant: %s)\n",
 		ruleQueriesStart.Format(time.RFC3339), ruleQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
 
-	ruleQueriesCount, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "ruler-query-frontend", ruleQueriesStart, ruleQueriesEnd, RuleQuery)
+	ruleQueriesCount, ruleSkipped, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "ruler-query-frontend", ruleQueriesStart, ruleQueriesEnd, RuleQuery)
 	if err != nil {
 		return fmt.Errorf("failed to query Loki for rule queries: %w", err)
 	}
 	fmt.Printf("Processed %d rule queries\n", ruleQueriesCount)
+	if ruleSkipped > 0 {
+		fmt.Printf("Warning: skipped %d malformed log entries for rule queries\n", ruleSkipped)
+	}
 
 	fmt.Printf("\nTotal queries analyzed: %d (user: %d, rules: %d)\n",
 		analyzer.TotalQueries(), analyzer.TotalUserQueries(), analyzer.TotalRuleQueries())
@@ -319,7 +325,7 @@ func splitTimeRangeUTC(start, end time.Time) []struct{ Start, End time.Time } {
 }
 
 // queryLokiStats queries Loki for query stats and processes them with the analyzer.
-// Returns the number of queries processed.
+// Returns the number of queries processed, number of skipped entries, and any error.
 func queryLokiStats(
 	ctx context.Context,
 	lokiClient *CachedLokiClient,
@@ -327,7 +333,7 @@ func queryLokiStats(
 	namespace, tenantID, container string,
 	start, end time.Time,
 	queryType QueryType,
-) (int, error) {
+) (int, int, error) {
 	const fetchConcurrency = 4
 
 	// Split time range into UTC-aligned chunks.
@@ -336,6 +342,7 @@ func queryLokiStats(
 	var (
 		resultsMx        sync.Mutex
 		queriesProcessed int
+		skippedEntries   int
 		completedChunks  int
 		errorsMx         sync.Mutex
 		errs             []error
@@ -362,13 +369,17 @@ func queryLokiStats(
 	_ = concurrency.ForEachJob(ctx, len(chunks), fetchConcurrency, func(ctx context.Context, idx int) error {
 		chunk := chunks[idx]
 
-		err := lokiClient.QueryQueryStats(ctx, namespace, tenantID, container, chunk.Start, chunk.End, func(entry QueryStatsEntry) error {
+		skipped, err := lokiClient.QueryQueryStats(ctx, namespace, tenantID, container, chunk.Start, chunk.End, func(entry QueryStatsEntry) error {
 			resultsMx.Lock()
 			analyzer.ProcessQuery(entry.Query, queryType)
 			queriesProcessed++
 			resultsMx.Unlock()
 			return nil
 		})
+
+		resultsMx.Lock()
+		skippedEntries += skipped
+		resultsMx.Unlock()
 
 		if err != nil {
 			errorsMx.Lock()
@@ -387,10 +398,10 @@ func queryLokiStats(
 	close(done)
 
 	if len(errs) > 0 {
-		return queriesProcessed, fmt.Errorf("some chunks failed: %v", errs)
+		return queriesProcessed, skippedEntries, fmt.Errorf("some chunks failed: %v", errs)
 	}
 
-	return queriesProcessed, nil
+	return queriesProcessed, skippedEntries, nil
 }
 
 func printLabelStatsTable(stats []LabelStats, limit int) {

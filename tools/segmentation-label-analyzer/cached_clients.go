@@ -84,10 +84,12 @@ func NewCachedLokiClient(client *LokiClient, cache *FileCache) *CachedLokiClient
 
 // QueryQueryStats queries Loki for query stats logs, using streaming cache.
 // Entries are cached in JSONL format (one JSON object per line) to avoid memory issues with large responses.
-func (c *CachedLokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, container string, start, end time.Time, handler QueryStatsHandler) error {
+// Returns the number of skipped entries (0 if from cache, since cache only contains valid entries) and any error.
+func (c *CachedLokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, container string, start, end time.Time, handler QueryStatsHandler) (int, error) {
 	key := buildKey("loki", namespace, tenantID, container, start.Format(time.RFC3339), end.Format(time.RFC3339))
 
 	// Try to read from cache (streaming).
+	// Cache only contains valid entries, so skip count is 0 for cache hits.
 	if c.cache.StreamRead(key, func(line []byte) error {
 		var entry QueryStatsEntry
 		if err := json.Unmarshal(line, &entry); err != nil {
@@ -95,13 +97,13 @@ func (c *CachedLokiClient) QueryQueryStats(ctx context.Context, namespace, tenan
 		}
 		return handler(entry)
 	}) {
-		return nil
+		return 0, nil
 	}
 
 	// Cache miss - query and stream-write to cache.
 	writer, err := c.cache.StreamWrite(key)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if writer != nil {
 		defer writer.Close()
