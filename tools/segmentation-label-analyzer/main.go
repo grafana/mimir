@@ -183,7 +183,7 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 	// The long tail of small values contributes minimally to the entropy calculation.
 	const batchSize = 20
 	const cardinalityLimit = 20
-	const fetchConcurrency = 4
+	const fetchConcurrency = 8
 
 	// Create batches of label names.
 	var batches [][]string
@@ -256,24 +256,10 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 
 		labelValuesResp, err := mimirClient.GetLabelValuesCardinality(ctx, batch, cardinalityLimit)
 		if err != nil {
-			// If timeout, retry each label individually.
-			if isTimeoutError(err) {
-				for _, labelName := range batch {
-					singleResp, singleErr := mimirClient.GetLabelValuesCardinality(ctx, []string{labelName}, cardinalityLimit)
-					if singleErr != nil {
-						failedMx.Lock()
-						failedLabels = append(failedLabels, labelName)
-						failedMx.Unlock()
-						continue
-					}
-					processResponse(singleResp)
-				}
-			} else {
-				// Non-timeout error - mark all labels in batch as failed.
-				failedMx.Lock()
-				failedLabels = append(failedLabels, batch...)
-				failedMx.Unlock()
-			}
+			// Mark all labels in batch as failed (don't retry on timeout - likely to timeout again).
+			failedMx.Lock()
+			failedLabels = append(failedLabels, batch...)
+			failedMx.Unlock()
 		} else {
 			processResponse(labelValuesResp)
 		}
@@ -293,7 +279,7 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 }
 
 // splitTimeRangeUTC splits a time range into UTC-aligned chunks.
-// Split duration is dynamic: <=10m range uses 1m chunks, <=60m uses 10m chunks, otherwise 1h chunks.
+// Split duration is dynamic: <=10m range uses 30s chunks, <=60m uses 5m chunks, otherwise 30m chunks.
 func splitTimeRangeUTC(start, end time.Time) []struct{ Start, End time.Time } {
 	var chunks []struct{ Start, End time.Time }
 
@@ -302,11 +288,11 @@ func splitTimeRangeUTC(start, end time.Time) []struct{ Start, End time.Time } {
 	var chunkDuration time.Duration
 	switch {
 	case totalDuration <= 10*time.Minute:
-		chunkDuration = time.Minute
+		chunkDuration = 30 * time.Second
 	case totalDuration <= 60*time.Minute:
-		chunkDuration = 10 * time.Minute
+		chunkDuration = 5 * time.Minute
 	default:
-		chunkDuration = time.Hour
+		chunkDuration = 30 * time.Minute
 	}
 
 	current := start
@@ -334,7 +320,7 @@ func queryLokiStats(
 	start, end time.Time,
 	queryType QueryType,
 ) (int, int, error) {
-	const fetchConcurrency = 4
+	const fetchConcurrency = 8
 
 	// Split time range into UTC-aligned chunks.
 	chunks := splitTimeRangeUTC(start, end)

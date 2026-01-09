@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-logfmt/logfmt"
+	"github.com/grafana/dskit/backoff"
 )
 
 // LokiClient is an HTTP client for querying Loki logs.
@@ -184,7 +185,7 @@ func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, c
 	return skippedEntries, nil
 }
 
-// queryRange performs a query_range request to Loki.
+// queryRange performs a query_range request to Loki with retry logic.
 func (c *LokiClient) queryRange(ctx context.Context, query string, limit int, start, end time.Time) (*LokiQueryResponse, error) {
 	params := url.Values{}
 	params.Set("query", query)
@@ -195,34 +196,58 @@ func (c *LokiClient) queryRange(ctx context.Context, query string, limit int, st
 
 	reqURL := fmt.Sprintf("%s/loki/api/v1/query_range?%s", c.address, params.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
+	const maxRetries = 3
+	boff := backoff.New(ctx, backoff.Config{
+		MinBackoff: 1 * time.Second,
+		MaxBackoff: 5 * time.Second,
+		MaxRetries: maxRetries,
+	})
+
+	var lastErr error
+	for boff.Ongoing() {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("error creating request: %w", err)
+		}
+
+		if c.authType == AuthTypeTrust {
+			req.Header.Set("X-Scope-OrgID", c.tenantID)
+		} else if c.username != "" && c.password != "" {
+			req.SetBasicAuth(c.username, c.password)
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = err
+			boff.Wait()
+			continue
+		}
+
+		result, err := func() (*LokiQueryResponse, error) {
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				bodyBytes, _ := io.ReadAll(resp.Body)
+				return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
+			}
+
+			var result LokiQueryResponse
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				return nil, fmt.Errorf("error decoding response: %w", err)
+			}
+			return &result, nil
+		}()
+
+		if err != nil {
+			lastErr = err
+			boff.Wait()
+			continue
+		}
+
+		return result, nil
 	}
 
-	if c.authType == AuthTypeTrust {
-		req.Header.Set("X-Scope-OrgID", c.tenantID)
-	} else if c.username != "" && c.password != "" {
-		req.SetBasicAuth(c.username, c.password)
-	}
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(bodyBytes))
-	}
-
-	var result LokiQueryResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("error decoding response: %w", err)
-	}
-
-	return &result, nil
+	return nil, fmt.Errorf("request failed after %d attempts: %s: %w", maxRetries, reqURL, lastErr)
 }
 
 // extractQueryFromLogLine parses a logfmt log line and extracts the "param_query" field.
