@@ -762,7 +762,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_DisabledByDefault(t *testing.
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
-	cfg.UpdateIngesterOwnedSeries = true // Enable owned series tracking
+	cfg.UseIngesterOwnedSeriesForLimits = true // Enable owned series for limits
 
 	limitsCfg := defaultLimitsTestConfig()
 	// EarlyHeadCompactionOwnedSeriesThreshold defaults to 0, which means disabled
@@ -800,7 +800,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
-	cfg.UpdateIngesterOwnedSeries = true // Enable owned series tracking
+	cfg.UseIngesterOwnedSeriesForLimits = true // Enable owned series for limits
 
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 5 // Trigger when owned series >= 5
@@ -843,7 +843,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	cfg.ActiveSeriesMetrics.Enabled = true
 	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
-	cfg.UpdateIngesterOwnedSeries = true // Enable owned series tracking
+	cfg.UseIngesterOwnedSeriesForLimits = true // Enable owned series for limits
 
 	limitsCfg := defaultLimitsTestConfig()
 	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 5
@@ -891,4 +891,42 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	// Now compaction should trigger again
 	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(60*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 2) // Now 2 blocks
+}
+
+func TestIngester_compactBlocksToReduceOwnedSeries_RequiresOwnedSeriesForLimits(t *testing.T) {
+	var (
+		ctx         = context.Background()
+		ctxWithUser = user.InjectOrgID(ctx, userID)
+		now         = time.Now()
+	)
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.ActiveSeriesMetrics.Enabled = true
+	cfg.ActiveSeriesMetrics.IdleTimeout = 20 * time.Minute
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = time.Hour
+	cfg.UseIngesterOwnedSeriesForLimits = false // Owned series for limits is disabled
+
+	limitsCfg := defaultLimitsTestConfig()
+	limitsCfg.EarlyHeadCompactionOwnedSeriesThreshold = 5 // Threshold is set
+
+	ingester, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limitsCfg, nil, "", nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ingester, r)
+
+	userBlocksDir := filepath.Join(ingester.cfg.BlocksStorageConfig.TSDB.Dir, userID)
+
+	// Push 10 series
+	for seriesID := 0; seriesID < 10; seriesID++ {
+		require.NoError(t, pushSeriesToIngester(ctxWithUser, t, ingester, []util_test.Series{{
+			Labels:  labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("metric_%d", seriesID)),
+			Samples: []util_test.Sample{{TS: now.UnixMilli(), Val: 0}},
+		}}))
+	}
+
+	// Mark all series as inactive
+	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
+
+	// Per-tenant early compaction should NOT trigger because UseIngesterOwnedSeriesForLimits is false
+	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
+	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 }
