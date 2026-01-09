@@ -68,6 +68,21 @@ func (idx *Index) RemoveBlock(id ulid.ULID) {
 	}
 }
 
+// Metadata contains metadata about the bucket index.
+type Metadata struct {
+	// Bucket index format version
+	Version int
+	// Unix timestamp in seconds when the bucket index was last updated
+	UpdatedAt int64
+}
+
+func (idx *Index) Metadata() *Metadata {
+	return &Metadata{
+		UpdatedAt: idx.UpdatedAt,
+		Version:   idx.Version,
+	}
+}
+
 // Block holds the information about a block in the index.
 type Block struct {
 	// Block ID.

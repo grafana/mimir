@@ -158,7 +158,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
-		if err := t.writeSamples(ctx, typeLabel, timestamp, series, metricMetadata, records); err != nil {
+		if err := t.writeSamples(ctx, typeLabel, timestamp, series, metricName, metricMetadata, records); err != nil {
 			errs.Add(err)
 			break
 		}
@@ -187,10 +187,10 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 	errs.Add(err)
 }
 
-func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metadata []prompb.MetricMetadata, records *MetricHistory) error {
+func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metricName string, metadata []prompb.MetricMetadata, records *MetricHistory) error {
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
-	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries)
+	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
 
 	start := time.Now()
 	statusCode, err := t.client.WriteSeries(ctx, series, metadata)
@@ -201,7 +201,7 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
 	} else {
-		level.Debug(logger).Log("msg", "Remote write series succeeded")
+		level.Info(logger).Log("msg", "Remote write series succeeded")
 	}
 
 	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
@@ -451,22 +451,22 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			return
 		}
 
-		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step)
-		level.Debug(logger).Log("msg", "Executing query to find previously written samples", "metric_name", metricName)
+		logger := log.With(t.logger, "query", query, "start", start, "end", end, "step", step, "metric_name", metricName)
+		level.Debug(logger).Log("msg", "Executing query to find previously written samples")
 
 		matrix, err := t.client.QueryRange(ctx, query, start, end, step, WithResultsCacheEnabled(false))
 		if err != nil {
-			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "query", query, "err", err)
+			level.Warn(logger).Log("msg", "Failed to execute range query used to find previously written samples", "err", err)
 			return
 		}
 
 		if len(matrix) == 0 {
-			// No samples found, so we'll keep the last computed valid time range (if any).
+			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no series, this should only happen if continuous-test has not ever run or has not run since the start of the query window")
 			return
 		}
 
 		if len(matrix) != 1 {
-			level.Error(logger).Log("msg", "The range query used to find previously written samples returned an unexpected number of series", "query", query, "expected", 1, "returned", len(matrix))
+			level.Error(logger).Log("msg", "The range query used to find previously written samples returned an unexpected number of series", "expected", 1, "returned", len(matrix))
 			return
 		}
 
@@ -482,11 +482,12 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			fullMatrix = model.Matrix{{Histograms: histograms}}
 			useHistograms = true
 		} else {
-			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither", "query", query)
+			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither")
 			return
 		}
-		lastMatchingIdx, _ := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
+		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
 		if lastMatchingIdx == -1 {
+			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no timestamps where the returned value matched the expected value", "err", err)
 			return
 		}
 
@@ -498,6 +499,8 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			from = samples[lastMatchingIdx].Timestamp.Time()
 			to = samples[len(samples)-1].Timestamp.Time()
 		}
+
+		level.Info(logger).Log("msg", "Found previously written samples", "from", from, "to", to, "issue_with_earlier_data", err)
 
 		// If the last matching sample is not the one at the beginning of the queried time range
 		// then it means we've found the oldest previously written sample and we can stop searching it.

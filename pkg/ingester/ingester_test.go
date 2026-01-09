@@ -8760,7 +8760,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
 		reg := prometheus.NewPedanticRegistry()
-		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg, util_test.NewTestingLogger(t))
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 		t.Cleanup(func() {
@@ -12026,7 +12026,7 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 	}
 
 	setup := func(t *testing.T, start bool, cfg Config) *Ingester {
-		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
 
 		if start {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))

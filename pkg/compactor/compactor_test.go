@@ -2295,6 +2295,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 1
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))
@@ -2365,6 +2366,7 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 1
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))

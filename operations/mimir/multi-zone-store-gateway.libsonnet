@@ -1,6 +1,6 @@
 {
   _config+:: {
-    multi_zone_store_gateway_enabled: false,
+    multi_zone_store_gateway_enabled: $._config.multi_zone_read_path_enabled,
     multi_zone_store_gateway_read_path_enabled: $._config.multi_zone_store_gateway_enabled,
     multi_zone_store_gateway_migration_enabled: false,
     multi_zone_store_gateway_replicas: 0,
@@ -13,7 +13,7 @@
     multi_zone_store_gateway_zpdb_max_unavailable: std.toString($._config.multi_zone_store_gateway_max_unavailable),
 
     // Controls whether the multi (virtual) zone store-gateway should also be deployed multi-AZ.
-    multi_zone_store_gateway_multi_az_enabled: false,
+    multi_zone_store_gateway_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
   },
 
   local container = $.core.v1.container,

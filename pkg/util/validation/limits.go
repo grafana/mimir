@@ -866,9 +866,22 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
 }
 
-// MaxActiveSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
-func (o *Overrides) MaxActiveSeriesPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxActiveSeriesPerUser
+// MaxActiveOrGlobalSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
+// It will automatically fall back to the MaxGlobalSeriesPerUser setting if MaxActiveSeriesPerUser is unset.
+// This means that for users who have any overrides defined, the fallback order is:
+// - Tenant's MaxActiveSeriesPerUser
+// - Default MaxActiveSeriesPerUser
+// - Tenant's MaxGlobalSeriesPerUser
+// - Default MaxGlobalSeriesPerUser
+// And for tenants without overrides it's just:
+// - Default MaxActiveSeriesPerUser
+// - Default MaxGlobalSeriesPerUser
+func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(userID string) int {
+	overrides := o.getOverridesForUser(userID)
+	if maxActive := overrides.MaxActiveSeriesPerUser; maxActive > 0 {
+		return maxActive
+	}
+	return overrides.MaxGlobalSeriesPerUser
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.

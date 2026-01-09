@@ -42,11 +42,16 @@ type memBufferWithInstrumentedRefCount struct {
 }
 
 func (b *memBufferWithInstrumentedRefCount) Ref() {
-	b.refCount.Add(1)
 	b.Buffer.Ref()
+
+	b.refCount.Add(1)
 }
 
 func (b *memBufferWithInstrumentedRefCount) Free() {
-	b.refCount.Sub(1)
 	b.Buffer.Free()
+
+	refCount := b.refCount.Sub(1)
+	if refCount < 0 {
+		panic("memBufferWithInstrumentedRefCount reference count below zero")
+	}
 }

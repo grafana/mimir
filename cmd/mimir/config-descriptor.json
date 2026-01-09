@@ -7396,7 +7396,7 @@
           "required": false,
           "desc": "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
           "fieldCategory": "experimental"
@@ -8643,6 +8643,17 @@
               "fieldDefaultValue": 500,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
               "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_sequential_pusher_enabled",
+              "required": false,
+              "desc": "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -12160,17 +12171,6 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "upload_sparse_index_headers",
-          "required": false,
-          "desc": "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "compactor.upload-sparse-index-headers",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -19759,7 +19759,7 @@
           "required": false,
           "desc": "Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration.",
           "fieldValue": null,
-          "fieldDefaultValue": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
+          "fieldDefaultValue": "ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group",
           "fieldFlag": "overrides-exporter.enabled-metrics",
           "fieldType": "string"
         }
