@@ -377,6 +377,86 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 	}
 }
 
+func TestGetLabelStats_TopValuesSeriesPercent(t *testing.T) {
+	tests := []struct {
+		name                string
+		seriesCount         uint64
+		seriesCountPerValue []uint64
+		expectedTopValues   []float64
+	}{
+		{
+			name:                "more than 3 values - returns top 3",
+			seriesCount:         1000,
+			seriesCountPerValue: []uint64{500, 300, 150, 50}, // sorted DESC
+			expectedTopValues:   []float64{50.0, 30.0, 15.0},
+		},
+		{
+			name:                "exactly 3 values",
+			seriesCount:         1000,
+			seriesCountPerValue: []uint64{600, 300, 100},
+			expectedTopValues:   []float64{60.0, 30.0, 10.0},
+		},
+		{
+			name:                "only 2 values",
+			seriesCount:         1000,
+			seriesCountPerValue: []uint64{700, 300},
+			expectedTopValues:   []float64{70.0, 30.0},
+		},
+		{
+			name:                "only 1 value",
+			seriesCount:         1000,
+			seriesCountPerValue: []uint64{1000},
+			expectedTopValues:   []float64{100.0},
+		},
+		{
+			name:                "empty values",
+			seriesCount:         1000,
+			seriesCountPerValue: []uint64{},
+			expectedTopValues:   nil,
+		},
+		{
+			name:                "zero series count",
+			seriesCount:         0,
+			seriesCountPerValue: []uint64{100, 50, 25},
+			expectedTopValues:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			analyzer := NewAnalyzer()
+
+			labelSeriesStats := map[string]LabelSeriesStats{
+				"test": {
+					SeriesCount:         tc.seriesCount,
+					ValuesCount:         uint64(len(tc.seriesCountPerValue)),
+					SeriesCountPerValue: tc.seriesCountPerValue,
+				},
+			}
+
+			stats := analyzer.GetLabelStats(labelSeriesStats, 1000, time.Hour, time.Hour)
+
+			var testStats *LabelStats
+			for i := range stats {
+				if stats[i].Name == "test" {
+					testStats = &stats[i]
+					break
+				}
+			}
+			require.NotNil(t, testStats, "test label not found")
+
+			if tc.expectedTopValues == nil {
+				assert.Empty(t, testStats.TopValuesSeriesPercent, "expected empty TopValuesSeriesPercent")
+			} else {
+				require.Len(t, testStats.TopValuesSeriesPercent, len(tc.expectedTopValues), "TopValuesSeriesPercent length mismatch")
+				for i, expected := range tc.expectedTopValues {
+					assert.InDelta(t, expected, testStats.TopValuesSeriesPercent[i], 0.01, "TopValuesSeriesPercent[%d] mismatch", i)
+				}
+			}
+		})
+	}
+}
+
 func TestGetLabelStats_QueryValuesPenalty(t *testing.T) {
 	// Test that query coverage score (not QueryCoverage itself) is penalized when
 	// queries reference multiple values for a label.

@@ -3,13 +3,16 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -232,6 +235,11 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 				seriesCountPerValue = append(seriesCountPerValue, v.SeriesCount)
 			}
 
+			// Ensure sorted in descending order (API should return sorted, but verify).
+			if !slices.IsSortedFunc(seriesCountPerValue, uint64Descending) {
+				slices.SortFunc(seriesCountPerValue, uint64Descending)
+			}
+
 			allLabelStats[label.LabelName] = LabelSeriesStats{
 				SeriesCount:         label.SeriesCount,
 				ValuesCount:         label.LabelValuesCount,
@@ -315,6 +323,7 @@ func printCandidatesTable(candidates []LabelStats) {
 		{Header: "User queries", Align: AlignRight},
 		{Header: "Rule queries", Align: AlignRight},
 		{Header: "Unique values", Align: AlignRight},
+		{Header: "Series with highest cardinality values", Align: AlignRight},
 		{Header: "Values distribution", Align: AlignRight},
 		{Header: "Avg values/query", Align: AlignRight},
 	}
@@ -329,12 +338,30 @@ func printCandidatesTable(candidates []LabelStats) {
 			fmt.Sprintf("%.2f%%", ls.UserQueryCoverage),
 			fmt.Sprintf("%.2f%%", ls.RuleQueryCoverage),
 			fmt.Sprintf("%d", ls.ValuesCount),
+			formatTopValuesPercent(ls.TopValuesSeriesPercent),
 			fmt.Sprintf("%.2f", ls.LabelValuesDistribution),
 			fmt.Sprintf("%.2f", ls.AvgDistinctValuesPerQuery),
 		})
 	}
 
 	PrintTable(columns, rows)
+}
+
+// formatTopValuesPercent formats the top values series percentages as "45%, 20%, 10%".
+func formatTopValuesPercent(percents []float64) string {
+	if len(percents) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(percents))
+	for i, p := range percents {
+		parts[i] = fmt.Sprintf("%.0f%%", p)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// uint64Descending is a comparison function for sorting uint64 in descending order.
+func uint64Descending(a, b uint64) int {
+	return cmp.Compare(b, a)
 }
 
 // isTimeoutError returns true if the error is a timeout error.
