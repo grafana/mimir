@@ -2374,6 +2374,26 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "",
 		},
+		"no HA samples in the request": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.AcceptHASamples = true
+			},
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					metrics[i] = mkLabels(25, "team", strconv.Itoa(i%4))
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			expectedErr: "",
+		},
 		"HA dedup; all samples same replica": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.AcceptHASamples = true
