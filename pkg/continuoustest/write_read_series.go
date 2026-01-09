@@ -157,7 +157,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, metricName, metricMetadata, records); err != nil {
 			errs.Add(err)
 			break

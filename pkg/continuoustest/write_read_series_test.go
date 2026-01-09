@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -137,7 +138,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2), mock.Anything)
+			expectedSeries := tt.generateSeries(tt.metricName, now, 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -174,7 +176,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2), mock.Anything)
+			expectedSeries := tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(980), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(980, 0), time.Unix(980, 0), writeInterval, mock.Anything)
@@ -216,9 +219,12 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2), mock.Anything)
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2), mock.Anything)
+			expectedSeries960 := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries980 := tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries1000 := tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries960, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries980, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries1000, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(960, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -254,7 +260,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
+			expectedSeries := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -284,7 +291,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
+			expectedSeries := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(940), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -316,9 +324,12 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(960, 0), 2), mock.Anything)
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(980, 0), 2), mock.Anything)
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2), mock.Anything)
+			expectedSeries960 := tt.generateSeries(tt.metricName, time.Unix(960, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries980 := tt.generateSeries(tt.metricName, time.Unix(980, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			expectedSeries1000 := tt.generateSeries(tt.metricName, time.Unix(1000, 0), 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries960, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries980, mock.Anything)
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries1000, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 		}
 
@@ -391,7 +402,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2), mock.Anything)
+			expectedSeries := tt.generateSeries(tt.metricName, now, 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
@@ -447,7 +459,8 @@ func testWriteReadSeriesTestRun(t *testing.T, cfg WriteReadSeriesTestConfig, tes
 		for _, tt := range testTuples {
 			records := tt.getMetricHistory(test)
 
-			client.AssertCalled(t, "WriteSeries", mock.Anything, tt.generateSeries(tt.metricName, now, 2), mock.Anything)
+			expectedSeries := tt.generateSeries(tt.metricName, now, 2, prompb.Label{Name: "protocol", Value: "prometheus"})
+			client.AssertCalled(t, "WriteSeries", mock.Anything, expectedSeries, mock.Anything)
 			assert.Equal(t, int64(1000), records.lastWrittenTimestamp.Unix())
 
 			client.AssertCalled(t, "QueryRange", mock.Anything, tt.querySum(tt.metricName), time.Unix(1000, 0), time.Unix(1000, 0), writeInterval, mock.Anything)
