@@ -124,8 +124,8 @@ type userTSDB struct {
 	// Unix timestamp of last deletion mark check.
 	lastDeletionMarkCheck atomic.Int64
 
-	// Unix timestamp (milliseconds) of last per-tenant early head compaction.
-	lastPerTenantEarlyCompaction atomic.Int64
+	// Unix timestamp (milliseconds) of last early head compaction (any type).
+	lastEarlyCompaction atomic.Int64
 
 	// for statistics
 	ingestedAPISamples  *util_math.EwmaRate
@@ -690,12 +690,12 @@ func (u *userTSDB) computeOwnedSeries() int {
 	return count
 }
 
-func (u *userTSDB) setLastPerTenantEarlyCompaction(t time.Time) {
-	u.lastPerTenantEarlyCompaction.Store(t.UnixMilli())
+func (u *userTSDB) setLastEarlyCompaction(t time.Time) {
+	u.lastEarlyCompaction.Store(t.UnixMilli())
 }
 
-func (u *userTSDB) getLastPerTenantEarlyCompaction() time.Time {
-	ts := u.lastPerTenantEarlyCompaction.Load()
+func (u *userTSDB) getLastEarlyCompaction() time.Time {
+	ts := u.lastEarlyCompaction.Load()
 	if ts == 0 {
 		return time.Time{}
 	}

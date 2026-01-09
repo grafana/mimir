@@ -3422,6 +3422,14 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 	level.Info(i.logger).Log("msg", "running TSDB head compaction to reduce the number of in-memory series", "users", strings.Join(usersToCompact, " "))
 	forcedCompactionMaxTime := now.Add(-i.cfg.ActiveSeriesMetrics.IdleTimeout).UnixMilli()
 	i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList(usersToCompact, nil))
+
+	// Update last compaction time for all compacted users
+	for _, userID := range usersToCompact {
+		if db := i.getTSDB(userID); db != nil {
+			db.setLastEarlyCompaction(now)
+		}
+	}
+
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", totalMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
 
@@ -3466,7 +3474,7 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 		minReductionPercentage := i.limits.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage(userID)
 
 		// Check cooldown - don't trigger if compacted less than IdleTimeout ago
-		if lastCompaction := db.getLastPerTenantEarlyCompaction(); !lastCompaction.IsZero() && now.Sub(lastCompaction) < idleTimeout {
+		if lastCompaction := db.getLastEarlyCompaction(); !lastCompaction.IsZero() && now.Sub(lastCompaction) < idleTimeout {
 			continue
 		}
 
@@ -3512,7 +3520,7 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 		i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList([]string{userID}, nil))
 
 		// Update last compaction time
-		db.setLastPerTenantEarlyCompaction(now)
+		db.setLastEarlyCompaction(now)
 
 		// Trigger owned series recomputation
 		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
