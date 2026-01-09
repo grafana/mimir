@@ -44,7 +44,7 @@ func run(cfg *Config) error {
 
 	// Create Mimir client (with caching wrapper).
 	mimirClient := NewCachedMimirClient(
-		NewMimirClient(cfg.MimirAddress, cfg.AuthType, cfg.TenantID, cfg.MimirUsername, cfg.MimirPassword),
+		NewMimirClient(cfg.MimirAddress, cfg.MimirAuthType, cfg.TenantID, cfg.MimirUsername, cfg.MimirPassword),
 		cache,
 		cfg.Namespace,
 		cfg.TenantID,
@@ -114,7 +114,7 @@ func run(cfg *Config) error {
 	// Step 3: Query Loki for query stats logs and analyze queries.
 	fmt.Printf("\n--- Querying Loki for query stats logs ---\n")
 	lokiClient := NewCachedLokiClient(
-		NewLokiClient(cfg.LokiAddress, cfg.AuthType, cfg.TenantID, cfg.LokiUsername, cfg.LokiPassword),
+		NewLokiClient(cfg.LokiAddress, cfg.LokiAuthType, cfg.TenantID, cfg.LokiUsername, cfg.LokiPassword),
 		cache,
 	)
 	analyzer := NewAnalyzer()

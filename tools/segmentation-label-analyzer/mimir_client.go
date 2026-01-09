@@ -110,7 +110,7 @@ func (c *MimirClient) doRequest(ctx context.Context, method, path string, body u
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	if c.authType == "trust" {
+	if c.authType == AuthTypeTrust {
 		req.Header.Set("X-Scope-OrgID", c.tenantID)
 	} else if c.username != "" && c.password != "" {
 		req.SetBasicAuth(c.username, c.password)
