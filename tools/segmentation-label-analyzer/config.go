@@ -3,23 +3,30 @@
 package main
 
 import (
-	"errors"
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
 )
 
+// Authentication type constants.
+const (
+	AuthTypeBasicAuth = "basic-auth"
+	AuthTypeTrust     = "trust"
+)
+
 // Config holds all configuration for the segmentation label analyzer.
 type Config struct {
 	TenantID string
-	AuthType string // "basic-auth" or "trust"
 
 	MimirAddress  string
+	MimirAuthType string // "basic-auth" or "trust"
 	MimirUsername string
 	MimirPassword string
 
 	LokiAddress  string
+	LokiAuthType string // "basic-auth" or "trust"
 	LokiUsername string
 	LokiPassword string
 
@@ -45,11 +52,12 @@ type Config struct {
 // RegisterFlags registers the configuration flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.TenantID, "tenant-id", "", "Tenant ID to analyze.")
-	f.StringVar(&cfg.AuthType, "auth-type", "basic-auth", "Authentication type: 'basic-auth' or 'trust'. When 'trust', tenant ID is passed via X-Scope-OrgID header.")
 	f.StringVar(&cfg.MimirAddress, "mimir-address", "", "Mimir endpoint URL (e.g., https://mimir.example.com).")
+	f.StringVar(&cfg.MimirAuthType, "mimir-auth-type", AuthTypeBasicAuth, "Mimir authentication type: 'basic-auth' or 'trust'. When 'trust', tenant ID is passed via X-Scope-OrgID header.")
 	f.StringVar(&cfg.MimirUsername, "mimir-username", "", "Username for Mimir basic auth.")
 	f.StringVar(&cfg.MimirPassword, "mimir-password", "", "Password for Mimir basic auth.")
 	f.StringVar(&cfg.LokiAddress, "loki-address", "", "Loki endpoint URL (e.g., https://loki.example.com).")
+	f.StringVar(&cfg.LokiAuthType, "loki-auth-type", AuthTypeBasicAuth, "Loki authentication type: 'basic-auth' or 'trust'. When 'trust', tenant ID is passed via X-Scope-OrgID header.")
 	f.StringVar(&cfg.LokiUsername, "loki-username", "", "Username for Loki basic auth.")
 	f.StringVar(&cfg.LokiPassword, "loki-password", "", "Password for Loki basic auth.")
 	f.StringVar(&cfg.Namespace, "namespace", "", "Kubernetes namespace for log filtering.")
@@ -73,19 +81,22 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // Validate checks that the configuration is valid.
 func (cfg *Config) Validate() error {
 	if cfg.TenantID == "" {
-		return errors.New("-tenant-id is required")
-	}
-	if cfg.AuthType != "basic-auth" && cfg.AuthType != "trust" {
-		return errors.New("-auth-type must be 'basic-auth' or 'trust'")
+		return fmt.Errorf("-tenant-id is required")
 	}
 	if cfg.MimirAddress == "" {
-		return errors.New("-mimir-address is required")
+		return fmt.Errorf("-mimir-address is required")
+	}
+	if cfg.MimirAuthType != AuthTypeBasicAuth && cfg.MimirAuthType != AuthTypeTrust {
+		return fmt.Errorf("-mimir-auth-type must be '%s' or '%s'", AuthTypeBasicAuth, AuthTypeTrust)
 	}
 	if cfg.LokiAddress == "" {
-		return errors.New("-loki-address is required")
+		return fmt.Errorf("-loki-address is required")
+	}
+	if cfg.LokiAuthType != AuthTypeBasicAuth && cfg.LokiAuthType != AuthTypeTrust {
+		return fmt.Errorf("-loki-auth-type must be '%s' or '%s'", AuthTypeBasicAuth, AuthTypeTrust)
 	}
 	if cfg.Namespace == "" {
-		return errors.New("-namespace is required")
+		return fmt.Errorf("-namespace is required")
 	}
 	return nil
 }
