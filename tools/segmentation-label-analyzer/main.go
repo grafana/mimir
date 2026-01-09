@@ -240,10 +240,24 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 
 		labelValuesResp, err := mimirClient.GetLabelValuesCardinality(ctx, batch, cardinalityLimit)
 		if err != nil {
-			// Mark all labels in batch as failed (don't retry on timeout - likely to timeout again).
-			failedMx.Lock()
-			failedLabels = append(failedLabels, batch...)
-			failedMx.Unlock()
+			if isTimeoutError(err) {
+				// Timeout - retry each label individually as fallback.
+				for _, label := range batch {
+					singleResp, singleErr := mimirClient.GetLabelValuesCardinality(ctx, []string{label}, cardinalityLimit)
+					if singleErr != nil {
+						failedMx.Lock()
+						failedLabels = append(failedLabels, label)
+						failedMx.Unlock()
+					} else {
+						processResponse(singleResp)
+					}
+				}
+			} else {
+				// Non-timeout error - mark all labels in batch as failed.
+				failedMx.Lock()
+				failedLabels = append(failedLabels, batch...)
+				failedMx.Unlock()
+			}
 		} else {
 			processResponse(labelValuesResp)
 		}
