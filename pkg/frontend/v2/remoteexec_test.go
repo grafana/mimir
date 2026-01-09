@@ -1166,6 +1166,9 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
 	requireNoBufferedData(t, evaluator)
 
+	_, err = resp1.GetNextSeries(ctx)
+	require.EqualError(t, err, "can't read next message for node 0, as it is already finished")
+
 	series, err = resp2.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2")}), series)
@@ -1186,6 +1189,9 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedData(t, evaluator)
+
+	_, err = resp2.GetNextSeries(ctx)
+	require.EqualError(t, err, "can't read next message for node 1, as it is already finished")
 
 	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
 }

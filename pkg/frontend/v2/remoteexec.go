@@ -28,7 +28,7 @@ import (
 
 var errMultipleEagerLoadingNextCalls = errors.New("multiple pending calls to eagerLoadingResponseStream.Next()")
 var errRequestAlreadySent = errors.New("can't call enqueueEvaluation() after the request was already sent")
-var errRequestNotSent = errors.New("can't call readNextMessage() before the request was sent")
+var errRequestNotSent = errors.New("can't call getNextMessageForStream() before the request was sent")
 var errUnexpectedEndOfStream = errors.New("expected EvaluateQueryResponse, got end of stream")
 
 var _ remoteexec.GroupEvaluator = &RemoteExecutionGroupEvaluator{}
@@ -130,38 +130,6 @@ func (g *RemoteExecutionGroupEvaluator) CreateRangeVectorExecution(ctx context.C
 	return newRangeVectorExecutionResponse(g, streamIdx, g.memoryConsumptionTracker), nil
 }
 
-type releaseMessageFunc func()
-
-func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*querierpb.EvaluateQueryResponse, releaseMessageFunc, error) {
-	if !g.requestSent {
-		return nil, nil, errRequestNotSent
-	}
-
-	// TODO:
-	// If have buffered message for this node index: pop it from the buffer, return it
-
-	// If don't have buffered message for this node:
-	// - read next message from stream
-	//   - if it's for this response, return it
-	//   - if it's not, buffer it and loop to next message
-
-	msg, err := g.stream.Next(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if msg == nil {
-		return nil, nil, errUnexpectedEndOfStream
-	}
-
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
-	}
-
-	return resp, msg.FreeBuffer, nil
-}
-
 func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	if g.requestSent {
 		return nil
@@ -224,6 +192,51 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	return nil
 }
 
+type releaseMessageFunc func()
+
+func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*querierpb.EvaluateQueryResponse, releaseMessageFunc, error) {
+	if !g.requestSent {
+		return nil, nil, errRequestNotSent
+	}
+
+	nodeState := &g.nodeStreamState[streamIndex]
+	if nodeState.finished {
+		return nil, nil, fmt.Errorf("can't read next message for node %v, as it is already finished", nodeState.nodeIndex)
+	}
+
+	// TODO:
+	// If have buffered message for this node index: pop it from the buffer, return it
+
+	// If don't have buffered message for this node:
+	// - read next message from stream
+	//   - if it's for this response, return it
+	//   - if it's not, buffer it and loop to next message
+	msg, err := g.readNextMessage(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	return resp, msg.FreeBuffer, nil
+}
+
+func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
+	msg, err := g.stream.Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if msg == nil {
+		return nil, errUnexpectedEndOfStream
+	}
+
+	return msg, nil
+}
+
 func (g *RemoteExecutionGroupEvaluator) readEvaluationCompleted(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
 	nodeState := &g.nodeStreamState[streamIndex]
 	if nodeState.finished {
@@ -240,19 +253,24 @@ func (g *RemoteExecutionGroupEvaluator) readEvaluationCompleted(ctx context.Cont
 
 	// Keep reading the stream until we get to an evaluation completed message.
 	for {
-		resp, releaseMessage, err := g.readNextMessage(ctx, streamIndex)
+		msg, err := g.readNextMessage(ctx)
 		if err != nil {
 			return nil, stats.Stats{}, err
 		}
 
+		resp := msg.GetEvaluateQueryResponse()
+		if resp == nil {
+			return nil, stats.Stats{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+		}
+
 		completion := resp.GetEvaluationCompleted()
 		if completion == nil {
-			releaseMessage()
+			msg.FreeBuffer()
 			continue // Try the next message.
 		}
 
 		annos, stats := decodeEvaluationCompletedMessage(completion)
-		releaseMessage()
+		msg.FreeBuffer()
 		return annos, stats, nil
 	}
 }
@@ -317,7 +335,7 @@ func (r *scalarExecutionResponse) Start(ctx context.Context) error {
 }
 
 func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarData, error) {
-	resp, releaseMessage, err := r.group.readNextMessage(ctx, r.streamIndex)
+	resp, releaseMessage, err := r.group.getNextMessageForStream(ctx, r.streamIndex)
 	if err != nil {
 		return types.ScalarData{}, err
 	}
@@ -383,7 +401,7 @@ func (r *instantVectorExecutionResponse) GetSeriesMetadata(ctx context.Context) 
 
 func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if len(r.currentBatch) == 0 {
-		resp, releaseMessage, err := r.group.readNextMessage(ctx, r.streamIndex)
+		resp, releaseMessage, err := r.group.getNextMessageForStream(ctx, r.streamIndex)
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
@@ -485,7 +503,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 	r.floats.Release()
 	r.histograms.Release()
 
-	resp, releaseMessage, err := r.group.readNextMessage(ctx, r.streamIndex)
+	resp, releaseMessage, err := r.group.getNextMessageForStream(ctx, r.streamIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -553,7 +571,7 @@ func (r *rangeVectorExecutionResponse) Close() {
 }
 
 func readSeriesMetadata(ctx context.Context, group *RemoteExecutionGroupEvaluator, streamIndex remoteExecutionNodeStreamIndex, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	resp, releaseMessage, err := group.readNextMessage(ctx, streamIndex)
+	resp, releaseMessage, err := group.getNextMessageForStream(ctx, streamIndex)
 	if err != nil {
 		return nil, err
 	}
