@@ -69,7 +69,8 @@ type QueryStatsHandler func(entry QueryStatsEntry) error
 // QueryQueryStats queries Loki for query stats logs and calls the handler for each entry.
 // It uses pagination to handle large result sets without loading everything in memory.
 // The container parameter specifies which container to query (e.g., "query-frontend" or "ruler-query-frontend").
-func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, container string, start, end time.Time, handler QueryStatsHandler) error {
+// Returns the number of skipped entries (malformed timestamps or invalid queries) and any error.
+func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, container string, start, end time.Time, handler QueryStatsHandler) (int, error) {
 	// Build the LogQL query.
 	// Filter for actual PromQL queries (not metadata queries like label values).
 	// Actual queries have path containing /query or /query_range.
@@ -84,15 +85,18 @@ func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, c
 	// Track seen entries to skip duplicates at batch boundaries.
 	seenEntries := make(map[string]struct{})
 
+	// Track skipped entries for visibility.
+	var skippedEntries int
+
 	for {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return skippedEntries, ctx.Err()
 		}
 
 		// Query this batch.
 		resp, err := c.queryRange(ctx, query, batchSize, currentStart, end)
 		if err != nil {
-			return fmt.Errorf("failed to query Loki: %w", err)
+			return skippedEntries, fmt.Errorf("failed to query Loki: %w", err)
 		}
 
 		if len(resp.Data.Result) == 0 {
@@ -109,10 +113,12 @@ func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, c
 		for _, stream := range resp.Data.Result {
 			for _, value := range stream.Values {
 				if len(value) < 2 {
+					skippedEntries++
 					continue
 				}
 				tsNano, err := strconv.ParseInt(value[0], 10, 64)
 				if err != nil {
+					skippedEntries++
 					continue
 				}
 				allEntries = append(allEntries, logEntry{
@@ -140,6 +146,7 @@ func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, c
 			// Parse the log line to extract the query.
 			queryStr, err := extractQueryFromLogLine(e.line)
 			if err != nil || queryStr == "" {
+				skippedEntries++
 				continue
 			}
 
@@ -148,7 +155,7 @@ func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, c
 				Timestamp: e.timestamp,
 				Query:     queryStr,
 			}); err != nil {
-				return fmt.Errorf("handler error: %w", err)
+				return skippedEntries, fmt.Errorf("handler error: %w", err)
 			}
 
 			lastTimestamp = e.timestamp
@@ -174,7 +181,7 @@ func (c *LokiClient) QueryQueryStats(ctx context.Context, namespace, tenantID, c
 		}
 	}
 
-	return nil
+	return skippedEntries, nil
 }
 
 // queryRange performs a query_range request to Loki.
