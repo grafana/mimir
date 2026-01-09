@@ -52,7 +52,7 @@ message TrackSeriesBatchRequest {
   repeated TrackSeriesBatchPartition partitions = 1;
 }
 
-message BatchRejectionUser {
+message TrackSeriesBatchRejectionUser {
   // UserID for the request that contained rejected hashes.
   string userID = 1;
 
@@ -60,16 +60,16 @@ message BatchRejectionUser {
   repeated uint64 rejectedSeriesHashes = 2;
 }
 
-message BatchRejection {
+message TrackSeriesBatchRejection {
   // Partition that the rejected series belong to.
   int32 partition = 1;
 
   // The users along with their rejected series.
-  repeated BatchRejectionUser users = 2;
+  repeated TrackSeriesBatchRejectionUser users = 2;
 }
 
 message TrackSeriesBatchResponse {
-  repeated BatchRejection rejections = 1;
+  repeated TrackSeriesBatchRejection rejections = 1;
 }
 
 message SeriesCreatedEvent {

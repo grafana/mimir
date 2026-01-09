@@ -160,8 +160,8 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejection{
-			{Partition: 0, Users: []*usagetrackerpb.BatchRejectionUser{
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
 				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
 				{UserID: "tenant2", RejectedSeriesHashes: []uint64{3}},
 			}},
@@ -185,8 +185,8 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 		})
 
 		require.NoError(t, err)
-		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejection{
-			{Partition: 0, Users: []*usagetrackerpb.BatchRejectionUser{
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
 				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
 				{UserID: "tenant1", RejectedSeriesHashes: []uint64{2}},
 				{UserID: "tenant1", RejectedSeriesHashes: []uint64{3}},

@@ -424,7 +424,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 	)
 }
 
-func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.BatchRejection, error) {
+func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
@@ -451,7 +451,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, p
 		IsTerminalError: func(_ error) bool { return false },
 	}
 
-	res, err := ring.DoUntilQuorum(ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]*usagetrackerpb.BatchRejection, error) {
+	res, err := ring.DoUntilQuorum(ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
 		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
 		if err != nil {
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
@@ -464,7 +464,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, p
 		}
 
 		return trackerRes.Rejections, nil
-	}, func(_ []*usagetrackerpb.BatchRejection) {
+	}, func(_ []*usagetrackerpb.TrackSeriesBatchRejection) {
 		// No cleanup.
 	})
 

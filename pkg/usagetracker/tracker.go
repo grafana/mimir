@@ -694,7 +694,7 @@ func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.T
 			return nil, err
 		}
 
-		userRejections := []*usagetrackerpb.BatchRejectionUser{}
+		userRejections := []*usagetrackerpb.TrackSeriesBatchRejectionUser{}
 
 		for _, r := range rp.Users {
 			rejected, err := p.store.trackSeries(context.Background(), r.UserID, r.SeriesHashes, now)
@@ -702,7 +702,7 @@ func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.T
 				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, r.UserID)
 			}
 			if len(rejected) > 0 {
-				userRejections = append(userRejections, &usagetrackerpb.BatchRejectionUser{
+				userRejections = append(userRejections, &usagetrackerpb.TrackSeriesBatchRejectionUser{
 					UserID:               r.UserID,
 					RejectedSeriesHashes: rejected,
 				})
@@ -710,7 +710,7 @@ func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.T
 		}
 
 		if len(userRejections) > 0 {
-			response.Rejections = append(response.Rejections, &usagetrackerpb.BatchRejection{
+			response.Rejections = append(response.Rejections, &usagetrackerpb.TrackSeriesBatchRejection{
 				Partition: rp.Partition,
 				Users:     userRejections,
 			})
