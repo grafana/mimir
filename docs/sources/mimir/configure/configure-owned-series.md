@@ -29,7 +29,7 @@ Owned series tracking addresses these problems by counting, per tenant, the subs
 ## How owned series tracking works
 
 {{% admonition type="note" %}}
-In ingest storage architecture, tokens are assigned to partitions rather than ingesters. 
+In ingest storage architecture, tokens are assigned to partitions rather than ingesters.
 {{% /admonition %}}
 
 Ingesters are assigned tokens in a hash ring. For each token `T` assigned to an ingester, that ingester owns the range of hash values from the preceding assigned token through `T-1`. The preceding token can belong to any ingester in the ring. When shuffle-sharding is enabled, the token ranges owned by an ingester are different for each tenant, depending on which ingesters are part of the tenant's sub-ring.
