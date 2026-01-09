@@ -634,8 +634,9 @@ type batchTrackingClient struct {
 	workers       *concurrency.ReusableGoroutinesPool
 	logger        log.Logger
 
-	mu             sync.Mutex
-	replicaRecords map[int32][]*usagetrackerpb.TrackSeriesBatchUser
+	recordsMtx sync.Mutex
+	// it's a mapping of partition -> user -> series hashes
+	records map[int32]map[string][]uint64
 }
 
 func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batchTrackingClient {
@@ -653,7 +654,7 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, b
 		workers:       concurrency.NewReusableGoroutinesPool(16),
 		logger:        logger,
 
-		replicaRecords: make(map[int32][]*usagetrackerpb.TrackSeriesBatchUser),
+		records: make(map[int32]map[string][]uint64),
 	}
 
 	go c.flushWorker()
@@ -661,15 +662,18 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, b
 	return c
 }
 
-// TrackSeries notes a
+// TrackSeries adds some series to the pending batches.
 func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series []uint64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.recordsMtx.Lock()
+	defer c.recordsMtx.Unlock()
 
-	c.replicaRecords[partition] = append(c.replicaRecords[partition], &usagetrackerpb.TrackSeriesBatchUser{
-		UserID:       userID,
-		SeriesHashes: series,
-	})
+	p, ok := c.records[partition]
+	if !ok {
+		p = make(map[string][]uint64)
+		c.records[partition] = p
+	}
+
+	p[userID] = append(p[userID], series...)
 }
 
 func (c *batchTrackingClient) flushWorker() {
@@ -694,10 +698,10 @@ func (c *batchTrackingClient) flushWorker() {
 }
 
 func (c *batchTrackingClient) flushBatch() error {
-	c.mu.Lock()
-	records := c.replicaRecords
-	c.replicaRecords = make(map[int32][]*usagetrackerpb.TrackSeriesBatchUser)
-	c.mu.Unlock()
+	c.recordsMtx.Lock()
+	records := c.records
+	c.records = make(map[int32]map[string][]uint64)
+	c.recordsMtx.Unlock()
 
 	for partition, records := range records {
 		c.workers.Go(func() {
@@ -708,8 +712,17 @@ func (c *batchTrackingClient) flushBatch() error {
 	return nil
 }
 
-func (c *batchTrackingClient) flush(partition int32, records []*usagetrackerpb.TrackSeriesBatchUser) error {
-	rejections, err := c.trackerClient.trackSeriesPerPartitionBatch(context.TODO(), partition, records)
+func (c *batchTrackingClient) flush(partition int32, records map[string][]uint64) error {
+	// Convert from map to RPC format.
+	users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, len(records))
+	for userID, series := range records {
+		users = append(users, &usagetrackerpb.TrackSeriesBatchUser{
+			UserID:       userID,
+			SeriesHashes: series,
+		})
+	}
+
+	rejections, err := c.trackerClient.trackSeriesPerPartitionBatch(context.TODO(), partition, users)
 	if err != nil {
 		return err
 	}
@@ -731,4 +744,5 @@ func (c *batchTrackingClient) flush(partition int32, records []*usagetrackerpb.T
 func (c *batchTrackingClient) Stop() {
 	// We flush any outstanding records.
 	c.cancel()
+	c.workers.Close()
 }
