@@ -668,6 +668,7 @@ func (t *UsageTracker) stop(_ error) error {
 	return errs.Err()
 }
 
+// TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
 	partition := req.Partition
 	p, err := t.runningPartition(partition)
