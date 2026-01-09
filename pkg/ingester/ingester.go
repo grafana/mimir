@@ -433,9 +433,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	}
 
 	// Validate per-tenant early compaction configuration.
-	if defaultThreshold := limits.EarlyHeadCompactionOwnedSeriesThreshold(""); defaultThreshold > 0 {
-		if !cfg.UseIngesterOwnedSeriesForLimits && !cfg.UpdateIngesterOwnedSeries {
-			return nil, fmt.Errorf("per-tenant early compaction (ingester.early-head-compaction-owned-series-threshold) requires owned series tracking to be enabled (either -ingester.use-ingester-owned-series-for-limits or -ingester.track-ingester-owned-series)")
+	if limits != nil {
+		if defaultThreshold := limits.EarlyHeadCompactionOwnedSeriesThreshold(""); defaultThreshold > 0 {
+			if !cfg.UseIngesterOwnedSeriesForLimits && !cfg.UpdateIngesterOwnedSeries {
+				return nil, fmt.Errorf("per-tenant early compaction (ingester.early-head-compaction-owned-series-threshold) requires owned series tracking to be enabled (either -ingester.use-ingester-owned-series-for-limits or -ingester.track-ingester-owned-series)")
+			}
 		}
 	}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
