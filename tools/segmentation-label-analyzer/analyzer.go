@@ -54,6 +54,10 @@ type LabelStats struct {
 	// Range 0-1: 0 = all series have one value (bad for sharding), 1 = evenly distributed (ideal for sharding).
 	LabelValuesDistribution float64
 
+	// TopValuesSeriesPercent is the percentage of series for the top 3 label values (by cardinality).
+	// E.g., [45.0, 20.0, 10.0] means the top value has 45% of series, second has 20%, etc.
+	TopValuesSeriesPercent []float64
+
 	// Score is a weighted score (0-1) for ranking candidates.
 	// Composed of 40% series coverage + 40% query coverage + 20% distribution uniformity (entropy).
 	Score float64
@@ -65,8 +69,8 @@ type LabelSeriesStats struct {
 	SeriesCount uint64
 	// ValuesCount is the number of unique values for this label.
 	ValuesCount uint64
-	// SeriesCountPerValue is the series count for the label values with the highest number of series.
-	// Used for distribution uniformity calculation.
+	// SeriesCountPerValue is the series count for label values, sorted in descending order (highest first).
+	// Used for distribution uniformity calculation and top values display.
 	SeriesCountPerValue []uint64
 }
 
@@ -188,12 +192,23 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 	// Add series stats from Mimir.
 	for name, stats := range labelSeriesStats {
 		coverage := min(100, max(0, float64(stats.SeriesCount)/float64(totalSeriesCount)*100))
+
+		// Compute top 3 values series percentages.
+		var topValuesPercent []float64
+		if stats.SeriesCount > 0 && len(stats.SeriesCountPerValue) > 0 {
+			for i := 0; i < min(3, len(stats.SeriesCountPerValue)); i++ {
+				pct := float64(stats.SeriesCountPerValue[i]) / float64(stats.SeriesCount) * 100
+				topValuesPercent = append(topValuesPercent, pct)
+			}
+		}
+
 		statsMap[name] = &LabelStats{
 			Name:                    name,
 			SeriesCount:             stats.SeriesCount,
 			ValuesCount:             stats.ValuesCount,
 			SeriesCoverage:          coverage,
 			LabelValuesDistribution: computeNormalizedEntropy(stats.SeriesCountPerValue),
+			TopValuesSeriesPercent:  topValuesPercent,
 		}
 	}
 
