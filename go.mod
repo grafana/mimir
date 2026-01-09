@@ -32,7 +32,7 @@ require (
 	github.com/prometheus/alertmanager v0.30.0
 	github.com/prometheus/client_golang v1.23.3-0.20251212205219-7ba246a648ca
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.67.4
+	github.com/prometheus/common v0.67.5
 	github.com/prometheus/prometheus v1.99.0
 	github.com/segmentio/fasthash v1.0.3
 	github.com/sirupsen/logrus v1.9.3
