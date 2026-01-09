@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -797,7 +799,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 								- MatrixSelector: {__name__="baz"}[5m0s]
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 3,
-			nodesEliminatedWithDelayedNameRemoval:    1,
+			nodesEliminatedWithDelayedNameRemoval:    4,
 		},
 	}
 
@@ -824,7 +826,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				// Then, create a plan with optimization
 				plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval, opts1.CommonOpts.Reg))
+				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval, opts2.CommonOpts.Reg))
 				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
 				require.NoError(t, err)
 				nodesAfter := countDeduplicateAndMergeNodes(planAfter.Root)
@@ -849,6 +851,17 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				require.Equal(t, expectedNodesEliminated, actualEliminated,
 					"Query: %s\nExpected to eliminate %d nodes, but eliminated %d (before: %d, after: %d)",
 					testCase.expr, expectedNodesEliminated, actualEliminated, nodesBefore, nodesAfter)
+
+				if expectedNodesEliminated > 0 {
+					reg := opts2.CommonOpts.Reg.(*prometheus.Registry)
+
+					require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
+						# HELP cortex_mimir_query_engine_eliminate_dedupe_modified_total Total number of queries where the optimization pass has been able to eliminate DeduplicateAndMerge nodes for.
+						# TYPE cortex_mimir_query_engine_eliminate_dedupe_modified_total counter
+						cortex_mimir_query_engine_eliminate_dedupe_modified_total 1
+						`), "cortex_mimir_query_engine_eliminate_dedupe_modified_total",
+					))
+				}
 			}
 
 			t.Run("delayed name removal disabled", func(t *testing.T) {

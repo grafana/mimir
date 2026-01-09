@@ -4,6 +4,7 @@ package plan
 
 import (
 	"context"
+	"slices"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -68,7 +69,9 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, 
 	// nodes is a list of DeduplicateAndMerge nodes in the order of their appearance in the plan.
 	var nodes []dedupNodeInfo
 	e.collect(plan.Root, nil, -1, &nodes)
-	if len(nodes) > 0 {
+
+	// If there are any DeduplicateAndMerge nodes we are not keeping, increment the modified counter.
+	if i := slices.IndexFunc(nodes, func(n dedupNodeInfo) bool { return !n.keep }); i != -1 {
 		e.modified.Inc()
 	}
 
