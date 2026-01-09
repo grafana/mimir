@@ -80,6 +80,10 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker *MemoryCon
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
+	// We intentionally call increase memory for labels here before deduplication because,
+	// we want to balance with the decrease memory consumption calls through iterator that can contains duplicate labels too.
+	// In the case of hash collision, we also want to make sure the labels memory consumption is increased
+	// and decreased for the labels set that was conflicted.
 	err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
 	if err != nil {
 		return labels.EmptyLabels(), err
