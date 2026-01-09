@@ -67,12 +67,13 @@ type ingesterMetrics struct {
 	maxLocalSeriesPerUser *prometheus.GaugeVec
 
 	// Head compactions metrics.
-	compactionsTriggered       prometheus.Counter
-	compactionsFailed          prometheus.Counter
-	forcedCompactionInProgress prometheus.Gauge
-	appenderAddDuration        prometheus.Histogram
-	appenderCommitDuration     prometheus.Histogram
-	idleTsdbChecks             *prometheus.CounterVec
+	compactionsTriggered               prometheus.Counter
+	compactionsFailed                  prometheus.Counter
+	forcedCompactionInProgress         prometheus.Gauge
+	perTenantEarlyCompactionsTriggered prometheus.Counter
+	appenderAddDuration                prometheus.Histogram
+	appenderCommitDuration             prometheus.Histogram
+	idleTsdbChecks                     *prometheus.CounterVec
 
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
@@ -370,6 +371,10 @@ func newIngesterMetrics(
 		forcedCompactionInProgress: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_tsdb_forced_compactions_in_progress",
 			Help: "Reports 1 if there's a forced TSDB head compaction in progress, 0 otherwise.",
+		}),
+		perTenantEarlyCompactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_per_tenant_early_compactions_triggered_total",
+			Help: "Total number of triggered per-tenant early compactions.",
 		}),
 
 		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{

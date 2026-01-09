@@ -3460,15 +3460,15 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 			return
 		}
 
-		db := i.getTSDB(userID)
-		if db == nil {
-			continue
-		}
-
 		// Get per-tenant limits
 		threshold := i.limits.EarlyHeadCompactionOwnedSeriesThreshold(userID)
 		if threshold <= 0 {
 			continue // Per-tenant early compaction disabled for this tenant
+		}
+
+		db := i.getTSDB(userID)
+		if db == nil {
+			continue
 		}
 
 		minReductionPercentage := i.limits.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage(userID)
@@ -3519,7 +3519,8 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 		// Trigger compaction for this user
 		i.compactBlocks(ctx, true, forcedCompactionMaxTime, util.NewAllowList([]string{userID}, nil))
 
-		// Update last compaction time
+		// Update metrics and last compaction time
+		i.metrics.perTenantEarlyCompactionsTriggered.Inc()
 		db.setLastEarlyCompaction(now)
 
 		// Trigger owned series recomputation
