@@ -15,24 +15,24 @@ In a distributed Grafana Mimir deployment, distributors use consistent hashing t
 
 Additionally, since each ingester enforces only a fraction of a tenant's in-memory series limits locally, increasing the ingester count, or a tenant's shuffle-shard size, can result in ingesters rejecting samples due to exceeded local limits, even if the global limit isn't breached. For example:
 
-- Consider a tenant with a global series limit of 150k with series spread across 3 ingesters; the local limit on each ingesters is 50k in-memory series
-- The tenant is sending ~90k series, so ~30k in-memory series per ingester
-- Now, we shard the tenant across 6 ingesters, either by adding ingesters or increasing the tenant's shuffle-shard size
-- The local limit on each ingester drops to 25k; the tenant's 30k series on the original 3 ingesters exceed the new local limit, and those ingesters immediately start to discard samples
+- Consider a tenant with a global series limit of 150k with series spread across 3 ingesters; the local limit on each ingesters is 50k in-memory series.
+- The tenant is sending ~90k series, so ~30k in-memory series per ingester.
+- Now, the tenant is sharded across 6 ingesters, either by adding ingesters or increasing the tenant's shuffle-shard size.
+- The local limit on each ingester drops to 25k; the tenant's 30k series on the original 3 ingesters exceed the new local limit, and those ingesters immediately start to discard samples.
 
 <div align="center">
   <img src="/media/docs/mimir/scale-up-owned-series.png" alt="Changing limits with in-memory series" width="400">
 </div>
 
-Owned series tracking addresses these problem by counting, per tenant, the subset of in-memory series that hash to a particular ingester or partition, based on the current ring state and shard configuration. When you enable owned series tracking and use owned series for series limits, Mimir ingesters enforce limits against a tenant's owned series count rather than the full count of in-memory series.
+Owned series tracking addresses these problems by counting, per tenant, the subset of in-memory series that hash to a particular ingester or partition, based on the current ring state and shard configuration. When you enable owned series tracking and use owned series for series limits, Mimir ingesters enforce limits against a tenant's owned series count rather than the full count of in-memory series.
 
 ## How owned series tracking works
 
 {{% admonition type="note" %}}
-In ingest storage architecture tokens are assigned to partitions and not ingesters; when referring to token and series ownership, instances of "ingester" below should be taken to mean "partition" for ingest storage.
+In ingest storage architecture, tokens are assigned to partitions rather than ingesters. 
 {{% /admonition %}}
 
-Ingesters are assigned tokens in a hash ring. For each token `T` assigned to an ingester, that ingester owns the range of hash values from the preceding assigned token (inclusive) through `T-1`. The preceding token can belong to any ingester in the ring. When shuffle-sharding is enabled, the token ranges owned by an ingester will be different for each tenant, depending on which ingesters are part of the tenant's sub-ring.
+Ingesters are assigned tokens in a hash ring. For each token `T` assigned to an ingester, that ingester owns the range of hash values from the preceding assigned token through `T-1`. The preceding token can belong to any ingester in the ring. When shuffle-sharding is enabled, the token ranges owned by an ingester are different for each tenant, depending on which ingesters are part of the tenant's sub-ring.
 
 A series is owned by an ingester if the hash of its labels and tenant ID falls within a token range owned by that ingester. New series written to an ingester are automatically counted as owned by the ingester, since the distributors use the same algorithm to route series to ingesters.
 
@@ -43,11 +43,11 @@ Every `ingester.owned-series-update-interval`, each ingester's owned series serv
 - Token ranges changes
 - Compaction events
 
-If any of the above trigger an owned series recomputation, the ingester iterates over all of the series in the tenant's TSDB and compares the series hash against the owned token ranges. If the hash falls within one of the token ranges, it is counted as still owned by the ingester; series with hashes that fall outside of the ranges are not counted (but they remain in-memory until compaction).
+If any of these conditions trigger an owned series recomputation, the ingester iterates over all of the series in the tenant's TSDB and compares the series hash against the owned token ranges. If the hash falls within one of the token ranges, it is counted as still owned by the ingester; series with hashes that fall outside of the ranges are not counted, but remain in-memory until compaction.
 
-Because owned series are recomputed shortly after a change in the ring state (e.g.: adding new ingesters) the owned series count is suitable to provide an autoscaler feedback about the impact of a scaling operation.
+Because owned series are recomputed shortly after a change in the ring state, for instance, adding new ingesters, the owned series count is suitable to provide an autoscaler feedback about the impact of a scaling operation.
 
-Additionally, if the recomputation is triggered by a series limit decrease, the owned series are recomputed before the new series limit takes effect (series limit increases take effect immediately). This allows graceful handling of the situation described above, without dropping samples while the owned series are being recomputed.
+Additionally, if the recomputation is triggered by a series limit decrease, the owned series are recomputed before the new series limit takes effect. Series limit increases take effect immediately. This allows graceful handling of this situation, without dropping samples while the owned series are being recomputed.
 
 <div align="center">
   <img src="/media/docs/mimir/scale-up-memory-series.png" alt="Changing limits with owned series" width="400">
@@ -59,7 +59,7 @@ Additionally, if the recomputation is triggered by a series limit decrease, the 
 These steps are only required to use owned series tracking in classic architecture. They are not required with ingest storage architecture because series replication is handled by the Kafka partitions, rather than writing to multiple ingesters. However, zone-aware replication of ingesters is still recommended for high availability.
 {{% /admonition %}}
 
-Due to the way token ranges are calculated, using owned series tracking requires the following tasks to be completed first:
+Due to the way token ranges are calculated, using owned series tracking requires you to complete the following tasks first:
 
 - Enable [zone-aware replication](https://grafana.com/docs/mimir/<MIMIR_VERSION>/configure/configure-zone-aware-replication/).
 - Set the replication factor equal to the number of zones.
@@ -76,7 +76,7 @@ Due to the way token ranges are calculated, using owned series tracking requires
     -ingester.owned-series-update-interval=15s
     ```
 
-1.  Verify owned series are being tracked per tenant by checking for `cortex_ingester_owned_series` metrics
+1.  Verify that owned series are being tracked per tenant by checking for `cortex_ingester_owned_series` metrics
 
 1.  Use owned series, rather than in-memory series, to enforce per-tenant series limits. For example:
 
