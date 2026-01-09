@@ -2399,7 +2399,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
+					for i := 0; i < 25; i++ {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
 					lbls.Set("cluster", "c1")
@@ -2427,7 +2427,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
-					for i := 0; i < 10; i++ {
+					for i := 0; i < 25; i++ {
 						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
 					}
 					cluster, replica := i/2+1, i%2+1
