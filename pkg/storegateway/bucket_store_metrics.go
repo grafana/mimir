@@ -17,11 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 )
 
-const (
-	labelDiscoveryDiffOlder = "older"
-	labelDiscoveryDiffNewer = "newer"
-)
-
 // BucketStoreMetrics holds all the metrics tracked by BucketStore. These metrics
 // MUST be monotonic (counter, summary, histogram) because a single metrics instance
 // can be passed to multiple BucketStore and metrics MUST be correct even after a
@@ -90,7 +85,6 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		NativeHistogramMaxBucketNumber:  100,
 		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
-
 	m.seriesDataTouched = promauto.With(reg).NewSummaryVec(prometheus.SummaryOpts{
 		Name: "cortex_bucket_store_series_data_touched",
 		Help: "How many items of a data type in a block were touched for a single Series/LabelValues/LabelNames request.",
