@@ -1181,8 +1181,6 @@ Usage of ./cmd/mimir/mimir:
     	For tenants marked for deletion, this is the time between deletion of the last block, and doing final cleanup (marker files, debug files) of the tenant. (default 6h0m0s)
   -compactor.update-blocks-concurrency int
     	Number of goroutines to use when updating blocks metadata during bucket index updates. (default 1)
-  -compactor.upload-sparse-index-headers
-    	[experimental] If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally. (default true)
   -config.expand-env
     	Expands ${var} or $var in config according to the values of the environment variables.
   -config.file value
@@ -1479,6 +1477,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
   -ingest-storage.kafka.ingestion-concurrency-queue-capacity int
     	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
+  -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
+    	[experimental] When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards. (default true)
   -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard int
     	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
   -ingest-storage.kafka.last-produced-offset-poll-interval duration
@@ -1964,7 +1964,7 @@ Usage of ./cmd/mimir/mimir:
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
-    	Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration. (default ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant)
+    	Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration. (default ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group)
   -overrides-exporter.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 4)
   -overrides-exporter.ring.consul.acl-token string
@@ -2168,7 +2168,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.query-store-after duration
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
   -querier.response-streaming-enabled
-    	[experimental] Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).
+    	[experimental] Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do). (default true)
   -querier.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -querier.ring.consul.acl-token string

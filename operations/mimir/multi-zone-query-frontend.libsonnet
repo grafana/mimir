@@ -3,7 +3,11 @@
     // Allow to configure whether the query-frontend should be deployed in single or multi-zone.
     // Multi-zone and single-zone can be enabled at the same time during migrations.
     single_zone_query_frontend_enabled: !$._config.multi_zone_query_frontend_enabled,
-    multi_zone_query_frontend_enabled: false,
+    multi_zone_query_frontend_enabled: $._config.multi_zone_read_path_enabled,
+
+    // Controls whether the traffic should be routed to multi-zone query-frontend.
+    // This setting can be used by downstream projects during migrations from single to multi-zone.
+    multi_zone_query_frontend_routing_enabled: $._config.multi_zone_query_frontend_enabled,
   },
 
   local container = $.core.v1.container,

@@ -687,7 +687,16 @@ func (c *GlobalConfig) isZero() bool {
 		c.ScrapeProtocols == nil &&
 		c.ScrapeNativeHistograms == nil &&
 		!c.ConvertClassicHistogramsToNHCB &&
-		!c.AlwaysScrapeClassicHistograms
+		!c.AlwaysScrapeClassicHistograms &&
+		c.BodySizeLimit == 0 &&
+		c.SampleLimit == 0 &&
+		c.TargetLimit == 0 &&
+		c.LabelLimit == 0 &&
+		c.LabelNameLengthLimit == 0 &&
+		c.LabelValueLengthLimit == 0 &&
+		c.KeepDroppedTargets == 0 &&
+		c.MetricNameValidationScheme == model.UnsetValidation &&
+		c.MetricNameEscapingScheme == ""
 }
 
 const DefaultGoGCPercentage = 75
@@ -1022,7 +1031,7 @@ func ToEscapingScheme(s string, v model.ValidationScheme) (model.EscapingScheme,
 		case model.LegacyValidation:
 			return model.UnderscoreEscaping, nil
 		case model.UnsetValidation:
-			return model.NoEscaping, fmt.Errorf("v is unset: %s", v)
+			return model.NoEscaping, fmt.Errorf("ValidationScheme is unset: %s", v)
 		default:
 			panic(fmt.Errorf("unhandled validation scheme: %s", v))
 		}

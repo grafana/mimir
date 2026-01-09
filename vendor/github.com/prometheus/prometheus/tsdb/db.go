@@ -96,6 +96,7 @@ func DefaultOptions() *Options {
 		CompactionDelayMaxPercent:                DefaultCompactionDelayMaxPercent,
 		CompactionDelay:                          time.Duration(0),
 		PostingsDecoderFactory:                   DefaultPostingsDecoderFactory,
+		BlockReloadInterval:                      1 * time.Minute,
 		IndexLookupPlannerFunc:                   DefaultIndexLookupPlannerFunc,
 		HeadChunksEndTimeVariance:                0,
 		HeadPostingsForMatchersCacheInvalidation: DefaultPostingsForMatchersCacheInvalidation,
@@ -344,6 +345,9 @@ type Options struct {
 	// BlockCompactionExcludeFunc is a function which returns true for blocks that should NOT be compacted.
 	// It's passed down to the TSDB compactor.
 	BlockCompactionExcludeFunc BlockExcludeFilterFunc
+
+	// BlockReloadInterval is the interval at which blocks are reloaded.
+	BlockReloadInterval time.Duration
 
 	// FeatureRegistry is used to register TSDB features.
 	FeatureRegistry features.Collector
@@ -960,6 +964,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}
+	if opts.BlockReloadInterval < 1*time.Second {
+		opts.BlockReloadInterval = 1 * time.Second
+	}
 	if opts.IndexLookupPlannerFunc == nil {
 		opts.IndexLookupPlannerFunc = DefaultIndexLookupPlannerFunc
 	}
@@ -1297,7 +1304,7 @@ func (db *DB) run(ctx context.Context) {
 		}
 
 		select {
-		case <-time.After(1 * time.Minute):
+		case <-time.After(db.opts.BlockReloadInterval):
 			db.cmtx.Lock()
 			if err := db.reloadBlocks(); err != nil {
 				db.logger.Error("reloadBlocks", "err", err)

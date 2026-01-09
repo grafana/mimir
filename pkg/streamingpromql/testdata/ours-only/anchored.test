@@ -1,8 +1,0 @@
-# These can be moved into ours/anchored.test once this PR is merged and vendored in - https://github.com/prometheus/prometheus/pull/17479
-load 1m
-  metric 1 2 _ 4 5
-
-eval instant at 2m resets(metric[1m] anchored)
-
-eval instant at 2m changes(metric[1m] anchored)
-

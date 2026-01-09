@@ -219,7 +219,7 @@
       "interval": "1s"
       "retries": "30"
       "start_period": "1s"
-      "test": "nc -z localhost 9092 || exit -1"
+      "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       "timeout": "1s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
@@ -243,7 +243,7 @@
       "interval": "1s"
       "retries": "30"
       "start_period": "1s"
-      "test": "nc -z localhost 9092 || exit -1"
+      "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       "timeout": "1s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":
@@ -267,7 +267,7 @@
       "interval": "1s"
       "retries": "30"
       "start_period": "1s"
-      "test": "nc -z localhost 9092 || exit -1"
+      "test": "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"
       "timeout": "1s"
     "image": "confluentinc/cp-kafka:latest"
     "ports":

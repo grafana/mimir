@@ -449,7 +449,7 @@ overrides_exporter:
   # Comma-separated list of metrics to include in the exporter. Metric names
   # must match yaml tags from the limits section of the configuration.
   # CLI flag: -overrides-exporter.enabled-metrics
-  [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
+  [enabled_metrics: <string> | default = "ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group"]
 
 # The common block holds configurations that configure multiple components at a
 # time.
@@ -3561,7 +3561,7 @@ grpc_client_config:
 # for response types that support it (currently only `active_series` responses
 # do).
 # CLI flag: -querier.response-streaming-enabled
-[response_streaming_enabled: <boolean> | default = false]
+[response_streaming_enabled: <boolean> | default = true]
 ```
 
 ### etcd
@@ -5157,6 +5157,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
   [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
 
+  # (experimental) When enabled, tenants with few timeseries use a simpler
+  # sequential pusher instead of parallel shards.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
+  [ingestion_concurrency_sequential_pusher_enabled: <boolean> | default = true]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when
@@ -5950,13 +5955,6 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
-
-# (experimental) If enabled, the compactor constructs and uploads sparse index
-# headers to object storage during each compaction cycle. This allows
-# store-gateway instances to use the sparse headers from object storage instead
-# of recreating them locally.
-# CLI flag: -compactor.upload-sparse-index-headers
-[upload_sparse_index_headers: <boolean> | default = true]
 ```
 
 ### store_gateway

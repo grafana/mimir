@@ -1748,6 +1748,158 @@
             "showTitle": true,
             "title": "By estimated compaction jobs from bucket-index",
             "titleSize": "h6"
+         },
+         {
+            "collapse": true,
+            "height": "250px",
+            "panels": [
+               {
+                  "aliasColors": { },
+                  "bars": false,
+                  "dashLength": 10,
+                  "dashes": false,
+                  "datasource": "$datasource",
+                  "fieldConfig": {
+                     "overrides": [
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Time"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "Time"
+                              },
+                              {
+                                 "id": "custom.hidden",
+                                 "value": true
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "Value"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "per-instance disk usage"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "bytes"
+                              }
+                           ]
+                        },
+                        {
+                           "matcher": {
+                              "id": "byName",
+                              "options": "user"
+                           },
+                           "properties": [
+                              {
+                                 "id": "displayName",
+                                 "value": "user"
+                              },
+                              {
+                                 "id": "decimals",
+                                 "value": 2
+                              },
+                              {
+                                 "id": "unit",
+                                 "value": "string"
+                              }
+                           ]
+                        }
+                     ]
+                  },
+                  "fill": 1,
+                  "id": 15,
+                  "legend": {
+                     "avg": false,
+                     "current": false,
+                     "max": false,
+                     "min": false,
+                     "show": true,
+                     "total": false,
+                     "values": false
+                  },
+                  "lines": true,
+                  "linewidth": 1,
+                  "links": [ ],
+                  "nullPointMode": "null as zero",
+                  "percentage": false,
+                  "pointradius": 5,
+                  "points": false,
+                  "renderer": "flot",
+                  "seriesOverrides": [ ],
+                  "sort": {
+                     "col": 2,
+                     "desc": true
+                  },
+                  "spaceLength": 10,
+                  "span": 12,
+                  "stack": false,
+                  "steppedLine": false,
+                  "targets": [
+                     {
+                        "expr": "topk($limit,\n  max by (user) (sum by (user, pod) (cortex_bucket_store_blocks_loaded_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}))\n)\n",
+                        "format": "table",
+                        "instant": true,
+                        "legendFormat": "",
+                        "refId": "A"
+                     }
+                  ],
+                  "thresholds": [ ],
+                  "timeFrom": null,
+                  "timeShift": null,
+                  "title": "Top $limit users by per-store-gateway disk utilization",
+                  "tooltip": {
+                     "shared": false,
+                     "sort": 0,
+                     "value_type": "individual"
+                  },
+                  "transform": "table",
+                  "type": "table",
+                  "xaxis": {
+                     "buckets": null,
+                     "mode": "time",
+                     "name": null,
+                     "show": true,
+                     "values": [ ]
+                  },
+                  "yaxes": [
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": 0,
+                        "show": true
+                     },
+                     {
+                        "format": "short",
+                        "label": null,
+                        "logBase": 1,
+                        "max": null,
+                        "min": null,
+                        "show": false
+                     }
+                  ]
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "By store-gateway disk utilization",
+            "titleSize": "h6"
          }
       ],
       "schemaVersion": 14,
