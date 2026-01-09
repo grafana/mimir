@@ -4,8 +4,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"sort"
 	"sync"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/mimir/pkg/querier/api"
 )
 
 func main() {
@@ -212,36 +215,57 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 		}
 	}()
 
+	// processResponse extracts label stats from a cardinality response.
+	processResponse := func(resp *api.LabelValuesCardinalityResponse) {
+		resultsMx.Lock()
+		defer resultsMx.Unlock()
+
+		// Use the total series count from the first successful response (it's the same for all).
+		if totalSeriesCount == 0 {
+			totalSeriesCount = resp.SeriesCountTotal
+		}
+
+		for _, label := range resp.Labels {
+			// Extract per-value series counts for entropy calculation.
+			seriesCountPerValue := make([]uint64, 0, len(label.Cardinality))
+			for _, v := range label.Cardinality {
+				seriesCountPerValue = append(seriesCountPerValue, v.SeriesCount)
+			}
+
+			allLabelStats[label.LabelName] = LabelSeriesStats{
+				SeriesCount:         label.SeriesCount,
+				ValuesCount:         label.LabelValuesCount,
+				SeriesCountPerValue: seriesCountPerValue,
+			}
+		}
+	}
+
 	// Fetch label values in parallel.
 	_ = concurrency.ForEachJob(ctx, len(batches), fetchConcurrency, func(ctx context.Context, idx int) error {
 		batch := batches[idx]
 
 		labelValuesResp, err := mimirClient.GetLabelValuesCardinality(ctx, batch, cardinalityLimit)
 		if err != nil {
-			failedMx.Lock()
-			failedLabels = append(failedLabels, batch...)
-			failedMx.Unlock()
+			// If timeout, retry each label individually.
+			if isTimeoutError(err) {
+				for _, labelName := range batch {
+					singleResp, singleErr := mimirClient.GetLabelValuesCardinality(ctx, []string{labelName}, cardinalityLimit)
+					if singleErr != nil {
+						failedMx.Lock()
+						failedLabels = append(failedLabels, labelName)
+						failedMx.Unlock()
+						continue
+					}
+					processResponse(singleResp)
+				}
+			} else {
+				// Non-timeout error - mark all labels in batch as failed.
+				failedMx.Lock()
+				failedLabels = append(failedLabels, batch...)
+				failedMx.Unlock()
+			}
 		} else {
-			resultsMx.Lock()
-			// Use the total series count from the first successful batch (it's the same for all).
-			if totalSeriesCount == 0 {
-				totalSeriesCount = labelValuesResp.SeriesCountTotal
-			}
-
-			for _, label := range labelValuesResp.Labels {
-				// Extract per-value series counts for entropy calculation.
-				seriesCountPerValue := make([]uint64, 0, len(label.Cardinality))
-				for _, v := range label.Cardinality {
-					seriesCountPerValue = append(seriesCountPerValue, v.SeriesCount)
-				}
-
-				allLabelStats[label.LabelName] = LabelSeriesStats{
-					SeriesCount:         label.SeriesCount,
-					ValuesCount:         label.LabelValuesCount,
-					SeriesCountPerValue: seriesCountPerValue,
-				}
-			}
-			resultsMx.Unlock()
+			processResponse(labelValuesResp)
 		}
 
 		resultsMx.Lock()
@@ -311,4 +335,20 @@ func printCandidatesTable(candidates []LabelStats) {
 	}
 
 	PrintTable(columns, rows)
+}
+
+// isTimeoutError returns true if the error is a timeout error.
+func isTimeoutError(err error) bool {
+	// Check for context deadline exceeded.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	// Check for net.Error timeout (e.g., http.Client.Timeout).
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	return false
 }
