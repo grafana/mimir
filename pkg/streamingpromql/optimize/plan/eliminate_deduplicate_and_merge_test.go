@@ -747,6 +747,58 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 1,
 			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
+		"nested binary operations with only name selectors": {
+			expr: `foo or bar or baz`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or RHS
+						- LHS: DeduplicateAndMerge
+							- BinaryExpression: LHS or RHS
+								- LHS: VectorSelector: {__name__="foo"}
+								- RHS: VectorSelector: {__name__="bar"}
+						- RHS: VectorSelector: {__name__="baz"}
+				`,
+			expectedPlanWithDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- DropName
+						- BinaryExpression: LHS or RHS
+							- LHS: BinaryExpression: LHS or RHS
+								- LHS: VectorSelector: {__name__="foo"}
+								- RHS: VectorSelector: {__name__="bar"}
+							- RHS: VectorSelector: {__name__="baz"}
+				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 0,
+			nodesEliminatedWithDelayedNameRemoval:    1,
+		},
+		"nested binary operations with rate functions": {
+			expr: `rate(foo[5m]) or rate(bar[5m]) or rate(baz[5m])`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or RHS
+						- LHS: DeduplicateAndMerge
+							- BinaryExpression: LHS or RHS
+								- LHS: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+								- RHS: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="bar"}[5m0s]
+						- RHS: FunctionCall: rate(...)
+							- MatrixSelector: {__name__="baz"}[5m0s]
+				`,
+			expectedPlanWithDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- DropName
+						- BinaryExpression: LHS or RHS
+							- LHS: BinaryExpression: LHS or RHS
+								- LHS: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+								- RHS: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="bar"}[5m0s]
+							- RHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="baz"}[5m0s]
+				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 3,
+			nodesEliminatedWithDelayedNameRemoval:    1,
+		},
 	}
 
 	ctx := context.Background()
