@@ -426,8 +426,9 @@ func printCandidatesTable(candidates []LabelStats) {
 		{Header: "User queries", Align: AlignRight},
 		{Header: "Rule queries", Align: AlignRight},
 		{Header: "Unique values", Align: AlignRight},
-		{Header: "Series with highest cardinality values", Align: AlignRight},
-		{Header: "Values distribution", Align: AlignRight},
+		{Header: "Top values series %", Align: AlignRight},
+		{Header: "Series values distribution", Align: AlignRight},
+		{Header: "Query values distribution", Align: AlignRight},
 		{Header: "Avg values/query", Align: AlignRight},
 	}
 
@@ -442,7 +443,8 @@ func printCandidatesTable(candidates []LabelStats) {
 			fmt.Sprintf("%.2f%%", ls.RuleQueryCoverage),
 			fmt.Sprintf("%d", ls.ValuesCount),
 			formatTopValuesPercent(ls.TopValuesSeriesPercent),
-			fmt.Sprintf("%.2f", ls.LabelValuesDistribution),
+			fmt.Sprintf("%.2f", ls.SeriesValuesDistribution),
+			fmt.Sprintf("%.2f", ls.QueryValuesDistribution),
 			fmt.Sprintf("%.2f", ls.AvgDistinctValuesPerQuery),
 		})
 	}
