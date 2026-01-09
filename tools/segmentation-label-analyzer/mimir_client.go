@@ -30,8 +30,10 @@ type MimirClient struct {
 // NewMimirClient creates a new MimirClient.
 func NewMimirClient(address, authType, tenantID, username, password string) *MimirClient {
 	return &MimirClient{
+		// High timeout because some requests are extremely slow (e.g., __name__ cardinality
+		// can take 60-90s for tenants with millions of unique metric names).
 		httpClient: &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 		address:  strings.TrimSuffix(address, "/"),
 		authType: authType,

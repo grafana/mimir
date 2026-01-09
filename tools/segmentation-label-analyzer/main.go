@@ -75,6 +75,10 @@ func run(cfg *Config) error {
 	// Report failures.
 	if len(failedLabels) > 0 {
 		fmt.Printf("\nWarning: failed to fetch cardinality for %d labels: %v\n", len(failedLabels), failedLabels)
+		if slices.Contains(failedLabels, "__name__") {
+			fmt.Println("Error: __name__ label is required but failed to fetch. Exiting.")
+			os.Exit(1)
+		}
 	}
 
 	fmt.Printf("Total series count: %d\n", totalSeriesCount)
