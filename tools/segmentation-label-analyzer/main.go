@@ -130,22 +130,6 @@ func run(cfg *Config) error {
 	ruleQueryDuration := ruleQueriesEnd.Sub(ruleQueriesStart)
 	labelStats := analyzer.GetLabelStats(allLabelStats, totalSeriesCount, userQueryDuration, ruleQueryDuration)
 
-	// Sort by series coverage descending.
-	sort.Slice(labelStats, func(i, j int) bool {
-		return labelStats[i].SeriesCoverage > labelStats[j].SeriesCoverage
-	})
-
-	fmt.Println("Top labels by series coverage:")
-	printLabelStatsTable(labelStats, 30)
-
-	// Sort by query coverage descending.
-	sort.Slice(labelStats, func(i, j int) bool {
-		return labelStats[i].QueryCoverage > labelStats[j].QueryCoverage
-	})
-
-	fmt.Println("\nTop labels by query coverage:")
-	printLabelStatsTable(labelStats, 30)
-
 	// Identify good segmentation candidates: score > 0.5.
 	fmt.Printf("\n--- Segmentation Label Candidates ---\n")
 	fmt.Printf("Labels with score > 0.5:\n\n")
@@ -388,30 +372,6 @@ func queryLokiStats(
 	}
 
 	return queriesProcessed, skippedEntries, nil
-}
-
-func printLabelStatsTable(stats []LabelStats, limit int) {
-	columns := []TableColumn{
-		{Header: "Label name", Align: AlignLeft},
-		{Header: "Series", Align: AlignRight},
-		{Header: "Unique values", Align: AlignRight},
-		{Header: "All queries", Align: AlignRight},
-	}
-
-	rows := make([]TableRow, 0, limit)
-	for i, ls := range stats {
-		if i >= limit {
-			break
-		}
-		rows = append(rows, TableRow{
-			ls.Name,
-			fmt.Sprintf("%.2f%%", ls.SeriesCoverage),
-			fmt.Sprintf("%d", ls.ValuesCount),
-			fmt.Sprintf("%.2f%%", ls.QueryCoverage),
-		})
-	}
-
-	PrintTable(columns, rows)
 }
 
 func printCandidatesTable(candidates []LabelStats) {
