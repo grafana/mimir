@@ -680,18 +680,35 @@ func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackS
 // TrackSeriesBatch implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.TrackSeriesBatchRequest) (*usagetrackerpb.TrackSeriesBatchResponse, error) {
 	response := usagetrackerpb.TrackSeriesBatchResponse{}
+	now := time.Now()
 
-	for _, b := range req.BatchRequests {
-		rejected, err := t.trackPartitionSeries(context.Background(), b.Partition, b.UserID, b.SeriesHashes)
+	for _, rp := range req.Partitions {
+		p, err := t.runningPartition(rp.Partition)
 		if err != nil {
-			return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", b.Partition, b.UserID)
+			return nil, err
 		}
-		if len(rejected) > 0 {
-			response.Rejections = append(response.Rejections, &usagetrackerpb.BatchRejectedHashes{
-				UserID:               b.UserID,
-				Partition:            b.Partition,
-				RejectedSeriesHashes: rejected,
+
+		userRejections := []*usagetrackerpb.BatchRejectionUser{}
+
+		for _, r := range rp.Users {
+			rejected, err := p.store.trackSeries(context.Background(), r.UserID, r.SeriesHashes, now)
+			if err != nil {
+				return nil, errors.Wrapf(err, "unable to track series for partition %d, user %s", rp.Partition, r.UserID)
+			}
+			if len(rejected) > 0 {
+				userRejections = append(userRejections, &usagetrackerpb.BatchRejectionUser{
+					UserID:               r.UserID,
+					RejectedSeriesHashes: rejected,
+				})
+			}
+		}
+
+		if len(userRejections) > 0 {
+			response.Rejections = append(response.Rejections, &usagetrackerpb.BatchRejection{
+				Partition: rp.Partition,
+				Users:     userRejections,
 			})
+			userRejections = nil
 		}
 	}
 

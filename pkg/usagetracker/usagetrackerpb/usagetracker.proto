@@ -32,34 +32,44 @@ message TrackSeriesResponse {
   repeated uint64 rejectedSeriesHashes = 1;
 }
 
-message TrackSeriesBatchRecord {
+message TrackSeriesBatchUser {
   // The tenant owning the series.
   string userID = 1;
 
-  // Partition that this series belong to.
-  int32 partition = 2;
-
   // The hashes of the series to track.
-  repeated uint64 seriesHashes = 3;
+  repeated uint64 seriesHashes = 2;
+}
+
+message TrackSeriesBatchPartition {
+  // Partition that the series belong to.
+  int32 partition = 1;
+
+  // The users along with their series to track.
+  repeated TrackSeriesBatchUser users = 2;
 }
 
 message TrackSeriesBatchRequest {
-  repeated TrackSeriesBatchRecord batchRequests = 1;
+  repeated TrackSeriesBatchPartition partitions = 1;
 }
 
-message BatchRejectedHashes {
+message BatchRejectionUser {
   // UserID for the request that contained rejected hashes.
   string userID = 1;
-
-  // Partition that this series belong to.
-  int32 partition = 2;
-
+  
   // The hashes of the series that have been rejected because the tenant is over the limit.
-  repeated uint64 rejectedSeriesHashes = 3;
+  repeated uint64 rejectedSeriesHashes = 2;
+}
+
+message BatchRejection {
+  // Partition that the rejected series belong to.
+  int32 partition = 1;
+
+  // The users along with their rejected series.
+  repeated BatchRejectionUser users = 2;
 }
 
 message TrackSeriesBatchResponse {
-  repeated BatchRejectedHashes rejections = 1;
+  repeated BatchRejection rejections = 1;
 }
 
 message SeriesCreatedEvent {

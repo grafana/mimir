@@ -139,7 +139,7 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 
 		tracker := newReadyTestUsageTracker(t, limits)
 		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
-			BatchRequests: nil,
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{},
 		})
 
 		require.NoError(t, err)
@@ -151,16 +151,20 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 
 		tracker := newReadyTestUsageTracker(t, limits)
 		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
-			BatchRequests: []*usagetrackerpb.TrackSeriesBatchRecord{
-				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{0, 1}},
-				{UserID: "tenant2", Partition: 0, SeriesHashes: []uint64{2, 3}},
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{
+					{UserID: "tenant1", SeriesHashes: []uint64{0, 1}},
+					{UserID: "tenant2", SeriesHashes: []uint64{2, 3}},
+				}},
 			},
 		})
 
 		require.NoError(t, err)
-		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejectedHashes{
-			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{1}},
-			{UserID: "tenant2", Partition: 0, RejectedSeriesHashes: []uint64{3}},
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.BatchRejectionUser{
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
+				{UserID: "tenant2", RejectedSeriesHashes: []uint64{3}},
+			}},
 		})
 	})
 
@@ -170,19 +174,23 @@ func TestUsageTracker_BatchTracking(t *testing.T) {
 		tracker := newReadyTestUsageTracker(t, limits)
 
 		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
-			BatchRequests: []*usagetrackerpb.TrackSeriesBatchRecord{
-				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{0}},
-				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{1}},
-				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{2}},
-				{UserID: "tenant1", Partition: 0, SeriesHashes: []uint64{3}},
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{
+					{UserID: "tenant1", SeriesHashes: []uint64{0}},
+					{UserID: "tenant1", SeriesHashes: []uint64{1}},
+					{UserID: "tenant1", SeriesHashes: []uint64{2}},
+					{UserID: "tenant1", SeriesHashes: []uint64{3}},
+				}},
 			},
 		})
 
 		require.NoError(t, err)
-		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejectedHashes{
-			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{1}},
-			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{2}},
-			{UserID: "tenant1", Partition: 0, RejectedSeriesHashes: []uint64{3}},
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.BatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.BatchRejectionUser{
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{2}},
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{3}},
+			}},
 		})
 	})
 }

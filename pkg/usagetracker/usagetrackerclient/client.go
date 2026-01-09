@@ -417,7 +417,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 	)
 }
 
-func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, records []*usagetrackerpb.TrackSeriesBatchRecord) ([]*usagetrackerpb.BatchRejectedHashes, error) {
+func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.BatchRejection, error) {
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
@@ -425,7 +425,9 @@ func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, p
 	}
 
 	req := &usagetrackerpb.TrackSeriesBatchRequest{
-		BatchRequests: records,
+		Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+			{Partition: partitionID, Users: users},
+		},
 	}
 
 	cfg := ring.DoUntilQuorumConfig{
@@ -442,7 +444,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, p
 		IsTerminalError: func(_ error) bool { return false },
 	}
 
-	res, err := ring.DoUntilQuorum(ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]*usagetrackerpb.BatchRejectedHashes, error) {
+	res, err := ring.DoUntilQuorum(ctx, set, cfg, func(ctx context.Context, instance *ring.InstanceDesc) ([]*usagetrackerpb.BatchRejection, error) {
 		poolClient, err := c.clientsPool.GetClientForInstance(*instance)
 		if err != nil {
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
@@ -455,7 +457,7 @@ func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, p
 		}
 
 		return trackerRes.Rejections, nil
-	}, func(_ []*usagetrackerpb.BatchRejectedHashes) {
+	}, func(_ []*usagetrackerpb.BatchRejection) {
 		// No cleanup.
 	})
 
@@ -633,7 +635,7 @@ type batchTrackingClient struct {
 	logger        log.Logger
 
 	mu             sync.Mutex
-	replicaRecords map[int32][]*usagetrackerpb.TrackSeriesBatchRecord
+	replicaRecords map[int32][]*usagetrackerpb.TrackSeriesBatchUser
 }
 
 func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batchTrackingClient {
@@ -651,7 +653,7 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxRequestsPerBatch int, b
 		workers:       concurrency.NewReusableGoroutinesPool(16),
 		logger:        logger,
 
-		replicaRecords: make(map[int32][]*usagetrackerpb.TrackSeriesBatchRecord),
+		replicaRecords: make(map[int32][]*usagetrackerpb.TrackSeriesBatchUser),
 	}
 
 	go c.flushWorker()
@@ -664,9 +666,8 @@ func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.replicaRecords[partition] = append(c.replicaRecords[partition], &usagetrackerpb.TrackSeriesBatchRecord{
+	c.replicaRecords[partition] = append(c.replicaRecords[partition], &usagetrackerpb.TrackSeriesBatchUser{
 		UserID:       userID,
-		Partition:    partition,
 		SeriesHashes: series,
 	})
 }
@@ -695,7 +696,7 @@ func (c *batchTrackingClient) flushWorker() {
 func (c *batchTrackingClient) flushBatch() error {
 	c.mu.Lock()
 	records := c.replicaRecords
-	c.replicaRecords = make(map[int32][]*usagetrackerpb.TrackSeriesBatchRecord)
+	c.replicaRecords = make(map[int32][]*usagetrackerpb.TrackSeriesBatchUser)
 	c.mu.Unlock()
 
 	for partition, records := range records {
@@ -707,7 +708,7 @@ func (c *batchTrackingClient) flushBatch() error {
 	return nil
 }
 
-func (c *batchTrackingClient) flush(partition int32, records []*usagetrackerpb.TrackSeriesBatchRecord) error {
+func (c *batchTrackingClient) flush(partition int32, records []*usagetrackerpb.TrackSeriesBatchUser) error {
 	rejections, err := c.trackerClient.trackSeriesPerPartitionBatch(context.TODO(), partition, records)
 	if err != nil {
 		return err
@@ -716,7 +717,7 @@ func (c *batchTrackingClient) flush(partition int32, records []*usagetrackerpb.T
 	if len(rejections) > 0 {
 		var sb strings.Builder
 		for i, rejection := range rejections {
-			sb.WriteString(fmt.Sprintf("%s (%d rejected)", rejection.UserID, len(rejection.RejectedSeriesHashes)))
+			sb.WriteString(fmt.Sprintf("%s (%d rejected)", rejection.Users[0].UserID, len(rejection.Users[0].RejectedSeriesHashes)))
 			if i < len(rejections)-1 {
 				sb.WriteString(", ")
 			}

@@ -136,26 +136,24 @@ func (m *TrackSeriesResponse) GetRejectedSeriesHashes() []uint64 {
 	return nil
 }
 
-type TrackSeriesBatchRecord struct {
+type TrackSeriesBatchUser struct {
 	// The tenant owning the series.
 	UserID string `protobuf:"bytes,1,opt,name=userID,proto3" json:"userID,omitempty"`
-	// Partition that this series belong to.
-	Partition int32 `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
 	// The hashes of the series to track.
-	SeriesHashes []uint64 `protobuf:"varint,3,rep,packed,name=seriesHashes,proto3" json:"seriesHashes,omitempty"`
+	SeriesHashes []uint64 `protobuf:"varint,2,rep,packed,name=seriesHashes,proto3" json:"seriesHashes,omitempty"`
 }
 
-func (m *TrackSeriesBatchRecord) Reset()      { *m = TrackSeriesBatchRecord{} }
-func (*TrackSeriesBatchRecord) ProtoMessage() {}
-func (*TrackSeriesBatchRecord) Descriptor() ([]byte, []int) {
+func (m *TrackSeriesBatchUser) Reset()      { *m = TrackSeriesBatchUser{} }
+func (*TrackSeriesBatchUser) ProtoMessage() {}
+func (*TrackSeriesBatchUser) Descriptor() ([]byte, []int) {
 	return fileDescriptor_24aa1621a7eb7fd6, []int{2}
 }
-func (m *TrackSeriesBatchRecord) XXX_Unmarshal(b []byte) error {
+func (m *TrackSeriesBatchUser) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *TrackSeriesBatchRecord) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *TrackSeriesBatchUser) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_TrackSeriesBatchRecord.Marshal(b, m, deterministic)
+		return xxx_messageInfo_TrackSeriesBatchUser.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -165,47 +163,93 @@ func (m *TrackSeriesBatchRecord) XXX_Marshal(b []byte, deterministic bool) ([]by
 		return b[:n], nil
 	}
 }
-func (m *TrackSeriesBatchRecord) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_TrackSeriesBatchRecord.Merge(m, src)
+func (m *TrackSeriesBatchUser) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TrackSeriesBatchUser.Merge(m, src)
 }
-func (m *TrackSeriesBatchRecord) XXX_Size() int {
+func (m *TrackSeriesBatchUser) XXX_Size() int {
 	return m.Size()
 }
-func (m *TrackSeriesBatchRecord) XXX_DiscardUnknown() {
-	xxx_messageInfo_TrackSeriesBatchRecord.DiscardUnknown(m)
+func (m *TrackSeriesBatchUser) XXX_DiscardUnknown() {
+	xxx_messageInfo_TrackSeriesBatchUser.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_TrackSeriesBatchRecord proto.InternalMessageInfo
+var xxx_messageInfo_TrackSeriesBatchUser proto.InternalMessageInfo
 
-func (m *TrackSeriesBatchRecord) GetUserID() string {
+func (m *TrackSeriesBatchUser) GetUserID() string {
 	if m != nil {
 		return m.UserID
 	}
 	return ""
 }
 
-func (m *TrackSeriesBatchRecord) GetPartition() int32 {
-	if m != nil {
-		return m.Partition
-	}
-	return 0
-}
-
-func (m *TrackSeriesBatchRecord) GetSeriesHashes() []uint64 {
+func (m *TrackSeriesBatchUser) GetSeriesHashes() []uint64 {
 	if m != nil {
 		return m.SeriesHashes
 	}
 	return nil
 }
 
+type TrackSeriesBatchPartition struct {
+	// Partition that the series belong to.
+	Partition int32 `protobuf:"varint,1,opt,name=partition,proto3" json:"partition,omitempty"`
+	// The users along with their series to track.
+	Users []*TrackSeriesBatchUser `protobuf:"bytes,2,rep,name=users,proto3" json:"users,omitempty"`
+}
+
+func (m *TrackSeriesBatchPartition) Reset()      { *m = TrackSeriesBatchPartition{} }
+func (*TrackSeriesBatchPartition) ProtoMessage() {}
+func (*TrackSeriesBatchPartition) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{3}
+}
+func (m *TrackSeriesBatchPartition) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TrackSeriesBatchPartition) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TrackSeriesBatchPartition.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *TrackSeriesBatchPartition) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TrackSeriesBatchPartition.Merge(m, src)
+}
+func (m *TrackSeriesBatchPartition) XXX_Size() int {
+	return m.Size()
+}
+func (m *TrackSeriesBatchPartition) XXX_DiscardUnknown() {
+	xxx_messageInfo_TrackSeriesBatchPartition.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TrackSeriesBatchPartition proto.InternalMessageInfo
+
+func (m *TrackSeriesBatchPartition) GetPartition() int32 {
+	if m != nil {
+		return m.Partition
+	}
+	return 0
+}
+
+func (m *TrackSeriesBatchPartition) GetUsers() []*TrackSeriesBatchUser {
+	if m != nil {
+		return m.Users
+	}
+	return nil
+}
+
 type TrackSeriesBatchRequest struct {
-	BatchRequests []*TrackSeriesBatchRecord `protobuf:"bytes,1,rep,name=batchRequests,proto3" json:"batchRequests,omitempty"`
+	Partitions []*TrackSeriesBatchPartition `protobuf:"bytes,1,rep,name=partitions,proto3" json:"partitions,omitempty"`
 }
 
 func (m *TrackSeriesBatchRequest) Reset()      { *m = TrackSeriesBatchRequest{} }
 func (*TrackSeriesBatchRequest) ProtoMessage() {}
 func (*TrackSeriesBatchRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{3}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{4}
 }
 func (m *TrackSeriesBatchRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -234,33 +278,31 @@ func (m *TrackSeriesBatchRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_TrackSeriesBatchRequest proto.InternalMessageInfo
 
-func (m *TrackSeriesBatchRequest) GetBatchRequests() []*TrackSeriesBatchRecord {
+func (m *TrackSeriesBatchRequest) GetPartitions() []*TrackSeriesBatchPartition {
 	if m != nil {
-		return m.BatchRequests
+		return m.Partitions
 	}
 	return nil
 }
 
-type BatchRejectedHashes struct {
+type BatchRejectionUser struct {
 	// UserID for the request that contained rejected hashes.
 	UserID string `protobuf:"bytes,1,opt,name=userID,proto3" json:"userID,omitempty"`
-	// Partition that this series belong to.
-	Partition int32 `protobuf:"varint,2,opt,name=partition,proto3" json:"partition,omitempty"`
 	// The hashes of the series that have been rejected because the tenant is over the limit.
-	RejectedSeriesHashes []uint64 `protobuf:"varint,3,rep,packed,name=rejectedSeriesHashes,proto3" json:"rejectedSeriesHashes,omitempty"`
+	RejectedSeriesHashes []uint64 `protobuf:"varint,2,rep,packed,name=rejectedSeriesHashes,proto3" json:"rejectedSeriesHashes,omitempty"`
 }
 
-func (m *BatchRejectedHashes) Reset()      { *m = BatchRejectedHashes{} }
-func (*BatchRejectedHashes) ProtoMessage() {}
-func (*BatchRejectedHashes) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{4}
+func (m *BatchRejectionUser) Reset()      { *m = BatchRejectionUser{} }
+func (*BatchRejectionUser) ProtoMessage() {}
+func (*BatchRejectionUser) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{5}
 }
-func (m *BatchRejectedHashes) XXX_Unmarshal(b []byte) error {
+func (m *BatchRejectionUser) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *BatchRejectedHashes) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *BatchRejectionUser) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_BatchRejectedHashes.Marshal(b, m, deterministic)
+		return xxx_messageInfo_BatchRejectionUser.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -270,47 +312,93 @@ func (m *BatchRejectedHashes) XXX_Marshal(b []byte, deterministic bool) ([]byte,
 		return b[:n], nil
 	}
 }
-func (m *BatchRejectedHashes) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_BatchRejectedHashes.Merge(m, src)
+func (m *BatchRejectionUser) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BatchRejectionUser.Merge(m, src)
 }
-func (m *BatchRejectedHashes) XXX_Size() int {
+func (m *BatchRejectionUser) XXX_Size() int {
 	return m.Size()
 }
-func (m *BatchRejectedHashes) XXX_DiscardUnknown() {
-	xxx_messageInfo_BatchRejectedHashes.DiscardUnknown(m)
+func (m *BatchRejectionUser) XXX_DiscardUnknown() {
+	xxx_messageInfo_BatchRejectionUser.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_BatchRejectedHashes proto.InternalMessageInfo
+var xxx_messageInfo_BatchRejectionUser proto.InternalMessageInfo
 
-func (m *BatchRejectedHashes) GetUserID() string {
+func (m *BatchRejectionUser) GetUserID() string {
 	if m != nil {
 		return m.UserID
 	}
 	return ""
 }
 
-func (m *BatchRejectedHashes) GetPartition() int32 {
-	if m != nil {
-		return m.Partition
-	}
-	return 0
-}
-
-func (m *BatchRejectedHashes) GetRejectedSeriesHashes() []uint64 {
+func (m *BatchRejectionUser) GetRejectedSeriesHashes() []uint64 {
 	if m != nil {
 		return m.RejectedSeriesHashes
 	}
 	return nil
 }
 
+type BatchRejection struct {
+	// Partition that the rejected series belong to.
+	Partition int32 `protobuf:"varint,1,opt,name=partition,proto3" json:"partition,omitempty"`
+	// The users along with their rejected series.
+	Users []*BatchRejectionUser `protobuf:"bytes,2,rep,name=users,proto3" json:"users,omitempty"`
+}
+
+func (m *BatchRejection) Reset()      { *m = BatchRejection{} }
+func (*BatchRejection) ProtoMessage() {}
+func (*BatchRejection) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24aa1621a7eb7fd6, []int{6}
+}
+func (m *BatchRejection) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *BatchRejection) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_BatchRejection.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *BatchRejection) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BatchRejection.Merge(m, src)
+}
+func (m *BatchRejection) XXX_Size() int {
+	return m.Size()
+}
+func (m *BatchRejection) XXX_DiscardUnknown() {
+	xxx_messageInfo_BatchRejection.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BatchRejection proto.InternalMessageInfo
+
+func (m *BatchRejection) GetPartition() int32 {
+	if m != nil {
+		return m.Partition
+	}
+	return 0
+}
+
+func (m *BatchRejection) GetUsers() []*BatchRejectionUser {
+	if m != nil {
+		return m.Users
+	}
+	return nil
+}
+
 type TrackSeriesBatchResponse struct {
-	Rejections []*BatchRejectedHashes `protobuf:"bytes,1,rep,name=rejections,proto3" json:"rejections,omitempty"`
+	Rejections []*BatchRejection `protobuf:"bytes,1,rep,name=rejections,proto3" json:"rejections,omitempty"`
 }
 
 func (m *TrackSeriesBatchResponse) Reset()      { *m = TrackSeriesBatchResponse{} }
 func (*TrackSeriesBatchResponse) ProtoMessage() {}
 func (*TrackSeriesBatchResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{5}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{7}
 }
 func (m *TrackSeriesBatchResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -339,7 +427,7 @@ func (m *TrackSeriesBatchResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_TrackSeriesBatchResponse proto.InternalMessageInfo
 
-func (m *TrackSeriesBatchResponse) GetRejections() []*BatchRejectedHashes {
+func (m *TrackSeriesBatchResponse) GetRejections() []*BatchRejection {
 	if m != nil {
 		return m.Rejections
 	}
@@ -358,7 +446,7 @@ type SeriesCreatedEvent struct {
 func (m *SeriesCreatedEvent) Reset()      { *m = SeriesCreatedEvent{} }
 func (*SeriesCreatedEvent) ProtoMessage() {}
 func (*SeriesCreatedEvent) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{6}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{8}
 }
 func (m *SeriesCreatedEvent) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -418,7 +506,7 @@ type SnapshotRecord struct {
 func (m *SnapshotRecord) Reset()      { *m = SnapshotRecord{} }
 func (*SnapshotRecord) ProtoMessage() {}
 func (*SnapshotRecord) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{7}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{9}
 }
 func (m *SnapshotRecord) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -483,7 +571,7 @@ type SnapshotEvent struct {
 func (m *SnapshotEvent) Reset()      { *m = SnapshotEvent{} }
 func (*SnapshotEvent) ProtoMessage() {}
 func (*SnapshotEvent) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{8}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{10}
 }
 func (m *SnapshotEvent) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -533,7 +621,7 @@ type SnapshotFile struct {
 func (m *SnapshotFile) Reset()      { *m = SnapshotFile{} }
 func (*SnapshotFile) ProtoMessage() {}
 func (*SnapshotFile) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{9}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{11}
 }
 func (m *SnapshotFile) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -577,7 +665,7 @@ type GetUsersCloseToLimitRequest struct {
 func (m *GetUsersCloseToLimitRequest) Reset()      { *m = GetUsersCloseToLimitRequest{} }
 func (*GetUsersCloseToLimitRequest) ProtoMessage() {}
 func (*GetUsersCloseToLimitRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{10}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{12}
 }
 func (m *GetUsersCloseToLimitRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -624,7 +712,7 @@ type GetUsersCloseToLimitResponse struct {
 func (m *GetUsersCloseToLimitResponse) Reset()      { *m = GetUsersCloseToLimitResponse{} }
 func (*GetUsersCloseToLimitResponse) ProtoMessage() {}
 func (*GetUsersCloseToLimitResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_24aa1621a7eb7fd6, []int{11}
+	return fileDescriptor_24aa1621a7eb7fd6, []int{13}
 }
 func (m *GetUsersCloseToLimitResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -670,9 +758,11 @@ func (m *GetUsersCloseToLimitResponse) GetPartition() int32 {
 func init() {
 	proto.RegisterType((*TrackSeriesRequest)(nil), "usagetrackerpb.TrackSeriesRequest")
 	proto.RegisterType((*TrackSeriesResponse)(nil), "usagetrackerpb.TrackSeriesResponse")
-	proto.RegisterType((*TrackSeriesBatchRecord)(nil), "usagetrackerpb.TrackSeriesBatchRecord")
+	proto.RegisterType((*TrackSeriesBatchUser)(nil), "usagetrackerpb.TrackSeriesBatchUser")
+	proto.RegisterType((*TrackSeriesBatchPartition)(nil), "usagetrackerpb.TrackSeriesBatchPartition")
 	proto.RegisterType((*TrackSeriesBatchRequest)(nil), "usagetrackerpb.TrackSeriesBatchRequest")
-	proto.RegisterType((*BatchRejectedHashes)(nil), "usagetrackerpb.BatchRejectedHashes")
+	proto.RegisterType((*BatchRejectionUser)(nil), "usagetrackerpb.BatchRejectionUser")
+	proto.RegisterType((*BatchRejection)(nil), "usagetrackerpb.BatchRejection")
 	proto.RegisterType((*TrackSeriesBatchResponse)(nil), "usagetrackerpb.TrackSeriesBatchResponse")
 	proto.RegisterType((*SeriesCreatedEvent)(nil), "usagetrackerpb.SeriesCreatedEvent")
 	proto.RegisterType((*SnapshotRecord)(nil), "usagetrackerpb.SnapshotRecord")
@@ -685,46 +775,49 @@ func init() {
 func init() { proto.RegisterFile("usagetracker.proto", fileDescriptor_24aa1621a7eb7fd6) }
 
 var fileDescriptor_24aa1621a7eb7fd6 = []byte{
-	// 620 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x55, 0x4d, 0x4f, 0xdb, 0x4c,
-	0x10, 0xce, 0x12, 0x5e, 0xf4, 0x66, 0x08, 0xb4, 0x5a, 0x10, 0x58, 0x29, 0x5a, 0x45, 0x46, 0xa2,
-	0x91, 0x5a, 0x51, 0x89, 0x5e, 0x2a, 0xf5, 0x06, 0xf4, 0x23, 0x12, 0x52, 0xab, 0xe5, 0xe3, 0xd0,
-	0x0b, 0xda, 0xc4, 0x93, 0xc4, 0x6d, 0xe2, 0x0d, 0xbb, 0x9b, 0x5e, 0xdb, 0x9f, 0xd0, 0x9f, 0xd1,
-	0x9f, 0xd1, 0x63, 0x8f, 0x1c, 0x39, 0x55, 0xc5, 0x5c, 0x7a, 0xe4, 0x27, 0x54, 0xf6, 0xda, 0xc5,
-	0x36, 0xc1, 0xa0, 0x4a, 0xbd, 0x79, 0xe7, 0xe3, 0x99, 0x79, 0x66, 0x9e, 0x91, 0x81, 0x4e, 0xb4,
-	0xe8, 0xa3, 0x51, 0xa2, 0xfb, 0x01, 0xd5, 0xe6, 0x58, 0x49, 0x23, 0xe9, 0x62, 0xd6, 0x36, 0xee,
-	0x34, 0x96, 0xfb, 0xb2, 0x2f, 0x63, 0xd7, 0x93, 0xe8, 0xcb, 0x46, 0xb9, 0x01, 0xd0, 0x83, 0x28,
-	0x64, 0x1f, 0x95, 0x8f, 0x9a, 0xe3, 0xc9, 0x04, 0xb5, 0xa1, 0x2b, 0x30, 0x37, 0xd1, 0xa8, 0xda,
-	0xbb, 0x0e, 0x69, 0x92, 0x56, 0x8d, 0x27, 0x2f, 0xba, 0x06, 0xb5, 0xb1, 0x50, 0xc6, 0x37, 0xbe,
-	0x0c, 0x9c, 0x99, 0x26, 0x69, 0xfd, 0xc7, 0xaf, 0x0c, 0xd4, 0x85, 0xba, 0x8e, 0x61, 0x5e, 0x0b,
-	0x3d, 0x40, 0xed, 0x54, 0x9b, 0xd5, 0xd6, 0x2c, 0xcf, 0xd9, 0xdc, 0x36, 0x2c, 0xe5, 0xea, 0xe9,
-	0xb1, 0x0c, 0x34, 0xd2, 0x2d, 0x58, 0x56, 0xf8, 0x1e, 0xbb, 0x06, 0xbd, 0xfd, 0x2c, 0x04, 0x89,
-	0x21, 0xa6, 0xfa, 0x5c, 0x05, 0x2b, 0x19, 0xa8, 0x6d, 0x61, 0xba, 0x03, 0x8e, 0x5d, 0xa9, 0xbc,
-	0x7f, 0xd8, 0x7e, 0x1f, 0x56, 0xaf, 0xd7, 0xb4, 0x33, 0xdb, 0x83, 0x85, 0x4e, 0xe6, 0x6d, 0x7b,
-	0x9f, 0xdf, 0xda, 0xd8, 0xcc, 0xef, 0x61, 0x73, 0x7a, 0xcf, 0x3c, 0x9f, 0xec, 0x7e, 0x82, 0xa5,
-	0xc4, 0x6b, 0x99, 0xdb, 0xfa, 0x7f, 0xc9, 0xec, 0xa6, 0xe9, 0x56, 0x4b, 0xa6, 0x7b, 0x0c, 0xce,
-	0xf5, 0x4e, 0x93, 0x6d, 0xed, 0x00, 0xd8, 0x1c, 0x5f, 0x06, 0x29, 0xcf, 0xf5, 0x22, 0xcf, 0x29,
-	0xed, 0xf3, 0x4c, 0x5a, 0xa4, 0x3c, 0x8b, 0xbd, 0xa3, 0x50, 0x18, 0xf4, 0x5e, 0x7c, 0xc4, 0xa0,
-	0x54, 0x79, 0xc6, 0x1f, 0xa1, 0x36, 0x62, 0x34, 0x8e, 0x09, 0x56, 0xf9, 0x95, 0xe1, 0x4e, 0xab,
-	0xfb, 0x41, 0x60, 0x71, 0x3f, 0x10, 0x63, 0x3d, 0x90, 0x26, 0xd1, 0x49, 0x0e, 0x94, 0x14, 0x41,
-	0xd7, 0xa0, 0xd6, 0xf3, 0x87, 0x18, 0x88, 0x11, 0x6a, 0x67, 0xa6, 0x59, 0x6d, 0xd5, 0xf8, 0x95,
-	0x81, 0x1e, 0xc1, 0xc6, 0x50, 0x68, 0x13, 0x77, 0xfd, 0xa6, 0xd7, 0xd3, 0x68, 0xde, 0x4e, 0x3a,
-	0x43, 0x5f, 0x0f, 0xd0, 0xdb, 0xc6, 0x9e, 0x54, 0x98, 0xd6, 0x72, 0xaa, 0x31, 0xf0, 0x1d, 0xa3,
-	0xe9, 0x33, 0x58, 0x8d, 0x22, 0xd3, 0x77, 0x26, 0xc3, 0x99, 0x8d, 0x81, 0x6e, 0x72, 0xbb, 0x6d,
-	0x58, 0xc8, 0x99, 0x6f, 0xa1, 0xd7, 0x80, 0xff, 0x53, 0x36, 0xf1, 0x40, 0x6b, 0xfc, 0xcf, 0xdb,
-	0x75, 0xa1, 0x9e, 0x42, 0xbd, 0xf4, 0x87, 0x48, 0x29, 0xcc, 0x7a, 0xc2, 0x88, 0x78, 0xd5, 0x75,
-	0x1e, 0x7f, 0xbb, 0xcf, 0xe1, 0xc1, 0x2b, 0x34, 0x87, 0x1a, 0x95, 0xde, 0x19, 0x4a, 0x8d, 0x07,
-	0x72, 0xcf, 0x1f, 0xf9, 0x26, 0x3d, 0x87, 0x9c, 0x22, 0x49, 0x41, 0x91, 0xae, 0x07, 0x6b, 0xd3,
-	0x93, 0x13, 0x85, 0x6d, 0xc0, 0x3d, 0x2d, 0x95, 0x41, 0xef, 0x38, 0xda, 0xff, 0xb1, 0xef, 0x59,
-	0x99, 0xd5, 0xf8, 0x82, 0x35, 0x47, 0x99, 0x6d, 0x4f, 0x97, 0xeb, 0x7e, 0xeb, 0xdb, 0x0c, 0xd4,
-	0x0f, 0x23, 0x55, 0x1e, 0x58, 0x55, 0xd2, 0x23, 0x98, 0xcf, 0x88, 0x9a, 0xba, 0x25, 0xb7, 0x99,
-	0xf0, 0x68, 0xac, 0x97, 0xc6, 0x24, 0xed, 0x22, 0xdc, 0x2f, 0x1e, 0x0b, 0x7d, 0x78, 0xfb, 0xe1,
-	0xdb, 0x0a, 0xad, 0xdb, 0x03, 0x93, 0x32, 0x27, 0xb0, 0x3c, 0x6d, 0x6a, 0xf4, 0x51, 0x11, 0xa1,
-	0x64, 0x31, 0x8d, 0xc7, 0x77, 0x0b, 0xb6, 0x25, 0xb7, 0x77, 0x4f, 0xcf, 0x59, 0xe5, 0xec, 0x9c,
-	0x55, 0x2e, 0xcf, 0x19, 0xf9, 0x1c, 0x32, 0xf2, 0x35, 0x64, 0xe4, 0x7b, 0xc8, 0xc8, 0x69, 0xc8,
-	0xc8, 0xcf, 0x90, 0x91, 0x5f, 0x21, 0xab, 0x5c, 0x86, 0x8c, 0x7c, 0xb9, 0x60, 0x95, 0xd3, 0x0b,
-	0x56, 0x39, 0xbb, 0x60, 0x95, 0x77, 0x85, 0x7f, 0x4f, 0x67, 0x2e, 0xfe, 0xd9, 0x3c, 0xfd, 0x1d,
-	0x00, 0x00, 0xff, 0xff, 0xd0, 0x72, 0x75, 0x5d, 0xa8, 0x06, 0x00, 0x00,
+	// 661 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x55, 0x4d, 0x6f, 0xd3, 0x4c,
+	0x10, 0xce, 0x26, 0x6d, 0xf5, 0x66, 0x9a, 0xf6, 0x45, 0x4b, 0x44, 0x43, 0xa8, 0x56, 0xd5, 0x82,
+	0x4a, 0x10, 0xa8, 0x48, 0xe1, 0x52, 0x81, 0xc4, 0xa1, 0x2d, 0x1f, 0x91, 0x90, 0xa8, 0xb6, 0x1f,
+	0x87, 0x5e, 0x8a, 0x1b, 0x4f, 0x1a, 0x43, 0xe2, 0x75, 0x77, 0x37, 0x9c, 0xf9, 0x09, 0xfc, 0x0c,
+	0x7e, 0x06, 0x47, 0x8e, 0x3d, 0xf6, 0x84, 0xa8, 0x7b, 0xe1, 0xd8, 0x9f, 0x80, 0xfc, 0x95, 0xda,
+	0x6e, 0xea, 0xf4, 0xe6, 0x9d, 0x9d, 0x79, 0x66, 0xe6, 0x99, 0x67, 0xbc, 0x40, 0x47, 0xda, 0x3a,
+	0x46, 0xa3, 0xac, 0xee, 0x17, 0x54, 0x6b, 0x9e, 0x92, 0x46, 0xd2, 0xc5, 0xb4, 0xcd, 0x3b, 0x6a,
+	0xd6, 0x8f, 0xe5, 0xb1, 0x0c, 0xaf, 0x9e, 0x07, 0x5f, 0x91, 0x17, 0x77, 0x81, 0xee, 0x06, 0x2e,
+	0x3b, 0xa8, 0x1c, 0xd4, 0x02, 0x4f, 0x46, 0xa8, 0x0d, 0xbd, 0x07, 0x73, 0x23, 0x8d, 0xaa, 0xb3,
+	0xd5, 0x20, 0x2b, 0xa4, 0x55, 0x15, 0xf1, 0x89, 0x2e, 0x43, 0xd5, 0xb3, 0x94, 0x71, 0x8c, 0x23,
+	0xdd, 0x46, 0x79, 0x85, 0xb4, 0x66, 0xc5, 0x95, 0x81, 0x72, 0xa8, 0xe9, 0x10, 0xe6, 0xbd, 0xa5,
+	0xfb, 0xa8, 0x1b, 0x95, 0x95, 0x4a, 0x6b, 0x46, 0x64, 0x6c, 0xbc, 0x03, 0x77, 0x33, 0xf9, 0xb4,
+	0x27, 0x5d, 0x8d, 0xb4, 0x0d, 0x75, 0x85, 0x9f, 0xb1, 0x6b, 0xd0, 0xde, 0x49, 0x43, 0x90, 0x10,
+	0x62, 0xe2, 0x1d, 0x17, 0x50, 0x4f, 0x41, 0x6d, 0x58, 0xa6, 0xdb, 0xdf, 0xd3, 0xa8, 0x6e, 0x2c,
+	0x3e, 0x5f, 0x5e, 0x79, 0x42, 0x79, 0x23, 0xb8, 0x9f, 0xc7, 0xdc, 0x1e, 0xf7, 0x97, 0xe9, 0x9e,
+	0xe4, 0xbb, 0x7f, 0x09, 0xb3, 0x41, 0xa2, 0x08, 0x77, 0xbe, 0xfd, 0x68, 0x2d, 0xcb, 0xff, 0xda,
+	0xa4, 0x5a, 0x45, 0x14, 0xc2, 0x6d, 0x58, 0xca, 0x5f, 0x27, 0xa3, 0xe8, 0x00, 0x8c, 0x73, 0x44,
+	0x7c, 0xcc, 0xb7, 0x9f, 0x4c, 0xc3, 0x1e, 0xd7, 0x2c, 0x52, 0xc1, 0xfc, 0x13, 0xd0, 0x18, 0x3a,
+	0x60, 0xd3, 0x91, 0x6e, 0x21, 0x5d, 0x37, 0x8d, 0xa4, 0x5c, 0x30, 0x92, 0x3e, 0x2c, 0x66, 0x33,
+	0x4c, 0xe1, 0x6c, 0x3d, 0xcb, 0x19, 0xcf, 0xf7, 0x75, 0xbd, 0xdc, 0x84, 0xb1, 0x03, 0x68, 0x5c,
+	0x67, 0x2c, 0x16, 0xd3, 0x6b, 0x00, 0x95, 0xc4, 0x24, 0x94, 0xb1, 0x62, 0x68, 0x91, 0x8a, 0x08,
+	0x76, 0x22, 0x82, 0xdd, 0x54, 0x68, 0x19, 0xb4, 0xdf, 0x7c, 0x45, 0xb7, 0x70, 0x27, 0x8c, 0x33,
+	0x44, 0x6d, 0xac, 0xa1, 0x17, 0xee, 0x44, 0x45, 0x5c, 0x19, 0x6e, 0xb5, 0x13, 0xbf, 0x09, 0x2c,
+	0xee, 0xb8, 0x96, 0xa7, 0xfb, 0xd2, 0x08, 0xec, 0x4a, 0x65, 0x67, 0x41, 0x49, 0x1e, 0x74, 0x19,
+	0xaa, 0x3d, 0x67, 0x80, 0xae, 0x35, 0x8c, 0xe7, 0x51, 0x15, 0x57, 0x06, 0xba, 0x0f, 0xab, 0x03,
+	0x4b, 0x9b, 0xb0, 0xea, 0x8f, 0xbd, 0x9e, 0x46, 0xb3, 0x3d, 0x3a, 0x1a, 0x38, 0xba, 0x8f, 0xf6,
+	0x06, 0xf6, 0xa4, 0xc2, 0x24, 0x57, 0xa3, 0x12, 0x02, 0xdf, 0xd2, 0x9b, 0xae, 0xc3, 0x52, 0xe0,
+	0x99, 0x9c, 0x53, 0x11, 0x8d, 0x99, 0x10, 0xe8, 0xa6, 0x6b, 0xde, 0x81, 0x85, 0x8c, 0x79, 0x4a,
+	0x7b, 0x4d, 0xf8, 0x2f, 0xe9, 0x26, 0x24, 0xb4, 0x2a, 0xc6, 0x67, 0xce, 0xa1, 0x96, 0x40, 0xbd,
+	0x75, 0x06, 0x48, 0x29, 0xcc, 0xd8, 0x96, 0xb1, 0xc2, 0x29, 0xd7, 0x44, 0xf8, 0xcd, 0x5f, 0xc1,
+	0x83, 0x77, 0x68, 0x02, 0xb5, 0xe8, 0xcd, 0x81, 0xd4, 0xb8, 0x2b, 0x3f, 0x38, 0x43, 0xc7, 0x24,
+	0x1b, 0x55, 0x28, 0x49, 0x6e, 0xc3, 0xf2, 0xe4, 0xe0, 0x58, 0x5c, 0xab, 0xf0, 0xbf, 0x96, 0xca,
+	0xa0, 0x7d, 0x18, 0xcc, 0xff, 0xd0, 0xb1, 0x23, 0x85, 0x55, 0xc5, 0x42, 0x64, 0x0e, 0x22, 0x3b,
+	0xb6, 0x2e, 0xfe, 0x55, 0xb6, 0x7f, 0x96, 0xa1, 0xb6, 0x17, 0x08, 0x72, 0x37, 0x12, 0x24, 0xdd,
+	0x87, 0xf9, 0x94, 0x9e, 0x29, 0x2f, 0xd8, 0xf0, 0xb8, 0x8f, 0xe6, 0xc3, 0x42, 0x9f, 0xb8, 0x5c,
+	0x84, 0x3b, 0xf9, 0x3d, 0xa1, 0x8f, 0xa7, 0xfd, 0x3e, 0x92, 0x0c, 0xad, 0xe9, 0x8e, 0x71, 0x9a,
+	0x13, 0xa8, 0x4f, 0x62, 0x8d, 0x3e, 0xcd, 0x23, 0x14, 0x0c, 0xa6, 0xf9, 0xec, 0x76, 0xce, 0x51,
+	0xca, 0x8d, 0xad, 0xd3, 0x73, 0x56, 0x3a, 0x3b, 0x67, 0xa5, 0xcb, 0x73, 0x46, 0xbe, 0xf9, 0x8c,
+	0xfc, 0xf0, 0x19, 0xf9, 0xe5, 0x33, 0x72, 0xea, 0x33, 0xf2, 0xc7, 0x67, 0xe4, 0xaf, 0xcf, 0x4a,
+	0x97, 0x3e, 0x23, 0xdf, 0x2f, 0x58, 0xe9, 0xf4, 0x82, 0x95, 0xce, 0x2e, 0x58, 0xe9, 0x20, 0xf7,
+	0x2a, 0x1e, 0xcd, 0x85, 0xcf, 0xe0, 0x8b, 0x7f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x05, 0xa0, 0xb7,
+	0xad, 0x42, 0x07, 0x00, 0x00,
 }
 
 func (this *TrackSeriesRequest) Equal(that interface{}) bool {
@@ -791,14 +884,14 @@ func (this *TrackSeriesResponse) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *TrackSeriesBatchRecord) Equal(that interface{}) bool {
+func (this *TrackSeriesBatchUser) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*TrackSeriesBatchRecord)
+	that1, ok := that.(*TrackSeriesBatchUser)
 	if !ok {
-		that2, ok := that.(TrackSeriesBatchRecord)
+		that2, ok := that.(TrackSeriesBatchUser)
 		if ok {
 			that1 = &that2
 		} else {
@@ -813,14 +906,43 @@ func (this *TrackSeriesBatchRecord) Equal(that interface{}) bool {
 	if this.UserID != that1.UserID {
 		return false
 	}
-	if this.Partition != that1.Partition {
-		return false
-	}
 	if len(this.SeriesHashes) != len(that1.SeriesHashes) {
 		return false
 	}
 	for i := range this.SeriesHashes {
 		if this.SeriesHashes[i] != that1.SeriesHashes[i] {
+			return false
+		}
+	}
+	return true
+}
+func (this *TrackSeriesBatchPartition) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*TrackSeriesBatchPartition)
+	if !ok {
+		that2, ok := that.(TrackSeriesBatchPartition)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Partition != that1.Partition {
+		return false
+	}
+	if len(this.Users) != len(that1.Users) {
+		return false
+	}
+	for i := range this.Users {
+		if !this.Users[i].Equal(that1.Users[i]) {
 			return false
 		}
 	}
@@ -845,24 +967,24 @@ func (this *TrackSeriesBatchRequest) Equal(that interface{}) bool {
 	} else if this == nil {
 		return false
 	}
-	if len(this.BatchRequests) != len(that1.BatchRequests) {
+	if len(this.Partitions) != len(that1.Partitions) {
 		return false
 	}
-	for i := range this.BatchRequests {
-		if !this.BatchRequests[i].Equal(that1.BatchRequests[i]) {
+	for i := range this.Partitions {
+		if !this.Partitions[i].Equal(that1.Partitions[i]) {
 			return false
 		}
 	}
 	return true
 }
-func (this *BatchRejectedHashes) Equal(that interface{}) bool {
+func (this *BatchRejectionUser) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*BatchRejectedHashes)
+	that1, ok := that.(*BatchRejectionUser)
 	if !ok {
-		that2, ok := that.(BatchRejectedHashes)
+		that2, ok := that.(BatchRejectionUser)
 		if ok {
 			that1 = &that2
 		} else {
@@ -877,14 +999,43 @@ func (this *BatchRejectedHashes) Equal(that interface{}) bool {
 	if this.UserID != that1.UserID {
 		return false
 	}
-	if this.Partition != that1.Partition {
-		return false
-	}
 	if len(this.RejectedSeriesHashes) != len(that1.RejectedSeriesHashes) {
 		return false
 	}
 	for i := range this.RejectedSeriesHashes {
 		if this.RejectedSeriesHashes[i] != that1.RejectedSeriesHashes[i] {
+			return false
+		}
+	}
+	return true
+}
+func (this *BatchRejection) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*BatchRejection)
+	if !ok {
+		that2, ok := that.(BatchRejection)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Partition != that1.Partition {
+		return false
+	}
+	if len(this.Users) != len(that1.Users) {
+		return false
+	}
+	for i := range this.Users {
+		if !this.Users[i].Equal(that1.Users[i]) {
 			return false
 		}
 	}
@@ -1126,15 +1277,27 @@ func (this *TrackSeriesResponse) GoString() string {
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *TrackSeriesBatchRecord) GoString() string {
+func (this *TrackSeriesBatchUser) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
-	s = append(s, "&usagetrackerpb.TrackSeriesBatchRecord{")
+	s := make([]string, 0, 6)
+	s = append(s, "&usagetrackerpb.TrackSeriesBatchUser{")
 	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
-	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
 	s = append(s, "SeriesHashes: "+fmt.Sprintf("%#v", this.SeriesHashes)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *TrackSeriesBatchPartition) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&usagetrackerpb.TrackSeriesBatchPartition{")
+	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
+	if this.Users != nil {
+		s = append(s, "Users: "+fmt.Sprintf("%#v", this.Users)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1144,21 +1307,33 @@ func (this *TrackSeriesBatchRequest) GoString() string {
 	}
 	s := make([]string, 0, 5)
 	s = append(s, "&usagetrackerpb.TrackSeriesBatchRequest{")
-	if this.BatchRequests != nil {
-		s = append(s, "BatchRequests: "+fmt.Sprintf("%#v", this.BatchRequests)+",\n")
+	if this.Partitions != nil {
+		s = append(s, "Partitions: "+fmt.Sprintf("%#v", this.Partitions)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
-func (this *BatchRejectedHashes) GoString() string {
+func (this *BatchRejectionUser) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
-	s = append(s, "&usagetrackerpb.BatchRejectedHashes{")
+	s := make([]string, 0, 6)
+	s = append(s, "&usagetrackerpb.BatchRejectionUser{")
 	s = append(s, "UserID: "+fmt.Sprintf("%#v", this.UserID)+",\n")
-	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
 	s = append(s, "RejectedSeriesHashes: "+fmt.Sprintf("%#v", this.RejectedSeriesHashes)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *BatchRejection) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 6)
+	s = append(s, "&usagetrackerpb.BatchRejection{")
+	s = append(s, "Partition: "+fmt.Sprintf("%#v", this.Partition)+",\n")
+	if this.Users != nil {
+		s = append(s, "Users: "+fmt.Sprintf("%#v", this.Users)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1496,7 +1671,7 @@ func (m *TrackSeriesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *TrackSeriesBatchRecord) Marshal() (dAtA []byte, err error) {
+func (m *TrackSeriesBatchUser) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1506,12 +1681,12 @@ func (m *TrackSeriesBatchRecord) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *TrackSeriesBatchRecord) MarshalTo(dAtA []byte) (int, error) {
+func (m *TrackSeriesBatchUser) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *TrackSeriesBatchRecord) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *TrackSeriesBatchUser) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1532,12 +1707,7 @@ func (m *TrackSeriesBatchRecord) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 		copy(dAtA[i:], dAtA6[:j5])
 		i = encodeVarintUsagetracker(dAtA, i, uint64(j5))
 		i--
-		dAtA[i] = 0x1a
-	}
-	if m.Partition != 0 {
-		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
-		i--
-		dAtA[i] = 0x10
+		dAtA[i] = 0x12
 	}
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
@@ -1545,6 +1715,48 @@ func (m *TrackSeriesBatchRecord) MarshalToSizedBuffer(dAtA []byte) (int, error) 
 		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *TrackSeriesBatchPartition) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *TrackSeriesBatchPartition) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *TrackSeriesBatchPartition) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Users) > 0 {
+		for iNdEx := len(m.Users) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Users[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintUsagetracker(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if m.Partition != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
+		i--
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -1569,10 +1781,10 @@ func (m *TrackSeriesBatchRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	_ = i
 	var l int
 	_ = l
-	if len(m.BatchRequests) > 0 {
-		for iNdEx := len(m.BatchRequests) - 1; iNdEx >= 0; iNdEx-- {
+	if len(m.Partitions) > 0 {
+		for iNdEx := len(m.Partitions) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.BatchRequests[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Partitions[iNdEx].MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -1586,7 +1798,7 @@ func (m *TrackSeriesBatchRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	return len(dAtA) - i, nil
 }
 
-func (m *BatchRejectedHashes) Marshal() (dAtA []byte, err error) {
+func (m *BatchRejectionUser) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1596,12 +1808,12 @@ func (m *BatchRejectedHashes) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *BatchRejectedHashes) MarshalTo(dAtA []byte) (int, error) {
+func (m *BatchRejectionUser) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *BatchRejectedHashes) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *BatchRejectionUser) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1622,12 +1834,7 @@ func (m *BatchRejectedHashes) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		copy(dAtA[i:], dAtA8[:j7])
 		i = encodeVarintUsagetracker(dAtA, i, uint64(j7))
 		i--
-		dAtA[i] = 0x1a
-	}
-	if m.Partition != 0 {
-		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
-		i--
-		dAtA[i] = 0x10
+		dAtA[i] = 0x12
 	}
 	if len(m.UserID) > 0 {
 		i -= len(m.UserID)
@@ -1635,6 +1842,48 @@ func (m *BatchRejectedHashes) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintUsagetracker(dAtA, i, uint64(len(m.UserID)))
 		i--
 		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *BatchRejection) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *BatchRejection) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *BatchRejection) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Users) > 0 {
+		for iNdEx := len(m.Users) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Users[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintUsagetracker(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if m.Partition != 0 {
+		i = encodeVarintUsagetracker(dAtA, i, uint64(m.Partition))
+		i--
+		dAtA[i] = 0x8
 	}
 	return len(dAtA) - i, nil
 }
@@ -1958,7 +2207,7 @@ func (m *TrackSeriesResponse) Size() (n int) {
 	return n
 }
 
-func (m *TrackSeriesBatchRecord) Size() (n int) {
+func (m *TrackSeriesBatchUser) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1967,9 +2216,6 @@ func (m *TrackSeriesBatchRecord) Size() (n int) {
 	l = len(m.UserID)
 	if l > 0 {
 		n += 1 + l + sovUsagetracker(uint64(l))
-	}
-	if m.Partition != 0 {
-		n += 1 + sovUsagetracker(uint64(m.Partition))
 	}
 	if len(m.SeriesHashes) > 0 {
 		l = 0
@@ -1981,14 +2227,17 @@ func (m *TrackSeriesBatchRecord) Size() (n int) {
 	return n
 }
 
-func (m *TrackSeriesBatchRequest) Size() (n int) {
+func (m *TrackSeriesBatchPartition) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	if len(m.BatchRequests) > 0 {
-		for _, e := range m.BatchRequests {
+	if m.Partition != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Partition))
+	}
+	if len(m.Users) > 0 {
+		for _, e := range m.Users {
 			l = e.Size()
 			n += 1 + l + sovUsagetracker(uint64(l))
 		}
@@ -1996,7 +2245,22 @@ func (m *TrackSeriesBatchRequest) Size() (n int) {
 	return n
 }
 
-func (m *BatchRejectedHashes) Size() (n int) {
+func (m *TrackSeriesBatchRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Partitions) > 0 {
+		for _, e := range m.Partitions {
+			l = e.Size()
+			n += 1 + l + sovUsagetracker(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *BatchRejectionUser) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -2006,15 +2270,30 @@ func (m *BatchRejectedHashes) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovUsagetracker(uint64(l))
 	}
-	if m.Partition != 0 {
-		n += 1 + sovUsagetracker(uint64(m.Partition))
-	}
 	if len(m.RejectedSeriesHashes) > 0 {
 		l = 0
 		for _, e := range m.RejectedSeriesHashes {
 			l += sovUsagetracker(uint64(e))
 		}
 		n += 1 + sovUsagetracker(uint64(l)) + l
+	}
+	return n
+}
+
+func (m *BatchRejection) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Partition != 0 {
+		n += 1 + sovUsagetracker(uint64(m.Partition))
+	}
+	if len(m.Users) > 0 {
+		for _, e := range m.Users {
+			l = e.Size()
+			n += 1 + l + sovUsagetracker(uint64(l))
+		}
 	}
 	return n
 }
@@ -2170,14 +2449,29 @@ func (this *TrackSeriesResponse) String() string {
 	}, "")
 	return s
 }
-func (this *TrackSeriesBatchRecord) String() string {
+func (this *TrackSeriesBatchUser) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&TrackSeriesBatchRecord{`,
+	s := strings.Join([]string{`&TrackSeriesBatchUser{`,
 		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
-		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
 		`SeriesHashes:` + fmt.Sprintf("%v", this.SeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *TrackSeriesBatchPartition) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForUsers := "[]*TrackSeriesBatchUser{"
+	for _, f := range this.Users {
+		repeatedStringForUsers += strings.Replace(f.String(), "TrackSeriesBatchUser", "TrackSeriesBatchUser", 1) + ","
+	}
+	repeatedStringForUsers += "}"
+	s := strings.Join([]string{`&TrackSeriesBatchPartition{`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`Users:` + repeatedStringForUsers + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2186,25 +2480,40 @@ func (this *TrackSeriesBatchRequest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForBatchRequests := "[]*TrackSeriesBatchRecord{"
-	for _, f := range this.BatchRequests {
-		repeatedStringForBatchRequests += strings.Replace(f.String(), "TrackSeriesBatchRecord", "TrackSeriesBatchRecord", 1) + ","
+	repeatedStringForPartitions := "[]*TrackSeriesBatchPartition{"
+	for _, f := range this.Partitions {
+		repeatedStringForPartitions += strings.Replace(f.String(), "TrackSeriesBatchPartition", "TrackSeriesBatchPartition", 1) + ","
 	}
-	repeatedStringForBatchRequests += "}"
+	repeatedStringForPartitions += "}"
 	s := strings.Join([]string{`&TrackSeriesBatchRequest{`,
-		`BatchRequests:` + repeatedStringForBatchRequests + `,`,
+		`Partitions:` + repeatedStringForPartitions + `,`,
 		`}`,
 	}, "")
 	return s
 }
-func (this *BatchRejectedHashes) String() string {
+func (this *BatchRejectionUser) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&BatchRejectedHashes{`,
+	s := strings.Join([]string{`&BatchRejectionUser{`,
 		`UserID:` + fmt.Sprintf("%v", this.UserID) + `,`,
-		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
 		`RejectedSeriesHashes:` + fmt.Sprintf("%v", this.RejectedSeriesHashes) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *BatchRejection) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForUsers := "[]*BatchRejectionUser{"
+	for _, f := range this.Users {
+		repeatedStringForUsers += strings.Replace(f.String(), "BatchRejectionUser", "BatchRejectionUser", 1) + ","
+	}
+	repeatedStringForUsers += "}"
+	s := strings.Join([]string{`&BatchRejection{`,
+		`Partition:` + fmt.Sprintf("%v", this.Partition) + `,`,
+		`Users:` + repeatedStringForUsers + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2213,9 +2522,9 @@ func (this *TrackSeriesBatchResponse) String() string {
 	if this == nil {
 		return "nil"
 	}
-	repeatedStringForRejections := "[]*BatchRejectedHashes{"
+	repeatedStringForRejections := "[]*BatchRejection{"
 	for _, f := range this.Rejections {
-		repeatedStringForRejections += strings.Replace(f.String(), "BatchRejectedHashes", "BatchRejectedHashes", 1) + ","
+		repeatedStringForRejections += strings.Replace(f.String(), "BatchRejection", "BatchRejection", 1) + ","
 	}
 	repeatedStringForRejections += "}"
 	s := strings.Join([]string{`&TrackSeriesBatchResponse{`,
@@ -2602,7 +2911,7 @@ func (m *TrackSeriesResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *TrackSeriesBatchRecord) Unmarshal(dAtA []byte) error {
+func (m *TrackSeriesBatchUser) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2625,10 +2934,10 @@ func (m *TrackSeriesBatchRecord) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: TrackSeriesBatchRecord: wiretype end group for non-group")
+			return fmt.Errorf("proto: TrackSeriesBatchUser: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: TrackSeriesBatchRecord: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: TrackSeriesBatchUser: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -2664,25 +2973,6 @@ func (m *TrackSeriesBatchRecord) Unmarshal(dAtA []byte) error {
 			m.UserID = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Partition", wireType)
-			}
-			m.Partition = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowUsagetracker
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Partition |= int32(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 3:
 			if wireType == 0 {
 				var v uint64
 				for shift := uint(0); ; shift += 7 {
@@ -2779,6 +3069,109 @@ func (m *TrackSeriesBatchRecord) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *TrackSeriesBatchPartition) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: TrackSeriesBatchPartition: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: TrackSeriesBatchPartition: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Partition", wireType)
+			}
+			m.Partition = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Partition |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Users", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Users = append(m.Users, &TrackSeriesBatchUser{})
+			if err := m.Users[len(m.Users)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *TrackSeriesBatchRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -2810,7 +3203,7 @@ func (m *TrackSeriesBatchRequest) Unmarshal(dAtA []byte) error {
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field BatchRequests", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Partitions", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -2837,8 +3230,8 @@ func (m *TrackSeriesBatchRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.BatchRequests = append(m.BatchRequests, &TrackSeriesBatchRecord{})
-			if err := m.BatchRequests[len(m.BatchRequests)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			m.Partitions = append(m.Partitions, &TrackSeriesBatchPartition{})
+			if err := m.Partitions[len(m.Partitions)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -2863,7 +3256,7 @@ func (m *TrackSeriesBatchRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *BatchRejectedHashes) Unmarshal(dAtA []byte) error {
+func (m *BatchRejectionUser) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -2886,10 +3279,10 @@ func (m *BatchRejectedHashes) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: BatchRejectedHashes: wiretype end group for non-group")
+			return fmt.Errorf("proto: BatchRejectionUser: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: BatchRejectedHashes: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: BatchRejectionUser: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -2925,25 +3318,6 @@ func (m *BatchRejectedHashes) Unmarshal(dAtA []byte) error {
 			m.UserID = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Partition", wireType)
-			}
-			m.Partition = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowUsagetracker
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				m.Partition |= int32(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-		case 3:
 			if wireType == 0 {
 				var v uint64
 				for shift := uint(0); ; shift += 7 {
@@ -3040,6 +3414,109 @@ func (m *BatchRejectedHashes) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *BatchRejection) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowUsagetracker
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: BatchRejection: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: BatchRejection: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Partition", wireType)
+			}
+			m.Partition = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Partition |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Users", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowUsagetracker
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Users = append(m.Users, &BatchRejectionUser{})
+			if err := m.Users[len(m.Users)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipUsagetracker(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthUsagetracker
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *TrackSeriesBatchResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -3098,7 +3575,7 @@ func (m *TrackSeriesBatchResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Rejections = append(m.Rejections, &BatchRejectedHashes{})
+			m.Rejections = append(m.Rejections, &BatchRejection{})
 			if err := m.Rejections[len(m.Rejections)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
