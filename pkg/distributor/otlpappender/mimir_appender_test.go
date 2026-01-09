@@ -557,7 +557,7 @@ func TestMimirAppender(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			for _, enableCreatedTimestampZeroIngestion := range []bool{false, true} {
 				t.Run(fmt.Sprintf("enableCreatedTimestampZeroIngestion=%v", enableCreatedTimestampZeroIngestion), func(t *testing.T) {
-					appender := NewCombinedAppender()
+					appender := NewCombinedAppender(nil)
 					appender.EnableCreatedTimestampZeroIngestion = enableCreatedTimestampZeroIngestion
 					appender.ValidIntervalCreatedTimestampZeroIngestion = tc.validIntervalCreatedTimestampZeroIngestion
 					tc.appends(t, appender)

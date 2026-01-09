@@ -11,11 +11,10 @@ import (
 	"io"
 	"slices"
 	"strings"
-	"sync"
 	"unsafe"
 
+	"github.com/grafana/mimir/pkg/util/arena"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/zeropool"
 )
 
 const (
@@ -29,37 +28,11 @@ const (
 	maxPreallocatedExemplarsPerSeries  = 10
 )
 
-var (
-	preallocTimeseriesSlicePool = zeropool.New(func() []PreallocTimeseries {
-		return make([]PreallocTimeseries, 0, minPreallocatedTimeseries)
-	})
-
-	timeSeriesPool = sync.Pool{
-		New: func() interface{} {
-			return &TimeSeries{
-				Labels:     make([]LabelAdapter, 0, minPreallocatedLabels),
-				Samples:    make([]Sample, 0, minPreallocatedSamplesPerSeries),
-				Exemplars:  make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
-				Histograms: nil,
-			}
-		},
-	}
-
-	// yoloSlicePool is a pool of byte slices which are used to back the yoloStrings of this package.
-	yoloSlicePool = sync.Pool{
-		New: func() interface{} {
-			// The initial cap of 200 is an arbitrary number which has been chosen because the default
-			// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
-			// 200 should be enough to back all the strings of one TimeSeries in many cases.
-			val := make([]byte, 0, 200)
-			return &val
-		},
-	}
-)
-
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
 type PreallocWriteRequest struct {
 	WriteRequest
+
+	arena *arena.Arena
 
 	// SkipUnmarshalingExemplars is an optimization to not unmarshal exemplars when they are disabled by the config anyway.
 	SkipUnmarshalingExemplars bool
@@ -83,17 +56,25 @@ type PreallocWriteRequest struct {
 	SkipDeduplicateMetadata bool
 }
 
+func NewPreallocWriteRequest(a *arena.Arena) *PreallocWriteRequest {
+	r := arena.New[PreallocWriteRequest](a)
+	r.arena = a
+	r.WriteRequest.arena = a
+	return r
+}
+
 // Unmarshal implements proto.Message.
 // Copied from the protobuf generated code, the only change is that in case 1 the value of .SkipUnmarshalingExemplars
 // gets copied into the PreallocTimeseries{} object which gets appended to Timeseries.
 func (p *PreallocWriteRequest) Unmarshal(dAtA []byte) error {
-	p.Timeseries = PreallocTimeseriesSliceFromPool()
+	p.Timeseries = AllocPreallocTimeseriesSlice(p.arena)
 	p.skipUnmarshalingExemplars = p.SkipUnmarshalingExemplars
 	p.skipNormalizeMetadataMetricName = p.SkipNormalizeMetadataMetricName
 	p.skipDeduplicateMetadata = p.SkipDeduplicateMetadata
 	p.unmarshalFromRW2 = p.UnmarshalFromRW2
 	p.rw2symbols.offset = p.RW2SymbolOffset
 	p.rw2symbols.commonSymbols = p.RW2CommonSymbols
+	p.WriteRequest.arena = p.arena
 	return p.WriteRequest.Unmarshal(dAtA)
 }
 
@@ -281,12 +262,12 @@ var TimeseriesUnmarshalCachingEnabled = true
 //   - in case 3 the exemplars don't get unmarshaled if
 //     p.skipUnmarshalingExemplars is false,
 //   - is symbols is not nil, we unmarshal from Remote Write 2.0 format.
-func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
+func (p *PreallocTimeseries) Unmarshal(a *arena.Arena, dAtA []byte, symbols *rw2PagedSymbols, metadata metadataSet, skipNormalizeMetricName bool) error {
 	if TimeseriesUnmarshalCachingEnabled && symbols == nil {
 		// TODO(krajorama): check if it makes sense for RW2 as well.
 		p.marshalledData = dAtA
 	}
-	p.TimeSeries = TimeseriesFromPool()
+	p.TimeSeries = AllocTimeSeries(a)
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
 	if symbols != nil {
 		return p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName)
@@ -540,83 +521,6 @@ type UnsafeMutableLabel = LabelAdapter
 // references may change once the timeseries is returned to the shared pool.
 type UnsafeMutableString = string
 
-// PreallocTimeseriesSliceFromPool retrieves a slice of PreallocTimeseries from a sync.Pool.
-// ReuseSlice should be called once done.
-func PreallocTimeseriesSliceFromPool() []PreallocTimeseries {
-	return preallocTimeseriesSlicePool.Get()
-}
-
-// ReuseSlice puts the slice back into a sync.Pool for reuse.
-func ReuseSlice(ts []PreallocTimeseries) {
-	if cap(ts) == 0 {
-		return
-	}
-
-	for i := range ts {
-		ReusePreallocTimeseries(&ts[i])
-	}
-
-	ReuseSliceOnly(ts)
-}
-
-// ReuseSliceOnly reuses the slice of timeseries, but not its contents.
-// Only use this if you have another means of reusing the individual timeseries contained within.
-// Most times, you want to use ReuseSlice instead.
-func ReuseSliceOnly(ts []PreallocTimeseries) {
-	preallocTimeseriesSlicePool.Put(ts[:0])
-}
-
-// TimeseriesFromPool retrieves a pointer to a TimeSeries from a sync.Pool.
-// ReuseTimeseries should be called once done, unless ReuseSlice was called on the slice that contains this TimeSeries.
-func TimeseriesFromPool() *TimeSeries {
-	ts := timeSeriesPool.Get().(*TimeSeries)
-
-	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
-	// which is indicative of a hard bug that we want to catch as soon as possible.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
-		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
-	}
-
-	return ts
-}
-
-// ReuseTimeseries puts the timeseries back into a sync.Pool for reuse.
-func ReuseTimeseries(ts *TimeSeries) {
-	// Name and Value may point into a large gRPC buffer, so clear the reference to allow GC
-	for i := 0; i < len(ts.Labels); i++ {
-		ts.Labels[i].Name = ""
-		ts.Labels[i].Value = ""
-	}
-
-	// Retain the slices only if their capacity is not bigger than the desired max pre-allocated size.
-	// This allows us to ensure we don't put very large slices back to the pool (e.g. a few requests with
-	// a huge number of samples may cause in-use heap memory to significantly increase, because the slices
-	// allocated by such poison requests would be reused by other requests with a normal number of samples).
-	if cap(ts.Labels) > maxPreallocatedLabels {
-		ts.Labels = nil
-	} else {
-		ts.Labels = ts.Labels[:0]
-	}
-
-	if cap(ts.Samples) > maxPreallocatedSamplesPerSeries {
-		ts.Samples = nil
-	} else {
-		ts.Samples = ts.Samples[:0]
-	}
-
-	if cap(ts.Histograms) > maxPreallocatedHistogramsPerSeries {
-		ts.Histograms = nil
-	} else {
-		ts.Histograms = ts.Histograms[:0]
-	}
-
-	ts.CreatedTimestamp = 0
-	ts.SkipUnmarshalingExemplars = false
-
-	ClearExemplars(ts)
-	timeSeriesPool.Put(ts)
-}
-
 // ClearExemplars safely removes exemplars from TimeSeries.
 func ClearExemplars(ts *TimeSeries) {
 	// When cleaning exemplars, retain the slice only if its capacity is not bigger than
@@ -639,98 +543,14 @@ func ClearExemplars(ts *TimeSeries) {
 	ts.Exemplars = ts.Exemplars[:0]
 }
 
-// ReusePreallocTimeseries puts the timeseries and the yoloSlice back into their respective pools for re-use.
-func ReusePreallocTimeseries(ts *PreallocTimeseries) {
-	if ts.TimeSeries != nil {
-		ReuseTimeseries(ts.TimeSeries)
-	}
-
-	if ts.yoloSlice != nil {
-		reuseYoloSlice(ts.yoloSlice)
-		ts.yoloSlice = nil
-	}
-
-	ts.marshalledData = nil
-}
-
-func yoloSliceFromPool() *[]byte {
-	return yoloSlicePool.Get().(*[]byte)
-}
-
-func reuseYoloSlice(val *[]byte) {
-	*val = (*val)[:0]
-	yoloSlicePool.Put(val)
-}
-
-// DeepCopyTimeseries copies the timeseries of one PreallocTimeseries into another one.
-// It copies all the properties, sub-properties and strings by value to ensure that the two timeseries are not sharing
-// anything after the deep copying.
-// The returned PreallocTimeseries has a yoloSlice property which should be returned to the yoloSlicePool on cleanup.
-func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExemplars bool) PreallocTimeseries {
-	if dst.TimeSeries == nil {
-		dst.TimeSeries = TimeseriesFromPool()
-	}
-
-	srcTs := src.TimeSeries
-	dstTs := dst.TimeSeries
-
-	// Prepare a buffer which is large enough to hold all the label names and values of src.
-	requiredYoloSliceCap := countTotalLabelLen(srcTs, keepExemplars)
-	dst.yoloSlice = yoloSliceFromPool()
-	buf := ensureCap(dst.yoloSlice, requiredYoloSliceCap)
-
-	// Copy the time series labels by using the prepared buffer.
-	dstTs.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
-
-	// Copy the samples.
-	if cap(dstTs.Samples) < len(srcTs.Samples) {
-		dstTs.Samples = make([]Sample, len(srcTs.Samples))
-	} else {
-		dstTs.Samples = dstTs.Samples[:len(srcTs.Samples)]
-	}
-	copy(dstTs.Samples, srcTs.Samples)
-
-	// Copy the histograms.
-	if keepHistograms {
-		if cap(dstTs.Histograms) < len(srcTs.Histograms) {
-			dstTs.Histograms = make([]Histogram, len(srcTs.Histograms))
-		} else {
-			dstTs.Histograms = dstTs.Histograms[:len(srcTs.Histograms)]
-		}
-		for i := range srcTs.Histograms {
-			dstTs.Histograms[i] = copyHistogram(srcTs.Histograms[i])
-		}
-	} else {
-		dstTs.Histograms = nil
-	}
-
-	// Prepare the slice of exemplars.
-	if keepExemplars {
-		if cap(dstTs.Exemplars) < len(srcTs.Exemplars) {
-			dstTs.Exemplars = make([]Exemplar, len(srcTs.Exemplars))
-		} else {
-			dstTs.Exemplars = dstTs.Exemplars[:len(srcTs.Exemplars)]
-		}
-
-		for exemplarIdx := range srcTs.Exemplars {
-			// Copy the exemplar labels by using the prepared buffer.
-			dstTs.Exemplars[exemplarIdx].Labels, buf = copyToYoloLabels(buf, dstTs.Exemplars[exemplarIdx].Labels, srcTs.Exemplars[exemplarIdx].Labels)
-
-			// Copy the other exemplar properties.
-			dstTs.Exemplars[exemplarIdx].Value = srcTs.Exemplars[exemplarIdx].Value
-			dstTs.Exemplars[exemplarIdx].TimestampMs = srcTs.Exemplars[exemplarIdx].TimestampMs
-		}
-	} else {
-		dstTs.Exemplars = dstTs.Exemplars[:0]
-	}
-
-	return dst
-}
-
 // ensureCap takes a pointer to a byte slice and ensures that the capacity of the referred slice is at least equal to
 // the given capacity, if not then the byte slice referred to by the pointer gets replaced with a new, larger one.
 // The return value is the byte slice which is now referred by the given pointer which has at least the given capacity.
 func ensureCap(bufRef *[]byte, requiredCap int) []byte {
+	if bufRef == nil {
+		return make([]byte, 0, requiredCap)
+	}
+
 	buf := *bufRef
 	if cap(buf) >= requiredCap {
 		return buf[:0]
