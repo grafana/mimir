@@ -785,7 +785,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_DisabledByDefault(t *testing.
 	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
 
 	// Per-tenant early compaction should not trigger because threshold is 0 (disabled)
-	ingester.compactBlocksToReduceOwnedSeries(ctx, now.Add(30*time.Minute))
+	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 0)
 }
 
@@ -828,7 +828,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_TriggersWhenThresholdExceeded
 	require.GreaterOrEqual(t, ownedState.ownedSeriesCount, 5)
 
 	// Per-tenant early compaction should trigger
-	ingester.compactBlocksToReduceOwnedSeries(ctx, now.Add(30*time.Minute))
+	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 }
 
@@ -868,7 +868,7 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 	ingester.getTSDB(userID).activeSeries.Purge(now.Add(30*time.Minute), nil)
 
 	// First compaction should trigger
-	ingester.compactBlocksToReduceOwnedSeries(ctx, now.Add(30*time.Minute))
+	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(30*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1)
 
 	// Push more series
@@ -884,11 +884,11 @@ func TestIngester_compactBlocksToReduceOwnedSeries_RespectsCooldown(t *testing.T
 
 	// Try compaction again immediately (within cooldown period)
 	// Should not create a new block because cooldown hasn't passed
-	ingester.compactBlocksToReduceOwnedSeries(ctx, now.Add(40*time.Minute))
+	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(40*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 1) // Still just 1 block
 
 	// Advance time past the cooldown period (IdleTimeout = 20 min)
 	// Now compaction should trigger again
-	ingester.compactBlocksToReduceOwnedSeries(ctx, now.Add(60*time.Minute))
+	ingester.compactBlocksToReducePerTenantOwnedSeries(ctx, now.Add(60*time.Minute))
 	require.Len(t, listBlocksInDir(t, userBlocksDir), 2) // Now 2 blocks
 }

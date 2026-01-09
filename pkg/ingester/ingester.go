@@ -3169,7 +3169,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 			i.compactBlocksToReduceInMemorySeries(ctx, time.Now())
 
 			// Check if any TSDB Head should be compacted based on per-tenant owned series thresholds.
-			i.compactBlocksToReduceOwnedSeries(ctx, time.Now())
+			i.compactBlocksToReducePerTenantOwnedSeries(ctx, time.Now())
 
 			// Decrement the counter after compaction is complete
 			i.numCompactionsInProgress.Dec()
@@ -3425,10 +3425,22 @@ func (i *Ingester) compactBlocksToReduceInMemorySeries(ctx context.Context, now 
 	level.Info(i.logger).Log("msg", "run TSDB head compaction to reduce the number of in-memory series", "before_in_memory_series", totalMemorySeries, "after_in_memory_series", i.seriesCount.Load())
 }
 
-// compactBlocksToReduceOwnedSeries compacts the TSDB Head for tenants that exceed their per-tenant early compaction threshold.
-func (i *Ingester) compactBlocksToReduceOwnedSeries(ctx context.Context, now time.Time) {
-	// Early return if active series metrics are not enabled (required for series reduction estimation)
-	if !i.cfg.ActiveSeriesMetrics.Enabled {
+func (i *Ingester) anyUserHasEarlyHeadCompactionEnabled() bool {
+	for _, userID := range i.getTSDBUsers() {
+		if i.limits.EarlyHeadCompactionOwnedSeriesThreshold(userID) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// compactBlocksToReducePerTenantOwnedSeries compacts the TSDB Head for tenants that exceed their per-tenant early compaction threshold.
+func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context, now time.Time) {
+	// Early return if active series metrics are not enabled (required for series reduction estimation) or if owned series are not used for limits.
+	if !i.cfg.ActiveSeriesMetrics.Enabled || !i.cfg.UseIngesterOwnedSeriesForLimits {
+		if i.anyUserHasEarlyHeadCompactionEnabled() {
+			level.Warn(i.logger).Log("msg", "per-tenant early head compaction is enabled, but active series metrics are not enabled or owned series are not used for limits", "active_series_metrics_enabled", i.cfg.ActiveSeriesMetrics.Enabled, "use_ingester_owned_series_for_limits", i.cfg.UseIngesterOwnedSeriesForLimits)
+		}
 		return
 	}
 
@@ -3454,8 +3466,7 @@ func (i *Ingester) compactBlocksToReduceOwnedSeries(ctx context.Context, now tim
 		minReductionPercentage := i.limits.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage(userID)
 
 		// Check cooldown - don't trigger if compacted less than IdleTimeout ago
-		lastCompaction := db.getLastPerTenantEarlyCompaction()
-		if !lastCompaction.IsZero() && now.Sub(lastCompaction) < idleTimeout {
+		if lastCompaction := db.getLastPerTenantEarlyCompaction(); !lastCompaction.IsZero() && now.Sub(lastCompaction) < idleTimeout {
 			continue
 		}
 
@@ -3477,7 +3488,7 @@ func (i *Ingester) compactBlocksToReduceOwnedSeries(ctx context.Context, now tim
 		// Purge active series to get accurate count
 		idx := db.Head().MustIndex()
 		db.activeSeries.Purge(now, idx)
-		idx.Close()
+		_ = idx.Close()
 
 		totalActiveSeries, _, _, _ := db.activeSeries.Active()
 		estimatedSeriesReduction := max(0, int64(userMemorySeries)-int64(totalActiveSeries))
