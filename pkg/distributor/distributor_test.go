@@ -9503,3 +9503,59 @@ func (m *MockTimeSource) Sleep(d time.Duration) {
 func (m *MockTimeSource) Add(d time.Duration) {
 	m.CurrentTime = m.CurrentTime.Add(d)
 }
+
+func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
+	var (
+		now                 = time.Now()
+		userID              = "user-1"
+		ctx                 = user.InjectOrgID(context.Background(), userID)
+		numSeriesPerRequest = 1024
+
+		testConfig = prepConfig{
+			numDistributors: 1,
+		}
+	)
+
+	testCases := map[string]struct {
+		rejectedSeriesPercentage float64
+	}{
+		"no series rejected": {
+			rejectedSeriesPercentage: 0,
+		},
+	}
+
+	for testName, _ := range testCases {
+		b.Run(testName, func(b *testing.B) {
+			// Pre-generate all write requests that will be used in this test.
+			reqs := make([]*mimirpb.WriteRequest, 0, b.N)
+			for r := 0; r < b.N; r++ {
+				req := &mimirpb.WriteRequest{
+					Timeseries: make([]mimirpb.PreallocTimeseries, 0, numSeriesPerRequest),
+				}
+
+				for s := 0; s < numSeriesPerRequest; s++ {
+					req.Timeseries = append(req.Timeseries, makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)}, makeSamples(now.UnixMilli(), float64(s)), nil, nil))
+				}
+
+				reqs = append(reqs, req)
+			}
+
+			// Create a distributor.
+			distributors, _, _, _ := prepare(b, testConfig)
+			require.Len(b, distributors, 1)
+
+			distributors[0].cfg.HATrackerConfig.EnableHATracker = true
+
+			// Get the middleware function.
+			noop := func(_ context.Context, _ *Request) error { return nil }
+			fn := distributors[0].prePushHaDedupeMiddleware(noop)
+
+			b.ResetTimer()
+
+			for n := 0; n < b.N; n++ {
+				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), err error) { return reqs[n], func() {}, nil }))
+				require.NoError(b, err)
+			}
+		})
+	}
+}
