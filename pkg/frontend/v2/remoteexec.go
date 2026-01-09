@@ -237,7 +237,7 @@ func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*f
 	return msg, nil
 }
 
-func (g *RemoteExecutionGroupEvaluator) readEvaluationCompleted(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
+func (g *RemoteExecutionGroupEvaluator) getEvaluationCompletedForStream(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
 	nodeState := &g.nodeStreamState[streamIndex]
 	if nodeState.finished {
 		return nil, stats.Stats{}, fmt.Errorf("can't read evaluation completed message for node %v, as it is already finished", nodeState.nodeIndex)
@@ -374,7 +374,7 @@ func (r *scalarExecutionResponse) GetValues(ctx context.Context) (types.ScalarDa
 }
 
 func (r *scalarExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.readEvaluationCompleted(ctx, r.streamIndex)
+	return r.group.getEvaluationCompletedForStream(ctx, r.streamIndex)
 }
 
 func (r *scalarExecutionResponse) Close() {
@@ -461,7 +461,7 @@ func (r *instantVectorExecutionResponse) GetNextSeries(ctx context.Context) (typ
 }
 
 func (r *instantVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.readEvaluationCompleted(ctx, r.streamIndex)
+	return r.group.getEvaluationCompletedForStream(ctx, r.streamIndex)
 }
 
 func (r *instantVectorExecutionResponse) Close() {
@@ -567,7 +567,7 @@ func (r *rangeVectorExecutionResponse) GetNextStepSamples(ctx context.Context) (
 }
 
 func (r *rangeVectorExecutionResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	return r.group.readEvaluationCompleted(ctx, r.streamIndex)
+	return r.group.getEvaluationCompletedForStream(ctx, r.streamIndex)
 }
 
 func (r *rangeVectorExecutionResponse) Close() {
