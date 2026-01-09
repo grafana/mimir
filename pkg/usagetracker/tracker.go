@@ -668,9 +668,14 @@ func (t *UsageTracker) stop(_ error) error {
 	return errs.Err()
 }
 
-// TrackSeries implements usagetrackerpb.UsageTrackerServer.
 func (t *UsageTracker) TrackSeries(_ context.Context, req *usagetrackerpb.TrackSeriesRequest) (*usagetrackerpb.TrackSeriesResponse, error) {
-	rejected, err := t.trackPartitionSeries(context.Background(), req.Partition, req.UserID, req.SeriesHashes)
+	partition := req.Partition
+	p, err := t.runningPartition(partition)
+	if err != nil {
+		return nil, err
+	}
+
+	rejected, err := p.store.trackSeries(context.Background(), req.UserID, req.SeriesHashes, time.Now())
 	if err != nil {
 		return nil, err
 	}
@@ -713,16 +718,6 @@ func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.T
 	}
 
 	return &response, nil
-}
-
-// trackPartitionSeries performs series-tracking under a given partition.
-// It returns the rejected series hashes.
-func (t *UsageTracker) trackPartitionSeries(ctx context.Context, partition int32, userID string, seriesHashes []uint64) ([]uint64, error) {
-	p, err := t.runningPartition(partition)
-	if err != nil {
-		return nil, err
-	}
-	return p.store.trackSeries(ctx, userID, seriesHashes, time.Now())
 }
 
 // GetUsersCloseToLimit implements usagetrackerpb.UsageTrackerServer.
