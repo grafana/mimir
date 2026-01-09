@@ -339,7 +339,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel)
+	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel, "protocol", t.client.Protocol())
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
@@ -389,7 +389,7 @@ func (t *WriteReadSeriesTest) runMetadataQueryAndVerifyResult(ctx context.Contex
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runMetadataQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp)
+	logger := log.With(sp, "protocol", t.client.Protocol())
 	level.Debug(logger).Log("msg", "Running metadata query")
 
 	const typeLabel = "metadata"
