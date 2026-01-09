@@ -251,28 +251,39 @@ func (g *RemoteExecutionGroupEvaluator) readEvaluationCompleted(ctx context.Cont
 
 	defer g.onAllStreamsFinished()
 
-	// Keep reading the stream until we get to an evaluation completed message.
+	// Keep reading the stream until we get to an evaluation completed message, or reach the end of the stream.
+	// If we reach the end of the stream, tryToReadEvaluationCompleted will return an error (because readNextMessage will return an error),
+	// so we don't need to do anything special here to handle that case.
 	for {
-		msg, err := g.readNextMessage(ctx)
+		ok, annos, stats, err := g.tryToReadEvaluationCompleted(ctx)
 		if err != nil {
-			return nil, stats.Stats{}, err
+			return nil, stats, err
 		}
-
-		resp := msg.GetEvaluateQueryResponse()
-		if resp == nil {
-			return nil, stats.Stats{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+		if ok {
+			return annos, stats, nil
 		}
-
-		completion := resp.GetEvaluationCompleted()
-		if completion == nil {
-			msg.FreeBuffer()
-			continue // Try the next message.
-		}
-
-		annos, stats := decodeEvaluationCompletedMessage(completion)
-		msg.FreeBuffer()
-		return annos, stats, nil
 	}
+}
+
+func (g *RemoteExecutionGroupEvaluator) tryToReadEvaluationCompleted(ctx context.Context) (bool, *annotations.Annotations, stats.Stats, error) {
+	msg, err := g.readNextMessage(ctx)
+	if err != nil {
+		return false, nil, stats.Stats{}, err
+	}
+	defer msg.FreeBuffer()
+
+	resp := msg.GetEvaluateQueryResponse()
+	if resp == nil {
+		return false, nil, stats.Stats{}, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	}
+
+	completion := resp.GetEvaluationCompleted()
+	if completion == nil {
+		return false, nil, stats.Stats{}, nil
+	}
+
+	annos, stats := decodeEvaluationCompletedMessage(completion)
+	return true, annos, stats, nil
 }
 
 func (g *RemoteExecutionGroupEvaluator) allNodesFinished() bool {
