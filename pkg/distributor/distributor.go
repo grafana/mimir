@@ -102,7 +102,7 @@ const (
 
 type usageTrackerGenericClient interface {
 	services.Service
-	TrackSeries(ctx context.Context, userID string, series []uint64) ([]uint64, error)
+	TrackSeries(ctx context.Context, userID string, series []uint64, async bool) ([]uint64, error)
 	CanTrackAsync(userID string) bool
 }
 
@@ -1607,7 +1607,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// User is close to limit, track synchronously.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
+		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes, false)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
@@ -1642,7 +1642,7 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
 	go func() {
 		defer close(done)
-		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes)
+		rejected, err := d.usageTrackerClient.TrackSeries(asyncTrackingCtx, userID, seriesHashes, true)
 		if err != nil {
 			level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
 		}
