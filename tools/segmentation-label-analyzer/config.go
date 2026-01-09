@@ -13,6 +13,7 @@ import (
 // Config holds all configuration for the segmentation label analyzer.
 type Config struct {
 	TenantID string
+	AuthType string // "basic-auth" or "trust"
 
 	MimirAddress  string
 	MimirUsername string
@@ -44,6 +45,7 @@ type Config struct {
 // RegisterFlags registers the configuration flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.TenantID, "tenant-id", "", "Tenant ID to analyze.")
+	f.StringVar(&cfg.AuthType, "auth-type", "basic-auth", "Authentication type: 'basic-auth' or 'trust'. When 'trust', tenant ID is passed via X-Scope-OrgID header.")
 	f.StringVar(&cfg.MimirAddress, "mimir-address", "", "Mimir endpoint URL (e.g., https://mimir.example.com).")
 	f.StringVar(&cfg.MimirUsername, "mimir-username", "", "Username for Mimir basic auth.")
 	f.StringVar(&cfg.MimirPassword, "mimir-password", "", "Password for Mimir basic auth.")
@@ -72,6 +74,9 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 func (cfg *Config) Validate() error {
 	if cfg.TenantID == "" {
 		return errors.New("-tenant-id is required")
+	}
+	if cfg.AuthType != "basic-auth" && cfg.AuthType != "trust" {
+		return errors.New("-auth-type must be 'basic-auth' or 'trust'")
 	}
 	if cfg.MimirAddress == "" {
 		return errors.New("-mimir-address is required")

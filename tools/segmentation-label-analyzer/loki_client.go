@@ -22,17 +22,21 @@ import (
 type LokiClient struct {
 	httpClient *http.Client
 	address    string
+	authType   string // "basic-auth" or "trust"
+	tenantID   string
 	username   string
 	password   string
 }
 
 // NewLokiClient creates a new LokiClient.
-func NewLokiClient(address, username, password string) *LokiClient {
+func NewLokiClient(address, authType, tenantID, username, password string) *LokiClient {
 	return &LokiClient{
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
 		address:  strings.TrimSuffix(address, "/"),
+		authType: authType,
+		tenantID: tenantID,
 		username: username,
 		password: password,
 	}
@@ -189,7 +193,9 @@ func (c *LokiClient) queryRange(ctx context.Context, query string, limit int, st
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	if c.username != "" && c.password != "" {
+	if c.authType == "trust" {
+		req.Header.Set("X-Scope-OrgID", c.tenantID)
+	} else if c.username != "" && c.password != "" {
 		req.SetBasicAuth(c.username, c.password)
 	}
 

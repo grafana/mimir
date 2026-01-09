@@ -20,17 +20,21 @@ import (
 type MimirClient struct {
 	httpClient *http.Client
 	address    string
+	authType   string // "basic-auth" or "trust"
+	tenantID   string
 	username   string
 	password   string
 }
 
 // NewMimirClient creates a new MimirClient.
-func NewMimirClient(address, username, password string) *MimirClient {
+func NewMimirClient(address, authType, tenantID, username, password string) *MimirClient {
 	return &MimirClient{
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 		},
 		address:  strings.TrimSuffix(address, "/"),
+		authType: authType,
+		tenantID: tenantID,
 		username: username,
 		password: password,
 	}
@@ -92,7 +96,7 @@ func (c *MimirClient) GetLabelValuesCardinality(ctx context.Context, labelNames 
 	return &result, nil
 }
 
-// doRequest performs an HTTP request with basic auth and form-encoded body.
+// doRequest performs an HTTP request with authentication and form-encoded body.
 func (c *MimirClient) doRequest(ctx context.Context, method, path string, body url.Values) (*http.Response, error) {
 	reqURL := c.address + path
 
@@ -106,7 +110,9 @@ func (c *MimirClient) doRequest(ctx context.Context, method, path string, body u
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	if c.username != "" && c.password != "" {
+	if c.authType == "trust" {
+		req.Header.Set("X-Scope-OrgID", c.tenantID)
+	} else if c.username != "" && c.password != "" {
 		req.SetBasicAuth(c.username, c.password)
 	}
 
