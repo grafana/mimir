@@ -714,7 +714,6 @@ func (t *UsageTracker) TrackSeriesBatch(_ context.Context, req *usagetrackerpb.T
 				Partition: rp.Partition,
 				Users:     userRejections,
 			})
-			userRejections = nil
 		}
 	}
 
