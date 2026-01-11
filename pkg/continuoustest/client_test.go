@@ -641,3 +641,8 @@ func (m *ClientMock) Metadata(ctx context.Context, metricName string) (v1.Metada
 	args := m.Called(ctx, metricName)
 	return args.Get(0).(v1.Metadata), args.Error(1)
 }
+
+func (m *ClientMock) Protocol() string {
+	args := m.Called()
+	return args.String(0)
+}

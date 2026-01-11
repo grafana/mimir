@@ -36,7 +36,7 @@ var floatMetricMetadata = []prompb.MetricMetadata{{
 }}
 
 type generateHistogramFunc func(t time.Time) prompb.Histogram
-type generateSeriesFunc func(name string, t time.Time, numSeries int) []prompb.TimeSeries
+type generateSeriesFunc func(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries
 type generateValueFunc func(t time.Time) float64
 type generateSampleHistogramFunc func(t time.Time, numSeries int) *model.SampleHistogram
 
@@ -126,8 +126,8 @@ var (
 func init() {
 	for i, histProfile := range histogramProfiles {
 		histogramProfiles[i].generateValue = nil
-		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int) []prompb.TimeSeries {
-			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram)
+		histogramProfiles[i].generateSeries = func(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries {
+			return generateHistogramSeriesInner(name, t, numSeries, histProfile.generateHistogram, extraLabels...)
 		}
 	}
 }
@@ -257,23 +257,26 @@ func generateFloatHistogram(value float64, numSeries int, gauge bool) *histogram
 	return h
 }
 
-func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.TimeSeries {
+func generateSineWaveSeries(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
 	value := generateSineWaveValue(t)
 	ts := t.UnixMilli()
 
 	for i := 0; i < numSeries; i++ {
+		labels := []prompb.Label{{
+			Name:  "__name__",
+			Value: name,
+		}, {
+			Name:  "series_id",
+			Value: strconv.Itoa(i),
+		}, {
+			Name:  "hash_extra",
+			Value: strconv.Itoa(i * hashFactor),
+		}}
+		labels = append(labels, extraLabels...)
+
 		out = append(out, prompb.TimeSeries{
-			Labels: []prompb.Label{{
-				Name:  "__name__",
-				Value: name,
-			}, {
-				Name:  "series_id",
-				Value: strconv.Itoa(i),
-			}, {
-				Name:  "hash_extra",
-				Value: strconv.Itoa(i * hashFactor),
-			}},
+			Labels: labels,
 			Samples: []prompb.Sample{{
 				Value:     value,
 				Timestamp: ts,
@@ -284,21 +287,24 @@ func generateSineWaveSeries(name string, t time.Time, numSeries int) []prompb.Ti
 	return out
 }
 
-func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histogramGenerator generateHistogramFunc) []prompb.TimeSeries {
+func generateHistogramSeriesInner(name string, t time.Time, numSeries int, histogramGenerator generateHistogramFunc, extraLabels ...prompb.Label) []prompb.TimeSeries {
 	out := make([]prompb.TimeSeries, 0, numSeries)
 
 	for i := 0; i < numSeries; i++ {
+		labels := []prompb.Label{{
+			Name:  "__name__",
+			Value: name,
+		}, {
+			Name:  "series_id",
+			Value: strconv.Itoa(i),
+		}, {
+			Name:  "hash_extra",
+			Value: strconv.Itoa(i * hashFactor),
+		}}
+		labels = append(labels, extraLabels...)
+
 		out = append(out, prompb.TimeSeries{
-			Labels: []prompb.Label{{
-				Name:  "__name__",
-				Value: name,
-			}, {
-				Name:  "series_id",
-				Value: strconv.Itoa(i),
-			}, {
-				Name:  "hash_extra",
-				Value: strconv.Itoa(i * hashFactor),
-			}},
+			Labels:     labels,
 			Histograms: []prompb.Histogram{histogramGenerator(t)},
 		})
 	}
