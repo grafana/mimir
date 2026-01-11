@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
@@ -1858,9 +1859,11 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 		limits: map[string]*validation.Limits{
 			"user-1": {
 				MaxEstimatedMemoryConsumptionPerQuery: 1000,
+				EnableDelayedNameRemoval:              false,
 			},
 			"user-2": {
 				MaxEstimatedMemoryConsumptionPerQuery: 10,
+				EnableDelayedNameRemoval:              true,
 			},
 			"user-3": {
 				MaxEstimatedMemoryConsumptionPerQuery: 3000,
@@ -1872,42 +1875,55 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 	}
 
 	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
-	provider := NewTenantQueryLimitsProvider(overrides)
+
+	// Create default engine options for testing
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	_, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, nil, log.NewNopLogger(), nil)
+
+	provider := NewTenantQueryLimitsProvider(overrides, mqeOpts)
 
 	testCases := map[string]struct {
-		ctx           context.Context
-		expectedLimit uint64
-		expectedError error
+		ctx                              context.Context
+		expectedLimit                    uint64
+		expectedEnableDelayedNameRemoval bool
+		expectedError                    error
 	}{
 		"no tenant ID provided": {
 			ctx:           context.Background(),
 			expectedError: user.ErrNoOrgID,
 		},
 		"single tenant ID provided, has limit": {
-			ctx:           user.InjectOrgID(context.Background(), "user-1"),
-			expectedLimit: 1000,
+			ctx:                              user.InjectOrgID(context.Background(), "user-1"),
+			expectedLimit:                    1000,
+			expectedEnableDelayedNameRemoval: false,
 		},
 		"single tenant ID provided, unlimited": {
-			ctx:           user.InjectOrgID(context.Background(), "unlimited-user"),
-			expectedLimit: 0,
+			ctx:                              user.InjectOrgID(context.Background(), "unlimited-user"),
+			expectedLimit:                    0,
+			expectedEnableDelayedNameRemoval: false,
 		},
-		"multiple tenant IDs provided, all have limits": {
-			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
-			expectedLimit: 4010,
+		"multiple tenant IDs provided, all have limits, one has delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
+			expectedLimit:                    4010,
+			expectedEnableDelayedNameRemoval: true,
 		},
-		"multiple tenant IDs provided, one unlimited": {
-			ctx:           user.InjectOrgID(context.Background(), "user-1|unlimited-user|user-3"),
-			expectedLimit: 0,
+		"multiple tenant IDs provided, one unlimited, none have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1|unlimited-user|user-3"),
+			expectedLimit:                    0,
+			expectedEnableDelayedNameRemoval: false,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			actualLimit, actualErr := provider.GetMaxEstimatedMemoryConsumptionPerQuery(testCase.ctx)
+			actualEnableDelayedNameRemoval, actualErr := provider.GetEnableDelayedNameRemoval(testCase.ctx)
 
 			if testCase.expectedError == nil {
 				require.NoError(t, actualErr)
 				require.Equal(t, testCase.expectedLimit, actualLimit)
+				require.Equal(t, testCase.expectedEnableDelayedNameRemoval, actualEnableDelayedNameRemoval)
 			} else {
 				require.ErrorIs(t, actualErr, testCase.expectedError)
 			}

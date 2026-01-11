@@ -62,7 +62,7 @@ func run() error {
 		return fmt.Errorf("could not create planner: %w", err)
 	}
 
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 	if err != nil {
 		return fmt.Errorf("could not create engine: %w", err)
 	}

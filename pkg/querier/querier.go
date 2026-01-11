@@ -218,7 +218,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	case PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
-		limitsProvider := NewTenantQueryLimitsProvider(limits)
+		limitsProvider := NewTenantQueryLimitsProvider(limits, mqeOpts)
 		var err error
 		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
 		if err != nil {
@@ -837,11 +837,13 @@ func logClampEvent(spanLog *spanlogger.SpanLogger, originalT, clampedT int64, mi
 
 type TenantQueryLimitsProvider struct {
 	limits *validation.Overrides
+	opts   streamingpromql.EngineOpts
 }
 
-func NewTenantQueryLimitsProvider(limits *validation.Overrides) *TenantQueryLimitsProvider {
+func NewTenantQueryLimitsProvider(limits *validation.Overrides, opts streamingpromql.EngineOpts) *TenantQueryLimitsProvider {
 	return &TenantQueryLimitsProvider{
 		limits: limits,
+		opts:   opts,
 	}
 }
 
@@ -867,6 +869,22 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	}
 
 	return totalLimit, nil
+}
+
+func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	for _, tenantID := range tenantIDs {
+		if p.limits.EnableDelayedNameRemoval(tenantID) {
+			// If any tenant has delayed name removal enabled, enable it for the whole query.
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 type RequestMetrics struct {
