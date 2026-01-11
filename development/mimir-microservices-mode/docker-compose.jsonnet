@@ -331,11 +331,10 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v3.7.3',
+      image: 'prom/prometheus:v3.9.1',
       command: [
         if $._config.enable_prometheus_rw2 then '--config.file=/etc/prometheus/prometheusRW2.yaml' else '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
-        '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',
@@ -348,12 +347,11 @@ std.manifestYamlDoc({
 
   prompair1:: {
     prompair1: {
-      image: 'prom/prometheus:v3.5.0',
+      image: 'prom/prometheus:v3.9.1',
       hostname: 'prom-ha-pair-1',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-1.yaml',
         '--enable-feature=exemplar-storage',
-        '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',
@@ -364,12 +362,11 @@ std.manifestYamlDoc({
 
   prompair2:: {
     prompair2: {
-      image: 'prom/prometheus:v3.5.0',
+      image: 'prom/prometheus:v3.9.1',
       hostname: 'prom-ha-pair-2',
       command: [
         '--config.file=/etc/prometheus/prom-ha-pair-2.yaml',
         '--enable-feature=exemplar-storage',
-        '--enable-feature=native-histograms',
       ],
       volumes: [
         './config:/etc/prometheus',
