@@ -3523,9 +3523,6 @@ func (i *Ingester) compactBlocksToReducePerTenantOwnedSeries(ctx context.Context
 		i.metrics.perTenantEarlyCompactionsTriggered.Inc()
 		db.setLastEarlyCompaction(now)
 
-		// Trigger owned series recomputation
-		db.triggerRecomputeOwnedSeries(recomputeOwnedSeriesReasonEarlyCompaction)
-
 		level.Info(i.logger).Log(
 			"msg", "per-tenant early head compaction completed",
 			"user", userID,
