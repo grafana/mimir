@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package thanos;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "functions";
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+// Do not generate XXX fields to reduce memory footprint.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+// Protobuf messages for splittable range vector functions.
+// These messages are used to serialize intermediate results for caching during query splitting.
+
+message SumOverTimeIntermediate {
+  double sumF = 1;
+  bool hasFloat = 2;
+  double sumC = 3;
+  cortexpb.Histogram sumH = 4;
+}
+
+message SumOverTimeIntermediateList {
+  repeated SumOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
+}
+
+message SingleSampleIntermediate {
+  double f = 1;
+  cortexpb.Histogram h = 2;
+  bool hasFloat = 3;
+}
+
+message SingleSampleIntermediateList {
+  repeated SingleSampleIntermediate results = 1 [(gogoproto.nullable) = false];
+}
+
+message RateIntermediate {
+  int64 sample_count = 1;
+  bool is_histogram = 2;
+
+  // For floats
+  cortexpb.Sample first_sample = 3;
+  cortexpb.Sample last_sample = 4;
+  double delta = 5;
+
+  // For histograms
+  cortexpb.Histogram first_histogram = 10;
+  cortexpb.Histogram last_histogram = 11;
+  cortexpb.Histogram delta_histogram = 12;
+  double first_histogram_count_before_reset = 13;
+  int64 first_histogram_timestamp = 14;
+  int64 last_histogram_timestamp = 15;
+
+  // Split range boundaries (for extrapolation in combine phase)
+  int64 split_range_start = 16;
+  int64 split_range_end = 17;
+}
+
+message RateIntermediateList {
+  repeated RateIntermediate results = 1 [(gogoproto.nullable) = false];
+}

@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV4
+var MaximumSupportedQueryPlanVersion = QueryPlanV5
 
 // IMPORTANT:
 // Do not change the value or meaning of these constants once they have been merged.
@@ -51,6 +51,9 @@ const QueryPlanV3 = QueryPlanVersion(3)
 
 // QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
 const QueryPlanV4 = QueryPlanVersion(4)
+
+// QueryPlanV5 introduces support for query splitting with intermediate result caching.
+const QueryPlanV5 = QueryPlanVersion(5)
 
 type QueryPlan struct {
 	Root       Node
@@ -225,6 +228,24 @@ type OperatorParameters struct {
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
+}
+
+// SplittableNode represents a planning node that supports query splitting with intermediate result caching.
+// Nodes implementing this interface can be split into sub-ranges for parallel execution and caching.
+type SplittableNode interface {
+	Node
+
+	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
+	// be split, there might be some edge cases where it's not possible or not implemented yet.
+	IsSplittable() bool
+
+	// QuerySplittingCacheKey returns a cache key for this node's intermediate results.
+	QuerySplittingCacheKey() string
+
+	// GetRange returns the time range duration for this range vector operation.
+	GetRange() time.Duration
+
+	GetTimeRangeParams() types.TimeRangeParams
 }
 
 // ToEncodedPlan converts this query plan to its encoded form.
@@ -551,4 +572,28 @@ func (p *planPrinter) printNode(n Node, indent int, label string) {
 	for childIdx, label := range n.ChildrenLabels() {
 		p.printNode(n.Child(childIdx), indent+1, label)
 	}
+}
+
+func (p *QueryPlan) CountSplitNodes() uint32 {
+	if p == nil || p.Root == nil {
+		return 0
+	}
+	return countSplitNodesRecursive(p.Root)
+}
+
+func countSplitNodesRecursive(node Node) uint32 {
+	if node == nil {
+		return 0
+	}
+
+	count := uint32(0)
+	if node.NodeType() == NODE_TYPE_SPLIT_RANGE_VECTOR {
+		count = 1
+	}
+
+	for i := 0; i < node.ChildCount(); i++ {
+		count += countSplitNodesRecursive(node.Child(i))
+	}
+
+	return count
 }

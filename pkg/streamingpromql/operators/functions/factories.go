@@ -557,9 +557,15 @@ type FunctionMetadata struct {
 	Name            string
 	OperatorFactory FunctionOperatorFactory
 	ReturnType      parser.ValueType
+
+	SplittableOperatorFactory SplittableOperatorFactory
 }
 
 func RegisterFunction(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory) error {
+	return RegisterFunctionWithSplitFactory(function, name, returnType, factory, nil)
+}
+
+func RegisterFunctionWithSplitFactory(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory, splittableFactory SplittableOperatorFactory) error {
 	if _, exists := RegisteredFunctions[function]; exists {
 		return fmt.Errorf("function with ID %d has already been registered", function)
 	}
@@ -572,6 +578,8 @@ func RegisterFunction(function Function, name string, returnType parser.ValueTyp
 		Name:            name,
 		ReturnType:      returnType,
 		OperatorFactory: factory,
+
+		SplittableOperatorFactory: splittableFactory,
 	}
 
 	promQLNamesToFunctions[name] = function
@@ -670,7 +678,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_CLAMP_MIN, "clamp_min", parser.ValueTypeVector, ClampMinMaxFunctionOperatorFactory("clamp_min", true)))
 	must(RegisterFunction(FUNCTION_COS, "cos", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("cos", Cos)))
 	must(RegisterFunction(FUNCTION_COSH, "cosh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("cosh", Cosh)))
-	must(RegisterFunction(FUNCTION_COUNT_OVER_TIME, "count_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("count_over_time", CountOverTime)))
+	must(RegisterFunctionWithSplitFactory(FUNCTION_COUNT_OVER_TIME, "count_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("count_over_time", CountOverTime), SplitCountOverTime))
 	must(RegisterFunction(FUNCTION_DAYS_IN_MONTH, "days_in_month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("days_in_month", DaysInMonth)))
 	must(RegisterFunction(FUNCTION_DAY_OF_MONTH, "day_of_month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_month", DayOfMonth)))
 	must(RegisterFunction(FUNCTION_DAY_OF_WEEK, "day_of_week", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("day_of_week", DayOfWeek)))
@@ -691,7 +699,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_HISTOGRAM_SUM, "histogram_sum", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("histogram_sum", HistogramSum)))
 	must(RegisterFunction(FUNCTION_HOUR, "hour", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("hour", Hour)))
 	must(RegisterFunction(FUNCTION_IDELTA, "idelta", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("idelta", Idelta)))
-	must(RegisterFunction(FUNCTION_INCREASE, "increase", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("increase", Increase)))
+	must(RegisterFunctionWithSplitFactory(FUNCTION_INCREASE, "increase", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("increase", Increase), SplitIncrease))
 	must(RegisterFunction(FUNCTION_IRATE, "irate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("irate", Irate)))
 	must(RegisterFunction(FUNCTION_LABEL_JOIN, "label_join", parser.ValueTypeVector, LabelJoinFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_LABEL_REPLACE, "label_replace", parser.ValueTypeVector, LabelReplaceFunctionOperatorFactory))
@@ -700,16 +708,16 @@ func init() {
 	must(RegisterFunction(FUNCTION_LOG10, "log10", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log10", Log10)))
 	must(RegisterFunction(FUNCTION_LOG2, "log2", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("log2", Log2)))
 	must(RegisterFunction(FUNCTION_MAD_OVER_TIME, "mad_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("mad_over_time", MadOverTime)))
-	must(RegisterFunction(FUNCTION_MAX_OVER_TIME, "max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime)))
+	must(RegisterFunctionWithSplitFactory(FUNCTION_MAX_OVER_TIME, "max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("max_over_time", MaxOverTime), SplitMaxOverTime))
 	must(RegisterFunction(FUNCTION_MINUTE, "minute", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("minute", Minute)))
-	must(RegisterFunction(FUNCTION_MIN_OVER_TIME, "min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime)))
+	must(RegisterFunctionWithSplitFactory(FUNCTION_MIN_OVER_TIME, "min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("min_over_time", MinOverTime), SplitMinOverTime))
 	must(RegisterFunction(FUNCTION_MONTH, "month", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("month", Month)))
 	must(RegisterFunction(FUNCTION_PI, "pi", parser.ValueTypeScalar, piOperatorFactory))
 	must(RegisterFunction(FUNCTION_PREDICT_LINEAR, "predict_linear", parser.ValueTypeVector, PredictLinearFactory))
 	must(RegisterFunction(FUNCTION_PRESENT_OVER_TIME, "present_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("present_over_time", PresentOverTime)))
 	must(RegisterFunction(FUNCTION_QUANTILE_OVER_TIME, "quantile_over_time", parser.ValueTypeVector, QuantileOverTimeFactory))
 	must(RegisterFunction(FUNCTION_RAD, "rad", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("rad", Rad)))
-	must(RegisterFunction(FUNCTION_RATE, "rate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("rate", Rate)))
+	must(RegisterFunctionWithSplitFactory(FUNCTION_RATE, "rate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("rate", Rate), SplitRate))
 	must(RegisterFunction(FUNCTION_RESETS, "resets", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("resets", Resets)))
 	must(RegisterFunction(FUNCTION_ROUND, "round", parser.ValueTypeVector, RoundFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_SCALAR, "scalar", parser.ValueTypeScalar, instantVectorToScalarOperatorFactory))
@@ -723,14 +731,15 @@ func init() {
 	must(RegisterFunction(FUNCTION_SQRT, "sqrt", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("sqrt", Sqrt)))
 	must(RegisterFunction(FUNCTION_STDDEV_OVER_TIME, "stddev_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("stddev_over_time", StddevOverTime)))
 	must(RegisterFunction(FUNCTION_STDVAR_OVER_TIME, "stdvar_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("stdvar_over_time", StdvarOverTime)))
-	must(RegisterFunction(FUNCTION_SUM_OVER_TIME, "sum_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("sum_over_time", SumOverTime)))
+	must(RegisterFunctionWithSplitFactory(FUNCTION_SUM_OVER_TIME, "sum_over_time", parser.ValueTypeVector,
+		FunctionOverRangeVectorOperatorFactory("sum_over_time", SumOverTime), SplitSumOverTime))
 	must(RegisterFunction(FUNCTION_TAN, "tan", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("tan", Tan)))
 	must(RegisterFunction(FUNCTION_TANH, "tanh", parser.ValueTypeVector, InstantVectorTransformationFunctionOperatorFactory("tanh", Tanh)))
 	must(RegisterFunction(FUNCTION_TIME, "time", parser.ValueTypeScalar, timeOperatorFactory))
 	must(RegisterFunction(FUNCTION_TIMESTAMP, "timestamp", parser.ValueTypeVector, TimestampFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_TS_OF_FIRST_OVER_TIME, "ts_of_first_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_first_over_time", TsOfFirstOverTime)))
 	must(RegisterFunction(FUNCTION_TS_OF_LAST_OVER_TIME, "ts_of_last_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_last_over_time", TsOfLastOverTime)))
-	must(RegisterFunction(FUNCTION_TS_OF_MAX_OVER_TIME, "ts_of_max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_max_over_time", TsOfMaxOverTime)))
+	must(RegisterFunctionWithSplitFactory(FUNCTION_TS_OF_MAX_OVER_TIME, "ts_of_max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_max_over_time", TsOfMaxOverTime), SplitMaxOverTime))
 	must(RegisterFunction(FUNCTION_TS_OF_MIN_OVER_TIME, "ts_of_min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_min_over_time", TsOfMinOverTime)))
 	must(RegisterFunction(FUNCTION_VECTOR, "vector", parser.ValueTypeVector, scalarToInstantVectorOperatorFactory))
 	must(RegisterFunction(FUNCTION_YEAR, "year", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("year", Year)))

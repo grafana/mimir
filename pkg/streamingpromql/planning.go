@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -100,6 +101,18 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	if opts.EnableSkippingHistogramDecoding {
 		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
+	}
+
+	// Run query splitting pass before CSE.
+	if opts.InstantQuerySplitting.Enabled {
+		splitInterval := opts.InstantQuerySplitting.SplitInterval
+		if splitInterval <= 0 {
+			splitInterval = 2 * time.Hour
+		}
+		planner.RegisterQueryPlanOptimizationPass(querysplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
+		if opts.Logger != nil {
+			opts.Logger.Log("msg", "query splitting optimization pass enabled", "split_interval", splitInterval)
+		}
 	}
 
 	if opts.EnableCommonSubexpressionElimination {

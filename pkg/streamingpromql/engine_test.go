@@ -4773,6 +4773,6 @@ func TestExtendedRangeSelectorsIrregular(t *testing.T) {
 
 type dummyMaterializer struct{}
 
-func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams types.TimeRangeParams) (planning.OperatorFactory, error) {
 	panic("not implemented")
 }
