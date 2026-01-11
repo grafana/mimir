@@ -7,11 +7,13 @@ global:
 
 scrape_configs:
   - job_name: mimir-1
+    scrape_native_histograms: true
     static_configs:
       - targets: ['mimir-1:8001']
         labels:
           container: 'mimir-1'
   - job_name: mimir-2
+    scrape_native_histograms: true
     static_configs:
       - targets: ['mimir-2:8002']
         labels:
