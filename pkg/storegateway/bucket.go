@@ -49,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -88,6 +89,7 @@ type BucketStore struct {
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
 	bkt             objstore.InstrumentedBucketReader
+	bucketIndexMeta BucketIndexMetadataReader
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
@@ -203,6 +205,7 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 func NewBucketStore(
 	userID string,
 	bkt objstore.InstrumentedBucketReader,
+	bucketIndexMeta BucketIndexMetadataReader,
 	fetcher block.MetadataFetcher,
 	dir string,
 	bucketStoreConfig tsdb.BucketStoreConfig,
@@ -217,6 +220,7 @@ func NewBucketStore(
 	s := &BucketStore{
 		logger:                      log.NewNopLogger(),
 		bkt:                         bkt,
+		bucketIndexMeta:             bucketIndexMeta,
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
@@ -599,6 +603,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 
 	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
@@ -1205,6 +1211,26 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
+func (s *BucketStore) recordBucketIndexDiscoveryDiff(ctx context.Context) {
+	reqUpdatedAt, err := getBucketIndexUpdatedAtFromGRPCContext(ctx)
+	if err != nil {
+		// This is not a problem by itself.
+		level.Warn(spanlogger.FromContext(ctx, s.logger)).Log("msg", "can't get bucket index versions (updated_at) from request", "err", err)
+		return
+	}
+
+	meta := s.bucketIndexMeta.Metadata()
+	diff := meta.UpdatedAt - reqUpdatedAt
+
+	logger := log.With(s.logger, "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
+
+	if diff < 0 {
+		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "bucket index version (updated_at) is older than requested")
+	} else {
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "bucket index versions (updated_at)")
+	}
+}
+
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	spanCtx, span := tracer.Start(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.End()
@@ -1269,6 +1295,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -1462,6 +1490,8 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	var setsMtx sync.Mutex
 	var sets [][]string
@@ -2111,4 +2141,8 @@ func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {
 		return sharding.ShardSelector{}
 	}
 	return *shard
+}
+
+type BucketIndexMetadataReader interface {
+	Metadata() *bucketindex.Metadata
 }

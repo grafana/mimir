@@ -207,6 +207,7 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	store, err := NewBucketStore(
 		userID,
 		objstore.WithNoopInstr(bkt),
+		newTestBucketIndexMetadataReader(t, bkt, userID),
 		metaFetcher,
 		cfg.tempDir,
 		cfg.bucketStoreConfig,

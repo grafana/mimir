@@ -193,3 +193,24 @@ func (f *BucketIndexBlockMetadataFetcher) Fetch(ctx context.Context) (metas map[
 
 	return metas, nil, nil
 }
+
+type bucketIndexMetadataReader struct {
+	indexReader interface {
+		Index() *bucketindex.Index
+	}
+}
+
+// newBucketIndexMetadataReaderFromLoader is an adapter from BucketIndexLoader to BucketIndexMetadataReader.
+func newBucketIndexMetadataReaderFromLoader(loader *BucketIndexLoader) BucketIndexMetadataReader {
+	return &bucketIndexMetadataReader{
+		indexReader: loader,
+	}
+}
+
+func (r *bucketIndexMetadataReader) Metadata() *bucketindex.Metadata {
+	idx := r.indexReader.Index()
+	if idx == nil {
+		return &bucketindex.Metadata{}
+	}
+	return idx.Metadata()
+}

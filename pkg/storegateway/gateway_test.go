@@ -1675,3 +1675,22 @@ func createBucketIndex(t testing.TB, bkt objstore.Bucket, userID string) *bucket
 
 	return idx
 }
+
+type testBucketIndexMetadataReader struct {
+	t      testing.TB
+	bkt    objstore.Bucket
+	userID string
+}
+
+func newTestBucketIndexMetadataReader(t testing.TB, bkt objstore.Bucket, userID string) *testBucketIndexMetadataReader {
+	return &testBucketIndexMetadataReader{
+		t:      t,
+		bkt:    bkt,
+		userID: userID,
+	}
+}
+
+func (t testBucketIndexMetadataReader) Metadata() *bucketindex.Metadata {
+	idx := createBucketIndex(t.t, t.bkt, t.userID)
+	return idx.Metadata()
+}
