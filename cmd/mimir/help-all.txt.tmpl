@@ -861,6 +861,12 @@ Usage of ./cmd/mimir/mimir:
     	TSDB WAL segments files max size (bytes). (default 134217728)
   -common.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
+  -common.instrument-reference-leaks.before-reuse-period duration
+    	[experimental] Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection. (default 2m0s)
+  -common.instrument-reference-leaks.max-inflight-instrumented-bytes uint
+    	[experimental] Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.
+  -common.instrument-reference-leaks.percentage float
+    	[experimental] Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.
   -common.storage.azure.account-key string
     	Azure storage account key. If unset, Azure managed identities will be used for authentication instead.
   -common.storage.azure.account-name string
@@ -1477,6 +1483,8 @@ Usage of ./cmd/mimir/mimir:
     	The maximum number of concurrent ingestion streams to the TSDB head. Every tenant has their own set of streams. 0 to disable.
   -ingest-storage.kafka.ingestion-concurrency-queue-capacity int
     	The number of batches to prepare and queue to ingest to the TSDB head. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 5)
+  -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
+    	[experimental] When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards. (default true)
   -ingest-storage.kafka.ingestion-concurrency-target-flushes-per-shard int
     	The expected number of times to ingest timeseries to the TSDB head after batching. With fewer flushes, the overhead of splitting up the work is higher than the benefit of parallelization. Only use this setting when -ingest-storage.kafka.ingestion-concurrency-max is greater than 0. (default 80)
   -ingest-storage.kafka.last-produced-offset-poll-interval duration
@@ -1573,6 +1581,10 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
+    	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
+  -ingester.early-head-compaction-owned-series-threshold int
+    	[experimental] When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
   -ingester.ignore-ooo-exemplars

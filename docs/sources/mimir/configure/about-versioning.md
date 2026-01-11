@@ -121,6 +121,9 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Per-tenant early TSDB Head compaction based on owned series count:
+    - `-ingester.early-head-compaction-owned-series-threshold`
+    - `-ingester.early-head-compaction-min-estimated-series-reduction-percentage`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
@@ -256,6 +259,13 @@ The following features are currently experimental:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
+- Common
+  - Instrument a fraction of pooled objects for references that outlive their lifetime.
+    - Only implemented for objects embedding `mimirpb.BufferHolder`.
+    - Flags:
+      - `-common.instrument-reference-leaks.percentage`
+      - `-common.instrument-reference-leaks.before-reuse-period`
+      - `-common.instrument-reference-leaks.max-inflight-instrumented-bytes`
 - Preferred available zones for querying ingesters and store-gateways
   - `-querier.prefer-availability-zones`
 - Memberlist zone-aware routing

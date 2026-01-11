@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
 )
@@ -423,6 +425,7 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 					promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 					promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 					promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+					atomic.NewInt64(0),
 					promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 				)
 				require.NoError(t, err)
@@ -438,6 +441,13 @@ func TestMultiDimensionalQueueAlgorithmSlowConsumerEffects(t *testing.T) {
 
 				ctx := context.Background()
 				require.NoError(t, queue.starting(ctx))
+
+				t.Cleanup(func() {
+					// if the test has failed and the queue does not get cleared,
+					// we must send a shutdown signal for the remaining connected querier
+					// or else StopAndAwaitTerminated will never complete.
+					assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
+				})
 
 				// configure queue producers to enqueue requests with the query component
 				// randomly assigned according to the distribution defined in the test case
