@@ -1581,6 +1581,10 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -ingester.client.tls-server-name string
     	Override the expected name on the server certificate.
+  -ingester.early-head-compaction-min-estimated-series-reduction-percentage int
+    	[experimental] Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction. (default 15)
+  -ingester.early-head-compaction-owned-series-threshold int
+    	[experimental] When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.
   -ingester.error-sample-rate int
     	Each error will be logged once in this many times. Use 0 to log all of them. (default 10)
   -ingester.ignore-ooo-exemplars
