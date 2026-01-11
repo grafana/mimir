@@ -36,40 +36,40 @@ func NewConfig(jsonData json.RawMessage) (Config, error) {
 	}
 	return settings, nil
 }
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Placeholder:  "Teams incoming webhook url",
-				PropertyName: "url",
-				Required:     true,
-			},
-			{
-				Label:        "Title",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Description:  "Templated title of the Teams message.",
-				PropertyName: "title",
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-			},
-			{
-				Label:        "Section Title",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Description:  "Section title for the Teams message. Leave blank for none.",
-				PropertyName: "sectiontitle",
-			},
-			{ // New in 8.0.
-				Label:        "Message",
-				Element:      schema.ElementTypeTextArea,
-				Placeholder:  templates.DefaultMessageEmbed,
-				PropertyName: "message",
-			},
+
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Placeholder:  "Teams incoming webhook url",
+			PropertyName: "url",
+			Required:     true,
+			Protected:    true,
 		},
-	}
+		{
+			Label:        "Title",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Description:  "Templated title of the Teams message.",
+			PropertyName: "title",
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+		},
+		{
+			Label:        "Section Title",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Description:  "Section title for the Teams message. Leave blank for none.",
+			PropertyName: "sectiontitle",
+		},
+		{ // New in 8.0.
+			Label:        "Message",
+			Element:      schema.ElementTypeTextArea,
+			Placeholder:  templates.DefaultMessageEmbed,
+			PropertyName: "message",
+		},
+	},
 }

@@ -89,7 +89,7 @@ func (s *Notifier) createSNSClient(tmpl func(string) string) (*sns.SNS, error) {
 	var creds *credentials.Credentials
 	// If there are provided sigV4 credentials we want to use those to create a session.
 	if s.settings.Sigv4.AccessKey != "" && s.settings.Sigv4.SecretKey != "" {
-		creds = credentials.NewStaticCredentials(s.settings.Sigv4.AccessKey, string(s.settings.Sigv4.SecretKey), "")
+		creds = credentials.NewStaticCredentials(s.settings.Sigv4.AccessKey, s.settings.Sigv4.SecretKey, "")
 	}
 	sess, err := session.NewSessionWithOptions(session.Options{
 		Config: aws.Config{

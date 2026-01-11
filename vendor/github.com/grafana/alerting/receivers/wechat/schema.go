@@ -7,16 +7,14 @@ import (
 
 const Type schema.IntegrationType = "wechat"
 
-func Schema() schema.IntegrationTypeSchema {
-	return schema.IntegrationTypeSchema{
-		Type:        Type,
-		Name:        "WeChat",
-		Description: "Sends notifications to WeChat",
-		Heading:     "WeChat settings",
+var Schema = schema.InitSchema(schema.IntegrationTypeSchema{
+	Type:        Type,
+	Name:        "WeChat",
+	Description: "Sends notifications to WeChat",
+	Heading:     "WeChat settings",
 
-		CurrentVersion: v0mimir1.Version,
-		Versions: []schema.IntegrationSchemaVersion{
-			v0mimir1.Schema(),
-		},
-	}
-}
+	CurrentVersion: v0mimir1.Version,
+	Versions: []schema.IntegrationSchemaVersion{
+		v0mimir1.Schema,
+	},
+})
