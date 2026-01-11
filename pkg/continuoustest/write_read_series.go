@@ -157,7 +157,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 			return
 		}
 
-		series := generateSeries(metricName, timestamp, t.cfg.NumSeries)
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
 		if err := t.writeSamples(ctx, typeLabel, timestamp, series, metricName, metricMetadata, records); err != nil {
 			errs.Add(err)
 			break
@@ -190,7 +190,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metricName string, metadata []prompb.MetricMetadata, records *MetricHistory) error {
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
-	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
+	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries, "metric_name", metricName, "protocol", t.client.Protocol())
 
 	start := time.Now()
 	statusCode, err := t.client.WriteSeries(ctx, series, metadata)
@@ -302,7 +302,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runRangeQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel)
+	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel, "protocol", t.client.Protocol())
 	level.Debug(logger).Log("msg", "Running range query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
@@ -339,7 +339,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runInstantQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel)
+	logger := log.With(sp, "query", metricSumQuery, "ts", ts.UnixMilli(), "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel, "protocol", t.client.Protocol())
 	level.Debug(logger).Log("msg", "Running instant query")
 
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
@@ -389,7 +389,7 @@ func (t *WriteReadSeriesTest) runMetadataQueryAndVerifyResult(ctx context.Contex
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.runMetadataQueryAndVerifyResult")
 	defer sp.Finish()
 
-	logger := log.With(sp)
+	logger := log.With(sp, "protocol", t.client.Protocol())
 	level.Debug(logger).Log("msg", "Running metadata query")
 
 	const typeLabel = "metadata"
