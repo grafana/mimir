@@ -92,7 +92,9 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
 	t.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), s)
+		if s.State() != services.Terminated { // Check if we're not already terminated to allow tests to stop it themselves
+			_ = services.StopAndAwaitTerminated(context.Background(), s)
+		}
 	})
 
 	l, err := net.Listen("tcp", "localhost:0")
@@ -496,6 +498,64 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	// This should now return with error, since scheduler is going down.
 	_, err = querierLoop.Recv()
 	require.Error(t, err)
+}
+
+func TestSchedulerShutdown_PendingRequests(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 2,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+
+	// Scheduler now has 2 queries. Let's connect querier and fetch it.
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue first query.
+	req, err := querierLoop.Recv()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), req.QueryID)
+
+	// Stop the scheduler which shouldn't exit immediately
+	scheduler.StopAsync()
+
+	// Unblock scheduler loop, to find next request.
+	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
+	require.NoError(t, err)
+
+	// This should return the second query
+	req, err = querierLoop.Recv()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), req.QueryID)
+
+	// The queue is empty and there's no inflight requests
+	require.Equal(t, true, scheduler.requestQueue.IsEmpty())
+
+	// This should error because the queue is stopped (we can't check the error exactly because its wrapped by grpc)
+	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
+	require.NoError(t, err)
+	_, err = querierLoop.Recv()
+	require.Error(t, err)
+
+	// Ensure the scheduler correctly terminates after the queue is empty and all inflight requests have been returned
+	require.NoError(t, scheduler.AwaitTerminated(context.Background()))
+}
+
+// Really silly short test to catch potential flakiness in the shutdown routines (such as deadlocks in channel select).
+func TestSchedulerShutdown_Empty(t *testing.T) {
+	scheduler, _, _ := setupScheduler(t, nil)
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 }
 
 func TestSchedulerMaxOutstandingRequests(t *testing.T) {

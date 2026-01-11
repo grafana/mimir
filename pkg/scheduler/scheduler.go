@@ -176,7 +176,6 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		s.queueLength,
 		s.discardedRequests,
 		enqueueDuration,
-		s.schedulerInflightRequestCount,
 		querierInflightRequestsMetric,
 	)
 	if err != nil {
@@ -727,8 +726,11 @@ func (s *Scheduler) running(ctx context.Context) error {
 
 // Close the Scheduler.
 func (s *Scheduler) stopping(_ error) error {
-	// This will also stop the requests queue, which stop accepting new requests and errors out any pending requests.
-	return services.StopManagerAndAwaitStopped(context.Background(), s.subservices)
+	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute) // 10 minute hard upper timeout to avoid blocking forever in worst case scenario
+	defer cancel()
+
+	// This will also stop the requests queue, which stop accepting new requests and wait for any pending requests to be dispatched to queriers.
+	return services.StopManagerAndAwaitStopped(timeout, s.subservices)
 }
 
 func (s *Scheduler) cleanupMetricsForInactiveUser(user string) {
