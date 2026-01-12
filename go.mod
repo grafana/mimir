@@ -81,7 +81,7 @@ require (
 	github.com/tjhop/slog-gokit v0.1.5
 	github.com/twmb/franz-go v1.20.6
 	github.com/twmb/franz-go/pkg/kadm v1.17.2-0.20251123185109-2b5c574e9ddd
-	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251123185109-2b5c574e9ddd
+	github.com/twmb/franz-go/pkg/kfake v0.0.0-20251227070528-0c71f7e25fa1
 	github.com/twmb/franz-go/pkg/kmsg v1.12.1-0.20251024215757-aea970d4d0d2
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
 	github.com/twmb/franz-go/plugin/kprom v1.3.0
