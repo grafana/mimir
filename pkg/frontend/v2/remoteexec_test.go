@@ -86,7 +86,7 @@ func TestScalarExecutionResponse(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestInstantVectorExecutionResponse(t *testing.T) {
@@ -155,7 +155,7 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
@@ -249,7 +249,7 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
@@ -335,7 +335,7 @@ func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testin
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestRangeVectorExecutionResponse(t *testing.T) {
@@ -452,7 +452,7 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
@@ -564,7 +564,7 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	require.Nil(t, data)
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
@@ -618,7 +618,7 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
@@ -890,7 +890,7 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 type mockResponseStream struct {
 	release   chan struct{}
 	responses []mockResponse
-	closed    bool
+	closed    atomic.Bool
 }
 
 func (m *mockResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
@@ -898,7 +898,7 @@ func (m *mockResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResul
 		<-m.release
 	}
 
-	if m.closed {
+	if m.closed.Load() {
 		return nil, errors.New("mock response stream is closed")
 	}
 
@@ -913,7 +913,7 @@ func (m *mockResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResul
 }
 
 func (m *mockResponseStream) Close() {
-	m.closed = true
+	m.closed.Store(true)
 }
 
 type mockResponse struct {
@@ -1195,7 +1195,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	_, err = resp2.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
 
-	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
@@ -1311,7 +1311,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
 }
 
 func requireNoBufferedDataForAllNodes(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
@@ -1498,7 +1498,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEvaluationInfoReads
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode(t *testing.T) {
@@ -1591,7 +1591,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testing.T) {
@@ -1679,7 +1679,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testi
 	resp2.Close()
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed, "stream should be closed after closing last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after closing last node")
 
 	resp2.Close() // Closing it again shouldn't matter.
 }
@@ -1985,7 +1985,7 @@ func TestEagerLoadingResponseStream_ClosesInnerStreamWhenClosed(t *testing.T) {
 	inner := &mockResponseStream{}
 	stream := newEagerLoadingResponseStream(context.Background(), inner)
 	stream.Close()
-	require.True(t, inner.closed)
+	require.True(t, inner.closed.Load())
 }
 
 func TestEagerLoadingResponseStream_ClosedWhileBuffering(t *testing.T) {
