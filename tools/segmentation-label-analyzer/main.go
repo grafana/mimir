@@ -480,18 +480,3 @@ func formatTopValuesNameAndPercent(values []LabelValuePercent) string {
 	return strings.Join(parts, ", ")
 }
 
-// isTimeoutError returns true if the error is a timeout error.
-func isTimeoutError(err error) bool {
-	// Check for context deadline exceeded.
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
-
-	// Check for net.Error timeout (e.g., http.Client.Timeout).
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-
-	return false
-}

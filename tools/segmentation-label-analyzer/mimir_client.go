@@ -5,8 +5,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -115,7 +117,10 @@ func (c *MimirClient) doRequest(ctx context.Context, method, path string, body u
 	})
 
 	var lastErr error
+	attempts := 0
 	for boff.Ongoing() {
+		attempts++
+
 		var reqBody io.Reader
 		if bodyEncoded != "" {
 			reqBody = strings.NewReader(bodyEncoded)
@@ -142,12 +147,34 @@ func (c *MimirClient) doRequest(ctx context.Context, method, path string, body u
 		}
 
 		lastErr = err
+
+		// Don't retry on timeout errors - they'll just timeout again.
+		if isTimeoutError(err) {
+			break
+		}
+
 		boff.Wait()
 	}
 
-	// All retries failed - include request details in error message.
+	// Request failed - include request details in error message.
 	if bodyEncoded != "" {
-		return nil, fmt.Errorf("request failed after %d attempts: %s %s (body: %s): %w", maxRetries, method, reqURL, bodyEncoded, lastErr)
+		return nil, fmt.Errorf("request failed after %d attempt(s): %s %s (body: %s): %w", attempts, method, reqURL, bodyEncoded, lastErr)
 	}
-	return nil, fmt.Errorf("request failed after %d attempts: %s %s: %w", maxRetries, method, reqURL, lastErr)
+	return nil, fmt.Errorf("request failed after %d attempt(s): %s %s: %w", attempts, method, reqURL, lastErr)
+}
+
+// isTimeoutError returns true if the error is a timeout error.
+func isTimeoutError(err error) bool {
+	// Check for context deadline exceeded.
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	// Check for net.Error timeout (e.g., http.Client.Timeout).
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+
+	return false
 }
