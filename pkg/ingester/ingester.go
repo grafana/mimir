@@ -3344,13 +3344,10 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			// ingested samples are expected to be much newer.
 			userMaxTime := max(userDB.db.Head().MaxTime(), userDB.db.Head().MaxOOOTime())
 			if userMaxTime > math.MinInt64 {
+				i.metrics.increaseForcedCompactions()
 				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
+				i.metrics.decreaseForcedCompactions()
 			}
-
-			i.metrics.increaseForcedCompactions()
-			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
-			i.metrics.decreaseForcedCompactions()
 
 		default:
 			reason = "regular"

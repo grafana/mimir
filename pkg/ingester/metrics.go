@@ -78,8 +78,8 @@ type ingesterMetrics struct {
 
 	// Reference counter for forced/idle compactions across all user TSDBs.
 	// Used to set forcedCompactionInProgress to 1 when any compaction is running, 0 when all complete.
-	forcedCompactionsCounter int64
-	forcedCompactionsMu      sync.Mutex
+	forcedCompactionsCount int64
+	forcedCompactionsMtx   sync.Mutex
 
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
@@ -467,25 +467,27 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 }
 
 func (m *ingesterMetrics) increaseForcedCompactions() {
-	m.forcedCompactionsMu.Lock()
-	defer m.forcedCompactionsMu.Unlock()
-	m.forcedCompactionsCounter++
-	if m.forcedCompactionsCounter == 1 {
+	m.forcedCompactionsMtx.Lock()
+	defer m.forcedCompactionsMtx.Unlock()
+	m.forcedCompactionsCount++
+	if m.forcedCompactionsCount == 1 {
 		m.forcedCompactionInProgress.Set(1)
 	}
 }
 
 func (m *ingesterMetrics) decreaseForcedCompactions() {
-	m.forcedCompactionsMu.Lock()
-	defer m.forcedCompactionsMu.Unlock()
-	m.forcedCompactionsCounter--
-	if m.forcedCompactionsCounter == 0 {
+	m.forcedCompactionsMtx.Lock()
+	defer m.forcedCompactionsMtx.Unlock()
+	m.forcedCompactionsCount--
+	if m.forcedCompactionsCount == 0 {
 		m.forcedCompactionInProgress.Set(0)
 	}
 }
 
 func (m *ingesterMetrics) resetForcedCompactions() {
-	m.forcedCompactionsCounter = 0
+	m.forcedCompactionsMtx.Lock()
+	defer m.forcedCompactionsMtx.Unlock()
+	m.forcedCompactionsCount = 0
 	m.forcedCompactionInProgress.Set(0)
 }
 

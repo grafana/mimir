@@ -103,7 +103,7 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	require.Equal(t, int64(0), metrics.forcedCompactionsCounter)
+	require.Equal(t, int64(0), metrics.forcedCompactionsCount)
 	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
 }
 
