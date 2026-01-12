@@ -1675,12 +1675,121 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testi
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	// Get the evaluation info for the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	// Close the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
 	resp2.Close()
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
 	require.True(t, stream.closed.Load(), "stream should be closed after closing last node")
 
+	resp2.Close() // Closing it again shouldn't matter.
+}
+
+func TestRemoteExecutionGroupEvaluator_AllNodesClosedBeforeRequestSent(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newErrorMessage(mimirpb.QUERY_ERROR_TYPE_INTERNAL, "this should never be read"),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Close both nodes.
+	resp1.Close()
+	resp2.Close()
+
+	// Start the request - neither Start() call should initiate the request.
+	require.NoError(t, resp1.Start(ctx))
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 0, frontend.requestCount)
+}
+
+func TestRemoteExecutionGroupEvaluator_SomeNodesClosedBeforeRequestSent(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Close the first node, and then start the second.
+	resp1.Close()
+	require.Equal(t, 0, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is not buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Close the second node, skipping over the remaining messages, confirm the remaining messages are not buffered and the underlying stream is closed.
+	resp2.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed.Load(), "stream should be closed after closing last node")
 	resp2.Close() // Closing it again shouldn't matter.
 }
 

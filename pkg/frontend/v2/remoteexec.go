@@ -144,6 +144,11 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 
 	g.requestSent = true
 
+	if g.allNodesFinished() {
+		// All nodes were closed already, nothing to do.
+		return nil
+	}
+
 	nodes := make([]planning.Node, 0, len(g.nodeStreamState))
 	version := planning.QueryPlanVersionZero
 	for _, state := range g.nodeStreamState {
@@ -376,7 +381,10 @@ func (g *RemoteExecutionGroupEvaluator) markStreamAsFinished(nodeStreamIndex rem
 }
 
 func (g *RemoteExecutionGroupEvaluator) onAllStreamsFinished() {
-	g.stream.Close()
+	if g.stream != nil {
+		g.stream.Close()
+		g.stream = nil
+	}
 }
 
 type ResponseStream interface {
