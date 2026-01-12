@@ -3351,8 +3351,9 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
-			// Expose a metric tracking whether there's a forced idle compaction in progress.
-			// For idle compactions, use reference counting to track concurrent compactions.
+			// Track idle compaction using reference counting to maintain a binary metric (0 or 1)
+			// that indicates whether any idle compactions are in progress (running) across all user TSDBs.
+			// This will be set to 0 once all idle compactions are complete.
 			incrementIdleCompaction(&activeIdleCompactions, &metricMutex, i.metrics.forcedCompactionInProgress)
 			defer decrementIdleCompaction(&activeIdleCompactions, &metricMutex, i.metrics.forcedCompactionInProgress)
 
