@@ -3291,36 +3291,9 @@ func (i *Ingester) timeToNextZoneAwareCompaction(now time.Time, zones []string) 
 	return result
 }
 
-func incrementIdleCompaction(counter *int64, mu *sync.Mutex, gauge prometheus.Gauge) {
-	mu.Lock()
-	defer mu.Unlock()
-	*counter++
-	if *counter == 1 {
-		gauge.Set(1)
-	}
-}
-
-func decrementIdleCompaction(counter *int64, mu *sync.Mutex, gauge prometheus.Gauge) {
-	mu.Lock()
-	defer mu.Unlock()
-	*counter--
-	if *counter == 0 {
-		gauge.Set(0)
-	}
-}
-
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
-	var (
-		activeIdleCompactions int64
-		metricMutex           sync.Mutex
-	)
-
-	// Expose a metric tracking whether there's a forced head compaction in progress.
-	if force {
-		i.metrics.forcedCompactionInProgress.Set(1)
-		defer i.metrics.forcedCompactionInProgress.Set(0)
-	}
+	defer i.metrics.resetForcedCompactions()
 
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
 		if !allowed.IsAllowed(userID) {
@@ -3348,15 +3321,11 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 		switch {
 		case force:
 			reason = "forced"
+			i.metrics.increaseForcedCompactions()
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
+			i.metrics.decreaseForcedCompactions()
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
-			// Track idle compaction using reference counting to maintain a binary metric (0 or 1)
-			// that indicates whether any idle compactions are in progress (running) across all user TSDBs.
-			// This will be set to 0 once all idle compactions are complete.
-			incrementIdleCompaction(&activeIdleCompactions, &metricMutex, i.metrics.forcedCompactionInProgress)
-			defer decrementIdleCompaction(&activeIdleCompactions, &metricMutex, i.metrics.forcedCompactionInProgress)
-
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
 
@@ -3377,6 +3346,11 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			if userMaxTime > math.MinInt64 {
 				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
 			}
+
+			i.metrics.increaseForcedCompactions()
+			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
+			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
+			i.metrics.decreaseForcedCompactions()
 
 		default:
 			reason = "regular"

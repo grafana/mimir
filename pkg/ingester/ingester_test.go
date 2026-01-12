@@ -42,7 +42,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -86,14 +85,9 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 
 func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	gauge := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-		Name: "test_idle_compactions_in_progress_concurrent",
-		Help: "Test gauge for concurrent idle compactions",
-	})
-	var counter int64
-	var mu sync.Mutex
+	metrics := newIngesterMetrics(reg, false, nil, nil, nil, nil)
 
-	require.Equal(t, float64(0), testutil.ToFloat64(gauge))
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
 
 	const numGoroutines = 100
 	var wg sync.WaitGroup
@@ -102,15 +96,15 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			defer wg.Done()
-			incrementIdleCompaction(&counter, &mu, gauge)
+			metrics.increaseForcedCompactions()
 			time.Sleep(10 * time.Millisecond)
-			decrementIdleCompaction(&counter, &mu, gauge)
+			metrics.decreaseForcedCompactions()
 		}()
 	}
 	wg.Wait()
 
-	require.Equal(t, int64(0), counter)
-	require.Equal(t, float64(0), testutil.ToFloat64(gauge))
+	require.Equal(t, int64(0), metrics.forcedCompactionsCounter)
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
 }
 
 func TestIngester_StartPushRequest(t *testing.T) {

@@ -6,6 +6,7 @@
 package ingester
 
 import (
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -74,6 +75,11 @@ type ingesterMetrics struct {
 	appenderAddDuration                prometheus.Histogram
 	appenderCommitDuration             prometheus.Histogram
 	idleTsdbChecks                     *prometheus.CounterVec
+
+	// Reference counter for forced/idle compactions across all user TSDBs.
+	// Used to set forcedCompactionInProgress to 1 when any compaction is running, 0 when all complete.
+	forcedCompactionsCounter int64
+	forcedCompactionsMu      sync.Mutex
 
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
@@ -458,6 +464,29 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
 		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
+}
+
+func (m *ingesterMetrics) increaseForcedCompactions() {
+	m.forcedCompactionsMu.Lock()
+	defer m.forcedCompactionsMu.Unlock()
+	m.forcedCompactionsCounter++
+	if m.forcedCompactionsCounter == 1 {
+		m.forcedCompactionInProgress.Set(1)
+	}
+}
+
+func (m *ingesterMetrics) decreaseForcedCompactions() {
+	m.forcedCompactionsMu.Lock()
+	defer m.forcedCompactionsMu.Unlock()
+	m.forcedCompactionsCounter--
+	if m.forcedCompactionsCounter == 0 {
+		m.forcedCompactionInProgress.Set(0)
+	}
+}
+
+func (m *ingesterMetrics) resetForcedCompactions() {
+	m.forcedCompactionsCounter = 0
+	m.forcedCompactionInProgress.Set(0)
 }
 
 type discardedMetrics struct {
