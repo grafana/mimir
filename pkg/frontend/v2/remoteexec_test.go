@@ -1169,7 +1169,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	_, err = resp1.GetNextSeries(ctx)
-	require.EqualError(t, err, "can't read next message for node 0, as it is already finished")
+	require.EqualError(t, err, "can't read next message for node stream at index 0, as it is already finished")
 
 	series, err = resp2.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
@@ -1193,7 +1193,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	_, err = resp2.GetNextSeries(ctx)
-	require.EqualError(t, err, "can't read next message for node 1, as it is already finished")
+	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
 
 	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
 }
@@ -1371,7 +1371,7 @@ func TestRemoteExecutionGroupEvaluator_ReceiveMessageForUnexpectedNode(t *testin
 	require.Equal(t, 1, frontend.requestCount)
 
 	series, err := resp.GetSeriesMetadata(ctx)
-	require.EqualError(t, err, "received unexpected message for node with index 10, expected nodes with indices [0]")
+	require.EqualError(t, err, "received message of type *querierpb.EvaluateQueryResponse_SeriesMetadata for node with index 10, expected nodes with indices [0]")
 	require.Empty(t, series)
 }
 
