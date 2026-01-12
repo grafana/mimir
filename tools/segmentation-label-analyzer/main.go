@@ -5,10 +5,8 @@ package main
 import (
 	"cmp"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"slices"
 	"sort"
@@ -18,6 +16,8 @@ import (
 
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/common/model"
+
 	"github.com/grafana/mimir/pkg/querier/api"
 )
 
@@ -75,7 +75,7 @@ func run(cfg *Config) error {
 	// Report failures.
 	if len(failedLabels) > 0 {
 		fmt.Printf("\nWarning: failed to fetch cardinality for %d labels: %v\n", len(failedLabels), failedLabels)
-		if slices.Contains(failedLabels, "__name__") {
+		if slices.Contains(failedLabels, model.MetricNameLabel) {
 			fmt.Println("Error: __name__ label is required but failed to fetch. Exiting.")
 			os.Exit(1)
 		}
@@ -84,7 +84,6 @@ func run(cfg *Config) error {
 	fmt.Printf("Total series count: %d\n", totalSeriesCount)
 
 	// Step 3: Query Loki for query stats logs and analyze queries.
-	fmt.Printf("\n--- Querying Loki for query stats logs ---\n")
 	lokiClient := NewCachedLokiClient(
 		NewLokiClient(cfg.LokiAddress, cfg.LokiAuthType, cfg.TenantID, cfg.LokiUsername, cfg.LokiPassword),
 		cache,
@@ -94,8 +93,8 @@ func run(cfg *Config) error {
 	// Query user queries from query-frontend.
 	userQueriesStart := time.Time(cfg.UserQueriesStart)
 	userQueriesEnd := time.Time(cfg.UserQueriesEnd)
-	fmt.Printf("Querying user queries from %s to %s (namespace: %s, tenant: %s)\n",
-		userQueriesStart.Format(time.RFC3339), userQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
+	fmt.Printf("Querying user queries from %s to %s\n",
+		userQueriesStart.Format(time.RFC3339), userQueriesEnd.Format(time.RFC3339))
 
 	userQueriesCount, userSkipped, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "query-frontend", userQueriesStart, userQueriesEnd, UserQuery)
 	if err != nil {
@@ -109,8 +108,8 @@ func run(cfg *Config) error {
 	// Query rule queries from ruler-query-frontend.
 	ruleQueriesStart := time.Time(cfg.RuleQueriesStart)
 	ruleQueriesEnd := time.Time(cfg.RuleQueriesEnd)
-	fmt.Printf("Querying rule queries from %s to %s (namespace: %s, tenant: %s)\n",
-		ruleQueriesStart.Format(time.RFC3339), ruleQueriesEnd.Format(time.RFC3339), cfg.Namespace, cfg.TenantID)
+	fmt.Printf("Querying rule queries from %s to %s\n",
+		ruleQueriesStart.Format(time.RFC3339), ruleQueriesEnd.Format(time.RFC3339))
 
 	ruleQueriesCount, ruleSkipped, err := queryLokiStats(ctx, lokiClient, analyzer, cfg.Namespace, cfg.TenantID, "ruler-query-frontend", ruleQueriesStart, ruleQueriesEnd, RuleQuery)
 	if err != nil {
@@ -125,19 +124,20 @@ func run(cfg *Config) error {
 		analyzer.TotalQueries(), analyzer.TotalUserQueries(), analyzer.TotalRuleQueries())
 
 	// Step 4: Combine Mimir and Loki analysis and output results.
-	fmt.Printf("\n--- Segmentation Label Analysis Results ---\n")
-	fmt.Printf("Total series: %d\n", totalSeriesCount)
-	fmt.Printf("Total queries analyzed: %d (user: %d, rules: %d)\n\n",
-		analyzer.TotalQueries(), analyzer.TotalUserQueries(), analyzer.TotalRuleQueries())
+	printSectionTitle("Segmentation Label Analysis Results")
+	fmt.Printf("Tenant ID:  %s\n", cfg.TenantID)
+	fmt.Printf("Namespace:  %s\n", cfg.Namespace)
+	fmt.Printf("Total series: %s\n", formatNumberWithCommas(totalSeriesCount))
+	fmt.Printf("Total queries analyzed: %s (user: %s, rules: %s)\n",
+		formatNumberWithCommas(uint64(analyzer.TotalQueries())),
+		formatNumberWithCommas(uint64(analyzer.TotalUserQueries())),
+		formatNumberWithCommas(uint64(analyzer.TotalRuleQueries())))
 
 	userQueryDuration := userQueriesEnd.Sub(userQueriesStart)
 	ruleQueryDuration := ruleQueriesEnd.Sub(ruleQueriesStart)
 	labelStats := analyzer.GetLabelStats(allLabelStats, totalSeriesCount, userQueryDuration, ruleQueryDuration)
 
 	// Identify good segmentation candidates: score > 0.5.
-	fmt.Printf("\n--- Segmentation Label Candidates ---\n")
-	fmt.Printf("Labels with score > 0.5:\n\n")
-
 	var candidates []LabelStats
 	for _, ls := range labelStats {
 		if ls.Score > 0.5 {
@@ -151,10 +151,30 @@ func run(cfg *Config) error {
 	})
 
 	if len(candidates) == 0 {
-		fmt.Println("  No labels meet both criteria.")
+		fmt.Println("No candidates found (score > 0.5).")
 	} else {
 		printCandidatesTable(candidates)
-		fmt.Println("\n--- Top Values per Label ---")
+
+		// Print top metric names if __name__ is a candidate.
+		for _, ls := range candidates {
+			if ls.Name == model.MetricNameLabel {
+				if len(ls.TopValuesSeries) > 0 {
+					fmt.Println("\nTop ingested metric names:")
+					for _, v := range ls.TopValuesSeries {
+						fmt.Printf("- %s (%.0f%%)\n", v.Value, v.Percent)
+					}
+				}
+				if len(ls.TopValuesQueries) > 0 {
+					fmt.Println("\nTop queried metric names:")
+					for _, v := range ls.TopValuesQueries {
+						fmt.Printf("- %s (%.0f%%)\n", v.Value, v.Percent)
+					}
+				}
+				break
+			}
+		}
+
+		printSectionTitle("Top Values per Label")
 		printTopValuesTable(candidates)
 	}
 
@@ -193,7 +213,7 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 	)
 
 	// Start a ticker to print progress periodically.
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -345,7 +365,7 @@ func queryLokiStats(
 	)
 
 	// Progress ticker.
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(15 * time.Second)
 	done := make(chan struct{})
 	go func() {
 		for {
@@ -468,7 +488,7 @@ func formatTopValuesPercent(values []LabelValuePercent) string {
 	return strings.Join(parts, ", ")
 }
 
-// formatTopValuesNameAndPercent formats the top values as "value_a (45%), value_b (20%)".
+// formatTopValuesNameAndPercent formats the top values with each on a separate line.
 func formatTopValuesNameAndPercent(values []LabelValuePercent) string {
 	if len(values) == 0 {
 		return "-"
@@ -477,6 +497,31 @@ func formatTopValuesNameAndPercent(values []LabelValuePercent) string {
 	for i, v := range values {
 		parts[i] = fmt.Sprintf("%s (%.0f%%)", v.Value, v.Percent)
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, "\n")
 }
 
+// printSectionTitle prints a styled section title.
+func printSectionTitle(title string) {
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", len(title)+4))
+	fmt.Printf("  %s\n", title)
+	fmt.Println(strings.Repeat("=", len(title)+4))
+	fmt.Println()
+}
+
+// formatNumberWithCommas formats a number with thousands separators.
+func formatNumberWithCommas(n uint64) string {
+	str := fmt.Sprintf("%d", n)
+	if len(str) <= 3 {
+		return str
+	}
+
+	var result strings.Builder
+	for i, c := range str {
+		if i > 0 && (len(str)-i)%3 == 0 {
+			result.WriteRune(',')
+		}
+		result.WriteRune(c)
+	}
+	return result.String()
+}

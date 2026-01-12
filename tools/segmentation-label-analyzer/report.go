@@ -51,11 +51,15 @@ func computeColumnWidths(columns []TableColumn, rows []TableRow) []int {
 		widths[i] = len(col.Header)
 	}
 
-	// Check all row values.
+	// Check all row values, accounting for multiline cells.
 	for _, row := range rows {
 		for i, value := range row {
-			if i < len(widths) && len(value) > widths[i] {
-				widths[i] = len(value)
+			if i < len(widths) {
+				for _, line := range strings.Split(value, "\n") {
+					if len(line) > widths[i] {
+						widths[i] = len(line)
+					}
+				}
 			}
 		}
 	}
@@ -72,27 +76,45 @@ func getHeaders(columns []TableColumn) []string {
 }
 
 func printTableRow(columns []TableColumn, widths []int, values []string) {
-	for i, col := range columns {
-		value := ""
+	// Split all cell values into lines.
+	cellLines := make([][]string, len(columns))
+	maxLines := 1
+	for i := range columns {
 		if i < len(values) {
-			value = values[i]
+			cellLines[i] = strings.Split(values[i], "\n")
+		} else {
+			cellLines[i] = []string{""}
 		}
-
-		width := widths[i]
-		isLast := i == len(columns)-1
-
-		switch col.Align {
-		case AlignLeft:
-			fmt.Printf("%-*s", width, value)
-		case AlignRight:
-			fmt.Printf("%*s", width, value)
-		}
-
-		if !isLast {
-			fmt.Print(" ")
+		if len(cellLines[i]) > maxLines {
+			maxLines = len(cellLines[i])
 		}
 	}
-	fmt.Println()
+
+	// Print each physical line.
+	for lineIdx := 0; lineIdx < maxLines; lineIdx++ {
+		for colIdx, col := range columns {
+			// Get the line for this cell, or empty if exhausted.
+			line := ""
+			if lineIdx < len(cellLines[colIdx]) {
+				line = cellLines[colIdx][lineIdx]
+			}
+
+			width := widths[colIdx]
+			isLast := colIdx == len(columns)-1
+
+			switch col.Align {
+			case AlignLeft:
+				fmt.Printf("%-*s", width, line)
+			case AlignRight:
+				fmt.Printf("%*s", width, line)
+			}
+
+			if !isLast {
+				fmt.Print(" ")
+			}
+		}
+		fmt.Println()
+	}
 }
 
 func printTableSeparator(widths []int) {
