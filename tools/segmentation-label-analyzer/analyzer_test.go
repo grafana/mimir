@@ -3,12 +3,26 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// toLabelValueSeriesCounts converts a slice of uint64 counts to LabelValueSeriesCount structs.
+// Used in tests where we only care about series counts, not value names.
+func toLabelValueSeriesCounts(counts []uint64) []LabelValueSeriesCount {
+	result := make([]LabelValueSeriesCount, len(counts))
+	for i, count := range counts {
+		result[i] = LabelValueSeriesCount{
+			Value:       fmt.Sprintf("value_%d", i),
+			SeriesCount: count,
+		}
+	}
+	return result
+}
 
 func TestFindSegmentLabelCandidates(t *testing.T) {
 	tests := []struct {
@@ -172,14 +186,14 @@ func TestGetLabelStats_WeightedQueryCoverage(t *testing.T) {
 
 	labelSeriesStats := map[string]LabelSeriesStats{
 		"cluster": {
-			SeriesCount:         1000,
-			ValuesCount:         10,
-			SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100}, // uniform
+			SeriesCount: 1000,
+			ValuesCount: 10,
+			TopValues:   toLabelValueSeriesCounts([]uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100}), // uniform
 		},
 		"__name__": {
-			SeriesCount:         1000,
-			ValuesCount:         100,
-			SeriesCountPerValue: []uint64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}, // only top 10 values
+			SeriesCount: 1000,
+			ValuesCount: 100,
+			TopValues:   toLabelValueSeriesCounts([]uint64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}), // only top 10 values
 		},
 	}
 
@@ -281,7 +295,7 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 		{
 			name:         "perfect candidate with enough values",
 			seriesCount:  1000,
-			valuesCount:  20, // >= 10, no penalty
+			valuesCount:  20,                                                                                       // >= 10, no penalty
 			distribution: []uint64{50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50}, // uniform
 			queryMatches: 10,
 			totalQueries: 10,
@@ -294,7 +308,7 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 		{
 			name:         "perfect candidate with few values - penalized",
 			seriesCount:  1000,
-			valuesCount:  5, // < 10, penalty applies
+			valuesCount:  5,                                 // < 10, penalty applies
 			distribution: []uint64{200, 200, 200, 200, 200}, // uniform
 			queryMatches: 10,
 			totalQueries: 10,
@@ -356,9 +370,9 @@ func TestGetLabelStats_ScoreCalculation(t *testing.T) {
 
 			labelSeriesStats := map[string]LabelSeriesStats{
 				"test": {
-					SeriesCount:         tc.seriesCount,
-					ValuesCount:         tc.valuesCount,
-					SeriesCountPerValue: tc.distribution,
+					SeriesCount: tc.seriesCount,
+					ValuesCount: tc.valuesCount,
+					TopValues:   toLabelValueSeriesCounts(tc.distribution),
 				},
 			}
 
@@ -429,9 +443,9 @@ func TestGetLabelStats_TopValuesSeriesPercent(t *testing.T) {
 
 			labelSeriesStats := map[string]LabelSeriesStats{
 				"test": {
-					SeriesCount:         tc.seriesCount,
-					ValuesCount:         uint64(len(tc.seriesCountPerValue)),
-					SeriesCountPerValue: tc.seriesCountPerValue,
+					SeriesCount: tc.seriesCount,
+					ValuesCount: uint64(len(tc.seriesCountPerValue)),
+					TopValues:   toLabelValueSeriesCounts(tc.seriesCountPerValue),
 				},
 			}
 
@@ -447,11 +461,11 @@ func TestGetLabelStats_TopValuesSeriesPercent(t *testing.T) {
 			require.NotNil(t, testStats, "test label not found")
 
 			if tc.expectedTopValues == nil {
-				assert.Empty(t, testStats.TopValuesSeriesPercent, "expected empty TopValuesSeriesPercent")
+				assert.Empty(t, testStats.TopValuesSeries, "expected empty TopValuesSeries")
 			} else {
-				require.Len(t, testStats.TopValuesSeriesPercent, len(tc.expectedTopValues), "TopValuesSeriesPercent length mismatch")
+				require.Len(t, testStats.TopValuesSeries, len(tc.expectedTopValues), "TopValuesSeries length mismatch")
 				for i, expected := range tc.expectedTopValues {
-					assert.InDelta(t, expected, testStats.TopValuesSeriesPercent[i], 0.01, "TopValuesSeriesPercent[%d] mismatch", i)
+					assert.InDelta(t, expected, testStats.TopValuesSeries[i].Percent, 0.01, "TopValuesSeries[%d].Percent mismatch", i)
 				}
 			}
 		})
@@ -477,14 +491,14 @@ func TestGetLabelStats_QueryValuesPenalty(t *testing.T) {
 
 	labelSeriesStats := map[string]LabelSeriesStats{
 		"cluster": {
-			SeriesCount:         1000,
-			ValuesCount:         10,
-			SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+			SeriesCount: 1000,
+			ValuesCount: 10,
+			TopValues:   toLabelValueSeriesCounts([]uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100}),
 		},
 		"__name__": {
-			SeriesCount:         1000,
-			ValuesCount:         100,
-			SeriesCountPerValue: []uint64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10},
+			SeriesCount: 1000,
+			ValuesCount: 100,
+			TopValues:   toLabelValueSeriesCounts([]uint64{10, 10, 10, 10, 10, 10, 10, 10, 10, 10}),
 		},
 	}
 
@@ -523,8 +537,8 @@ func TestGetLabelStats_QueryValuesPenalty(t *testing.T) {
 
 func TestGetLabelStats_QueryValuesDistribution(t *testing.T) {
 	tests := []struct {
-		name                        string
-		queries                     []string
+		name                           string
+		queries                        []string
 		expectedQueryValuesDistCluster float64
 	}{
 		{
@@ -584,9 +598,9 @@ func TestGetLabelStats_QueryValuesDistribution(t *testing.T) {
 
 			labelSeriesStats := map[string]LabelSeriesStats{
 				"cluster": {
-					SeriesCount:         1000,
-					ValuesCount:         10,
-					SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+					SeriesCount: 1000,
+					ValuesCount: 10,
+					TopValues:   toLabelValueSeriesCounts([]uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100}),
 				},
 			}
 
@@ -609,9 +623,9 @@ func TestGetLabelStats_QueryValuesDistribution(t *testing.T) {
 
 func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 	tests := []struct {
-		name              string
-		queries           []string
-		expectedTopValues []float64
+		name                   string
+		queries                []string
+		expectedTopValuesQuery []LabelValuePercent
 	}{
 		{
 			name: "more than 3 values - returns top 3",
@@ -629,7 +643,11 @@ func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 				`metric{cluster="d"}`, // 1 query with "d"
 			},
 			// Total: 11 queries. Top 3: a=5 (45.45%), b=3 (27.27%), c=2 (18.18%)
-			expectedTopValues: []float64{45.45, 27.27, 18.18},
+			expectedTopValuesQuery: []LabelValuePercent{
+				{Value: "a", Percent: 45.45},
+				{Value: "b", Percent: 27.27},
+				{Value: "c", Percent: 18.18},
+			},
 		},
 		{
 			name: "exactly 3 values",
@@ -642,7 +660,11 @@ func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 				`metric{cluster="c"}`, // 1
 			},
 			// Total: 6 queries. a=3 (50%), b=2 (33.33%), c=1 (16.67%)
-			expectedTopValues: []float64{50.0, 33.33, 16.67},
+			expectedTopValuesQuery: []LabelValuePercent{
+				{Value: "a", Percent: 50.0},
+				{Value: "b", Percent: 33.33},
+				{Value: "c", Percent: 16.67},
+			},
 		},
 		{
 			name: "only 2 values",
@@ -653,7 +675,10 @@ func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 				`metric{cluster="b"}`, // 1
 			},
 			// Total: 4 queries. a=3 (75%), b=1 (25%)
-			expectedTopValues: []float64{75.0, 25.0},
+			expectedTopValuesQuery: []LabelValuePercent{
+				{Value: "a", Percent: 75.0},
+				{Value: "b", Percent: 25.0},
+			},
 		},
 		{
 			name: "only 1 value",
@@ -662,7 +687,9 @@ func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 				`metric{cluster="a"}`,
 			},
 			// Total: 2 queries. a=2 (100%)
-			expectedTopValues: []float64{100.0},
+			expectedTopValuesQuery: []LabelValuePercent{
+				{Value: "a", Percent: 100.0},
+			},
 		},
 		{
 			name: "query with multiple values counts each separately",
@@ -672,8 +699,10 @@ func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 				`metric{cluster="a"}`,    // a=1
 			},
 			// Total value references: a=3, b=1 (4 total)
-			// a=3 (75%), b=1 (25%)
-			expectedTopValues: []float64{75.0, 25.0},
+			expectedTopValuesQuery: []LabelValuePercent{
+				{Value: "a", Percent: 75.0},
+				{Value: "b", Percent: 25.0},
+			},
 		},
 	}
 
@@ -686,9 +715,9 @@ func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 
 			labelSeriesStats := map[string]LabelSeriesStats{
 				"cluster": {
-					SeriesCount:         1000,
-					ValuesCount:         10,
-					SeriesCountPerValue: []uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100},
+					SeriesCount: 1000,
+					ValuesCount: 10,
+					TopValues:   toLabelValueSeriesCounts([]uint64{100, 100, 100, 100, 100, 100, 100, 100, 100, 100}),
 				},
 			}
 
@@ -703,13 +732,10 @@ func TestGetLabelStats_TopValuesQueriesPercent(t *testing.T) {
 			}
 			require.NotNil(t, clusterStats, "cluster label not found")
 
-			if tc.expectedTopValues == nil {
-				assert.Empty(t, clusterStats.TopValuesQueriesPercent, "expected empty TopValuesQueriesPercent")
-			} else {
-				require.Len(t, clusterStats.TopValuesQueriesPercent, len(tc.expectedTopValues), "TopValuesQueriesPercent length mismatch")
-				for i, expected := range tc.expectedTopValues {
-					assert.InDelta(t, expected, clusterStats.TopValuesQueriesPercent[i], 0.1, "TopValuesQueriesPercent[%d] mismatch", i)
-				}
+			require.Len(t, clusterStats.TopValuesQueries, len(tc.expectedTopValuesQuery), "TopValuesQueries length mismatch")
+			for i, expected := range tc.expectedTopValuesQuery {
+				assert.Equal(t, expected.Value, clusterStats.TopValuesQueries[i].Value, "TopValuesQueries[%d].Value mismatch", i)
+				assert.InDelta(t, expected.Percent, clusterStats.TopValuesQueries[i].Percent, 0.1, "TopValuesQueries[%d].Percent mismatch", i)
 			}
 		})
 	}

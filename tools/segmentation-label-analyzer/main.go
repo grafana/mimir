@@ -154,6 +154,8 @@ func run(cfg *Config) error {
 		fmt.Println("  No labels meet both criteria.")
 	} else {
 		printCandidatesTable(candidates)
+		fmt.Println("\n--- Top Values per Label ---")
+		printTopValuesTable(candidates)
 	}
 
 	return nil
@@ -219,21 +221,27 @@ func fetchLabelValuesStats(ctx context.Context, mimirClient *CachedMimirClient, 
 		}
 
 		for _, label := range resp.Labels {
-			// Extract per-value series counts for entropy calculation.
-			seriesCountPerValue := make([]uint64, 0, len(label.Cardinality))
+			topValues := make([]LabelValueSeriesCount, 0, len(label.Cardinality))
 			for _, v := range label.Cardinality {
-				seriesCountPerValue = append(seriesCountPerValue, v.SeriesCount)
+				topValues = append(topValues, LabelValueSeriesCount{
+					Value:       v.LabelValue,
+					SeriesCount: v.SeriesCount,
+				})
 			}
 
 			// Ensure sorted in descending order (API should return sorted, but verify).
-			if !slices.IsSortedFunc(seriesCountPerValue, uint64Descending) {
-				slices.SortFunc(seriesCountPerValue, uint64Descending)
+			if !slices.IsSortedFunc(topValues, func(a, b LabelValueSeriesCount) int {
+				return cmp.Compare(b.SeriesCount, a.SeriesCount)
+			}) {
+				slices.SortFunc(topValues, func(a, b LabelValueSeriesCount) int {
+					return cmp.Compare(b.SeriesCount, a.SeriesCount)
+				})
 			}
 
 			allLabelStats[label.LabelName] = LabelSeriesStats{
-				SeriesCount:         label.SeriesCount,
-				ValuesCount:         label.LabelValuesCount,
-				SeriesCountPerValue: seriesCountPerValue,
+				SeriesCount: label.SeriesCount,
+				ValuesCount: label.LabelValuesCount,
+				TopValues:   topValues,
 			}
 		}
 	}
@@ -420,30 +428,56 @@ func printCandidatesTable(candidates []LabelStats) {
 			fmt.Sprintf("%d", ls.ValuesCount),
 			fmt.Sprintf("%.2f", ls.AvgDistinctValuesPerQuery),
 			fmt.Sprintf("%.2f", ls.SeriesValuesDistribution),
-			formatTopValuesPercent(ls.TopValuesSeriesPercent),
+			formatTopValuesPercent(ls.TopValuesSeries),
 			fmt.Sprintf("%.2f", ls.QueryValuesDistribution),
-			formatTopValuesPercent(ls.TopValuesQueriesPercent),
+			formatTopValuesPercent(ls.TopValuesQueries),
 		})
 	}
 
 	PrintTable(columns, rows)
 }
 
-// formatTopValuesPercent formats the top values series percentages as "45%, 20%, 10%".
-func formatTopValuesPercent(percents []float64) string {
-	if len(percents) == 0 {
+func printTopValuesTable(candidates []LabelStats) {
+	columns := []TableColumn{
+		{Header: "Label", Align: AlignLeft},
+		{Header: "Top values series", Align: AlignLeft},
+		{Header: "Top values queries", Align: AlignLeft},
+	}
+
+	rows := make([]TableRow, 0, len(candidates))
+	for _, ls := range candidates {
+		rows = append(rows, TableRow{
+			ls.Name,
+			formatTopValuesNameAndPercent(ls.TopValuesSeries),
+			formatTopValuesNameAndPercent(ls.TopValuesQueries),
+		})
+	}
+
+	PrintTable(columns, rows)
+}
+
+// formatTopValuesPercent formats the top values as "45%, 20%, 10%".
+func formatTopValuesPercent(values []LabelValuePercent) string {
+	if len(values) == 0 {
 		return "-"
 	}
-	parts := make([]string, len(percents))
-	for i, p := range percents {
-		parts[i] = fmt.Sprintf("%.0f%%", p)
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = fmt.Sprintf("%.0f%%", v.Percent)
 	}
 	return strings.Join(parts, ", ")
 }
 
-// uint64Descending is a comparison function for sorting uint64 in descending order.
-func uint64Descending(a, b uint64) int {
-	return cmp.Compare(b, a)
+// formatTopValuesNameAndPercent formats the top values as "value_a (45%), value_b (20%)".
+func formatTopValuesNameAndPercent(values []LabelValuePercent) string {
+	if len(values) == 0 {
+		return "-"
+	}
+	parts := make([]string, len(values))
+	for i, v := range values {
+		parts[i] = fmt.Sprintf("%s (%.0f%%)", v.Value, v.Percent)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // isTimeoutError returns true if the error is a timeout error.

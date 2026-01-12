@@ -32,6 +32,7 @@ metrics-activity.log
 /query-tee
 /test-exporter
 /segmentation-label-analyzer
+/tools/segmentation-label-analyzer/segmentation-label-analyzer
 
 # This is custom Makefile modification, if it exists.
 Makefile.local

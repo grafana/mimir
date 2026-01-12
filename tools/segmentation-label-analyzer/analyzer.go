@@ -59,17 +59,35 @@ type LabelStats struct {
 	// Range 0-1: 0 = all queries use one value (bad for queries isolation), 1 = queries evenly distributed across values (ideal for queries isolation).
 	QueryValuesDistribution float64
 
-	// TopValuesSeriesPercent is the percentage of series for the top 3 label values (by cardinality).
-	// E.g., [45.0, 20.0, 10.0] means the top value has 45% of series, second has 20%, etc.
-	TopValuesSeriesPercent []float64
+	// TopValuesSeries holds the top 3 label values with their series percentages.
+	// E.g., [{Value: "prod", Percent: 45.0}, {Value: "dev", Percent: 20.0}]
+	TopValuesSeries []LabelValuePercent
 
-	// TopValuesQueriesPercent is the percentage of queries for the top 3 label values.
-	// E.g., [45.0, 20.0, 10.0] means the top value has 45% of queries, second has 20%, etc.
-	TopValuesQueriesPercent []float64
+	// TopValuesQueries holds the top 3 label values with their query percentages.
+	// E.g., [{Value: "prod", Percent: 45.0}, {Value: "dev", Percent: 20.0}]
+	TopValuesQueries []LabelValuePercent
 
 	// Score is a weighted score (0-1) for ranking candidates.
 	// Composed of 40% series coverage + 30% query coverage + 15% query values distribution + 15% series values distribution.
 	Score float64
+}
+
+// LabelValuePercent holds a label value and its percentage (of series or queries).
+type LabelValuePercent struct {
+	Value   string
+	Percent float64
+}
+
+// LabelValueSeriesCount holds a label value and its series count.
+type LabelValueSeriesCount struct {
+	Value       string
+	SeriesCount uint64
+}
+
+// LabelValueQueriesCount holds a label value and its queries count.
+type LabelValueQueriesCount struct {
+	Value        string
+	QueriesCount int
 }
 
 // LabelSeriesStats holds series statistics for a label from Mimir.
@@ -78,9 +96,9 @@ type LabelSeriesStats struct {
 	SeriesCount uint64
 	// ValuesCount is the number of unique values for this label.
 	ValuesCount uint64
-	// SeriesCountPerValue is the series count for label values, sorted in descending order (highest first).
-	// Used for distribution uniformity calculation and top values display.
-	SeriesCountPerValue []uint64
+	// TopValues holds the top label values by series count (up to 20, as returned by cardinality API).
+	// Sorted in descending order by SeriesCount.
+	TopValues []LabelValueSeriesCount
 }
 
 // computeNormalizedEntropy calculates the normalized Shannon entropy of series distribution.
@@ -215,13 +233,22 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 	for name, stats := range labelSeriesStats {
 		coverage := min(100, max(0, float64(stats.SeriesCount)/float64(totalSeriesCount)*100))
 
-		// Compute top 3 values series percentages.
-		var topValuesPercent []float64
-		if stats.SeriesCount > 0 && len(stats.SeriesCountPerValue) > 0 {
-			for i := 0; i < min(3, len(stats.SeriesCountPerValue)); i++ {
-				pct := float64(stats.SeriesCountPerValue[i]) / float64(stats.SeriesCount) * 100
-				topValuesPercent = append(topValuesPercent, pct)
+		// Compute top 3 values series with names and percentages.
+		var topValuesSeries []LabelValuePercent
+		if stats.SeriesCount > 0 && len(stats.TopValues) > 0 {
+			for i := 0; i < min(3, len(stats.TopValues)); i++ {
+				pct := float64(stats.TopValues[i].SeriesCount) / float64(stats.SeriesCount) * 100
+				topValuesSeries = append(topValuesSeries, LabelValuePercent{
+					Value:   stats.TopValues[i].Value,
+					Percent: pct,
+				})
 			}
+		}
+
+		// Extract series counts for entropy calculation.
+		seriesCounts := make([]uint64, len(stats.TopValues))
+		for i, tv := range stats.TopValues {
+			seriesCounts[i] = tv.SeriesCount
 		}
 
 		statsMap[name] = &LabelStats{
@@ -229,8 +256,8 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 			SeriesCount:              stats.SeriesCount,
 			ValuesCount:              stats.ValuesCount,
 			SeriesCoverage:           coverage,
-			SeriesValuesDistribution: computeNormalizedEntropy(stats.SeriesCountPerValue),
-			TopValuesSeriesPercent:   topValuesPercent,
+			SeriesValuesDistribution: computeNormalizedEntropy(seriesCounts),
+			TopValuesSeries:          topValuesSeries,
 		}
 	}
 
@@ -283,28 +310,31 @@ func (a *Analyzer) GetLabelStats(labelSeriesStats map[string]LabelSeriesStats, t
 
 		// Calculate query values distribution (entropy of queries per label value).
 		if counts, ok := a.queriesCountByLabelValue[label]; ok && len(counts) > 0 {
+			// Build slices for sorting and entropy calculation.
+			pairs := make([]LabelValueQueriesCount, 0, len(counts))
 			queryCounts := make([]uint64, 0, len(counts))
-			for _, count := range counts {
-				queryCounts = append(queryCounts, uint64(count))
-			}
-			stats.QueryValuesDistribution = computeNormalizedEntropy(queryCounts)
-
-			// Compute top 3 values queries percentages.
 			totalQueries := 0
-			for _, c := range counts {
+			for v, c := range counts {
+				pairs = append(pairs, LabelValueQueriesCount{v, c})
+				queryCounts = append(queryCounts, uint64(c))
 				totalQueries += c
 			}
-			if totalQueries > 0 {
-				// Sort counts descending.
-				sortedCounts := make([]int, 0, len(counts))
-				for _, c := range counts {
-					sortedCounts = append(sortedCounts, c)
-				}
-				sort.Sort(sort.Reverse(sort.IntSlice(sortedCounts)))
 
-				for i := 0; i < min(3, len(sortedCounts)); i++ {
-					pct := float64(sortedCounts[i]) / float64(totalQueries) * 100
-					stats.TopValuesQueriesPercent = append(stats.TopValuesQueriesPercent, pct)
+			// Sort by count descending.
+			sort.Slice(pairs, func(i, j int) bool {
+				return pairs[i].QueriesCount > pairs[j].QueriesCount
+			})
+
+			stats.QueryValuesDistribution = computeNormalizedEntropy(queryCounts)
+
+			// Compute top 3 values with names and percentages.
+			if totalQueries > 0 {
+				for i := 0; i < min(3, len(pairs)); i++ {
+					pct := float64(pairs[i].QueriesCount) / float64(totalQueries) * 100
+					stats.TopValuesQueries = append(stats.TopValuesQueries, LabelValuePercent{
+						Value:   pairs[i].Value,
+						Percent: pct,
+					})
 				}
 			}
 		}
