@@ -17,7 +17,10 @@ func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotati
 		return err
 	}
 
-	annos.Merge(*newAnnos)
+	if newAnnos != nil {
+		annos.Merge(*newAnnos)
+	}
+
 	queryStats.IncrementSamples(int64(remoteStats.SamplesProcessed))
 
 	if localStats := stats.FromContext(ctx); localStats != nil {
