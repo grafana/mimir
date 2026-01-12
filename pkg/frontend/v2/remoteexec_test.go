@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	prototypes "github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -990,6 +991,7 @@ func newInstantVectorSeriesData(nodeIndex int64, floats []promql.FPoint, histogr
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+						NodeIndex: nodeIndex,
 						Series: []querierpb.InstantVectorSeriesData{
 							{
 								Floats:     mimirpb.FromFPointsToSamples(floats),
@@ -1152,19 +1154,19 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	series, err := resp1.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "1")}), series)
-	requireNoBufferedData(t, evaluator)
+	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	data, err := resp1.GetNextSeries(ctx)
 	require.NoError(t, err)
 	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}}}
 	require.Equal(t, expectedData, data)
-	requireNoBufferedData(t, evaluator)
+	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	annos, returnedStats, err := resp1.GetEvaluationInfo(ctx)
 	require.NoError(t, err)
 	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls GetEvaluationInfo")
 	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
-	requireNoBufferedData(t, evaluator)
+	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	_, err = resp1.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node 0, as it is already finished")
@@ -1172,13 +1174,13 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	series, err = resp2.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2")}), series)
-	requireNoBufferedData(t, evaluator)
+	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	data, err = resp2.GetNextSeries(ctx)
 	require.NoError(t, err)
 	expectedData = types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
 	require.Equal(t, expectedData, data)
-	requireNoBufferedData(t, evaluator)
+	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	annos, returnedStats, err = resp2.GetEvaluationInfo(ctx)
 	require.NoError(t, err)
@@ -1188,7 +1190,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedAnnos, annos)
 	expectedStats := stats.Stats{SamplesProcessed: 1234}
 	require.Equal(t, expectedStats, returnedStats)
-	requireNoBufferedData(t, evaluator)
+	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	_, err = resp2.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node 1, as it is already finished")
@@ -1196,10 +1198,211 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
 }
 
-func requireNoBufferedData(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
+func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1"), labels.FromStrings("series", "2")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "3"), labels.FromStrings("series", "4")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 41}, {T: 2000, F: 42}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "3"), labels.FromStrings("series", "4")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Read the second message from the second node, message for first node should still be buffered.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}}}
+	require.Equal(t, expectedData, data)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Now go and read the cached message for the first node, one more message for the first node.
+	series, err = resp1.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "1"), labels.FromStrings("series", "2")}), series)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	data, err = resp1.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData = types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Read the evaluation completed message for the first node, which should cause no buffering as we'll
+	// read the results when we are done with the second node.
+	annos, returnedStats, err := resp1.GetEvaluationInfo(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls GetEvaluationInfo")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	annos, returnedStats, err = resp2.GetEvaluationInfo(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+}
+
+func requireNoBufferedDataForAllNodes(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
 	for idx, nodeState := range evaluator.nodeStreamState {
 		require.Falsef(t, nodeState.buffer.Any(), "expected node at index %v to have nothing buffered, but it has %v buffered messages", idx, nodeState.buffer.length)
 	}
+}
+
+func requireNoBufferedDataForNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node) {
+	nodeIndex := findNode(t, evaluator, node)
+	nodeState := evaluator.nodeStreamState[nodeIndex]
+	require.Falsef(t, nodeState.buffer.Any(), "expected node at index %v to have nothing buffered, but it has %v buffered messages", nodeIndex, nodeState.buffer.length)
+}
+
+func requireBufferedDataForNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node, expectedLength int) {
+	nodeIndex := findNode(t, evaluator, node)
+	nodeState := evaluator.nodeStreamState[nodeIndex]
+	require.Equalf(t, expectedLength, nodeState.buffer.length, "expected node at index %v to have nothing buffered, but it has %v buffered messages", nodeIndex, nodeState.buffer.length)
+}
+
+func findNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node) remoteExecutionNodeStreamIndex {
+	for idx, nodeState := range evaluator.nodeStreamState {
+		if nodeState.node == node {
+			return remoteExecutionNodeStreamIndex(idx)
+		}
+	}
+	require.Failf(t, "cannot find node in evaluator", "expected to find node %v in evaluator", node)
+	panic("should never reach here")
+}
+
+func TestRemoteExecutionGroupEvaluator_ReceiveMessageForUnexpectedNode(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(10, false, labels.FromStrings("series", "1"), labels.FromStrings("series", "2")),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	node := createDummyNode()
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	series, err := resp.GetSeriesMetadata(ctx)
+	require.EqualError(t, err, "received unexpected message for node with index 10, expected nodes with indices [0]")
+	require.Empty(t, series)
+}
+
+func TestRemoteExecutionGroupEvaluator_ReceiveUnexpectedMessageWithoutNodeIndex(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	node := createDummyNode()
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	series, err := resp.GetSeriesMetadata(ctx)
+	require.EqualError(t, err, "getNodeStreamState: unexpected message type *querierpb.EvaluateQueryResponse_EvaluationCompleted, this is a bug")
+	require.Empty(t, series)
 }
 
 func TestRemoteExecutionGroupEvaluator_AddingNodesAfterRequestSent(t *testing.T) {
@@ -1639,9 +1842,11 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 				count.Dec()
 			}
 
+			nodeIdx := requestedNodeIndex(t, msg)
+
 			// Simulate doing some work, then send an empty response.
 			time.Sleep(20 * time.Millisecond)
-			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(0, false), newEvaluationCompleted(0, nil, nil))
+			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(nodeIdx, false), newEvaluationCompleted(0, nil, nil))
 			require.NoError(t, err)
 		}()
 
@@ -1679,6 +1884,14 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	require.NoError(t, err)
 	require.NotZero(t, maxConcurrent, "expected at least one query to be executed")
 	require.LessOrEqualf(t, maxConcurrent, maxQueryParallelism, "max query parallelism %v went over the configured limit of %v", maxConcurrent, maxQueryParallelism)
+}
+
+func requestedNodeIndex(t *testing.T, msg *schedulerpb.FrontendToScheduler) int64 {
+	request := querierpb.EvaluateQueryRequest{}
+	require.NoError(t, prototypes.UnmarshalAny(msg.GetProtobufRequest().Payload, &request))
+	require.Len(t, request.Nodes, 1)
+
+	return request.Nodes[0].NodeIndex
 }
 
 type mockLimitedParallelismLimits struct {

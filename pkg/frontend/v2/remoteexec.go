@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/bits"
+	"slices"
 	"sync"
 	"time"
 
@@ -60,9 +62,10 @@ type RemoteExecutionGroupEvaluator struct {
 	queryParameters          *planning.QueryParameters
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	stream          ResponseStream
-	nodeStreamState []remoteExecutionNodeStreamState
-	requestSent     bool
+	stream                 ResponseStream
+	nodeStreamState        []*remoteExecutionNodeStreamState
+	requestSent            bool
+	nodeIndexToStreamState map[int64]*remoteExecutionNodeStreamState // Only populated once request is sent.
 }
 
 type remoteExecutionNodeStreamState struct {
@@ -94,7 +97,7 @@ func (g *RemoteExecutionGroupEvaluator) enqueueEvaluation(node planning.Node, ti
 		return -1, errRequestAlreadySent
 	}
 
-	g.nodeStreamState = append(g.nodeStreamState, remoteExecutionNodeStreamState{
+	g.nodeStreamState = append(g.nodeStreamState, &remoteExecutionNodeStreamState{
 		node:      node,
 		timeRange: timeRange,
 		buffer:    &responseStreamBuffer{},
@@ -161,10 +164,12 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	}
 
 	overallQueriedTimeRange := planning.NoDataQueried()
+	g.nodeIndexToStreamState = make(map[int64]*remoteExecutionNodeStreamState, len(g.nodeStreamState))
 
 	for streamIdx, nodeIdx := range nodeIndices {
-		state := &g.nodeStreamState[streamIdx]
+		state := g.nodeStreamState[streamIdx]
 		state.nodeIndex = nodeIdx
+		g.nodeIndexToStreamState[nodeIdx] = state
 		timeRange := state.timeRange
 
 		queriedTimeRange, err := state.node.QueriedTimeRange(timeRange, g.cfg.LookBackDelta)
@@ -199,29 +204,73 @@ func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Cont
 		return nil, nil, errRequestNotSent
 	}
 
-	nodeState := &g.nodeStreamState[streamIndex]
+	nodeState := g.nodeStreamState[streamIndex]
 	if nodeState.finished {
 		return nil, nil, fmt.Errorf("can't read next message for node %v, as it is already finished", nodeState.nodeIndex)
 	}
 
-	// TODO:
-	// If have buffered message for this node index: pop it from the buffer, return it
+	if nodeState.buffer.Any() {
+		b := nodeState.buffer.Pop()
+		if b.err != nil {
+			return nil, nil, b.err
+		}
 
-	// If don't have buffered message for this node:
-	// - read next message from stream
-	//   - if it's for this response, return it
-	//   - if it's not, buffer it and loop to next message
-	msg, err := g.readNextMessage(ctx)
-	if err != nil {
-		return nil, nil, err
+		resp := b.payload.GetEvaluateQueryResponse()
+		if resp == nil {
+			return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", b.payload.Data)
+		}
+
+		return resp, b.payload.FreeBuffer, nil
 	}
 
-	resp := msg.GetEvaluateQueryResponse()
-	if resp == nil {
-		return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", msg.Data)
+	for {
+		payload, err := g.readNextMessage(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// We don't need to check for Error messages below, these are translated to Go errors in ProtobufResponseStream.
+		resp := payload.GetEvaluateQueryResponse()
+		if resp == nil {
+			return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", payload.Data)
+		}
+
+		respNodeState, err := g.getNodeStreamState(resp)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if respNodeState == nodeState {
+			return resp, payload.FreeBuffer, nil
+		}
+
+		respNodeState.buffer.Push(bufferedMessage{payload: payload})
+	}
+}
+
+func (g *RemoteExecutionGroupEvaluator) getNodeStreamState(resp *querierpb.EvaluateQueryResponse) (*remoteExecutionNodeStreamState, error) {
+	var idx int64
+
+	switch msg := resp.Message.(type) {
+	case *querierpb.EvaluateQueryResponse_SeriesMetadata:
+		idx = msg.SeriesMetadata.NodeIndex
+	case *querierpb.EvaluateQueryResponse_StringValue:
+		idx = msg.StringValue.NodeIndex
+	case *querierpb.EvaluateQueryResponse_ScalarValue:
+		idx = msg.ScalarValue.NodeIndex
+	case *querierpb.EvaluateQueryResponse_InstantVectorSeriesData:
+		idx = msg.InstantVectorSeriesData.NodeIndex
+	case *querierpb.EvaluateQueryResponse_RangeVectorStepData:
+		idx = msg.RangeVectorStepData.NodeIndex
+	default:
+		return nil, fmt.Errorf("getNodeStreamState: unexpected message type %T, this is a bug", msg)
 	}
 
-	return resp, msg.FreeBuffer, nil
+	if nodeState, ok := g.nodeIndexToStreamState[idx]; ok {
+		return nodeState, nil
+	}
+
+	return nil, fmt.Errorf("received unexpected message for node with index %v, expected nodes with indices %v", idx, slices.Collect(maps.Keys(g.nodeIndexToStreamState)))
 }
 
 func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
@@ -238,7 +287,7 @@ func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*f
 }
 
 func (g *RemoteExecutionGroupEvaluator) getEvaluationCompletedForStream(ctx context.Context, streamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
-	nodeState := &g.nodeStreamState[streamIndex]
+	nodeState := g.nodeStreamState[streamIndex]
 	if nodeState.finished {
 		return nil, stats.Stats{}, fmt.Errorf("can't read evaluation completed message for node %v, as it is already finished", nodeState.nodeIndex)
 	}
@@ -305,7 +354,7 @@ func (g *RemoteExecutionGroupEvaluator) closeStream(streamIndex remoteExecutionN
 }
 
 func (g *RemoteExecutionGroupEvaluator) markStreamAsFinished(streamIndex remoteExecutionNodeStreamIndex) {
-	nodeState := &g.nodeStreamState[streamIndex]
+	nodeState := g.nodeStreamState[streamIndex]
 	if nodeState.finished {
 		return
 	}
