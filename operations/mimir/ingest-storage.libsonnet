@@ -81,6 +81,9 @@
     'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_consumer_client_id_settings),
   },
 
+  // The configuration that should be applied to all Mimir components ingesting metrics from Kafka (e.g. ingesters).
+  ingest_storage_kafka_ingestion_args:: {},
+
   //
   // Mimir components specific configuration.
   //
@@ -94,6 +97,7 @@
     $.ingest_storage_ruler_args,
 
   ingester_args+:: if !$._config.ingest_storage_enabled then {} else
+    $.ingest_storage_kafka_ingestion_args +
     $.ingest_storage_ingester_args {
       // How long to wait before deleting an inactive partition, that doesn't have an owner.
       'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
