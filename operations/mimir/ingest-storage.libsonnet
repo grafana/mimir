@@ -81,6 +81,9 @@
     'ingest-storage.kafka.client-id': $.mimirKafkaClientID($.ingest_storage_kafka_consumer_client_id_settings),
   },
 
+  // The configuration that should be applied to all Mimir components ingesting metrics from Kafka (e.g. ingesters).
+  ingest_storage_kafka_ingestion_args:: {},
+
   //
   // Mimir components specific configuration.
   //
