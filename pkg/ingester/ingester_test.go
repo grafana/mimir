@@ -42,6 +42,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -85,12 +86,10 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 
 func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 	reg := prometheus.NewRegistry()
-	gauge := prometheus.NewGauge(prometheus.GaugeOpts{
+	gauge := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name: "test_idle_compactions_in_progress_concurrent",
 		Help: "Test gauge for concurrent idle compactions",
 	})
-	reg.MustRegister(gauge)
-
 	var counter int64
 	var mu sync.Mutex
 
