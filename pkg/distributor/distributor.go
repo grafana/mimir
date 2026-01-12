@@ -1237,19 +1237,21 @@ func (d *Distributor) processHaReplicas(ctx context.Context, userID string, samp
 
 var haReplicaSlicePool = sync.Pool{
 	New: func() interface{} {
-		return make([]haReplica, 0, 2500)
+		s := make([]haReplica, 0, 2500)
+		return &s
 	},
 }
 
-func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLabel string) ([]haReplica, map[haReplica]*replicaInfo) {
+func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLabel string) (*[]haReplica, map[haReplica]*replicaInfo) {
 	count := len(req.Timeseries)
-	replicas := haReplicaSlicePool.Get().([]haReplica)
-	if cap(replicas) < count {
-		replicas = make([]haReplica, count)
+	replicasPtr := haReplicaSlicePool.Get().(*[]haReplica)
+	if cap(*replicasPtr) < count {
+		*replicasPtr = make([]haReplica, count)
 	} else {
-		replicas = replicas[:count]
+		*replicasPtr = (*replicasPtr)[:count]
 	}
 
+	replicas := *replicasPtr
 	replicaInfos := make(map[haReplica]*replicaInfo)
 
 	var previousReplica haReplica
@@ -1281,7 +1283,7 @@ func getReplicasAndInfos(req *mimirpb.WriteRequest, haReplicaLabel, haClusterLab
 		previousReplica = currentReplica
 		lastInfo = info
 	}
-	return replicas, replicaInfos
+	return replicasPtr, replicaInfos
 }
 
 func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
@@ -1303,13 +1305,14 @@ func (d *Distributor) prePushHaDedupeMiddleware(next PushFunc) PushFunc {
 		haReplicaLabel := d.limits.HAReplicaLabel(userID)
 		haClusterLabel := d.limits.HAClusterLabel(userID)
 
-		replicas, replicaInfos := getReplicasAndInfos(req, haReplicaLabel, haClusterLabel)
+		replicasPtr, replicaInfos := getReplicasAndInfos(req, haReplicaLabel, haClusterLabel)
+		replicas := *replicasPtr
 		defer func() {
 			var zero haReplica
 			for i := range replicas {
 				replicas[i] = zero
 			}
-			haReplicaSlicePool.Put(replicas)
+			haReplicaSlicePool.Put(replicasPtr)
 		}()
 
 		span := trace.SpanFromContext(ctx)
