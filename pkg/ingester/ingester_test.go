@@ -83,6 +83,37 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 	return m
 }
 
+func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	gauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "test_idle_compactions_in_progress_concurrent",
+		Help: "Test gauge for concurrent idle compactions",
+	})
+	reg.MustRegister(gauge)
+
+	var counter int64
+	var mu sync.Mutex
+
+	require.Equal(t, float64(0), testutil.ToFloat64(gauge))
+
+	const numGoroutines = 100
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			incrementIdleCompaction(&counter, &mu, gauge)
+			time.Sleep(10 * time.Millisecond)
+			decrementIdleCompaction(&counter, &mu, gauge)
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int64(0), counter)
+	require.Equal(t, float64(0), testutil.ToFloat64(gauge))
+}
+
 func TestIngester_StartPushRequest(t *testing.T) {
 	const reqSize = 10
 	instanceLimits := &InstanceLimits{}

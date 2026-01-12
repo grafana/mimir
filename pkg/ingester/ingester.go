@@ -3291,25 +3291,35 @@ func (i *Ingester) timeToNextZoneAwareCompaction(now time.Time, zones []string) 
 	return result
 }
 
+func incrementIdleCompaction(counter *int64, mu *sync.Mutex, gauge prometheus.Gauge) {
+	mu.Lock()
+	defer mu.Unlock()
+	*counter++
+	if *counter == 1 {
+		gauge.Set(1)
+	}
+}
+
+func decrementIdleCompaction(counter *int64, mu *sync.Mutex, gauge prometheus.Gauge) {
+	mu.Lock()
+	defer mu.Unlock()
+	*counter--
+	if *counter == 0 {
+		gauge.Set(0)
+	}
+}
+
 // Compacts all compactable blocks. Force flag will force compaction even if head is not compactable yet.
 func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompactionMaxTime int64, allowed *util.AllowList) {
 	var (
-		metricSet     atomic.Bool
-		metricSetOnce sync.Once
+		activeIdleCompactions int64
+		metricMutex           sync.Mutex
 	)
 
-	// Defer that resets the metric if it was set during this compaction run (handles both forced and idle cases).
-	defer func() {
-		if metricSet.Load() {
-			i.metrics.forcedCompactionInProgress.Set(0)
-		}
-	}()
-
 	// Expose a metric tracking whether there's a forced head compaction in progress.
-	// This metric can be used in alerts and when troubleshooting.
 	if force {
 		i.metrics.forcedCompactionInProgress.Set(1)
-		metricSet.Store(true)
+		defer i.metrics.forcedCompactionInProgress.Set(0)
 	}
 
 	_ = concurrency.ForEachUser(ctx, i.getTSDBUsers(), i.cfg.BlocksStorageConfig.TSDB.HeadCompactionConcurrency, func(_ context.Context, userID string) error {
@@ -3341,11 +3351,10 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), forcedCompactionMaxTime)
 
 		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
-			// Expose a metric tracking whether there's an idle head compaction in progress.
-			metricSetOnce.Do(func() {
-				i.metrics.forcedCompactionInProgress.Set(1)
-				metricSet.Store(true)
-			})
+			// Expose a metric tracking whether there's a forced idle compaction in progress.
+			// For idle compactions, use reference counting to track concurrent compactions.
+			incrementIdleCompaction(&activeIdleCompactions, &metricMutex, i.metrics.forcedCompactionInProgress)
+			defer decrementIdleCompaction(&activeIdleCompactions, &metricMutex, i.metrics.forcedCompactionInProgress)
 
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
