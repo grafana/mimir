@@ -3334,8 +3334,23 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
 
-			// Always pass math.MaxInt64 as forcedCompactionMaxTime because we want to compact the whole TSDB head.
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), math.MaxInt64)
+			// We want to compact the entire TSDB head.
+			//
+			// However, when a partition switches from INACTIVE back to ACTIVE while the ingester
+			// is compacting idle TSDBs, consumption from Kafka can be paused (effectively fail
+			// and the gets retried). This happens if incoming samples have timestamps that overlap
+			// with the forced compaction interval.
+			//
+			// To reduce the likelihood of this, we force compaction only up to the maximum sample
+			// timestamp currently in the TSDB head, instead of using a higher value (for example,
+			// math.MaxInt64). This still compacts all samples in the head, but in practice the
+			// maximum compacted timestamp is roughly HeadCompactionIdleTimeout old (1h by default).
+			// As a result, it’s unlikely that Kafka consumption will be paused, since newly
+			// ingested samples are expected to be much newer.
+			userMaxTime := max(userDB.db.Head().MaxTime(), userDB.db.Head().MaxOOOTime())
+			if userMaxTime > math.MinInt64 {
+				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
+			}
 
 		default:
 			reason = "regular"
