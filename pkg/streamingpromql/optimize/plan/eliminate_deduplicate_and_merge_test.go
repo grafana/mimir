@@ -4,6 +4,7 @@ package plan_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -852,16 +853,18 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 					"Query: %s\nExpected to eliminate %d nodes, but eliminated %d (before: %d, after: %d)",
 					testCase.expr, expectedNodesEliminated, actualEliminated, nodesBefore, nodesAfter)
 
+				var expectedModified int
 				if expectedNodesEliminated > 0 {
-					reg := opts2.CommonOpts.Reg.(*prometheus.Registry)
-
-					require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(`
-						# HELP cortex_mimir_query_engine_eliminate_dedupe_modified_total Total number of queries where the optimization pass has been able to eliminate DeduplicateAndMerge nodes for.
-						# TYPE cortex_mimir_query_engine_eliminate_dedupe_modified_total counter
-						cortex_mimir_query_engine_eliminate_dedupe_modified_total 1
-						`), "cortex_mimir_query_engine_eliminate_dedupe_modified_total",
-					))
+					expectedModified = 1
 				}
+
+				reg := opts2.CommonOpts.Reg.(*prometheus.Registry)
+				require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					# HELP cortex_mimir_query_engine_eliminate_dedupe_modified_total Total number of queries where the optimization pass has been able to eliminate DeduplicateAndMerge nodes for.
+					# TYPE cortex_mimir_query_engine_eliminate_dedupe_modified_total counter
+					cortex_mimir_query_engine_eliminate_dedupe_modified_total %d
+					`, expectedModified)), "cortex_mimir_query_engine_eliminate_dedupe_modified_total",
+				))
 			}
 
 			t.Run("delayed name removal disabled", func(t *testing.T) {

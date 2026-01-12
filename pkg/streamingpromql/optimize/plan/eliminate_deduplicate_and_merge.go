@@ -71,7 +71,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, 
 	e.collect(plan.Root, nil, -1, &nodes)
 
 	// If there are any DeduplicateAndMerge nodes we are not keeping, increment the modified counter.
-	if i := slices.IndexFunc(nodes, func(n dedupNodeInfo) bool { return !n.keep }); i != -1 {
+	if slices.ContainsFunc(nodes, func(n dedupNodeInfo) bool { return !n.keep }) {
 		e.modified.Inc()
 	}
 
