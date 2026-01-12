@@ -3348,11 +3348,10 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			// As a result, it’s unlikely that Kafka consumption will be paused, since newly
 			// ingested samples are expected to be much newer.
 			userMaxTime := max(userDB.db.Head().MaxTime(), userDB.db.Head().MaxOOOTime())
-			if userMaxTime <= 0 {
-				userMaxTime = math.MaxInt64
+			if userMaxTime > math.MinInt64 {
+				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
 			}
-			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
-
+			
 		default:
 			reason = "regular"
 			err = userDB.Compact()
