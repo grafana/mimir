@@ -1405,6 +1405,285 @@ func TestRemoteExecutionGroupEvaluator_ReceiveUnexpectedMessageWithoutNodeIndex(
 	require.Empty(t, series)
 }
 
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEvaluationInfoReads(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Get the evaluation info for the first node, confirm the buffered message is dropped.
+	annos, returnedStats, err := resp1.GetEvaluationInfo(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls GetEvaluationInfo")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Read the second message from the second node, confirm nothing is buffered for the first node.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Get the evaluation info for the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	annos, returnedStats, err = resp2.GetEvaluationInfo(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+}
+
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Close the first node, confirm the buffered message is dropped.
+	resp1.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Read the second message from the second node, confirm nothing is buffered for the first node.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Get the evaluation info for the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	annos, returnedStats, err := resp2.GetEvaluationInfo(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed, "stream should be closed after reading evaluation info for last node")
+}
+
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Close the first node, confirm the buffered message is dropped.
+	resp1.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	resp1.Close() // Closing it again shouldn't matter.
+
+	// Read the second message from the second node, confirm nothing is buffered for the first node.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Get the evaluation info for the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	resp2.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed, "stream should be closed after closing last node")
+
+	resp2.Close() // Closing it again shouldn't matter.
+}
+
 func TestRemoteExecutionGroupEvaluator_AddingNodesAfterRequestSent(t *testing.T) {
 	ctx := context.Background()
 	frontend := &mockFrontend{}

@@ -244,7 +244,9 @@ func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Cont
 			return resp, payload.FreeBuffer, nil
 		}
 
-		respNodeState.buffer.Push(bufferedMessage{payload: payload})
+		if !respNodeState.finished {
+			respNodeState.buffer.Push(bufferedMessage{payload: payload})
+		}
 	}
 }
 
@@ -360,8 +362,7 @@ func (g *RemoteExecutionGroupEvaluator) markStreamAsFinished(streamIndex remoteE
 	}
 
 	nodeState.finished = true
-
-	// TODO: discard any buffered messages
+	nodeState.buffer.Close()
 }
 
 func (g *RemoteExecutionGroupEvaluator) onAllStreamsFinished() {
@@ -946,8 +947,11 @@ func (b *responseStreamBuffer) Any() bool {
 }
 
 func (b *responseStreamBuffer) Close() {
+	b.startIndex = 0
+	b.length = 0
 	clear(b.msgs)
 	responseMessageSlicePool.Put(b.msgs)
+	b.msgs = nil
 }
 
 // Why types.MaxExpectedSeriesPerResult as the slice size limit?
