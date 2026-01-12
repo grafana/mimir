@@ -97,6 +97,7 @@
     $.ingest_storage_ruler_args,
 
   ingester_args+:: if !$._config.ingest_storage_enabled then {} else
+    $.ingest_storage_kafka_ingestion_args +
     $.ingest_storage_ingester_args {
       // How long to wait before deleting an inactive partition, that doesn't have an owner.
       'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
