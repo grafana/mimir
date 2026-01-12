@@ -179,19 +179,26 @@ func minOverTimeGenerate(
 	return result, nil
 }
 
-func minOverTimeCombine(pieces []SingleSampleIntermediate, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTimeCombine(pieces []SingleSampleIntermediate, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	hasFloat := false
+	hasHistogram := false
 	minF := math.NaN()
 
 	for _, p := range pieces {
-		if !p.HasFloat {
-			continue
+		if p.HasFloat {
+			hasFloat = true
+			if p.F < minF || math.IsNaN(minF) {
+				minF = p.F
+			}
 		}
-		hasFloat = true
+		if p.H != nil {
+			hasHistogram = true
+		}
+	}
 
-		if p.F < minF || math.IsNaN(minF) {
-			minF = p.F
-		}
+	if hasFloat && hasHistogram {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return 0, false, nil, nil
 	}
 
 	return minF, hasFloat, nil, nil
@@ -224,19 +231,26 @@ func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, 
 	return result, nil
 }
 
-func maxOverTimeCombine(pieces []SingleSampleIntermediate, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTimeCombine(pieces []SingleSampleIntermediate, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	hasFloat := false
+	hasHistogram := false
 	maxF := math.NaN()
 
 	for _, p := range pieces {
-		if !p.HasFloat {
-			continue
+		if p.HasFloat {
+			hasFloat = true
+			if p.F > maxF || math.IsNaN(maxF) {
+				maxF = p.F
+			}
 		}
-		hasFloat = true
+		if p.H != nil {
+			hasHistogram = true
+		}
+	}
 
-		if p.F > maxF || math.IsNaN(maxF) {
-			maxF = p.F
-		}
+	if hasFloat && hasHistogram {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return 0, false, nil, nil
 	}
 
 	return maxF, hasFloat, nil, nil

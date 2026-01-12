@@ -142,16 +142,31 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 			return 0, false, nil, nil
 		}
 
-		// FIXME: should warn if mix between floats and histograms
+		hasFloat := false
+		hasHistogram := false
 		for _, p := range pieces {
 			if p.SampleCount > 0 {
 				if p.IsHistogram {
-					h, err := rateCombineHistogram(pieces, isRate, emitAnnotation)
-					return 0, false, h, err
+					hasHistogram = true
+				} else {
+					hasFloat = true
 				}
-				f, hasFloat, err := rateCombineFloat(pieces, isRate)
-				return f, hasFloat, nil, err
 			}
+		}
+
+		if hasFloat && hasHistogram {
+			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+			return 0, false, nil, nil
+		}
+
+		if hasHistogram {
+			h, err := rateCombineHistogram(pieces, isRate, emitAnnotation)
+			return 0, false, h, err
+		}
+
+		if hasFloat {
+			f, hasFloat, err := rateCombineFloat(pieces, isRate)
+			return f, hasFloat, nil, err
 		}
 
 		return 0, false, nil, nil

@@ -93,10 +93,10 @@ clear
 
 # Native histogram counter detection
 # Query at 6h with 5h range spans [1h, 6h]
-# Splits: Head (1h, 2h] no data, Middle (2h, 4h] gauge histogram, Middle2 (4h, 6h] no data
-# Single gauge histogram at 3h is ONLY in middle split (2h, 4h]
+# Splits: Head (1h, 2h] no data, Middle (2h, 4h] gauge histograms, Middle2 (4h, 6h] no data
+# Two gauge histograms at 3h and 3h30m are ONLY in middle split (2h, 4h]
 load 1m
-	gauge_histogram{env="prod"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}
+	gauge_histogram{env="prod"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60
 
 # First run: uncached, middle split writes annotation to cache
 eval instant at 6h rate(gauge_histogram[5h])
@@ -134,11 +134,11 @@ clear
 # Query at 6h with 5h range spans [1h, 6h]
 # Splits: Head (1h, 2h] floats, Middle (2h, 4h] mixed data, Middle2 (4h, 6h] floats
 # Series 1 & 2: Mixed floats/histogram with histogram at 3h (middle split only)
-# Series 3: Gauge histogram at 3h (middle split only)
+# Series 3: Two gauge histograms at 3h and 3h30m (middle split only)
 load 1m
 	dedup_test{series="1"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
 	dedup_test{series="2"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
-	dedup_test{series="3"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}
+	dedup_test{series="3"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60
 
 # First run: uncached, middle split writes both annotations to cache
 eval instant at 6h rate(dedup_test[5h])
@@ -172,3 +172,5 @@ eval instant at 5h rate(non_counter_metric[4h])
 	{} 1.0
 
 clear
+
+#TODO: add tests for annotations across splits
