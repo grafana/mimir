@@ -97,7 +97,6 @@
 * [ENHANCEMENT] Compactor: If compaction fails because the result block would have a postings offsets table larger than the 4GB limit, mark input blocks for no-compaction to avoid blocking future compactor runs. #13876
 * [ENHANCEMENT] Query-frontend: add support for `range()` duration expression. #13931
 * [ENHANCEMENT] Add experimental flag `common.instrument-reference-leaks-percentage` to leaked references to gRPC buffers. #13609
-* [ENHANCEMENT] HA: Deduplication per sample instead of per batch. #13665
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [ENHANCEMENT] HA: Deduplicate per sample instead of per batch. #13665
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
