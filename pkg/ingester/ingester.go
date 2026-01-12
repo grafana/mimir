@@ -3351,7 +3351,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, forcedCompacti
 			if userMaxTime > math.MinInt64 {
 				err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds(), userMaxTime)
 			}
-			
+
 		default:
 			reason = "regular"
 			err = userDB.Compact()
