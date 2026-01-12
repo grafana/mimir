@@ -2374,7 +2374,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "",
 		},
-		"no HA samples in the request": {
+		"HA dedup; no HA samples in the request": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.AcceptHASamples = true
 			},
