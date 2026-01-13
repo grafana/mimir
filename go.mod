@@ -54,7 +54,7 @@ require (
 	cloud.google.com/go/storage v1.58.0
 	github.com/alecthomas/chroma/v2 v2.22.0
 	github.com/alecthomas/kingpin/v2 v2.4.0
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
 	github.com/cortexproject/promqlsmith v0.0.0-20251018201159-9e00e5e62e4e
 	github.com/dennwc/varint v1.0.0
 	github.com/felixge/fgprof v0.9.5
@@ -235,14 +235,14 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	github.com/DmitriyVTitov/size v1.5.0
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.41.0 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.41.1 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.32.6 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.6 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.16 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.16 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.16 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.17 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.16 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.30.8 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.5 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
