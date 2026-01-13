@@ -1085,6 +1085,11 @@ reactive_limiter:
   # CLI flag: -distributor.reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -distributor.reactive-limiter.recent-window-min-duration
@@ -1529,6 +1534,11 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1591,6 +1601,11 @@ read_reactive_limiter:
   # requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
+
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples

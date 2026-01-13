@@ -1901,6 +1901,17 @@
             },
             {
               "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "distributor.reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4662,6 +4673,17 @@
             },
             {
               "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.push-reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4810,6 +4832,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 5,
               "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor-decay",
               "fieldType": "float",
               "fieldCategory": "experimental"
             },
