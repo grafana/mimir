@@ -56,6 +56,16 @@ func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.Me
 	return c.series, c.metadata
 }
 
+// Len returns the current number of series in the appender.
+func (c *MimirAppender) Len() int {
+	return len(c.series)
+}
+
+// MetadataLen returns the current number of metadata entries in the appender.
+func (c *MimirAppender) MetadataLen() int {
+	return len(c.metadata)
+}
+
 func (c *MimirAppender) AppendSample(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
 	return c.appendFloatOrHistogram(ls, meta, ct, t, v, nil, es)
 }

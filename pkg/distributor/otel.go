@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -1205,16 +1204,9 @@ type otlpBatchProcessor struct {
 	batchSize               int // Number of ResourceMetrics to process per batch
 }
 
-// batchResult holds the converted batch ready for pushing
-type batchResult struct {
-	req     *Request
-	metrics []mimirpb.PreallocTimeseries
-	err     error
-}
-
-// processBatched processes OTLP metrics in batches using a pipeline.
-// It converts batches in the main goroutine and pushes them in a separate goroutine,
-// allowing conversion and push to overlap for better latency.
+// processBatched processes OTLP metrics in batches sequentially.
+// It uses a shared appender across all batches to maintain series deduplication
+// while reducing peak memory by pushing batches incrementally.
 func (p *otlpBatchProcessor) processBatched(
 	ctx context.Context,
 	otlpReq pmetricotlp.ExportRequest,
@@ -1228,50 +1220,23 @@ func (p *otlpBatchProcessor) processBatched(
 		return nil, nil
 	}
 
-	// Channel for pipeline: converter sends to pusher
-	// Buffer of 1 allows one batch to be queued while the previous is being pushed
-	batchChan := make(chan batchResult, 1)
+	// SHARED appender for entire request - maintains series deduplication
+	appender := otlpappender.NewCombinedAppender()
+	appender.EnableCreatedTimestampZeroIngestion = convOpts.enableCTZeroIngestion
+	converter := newOTLPMimirConverter(appender)
 
-	// Error channel from push goroutine
-	pushErrChan := make(chan error, n)
-
-	// WaitGroup to track push completion
-	var pushWg sync.WaitGroup
-
-	// Track if we should abort early due to hard error
-	var abortMu sync.Mutex
-	aborted := false
-
-	// Start push goroutine - consumes converted batches
-	pushWg.Add(1)
-	go func() {
-		defer pushWg.Done()
-		for batch := range batchChan {
-			if batch.err != nil {
-				pushErrChan <- batch.err
-				continue
-			}
-
-			pushErr := p.push(ctx, batch.req)
-
-			// Cleanup this batch immediately after push
-			mimirpb.ReuseSlice(batch.metrics)
-			batch.req.CleanUp()
-
-			if pushErr != nil {
-				pushErrChan <- pushErr
-				if isOTLPHardError(pushErr) {
-					abortMu.Lock()
-					aborted = true
-					abortMu.Unlock()
-					// Drain remaining batches without processing
-					for range batchChan {
-					}
-					return
-				}
-			}
-		}
-	}()
+	// Get conversion settings
+	settings := prometheusremotewrite.Settings{
+		AddMetricSuffixes:                    convOpts.addSuffixes,
+		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: convOpts.promoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:    convOpts.keepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:              convOpts.convertHistogramsToNHCB,
+		PromoteScopeMetadata:                 convOpts.promoteScopeMetadata,
+		AllowDeltaTemporality:                convOpts.allowDeltaTemporality,
+		AllowUTF8:                            convOpts.allowUTF8,
+		LabelNameUnderscoreSanitization:      convOpts.underscoreSanitization,
+		LabelNamePreserveMultipleUnderscores: convOpts.preserveMultipleUnderscores,
+	}
 
 	// Determine batch size - default to 1 if not set
 	batchSize := p.batchSize
@@ -1279,22 +1244,15 @@ func (p *otlpBatchProcessor) processBatched(
 		batchSize = 1
 	}
 
-	// Convert batches and send to push goroutine (main goroutine)
-	for i := 0; i < n; i += batchSize {
-		// Check for context cancellation or abort
-		if ctx.Err() != nil {
-			close(batchChan)
-			pushWg.Wait()
-			close(pushErrChan)
-			softErrs, _ := collectBatchErrors(pushErrChan)
-			return softErrs, ctx.Err()
-		}
+	// Track series/metadata indices for incremental extraction
+	lastSeriesIdx := 0
+	lastMetadataIdx := 0
 
-		abortMu.Lock()
-		shouldAbort := aborted
-		abortMu.Unlock()
-		if shouldAbort {
-			break
+	// Process batches sequentially
+	for i := 0; i < n; i += batchSize {
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return softErrors, ctx.Err()
 		}
 
 		// Calculate end index for this batch
@@ -1303,43 +1261,57 @@ func (p *otlpBatchProcessor) processBatched(
 			end = n
 		}
 
-		// Create batch with ResourceMetrics range
+		// Convert batch through shared appender
+		// We still need to create a Metrics wrapper, but the appender is shared
 		var batchMetrics pmetric.Metrics
 		if batchSize == 1 {
-			// Optimization: avoid unnecessary capacity allocation for single item
 			batchMetrics = createSingleResourceMetrics(resourceMetricsSlice.At(i))
 		} else {
 			batchMetrics = createBatchedResourceMetrics(resourceMetricsSlice, i, end)
 		}
 
-		// New appender per batch for isolation
-		appender := otlpappender.NewCombinedAppender()
-		converter := newOTLPMimirConverter(appender)
-
-		// Convert this batch
-		metrics, metadata, _, err := otelMetricsToSeriesAndMetadata(
-			ctx, converter, batchMetrics, convOpts, p.logger,
-		)
-
+		// Convert using shared converter/appender - series accumulate with deduplication
+		_, err := converter.converter.FromMetrics(ctx, batchMetrics, settings)
 		if err != nil {
-			batchChan <- batchResult{err: err}
+			// Conversion errors are soft - continue with next batch
+			softErrors = append(softErrors, err)
 			continue
 		}
 
-		// Create request for this batch
-		req := p.createBatchRequest(metrics, metadata)
-		batchChan <- batchResult{req: req, metrics: metrics}
+		// Extract only NEW series since last batch
+		allSeries, allMetadata := appender.GetResult()
+		newSeriesCount := len(allSeries) - lastSeriesIdx
+
+		// Skip if no new series in this batch (all deduplicated)
+		if newSeriesCount == 0 {
+			continue
+		}
+
+		// Create slice views for new series (no copy, just slice headers)
+		newSeries := allSeries[lastSeriesIdx:]
+		newMetadata := allMetadata[lastMetadataIdx:]
+
+		// Create and push batch request
+		req := p.createBatchRequest(newSeries, newMetadata)
+		pushErr := p.push(ctx, req)
+
+		// Note: Don't call ReuseSlice here - the series are still owned by the shared appender
+		// They will be cleaned up when the entire request completes
+		req.CleanUp()
+
+		if pushErr != nil {
+			if isOTLPHardError(pushErr) {
+				return softErrors, pushErr
+			}
+			softErrors = append(softErrors, pushErr)
+		}
+
+		// Update indices for next batch
+		lastSeriesIdx = len(allSeries)
+		lastMetadataIdx = len(allMetadata)
 	}
 
-	// Close channel to signal no more batches
-	close(batchChan)
-
-	// Wait for all pushes to complete
-	pushWg.Wait()
-	close(pushErrChan)
-
-	// Collect errors - returns soft errors and any hard error
-	return collectBatchErrors(pushErrChan)
+	return softErrors, nil
 }
 
 // createBatchRequest creates a Request from converted metrics and metadata.
@@ -1386,21 +1358,6 @@ func isOTLPHardError(err error) bool {
 	}
 
 	return false
-}
-
-// collectBatchErrors collects errors from the channel and separates hard errors from soft errors.
-// Returns soft errors and the first hard error encountered (if any).
-func collectBatchErrors(errChan <-chan error) (softErrors []error, hardErr error) {
-	for err := range errChan {
-		if isOTLPHardError(err) {
-			if hardErr == nil {
-				hardErr = err
-			}
-		} else {
-			softErrors = append(softErrors, err)
-		}
-	}
-	return softErrors, hardErr
 }
 
 // aggregateBatchErrors creates an error message from multiple batch errors.
