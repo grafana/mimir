@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
 	dskit_metrics "github.com/grafana/dskit/metrics"
@@ -105,6 +106,52 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 
 	require.Equal(t, int64(0), metrics.forcedCompactionsCount)
 	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup         func(*Config)
+		expectedError string
+	}{
+		"default config passes validation": {
+			setup: func(_ *Config) {},
+		},
+		"negative error sample rate fails validation": {
+			setup: func(cfg *Config) {
+				cfg.ErrorSampleRate = -1
+			},
+			expectedError: "error sample rate cannot be a negative number",
+		},
+		"tokenless mode with gRPC push enabled fails validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterRing.NumTokens = 0
+				cfg.PushGrpcMethodEnabled = true
+			},
+			expectedError: "ring tokens can only be disabled when gRPC push is disabled",
+		},
+		"tokenless mode with gRPC push disabled passes validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterRing.NumTokens = 0
+				cfg.PushGrpcMethodEnabled = false
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			tc.setup(&cfg)
+
+			err := cfg.Validate(log.NewNopLogger())
+			if tc.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.ErrorContains(t, err, tc.expectedError)
+			}
+		})
+	}
 }
 
 func TestIngester_StartPushRequest(t *testing.T) {
@@ -8803,7 +8850,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		// Wait until the ingester is healthy
 		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-			return healthyInstancesCount(i.ring)
+			return healthyInstancesCount(i.instanceRing)
 		})
 
 		// Re-enable push gRPC method to simulate migration period, when ingester can receive requests from gRPC
@@ -12069,7 +12116,7 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 			})
 
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
-				return healthyInstancesCount(ingester.ring)
+				return healthyInstancesCount(ingester.instanceRing)
 			})
 		}
 
@@ -12117,6 +12164,8 @@ func newFailingIngester(t *testing.T, cfg Config, kvStore kv.Client, failingCaus
 	fI := &failingIngester{Ingester: i, failingCause: failingCause}
 	if kvStore != nil {
 		fI.kvStore = kvStore
+	} else {
+		fI.kvStore = cfg.IngesterRing.KVStore.Mock
 	}
 	fI.BasicService = services.NewBasicService(fI.starting, fI.ingesterRunning, fI.stopping)
 	return fI
@@ -12133,7 +12182,7 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 		expectedHealthyIngesters = 0
 	}
 	test.Poll(t, 100*time.Millisecond, expectedHealthyIngesters, func() interface{} {
-		return healthyInstancesCount(i.ring)
+		return healthyInstancesCount(i.instanceRing)
 	})
 }
 
@@ -12156,11 +12205,11 @@ func (i *failingIngester) starting(parentCtx context.Context) error {
 }
 
 func (i *failingIngester) getInstance(ctx context.Context) *ring.InstanceDesc {
-	d, err := i.lifecycler.KVStore.Get(ctx, IngesterRingKey)
+	d, err := i.kvStore.Get(ctx, IngesterRingKey)
 	if err != nil {
 		return nil
 	}
-	instanceDesc, ok := ring.GetOrCreateRingDesc(d).Ingesters[i.lifecycler.ID]
+	instanceDesc, ok := ring.GetOrCreateRingDesc(d).Ingesters[i.ingesterID]
 	if !ok {
 		return nil
 	}
