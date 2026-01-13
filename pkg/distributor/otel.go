@@ -72,7 +72,13 @@ type OTLPHandlerLimits interface {
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
 
+// protoUnmarshalerFactory creates a proto.Message unmarshaler for an ExportRequest.
+// This type is used to eliminate per-request branching - the factory is created once
+// at handler creation time and passed to the parser.
+type protoUnmarshalerFactory func(*pmetricotlp.ExportRequest) proto.Message
+
 // OTLPHandler is an http.Handler accepting OTLP write requests.
+// It dispatches to specialized handlers at creation time to eliminate per-request branching.
 func OTLPHandler(
 	maxRecvMsgSize int,
 	requestBufferPool util.Pool,
@@ -92,40 +98,74 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
+	// Dispatch to specialized handlers at creation time to eliminate per-request branching.
+	if enableBatchedStreaming {
+		return newOTLPBatchedHandler(
+			maxRecvMsgSize, requestBufferPool, sourceIPs, limits,
+			resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+			retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, batchedStreamingBatchSize,
+			push, pushMetrics, discardedDueToOtelParseError, logger,
+		)
+	}
+
+	return newOTLPDefaultHandler(
+		maxRecvMsgSize, requestBufferPool, sourceIPs, limits,
+		resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+		retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing,
+		push, pushMetrics, discardedDueToOtelParseError, logger,
+	)
+}
+
+// newOTLPDefaultHandler creates the default OTLP handler for single-shot processing.
+func newOTLPDefaultHandler(
+	maxRecvMsgSize int,
+	requestBufferPool util.Pool,
+	sourceIPs *middleware.SourceIPExtractor,
+	limits OTLPHandlerLimits,
+	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
+	retryCfg RetryConfig,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
+	enableOTLPLazyDeserializing bool,
+	push PushFunc,
+	pushMetrics *PushMetrics,
+	discardedDueToOtelParseError *prometheus.CounterVec,
+	logger log.Logger,
+) http.Handler {
+	// Create unmarshaler factory at handler creation time to avoid per-request overhead.
+	var createUnmarshaler protoUnmarshalerFactory
+	if enableOTLPLazyDeserializing {
+		createUnmarshaler = func(req *pmetricotlp.ExportRequest) proto.Message {
+			return otlpProtoUnmarshalerLazy{request: req}
+		}
+	} else {
+		createUnmarshaler = func(req *pmetricotlp.ExportRequest) proto.Message {
+			return otlpProtoUnmarshaler{request: req}
+		}
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		logger := utillog.WithContext(ctx, logger)
+		reqLogger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
 			if source != "" {
-				logger = utillog.WithSourceIPs(source, logger)
+				reqLogger = utillog.WithSourceIPs(source, reqLogger)
 			}
 		}
 
-		// Use batched streaming path when enabled
-		if enableBatchedStreaming {
-			handleOTLPBatchedStreaming(
-				ctx, w, r, maxRecvMsgSize, requestBufferPool, limits,
-				resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-				retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, batchedStreamingBatchSize,
-				push, pushMetrics, discardedDueToOtelParseError, logger,
-			)
-			return
-		}
-
-		// Original single-shot path
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
 		parser := newOTLPParser(
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
-			OTLPPushMiddlewares, enableOTLPLazyDeserializing,
+			OTLPPushMiddlewares, createUnmarshaler,
 		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, reqLogger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
@@ -145,69 +185,110 @@ func OTLPHandler(
 		req.contentLength = r.ContentLength
 
 		pushErr := push(ctx, req)
-		if pushErr == nil {
-			if otlpErr := otlpConverter.Err(); otlpErr != nil {
-				// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
-				pushErr = httpgrpc.Error(http.StatusBadRequest, otlpErr.Error())
-			} else {
-				// Respond as per spec:
-				// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
-				var expResp colmetricpb.ExportMetricsServiceResponse
-				addSuccessHeaders(w, req.artificialDelay)
-				writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
-				return
+		handleOTLPPushResponse(w, r, req, pushErr, otlpConverter, retryCfg, reqLogger)
+	})
+}
+
+// newOTLPBatchedHandler creates the batched streaming OTLP handler.
+func newOTLPBatchedHandler(
+	maxRecvMsgSize int,
+	requestBufferPool util.Pool,
+	sourceIPs *middleware.SourceIPExtractor,
+	limits OTLPHandlerLimits,
+	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
+	retryCfg RetryConfig,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
+	enableOTLPLazyDeserializing bool,
+	batchSize int,
+	push PushFunc,
+	pushMetrics *PushMetrics,
+	discardedDueToOtelParseError *prometheus.CounterVec,
+	logger log.Logger,
+) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		reqLogger := utillog.WithContext(ctx, logger)
+		if sourceIPs != nil {
+			source := sourceIPs.Get(r)
+			if source != "" {
+				reqLogger = utillog.WithSourceIPs(source, reqLogger)
 			}
 		}
 
-		if errors.Is(pushErr, context.Canceled) {
-			level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
-			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+		handleOTLPBatchedStreaming(
+			ctx, w, r, maxRecvMsgSize, requestBufferPool, limits,
+			resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+			retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, batchSize,
+			push, pushMetrics, discardedDueToOtelParseError, reqLogger,
+		)
+	})
+}
+
+// handleOTLPPushResponse handles the response after pushing OTLP metrics.
+func handleOTLPPushResponse(w http.ResponseWriter, r *http.Request, req *Request, pushErr error, otlpConverter *otlpMimirConverter, retryCfg RetryConfig, logger log.Logger) {
+	if pushErr == nil {
+		if otlpErr := otlpConverter.Err(); otlpErr != nil {
+			// Push was successful, but OTLP converter left out some samples. We let the client know about it by replying with 4xx (and an insight log).
+			pushErr = httpgrpc.Error(http.StatusBadRequest, otlpErr.Error())
+		} else {
+			// Respond as per spec:
+			// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
+			var expResp colmetricpb.ExportMetricsServiceResponse
+			addSuccessHeaders(w, req.artificialDelay)
+			writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 			return
 		}
-		if labelValueTooLongErr := (labelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
-			// Translate from Mimir to OTel domain terminology
-			pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
-		}
-		var (
-			httpCode int
-			grpcCode codes.Code
-			errorMsg string
-		)
-		if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
-			grpcCode = st.Code()
-			errorMsg = st.Message()
+	}
 
-			// This code is needed for a correct handling of errors returned by the supplier function.
-			// These errors are usually created by using the httpgrpc package.
-			// However, distributor's write path is complex and has a lot of dependencies, so sometimes it's not.
-			if util.IsHTTPStatusCode(grpcCode) {
-				httpCode = httpRetryableToOTLPRetryable(int(grpcCode))
-			} else {
-				httpCode = http.StatusServiceUnavailable
-			}
+	if errors.Is(pushErr, context.Canceled) {
+		level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
+		writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+		return
+	}
+	if labelValueTooLongErr := (labelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
+		// Translate from Mimir to OTel domain terminology
+		pushErr = newValidationError(otelAttributeValueTooLongError{labelValueTooLongErr})
+	}
+	var (
+		httpCode int
+		grpcCode codes.Code
+		errorMsg string
+	)
+	if st, ok := grpcutil.ErrorToStatus(pushErr); ok {
+		grpcCode = st.Code()
+		errorMsg = st.Message()
+
+		// This code is needed for a correct handling of errors returned by the supplier function.
+		// These errors are usually created by using the httpgrpc package.
+		// However, distributor's write path is complex and has a lot of dependencies, so sometimes it's not.
+		if util.IsHTTPStatusCode(grpcCode) {
+			httpCode = httpRetryableToOTLPRetryable(int(grpcCode))
 		} else {
-			var isSoft bool
-			grpcCode, httpCode, isSoft = toOtlpGRPCHTTPStatus(pushErr)
-			if isSoft {
-				handlePartialOTLPPush(pushErr, w, r, req, logger)
-				return
-			}
+			httpCode = http.StatusServiceUnavailable
+		}
+	} else {
+		var isSoft bool
+		grpcCode, httpCode, isSoft = toOtlpGRPCHTTPStatus(pushErr)
+		if isSoft {
+			handlePartialOTLPPush(pushErr, w, r, req, logger)
+			return
+		}
 
-			errorMsg = pushErr.Error()
+		errorMsg = pushErr.Error()
+	}
+	if httpCode != 202 {
+		// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
+		msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
+		logLevel := level.Error
+		if httpCode/100 == 4 {
+			msgs = append(msgs, "insight", true)
+			logLevel = level.Warn
 		}
-		if httpCode != 202 {
-			// This error message is consistent with error message in Prometheus remote-write handler, and ingester's ingest-storage pushToStorage method.
-			msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (the request may have been partially ingested)", "httpCode", httpCode, "err", pushErr}
-			logLevel := level.Error
-			if httpCode/100 == 4 {
-				msgs = append(msgs, "insight", true)
-				logLevel = level.Warn
-			}
-			logLevel(logger).Log(msgs...)
-		}
-		addErrorHeaders(w, pushErr, r, httpCode, retryCfg)
-		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
-	})
+		logLevel(logger).Log(msgs...)
+	}
+	addErrorHeaders(w, pushErr, r, httpCode, retryCfg)
+	writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
 }
 
 func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request, req *Request, logger log.Logger) {
@@ -357,9 +438,11 @@ func parseOTLPRequestForBatching(
 	switch contentType {
 	case pbContentType:
 		exportReq := pmetricotlp.NewExportRequest()
-		unmarshaler := otlpProtoUnmarshaler{
-			request:         &exportReq,
-			lazyDeserialize: enableOTLPLazyDeserializing,
+		var unmarshaler proto.Message
+		if enableOTLPLazyDeserializing {
+			unmarshaler = otlpProtoUnmarshalerLazy{request: &exportReq}
+		} else {
+			unmarshaler = otlpProtoUnmarshaler{request: &exportReq}
 		}
 		uncompressedBodySize, err = util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 		var tooLargeErr util.MsgSizeTooLargeErr
@@ -535,7 +618,7 @@ func newOTLPParser(
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
-	enableOTLPLazyDeserializing bool,
+	createUnmarshaler protoUnmarshalerFactory,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
 		resourceAttributePromotionConfig = limits
@@ -565,10 +648,7 @@ func newOTLPParser(
 		case pbContentType:
 			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()
-				unmarshaler := otlpProtoUnmarshaler{
-					request: &exportReq,
-					lazyDeserialize: enableOTLPLazyDeserializing,
-				}
+				unmarshaler := createUnmarshaler(&exportReq)
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
@@ -854,25 +934,32 @@ func marshal(payload proto.Message, contentType string) ([]byte, string, error) 
 }
 
 // otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest.
+// otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest
+// using standard (eager) deserialization.
 type otlpProtoUnmarshaler struct {
-	request         *pmetricotlp.ExportRequest
-	lazyDeserialize bool
+	request *pmetricotlp.ExportRequest
 }
 
 func (o otlpProtoUnmarshaler) ProtoMessage() {}
-
-func (o otlpProtoUnmarshaler) Reset() {}
-
-func (o otlpProtoUnmarshaler) String() string {
-	return ""
-}
+func (o otlpProtoUnmarshaler) Reset()        {}
+func (o otlpProtoUnmarshaler) String() string { return "" }
 
 func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
-	if o.lazyDeserialize {
-		return o.request.UnmarshalProtoLazy(data)
-	}
-
 	return o.request.UnmarshalProto(data)
+}
+
+// otlpProtoUnmarshalerLazy implements proto.Message wrapping pmetricotlp.ExportRequest
+// using lazy deserialization. This avoids parsing nested messages until they're accessed.
+type otlpProtoUnmarshalerLazy struct {
+	request *pmetricotlp.ExportRequest
+}
+
+func (o otlpProtoUnmarshalerLazy) ProtoMessage() {}
+func (o otlpProtoUnmarshalerLazy) Reset()        {}
+func (o otlpProtoUnmarshalerLazy) String() string { return "" }
+
+func (o otlpProtoUnmarshalerLazy) Unmarshal(data []byte) error {
+	return o.request.UnmarshalProtoLazy(data)
 }
 
 type conversionOptions struct {
