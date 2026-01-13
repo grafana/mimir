@@ -34,12 +34,7 @@ type StreamingSeriesSource struct {
 	SeriesIndex  uint64
 }
 
-type memoryConsumptionTracker interface {
-	IncreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource) error
-	DecreaseMemoryConsumption(b uint64, source limiter.MemoryConsumptionSource)
-}
-
-func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker memoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
+func NewSeriesChunksStreamReader(ctx context.Context, client Ingester_QueryStreamClient, ingesterName string, expectedSeriesCount int, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, cleanup func(), log log.Logger) *SeriesChunksStreamReader {
 	return &SeriesChunksStreamReader{
 		ctx:                 ctx,
 		client:              client,
@@ -59,7 +54,7 @@ type SeriesChunksStreamReader struct {
 	client              Ingester_QueryStreamClient
 	expectedSeriesCount int
 	queryLimiter        *limiter.QueryLimiter
-	memoryTracker       memoryConsumptionTracker
+	memoryTracker       *limiter.MemoryConsumptionTracker
 	cleanup             func()
 	log                 log.Logger
 
