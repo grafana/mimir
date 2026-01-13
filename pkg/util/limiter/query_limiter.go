@@ -104,7 +104,7 @@ func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker *MemoryCon
 
 	// This can be either newly seen labels with different fingerprint or can also be newly seen labels whose hash
 	// conflicted with previous seen different labels.
-	// In both cases we just return a new labels and increase memory consumption.
+	// In both cases we just return the provided labels.
 	ql.uniqueSeries[fingerprint] = seriesLabels
 
 	uniqueSeriesAfter := len(ql.uniqueSeries)
