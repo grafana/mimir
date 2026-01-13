@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -82,6 +83,7 @@ func OTLPHandler(
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	enableOTLPLazyDeserializing bool,
+	enableBatchedStreaming bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -99,6 +101,18 @@ func OTLPHandler(
 			}
 		}
 
+		// Use batched streaming path when enabled
+		if enableBatchedStreaming {
+			handleOTLPBatchedStreaming(
+				ctx, w, r, maxRecvMsgSize, requestBufferPool, limits,
+				resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+				retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, push,
+				pushMetrics, discardedDueToOtelParseError, logger,
+			)
+			return
+		}
+
+		// Original single-shot path
 		otlpConverter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
 
 		parser := newOTLPParser(
@@ -205,6 +219,293 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 		},
 	}
 	addSuccessHeaders(w, req.artificialDelay)
+	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
+}
+
+// handleOTLPBatchedStreaming handles OTLP requests using batched streaming to reduce peak memory.
+// It processes metrics one ResourceMetrics at a time, overlapping conversion and push in a pipeline.
+func handleOTLPBatchedStreaming(
+	ctx context.Context,
+	w http.ResponseWriter,
+	r *http.Request,
+	maxRecvMsgSize int,
+	requestBufferPool util.Pool,
+	limits OTLPHandlerLimits,
+	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
+	retryCfg RetryConfig,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
+	enableOTLPLazyDeserializing bool,
+	push PushFunc,
+	pushMetrics *PushMetrics,
+	discardedDueToOtelParseError *prometheus.CounterVec,
+	logger log.Logger,
+) {
+	// Parse OTLP request (decompression + protobuf/JSON parsing)
+	rb := util.NewRequestBuffers(requestBufferPool)
+	otlpReq, uncompressedBodySize, tenantID, convOpts, err := parseOTLPRequestForBatching(
+		ctx, r, maxRecvMsgSize, rb, limits,
+		resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
+		OTLPPushMiddlewares, enableOTLPLazyDeserializing, pushMetrics, logger,
+	)
+	if err != nil {
+		rb.CleanUp()
+		handleOTLPParseError(w, r, err, retryCfg, logger)
+		return
+	}
+
+	// Record metrics
+	pushMetrics.IncOTLPRequest(tenantID)
+	pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
+	pushMetrics.IncOTLPContentType(r.Header.Get("Content-Type"))
+	observeOTLPFieldsCount(pushMetrics, otlpReq)
+
+	// Create batch processor
+	processor := &otlpBatchProcessor{
+		limits:                  limits,
+		resourceAttrConfig:      resourceAttributePromotionConfig,
+		keepIdentifyingConfig:   keepIdentifyingOTelResourceAttributesConfig,
+		pushMetrics:             pushMetrics,
+		discardedCounter:        discardedDueToOtelParseError,
+		middlewares:             OTLPPushMiddlewares,
+		enableLazyDeserializing: enableOTLPLazyDeserializing,
+		push:                    push,
+		logger:                  logger,
+	}
+
+	// Process batches
+	softErrors, hardErr := processor.processBatched(ctx, otlpReq, tenantID, convOpts)
+
+	// Cleanup buffer after all batches complete (important for lazy deserialization)
+	rb.CleanUp()
+
+	// Handle response
+	if hardErr != nil {
+		handleOTLPBatchError(w, r, hardErr, retryCfg, logger)
+		return
+	}
+
+	if len(softErrors) > 0 {
+		// Partial success - some batches failed with soft errors
+		handleOTLPBatchPartialSuccess(w, r, softErrors, logger)
+		return
+	}
+
+	// Full success
+	var expResp colmetricpb.ExportMetricsServiceResponse
+	addSuccessHeaders(w, -1) // No artificial delay tracked for batched streaming
+	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
+}
+
+// parseOTLPRequestForBatching parses an OTLP request without converting to mimirpb.
+// It returns the parsed request, tenant ID, and conversion options.
+func parseOTLPRequestForBatching(
+	ctx context.Context,
+	r *http.Request,
+	maxRecvMsgSize int,
+	buffers *util.RequestBuffers,
+	limits OTLPHandlerLimits,
+	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
+	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
+	OTLPPushMiddlewares []OTLPPushMiddleware,
+	enableOTLPLazyDeserializing bool,
+	pushMetrics *PushMetrics,
+	logger log.Logger,
+) (pmetricotlp.ExportRequest, int, string, conversionOptions, error) {
+	var emptyReq pmetricotlp.ExportRequest
+	var emptyOpts conversionOptions
+
+	if resourceAttributePromotionConfig == nil {
+		resourceAttributePromotionConfig = limits
+	}
+	if keepIdentifyingOTelResourceAttributesConfig == nil {
+		keepIdentifyingOTelResourceAttributesConfig = limits
+	}
+
+	contentType := r.Header.Get("Content-Type")
+	contentEncoding := r.Header.Get("Content-Encoding")
+	var compression util.CompressionType
+	switch contentEncoding {
+	case "gzip":
+		compression = util.Gzip
+	case "lz4":
+		compression = util.Lz4
+	case "zstd":
+		compression = util.Zstd
+	case "":
+		compression = util.NoCompression
+	default:
+		return emptyReq, 0, "", emptyOpts, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
+	}
+
+	// Check content length before decompression
+	if r.ContentLength > int64(maxRecvMsgSize) {
+		return emptyReq, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+			actual: int(r.ContentLength),
+			limit:  maxRecvMsgSize,
+		}.Error())
+	}
+
+	// Decode the request
+	var otlpReq pmetricotlp.ExportRequest
+	var uncompressedBodySize int
+	var err error
+
+	switch contentType {
+	case pbContentType:
+		exportReq := pmetricotlp.NewExportRequest()
+		unmarshaler := otlpProtoUnmarshaler{
+			request:         &exportReq,
+			lazyDeserialize: enableOTLPLazyDeserializing,
+		}
+		uncompressedBodySize, err = util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
+		var tooLargeErr util.MsgSizeTooLargeErr
+		if errors.As(err, &tooLargeErr) {
+			return emptyReq, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+				compressed: tooLargeErr.Compressed,
+				actual:     tooLargeErr.Actual,
+				limit:      tooLargeErr.Limit,
+			}.Error())
+		}
+		if err != nil {
+			return emptyReq, 0, "", emptyOpts, err
+		}
+		otlpReq = exportReq
+
+	case jsonContentType:
+		exportReq := pmetricotlp.NewExportRequest()
+		sz := int(r.ContentLength)
+		if sz > 0 {
+			sz += bytes.MinRead
+		}
+		buf := buffers.Get(sz)
+		var reader io.Reader = r.Body
+		switch compression {
+		case util.Gzip:
+			gzReader, err := gzip.NewReader(reader)
+			if err != nil {
+				return emptyReq, 0, "", emptyOpts, errors.Wrap(err, "create gzip reader")
+			}
+			defer runutil.CloseWithLogOnErr(logger, gzReader, "close gzip reader")
+			reader = gzReader
+		case util.Lz4:
+			reader = io.NopCloser(lz4.NewReader(reader))
+		case util.Zstd:
+			reader, err = zstd.NewReader(reader)
+			if err != nil {
+				return emptyReq, 0, "", emptyOpts, errors.Wrap(err, "create zstd reader")
+			}
+		}
+
+		reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
+		if _, err := buf.ReadFrom(reader); err != nil {
+			if util.IsRequestBodyTooLarge(err) {
+				return emptyReq, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+					actual: -1,
+					limit:  maxRecvMsgSize,
+				}.Error())
+			}
+			return emptyReq, 0, "", emptyOpts, errors.Wrap(err, "read write request")
+		}
+		if err := exportReq.UnmarshalJSON(buf.Bytes()); err != nil {
+			return emptyReq, 0, "", emptyOpts, err
+		}
+		uncompressedBodySize = buf.Len()
+		otlpReq = exportReq
+
+	default:
+		return emptyReq, 0, "", emptyOpts, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+	}
+
+	// Run middlewares
+	for _, middleware := range OTLPPushMiddlewares {
+		if err := middleware(ctx, &otlpReq); err != nil {
+			return emptyReq, 0, "", emptyOpts, err
+		}
+	}
+
+	// Get tenant ID and configuration
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return emptyReq, 0, "", emptyOpts, err
+	}
+
+	translationStrategy := limits.OTelTranslationStrategy(tenantID)
+	validateTranslationStrategy(translationStrategy, limits, tenantID)
+
+	convOpts := conversionOptions{
+		addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
+		enableCTZeroIngestion:             limits.OTelCreatedTimestampZeroIngestionEnabled(tenantID),
+		keepIdentifyingResourceAttributes: keepIdentifyingOTelResourceAttributesConfig.OTelKeepIdentifyingResourceAttributes(tenantID),
+		convertHistogramsToNHCB:           limits.OTelConvertHistogramsToNHCB(tenantID),
+		promoteScopeMetadata:              limits.OTelPromoteScopeMetadata(tenantID),
+		promoteResourceAttributes:         resourceAttributePromotionConfig.PromoteOTelResourceAttributes(tenantID),
+		allowDeltaTemporality:             limits.OTelNativeDeltaIngestion(tenantID),
+		allowUTF8:                         !translationStrategy.ShouldEscape(),
+		underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
+		preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
+	}
+
+	return otlpReq, uncompressedBodySize, tenantID, convOpts, nil
+}
+
+// handleOTLPParseError handles errors that occur during OTLP request parsing.
+func handleOTLPParseError(w http.ResponseWriter, r *http.Request, err error, retryCfg RetryConfig, logger log.Logger) {
+	if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
+		err = httpgrpc.Error(http.StatusBadRequest, err.Error())
+	}
+
+	st, ok := grpcutil.ErrorToStatus(err)
+	if !ok {
+		writeErrorToHTTPResponseBody(r, w, http.StatusBadRequest, codes.InvalidArgument, err.Error(), logger)
+		return
+	}
+
+	grpcCode := st.Code()
+	httpCode := http.StatusBadRequest
+	if util.IsHTTPStatusCode(grpcCode) {
+		httpCode = httpRetryableToOTLPRetryable(int(grpcCode))
+	}
+
+	addErrorHeaders(w, err, r, httpCode, retryCfg)
+	writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, st.Message(), logger)
+}
+
+// handleOTLPBatchError handles hard errors from batch processing.
+func handleOTLPBatchError(w http.ResponseWriter, r *http.Request, err error, retryCfg RetryConfig, logger log.Logger) {
+	if errors.Is(err, context.Canceled) {
+		level.Warn(logger).Log("msg", "push request canceled", "err", err)
+		writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+		return
+	}
+
+	grpcCode, httpCode, _ := toOtlpGRPCHTTPStatus(err)
+	errorMsg := err.Error()
+
+	msgs := []interface{}{"msg", "detected an error while ingesting OTLP metrics request (batched streaming)", "httpCode", httpCode, "err", err}
+	logLevel := level.Error
+	if httpCode/100 == 4 {
+		msgs = append(msgs, "insight", true)
+		logLevel = level.Warn
+	}
+	logLevel(logger).Log(msgs...)
+
+	addErrorHeaders(w, err, r, httpCode, retryCfg)
+	writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
+}
+
+// handleOTLPBatchPartialSuccess handles soft errors from batch processing.
+func handleOTLPBatchPartialSuccess(w http.ResponseWriter, r *http.Request, softErrors []error, logger log.Logger) {
+	errorMsg := aggregateBatchErrors(softErrors)
+	level.Warn(logger).Log("msg", "partial success in OTLP batched streaming", "errors", len(softErrors), "insight", true)
+
+	expResp := colmetricpb.ExportMetricsServiceResponse{
+		PartialSuccess: &colmetricpb.ExportMetricsPartialSuccess{
+			RejectedDataPoints: 0, // We don't track exact count per batch
+			ErrorMessage:       errorMsg,
+		},
+	}
+	addSuccessHeaders(w, -1)
 	writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
 }
 
@@ -797,4 +1098,212 @@ func (e otelAttributeValueTooLongError) Error() string {
 		"received a metric whose attribute value length of %d exceeds the limit of %d, attribute: '%s', value: '%.200s' (truncated) metric: '%.200s'. See: https://grafana.com/docs/grafana-cloud/send-data/otlp/otlp-format-considerations/#metrics-ingestion-limits",
 		len(e.Label.Value), e.Limit, e.Label.Name, e.Label.Value, e.Series,
 	)
+}
+
+// otlpBatchProcessor processes OTLP metrics in batches at the ResourceMetrics level
+// to reduce peak memory usage.
+type otlpBatchProcessor struct {
+	limits                  OTLPHandlerLimits
+	resourceAttrConfig      OTelResourceAttributePromotionConfig
+	keepIdentifyingConfig   KeepIdentifyingOTelResourceAttributesConfig
+	pushMetrics             *PushMetrics
+	discardedCounter        *prometheus.CounterVec
+	middlewares             []OTLPPushMiddleware
+	enableLazyDeserializing bool
+	push                    PushFunc
+	logger                  log.Logger
+}
+
+// batchResult holds the converted batch ready for pushing
+type batchResult struct {
+	req     *Request
+	metrics []mimirpb.PreallocTimeseries
+	err     error
+}
+
+// processBatched processes OTLP metrics in batches using a pipeline.
+// It converts batches in the main goroutine and pushes them in a separate goroutine,
+// allowing conversion and push to overlap for better latency.
+func (p *otlpBatchProcessor) processBatched(
+	ctx context.Context,
+	otlpReq pmetricotlp.ExportRequest,
+	tenantID string,
+	convOpts conversionOptions,
+) (softErrors []error, hardErr error) {
+	resourceMetricsSlice := otlpReq.Metrics().ResourceMetrics()
+	n := resourceMetricsSlice.Len()
+
+	if n == 0 {
+		return nil, nil
+	}
+
+	// Channel for pipeline: converter sends to pusher
+	// Buffer of 1 allows one batch to be queued while the previous is being pushed
+	batchChan := make(chan batchResult, 1)
+
+	// Error channel from push goroutine
+	pushErrChan := make(chan error, n)
+
+	// WaitGroup to track push completion
+	var pushWg sync.WaitGroup
+
+	// Track if we should abort early due to hard error
+	var abortMu sync.Mutex
+	aborted := false
+
+	// Start push goroutine - consumes converted batches
+	pushWg.Add(1)
+	go func() {
+		defer pushWg.Done()
+		for batch := range batchChan {
+			if batch.err != nil {
+				pushErrChan <- batch.err
+				continue
+			}
+
+			pushErr := p.push(ctx, batch.req)
+
+			// Cleanup this batch immediately after push
+			mimirpb.ReuseSlice(batch.metrics)
+			batch.req.CleanUp()
+
+			if pushErr != nil {
+				pushErrChan <- pushErr
+				if isOTLPHardError(pushErr) {
+					abortMu.Lock()
+					aborted = true
+					abortMu.Unlock()
+					// Drain remaining batches without processing
+					for range batchChan {
+					}
+					return
+				}
+			}
+		}
+	}()
+
+	// Convert batches and send to push goroutine (main goroutine)
+	for i := 0; i < n; i++ {
+		// Check for context cancellation or abort
+		if ctx.Err() != nil {
+			close(batchChan)
+			pushWg.Wait()
+			close(pushErrChan)
+			softErrs, _ := collectBatchErrors(pushErrChan)
+			return softErrs, ctx.Err()
+		}
+
+		abortMu.Lock()
+		shouldAbort := aborted
+		abortMu.Unlock()
+		if shouldAbort {
+			break
+		}
+
+		// Create isolated batch with single ResourceMetrics
+		batchMetrics := createSingleResourceMetrics(resourceMetricsSlice.At(i))
+
+		// New appender per batch for isolation
+		appender := otlpappender.NewCombinedAppender()
+		converter := newOTLPMimirConverter(appender)
+
+		// Convert this batch
+		metrics, metadata, _, err := otelMetricsToSeriesAndMetadata(
+			ctx, converter, batchMetrics, convOpts, p.logger,
+		)
+
+		if err != nil {
+			batchChan <- batchResult{err: err}
+			continue
+		}
+
+		// Create request for this batch
+		req := p.createBatchRequest(metrics, metadata)
+		batchChan <- batchResult{req: req, metrics: metrics}
+	}
+
+	// Close channel to signal no more batches
+	close(batchChan)
+
+	// Wait for all pushes to complete
+	pushWg.Wait()
+	close(pushErrChan)
+
+	// Collect errors - returns soft errors and any hard error
+	return collectBatchErrors(pushErrChan)
+}
+
+// createBatchRequest creates a Request from converted metrics and metadata.
+func (p *otlpBatchProcessor) createBatchRequest(metrics []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata) *Request {
+	writeReq := &mimirpb.WriteRequest{
+		Timeseries: metrics,
+		Metadata:   metadata,
+		Source:     mimirpb.OTLP,
+	}
+	return NewParsedRequest(writeReq)
+}
+
+// createSingleResourceMetrics extracts a single ResourceMetrics into a new Metrics object.
+func createSingleResourceMetrics(rm pmetric.ResourceMetrics) pmetric.Metrics {
+	md := pmetric.NewMetrics()
+	rm.CopyTo(md.ResourceMetrics().AppendEmpty())
+	return md
+}
+
+// isOTLPHardError returns true if the error should stop batch processing.
+// Hard errors include context cancellation, deadlines, and critical system errors.
+func isOTLPHardError(err error) bool {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var distributorErr Error
+	if errors.As(err, &distributorErr) {
+		cause := distributorErr.Cause()
+		// Circuit breaker and instance limits are hard errors - the system is overloaded
+		return cause == mimirpb.ERROR_CAUSE_CIRCUIT_BREAKER_OPEN || cause == mimirpb.ERROR_CAUSE_INSTANCE_LIMIT
+	}
+
+	return false
+}
+
+// collectBatchErrors collects errors from the channel and separates hard errors from soft errors.
+// Returns soft errors and the first hard error encountered (if any).
+func collectBatchErrors(errChan <-chan error) (softErrors []error, hardErr error) {
+	for err := range errChan {
+		if isOTLPHardError(err) {
+			if hardErr == nil {
+				hardErr = err
+			}
+		} else {
+			softErrors = append(softErrors, err)
+		}
+	}
+	return softErrors, hardErr
+}
+
+// aggregateBatchErrors creates an error message from multiple batch errors.
+func aggregateBatchErrors(errs []error) string {
+	if len(errs) == 0 {
+		return ""
+	}
+	if len(errs) == 1 {
+		return errs[0].Error()
+	}
+
+	// Limit message length
+	const maxLen = 1024
+	msg := fmt.Sprintf("%d batches failed: ", len(errs))
+	for i, err := range errs {
+		if i > 0 {
+			msg += "; "
+		}
+		errMsg := err.Error()
+		if len(msg)+len(errMsg) > maxLen {
+			msg += "..."
+			break
+		}
+		msg += errMsg
+	}
+	return msg
 }

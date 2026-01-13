@@ -1540,7 +1540,7 @@ cortex_distributor_uncompressed_request_body_size_bytes_count{handler="otlp",use
 			reg := prometheus.NewRegistry()
 			handler := OTLPHandler(
 				MiB, util.NewBufferPool(0), nil, otlpLimitsMock{},
-				nil, nil, RetryConfig{}, nil, false,
+				nil, nil, RetryConfig{}, nil, false, false,
 				distr.limitsMiddleware(dummyPushFunc), newPushMetrics(reg), reg, log.NewNopLogger(),
 			)
 
@@ -1587,7 +1587,7 @@ func TestOTLPPushHandlerErrorsAreReportedCorrectlyViaHttpgrpc(t *testing.T) {
 	}
 	h := OTLPHandler(
 		200, util.NewBufferPool(0), nil, otlpLimitsMock{},
-		nil, nil, RetryConfig{}, nil, false,
+		nil, nil, RetryConfig{}, nil, false, false,
 		push, newPushMetrics(reg), reg, log.NewNopLogger(),
 	)
 	srv.HTTP.Handle("/otlp", h)

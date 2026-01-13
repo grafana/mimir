@@ -305,6 +305,9 @@ type Config struct {
 
 	// Enable lazy deserializing of OTLP protobuf messages
 	EnableOTLPLazyDeserializing bool `yaml:"enable_otlp_lazy_deserializing" category:"experimental"`
+
+	// Enable batched streaming for OTLP ingestion to reduce peak memory usage
+	EnableOTLPBatchedStreaming bool `yaml:"enable_otlp_batched_streaming" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -357,6 +360,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 	f.BoolVar(&cfg.EnableOTLPLazyDeserializing, "distributor.enable-otlp-lazy-deserializing", false, "Enable the lazy deserializing of OTel protobuf messages")
+	f.BoolVar(&cfg.EnableOTLPBatchedStreaming, "distributor.enable-otlp-batched-streaming", false, "Enable batched streaming for OTLP ingestion to reduce peak memory usage by processing one ResourceMetrics at a time.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }

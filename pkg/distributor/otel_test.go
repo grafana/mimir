@@ -1115,7 +1115,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		10000000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, pushFunc, nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, false, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1208,7 +1208,7 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	b.Run("not-lazy", func(b *testing.B) {
 		handler := OTLPHandler(
 			200000000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, false, pushFunc, nil, nil, log.NewNopLogger(),
+			RetryConfig{}, nil, false, false, pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
 		md := pmetric.NewMetrics()
@@ -1228,7 +1228,47 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	b.Run("lazy", func(b *testing.B) {
 		handler := OTLPHandler(
 			200000000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, true, pushFunc, nil, nil, log.NewNopLogger(),
+			RetryConfig{}, nil, true, false, pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+
+		b.ResetTimer()
+		for range b.N {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("batched-streaming", func(b *testing.B) {
+		handler := OTLPHandler(
+			200000000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, false, true, pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+
+		b.ResetTimer()
+		for range b.N {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("batched-streaming-lazy", func(b *testing.B) {
+		handler := OTLPHandler(
+			200000000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, true, true, pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
 		md := pmetric.NewMetrics()
@@ -1774,7 +1814,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			handler := OTLPHandler(
 				tt.maxMsgSize, nil, nil, limits,
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
-				retryConfig, nil, false, pusher, nil, nil,
+				retryConfig, nil, false, false, pusher, nil, nil,
 				util_log.MakeLeveledLogger(logs, "info"),
 			)
 
@@ -1868,7 +1908,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			assert.NoError(t, err)
 			assert.Len(t, request.Timeseries, 3)
@@ -1913,7 +1953,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -1942,7 +1982,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -1973,7 +2013,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	handler := OTLPHandler(
 		140, nil, nil, nil, nil, nil,
-		RetryConfig{}, nil, false, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, false, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
@@ -2285,7 +2325,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 			)
 			handler := OTLPHandler(
 				100000, nil, nil, limits, nil, nil,
-				RetryConfig{}, nil, false, func(_ context.Context, req *Request) error {
+				RetryConfig{}, nil, false, false, func(_ context.Context, req *Request) error {
 					_, err := req.WriteRequest()
 					return err
 				}, nil, nil, log.NewNopLogger(),
@@ -2313,4 +2353,256 @@ type fakeResourceAttributePromotionConfig struct {
 
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
 	return c.promote
+}
+
+// Tests for batched streaming OTLP handler
+
+func TestOTLPBatchedStreaming(t *testing.T) {
+	limits := validation.MockDefaultOverrides()
+
+	t.Run("basic_batched_streaming", func(t *testing.T) {
+		// Create OTLP request with multiple ResourceMetrics
+		md := pmetric.NewMetrics()
+
+		// First ResourceMetrics
+		rm1 := md.ResourceMetrics().AppendEmpty()
+		rm1.Resource().Attributes().PutStr("service.name", "service1")
+		m1 := rm1.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m1.SetName("metric1")
+		dp1 := m1.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp1.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp1.SetDoubleValue(1.0)
+
+		// Second ResourceMetrics
+		rm2 := md.ResourceMetrics().AppendEmpty()
+		rm2.Resource().Attributes().PutStr("service.name", "service2")
+		m2 := rm2.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+		m2.SetName("metric2")
+		dp2 := m2.SetEmptyGauge().DataPoints().AppendEmpty()
+		dp2.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+		dp2.SetDoubleValue(2.0)
+
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(t, exportReq, "")
+
+		var pushCount int
+		pushFunc := func(_ context.Context, pushReq *Request) error {
+			pushCount++
+			pushReq.CleanUp()
+			return nil
+		}
+
+		handler := OTLPHandler(
+			100000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, false, true, // enable batched streaming
+			pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
+		assert.Equal(t, 2, pushCount, "Expected 2 pushes for 2 ResourceMetrics")
+	})
+
+	t.Run("batched_streaming_soft_error_continues", func(t *testing.T) {
+		// Create OTLP request with multiple ResourceMetrics
+		md := pmetric.NewMetrics()
+
+		// Three ResourceMetrics
+		for i := 0; i < 3; i++ {
+			rm := md.ResourceMetrics().AppendEmpty()
+			rm.Resource().Attributes().PutStr("service.name", fmt.Sprintf("service%d", i))
+			m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName(fmt.Sprintf("metric%d", i))
+			dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			dp.SetDoubleValue(float64(i))
+		}
+
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(t, exportReq, "")
+
+		var pushCount int
+		pushFunc := func(_ context.Context, pushReq *Request) error {
+			pushCount++
+			pushReq.CleanUp()
+			// Second batch fails with soft error (validation error)
+			if pushCount == 2 {
+				return newValidationError(errors.New("validation failed"))
+			}
+			return nil
+		}
+
+		handler := OTLPHandler(
+			100000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, false, true, // enable batched streaming
+			pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+
+		// Should still succeed with partial success
+		assert.Equal(t, http.StatusOK, resp.Code)
+		assert.Equal(t, 3, pushCount, "All 3 batches should be processed despite soft error")
+
+		// Check response contains partial success
+		body, _ := io.ReadAll(resp.Body)
+		var exportResp colmetricpb.ExportMetricsServiceResponse
+		err := proto.Unmarshal(body, &exportResp)
+		require.NoError(t, err)
+		assert.NotNil(t, exportResp.PartialSuccess)
+		assert.Contains(t, exportResp.PartialSuccess.ErrorMessage, "validation failed")
+	})
+
+	t.Run("batched_streaming_hard_error_stops", func(t *testing.T) {
+		// Create OTLP request with multiple ResourceMetrics
+		md := pmetric.NewMetrics()
+
+		// Three ResourceMetrics
+		for i := 0; i < 3; i++ {
+			rm := md.ResourceMetrics().AppendEmpty()
+			rm.Resource().Attributes().PutStr("service.name", fmt.Sprintf("service%d", i))
+			m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+			m.SetName(fmt.Sprintf("metric%d", i))
+			dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+			dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+			dp.SetDoubleValue(float64(i))
+		}
+
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(t, exportReq, "")
+
+		var pushCount int
+		pushFunc := func(ctx context.Context, pushReq *Request) error {
+			pushCount++
+			pushReq.CleanUp()
+			// Second batch fails with hard error (context canceled)
+			if pushCount == 2 {
+				return context.Canceled
+			}
+			return nil
+		}
+
+		handler := OTLPHandler(
+			100000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, false, true, // enable batched streaming
+			pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+
+		// Should fail with error - context.Canceled maps to 499 (Client Closed Request)
+		assert.Equal(t, 499, resp.Code)
+		// Hard error stops processing - push count depends on timing due to pipeline
+		// At minimum 2 pushes should have been attempted
+		assert.GreaterOrEqual(t, pushCount, 2)
+	})
+
+	t.Run("batched_streaming_empty_request", func(t *testing.T) {
+		// Create empty OTLP request
+		md := pmetric.NewMetrics()
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(t, exportReq, "")
+
+		var pushCount int
+		pushFunc := func(_ context.Context, pushReq *Request) error {
+			pushCount++
+			pushReq.CleanUp()
+			return nil
+		}
+
+		handler := OTLPHandler(
+			100000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, false, true, // enable batched streaming
+			pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		resp := httptest.NewRecorder()
+		handler.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
+		assert.Equal(t, 0, pushCount, "No pushes for empty request")
+	})
+}
+
+func TestIsOTLPHardError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "context.Canceled is hard error",
+			err:      context.Canceled,
+			expected: true,
+		},
+		{
+			name:     "context.DeadlineExceeded is hard error",
+			err:      context.DeadlineExceeded,
+			expected: true,
+		},
+		{
+			name:     "wrapped context.Canceled is hard error",
+			err:      errors.Wrap(context.Canceled, "wrapped"),
+			expected: true,
+		},
+		{
+			name:     "validation error is soft error",
+			err:      newValidationError(errors.New("validation failed")),
+			expected: false,
+		},
+		{
+			name:     "nil error is soft error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "generic error is soft error",
+			err:      errors.New("some error"),
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isOTLPHardError(tt.err)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestCreateSingleResourceMetrics(t *testing.T) {
+	// Create a ResourceMetrics with some data
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	rm.Resource().Attributes().PutStr("service.name", "test-service")
+	rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
+
+	sm := rm.ScopeMetrics().AppendEmpty()
+	sm.Scope().SetName("test-scope")
+
+	m := sm.Metrics().AppendEmpty()
+	m.SetName("test_metric")
+	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
+	dp.SetDoubleValue(42.0)
+
+	// Create single ResourceMetrics from this
+	single := createSingleResourceMetrics(rm)
+
+	// Verify the result
+	require.Equal(t, 1, single.ResourceMetrics().Len())
+
+	singleRM := single.ResourceMetrics().At(0)
+	assert.Equal(t, "test-service", singleRM.Resource().Attributes().AsRaw()["service.name"])
+	assert.Equal(t, "test-namespace", singleRM.Resource().Attributes().AsRaw()["service.namespace"])
+
+	require.Equal(t, 1, singleRM.ScopeMetrics().Len())
+	assert.Equal(t, "test-scope", singleRM.ScopeMetrics().At(0).Scope().Name())
+
+	require.Equal(t, 1, singleRM.ScopeMetrics().At(0).Metrics().Len())
+	assert.Equal(t, "test_metric", singleRM.ScopeMetrics().At(0).Metrics().At(0).Name())
 }
