@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -2313,4 +2314,85 @@ type fakeResourceAttributePromotionConfig struct {
 
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
 	return c.promote
+}
+
+// BenchmarkOTLPHandlerPeakMemory measures peak heap usage during OTLP request processing.
+// This benchmark processes one request at a time with explicit GC to isolate memory usage.
+// Run with: go test -bench BenchmarkOTLPHandlerPeakMemory -benchmem -memprofile mem.out
+// Analyze with: go tool pprof -top mem.out
+func BenchmarkOTLPHandlerPeakMemory(b *testing.B) {
+	limits := validation.MockDefaultOverrides()
+	pushFunc := func(_ context.Context, pushReq *Request) error {
+		_, _ = pushReq.WriteRequest()
+		pushReq.CleanUp()
+		return nil
+	}
+
+	createResourceMetrics := func(md pmetric.Metrics) {
+		// Create 100 ResourceMetrics with 100 metrics each = 10,000 total metrics
+		now := pcommon.NewTimestampFromTime(time.Now())
+		for i := 0; i < 100; i++ {
+			rm := md.ResourceMetrics().AppendEmpty()
+			rm.Resource().Attributes().PutStr("service.name", fmt.Sprintf("service-%d", i))
+			sm := rm.ScopeMetrics().AppendEmpty()
+			for j := 0; j < 100; j++ {
+				m := sm.Metrics().AppendEmpty()
+				m.SetName(fmt.Sprintf("metric_%d_%d", i, j))
+				dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+				dp.SetTimestamp(now)
+				dp.SetDoubleValue(float64(i*100 + j))
+				dp.Attributes().PutStr("label1", fmt.Sprintf("value_%d", j%10))
+				dp.Attributes().PutStr("label2", fmt.Sprintf("value_%d", j%5))
+			}
+		}
+	}
+
+	testCases := []struct {
+		name       string
+		enableLazy bool
+	}{
+		{"baseline", false},
+		{"lazy", true},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			handler := OTLPHandler(
+				200000000, nil, nil, limits, nil, nil,
+				RetryConfig{}, nil, tc.enableLazy, pushFunc, nil, nil, log.NewNopLogger(),
+			)
+
+			md := pmetric.NewMetrics()
+			createResourceMetrics(md)
+			exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+			req := createOTLPProtoRequest(b, exportReq, "")
+
+			var memStats runtime.MemStats
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				runtime.GC()
+				runtime.ReadMemStats(&memStats)
+				heapBefore := memStats.HeapAlloc
+
+				b.StartTimer()
+				resp := httptest.NewRecorder()
+				handler.ServeHTTP(resp, req)
+				b.StopTimer()
+
+				require.Equal(b, http.StatusOK, resp.Code)
+
+				runtime.ReadMemStats(&memStats)
+				heapAfter := memStats.HeapAlloc
+
+				if i == b.N-1 {
+					b.ReportMetric(float64(heapAfter-heapBefore), "heap-growth-bytes/op")
+				}
+
+				req.Body.(*reusableReader).Reset()
+				b.StartTimer()
+			}
+		})
+	}
 }
