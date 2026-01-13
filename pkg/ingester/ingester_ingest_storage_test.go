@@ -84,7 +84,7 @@ func TestIngester_Start(t *testing.T) {
 
 		// Create the ingester.
 		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-		ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg, util_test.NewTestingLogger(t))
+		ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
 
 		// Mock the Kafka cluster to:
 		// - Count the Fetch requests.
@@ -294,7 +294,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			// Create the ingester.
 			overrides := validation.NewOverrides(limits, nil)
-			ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg, util_test.NewTestingLogger(t))
+			ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
 
 			// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
 			// If read consistency is "eventual" then these failures shouldn't affect queries, but if it's set
@@ -378,7 +378,7 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 
 	// Start ingester.
 	cfg := defaultIngesterTestConfig(t)
-	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg, util_test.NewTestingLogger(t))
+	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
 	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
@@ -433,7 +433,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 	setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher, *ring.PartitionRingEditor) {
 		// Start ingester.
-		ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
+		ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
 		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
@@ -628,7 +628,7 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 	cfg := defaultIngesterTestConfig(t)
-	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
+	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
 
 	// Create the shutdown marker.
 	require.NoError(t, os.MkdirAll(cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm))
@@ -712,7 +712,7 @@ func TestIngester_compactionServiceInterval(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, util_test.NewTestingLogger(t))
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, util_test.NewTestingLogger(t))
 
 			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = tt.interval
 			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = tt.jitterEnabled
@@ -839,7 +839,7 @@ func TestIngester_timeToNextZoneAwareCompaction(t *testing.T) {
 			cfg.IngesterRing.InstanceZone = tt.instanceZone
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = defaultBaseHeadCompactionInterval
 
-			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, util_test.NewTestingLogger(t))
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, util_test.NewTestingLogger(t))
 
 			headCompactionInterval := ingester.timeToNextZoneAwareCompaction(fakeNow, tt.zones)
 			require.Equal(t, tt.expected, headCompactionInterval)
@@ -916,7 +916,14 @@ func TestIngester_timeUntilCompaction(t *testing.T) {
 }
 
 // Returned ingester is NOT started.
-func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer, logger log.Logger) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
+func createTestIngesterWithIngestStorage(
+	t testing.TB,
+	ingesterCfg *Config,
+	overrides *validation.Overrides,
+	ingestersRing ring.ReadRing,
+	reg prometheus.Registerer,
+	logger log.Logger,
+) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
 	var (
 		ctx                   = context.Background()
 		defaultIngesterConfig = defaultIngesterTestConfig(t)
@@ -924,6 +931,10 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 
 	if logger == nil {
 		logger = log.NewNopLogger()
+	}
+
+	if ingestersRing == nil {
+		ingestersRing = createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
 	}
 
 	// Always disable gRPC Push API when testing ingest store.
@@ -970,9 +981,6 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 	t.Cleanup(func() {
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, prw))
 	})
-
-	// Create and start the ingesters ring.
-	ingestersRing := createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
 
 	ingester, err := New(*ingesterCfg, overrides, ingestersRing, prw, nil, nil, reg, logger)
 	require.NoError(t, err)
@@ -1056,7 +1064,7 @@ func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
 
 			// Create the ingester (not started yet).
 			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-			ingester, _, _ := createTestIngesterWithIngestStorage(b, &cfg, overrides, nil, nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(b, &cfg, overrides, nil, nil, nil)
 			b.Cleanup(func() {
 				require.NoError(b, services.StopAndAwaitTerminated(ctx, ingester))
 			})
@@ -1135,7 +1143,7 @@ func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
 
 			// Create the ingester (not started yet).
 			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-			ingester, _, _ := createTestIngesterWithIngestStorage(b, &cfg, overrides, nil, nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(b, &cfg, overrides, nil, nil, nil)
 			b.Cleanup(func() {
 				require.NoError(b, services.StopAndAwaitTerminated(ctx, ingester))
 			})

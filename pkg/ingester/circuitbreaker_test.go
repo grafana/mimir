@@ -615,7 +615,7 @@ func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t 
 				}
 
 				overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, registry, util_test.NewTestingLogger(t))
+				i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, registry, util_test.NewTestingLogger(t))
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 				defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 

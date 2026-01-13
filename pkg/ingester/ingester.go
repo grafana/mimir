@@ -290,6 +290,7 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
+	instanceRing          ring.ReadRing
 	lifecycler            *ring.Lifecycler
 	ring                  ring.ReadRing
 	limits                *validation.Overrides
@@ -366,7 +367,7 @@ type Ingester struct {
 	reactiveLimiter *ingesterReactiveLimiter
 }
 
-func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	if cfg.BlocksStorageConfig.Bucket.Backend == bucket.Filesystem {
 		level.Warn(logger).Log("msg", "-blocks-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
@@ -386,6 +387,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		cfg:    cfg,
 		limits: limits,
 		logger: logger,
+
+		instanceRing: ingestersRing,
 
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
@@ -429,7 +432,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	i, err := newIngester(cfg, limits, registerer, logger)
+	i, err := newIngester(cfg, limits, ingestersRing, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +590,7 @@ func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
 // ingester is not ingesting anything, its only purpose is to react on Flush
 // method and flush all openened TSDBs when called.
 func NewForFlusher(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	i, err := newIngester(cfg, limits, registerer, logger)
+	i, err := newIngester(cfg, limits, nil, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -678,6 +681,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 	if err := i.lifecycler.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
+	}
+	if err := ring.WaitInstanceState(ctx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
+		return errors.Wrap(err, "failed to wait for instance to be active in ring")
 	}
 
 	// Finally we start all services that should run after the ingester ring lifecycler.
