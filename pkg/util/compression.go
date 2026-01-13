@@ -6,9 +6,9 @@ import (
 	"compress/gzip"
 	"io"
 	"sync"
-	"sync/atomic"
 
 	"github.com/klauspost/compress/zstd"
+	"go.uber.org/atomic"
 )
 
 // Global pools for decompressor reuse. These reduce allocations by reusing
@@ -97,7 +97,7 @@ func (r *pooledZstdReader) Close() error {
 	}
 
 	// Reset with nil to release references to the underlying reader.
-	err := r.Decoder.Reset(nil)
+	err := r.Reset(nil)
 	r.pool.Put(r)
 	return err
 }
