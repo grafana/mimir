@@ -211,7 +211,7 @@ github.com/aws/aws-sdk-go/service/sso/ssoiface
 github.com/aws/aws-sdk-go/service/ssooidc
 github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
-# github.com/aws/aws-sdk-go-v2 v1.41.0
+# github.com/aws/aws-sdk-go-v2 v1.41.1
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/aws
 github.com/aws/aws-sdk-go-v2/aws/defaults
@@ -254,10 +254,10 @@ github.com/aws/aws-sdk-go-v2/credentials/stscreds
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds
 github.com/aws/aws-sdk-go-v2/feature/ec2/imds/internal/config
-# github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.16
+# github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.17
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/internal/configsources
-# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.16
+# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
 # github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4
@@ -266,10 +266,10 @@ github.com/aws/aws-sdk-go-v2/internal/ini
 # github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
-# github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.16
+# github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
-# github.com/aws/aws-sdk-go-v2/service/s3 v1.95.0
+# github.com/aws/aws-sdk-go-v2/service/s3 v1.95.1
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/s3/types
 # github.com/aws/aws-sdk-go-v2/service/signin v1.0.4
