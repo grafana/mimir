@@ -83,7 +83,8 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 		return ringDesc, true, nil
 	})
 
-	// Create an ingester which we won't start so the second ingester will have to wait
+	// Create an ingester and manually add to the ring;
+	// needed to emulate an ingester which is delayed in claiming tokens.
 	ingester0, _, _ := createTestIngesterWithIngestStorage(
 		t, &cfg, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
 	)
@@ -99,46 +100,42 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 		i0RoTs,
 		nil,
 	)
+	// Ensure updated instance ring state is committed
 	err = ingesterRing.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		return ringDesc, true, nil
 	})
 	require.NoError(t, err)
-	val, err := ingesterRing.KVClient.Get(ctx, IngesterRingKey)
-	require.NoError(t, err)
-	ringDesc = val.(*ring.Desc)
 
-	waitCasCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Tests require that we've joined the ring so ensure that here.
+	// Ensure addition of ingester-zone-a-0 is reflected in top-level instance ring state
+	waitCasCtx, waitCasCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer waitCasCancel()
 	require.NoError(t, ring.WaitInstanceState(waitCasCtx, ingesterRing, ingester0.cfg.IngesterRing.InstanceID, ring.PENDING))
 
-	ingester0State, err := ingesterRing.GetInstanceState(ingester0.cfg.IngesterRing.InstanceID)
-	require.NoError(t, err)
-	require.Equal(t, ring.PENDING, ingester0State)
-
+	// Create ingester-zone-a-1, which will block on joining
+	// while it waits for the lower-order ingester-zone-a-0 to claim its tokens.
+	// It will proceed after the currently-hardcoded ring.LifeCycler.canJoinTimeout deadline of 5 minutes,
+	// which will not trigger before the end of the test.
 	ingester1, _, _ := createTestIngesterWithIngestStorage(
 		t, cfg1, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
 	)
-
-	var canJoinTimeout = ((1 * 30) + 1) * time.Second
-	timeoutCtx, cancelFunc := context.WithTimeout(context.Background(), canJoinTimeout)
-	defer cancelFunc()
+	joinCtx, joinCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer joinCancel()
 	require.NoError(t, ingester1.StartAsync(context.Background()))
-	err = ingester1.AwaitRunning(timeoutCtx)
+	err = ingester1.AwaitRunning(joinCtx)
 	require.NoError(t, err)
 
+	// Confirm ingester-zone-a-1 pending instance state
 	i0InstanceState, err := ingesterRing.GetInstanceState(ingester1.cfg.IngesterRing.InstanceID)
 	require.NoError(t, err)
 	require.Equal(t, ring.PENDING, i0InstanceState)
 
-	//require.NoError(t, ring.WaitInstanceState(timeoutCtx, ingesterRing, ingester1.cfg.IngesterRing.InstanceID, ring.ACTIVE))
-	//require.NoError(t, ring.WaitInstanceState(timeoutCtx, ingesterRing, ingester1.cfg.IngesterRing.InstanceID, ring.ACTIVE))
-
+	// Ensure ingester-zone-a-1 partition ring running method reconciles updated partition state
 	time.Sleep(100 * cfg1.IngesterPartitionRing.lifecyclerPollingInterval)
 
 	i0PartitionState, _, err := ingester1.ingestPartitionLifecycler.GetPartitionState(ctx)
 	require.NoError(t, err)
+	// This fails until we fix the partition ring lifecycler
+	// to wait for active state in instance ring before promoting partition to active.
 	require.Equal(t, ring.PartitionPending, i0PartitionState)
 }
 
