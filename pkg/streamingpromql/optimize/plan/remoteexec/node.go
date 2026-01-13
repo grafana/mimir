@@ -289,6 +289,10 @@ func (f *RemoteExecutionGroupOperatorFactory) Produce() (types.Operator, error) 
 }
 
 func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c *RemoteExecutionConsumer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (types.Operator, error) {
+	if c.NodeIndex >= uint64(len(c.Group.Nodes)) {
+		return nil, fmt.Errorf("tried to produce an operator for a RemoteExecutionConsumer with node index %v, but the RemoteExecutionGroup only has %v children", c.NodeIndex, len(c.Group.Nodes))
+	}
+
 	node := c.Group.Nodes[c.NodeIndex]
 	expressionPosition, err := node.ExpressionPosition()
 	if err != nil {
