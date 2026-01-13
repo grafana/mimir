@@ -351,20 +351,23 @@ func rateCombineHistogram(splits []RateIntermediate, isRate bool, emitAnnotation
 	return result, nil
 }
 
-var RateCodec = newProtoListCodec(
-	func(results []RateIntermediate) ([]byte, error) {
-		listProto := &RateIntermediateList{Results: results}
-		listBytes, err := listProto.Marshal()
-		if err != nil {
-			return nil, errors.Wrap(err, "marshaling rate list")
-		}
-		return listBytes, nil
-	},
-	func(bytes []byte) ([]RateIntermediate, error) {
-		var listProto RateIntermediateList
-		if err := listProto.Unmarshal(bytes); err != nil {
-			return nil, errors.Wrap(err, "unmarshaling rate list")
-		}
-		return listProto.Results, nil
-	},
-)
+type rateCodec struct{}
+
+func (c rateCodec) Marshal(results []RateIntermediate) ([]byte, error) {
+	listProto := &RateIntermediateList{Results: results}
+	listBytes, err := listProto.Marshal()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshaling rate list")
+	}
+	return listBytes, nil
+}
+
+func (c rateCodec) Unmarshal(bytes []byte) ([]RateIntermediate, error) {
+	var listProto RateIntermediateList
+	if err := listProto.Unmarshal(bytes); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling rate list")
+	}
+	return listProto.Results, nil
+}
+
+var RateCodec = rateCodec{}

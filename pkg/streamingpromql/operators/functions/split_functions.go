@@ -3,10 +3,7 @@
 package functions
 
 import (
-	"io"
 	"math"
-
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -81,41 +78,47 @@ func sumOverTimeCombine(
 	return sumF + c, haveFloats, sumH, nil
 }
 
-var SumOverTimeCodec = newProtoListCodec(
-	func(results []SumOverTimeIntermediate) ([]byte, error) {
-		listProto := &SumOverTimeIntermediateList{Results: results}
-		listBytes, err := listProto.Marshal()
-		if err != nil {
-			return nil, errors.Wrap(err, "marshaling sum over time list")
-		}
-		return listBytes, nil
-	},
-	func(bytes []byte) ([]SumOverTimeIntermediate, error) {
-		var listProto SumOverTimeIntermediateList
-		if err := listProto.Unmarshal(bytes); err != nil {
-			return nil, errors.Wrap(err, "unmarshaling sum over time list")
-		}
-		return listProto.Results, nil
-	},
-)
+type sumOverTimeCodec struct{}
 
-var SingleSampleCodec = newProtoListCodec(
-	func(results []SingleSampleIntermediate) ([]byte, error) {
-		listProto := &SingleSampleIntermediateList{Results: results}
-		listBytes, err := listProto.Marshal()
-		if err != nil {
-			return nil, errors.Wrap(err, "marshaling single sample list")
-		}
-		return listBytes, nil
-	},
-	func(bytes []byte) ([]SingleSampleIntermediate, error) {
-		var listProto SingleSampleIntermediateList
-		if err := listProto.Unmarshal(bytes); err != nil {
-			return nil, errors.Wrap(err, "unmarshaling single sample list")
-		}
-		return listProto.Results, nil
-	},
-)
+func (c sumOverTimeCodec) Marshal(results []SumOverTimeIntermediate) ([]byte, error) {
+	listProto := &SumOverTimeIntermediateList{Results: results}
+	listBytes, err := listProto.Marshal()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshaling sum over time list")
+	}
+	return listBytes, nil
+}
+
+func (c sumOverTimeCodec) Unmarshal(bytes []byte) ([]SumOverTimeIntermediate, error) {
+	var listProto SumOverTimeIntermediateList
+	if err := listProto.Unmarshal(bytes); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling sum over time list")
+	}
+	return listProto.Results, nil
+}
+
+var SumOverTimeCodec = sumOverTimeCodec{}
+
+type singleSampleCodec struct{}
+
+func (c singleSampleCodec) Marshal(results []SingleSampleIntermediate) ([]byte, error) {
+	listProto := &SingleSampleIntermediateList{Results: results}
+	listBytes, err := listProto.Marshal()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshaling single sample list")
+	}
+	return listBytes, nil
+}
+
+func (c singleSampleCodec) Unmarshal(bytes []byte) ([]SingleSampleIntermediate, error) {
+	var listProto SingleSampleIntermediateList
+	if err := listProto.Unmarshal(bytes); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling single sample list")
+	}
+	return listProto.Results, nil
+}
+
+var SingleSampleCodec = singleSampleCodec{}
 
 var SplitCountOverTime = NewSplitOperatorFactory[SingleSampleIntermediate](
 	countOverTimeGenerate,
@@ -256,65 +259,3 @@ func maxOverTimeCombine(pieces []SingleSampleIntermediate, emitAnnotation types.
 	return maxF, hasFloat, nil, nil
 }
 
-// Generic codec implementation for protobuf list-based intermediate results.
-type protoListCodec[ItemProto any] struct {
-	marshalList   func([]ItemProto) ([]byte, error)
-	unmarshalList func([]byte) ([]ItemProto, error)
-}
-
-func newProtoListCodec[ItemProto any](
-	marshalList func([]ItemProto) ([]byte, error),
-	unmarshalList func([]byte) ([]ItemProto, error),
-) cache.SplitCodec[ItemProto] {
-	return &protoListCodec[ItemProto]{
-		marshalList:   marshalList,
-		unmarshalList: unmarshalList,
-	}
-}
-
-func (c *protoListCodec[ItemProto]) NewWriter(setResultBytes func([]byte)) (cache.SplitWriter[ItemProto], error) {
-	return &protoListWriter[ItemProto]{
-		setResultBytes: setResultBytes,
-		marshalList:    c.marshalList,
-	}, nil
-}
-
-func (c *protoListCodec[ItemProto]) NewReader(bytes []byte) (cache.SplitReader[ItemProto], error) {
-	results, err := c.unmarshalList(bytes)
-	if err != nil {
-		return nil, err
-	}
-	return &protoListReader[ItemProto]{results: results}, nil
-}
-
-type protoListWriter[ItemProto any] struct {
-	setResultBytes func([]byte)
-	marshalList    func([]ItemProto) ([]byte, error)
-	results        []ItemProto
-}
-
-func (w *protoListWriter[ItemProto]) WriteNextResult(result ItemProto) error {
-	w.results = append(w.results, result)
-	return nil
-}
-
-func (w *protoListWriter[ItemProto]) Finalize() error {
-	listBytes, err := w.marshalList(w.results)
-	if err != nil {
-		return err
-	}
-	w.setResultBytes(listBytes)
-	return nil
-}
-
-type protoListReader[ItemProto any] struct {
-	results []ItemProto
-}
-
-func (r *protoListReader[ItemProto]) ReadResultAt(idx int) (ItemProto, error) {
-	if idx >= len(r.results) {
-		var zero ItemProto
-		return zero, io.EOF
-	}
-	return r.results[idx], nil
-}

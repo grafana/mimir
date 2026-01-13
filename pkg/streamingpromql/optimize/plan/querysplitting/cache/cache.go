@@ -18,29 +18,26 @@ import (
 	"github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// Backend is the underlying storage backend (memcached, etc.)
 type Backend interface {
 	GetMulti(ctx context.Context, keys []string, opts ...cache.Option) map[string][]byte
 	SetMultiAsync(data map[string][]byte, ttl time.Duration)
 }
 
-type Cache struct {
+type CacheFactory struct {
 	backend Backend
-	metrics *resultsCacheMetrics
+	metrics *cacheMetrics
 	logger  log.Logger
 }
 
-type resultsCacheMetrics struct {
+type cacheMetrics struct {
 	cacheRequests prometheus.Counter
 	cacheHits     prometheus.Counter
 }
 
-func newResultsCacheMetrics(reg prometheus.Registerer) *resultsCacheMetrics {
-	return &resultsCacheMetrics{
+func newCacheMetrics(reg prometheus.Registerer) *cacheMetrics {
+	return &cacheMetrics{
 		cacheRequests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "mimir_query_engine_intermediate_result_cache_requests_total",
 			Help: "Total number of requests (or partial requests) looked up in the results cache.",
@@ -52,7 +49,7 @@ func newResultsCacheMetrics(reg prometheus.Registerer) *resultsCacheMetrics {
 	}
 }
 
-func NewResultsCache(cfg Config, logger log.Logger, reg prometheus.Registerer) (*Cache, error) {
+func NewCacheFactory(cfg Config, logger log.Logger, reg prometheus.Registerer) (*CacheFactory, error) {
 	client, err := cache.CreateClient("intermediate-result-cache", cfg.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("mimir_", reg))
 	if err != nil {
 		return nil, err
@@ -69,214 +66,12 @@ func NewResultsCache(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 	return NewResultsCacheWithBackend(backend, reg, logger), nil
 }
 
-func NewResultsCacheWithBackend(backend Backend, reg prometheus.Registerer, logger log.Logger) *Cache {
-	return &Cache{
+func NewResultsCacheWithBackend(backend Backend, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
+	return &CacheFactory{
 		backend: backend,
-		metrics: newResultsCacheMetrics(reg),
+		metrics: newCacheMetrics(reg),
 		logger:  logger,
 	}
-}
-
-type SplitWriter[T any] interface {
-	WriteNextResult(T) error
-	Finalize() error
-}
-
-type SplitReader[T any] interface {
-	ReadResultAt(idx int) (T, error)
-}
-
-type SplitCodec[T any] interface {
-	// TODO: if results are streamed instead, we should return in a writer that can be updated incrementally.
-	NewWriter(setResultBytes func([]byte)) (SplitWriter[T], error)
-	// TODO: if results are streamed instead, we should pass in a reader that can be read incrementally
-	NewReader(bytes []byte) (SplitReader[T], error)
-}
-
-type ReadEntry[T any] interface {
-	ReadSeriesMetadata(*limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error)
-	ReadAnnotations() []Annotation
-	ReadResultAt(idx int) (T, error)
-}
-
-type WriteEntry[T any] interface {
-	WriteSeriesMetadata(metadata []types.SeriesMetadata) error
-	WriteAnnotations(annotations []Annotation)
-	WriteNextResult(T) error
-	Finalize() error
-}
-
-func NewReadEntry[T any](
-	c *Cache,
-	codec SplitCodec[T],
-	ctx context.Context,
-	function int32,
-	innerKey string,
-	start, end int64,
-	stats *CacheStats,
-) (ReadEntry[T], bool, error) {
-	tenant, err := user.ExtractOrgID(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-
-	c.metrics.cacheRequests.Inc()
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
-	hashedKey := cacheHashKey(cacheKey)
-
-	found := c.backend.GetMulti(ctx, []string{hashedKey})
-	data, ok := found[hashedKey]
-	if !ok || len(data) == 0 {
-		return nil, false, nil
-	}
-
-	var cached CachedSeries
-	if err := cached.Unmarshal(data); err != nil {
-		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
-		return nil, false, nil
-	}
-
-	if cached.CacheKey != cacheKey {
-		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey, "cache_key", cacheKey)
-
-		return nil, false, nil
-	}
-
-	c.metrics.cacheHits.Inc()
-	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
-
-	reader, err := codec.NewReader(cached.Results)
-	if err != nil {
-		return nil, false, err
-	}
-
-	stats.AddReadEntryStat(len(cached.Series), len(data))
-
-	return &bufferedReadEntry[T]{
-		cached: cached,
-		reader: reader,
-	}, true, nil
-}
-
-func NewWriteEntry[T any](
-	c *Cache,
-	codec SplitCodec[T],
-	ctx context.Context,
-	function int32,
-	innerKey string,
-	start, end int64,
-	stats *CacheStats,
-) (WriteEntry[T], error) {
-	tenant, err := user.ExtractOrgID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
-
-	entry := &bufferedWriteEntry[T]{
-		cache: c.backend,
-		cached: CachedSeries{
-			CacheKey: cacheKey,
-			Start:    start,
-			End:      end,
-		},
-		finalized: false,
-		logger:    c.logger,
-		stats:     stats,
-	}
-
-	writer, err := codec.NewWriter(func(data []byte) {
-		entry.cached.Results = data
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	entry.writer = writer
-	return entry, nil
-}
-
-type bufferedReadEntry[T any] struct {
-	cached CachedSeries
-	reader SplitReader[T]
-}
-
-func (e *bufferedReadEntry[T]) ReadResultAt(idx int) (T, error) {
-	return e.reader.ReadResultAt(idx)
-}
-
-func (e *bufferedReadEntry[T]) ReadSeriesMetadata(memoryTracker *limiter.MemoryConsumptionTracker) ([]types.SeriesMetadata, error) {
-	series, err := types.SeriesMetadataSlicePool.Get(len(e.cached.Series), memoryTracker)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, m := range e.cached.Series {
-		lbls := mimirpb.FromLabelAdaptersToLabels(m.Labels)
-		if err = memoryTracker.IncreaseMemoryConsumptionForLabels(lbls); err != nil {
-			return nil, err
-		}
-		series = append(series, types.SeriesMetadata{Labels: lbls})
-	}
-
-	return series, nil
-}
-
-func (e *bufferedReadEntry[T]) ReadAnnotations() []Annotation {
-	return e.cached.Annotations
-}
-
-type bufferedWriteEntry[T any] struct {
-	cache     Backend
-	cached    CachedSeries
-	writer    SplitWriter[T]
-	finalized bool
-	stats     *CacheStats
-	logger    log.Logger
-}
-
-func (e *bufferedWriteEntry[T]) WriteSeriesMetadata(metadata []types.SeriesMetadata) error {
-	e.cached.Series = make([]mimirpb.Metric, len(metadata))
-	for i, sm := range metadata {
-		e.cached.Series[i] = mimirpb.Metric{
-			Labels: mimirpb.FromLabelsToLabelAdapters(sm.Labels),
-		}
-	}
-	return nil
-}
-
-func (e *bufferedWriteEntry[T]) WriteAnnotations(annotations []Annotation) {
-	e.cached.Annotations = annotations
-}
-
-func (e *bufferedWriteEntry[T]) WriteNextResult(result T) error {
-	return e.writer.WriteNextResult(result)
-}
-
-func (e *bufferedWriteEntry[T]) Finalize() error {
-	if e.finalized {
-		return nil
-	}
-
-	if err := e.writer.Finalize(); err != nil {
-		return err
-	}
-
-	data, err := e.cached.Marshal()
-	if err != nil {
-		return fmt.Errorf("marshalling cached series: %w", err)
-	}
-
-	hashedKey := cacheHashKey(e.cached.CacheKey)
-	e.cache.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
-
-	level.Debug(e.logger).Log("msg", "cache entry written", "cache_key", e.cached.CacheKey, "series_count", len(e.cached.Series), "entry_size", len(data))
-
-	e.stats.AddWriteEntryStat(len(e.cached.Series), len(data))
-
-	e.finalized = true
-	return nil
 }
 
 func generateCacheKey(tenant string, function int32, selector string, start, end int64) string {
@@ -288,4 +83,123 @@ func cacheHashKey(key string) string {
 	hasher := fnv.New64a()
 	_, _ = hasher.Write([]byte(key))
 	return hex.EncodeToString(hasher.Sum(nil))
+}
+
+// SplitCodec handles serialization of intermediate results for query splitting.
+type SplitCodec[T any] interface {
+	// Marshal serializes a slice of intermediate results to bytes.
+	Marshal(results []T) ([]byte, error)
+
+	// Unmarshal deserializes bytes back to a slice of intermediate results.
+	Unmarshal(data []byte) ([]T, error)
+}
+
+type Cache[T any] struct {
+	backend Backend
+	metrics *cacheMetrics
+	logger  log.Logger
+	codec   SplitCodec[T]
+}
+
+func NewCache[T any](factory *CacheFactory, codec SplitCodec[T]) *Cache[T] {
+	return &Cache[T]{
+		backend: factory.backend,
+		metrics: factory.metrics,
+		logger:  factory.logger,
+		codec:   codec,
+	}
+}
+
+func (c *Cache[T]) Get(
+	ctx context.Context,
+	function int32,
+	innerKey string,
+	start, end int64,
+	stats *CacheStats,
+) (seriesProtos []mimirpb.Metric, annotations []Annotation, results []T, found bool, err error) {
+	tenant, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return nil, nil, nil, false, err
+	}
+
+	c.metrics.cacheRequests.Inc()
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
+	hashedKey := cacheHashKey(cacheKey)
+
+	foundData := c.backend.GetMulti(ctx, []string{hashedKey})
+	data, ok := foundData[hashedKey]
+	if !ok || len(data) == 0 {
+		return nil, nil, nil, false, nil
+	}
+
+	var cached CachedSeries
+	if err := cached.Unmarshal(data); err != nil {
+		level.Warn(c.logger).Log("msg", "failed to decode cached result", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
+		return nil, nil, nil, false, nil
+	}
+
+	if cached.CacheKey != cacheKey {
+		level.Warn(c.logger).Log("msg", "skipped cached result because a cache key collision has been found", "hashed_cache_key", hashedKey, "cache_key", cacheKey)
+		return nil, nil, nil, false, nil
+	}
+
+	c.metrics.cacheHits.Inc()
+	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
+
+	stats.AddReadEntryStat(len(cached.Series), len(data))
+
+	results, err = c.codec.Unmarshal(cached.Results)
+	if err != nil {
+		return nil, nil, nil, false, fmt.Errorf("unmarshaling cached results: %w", err)
+	}
+
+	return cached.Series, cached.Annotations, results, true, nil
+}
+
+func (c *Cache[T]) Set(
+	ctx context.Context,
+	function int32,
+	innerKey string,
+	start, end int64,
+	seriesProtos []mimirpb.Metric,
+	annotations []Annotation,
+	results []T,
+	stats *CacheStats,
+) error {
+	tenant, err := user.ExtractOrgID(ctx)
+	if err != nil {
+		return err
+	}
+
+	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
+
+	// No conversion needed - use protobuf directly
+	resultBytes, err := c.codec.Marshal(results)
+	if err != nil {
+		return fmt.Errorf("marshaling results: %w", err)
+	}
+
+	// Build CachedSeries protobuf
+	cached := &CachedSeries{
+		CacheKey:    cacheKey,
+		Start:       start,
+		End:         end,
+		Series:      seriesProtos,
+		Annotations: annotations,
+		Results:     resultBytes,
+	}
+
+	data, err := cached.Marshal()
+	if err != nil {
+		return fmt.Errorf("marshalling cached series: %w", err)
+	}
+
+	hashedKey := cacheHashKey(cacheKey)
+	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
+
+	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", len(seriesProtos), "entry_size", len(data))
+
+	stats.AddWriteEntryStat(len(seriesProtos), len(data))
+
+	return nil
 }

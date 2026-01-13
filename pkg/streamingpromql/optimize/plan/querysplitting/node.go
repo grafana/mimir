@@ -134,12 +134,12 @@ func (s *SplittableFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlan
 }
 
 type Materializer struct {
-	cache *cache.Cache
+	cache *cache.CacheFactory
 }
 
 var _ planning.NodeMaterializer = &Materializer{}
 
-func NewMaterializer(cache *cache.Cache) *Materializer {
+func NewMaterializer(cache *cache.CacheFactory) *Materializer {
 	return &Materializer{
 		cache: cache,
 	}
