@@ -84,6 +84,7 @@ func OTLPHandler(
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	enableOTLPLazyDeserializing bool,
 	enableBatchedStreaming bool,
+	batchedStreamingBatchSize int,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	reg prometheus.Registerer,
@@ -106,8 +107,8 @@ func OTLPHandler(
 			handleOTLPBatchedStreaming(
 				ctx, w, r, maxRecvMsgSize, requestBufferPool, limits,
 				resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-				retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, push,
-				pushMetrics, discardedDueToOtelParseError, logger,
+				retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, batchedStreamingBatchSize,
+				push, pushMetrics, discardedDueToOtelParseError, logger,
 			)
 			return
 		}
@@ -223,7 +224,7 @@ func handlePartialOTLPPush(pushErr error, w http.ResponseWriter, r *http.Request
 }
 
 // handleOTLPBatchedStreaming handles OTLP requests using batched streaming to reduce peak memory.
-// It processes metrics one ResourceMetrics at a time, overlapping conversion and push in a pipeline.
+// It processes metrics in batches, overlapping conversion and push in a pipeline.
 func handleOTLPBatchedStreaming(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -236,6 +237,7 @@ func handleOTLPBatchedStreaming(
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
 	enableOTLPLazyDeserializing bool,
+	batchSize int,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
@@ -271,6 +273,7 @@ func handleOTLPBatchedStreaming(
 		enableLazyDeserializing: enableOTLPLazyDeserializing,
 		push:                    push,
 		logger:                  logger,
+		batchSize:               batchSize,
 	}
 
 	// Process batches
@@ -1112,6 +1115,7 @@ type otlpBatchProcessor struct {
 	enableLazyDeserializing bool
 	push                    PushFunc
 	logger                  log.Logger
+	batchSize               int // Number of ResourceMetrics to process per batch
 }
 
 // batchResult holds the converted batch ready for pushing
@@ -1182,8 +1186,14 @@ func (p *otlpBatchProcessor) processBatched(
 		}
 	}()
 
+	// Determine batch size - default to 1 if not set
+	batchSize := p.batchSize
+	if batchSize <= 0 {
+		batchSize = 1
+	}
+
 	// Convert batches and send to push goroutine (main goroutine)
-	for i := 0; i < n; i++ {
+	for i := 0; i < n; i += batchSize {
 		// Check for context cancellation or abort
 		if ctx.Err() != nil {
 			close(batchChan)
@@ -1200,8 +1210,20 @@ func (p *otlpBatchProcessor) processBatched(
 			break
 		}
 
-		// Create isolated batch with single ResourceMetrics
-		batchMetrics := createSingleResourceMetrics(resourceMetricsSlice.At(i))
+		// Calculate end index for this batch
+		end := i + batchSize
+		if end > n {
+			end = n
+		}
+
+		// Create batch with ResourceMetrics range
+		var batchMetrics pmetric.Metrics
+		if batchSize == 1 {
+			// Optimization: avoid unnecessary capacity allocation for single item
+			batchMetrics = createSingleResourceMetrics(resourceMetricsSlice.At(i))
+		} else {
+			batchMetrics = createBatchedResourceMetrics(resourceMetricsSlice, i, end)
+		}
 
 		// New appender per batch for isolation
 		appender := otlpappender.NewCombinedAppender()
@@ -1247,6 +1269,18 @@ func (p *otlpBatchProcessor) createBatchRequest(metrics []mimirpb.PreallocTimese
 func createSingleResourceMetrics(rm pmetric.ResourceMetrics) pmetric.Metrics {
 	md := pmetric.NewMetrics()
 	rm.CopyTo(md.ResourceMetrics().AppendEmpty())
+	return md
+}
+
+// createBatchedResourceMetrics extracts a range of ResourceMetrics into a new Metrics object.
+// This is more efficient than creating one Metrics per ResourceMetrics when batch size > 1.
+func createBatchedResourceMetrics(slice pmetric.ResourceMetricsSlice, start, end int) pmetric.Metrics {
+	md := pmetric.NewMetrics()
+	rmSlice := md.ResourceMetrics()
+	rmSlice.EnsureCapacity(end - start)
+	for i := start; i < end; i++ {
+		slice.At(i).CopyTo(rmSlice.AppendEmpty())
+	}
 	return md
 }
 

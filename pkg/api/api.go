@@ -290,6 +290,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,
 		pushConfig.EnableOTLPLazyDeserializing,
 		pushConfig.EnableOTLPBatchedStreaming,
+		pushConfig.OTLPBatchedStreamingBatchSize,
 		d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 
