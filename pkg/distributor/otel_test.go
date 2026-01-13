@@ -1114,9 +1114,14 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
+
 	handler := OTLPHandler(
 		10000000, nil, nil, limits, nil, nil,
 		RetryConfig{}, nil, false, pushFunc, nil, nil, log.NewNopLogger(),
+	)
+	handlerLazy := OTLPHandler(
+		10000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, true, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1126,6 +1131,18 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("protobuf-lazy", func(b *testing.B) {
+		req := createOTLPProtoRequest(b, exportReq, "")
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handlerLazy.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
 			req.Body.(*reusableReader).Reset()
 		}
@@ -2370,7 +2387,7 @@ func BenchmarkOTLPHandlerPeakMemory(b *testing.B) {
 			var memStats runtime.MemStats
 
 			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
+			for i := range b.N {
 				b.StopTimer()
 				runtime.GC()
 				runtime.ReadMemStats(&memStats)
