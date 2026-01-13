@@ -19,17 +19,17 @@ import (
 // LogRecord are experimental implementation of OpenTelemetry Log Data Model.
 
 type LogRecord struct {
-	Body                   AnyValue
-	SeverityText           string
-	EventName              string
-	Attributes             []KeyValue
 	TimeUnixNano           uint64
 	ObservedTimeUnixNano   uint64
 	SeverityNumber         SeverityNumber
+	SeverityText           string
+	Body                   AnyValue
+	Attributes             []KeyValue
 	DroppedAttributesCount uint32
 	Flags                  uint32
 	TraceId                TraceID
 	SpanId                 SpanID
+	EventName              string
 }
 
 var (
@@ -61,7 +61,6 @@ func DeleteLogRecord(orig *LogRecord, nullable bool) {
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
-
 	DeleteTraceID(&orig.TraceId, false)
 	DeleteSpanID(&orig.SpanId, false)
 
@@ -85,15 +84,21 @@ func CopyLogRecord(dest, src *LogRecord) *LogRecord {
 		dest = NewLogRecord()
 	}
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	dest.ObservedTimeUnixNano = src.ObservedTimeUnixNano
+
 	dest.SeverityNumber = src.SeverityNumber
+
 	dest.SeverityText = src.SeverityText
+
 	CopyAnyValue(&dest.Body, &src.Body)
 
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.DroppedAttributesCount = src.DroppedAttributesCount
+
 	dest.Flags = src.Flags
+
 	CopyTraceID(&dest.TraceId, &src.TraceId)
 
 	CopySpanID(&dest.SpanId, &src.SpanId)
@@ -253,16 +258,15 @@ func (orig *LogRecord) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.ObservedTimeUnixNano != uint64(0) {
+	if orig.ObservedTimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.SeverityNumber != SeverityNumber(0) {
+	if orig.SeverityNumber != 0 {
 		n += 1 + proto.Sov(uint64(orig.SeverityNumber))
 	}
-
 	l = len(orig.SeverityText)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -273,17 +277,16 @@ func (orig *LogRecord) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		n += 1 + proto.Sov(uint64(orig.DroppedAttributesCount))
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 5
 	}
 	l = orig.TraceId.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
 	l = orig.SpanId.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-
 	l = len(orig.EventName)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -295,19 +298,19 @@ func (orig *LogRecord) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
 		buf[pos] = 0x9
 	}
-	if orig.ObservedTimeUnixNano != uint64(0) {
+	if orig.ObservedTimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.ObservedTimeUnixNano))
 		pos--
 		buf[pos] = 0x59
 	}
-	if orig.SeverityNumber != SeverityNumber(0) {
+	if orig.SeverityNumber != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.SeverityNumber))
 		pos--
 		buf[pos] = 0x10
@@ -333,12 +336,12 @@ func (orig *LogRecord) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x32
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.DroppedAttributesCount))
 		pos--
 		buf[pos] = 0x38
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos -= 4
 		binary.LittleEndian.PutUint32(buf[pos:], uint32(orig.Flags))
 		pos--
@@ -419,6 +422,7 @@ func (orig *LogRecord) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptio
 			if err != nil {
 				return err
 			}
+
 			orig.SeverityNumber = SeverityNumber(num)
 
 		case 3:
@@ -474,6 +478,7 @@ func (orig *LogRecord) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptio
 			if err != nil {
 				return err
 			}
+
 			orig.DroppedAttributesCount = uint32(num)
 
 		case 8:

@@ -17,32 +17,102 @@ import (
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
+func (m *ExponentialHistogramDataPoint) GetSum_() any {
+	if m != nil {
+		return m.Sum_
+	}
+	return nil
+}
+
+type ExponentialHistogramDataPoint_Sum struct {
+	Sum float64
+}
+
+func (m *ExponentialHistogramDataPoint) GetSum() float64 {
+	if v, ok := m.GetSum_().(*ExponentialHistogramDataPoint_Sum); ok {
+		return v.Sum
+	}
+	return float64(0)
+}
+
+func (m *ExponentialHistogramDataPoint) GetMin_() any {
+	if m != nil {
+		return m.Min_
+	}
+	return nil
+}
+
+type ExponentialHistogramDataPoint_Min struct {
+	Min float64
+}
+
+func (m *ExponentialHistogramDataPoint) GetMin() float64 {
+	if v, ok := m.GetMin_().(*ExponentialHistogramDataPoint_Min); ok {
+		return v.Min
+	}
+	return float64(0)
+}
+
+func (m *ExponentialHistogramDataPoint) GetMax_() any {
+	if m != nil {
+		return m.Max_
+	}
+	return nil
+}
+
+type ExponentialHistogramDataPoint_Max struct {
+	Max float64
+}
+
+func (m *ExponentialHistogramDataPoint) GetMax() float64 {
+	if v, ok := m.GetMax_().(*ExponentialHistogramDataPoint_Max); ok {
+		return v.Max
+	}
+	return float64(0)
+}
+
 // ExponentialHistogramDataPoint is a single data point in a timeseries that describes the
 // time-varying values of a ExponentialHistogram of double values. A ExponentialHistogram contains
 // summary statistics for a population of values, it may optionally contain the
 // distribution of those values across a set of buckets.
 type ExponentialHistogramDataPoint struct {
-	Positive          ExponentialHistogramDataPointBuckets
-	Negative          ExponentialHistogramDataPointBuckets
 	Attributes        []KeyValue
-	Exemplars         []Exemplar
 	StartTimeUnixNano uint64
 	TimeUnixNano      uint64
 	Count             uint64
-	Sum               float64
-	ZeroCount         uint64
-	Min               float64
-	Max               float64
-	ZeroThreshold     float64
-	metadata          [1]uint64
+	Sum_              any
 	Scale             int32
+	ZeroCount         uint64
+	Positive          ExponentialHistogramDataPointBuckets
+	Negative          ExponentialHistogramDataPointBuckets
 	Flags             uint32
+	Exemplars         []Exemplar
+	Min_              any
+	Max_              any
+	ZeroThreshold     float64
 }
 
 var (
 	protoPoolExponentialHistogramDataPoint = sync.Pool{
 		New: func() any {
 			return &ExponentialHistogramDataPoint{}
+		},
+	}
+	ProtoPoolExponentialHistogramDataPoint_Sum = sync.Pool{
+		New: func() any {
+			return &ExponentialHistogramDataPoint_Sum{}
+		},
+	}
+
+	ProtoPoolExponentialHistogramDataPoint_Min = sync.Pool{
+		New: func() any {
+			return &ExponentialHistogramDataPoint_Min{}
+		},
+	}
+
+	ProtoPoolExponentialHistogramDataPoint_Max = sync.Pool{
+		New: func() any {
+			return &ExponentialHistogramDataPoint_Max{}
 		},
 	}
 )
@@ -63,15 +133,38 @@ func DeleteExponentialHistogramDataPoint(orig *ExponentialHistogramDataPoint, nu
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
+	switch ov := orig.Sum_.(type) {
+	case *ExponentialHistogramDataPoint_Sum:
+		if UseProtoPooling.IsEnabled() {
+			ov.Sum = float64(0)
+			ProtoPoolExponentialHistogramDataPoint_Sum.Put(ov)
+		}
 
+	}
 	DeleteExponentialHistogramDataPointBuckets(&orig.Positive, false)
 	DeleteExponentialHistogramDataPointBuckets(&orig.Negative, false)
-
 	for i := range orig.Exemplars {
 		DeleteExemplar(&orig.Exemplars[i], false)
+	}
+	switch ov := orig.Min_.(type) {
+	case *ExponentialHistogramDataPoint_Min:
+		if UseProtoPooling.IsEnabled() {
+			ov.Min = float64(0)
+			ProtoPoolExponentialHistogramDataPoint_Min.Put(ov)
+		}
+
+	}
+	switch ov := orig.Max_.(type) {
+	case *ExponentialHistogramDataPoint_Max:
+		if UseProtoPooling.IsEnabled() {
+			ov.Max = float64(0)
+			ProtoPoolExponentialHistogramDataPoint_Max.Put(ov)
+		}
+
 	}
 
 	orig.Reset()
@@ -96,33 +189,63 @@ func CopyExponentialHistogramDataPoint(dest, src *ExponentialHistogramDataPoint)
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.StartTimeUnixNano = src.StartTimeUnixNano
+
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	dest.Count = src.Count
-	if src.HasSum() {
-		dest.SetSum(src.Sum)
-	} else {
-		dest.RemoveSum()
+
+	switch t := src.Sum_.(type) {
+	case *ExponentialHistogramDataPoint_Sum:
+		var ov *ExponentialHistogramDataPoint_Sum
+		if !UseProtoPooling.IsEnabled() {
+			ov = &ExponentialHistogramDataPoint_Sum{}
+		} else {
+			ov = ProtoPoolExponentialHistogramDataPoint_Sum.Get().(*ExponentialHistogramDataPoint_Sum)
+		}
+		ov.Sum = t.Sum
+		dest.Sum_ = ov
+	default:
+		dest.Sum_ = nil
 	}
 
 	dest.Scale = src.Scale
+
 	dest.ZeroCount = src.ZeroCount
+
 	CopyExponentialHistogramDataPointBuckets(&dest.Positive, &src.Positive)
 
 	CopyExponentialHistogramDataPointBuckets(&dest.Negative, &src.Negative)
 
 	dest.Flags = src.Flags
+
 	dest.Exemplars = CopyExemplarSlice(dest.Exemplars, src.Exemplars)
 
-	if src.HasMin() {
-		dest.SetMin(src.Min)
-	} else {
-		dest.RemoveMin()
+	switch t := src.Min_.(type) {
+	case *ExponentialHistogramDataPoint_Min:
+		var ov *ExponentialHistogramDataPoint_Min
+		if !UseProtoPooling.IsEnabled() {
+			ov = &ExponentialHistogramDataPoint_Min{}
+		} else {
+			ov = ProtoPoolExponentialHistogramDataPoint_Min.Get().(*ExponentialHistogramDataPoint_Min)
+		}
+		ov.Min = t.Min
+		dest.Min_ = ov
+	default:
+		dest.Min_ = nil
 	}
 
-	if src.HasMax() {
-		dest.SetMax(src.Max)
-	} else {
-		dest.RemoveMax()
+	switch t := src.Max_.(type) {
+	case *ExponentialHistogramDataPoint_Max:
+		var ov *ExponentialHistogramDataPoint_Max
+		if !UseProtoPooling.IsEnabled() {
+			ov = &ExponentialHistogramDataPoint_Max{}
+		} else {
+			ov = ProtoPoolExponentialHistogramDataPoint_Max.Get().(*ExponentialHistogramDataPoint_Max)
+		}
+		ov.Max = t.Max
+		dest.Max_ = ov
+	default:
+		dest.Max_ = nil
 	}
 
 	dest.ZeroThreshold = src.ZeroThreshold
@@ -207,7 +330,7 @@ func (orig *ExponentialHistogramDataPoint) MarshalJSON(dest *json.Stream) {
 		dest.WriteObjectField("count")
 		dest.WriteUint64(orig.Count)
 	}
-	if orig.HasSum() {
+	if orig, ok := orig.Sum_.(*ExponentialHistogramDataPoint_Sum); ok {
 		dest.WriteObjectField("sum")
 		dest.WriteFloat64(orig.Sum)
 	}
@@ -237,11 +360,11 @@ func (orig *ExponentialHistogramDataPoint) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-	if orig.HasMin() {
+	if orig, ok := orig.Min_.(*ExponentialHistogramDataPoint_Min); ok {
 		dest.WriteObjectField("min")
 		dest.WriteFloat64(orig.Min)
 	}
-	if orig.HasMax() {
+	if orig, ok := orig.Max_.(*ExponentialHistogramDataPoint_Max); ok {
 		dest.WriteObjectField("max")
 		dest.WriteFloat64(orig.Max)
 	}
@@ -269,7 +392,16 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalJSON(iter *json.Iterator) {
 		case "count":
 			orig.Count = iter.ReadUint64()
 		case "sum":
-			orig.SetSum(iter.ReadFloat64())
+			{
+				var ov *ExponentialHistogramDataPoint_Sum
+				if !UseProtoPooling.IsEnabled() {
+					ov = &ExponentialHistogramDataPoint_Sum{}
+				} else {
+					ov = ProtoPoolExponentialHistogramDataPoint_Sum.Get().(*ExponentialHistogramDataPoint_Sum)
+				}
+				ov.Sum = iter.ReadFloat64()
+				orig.Sum_ = ov
+			}
 
 		case "scale":
 			orig.Scale = iter.ReadInt32()
@@ -290,10 +422,28 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalJSON(iter *json.Iterator) {
 			}
 
 		case "min":
-			orig.SetMin(iter.ReadFloat64())
+			{
+				var ov *ExponentialHistogramDataPoint_Min
+				if !UseProtoPooling.IsEnabled() {
+					ov = &ExponentialHistogramDataPoint_Min{}
+				} else {
+					ov = ProtoPoolExponentialHistogramDataPoint_Min.Get().(*ExponentialHistogramDataPoint_Min)
+				}
+				ov.Min = iter.ReadFloat64()
+				orig.Min_ = ov
+			}
 
 		case "max":
-			orig.SetMax(iter.ReadFloat64())
+			{
+				var ov *ExponentialHistogramDataPoint_Max
+				if !UseProtoPooling.IsEnabled() {
+					ov = &ExponentialHistogramDataPoint_Max{}
+				} else {
+					ov = ProtoPoolExponentialHistogramDataPoint_Max.Get().(*ExponentialHistogramDataPoint_Max)
+				}
+				ov.Max = iter.ReadFloat64()
+				orig.Max_ = ov
+			}
 
 		case "zeroThreshold", "zero_threshold":
 			orig.ZeroThreshold = iter.ReadFloat64()
@@ -311,42 +461,45 @@ func (orig *ExponentialHistogramDataPoint) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.Count != uint64(0) {
+	if orig.Count != 0 {
 		n += 9
 	}
-	if orig.HasSum() {
+	if orig, ok := orig.Sum_.(*ExponentialHistogramDataPoint_Sum); ok {
+		_ = orig
 		n += 9
 	}
-	if orig.Scale != int32(0) {
+	if orig.Scale != 0 {
 		n += 1 + proto.Soz(uint64(orig.Scale))
 	}
-	if orig.ZeroCount != uint64(0) {
+	if orig.ZeroCount != 0 {
 		n += 9
 	}
 	l = orig.Positive.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
 	l = orig.Negative.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 1 + proto.Sov(uint64(orig.Flags))
 	}
 	for i := range orig.Exemplars {
 		l = orig.Exemplars[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.HasMin() {
+	if orig, ok := orig.Min_.(*ExponentialHistogramDataPoint_Min); ok {
+		_ = orig
 		n += 9
 	}
-	if orig.HasMax() {
+	if orig, ok := orig.Max_.(*ExponentialHistogramDataPoint_Max); ok {
+		_ = orig
 		n += 9
 	}
-	if orig.ZeroThreshold != float64(0) {
+	if orig.ZeroThreshold != 0 {
 		n += 9
 	}
 	return n
@@ -363,36 +516,36 @@ func (orig *ExponentialHistogramDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0xa
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.StartTimeUnixNano))
 		pos--
 		buf[pos] = 0x11
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
 		buf[pos] = 0x19
 	}
-	if orig.Count != uint64(0) {
+	if orig.Count != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.Count))
 		pos--
 		buf[pos] = 0x21
 	}
-	if orig.HasSum() {
+	if orig, ok := orig.Sum_.(*ExponentialHistogramDataPoint_Sum); ok {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.Sum))
 		pos--
 		buf[pos] = 0x29
 	}
-	if orig.Scale != int32(0) {
+	if orig.Scale != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64((uint32(orig.Scale)<<1)^uint32(orig.Scale>>31)))
 		pos--
 		buf[pos] = 0x30
 	}
-	if orig.ZeroCount != uint64(0) {
+	if orig.ZeroCount != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.ZeroCount))
 		pos--
@@ -410,7 +563,7 @@ func (orig *ExponentialHistogramDataPoint) MarshalProto(buf []byte) int {
 	pos--
 	buf[pos] = 0x4a
 
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Flags))
 		pos--
 		buf[pos] = 0x50
@@ -422,19 +575,19 @@ func (orig *ExponentialHistogramDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x5a
 	}
-	if orig.HasMin() {
+	if orig, ok := orig.Min_.(*ExponentialHistogramDataPoint_Min); ok {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.Min))
 		pos--
 		buf[pos] = 0x61
 	}
-	if orig.HasMax() {
+	if orig, ok := orig.Max_.(*ExponentialHistogramDataPoint_Max); ok {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.Max))
 		pos--
 		buf[pos] = 0x69
 	}
-	if orig.ZeroThreshold != float64(0) {
+	if orig.ZeroThreshold != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.ZeroThreshold))
 		pos--
@@ -523,7 +676,14 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *
 			if err != nil {
 				return err
 			}
-			orig.SetSum(math.Float64frombits(num))
+			var ov *ExponentialHistogramDataPoint_Sum
+			if !UseProtoPooling.IsEnabled() {
+				ov = &ExponentialHistogramDataPoint_Sum{}
+			} else {
+				ov = ProtoPoolExponentialHistogramDataPoint_Sum.Get().(*ExponentialHistogramDataPoint_Sum)
+			}
+			ov.Sum = math.Float64frombits(num)
+			orig.Sum_ = ov
 
 		case 6:
 			if wireType != proto.WireTypeVarint {
@@ -534,6 +694,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *
 			if err != nil {
 				return err
 			}
+
 			orig.Scale = int32(uint32(num>>1) ^ uint32(int32((num&1)<<31)>>31))
 
 		case 7:
@@ -589,6 +750,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *
 			if err != nil {
 				return err
 			}
+
 			orig.Flags = uint32(num)
 
 		case 11:
@@ -616,7 +778,14 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *
 			if err != nil {
 				return err
 			}
-			orig.SetMin(math.Float64frombits(num))
+			var ov *ExponentialHistogramDataPoint_Min
+			if !UseProtoPooling.IsEnabled() {
+				ov = &ExponentialHistogramDataPoint_Min{}
+			} else {
+				ov = ProtoPoolExponentialHistogramDataPoint_Min.Get().(*ExponentialHistogramDataPoint_Min)
+			}
+			ov.Min = math.Float64frombits(num)
+			orig.Min_ = ov
 
 		case 13:
 			if wireType != proto.WireTypeI64 {
@@ -627,7 +796,14 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *
 			if err != nil {
 				return err
 			}
-			orig.SetMax(math.Float64frombits(num))
+			var ov *ExponentialHistogramDataPoint_Max
+			if !UseProtoPooling.IsEnabled() {
+				ov = &ExponentialHistogramDataPoint_Max{}
+			} else {
+				ov = ProtoPoolExponentialHistogramDataPoint_Max.Get().(*ExponentialHistogramDataPoint_Max)
+			}
+			ov.Max = math.Float64frombits(num)
+			orig.Max_ = ov
 
 		case 14:
 			if wireType != proto.WireTypeI64 {
@@ -638,6 +814,7 @@ func (orig *ExponentialHistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *
 			if err != nil {
 				return err
 			}
+
 			orig.ZeroThreshold = math.Float64frombits(num)
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
@@ -844,15 +1021,15 @@ func GenTestExponentialHistogramDataPoint() *ExponentialHistogramDataPoint {
 	orig.StartTimeUnixNano = uint64(13)
 	orig.TimeUnixNano = uint64(13)
 	orig.Count = uint64(13)
-	orig.SetSum(float64(3.1415926))
+	orig.Sum_ = &ExponentialHistogramDataPoint_Sum{Sum: float64(3.1415926)}
 	orig.Scale = int32(13)
 	orig.ZeroCount = uint64(13)
 	orig.Positive = *GenTestExponentialHistogramDataPointBuckets()
 	orig.Negative = *GenTestExponentialHistogramDataPointBuckets()
 	orig.Flags = uint32(13)
 	orig.Exemplars = []Exemplar{{}, *GenTestExemplar()}
-	orig.SetMin(float64(3.1415926))
-	orig.SetMax(float64(3.1415926))
+	orig.Min_ = &ExponentialHistogramDataPoint_Min{Min: float64(3.1415926)}
+	orig.Max_ = &ExponentialHistogramDataPoint_Max{Max: float64(3.1415926)}
 	orig.ZeroThreshold = float64(3.1415926)
 	return orig
 }

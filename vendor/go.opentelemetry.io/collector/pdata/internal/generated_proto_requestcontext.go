@@ -67,9 +67,9 @@ func (m *RequestContext) GetUnix() *UnixAddr {
 }
 
 type RequestContext struct {
-	ClientAddress  any
 	SpanContext    *SpanContext
 	ClientMetadata []KeyValue
+	ClientAddress  any
 }
 
 var (
@@ -120,6 +120,7 @@ func DeleteRequestContext(orig *RequestContext, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteSpanContext(orig.SpanContext, true)
 	for i := range orig.ClientMetadata {
 		DeleteKeyValue(&orig.ClientMetadata[i], false)
@@ -141,7 +142,9 @@ func DeleteRequestContext(orig *RequestContext, nullable bool) {
 		DeleteUnixAddr(ov.Unix, true)
 		ov.Unix = nil
 		ProtoPoolRequestContext_Unix.Put(ov)
+
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolRequestContext.Put(orig)
@@ -336,6 +339,7 @@ func (orig *RequestContext) UnmarshalJSON(iter *json.Iterator) {
 				ov.IP.UnmarshalJSON(iter)
 				orig.ClientAddress = ov
 			}
+
 		case "tCP":
 			{
 				var ov *RequestContext_TCP
@@ -348,6 +352,7 @@ func (orig *RequestContext) UnmarshalJSON(iter *json.Iterator) {
 				ov.TCP.UnmarshalJSON(iter)
 				orig.ClientAddress = ov
 			}
+
 		case "uDP":
 			{
 				var ov *RequestContext_UDP
@@ -360,6 +365,7 @@ func (orig *RequestContext) UnmarshalJSON(iter *json.Iterator) {
 				ov.UDP.UnmarshalJSON(iter)
 				orig.ClientAddress = ov
 			}
+
 		case "unix":
 			{
 				var ov *RequestContext_Unix
@@ -617,7 +623,6 @@ func (orig *RequestContext) UnmarshalProtoOpts(buf []byte, opts *pdata.Unmarshal
 				return err
 			}
 			orig.ClientAddress = ov
-
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

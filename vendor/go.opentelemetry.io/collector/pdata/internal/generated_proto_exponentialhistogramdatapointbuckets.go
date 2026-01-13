@@ -17,8 +17,8 @@ import (
 
 // ExponentialHistogramDataPointBuckets are a set of bucket counts, encoded in a contiguous array of counts.
 type ExponentialHistogramDataPointBuckets struct {
-	BucketCounts []uint64
 	Offset       int32
+	BucketCounts []uint64
 }
 
 var (
@@ -66,6 +66,7 @@ func CopyExponentialHistogramDataPointBuckets(dest, src *ExponentialHistogramDat
 		dest = NewExponentialHistogramDataPointBuckets()
 	}
 	dest.Offset = src.Offset
+
 	dest.BucketCounts = append(dest.BucketCounts[:0], src.BucketCounts...)
 
 	return dest
@@ -140,7 +141,6 @@ func (orig *ExponentialHistogramDataPointBuckets) MarshalJSON(dest *json.Stream)
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -165,10 +165,9 @@ func (orig *ExponentialHistogramDataPointBuckets) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.Offset != int32(0) {
+	if orig.Offset != 0 {
 		n += 1 + proto.Soz(uint64(orig.Offset))
 	}
-
 	if len(orig.BucketCounts) > 0 {
 		l = 0
 		for _, e := range orig.BucketCounts {
@@ -183,7 +182,7 @@ func (orig *ExponentialHistogramDataPointBuckets) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.Offset != int32(0) {
+	if orig.Offset != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64((uint32(orig.Offset)<<1)^uint32(orig.Offset>>31)))
 		pos--
 		buf[pos] = 0x8
@@ -229,6 +228,7 @@ func (orig *ExponentialHistogramDataPointBuckets) UnmarshalProtoOpts(buf []byte,
 			if err != nil {
 				return err
 			}
+
 			orig.Offset = int32(uint32(num>>1) ^ uint32(int32((num&1)<<31)>>31))
 		case 2:
 			switch wireType {

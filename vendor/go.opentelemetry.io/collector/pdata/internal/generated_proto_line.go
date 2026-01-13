@@ -67,7 +67,9 @@ func CopyLine(dest, src *Line) *Line {
 		dest = NewLine()
 	}
 	dest.FunctionIndex = src.FunctionIndex
+
 	dest.Line = src.Line
+
 	dest.Column = src.Column
 
 	return dest
@@ -163,13 +165,13 @@ func (orig *Line) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.FunctionIndex != int32(0) {
+	if orig.FunctionIndex != 0 {
 		n += 1 + proto.Sov(uint64(orig.FunctionIndex))
 	}
-	if orig.Line != int64(0) {
+	if orig.Line != 0 {
 		n += 1 + proto.Sov(uint64(orig.Line))
 	}
-	if orig.Column != int64(0) {
+	if orig.Column != 0 {
 		n += 1 + proto.Sov(uint64(orig.Column))
 	}
 	return n
@@ -179,17 +181,17 @@ func (orig *Line) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.FunctionIndex != int32(0) {
+	if orig.FunctionIndex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.FunctionIndex))
 		pos--
 		buf[pos] = 0x8
 	}
-	if orig.Line != int64(0) {
+	if orig.Line != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Line))
 		pos--
 		buf[pos] = 0x10
 	}
-	if orig.Column != int64(0) {
+	if orig.Column != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Column))
 		pos--
 		buf[pos] = 0x18
@@ -225,6 +227,7 @@ func (orig *Line) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) e
 			if err != nil {
 				return err
 			}
+
 			orig.FunctionIndex = int32(num)
 
 		case 2:
@@ -236,6 +239,7 @@ func (orig *Line) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) e
 			if err != nil {
 				return err
 			}
+
 			orig.Line = int64(num)
 
 		case 3:
@@ -247,6 +251,7 @@ func (orig *Line) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) e
 			if err != nil {
 				return err
 			}
+
 			orig.Column = int64(num)
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)

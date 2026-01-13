@@ -44,7 +44,9 @@ func DeleteExportLogsServiceResponse(orig *ExportLogsServiceResponse, nullable b
 		orig.Reset()
 		return
 	}
+
 	DeleteExportLogsPartialSuccess(&orig.PartialSuccess, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolExportLogsServiceResponse.Put(orig)

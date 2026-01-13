@@ -17,26 +17,96 @@ import (
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
+func (m *HistogramDataPoint) GetSum_() any {
+	if m != nil {
+		return m.Sum_
+	}
+	return nil
+}
+
+type HistogramDataPoint_Sum struct {
+	Sum float64
+}
+
+func (m *HistogramDataPoint) GetSum() float64 {
+	if v, ok := m.GetSum_().(*HistogramDataPoint_Sum); ok {
+		return v.Sum
+	}
+	return float64(0)
+}
+
+func (m *HistogramDataPoint) GetMin_() any {
+	if m != nil {
+		return m.Min_
+	}
+	return nil
+}
+
+type HistogramDataPoint_Min struct {
+	Min float64
+}
+
+func (m *HistogramDataPoint) GetMin() float64 {
+	if v, ok := m.GetMin_().(*HistogramDataPoint_Min); ok {
+		return v.Min
+	}
+	return float64(0)
+}
+
+func (m *HistogramDataPoint) GetMax_() any {
+	if m != nil {
+		return m.Max_
+	}
+	return nil
+}
+
+type HistogramDataPoint_Max struct {
+	Max float64
+}
+
+func (m *HistogramDataPoint) GetMax() float64 {
+	if v, ok := m.GetMax_().(*HistogramDataPoint_Max); ok {
+		return v.Max
+	}
+	return float64(0)
+}
+
 // HistogramDataPoint is a single data point in a timeseries that describes the time-varying values of a Histogram of values.
 type HistogramDataPoint struct {
 	Attributes        []KeyValue
-	BucketCounts      []uint64
-	ExplicitBounds    []float64
-	Exemplars         []Exemplar
 	StartTimeUnixNano uint64
 	TimeUnixNano      uint64
 	Count             uint64
-	Sum               float64
-	Min               float64
-	Max               float64
-	metadata          [1]uint64
+	Sum_              any
+	BucketCounts      []uint64
+	ExplicitBounds    []float64
+	Exemplars         []Exemplar
 	Flags             uint32
+	Min_              any
+	Max_              any
 }
 
 var (
 	protoPoolHistogramDataPoint = sync.Pool{
 		New: func() any {
 			return &HistogramDataPoint{}
+		},
+	}
+	ProtoPoolHistogramDataPoint_Sum = sync.Pool{
+		New: func() any {
+			return &HistogramDataPoint_Sum{}
+		},
+	}
+
+	ProtoPoolHistogramDataPoint_Min = sync.Pool{
+		New: func() any {
+			return &HistogramDataPoint_Min{}
+		},
+	}
+
+	ProtoPoolHistogramDataPoint_Max = sync.Pool{
+		New: func() any {
+			return &HistogramDataPoint_Max{}
 		},
 	}
 )
@@ -57,12 +127,36 @@ func DeleteHistogramDataPoint(orig *HistogramDataPoint, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
+	switch ov := orig.Sum_.(type) {
+	case *HistogramDataPoint_Sum:
+		if UseProtoPooling.IsEnabled() {
+			ov.Sum = float64(0)
+			ProtoPoolHistogramDataPoint_Sum.Put(ov)
+		}
 
+	}
 	for i := range orig.Exemplars {
 		DeleteExemplar(&orig.Exemplars[i], false)
+	}
+	switch ov := orig.Min_.(type) {
+	case *HistogramDataPoint_Min:
+		if UseProtoPooling.IsEnabled() {
+			ov.Min = float64(0)
+			ProtoPoolHistogramDataPoint_Min.Put(ov)
+		}
+
+	}
+	switch ov := orig.Max_.(type) {
+	case *HistogramDataPoint_Max:
+		if UseProtoPooling.IsEnabled() {
+			ov.Max = float64(0)
+			ProtoPoolHistogramDataPoint_Max.Put(ov)
+		}
+
 	}
 
 	orig.Reset()
@@ -87,31 +181,57 @@ func CopyHistogramDataPoint(dest, src *HistogramDataPoint) *HistogramDataPoint {
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.StartTimeUnixNano = src.StartTimeUnixNano
+
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	dest.Count = src.Count
-	if src.HasSum() {
-		dest.SetSum(src.Sum)
-	} else {
-		dest.RemoveSum()
+
+	switch t := src.Sum_.(type) {
+	case *HistogramDataPoint_Sum:
+		var ov *HistogramDataPoint_Sum
+		if !UseProtoPooling.IsEnabled() {
+			ov = &HistogramDataPoint_Sum{}
+		} else {
+			ov = ProtoPoolHistogramDataPoint_Sum.Get().(*HistogramDataPoint_Sum)
+		}
+		ov.Sum = t.Sum
+		dest.Sum_ = ov
+	default:
+		dest.Sum_ = nil
 	}
 
 	dest.BucketCounts = append(dest.BucketCounts[:0], src.BucketCounts...)
-
 	dest.ExplicitBounds = append(dest.ExplicitBounds[:0], src.ExplicitBounds...)
-
 	dest.Exemplars = CopyExemplarSlice(dest.Exemplars, src.Exemplars)
 
 	dest.Flags = src.Flags
-	if src.HasMin() {
-		dest.SetMin(src.Min)
-	} else {
-		dest.RemoveMin()
+
+	switch t := src.Min_.(type) {
+	case *HistogramDataPoint_Min:
+		var ov *HistogramDataPoint_Min
+		if !UseProtoPooling.IsEnabled() {
+			ov = &HistogramDataPoint_Min{}
+		} else {
+			ov = ProtoPoolHistogramDataPoint_Min.Get().(*HistogramDataPoint_Min)
+		}
+		ov.Min = t.Min
+		dest.Min_ = ov
+	default:
+		dest.Min_ = nil
 	}
 
-	if src.HasMax() {
-		dest.SetMax(src.Max)
-	} else {
-		dest.RemoveMax()
+	switch t := src.Max_.(type) {
+	case *HistogramDataPoint_Max:
+		var ov *HistogramDataPoint_Max
+		if !UseProtoPooling.IsEnabled() {
+			ov = &HistogramDataPoint_Max{}
+		} else {
+			ov = ProtoPoolHistogramDataPoint_Max.Get().(*HistogramDataPoint_Max)
+		}
+		ov.Max = t.Max
+		dest.Max_ = ov
+	default:
+		dest.Max_ = nil
 	}
 
 	return dest
@@ -194,7 +314,7 @@ func (orig *HistogramDataPoint) MarshalJSON(dest *json.Stream) {
 		dest.WriteObjectField("count")
 		dest.WriteUint64(orig.Count)
 	}
-	if orig.HasSum() {
+	if orig, ok := orig.Sum_.(*HistogramDataPoint_Sum); ok {
 		dest.WriteObjectField("sum")
 		dest.WriteFloat64(orig.Sum)
 	}
@@ -208,7 +328,6 @@ func (orig *HistogramDataPoint) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	if len(orig.ExplicitBounds) > 0 {
 		dest.WriteObjectField("explicitBounds")
 		dest.WriteArrayStart()
@@ -219,7 +338,6 @@ func (orig *HistogramDataPoint) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	if len(orig.Exemplars) > 0 {
 		dest.WriteObjectField("exemplars")
 		dest.WriteArrayStart()
@@ -234,11 +352,11 @@ func (orig *HistogramDataPoint) MarshalJSON(dest *json.Stream) {
 		dest.WriteObjectField("flags")
 		dest.WriteUint32(orig.Flags)
 	}
-	if orig.HasMin() {
+	if orig, ok := orig.Min_.(*HistogramDataPoint_Min); ok {
 		dest.WriteObjectField("min")
 		dest.WriteFloat64(orig.Min)
 	}
-	if orig.HasMax() {
+	if orig, ok := orig.Max_.(*HistogramDataPoint_Max); ok {
 		dest.WriteObjectField("max")
 		dest.WriteFloat64(orig.Max)
 	}
@@ -262,7 +380,16 @@ func (orig *HistogramDataPoint) UnmarshalJSON(iter *json.Iterator) {
 		case "count":
 			orig.Count = iter.ReadUint64()
 		case "sum":
-			orig.SetSum(iter.ReadFloat64())
+			{
+				var ov *HistogramDataPoint_Sum
+				if !UseProtoPooling.IsEnabled() {
+					ov = &HistogramDataPoint_Sum{}
+				} else {
+					ov = ProtoPoolHistogramDataPoint_Sum.Get().(*HistogramDataPoint_Sum)
+				}
+				ov.Sum = iter.ReadFloat64()
+				orig.Sum_ = ov
+			}
 
 		case "bucketCounts", "bucket_counts":
 			for iter.ReadArray() {
@@ -283,10 +410,28 @@ func (orig *HistogramDataPoint) UnmarshalJSON(iter *json.Iterator) {
 		case "flags":
 			orig.Flags = iter.ReadUint32()
 		case "min":
-			orig.SetMin(iter.ReadFloat64())
+			{
+				var ov *HistogramDataPoint_Min
+				if !UseProtoPooling.IsEnabled() {
+					ov = &HistogramDataPoint_Min{}
+				} else {
+					ov = ProtoPoolHistogramDataPoint_Min.Get().(*HistogramDataPoint_Min)
+				}
+				ov.Min = iter.ReadFloat64()
+				orig.Min_ = ov
+			}
 
 		case "max":
-			orig.SetMax(iter.ReadFloat64())
+			{
+				var ov *HistogramDataPoint_Max
+				if !UseProtoPooling.IsEnabled() {
+					ov = &HistogramDataPoint_Max{}
+				} else {
+					ov = ProtoPoolHistogramDataPoint_Max.Get().(*HistogramDataPoint_Max)
+				}
+				ov.Max = iter.ReadFloat64()
+				orig.Max_ = ov
+			}
 
 		default:
 			iter.Skip()
@@ -302,16 +447,17 @@ func (orig *HistogramDataPoint) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.Count != uint64(0) {
+	if orig.Count != 0 {
 		n += 9
 	}
-	if orig.HasSum() {
+	if orig, ok := orig.Sum_.(*HistogramDataPoint_Sum); ok {
+		_ = orig
 		n += 9
 	}
 	l = len(orig.BucketCounts)
@@ -328,13 +474,15 @@ func (orig *HistogramDataPoint) SizeProto() int {
 		l = orig.Exemplars[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 1 + proto.Sov(uint64(orig.Flags))
 	}
-	if orig.HasMin() {
+	if orig, ok := orig.Min_.(*HistogramDataPoint_Min); ok {
+		_ = orig
 		n += 9
 	}
-	if orig.HasMax() {
+	if orig, ok := orig.Max_.(*HistogramDataPoint_Max); ok {
+		_ = orig
 		n += 9
 	}
 	return n
@@ -351,25 +499,25 @@ func (orig *HistogramDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x4a
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.StartTimeUnixNano))
 		pos--
 		buf[pos] = 0x11
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
 		buf[pos] = 0x19
 	}
-	if orig.Count != uint64(0) {
+	if orig.Count != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.Count))
 		pos--
 		buf[pos] = 0x21
 	}
-	if orig.HasSum() {
+	if orig, ok := orig.Sum_.(*HistogramDataPoint_Sum); ok {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.Sum))
 		pos--
@@ -402,18 +550,18 @@ func (orig *HistogramDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x42
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Flags))
 		pos--
 		buf[pos] = 0x50
 	}
-	if orig.HasMin() {
+	if orig, ok := orig.Min_.(*HistogramDataPoint_Min); ok {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.Min))
 		pos--
 		buf[pos] = 0x59
 	}
-	if orig.HasMax() {
+	if orig, ok := orig.Max_.(*HistogramDataPoint_Max); ok {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.Max))
 		pos--
@@ -502,7 +650,14 @@ func (orig *HistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.Unmar
 			if err != nil {
 				return err
 			}
-			orig.SetSum(math.Float64frombits(num))
+			var ov *HistogramDataPoint_Sum
+			if !UseProtoPooling.IsEnabled() {
+				ov = &HistogramDataPoint_Sum{}
+			} else {
+				ov = ProtoPoolHistogramDataPoint_Sum.Get().(*HistogramDataPoint_Sum)
+			}
+			ov.Sum = math.Float64frombits(num)
+			orig.Sum_ = ov
 		case 6:
 			switch wireType {
 			case proto.WireTypeLen:
@@ -593,6 +748,7 @@ func (orig *HistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.Unmar
 			if err != nil {
 				return err
 			}
+
 			orig.Flags = uint32(num)
 
 		case 11:
@@ -604,7 +760,14 @@ func (orig *HistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.Unmar
 			if err != nil {
 				return err
 			}
-			orig.SetMin(math.Float64frombits(num))
+			var ov *HistogramDataPoint_Min
+			if !UseProtoPooling.IsEnabled() {
+				ov = &HistogramDataPoint_Min{}
+			} else {
+				ov = ProtoPoolHistogramDataPoint_Min.Get().(*HistogramDataPoint_Min)
+			}
+			ov.Min = math.Float64frombits(num)
+			orig.Min_ = ov
 
 		case 12:
 			if wireType != proto.WireTypeI64 {
@@ -615,7 +778,14 @@ func (orig *HistogramDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.Unmar
 			if err != nil {
 				return err
 			}
-			orig.SetMax(math.Float64frombits(num))
+			var ov *HistogramDataPoint_Max
+			if !UseProtoPooling.IsEnabled() {
+				ov = &HistogramDataPoint_Max{}
+			} else {
+				ov = ProtoPoolHistogramDataPoint_Max.Get().(*HistogramDataPoint_Max)
+			}
+			ov.Max = math.Float64frombits(num)
+			orig.Max_ = ov
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {
@@ -818,13 +988,13 @@ func GenTestHistogramDataPoint() *HistogramDataPoint {
 	orig.StartTimeUnixNano = uint64(13)
 	orig.TimeUnixNano = uint64(13)
 	orig.Count = uint64(13)
-	orig.SetSum(float64(3.1415926))
+	orig.Sum_ = &HistogramDataPoint_Sum{Sum: float64(3.1415926)}
 	orig.BucketCounts = []uint64{uint64(0), uint64(13)}
 	orig.ExplicitBounds = []float64{float64(0), float64(3.1415926)}
 	orig.Exemplars = []Exemplar{{}, *GenTestExemplar()}
 	orig.Flags = uint32(13)
-	orig.SetMin(float64(3.1415926))
-	orig.SetMax(float64(3.1415926))
+	orig.Min_ = &HistogramDataPoint_Min{Min: float64(3.1415926)}
+	orig.Max_ = &HistogramDataPoint_Max{Max: float64(3.1415926)}
 	return orig
 }
 

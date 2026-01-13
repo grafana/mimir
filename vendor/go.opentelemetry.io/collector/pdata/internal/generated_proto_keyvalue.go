@@ -16,8 +16,8 @@ import (
 )
 
 type KeyValue struct {
-	Value AnyValue
 	Key   string
+	Value AnyValue
 }
 
 var (
@@ -46,6 +46,7 @@ func DeleteKeyValue(orig *KeyValue, nullable bool) {
 	}
 
 	DeleteAnyValue(&orig.Value, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolKeyValue.Put(orig)
@@ -66,6 +67,7 @@ func CopyKeyValue(dest, src *KeyValue) *KeyValue {
 		dest = NewKeyValue()
 	}
 	dest.Key = src.Key
+
 	CopyAnyValue(&dest.Value, &src.Value)
 
 	return dest
@@ -154,7 +156,6 @@ func (orig *KeyValue) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.Key)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
