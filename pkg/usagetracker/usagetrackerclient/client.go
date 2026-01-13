@@ -678,7 +678,12 @@ func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series
 	p[userID] = append(p[userID], series...)
 	c.seriesCount += len(series)
 	if needsFlush := c.seriesCount >= c.maxSeriesPerBatch; needsFlush {
-		c.flushChan <- struct{}{}
+		select {
+		case c.flushChan <- struct{}{}:
+		default:
+			// The channel is full, we'll flush on the next ticker.
+			break
+		}
 	}
 }
 
