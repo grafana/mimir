@@ -12117,6 +12117,8 @@ func newFailingIngester(t *testing.T, cfg Config, kvStore kv.Client, failingCaus
 	fI := &failingIngester{Ingester: i, failingCause: failingCause}
 	if kvStore != nil {
 		fI.kvStore = kvStore
+	} else {
+		fI.kvStore = cfg.IngesterRing.KVStore.Mock
 	}
 	fI.BasicService = services.NewBasicService(fI.starting, fI.ingesterRunning, fI.stopping)
 	return fI
@@ -12156,11 +12158,11 @@ func (i *failingIngester) starting(parentCtx context.Context) error {
 }
 
 func (i *failingIngester) getInstance(ctx context.Context) *ring.InstanceDesc {
-	d, err := i.lifecycler.KVStore.Get(ctx, IngesterRingKey)
+	d, err := i.kvStore.Get(ctx, IngesterRingKey)
 	if err != nil {
 		return nil
 	}
-	instanceDesc, ok := ring.GetOrCreateRingDesc(d).Ingesters[i.lifecycler.ID]
+	instanceDesc, ok := ring.GetOrCreateRingDesc(d).Ingesters[i.ingesterID]
 	if !ok {
 		return nil
 	}

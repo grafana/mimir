@@ -22,6 +22,9 @@ ingester:
   active_series_metrics_update_period: 10s
   active_series_metrics_idle_timeout:  1m
 
+  ring:
+    num_tokens: 0
+
   partition_ring:
     min_partition_owners_count:       1
     min_partition_owners_duration:    10s

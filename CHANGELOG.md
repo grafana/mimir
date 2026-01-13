@@ -35,6 +35,7 @@
 * [FEATURE] Store-gateway: Add experimental per-zone shard size `-store-gateway.tenant-shard-size-per-zone`. When set, the total shard size is computed as this value multiplied by the number of zones. This option takes precedence over `-store-gateway.tenant-shard-size`. #13835
 * [FEATURE] Distributor, Ingester: Add experimental reactive limiter setting `-distributor.reactive-limiter.max-limit-factor-decay`. #14007
 * [FEATURE] Ingester: Added experimental per-tenant early head compaction. New per-tenant limits `-ingester.early-head-compaction-owned-series-threshold` and `-ingester.early-head-compaction-min-estimated-series-reduction-percentage` trigger compaction based on owned series count. #13980
+* [FEATURE] Ingester: Added experimental support to run ingesters with no tokens in the ring when ingest storage is enabled. This can be enabled by setting `-ingester.ring.num-tokens=0`. #14024
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151

@@ -290,7 +290,7 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	lifecycler            *ring.Lifecycler
+	lifecycler            ingesterLifecycler
 	ring                  ring.ReadRing
 	limits                *validation.Overrides
 	limiter               *Limiter
@@ -436,6 +436,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetrics.Enabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 	i.activeGroups = activeGroupsCleanupService
+	i.ring = ingestersRing
 
 	i.costAttributionMgr = costAttributionMgr
 	// We create a circuit breaker, which will be activated on a successful completion of starting.
@@ -462,12 +463,49 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}, i.maxTsdbHeadTimestamp)
 	}
 
-	i.ring = ingestersRing
+	// Create a Prometheus registered where metrics are prefixed by "cortex_".
+	cortexPrefixedRegisterer := prometheus.WrapRegistererWithPrefix("cortex_", registerer)
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, IngesterRingName, IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
-	if err != nil {
-		return nil, err
+	// Create the lifecycler. In tokenless mode, we use a BasicLifecycler
+	// configured to not register tokens. Otherwise, use classic Lifecycler.
+	var ingesterID string
+	if cfg.IngesterRing.NumTokens == 0 {
+		// Tokenless mode requires ingest storage to be enabled.
+		// This check is here instead of Config.Validate() because Config.IngestStorageConfig is injected after validation.
+		if !cfg.IngestStorageConfig.Enabled {
+			return nil, fmt.Errorf("ring tokens can only be disabled when ingest storage is enabled")
+		}
+
+		// Create KV store for the ring.
+		ringKV, err := kv.NewClient(cfg.IngesterRing.KVStore, ring.GetCodec(), kv.RegistererWithKVName(cortexPrefixedRegisterer, IngesterRingName+"-lifecycler"), logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating KV store for ingester ring in tokenless mode")
+		}
+
+		// Create BasicLifecycler config.
+		lifecyclerCfg, err := cfg.IngesterRing.ToTokenlessBasicLifecyclerConfig(logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating basic lifecycler config for ingester ring in tokenless mode")
+		}
+
+		// Create tokenless lifecycler.
+		lifecycler, err := newTokenlessLifecycler(lifecyclerCfg, IngesterRingName, IngesterRingKey, ringKV, cfg.IngesterRing.MinReadyDuration, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, i.Flush, logger, cortexPrefixedRegisterer)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating lifecycler for ingester ring in tokenless mode")
+		}
+
+		i.lifecycler = lifecycler
+		ingesterID = lifecycler.GetInstanceID()
+	} else {
+		// Classic Lifecycler for token-based mode.
+		lifecycler, err := ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, IngesterRingName, IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, cortexPrefixedRegisterer)
+		if err != nil {
+			return nil, err
+		}
+		i.lifecycler = lifecycler
+		ingesterID = lifecycler.ID
 	}
+
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
 
@@ -478,7 +516,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer))
 	}
 
-	i.ingesterID = i.lifecycler.ID
+	i.ingesterID = ingesterID
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
@@ -529,7 +567,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	} else {
 		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
-		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(i.lifecycler.ID, ingestersRing, i.limits.IngestionTenantShardSize)
+		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(ingesterID, ingestersRing, i.limits.IngestionTenantShardSize)
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)
