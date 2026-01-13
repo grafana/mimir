@@ -71,6 +71,11 @@ type OTLPHandlerLimits interface {
 
 type OTLPPushMiddleware func(ctx context.Context, req *pmetricotlp.ExportRequest) error
 
+// protoUnmarshalerFactory creates a proto.Message unmarshaler for an ExportRequest.
+// This type is used to eliminate per-request branching - the factory is created once
+// at handler creation time and passed to the parser.
+type protoUnmarshalerFactory func(*pmetricotlp.ExportRequest) proto.Message
+
 // OTLPHandler is an http.Handler accepting OTLP write requests.
 func OTLPHandler(
 	maxRecvMsgSize int,
@@ -89,13 +94,25 @@ func OTLPHandler(
 ) http.Handler {
 	discardedDueToOtelParseError := validation.DiscardedSamplesCounter(reg, otelParseError)
 
+	// Create unmarshaler factory at handler creation time to avoid per-request branching.
+	var createUnmarshaler protoUnmarshalerFactory
+	if enableOTLPLazyDeserializing {
+		createUnmarshaler = func(req *pmetricotlp.ExportRequest) proto.Message {
+			return otlpProtoUnmarshalerLazy{request: req}
+		}
+	} else {
+		createUnmarshaler = func(req *pmetricotlp.ExportRequest) proto.Message {
+			return otlpProtoUnmarshaler{request: req}
+		}
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		logger := utillog.WithContext(ctx, logger)
+		reqLogger := utillog.WithContext(ctx, logger)
 		if sourceIPs != nil {
 			source := sourceIPs.Get(r)
 			if source != "" {
-				logger = utillog.WithSourceIPs(source, logger)
+				reqLogger = utillog.WithSourceIPs(source, reqLogger)
 			}
 		}
 
@@ -104,13 +121,13 @@ func OTLPHandler(
 		parser := newOTLPParser(
 			limits, resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 			otlpConverter, pushMetrics, discardedDueToOtelParseError,
-			OTLPPushMiddlewares, enableOTLPLazyDeserializing,
+			OTLPPushMiddlewares, createUnmarshaler,
 		)
 
 		supplier := func() (*mimirpb.WriteRequest, func(), error) {
 			rb := util.NewRequestBuffers(requestBufferPool)
 			var req mimirpb.PreallocWriteRequest
-			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, logger); err != nil {
+			if err := parser(ctx, r, maxRecvMsgSize, rb, &req, reqLogger); err != nil {
 				// Check for httpgrpc error, default to client error if parsing failed
 				if _, ok := httpgrpc.HTTPResponseFromError(err); !ok {
 					err = httpgrpc.Error(http.StatusBadRequest, err.Error())
@@ -139,14 +156,14 @@ func OTLPHandler(
 				// https://opentelemetry.io/docs/specs/otlp/#otlphttp-response.
 				var expResp colmetricpb.ExportMetricsServiceResponse
 				addSuccessHeaders(w, req.artificialDelay)
-				writeOTLPResponse(r, w, http.StatusOK, &expResp, logger)
+				writeOTLPResponse(r, w, http.StatusOK, &expResp, reqLogger)
 				return
 			}
 		}
 
 		if errors.Is(pushErr, context.Canceled) {
-			level.Warn(logger).Log("msg", "push request canceled", "err", pushErr)
-			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", logger)
+			level.Warn(reqLogger).Log("msg", "push request canceled", "err", pushErr)
+			writeErrorToHTTPResponseBody(r, w, statusClientClosedRequest, codes.Canceled, "push request context canceled", reqLogger)
 			return
 		}
 		if labelValueTooLongErr := (labelValueTooLongError{}); errors.As(pushErr, &labelValueTooLongErr) {
@@ -174,7 +191,7 @@ func OTLPHandler(
 			var isSoft bool
 			grpcCode, httpCode, isSoft = toOtlpGRPCHTTPStatus(pushErr)
 			if isSoft {
-				handlePartialOTLPPush(pushErr, w, r, req, logger)
+				handlePartialOTLPPush(pushErr, w, r, req, reqLogger)
 				return
 			}
 
@@ -188,10 +205,10 @@ func OTLPHandler(
 				msgs = append(msgs, "insight", true)
 				logLevel = level.Warn
 			}
-			logLevel(logger).Log(msgs...)
+			logLevel(reqLogger).Log(msgs...)
 		}
 		addErrorHeaders(w, pushErr, r, httpCode, retryCfg)
-		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, logger)
+		writeErrorToHTTPResponseBody(r, w, httpCode, grpcCode, errorMsg, reqLogger)
 	})
 }
 
@@ -231,7 +248,7 @@ func newOTLPParser(
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
-	enableOTLPLazyDeserializing bool,
+	createUnmarshaler protoUnmarshalerFactory,
 ) parserFunc {
 	if resourceAttributePromotionConfig == nil {
 		resourceAttributePromotionConfig = limits
@@ -261,10 +278,7 @@ func newOTLPParser(
 		case pbContentType:
 			decoderFunc = func(reader io.Reader) (req pmetricotlp.ExportRequest, uncompressedBodySize int, err error) {
 				exportReq := pmetricotlp.NewExportRequest()
-				unmarshaler := otlpProtoUnmarshaler{
-					request: &exportReq,
-					lazyDeserialize: enableOTLPLazyDeserializing,
-				}
+				unmarshaler := createUnmarshaler(&exportReq)
 				protoBodySize, err := util.ParseProtoReader(ctx, reader, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
 				var tooLargeErr util.MsgSizeTooLargeErr
 				if errors.As(err, &tooLargeErr) {
@@ -549,26 +563,32 @@ func marshal(payload proto.Message, contentType string) ([]byte, string, error) 
 	return data, "protobuf", err
 }
 
-// otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest.
+// otlpProtoUnmarshaler implements proto.Message wrapping pmetricotlp.ExportRequest
+// using standard (eager) deserialization.
 type otlpProtoUnmarshaler struct {
-	request         *pmetricotlp.ExportRequest
-	lazyDeserialize bool
+	request *pmetricotlp.ExportRequest
 }
 
-func (o otlpProtoUnmarshaler) ProtoMessage() {}
-
-func (o otlpProtoUnmarshaler) Reset() {}
-
-func (o otlpProtoUnmarshaler) String() string {
-	return ""
-}
+func (o otlpProtoUnmarshaler) ProtoMessage()  {}
+func (o otlpProtoUnmarshaler) Reset()         {}
+func (o otlpProtoUnmarshaler) String() string { return "" }
 
 func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
-	if o.lazyDeserialize {
-		return o.request.UnmarshalProtoLazy(data)
-	}
-
 	return o.request.UnmarshalProto(data)
+}
+
+// otlpProtoUnmarshalerLazy implements proto.Message wrapping pmetricotlp.ExportRequest
+// using lazy deserialization. This avoids parsing nested messages until they're accessed.
+type otlpProtoUnmarshalerLazy struct {
+	request *pmetricotlp.ExportRequest
+}
+
+func (o otlpProtoUnmarshalerLazy) ProtoMessage()  {}
+func (o otlpProtoUnmarshalerLazy) Reset()         {}
+func (o otlpProtoUnmarshalerLazy) String() string { return "" }
+
+func (o otlpProtoUnmarshalerLazy) Unmarshal(data []byte) error {
+	return o.request.UnmarshalProtoLazy(data)
 }
 
 type conversionOptions struct {
