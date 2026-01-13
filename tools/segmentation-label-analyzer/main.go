@@ -150,6 +150,7 @@ func run(cfg *Config) error {
 		return candidates[i].Score > candidates[j].Score
 	})
 
+	fmt.Println()
 	if len(candidates) == 0 {
 		fmt.Println("No candidates found (score > 0.5).")
 	} else {
