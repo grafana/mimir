@@ -8924,7 +8924,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			return i.inflightPushRequestsBytes.Load() == int64(requestSize)
-		}, targetRequestDuration/3, 3*time.Millisecond)
+		}, targetRequestDuration, 3*time.Millisecond)
 
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.

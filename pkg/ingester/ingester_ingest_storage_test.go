@@ -47,6 +47,106 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
+func TestIngester_Startup_PartitionRing(t *testing.T) {
+	var err error
+
+	cfg := defaultIngesterTestConfig(t)
+	cfg.IngesterRing.TokenGenerationStrategy = tokenGenerationSpreadMinimizing
+	cfg.IngesterRing.InstanceZone = "zone-a"
+	cfg.IngesterRing.SpreadMinimizingZones = []string{"zone-a"}
+	cfg.IngesterRing.SpreadMinimizingJoinRingInOrder = true
+
+	cfg0 := &cfg
+	cfg0.IngesterRing.InstanceID = "ingester-zone-a-0"
+
+	cfg1 := &cfg
+	cfg1.IngesterRing.InstanceID = "ingester-zone-a-1"
+
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+
+	// Start ingester instance ring & wait
+	ingesterRing, err := ring.New(cfg1.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingesterRing))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingesterRing))
+	})
+
+	ctx := context.Background()
+
+	// Get ingester instance ring desc
+	var ringDesc *ring.Desc
+	err = ingesterRing.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc = ring.GetOrCreateRingDesc(in)
+		return ringDesc, true, nil
+	})
+
+	// Create an ingester and manually add to the ring;
+	// needed to emulate an ingester which is delayed in claiming tokens.
+	i0, _, _ := createTestIngesterWithIngestStorage(
+		t, &cfg, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
+	)
+	i0Ro, i0RoTs := i0.lifecycler.GetReadOnlyState()
+	ringDesc.AddIngester(
+		i0.lifecycler.ID,
+		i0.lifecycler.Addr,
+		i0.lifecycler.Zone,
+		[]uint32{}, // Empty tokens; higher-indexed ingesters will block until lower-indexed ingesters claim tokens
+		i0.lifecycler.GetState(),
+		time.Now(),
+		i0Ro,
+		i0RoTs,
+		nil,
+	)
+	// Ensure updated instance ring state is committed
+	err = ingesterRing.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Ensure addition of ingester-zone-a-0 is reflected in top-level instance ring state
+	require.NoError(t, ring.WaitInstanceState(ctx, ingesterRing, i0.cfg.IngesterRing.InstanceID, ring.PENDING))
+
+	// Create ingester-zone-a-1, which will block on joining
+	// while it waits for the lower-indexed ingester-zone-a-0 to claim its tokens.
+	// It will proceed after the currently-hardcoded ring.LifeCycler.canJoinTimeout deadline of 5 minutes,
+	// which will not trigger before the end of the test.
+	i1, _, _ := createTestIngesterWithIngestStorage(
+		t, cfg1, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
+	)
+
+	svcCtx, svcCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	require.NoError(t, i1.StartAsync(svcCtx))
+	t.Cleanup(func() {
+		svcCancel()
+	})
+
+	joinCtx, joinCancel := context.WithTimeout(context.Background(), 1*time.Second)
+	t.Cleanup(func() {
+		joinCancel()
+	})
+	err = i1.AwaitRunning(joinCtx)
+	require.ErrorIs(t, err, context.DeadlineExceeded) // i1 will not start as it blocks on i0 claiming tokens
+
+	// Confirm ingester-zone-a-1 pending instance state
+	i1InstanceState, err := ingesterRing.GetInstanceState(i1.cfg.IngesterRing.InstanceID)
+	require.NoError(t, err)
+	require.Equal(t, ring.PENDING, i1InstanceState)
+
+	// Confirm ingester-zone-a-1 partition lifecycler ring has not been started
+	i1PartitionLifecyclerState := i1.ingestPartitionLifecycler.State()
+	require.Equal(t, services.New, i1PartitionLifecyclerState)
+
+	// Confirm partition for ingester 1 has not been created yet
+	i1PartitionName, err := ingest.IngesterPartitionID(cfg1.IngesterRing.InstanceID)
+	require.NoError(t, err)
+	partitionRingDescVal, err := ingesterRing.KVClient.Get(ctx, PartitionRingKey)
+	require.NoError(t, err)
+	partitionRingDesc := ring.GetOrCreatePartitionRingDesc(partitionRingDescVal)
+	_, exists := partitionRingDesc.Partitions[i1PartitionName]
+	require.False(t, exists)
+}
+
 func TestIngester_Start(t *testing.T) {
 	util_test.VerifyNoLeak(t)
 
