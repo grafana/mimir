@@ -46,9 +46,11 @@ func DeleteMetricsData(orig *MetricsData, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.ResourceMetrics {
 		DeleteResourceMetrics(orig.ResourceMetrics[i], true)
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolMetricsData.Put(orig)

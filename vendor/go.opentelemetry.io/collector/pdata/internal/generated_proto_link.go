@@ -45,8 +45,10 @@ func DeleteLink(orig *Link, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteTraceID(&orig.TraceId, false)
 	DeleteSpanID(&orig.SpanId, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolLink.Put(orig)

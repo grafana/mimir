@@ -16,9 +16,9 @@ import (
 )
 
 type TCPAddr struct {
-	Zone string
 	IP   []byte
 	Port int64
+	Zone string
 }
 
 var (
@@ -66,7 +66,9 @@ func CopyTCPAddr(dest, src *TCPAddr) *TCPAddr {
 		dest = NewTCPAddr()
 	}
 	dest.IP = src.IP
+
 	dest.Port = src.Port
+
 	dest.Zone = src.Zone
 
 	return dest
@@ -163,15 +165,13 @@ func (orig *TCPAddr) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.IP)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.Port != int64(0) {
+	if orig.Port != 0 {
 		n += 1 + proto.Sov(uint64(orig.Port))
 	}
-
 	l = len(orig.Zone)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -191,7 +191,7 @@ func (orig *TCPAddr) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0xa
 	}
-	if orig.Port != int64(0) {
+	if orig.Port != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Port))
 		pos--
 		buf[pos] = 0x10
@@ -250,6 +250,7 @@ func (orig *TCPAddr) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions
 			if err != nil {
 				return err
 			}
+
 			orig.Port = int64(num)
 
 		case 3:

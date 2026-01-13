@@ -46,10 +46,12 @@ func DeleteExportProfilesServiceRequest(orig *ExportProfilesServiceRequest, null
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.ResourceProfiles {
 		DeleteResourceProfiles(orig.ResourceProfiles[i], true)
 	}
 	DeleteProfilesDictionary(&orig.Dictionary, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolExportProfilesServiceRequest.Put(orig)

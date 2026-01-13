@@ -171,6 +171,7 @@ func DeleteAnyValue(orig *AnyValue, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	switch ov := orig.Value.(type) {
 	case *AnyValue_StringValue:
 		if UseProtoPooling.IsEnabled() {
@@ -205,7 +206,9 @@ func DeleteAnyValue(orig *AnyValue, nullable bool) {
 			ov.BytesValue = nil
 			ProtoPoolAnyValue_BytesValue.Put(ov)
 		}
+
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolAnyValue.Put(orig)
@@ -235,7 +238,6 @@ func CopyAnyValue(dest, src *AnyValue) *AnyValue {
 		}
 		ov.StringValue = t.StringValue
 		dest.Value = ov
-
 	case *AnyValue_BoolValue:
 		var ov *AnyValue_BoolValue
 		if !UseProtoPooling.IsEnabled() {
@@ -245,7 +247,6 @@ func CopyAnyValue(dest, src *AnyValue) *AnyValue {
 		}
 		ov.BoolValue = t.BoolValue
 		dest.Value = ov
-
 	case *AnyValue_IntValue:
 		var ov *AnyValue_IntValue
 		if !UseProtoPooling.IsEnabled() {
@@ -255,7 +256,6 @@ func CopyAnyValue(dest, src *AnyValue) *AnyValue {
 		}
 		ov.IntValue = t.IntValue
 		dest.Value = ov
-
 	case *AnyValue_DoubleValue:
 		var ov *AnyValue_DoubleValue
 		if !UseProtoPooling.IsEnabled() {
@@ -265,7 +265,6 @@ func CopyAnyValue(dest, src *AnyValue) *AnyValue {
 		}
 		ov.DoubleValue = t.DoubleValue
 		dest.Value = ov
-
 	case *AnyValue_ArrayValue:
 		var ov *AnyValue_ArrayValue
 		if !UseProtoPooling.IsEnabled() {
@@ -297,7 +296,6 @@ func CopyAnyValue(dest, src *AnyValue) *AnyValue {
 		}
 		ov.BytesValue = t.BytesValue
 		dest.Value = ov
-
 	default:
 		dest.Value = nil
 	}
@@ -407,6 +405,7 @@ func (orig *AnyValue) UnmarshalJSON(iter *json.Iterator) {
 				ov.StringValue = iter.ReadString()
 				orig.Value = ov
 			}
+
 		case "boolValue", "bool_value":
 			{
 				var ov *AnyValue_BoolValue
@@ -418,6 +417,7 @@ func (orig *AnyValue) UnmarshalJSON(iter *json.Iterator) {
 				ov.BoolValue = iter.ReadBool()
 				orig.Value = ov
 			}
+
 		case "intValue", "int_value":
 			{
 				var ov *AnyValue_IntValue
@@ -429,6 +429,7 @@ func (orig *AnyValue) UnmarshalJSON(iter *json.Iterator) {
 				ov.IntValue = iter.ReadInt64()
 				orig.Value = ov
 			}
+
 		case "doubleValue", "double_value":
 			{
 				var ov *AnyValue_DoubleValue
@@ -440,6 +441,7 @@ func (orig *AnyValue) UnmarshalJSON(iter *json.Iterator) {
 				ov.DoubleValue = iter.ReadFloat64()
 				orig.Value = ov
 			}
+
 		case "arrayValue", "array_value":
 			{
 				var ov *AnyValue_ArrayValue
@@ -452,6 +454,7 @@ func (orig *AnyValue) UnmarshalJSON(iter *json.Iterator) {
 				ov.ArrayValue.UnmarshalJSON(iter)
 				orig.Value = ov
 			}
+
 		case "kvlistValue", "kvlist_value":
 			{
 				var ov *AnyValue_KvlistValue
@@ -464,6 +467,7 @@ func (orig *AnyValue) UnmarshalJSON(iter *json.Iterator) {
 				ov.KvlistValue.UnmarshalJSON(iter)
 				orig.Value = ov
 			}
+
 		case "bytesValue", "bytes_value":
 			{
 				var ov *AnyValue_BytesValue
@@ -494,13 +498,10 @@ func (orig *AnyValue) SizeProto() int {
 		l = len(orig.StringValue)
 		n += 1 + proto.Sov(uint64(l)) + l
 	case *AnyValue_BoolValue:
-
 		n += 2
 	case *AnyValue_IntValue:
-
 		n += 1 + proto.Sov(uint64(orig.IntValue))
 	case *AnyValue_DoubleValue:
-
 		n += 9
 	case *AnyValue_ArrayValue:
 		if orig.ArrayValue != nil {
@@ -740,7 +741,6 @@ func (orig *AnyValue) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOption
 				copy(ov.BytesValue, buf[startPos:pos])
 			}
 			orig.Value = ov
-
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

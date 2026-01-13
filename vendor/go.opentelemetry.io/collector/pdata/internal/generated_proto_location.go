@@ -17,10 +17,10 @@ import (
 
 // Location describes function and line table debug information.
 type Location struct {
+	MappingIndex     int32
+	Address          uint64
 	Lines            []*Line
 	AttributeIndices []int32
-	Address          uint64
-	MappingIndex     int32
 }
 
 var (
@@ -72,7 +72,9 @@ func CopyLocation(dest, src *Location) *Location {
 		dest = NewLocation()
 	}
 	dest.MappingIndex = src.MappingIndex
+
 	dest.Address = src.Address
+
 	dest.Lines = CopyLinePtrSlice(dest.Lines, src.Lines)
 
 	dest.AttributeIndices = append(dest.AttributeIndices[:0], src.AttributeIndices...)
@@ -163,7 +165,6 @@ func (orig *Location) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -196,17 +197,16 @@ func (orig *Location) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.MappingIndex != int32(0) {
+	if orig.MappingIndex != 0 {
 		n += 1 + proto.Sov(uint64(orig.MappingIndex))
 	}
-	if orig.Address != uint64(0) {
+	if orig.Address != 0 {
 		n += 1 + proto.Sov(uint64(orig.Address))
 	}
 	for i := range orig.Lines {
 		l = orig.Lines[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	if len(orig.AttributeIndices) > 0 {
 		l = 0
 		for _, e := range orig.AttributeIndices {
@@ -221,12 +221,12 @@ func (orig *Location) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.MappingIndex != int32(0) {
+	if orig.MappingIndex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.MappingIndex))
 		pos--
 		buf[pos] = 0x8
 	}
-	if orig.Address != uint64(0) {
+	if orig.Address != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Address))
 		pos--
 		buf[pos] = 0x10
@@ -279,6 +279,7 @@ func (orig *Location) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOption
 			if err != nil {
 				return err
 			}
+
 			orig.MappingIndex = int32(num)
 
 		case 2:
@@ -290,6 +291,7 @@ func (orig *Location) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOption
 			if err != nil {
 				return err
 			}
+
 			orig.Address = uint64(num)
 
 		case 3:

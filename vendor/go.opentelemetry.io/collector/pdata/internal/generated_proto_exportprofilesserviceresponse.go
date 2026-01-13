@@ -44,7 +44,9 @@ func DeleteExportProfilesServiceResponse(orig *ExportProfilesServiceResponse, nu
 		orig.Reset()
 		return
 	}
+
 	DeleteExportProfilesPartialSuccess(&orig.PartialSuccess, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolExportProfilesServiceResponse.Put(orig)

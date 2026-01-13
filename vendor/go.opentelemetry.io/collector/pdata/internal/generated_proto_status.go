@@ -67,6 +67,7 @@ func CopyStatus(dest, src *Status) *Status {
 		dest = NewStatus()
 	}
 	dest.Message = src.Message
+
 	dest.Code = src.Code
 
 	return dest
@@ -157,12 +158,11 @@ func (orig *Status) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.Message)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.Code != StatusCode(0) {
+	if orig.Code != 0 {
 		n += 1 + proto.Sov(uint64(orig.Code))
 	}
 	return n
@@ -180,7 +180,7 @@ func (orig *Status) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x12
 	}
-	if orig.Code != StatusCode(0) {
+	if orig.Code != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Code))
 		pos--
 		buf[pos] = 0x18
@@ -228,6 +228,7 @@ func (orig *Status) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions)
 			if err != nil {
 				return err
 			}
+
 			orig.Code = StatusCode(num)
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)

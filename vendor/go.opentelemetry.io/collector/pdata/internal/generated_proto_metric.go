@@ -163,10 +163,12 @@ func DeleteMetric(orig *Metric, nullable bool) {
 		DeleteSummary(ov.Summary, true)
 		ov.Summary = nil
 		ProtoPoolMetric_Summary.Put(ov)
+
 	}
 	for i := range orig.Metadata {
 		DeleteKeyValue(&orig.Metadata[i], false)
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolMetric.Put(orig)
@@ -187,8 +189,11 @@ func CopyMetric(dest, src *Metric) *Metric {
 		dest = NewMetric()
 	}
 	dest.Name = src.Name
+
 	dest.Description = src.Description
+
 	dest.Unit = src.Unit
+
 	switch t := src.Data.(type) {
 	case *Metric_Gauge:
 		var ov *Metric_Gauge
@@ -383,6 +388,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.Gauge.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "sum":
 			{
 				var ov *Metric_Sum
@@ -395,6 +401,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.Sum.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "histogram":
 			{
 				var ov *Metric_Histogram
@@ -407,6 +414,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.Histogram.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "exponentialHistogram", "exponential_histogram":
 			{
 				var ov *Metric_ExponentialHistogram
@@ -419,6 +427,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.ExponentialHistogram.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "summary":
 			{
 				var ov *Metric_Summary
@@ -448,17 +457,14 @@ func (orig *Metric) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.Name)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Description)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Unit)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l

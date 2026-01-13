@@ -44,7 +44,9 @@ func DeleteExportMetricsServiceResponse(orig *ExportMetricsServiceResponse, null
 		orig.Reset()
 		return
 	}
+
 	DeleteExportMetricsPartialSuccess(&orig.PartialSuccess, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolExportMetricsServiceResponse.Put(orig)

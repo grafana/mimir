@@ -47,10 +47,12 @@ func DeleteProfilesData(orig *ProfilesData, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.ResourceProfiles {
 		DeleteResourceProfiles(orig.ResourceProfiles[i], true)
 	}
 	DeleteProfilesDictionary(&orig.Dictionary, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolProfilesData.Put(orig)

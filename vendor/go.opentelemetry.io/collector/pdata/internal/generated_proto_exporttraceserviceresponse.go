@@ -44,7 +44,9 @@ func DeleteExportTraceServiceResponse(orig *ExportTraceServiceResponse, nullable
 		orig.Reset()
 		return
 	}
+
 	DeleteExportTracePartialSuccess(&orig.PartialSuccess, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolExportTraceServiceResponse.Put(orig)

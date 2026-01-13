@@ -17,9 +17,9 @@ import (
 
 // ScopeSpans is a collection of spans from a LibraryInstrumentation.
 type ScopeSpans struct {
-	SchemaUrl string
-	Spans     []*Span
 	Scope     InstrumentationScope
+	Spans     []*Span
+	SchemaUrl string
 }
 
 var (
@@ -46,6 +46,7 @@ func DeleteScopeSpans(orig *ScopeSpans, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteInstrumentationScope(&orig.Scope, false)
 	for i := range orig.Spans {
 		DeleteSpan(orig.Spans[i], true)
@@ -184,7 +185,6 @@ func (orig *ScopeSpans) SizeProto() int {
 		l = orig.Spans[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.SchemaUrl)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l

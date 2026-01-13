@@ -46,9 +46,11 @@ func DeleteTracesData(orig *TracesData, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.ResourceSpans {
 		DeleteResourceSpans(orig.ResourceSpans[i], true)
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolTracesData.Put(orig)

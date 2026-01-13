@@ -48,11 +48,11 @@ func (m *NumberDataPoint) GetAsInt() int64 {
 
 // NumberDataPoint is a single data point in a timeseries that describes the time-varying value of a number metric.
 type NumberDataPoint struct {
-	Value             any
 	Attributes        []KeyValue
-	Exemplars         []Exemplar
 	StartTimeUnixNano uint64
 	TimeUnixNano      uint64
+	Value             any
+	Exemplars         []Exemplar
 	Flags             uint32
 }
 
@@ -92,10 +92,10 @@ func DeleteNumberDataPoint(orig *NumberDataPoint, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
-
 	switch ov := orig.Value.(type) {
 	case *NumberDataPoint_AsDouble:
 		if UseProtoPooling.IsEnabled() {
@@ -107,6 +107,7 @@ func DeleteNumberDataPoint(orig *NumberDataPoint, nullable bool) {
 			ov.AsInt = int64(0)
 			ProtoPoolNumberDataPoint_AsInt.Put(ov)
 		}
+
 	}
 	for i := range orig.Exemplars {
 		DeleteExemplar(&orig.Exemplars[i], false)
@@ -134,7 +135,9 @@ func CopyNumberDataPoint(dest, src *NumberDataPoint) *NumberDataPoint {
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.StartTimeUnixNano = src.StartTimeUnixNano
+
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	switch t := src.Value.(type) {
 	case *NumberDataPoint_AsDouble:
 		var ov *NumberDataPoint_AsDouble
@@ -145,7 +148,6 @@ func CopyNumberDataPoint(dest, src *NumberDataPoint) *NumberDataPoint {
 		}
 		ov.AsDouble = t.AsDouble
 		dest.Value = ov
-
 	case *NumberDataPoint_AsInt:
 		var ov *NumberDataPoint_AsInt
 		if !UseProtoPooling.IsEnabled() {
@@ -155,7 +157,6 @@ func CopyNumberDataPoint(dest, src *NumberDataPoint) *NumberDataPoint {
 		}
 		ov.AsInt = t.AsInt
 		dest.Value = ov
-
 	default:
 		dest.Value = nil
 	}
@@ -290,6 +291,7 @@ func (orig *NumberDataPoint) UnmarshalJSON(iter *json.Iterator) {
 				ov.AsDouble = iter.ReadFloat64()
 				orig.Value = ov
 			}
+
 		case "asInt", "as_int":
 			{
 				var ov *NumberDataPoint_AsInt
@@ -324,10 +326,10 @@ func (orig *NumberDataPoint) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
 	switch orig := orig.Value.(type) {
@@ -335,17 +337,15 @@ func (orig *NumberDataPoint) SizeProto() int {
 		_ = orig
 		break
 	case *NumberDataPoint_AsDouble:
-
 		n += 9
 	case *NumberDataPoint_AsInt:
-
 		n += 9
 	}
 	for i := range orig.Exemplars {
 		l = orig.Exemplars[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 1 + proto.Sov(uint64(orig.Flags))
 	}
 	return n
@@ -362,13 +362,13 @@ func (orig *NumberDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x3a
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.StartTimeUnixNano))
 		pos--
 		buf[pos] = 0x11
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
@@ -395,7 +395,7 @@ func (orig *NumberDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x2a
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Flags))
 		pos--
 		buf[pos] = 0x40
@@ -523,6 +523,7 @@ func (orig *NumberDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.Unmarsha
 			if err != nil {
 				return err
 			}
+
 			orig.Flags = uint32(num)
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)

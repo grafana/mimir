@@ -44,9 +44,11 @@ func DeleteArrayValue(orig *ArrayValue, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.Values {
 		DeleteAnyValue(&orig.Values[i], false)
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolArrayValue.Put(orig)
