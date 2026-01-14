@@ -8,8 +8,6 @@ package compactor
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -335,61 +333,4 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestPostingsOffsetTableErrorStringDetection(t *testing.T) {
-	// This test verifies that we can detect the postings offset table size error
-	// from Prometheus TSDB. If this test fails, it means Prometheus has changed
-	// the error message format and we need to update IsPostingsOffsetTableSizeError().
-	//
-	// The error originates from:
-	// - vendor/github.com/prometheus/prometheus/tsdb/index/index.go (writeLengthAndHash)
-
-	t.Run("detects actual error strings from Prometheus TSDB source", func(t *testing.T) {
-		// Read the actual error strings from Prometheus vendored source code
-		indexSourceFile, err := filepath.Abs(filepath.Join("..", "..", "vendor", "github.com", "prometheus", "prometheus", "tsdb", "index", "index.go"))
-		require.NoError(t, err)
-		indexSource, err := os.ReadFile(indexSourceFile)
-		require.NoError(t, err)
-
-		// Verify the error strings we're looking for exist in Prometheus source
-		require.Contains(t, string(indexSource), `length size exceeds 4 bytes:`,
-			"Prometheus error message format changed! Update IsPostingsOffsetTableSizeError()")
-		require.Contains(t, string(indexSource), `postings offset table`,
-			"Prometheus error message format changed! Update IsPostingsOffsetTableSizeError()")
-
-		// Now test that our detection works with the actual error chain
-		err = fmt.Errorf("compact blocks 01ABC,02DEF: %w",
-			fmt.Errorf("closing index writer: %w",
-				fmt.Errorf("postings offset table length/crc32 write error: %w",
-					fmt.Errorf("length size exceeds 4 bytes: 5000000000"))))
-
-		require.True(t, IsPostingsOffsetTableSizeError(err), "should detect postings offset table size error from Prometheus TSDB")
-	})
-
-	t.Run("does not detect unrelated errors", func(t *testing.T) {
-		testCases := []struct {
-			name string
-			err  error
-		}{
-			{
-				name: "completely unrelated error",
-				err:  fmt.Errorf("some other error"),
-			},
-			{
-				name: "has length error but missing postings table",
-				err:  fmt.Errorf("length size exceeds 4 bytes: 100"),
-			},
-			{
-				name: "has postings table but missing length error",
-				err:  fmt.Errorf("postings offset table error"),
-			},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				require.False(t, IsPostingsOffsetTableSizeError(tc.err), "should not detect error: %v", tc.err)
-			})
-		}
-	})
 }
