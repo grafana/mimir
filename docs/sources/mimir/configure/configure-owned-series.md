@@ -15,7 +15,7 @@ In a distributed Grafana Mimir deployment, distributors use consistent hashing t
 
 Additionally, since each ingester enforces only a fraction of a tenant's in-memory series limits locally, increasing the ingester count, or a tenant's shuffle-shard size, can result in ingesters rejecting samples due to exceeded local limits, even if the global limit isn't breached. For example:
 
-- Consider a tenant with a global series limit of 150k with series spread across 3 ingesters; the local limit on each ingesters is 50k in-memory series.
+- Consider a tenant with a global series limit of 150k with series spread across 3 ingesters; the local limit on each ingester is 50k in-memory series.
 - The tenant is sending ~90k series, so ~30k in-memory series per ingester.
 - Now, the tenant is sharded across 6 ingesters, either by adding ingesters or increasing the tenant's shuffle-shard size.
 - The local limit on each ingester drops to 25k; the tenant's 30k series on the original 3 ingesters exceed the new local limit, and those ingesters immediately start to discard samples.
