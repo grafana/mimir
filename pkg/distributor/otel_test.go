@@ -1122,7 +1122,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
@@ -1134,7 +1134,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		req := createOTLPJSONRequest(b, exportReq, "")
 		b.ResetTimer()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
@@ -1216,7 +1216,7 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 		req := createOTLPProtoRequest(b, exportReq, "")
 
 		b.ResetTimer()
-		for range b.N {
+		for b.Loop() {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
