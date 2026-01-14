@@ -796,7 +796,7 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 	}
 }
 
-func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
+func TestExecutionResponses_Finalize(t *testing.T) {
 	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
 		"scalar": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
 			frontend := &mockFrontend{stream: stream}
@@ -843,7 +843,7 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 				memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 				response := responseCreator(t, ctx, stream, memoryConsumptionTracker)
 
-				annos, stats, err := response.GetEvaluationInfo(ctx)
+				annos, stats, err := response.Finalize(ctx)
 				if expectSuccess {
 					require.NoError(t, err)
 					require.Equal(t, expectedTotalSamples, stats.SamplesProcessed)
@@ -1162,10 +1162,10 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err := resp1.GetEvaluationInfo(ctx)
+	annos, returnedStats, err := resp1.Finalize(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls GetEvaluationInfo")
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	_, err = resp1.GetNextSeries(ctx)
@@ -1182,7 +1182,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err = resp2.GetEvaluationInfo(ctx)
+	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
 	expectedAnnos.Add(newRemoteInfo("an info annotation"))
@@ -1195,7 +1195,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing
 	_, err = resp2.GetNextSeries(ctx)
 	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
 
-	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
@@ -1295,13 +1295,13 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 
 	// Read the evaluation completed message for the first node, which should cause no buffering as we'll
 	// read the results when we are done with the second node.
-	annos, returnedStats, err := resp1.GetEvaluationInfo(ctx)
+	annos, returnedStats, err := resp1.Finalize(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls GetEvaluationInfo")
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	annos, returnedStats, err = resp2.GetEvaluationInfo(ctx)
+	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
 	expectedAnnos.Add(newRemoteInfo("an info annotation"))
@@ -1311,7 +1311,7 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
 }
 
 func requireNoBufferedDataForAllNodes(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
@@ -1405,7 +1405,7 @@ func TestRemoteExecutionGroupEvaluator_ReceiveUnexpectedMessageWithoutNodeIndex(
 	require.Empty(t, series)
 }
 
-func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEvaluationInfoReads(t *testing.T) {
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing.T) {
 	ctx := context.Background()
 
 	stream := &mockResponseStream{
@@ -1473,11 +1473,11 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEvaluationInfoReads
 	requireBufferedDataForNode(t, evaluator, node1, 1)
 	requireNoBufferedDataForNode(t, evaluator, node2)
 
-	// Get the evaluation info for the first node, confirm the buffered message is dropped.
-	annos, returnedStats, err := resp1.GetEvaluationInfo(ctx)
+	// Finalize the first node, confirm the buffered message is dropped.
+	annos, returnedStats, err := resp1.Finalize(ctx)
 	require.NoError(t, err)
-	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls GetEvaluationInfo")
-	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls GetEvaluationInfo")
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
 	// Read the second message from the second node, confirm nothing is buffered for the first node.
@@ -1487,8 +1487,8 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEvaluationInfoReads
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	// Get the evaluation info for the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	annos, returnedStats, err = resp2.GetEvaluationInfo(ctx)
+	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	annos, returnedStats, err = resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
 	expectedAnnos.Add(newRemoteInfo("an info annotation"))
@@ -1498,7 +1498,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEvaluationInfoReads
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode(t *testing.T) {
@@ -1580,8 +1580,8 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	require.Equal(t, expectedData, data)
 	requireNoBufferedDataForAllNodes(t, evaluator)
 
-	// Get the evaluation info for the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
-	annos, returnedStats, err := resp2.GetEvaluationInfo(ctx)
+	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	annos, returnedStats, err := resp2.Finalize(ctx)
 	require.NoError(t, err)
 	expectedAnnos := annotations.New()
 	expectedAnnos.Add(newRemoteInfo("an info annotation"))
@@ -1591,7 +1591,7 @@ func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode
 	require.Equal(t, expectedStats, returnedStats)
 	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
 
-	require.True(t, stream.closed.Load(), "stream should be closed after reading evaluation info for last node")
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
 }
 
 func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testing.T) {

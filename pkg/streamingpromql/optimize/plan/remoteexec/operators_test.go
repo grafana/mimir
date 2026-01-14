@@ -89,7 +89,7 @@ func (m *mockResponse) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *mockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+func (m *mockResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
 	return m.annos, m.stats, nil
 }
 
@@ -98,16 +98,16 @@ func (m *mockResponse) Close() {
 }
 
 type finalizationTestMockResponse struct {
-	Closed                  bool
-	GetEvaluationInfoCalled bool
+	Closed    bool
+	Finalized bool
 }
 
 func (m *finalizationTestMockResponse) Start(ctx context.Context) error {
 	return nil
 }
 
-func (m *finalizationTestMockResponse) GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
-	m.GetEvaluationInfoCalled = true
+func (m *finalizationTestMockResponse) Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error) {
+	m.Finalized = true
 	return annotations.New(), stats.Stats{}, nil
 }
 

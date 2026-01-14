@@ -12,7 +12,7 @@ import (
 )
 
 func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations, queryStats *types.QueryStats) error {
-	newAnnos, remoteStats, err := resp.GetEvaluationInfo(ctx)
+	newAnnos, remoteStats, err := resp.Finalize(ctx)
 	if err != nil {
 		return err
 	}

@@ -64,15 +64,22 @@ type RemoteExecutionResponse interface {
 	// Calling another method before calling Start may lead to unpredictable behaviour.
 	Start(ctx context.Context) error
 
-	// GetEvaluationInfo returns the annotations and statistics from the remote evaluation, or the next available error from the stream.
+	// Finalize finishes evaluation of the request.
 	//
-	// If any unread part of the response is not the evaluation info (eg. there is unread series data), this is skipped until the evaluation info or an error is found.
+	// If there is any unread data for this request, it is discarded.
 	//
-	// GetEvaluationInfo can only be called before Close is called.
-	GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error)
+	// If this is the last request in a group, it returns the annotations and statistics from the remote evaluation, or otherwise returns an empty set of annotations
+	// and statistics.
+	//
+	// Finalize can only be called before Close is called.
+	Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error)
 
 	// Close cleans up any resources associated with this request.
 	//
-	// If the request is still inflight, it is cancelled.
+	// If there is any unread data for this request, it is discarded.
+	//
+	// If this is the last request in a group, any resources associated with the group itself are also cleaned up.
+	//
+	// It is safe to call Close multiple times on the same request.
 	Close()
 }
