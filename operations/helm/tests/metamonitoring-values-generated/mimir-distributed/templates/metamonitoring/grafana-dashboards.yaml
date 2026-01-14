@@ -14302,7 +14302,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Estimated memory consumption",
                             "legendLink": null
@@ -14351,7 +14351,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)",
+                            "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}[$__rate_interval])) or vector(0)",
                             "format": "time_series",
                             "legendFormat": "Queries",
                             "legendLink": null

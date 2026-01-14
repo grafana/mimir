@@ -390,7 +390,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.heatmapPanel('Estimated per-query memory consumption') +
-        $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))', 'Estimated memory consumption') +
+        $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, %s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.querier), 'Estimated memory consumption') +
         {
           options+: {
             legend+: {
@@ -428,7 +428,7 @@ local filename = 'mimir-queries.json';
       )
       .addPanel(
         $.timeseriesPanel("Fallback to Prometheus' query engine") +
-        $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)', 'Queries') +
+        $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, %s}[$__rate_interval])) or vector(0)' % $.jobMatcher($._config.job_names.querier), 'Queries') +
         { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
         $.panelDescription(
           "Fallback to Prometheus' query engine",
