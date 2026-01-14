@@ -28,6 +28,8 @@ Each project must have a [`MAINTAINERS.md`][maintainers] file with at least one 
 
 ### Team members
 
+#### Regular team members
+
 Team member status may be given to those who have made ongoing contributions to the Mimir project for at least 3 months. This is usually in the form of code improvements and/or notable work on documentation, but organizing events or user support could also be taken into account.
 
 New members may be proposed by any existing member by email to the [team mailing list][team]. It is highly desirable to reach consensus about acceptance of a new member. However, the proposal is ultimately voted on by a formal [supermajority vote](#supermajority-vote).
@@ -46,7 +48,17 @@ Upon death of a member, they leave the team automatically.
 
 In case a member leaves, the [offboarding](#offboarding) procedure is applied.
 
-The current team members are:
+#### Grafana Labs temporary team members
+
+Grafana Labs temporary team members are a subset of team members who interact with the Mimir project as part of their employment at Grafana Labs. They are expected to follow this governance document and participate in decision making as described herein.
+
+New Grafana Labs temporary team members are added without a public vote by a team member working at Grafana Labs who is not temporary. They appear in the list of team members with a note indicating their temporary status.
+
+Upon leaving the Mimir team at Grafana Labs or death of a member, a regular team member working at Grafana Labs will remove them from the list of team members.
+
+Grafana Labs temporary team members may become regular team members under the same condition as contributors who do not work at Grafana Labs.
+
+#### Current team members
 
 - Andrew Hall [@tcp13equals2](https://github.com/tcp13equals2) ([Grafana Labs](https://grafana.com/))
 - Andy Asp [@andyasp](https://github.com/andyasp) ([Grafana Labs](https://grafana.com/))
@@ -81,7 +93,7 @@ The current team members are:
 - Ying-jeanne Wang [@ying-jeanne](https://github.com/ying-jeanne) ([Grafana Labs](https://grafana.com/))
 - Đurica Yuri Nikolić [@duricanikolic](https://github.com/duricanikolic) ([Grafana Labs](https://grafana.com/))
 
-Previous team members:
+#### Previous team members
 
 - Goutham Veeramachaneni — [@gouthamve](https://github.com/gouthamve)
 - Jacob Lisi — [@jtlisi](https://github.com/jtlisi)
