@@ -303,9 +303,6 @@ type Config struct {
 
 	ReactiveLimiter reactivelimiter.Config `yaml:"reactive_limiter"`
 
-	// Enable lazy deserializing of OTLP protobuf messages
-	EnableOTLPLazyDeserializing bool `yaml:"enable_otlp_lazy_deserializing" category:"experimental"`
-
 	// Enable batched streaming for OTLP ingestion to reduce peak memory usage
 	EnableOTLPBatchedStreaming bool `yaml:"enable_otlp_batched_streaming" category:"experimental"`
 
@@ -362,9 +359,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
-	f.BoolVar(&cfg.EnableOTLPLazyDeserializing, "distributor.enable-otlp-lazy-deserializing", false, "Enable the lazy deserializing of OTel protobuf messages")
-	f.BoolVar(&cfg.EnableOTLPBatchedStreaming, "distributor.enable-otlp-batched-streaming", false, "Enable batched streaming for OTLP ingestion to reduce peak memory usage by processing ResourceMetrics in batches.")
-	f.IntVar(&cfg.OTLPBatchedStreamingBatchSize, "distributor.otlp-batched-streaming-batch-size", 1, "Number of ResourceMetrics to process per batch when batched streaming is enabled. Higher values reduce copy overhead but increase peak memory per batch.")
+	f.BoolVar(&cfg.EnableOTLPBatchedStreaming, "distributor.enable-otlp-batched-streaming", true, "Enable batched streaming for OTLP ingestion to reduce peak memory usage by processing ResourceMetrics in batches.")
+	f.IntVar(&cfg.OTLPBatchedStreamingBatchSize, "distributor.otlp-batched-streaming-batch-size", 10, "Number of ResourceMetrics to process per batch when batched streaming is enabled. Higher values reduce copy overhead but increase peak memory per batch.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }

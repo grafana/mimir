@@ -87,7 +87,6 @@ func OTLPHandler(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
-	enableOTLPLazyDeserializing bool,
 	enableBatchedStreaming bool,
 	batchedStreamingBatchSize int,
 	push PushFunc,
@@ -102,7 +101,7 @@ func OTLPHandler(
 		return newOTLPBatchedHandler(
 			maxRecvMsgSize, requestBufferPool, sourceIPs, limits,
 			resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-			retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, batchedStreamingBatchSize,
+			retryCfg, OTLPPushMiddlewares, batchedStreamingBatchSize,
 			push, pushMetrics, discardedDueToOtelParseError, logger,
 		)
 	}
@@ -110,7 +109,7 @@ func OTLPHandler(
 	return newOTLPDefaultHandler(
 		maxRecvMsgSize, requestBufferPool, sourceIPs, limits,
 		resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-		retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing,
+		retryCfg, OTLPPushMiddlewares,
 		push, pushMetrics, discardedDueToOtelParseError, logger,
 	)
 }
@@ -125,22 +124,14 @@ func newOTLPDefaultHandler(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
-	enableOTLPLazyDeserializing bool,
 	push PushFunc,
 	pushMetrics *PushMetrics,
 	discardedDueToOtelParseError *prometheus.CounterVec,
 	logger log.Logger,
 ) http.Handler {
 	// Create unmarshaler factory at handler creation time to avoid per-request overhead.
-	var createUnmarshaler protoUnmarshalerFactory
-	if enableOTLPLazyDeserializing {
-		createUnmarshaler = func(req *pmetricotlp.ExportRequest) proto.Message {
-			return otlpProtoUnmarshalerLazy{request: req}
-		}
-	} else {
-		createUnmarshaler = func(req *pmetricotlp.ExportRequest) proto.Message {
-			return otlpProtoUnmarshaler{request: req}
-		}
+	createUnmarshaler := func(req *pmetricotlp.ExportRequest) proto.Message {
+		return otlpProtoUnmarshaler{request: req}
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -198,7 +189,6 @@ func newOTLPBatchedHandler(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
-	enableOTLPLazyDeserializing bool,
 	batchSize int,
 	push PushFunc,
 	pushMetrics *PushMetrics,
@@ -218,7 +208,7 @@ func newOTLPBatchedHandler(
 		handleOTLPBatchedStreaming(
 			ctx, w, r, maxRecvMsgSize, requestBufferPool, limits,
 			resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-			retryCfg, OTLPPushMiddlewares, enableOTLPLazyDeserializing, batchSize,
+			retryCfg, OTLPPushMiddlewares, batchSize,
 			push, pushMetrics, discardedDueToOtelParseError, reqLogger,
 		)
 	})
@@ -316,7 +306,6 @@ func handleOTLPBatchedStreaming(
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	retryCfg RetryConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
-	enableOTLPLazyDeserializing bool,
 	batchSize int,
 	push PushFunc,
 	pushMetrics *PushMetrics,
@@ -328,7 +317,7 @@ func handleOTLPBatchedStreaming(
 	otlpReq, rawBytes, uncompressedBodySize, tenantID, convOpts, err := parseOTLPRequestForBatching(
 		ctx, r, maxRecvMsgSize, rb, limits,
 		resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
-		OTLPPushMiddlewares, enableOTLPLazyDeserializing, pushMetrics, logger,
+		OTLPPushMiddlewares, pushMetrics, logger,
 	)
 	if err != nil {
 		rb.CleanUp()
@@ -348,22 +337,21 @@ func handleOTLPBatchedStreaming(
 
 	// Create batch processor
 	processor := &otlpBatchProcessor{
-		limits:                  limits,
-		resourceAttrConfig:      resourceAttributePromotionConfig,
-		keepIdentifyingConfig:   keepIdentifyingOTelResourceAttributesConfig,
-		pushMetrics:             pushMetrics,
-		discardedCounter:        discardedDueToOtelParseError,
-		middlewares:             OTLPPushMiddlewares,
-		enableLazyDeserializing: enableOTLPLazyDeserializing,
-		push:                    push,
-		logger:                  logger,
-		batchSize:               batchSize,
+		limits:                limits,
+		resourceAttrConfig:   resourceAttributePromotionConfig,
+		keepIdentifyingConfig: keepIdentifyingOTelResourceAttributesConfig,
+		pushMetrics:          pushMetrics,
+		discardedCounter:     discardedDueToOtelParseError,
+		middlewares:          OTLPPushMiddlewares,
+		push:                 push,
+		logger:               logger,
+		batchSize:            batchSize,
 	}
 
 	// Process batches - use streaming iteration for protobuf if rawBytes available
 	softErrors, hardErr := processor.processBatched(ctx, otlpReq, rawBytes, tenantID, convOpts)
 
-	// Cleanup buffer after all batches complete (important for lazy deserialization)
+	// Cleanup buffer after all batches complete
 	rb.CleanUp()
 
 	// Handle response
@@ -396,7 +384,6 @@ func parseOTLPRequestForBatching(
 	resourceAttributePromotionConfig OTelResourceAttributePromotionConfig,
 	keepIdentifyingOTelResourceAttributesConfig KeepIdentifyingOTelResourceAttributesConfig,
 	OTLPPushMiddlewares []OTLPPushMiddleware,
-	enableOTLPLazyDeserializing bool,
 	pushMetrics *PushMetrics,
 	logger log.Logger,
 ) (pmetricotlp.ExportRequest, []byte, int, string, conversionOptions, error) {
@@ -461,12 +448,7 @@ func parseOTLPRequestForBatching(
 		// Streaming will parse rawBytes directly, avoiding double-parsing.
 		if len(OTLPPushMiddlewares) > 0 {
 			exportReq := pmetricotlp.NewExportRequest()
-			var unmarshaler proto.Unmarshaler
-			if enableOTLPLazyDeserializing {
-				unmarshaler = otlpProtoUnmarshalerLazy{request: &exportReq}
-			} else {
-				unmarshaler = otlpProtoUnmarshaler{request: &exportReq}
-			}
+			unmarshaler := otlpProtoUnmarshaler{request: &exportReq}
 			if err = unmarshaler.Unmarshal(rawBytes); err != nil {
 				return emptyReq, nil, 0, "", emptyOpts, err
 			}
@@ -965,20 +947,6 @@ func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
 	return o.request.UnmarshalProto(data)
 }
 
-// otlpProtoUnmarshalerLazy implements proto.Message wrapping pmetricotlp.ExportRequest
-// using lazy deserialization. This avoids parsing nested messages until they're accessed.
-type otlpProtoUnmarshalerLazy struct {
-	request *pmetricotlp.ExportRequest
-}
-
-func (o otlpProtoUnmarshalerLazy) ProtoMessage() {}
-func (o otlpProtoUnmarshalerLazy) Reset()        {}
-func (o otlpProtoUnmarshalerLazy) String() string { return "" }
-
-func (o otlpProtoUnmarshalerLazy) Unmarshal(data []byte) error {
-	return o.request.UnmarshalProtoLazy(data)
-}
-
 type conversionOptions struct {
 	addSuffixes                       bool
 	enableCTZeroIngestion             bool
@@ -1210,16 +1178,15 @@ func (e otelAttributeValueTooLongError) Error() string {
 // otlpBatchProcessor processes OTLP metrics in batches at the ResourceMetrics level
 // to reduce peak memory usage.
 type otlpBatchProcessor struct {
-	limits                  OTLPHandlerLimits
-	resourceAttrConfig      OTelResourceAttributePromotionConfig
-	keepIdentifyingConfig   KeepIdentifyingOTelResourceAttributesConfig
-	pushMetrics             *PushMetrics
-	discardedCounter        *prometheus.CounterVec
-	middlewares             []OTLPPushMiddleware
-	enableLazyDeserializing bool
-	push                    PushFunc
-	logger                  log.Logger
-	batchSize               int // Number of ResourceMetrics to process per batch
+	limits                OTLPHandlerLimits
+	resourceAttrConfig    OTelResourceAttributePromotionConfig
+	keepIdentifyingConfig KeepIdentifyingOTelResourceAttributesConfig
+	pushMetrics           *PushMetrics
+	discardedCounter      *prometheus.CounterVec
+	middlewares           []OTLPPushMiddleware
+	push                  PushFunc
+	logger                log.Logger
+	batchSize             int // Number of ResourceMetrics to process per batch
 }
 
 // processBatched processes OTLP metrics in batches sequentially.

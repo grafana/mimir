@@ -1116,7 +1116,7 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	limits := validation.MockDefaultOverrides()
 	handler := OTLPHandler(
 		10000000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, false, 1, pushFunc, nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, 1, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1206,30 +1206,10 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	}
 	limits := validation.MockDefaultOverrides()
 
-	b.Run("not-lazy", func(b *testing.B) {
+	b.Run("default", func(b *testing.B) {
 		handler := OTLPHandler(
 			200000000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, false, false, 1, pushFunc, nil, nil, log.NewNopLogger(),
-		)
-
-		md := pmetric.NewMetrics()
-		createResourceMetrics(md)
-		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
-		req := createOTLPProtoRequest(b, exportReq, "")
-
-		b.ResetTimer()
-		for range b.N {
-			resp := httptest.NewRecorder()
-			handler.ServeHTTP(resp, req)
-			require.Equal(b, http.StatusOK, resp.Code)
-			req.Body.(*reusableReader).Reset()
-		}
-	})
-
-	b.Run("lazy", func(b *testing.B) {
-		handler := OTLPHandler(
-			200000000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, true, false, 1, pushFunc, nil, nil, log.NewNopLogger(),
+			RetryConfig{}, nil, false, 1, pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
 		md := pmetric.NewMetrics()
@@ -1249,27 +1229,7 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	b.Run("batched-streaming", func(b *testing.B) {
 		handler := OTLPHandler(
 			200000000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, false, true, 1, pushFunc, nil, nil, log.NewNopLogger(),
-		)
-
-		md := pmetric.NewMetrics()
-		createResourceMetrics(md)
-		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
-		req := createOTLPProtoRequest(b, exportReq, "")
-
-		b.ResetTimer()
-		for range b.N {
-			resp := httptest.NewRecorder()
-			handler.ServeHTTP(resp, req)
-			require.Equal(b, http.StatusOK, resp.Code)
-			req.Body.(*reusableReader).Reset()
-		}
-	})
-
-	b.Run("batched-streaming-lazy", func(b *testing.B) {
-		handler := OTLPHandler(
-			200000000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, true, true, 1, pushFunc, nil, nil, log.NewNopLogger(),
+			RetryConfig{}, nil, true, 1, pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
 		md := pmetric.NewMetrics()
@@ -1291,7 +1251,7 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 		b.Run(fmt.Sprintf("batched-streaming-batch%d", batchSize), func(b *testing.B) {
 			handler := OTLPHandler(
 				200000000, nil, nil, limits, nil, nil,
-				RetryConfig{}, nil, false, true, batchSize, pushFunc, nil, nil, log.NewNopLogger(),
+				RetryConfig{}, nil, true, batchSize, pushFunc, nil, nil, log.NewNopLogger(),
 			)
 
 			md := pmetric.NewMetrics()
@@ -1347,23 +1307,19 @@ func BenchmarkOTLPHandlerPeakMemory(b *testing.B) {
 		name                 string
 		enableBatchStreaming bool
 		batchSize            int
-		enableLazy           bool
 	}
 
 	testCases := []testCase{
-		{"baseline", false, 1, false},
-		{"lazy", false, 1, true},
-		{"batched", true, 1, false},
-		{"batched-lazy", true, 1, true},
-		{"batched-batch10", true, 10, false},
-		{"batched-batch10-lazy", true, 10, true},
+		{"baseline", false, 1},
+		{"batched", true, 1},
+		{"batched-batch10", true, 10},
 	}
 
 	for _, tc := range testCases {
 		b.Run(tc.name, func(b *testing.B) {
 			handler := OTLPHandler(
 				200000000, nil, nil, limits, nil, nil,
-				RetryConfig{}, nil, tc.enableLazy, tc.enableBatchStreaming, tc.batchSize,
+				RetryConfig{}, nil, tc.enableBatchStreaming, tc.batchSize,
 				pushFunc, nil, nil, log.NewNopLogger(),
 			)
 
@@ -1934,7 +1890,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			handler := OTLPHandler(
 				tt.maxMsgSize, nil, nil, limits,
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
-				retryConfig, nil, false, false, 1, pusher, nil, nil,
+				retryConfig, nil, false, 1, pusher, nil, nil,
 				util_log.MakeLeveledLogger(logs, "info"),
 			)
 
@@ -2028,7 +1984,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, false, 1, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, 1, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			assert.NoError(t, err)
 			assert.Len(t, request.Timeseries, 3)
@@ -2073,7 +2029,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, false, 1, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, 1, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -2102,7 +2058,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, false, false, 1, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, 1, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -2133,7 +2089,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	handler := OTLPHandler(
 		140, nil, nil, nil, nil, nil,
-		RetryConfig{}, nil, false, false, 1, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, 1, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
@@ -2445,7 +2401,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 			)
 			handler := OTLPHandler(
 				100000, nil, nil, limits, nil, nil,
-				RetryConfig{}, nil, false, false, 1, func(_ context.Context, req *Request) error {
+				RetryConfig{}, nil, false, 1, func(_ context.Context, req *Request) error {
 					_, err := req.WriteRequest()
 					return err
 				}, nil, nil, log.NewNopLogger(),
@@ -2514,7 +2470,7 @@ func TestOTLPBatchedStreaming(t *testing.T) {
 
 		handler := OTLPHandler(
 			100000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, false, true, 1, // enable batched streaming
+			RetryConfig{}, nil, true, 1, // enable batched streaming
 			pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
@@ -2556,7 +2512,7 @@ func TestOTLPBatchedStreaming(t *testing.T) {
 
 		handler := OTLPHandler(
 			100000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, false, true, 1, // enable batched streaming
+			RetryConfig{}, nil, true, 1, // enable batched streaming
 			pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
@@ -2607,7 +2563,7 @@ func TestOTLPBatchedStreaming(t *testing.T) {
 
 		handler := OTLPHandler(
 			100000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, false, true, 1, // enable batched streaming
+			RetryConfig{}, nil, true, 1, // enable batched streaming
 			pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
@@ -2636,7 +2592,7 @@ func TestOTLPBatchedStreaming(t *testing.T) {
 
 		handler := OTLPHandler(
 			100000, nil, nil, limits, nil, nil,
-			RetryConfig{}, nil, false, true, 1, // enable batched streaming
+			RetryConfig{}, nil, true, 1, // enable batched streaming
 			pushFunc, nil, nil, log.NewNopLogger(),
 		)
 
