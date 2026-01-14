@@ -317,6 +317,11 @@ local filename = 'mimir-queries.json';
       )
     )
     .addRow(
+      $.row('Query-frontend - query engine')
+      .addPanel(queryMemoryConsumptionPanel('query-frontend', $._config.job_names.query_frontend))
+      .addPanel(mqeFallbackPanel('query-frontend', $._config.job_names.query_frontend))
+    )
+    .addRow(
       $.row('Ingester')
       .addPanel(
         $.timeseriesPanel('Series per query') +
