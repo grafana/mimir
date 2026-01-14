@@ -92,9 +92,10 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 	)
 	t.Cleanup(func() {
 		// Several services are started with New() and only closed on error cases in ingester.starting();
-		// Call start, then stop to clean up goroutines.
+		// Call start, which will fail and to trigger goroutine cleanup.
 		require.NoError(t, i0.StartAsync(ctx))
 		err := services.StopAndAwaitTerminated(ctx, i0)
+		// Error is propagated from failure in ingester.starting().
 		require.ErrorContains(t, err, "failed to start ingester subservices before partition reader")
 	})
 	i0Ro, i0RoTs := i0.lifecycler.GetReadOnlyState()

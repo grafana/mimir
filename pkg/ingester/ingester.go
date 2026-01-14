@@ -621,8 +621,12 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
 		if err != nil {
-			// If starting() fails for any reason (e.g., context canceled),
-			// stop the watcher started in New() to clean up goroutines.
+			// If starting() fails for any reason (e.g., context canceled), services must be stopped.
+
+			// Lifecycler may be stuck attempting to join; do not wait on Terminated status.
+			i.lifecycler.StopAsync()
+
+			// Clean up goroutines started in New().
 			i.subservicesWatcher.Close()
 		}
 	}()
