@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"go.opentelemetry.io/collector/featuregate"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -305,6 +306,9 @@ type Config struct {
 
 	// Enable lazy deserializing of OTLP protobuf messages
 	EnableOTLPLazyDeserializing bool `yaml:"enable_otlp_lazy_deserializing" category:"experimental"`
+
+	// Enable pdata object pool in OTLP deserializer
+	EnableOTLPObjectPool bool `yaml:"enable_otlp_object_pool" category:"experimental"`
 }
 
 // PushWrapper wraps around a push. It is similar to middleware.Interface.
@@ -357,6 +361,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
 	f.BoolVar(&cfg.EnableOTLPLazyDeserializing, "distributor.enable-otlp-lazy-deserializing", false, "Enable the lazy deserializing of OTel protobuf messages")
+	f.BoolVar(&cfg.EnableOTLPObjectPool, "distributor.enable-otlp-object-pool", false, "Enable the experimental object pool for OTLP deserializer")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }
@@ -747,6 +752,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 
 		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg)
 		subservices = append(subservices, d.usageTrackerClient)
+	}
+
+	// Enable OTLP object pool used when deserializing OTLP messages
+	// Ref: https://github.com/grafana/mimir/pull/13962
+	if cfg.EnableOTLPObjectPool {
+		featuregate.GlobalRegistry().Set("pdata.useProtoPooling", true);
 	}
 
 	// Register each metric only if the corresponding storage is enabled.
