@@ -131,7 +131,8 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 		require.ErrorContains(t, err, "failed to wait for instance to be active in ring")
 	})
 
-	awaitJoinCtx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	awaitJoinCtx, awaitJoinCancel := context.WithTimeout(context.Background(), 1*time.Second)
+	t.Cleanup(func() { awaitJoinCancel() })
 	err = i1.AwaitRunning(awaitJoinCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded) // i1 will not start as it blocks on i0 claiming tokens
 
