@@ -41,13 +41,20 @@ type MimirAppender struct {
 	metricFamilies map[string]metadata.Metadata
 }
 
+// Default capacities for map pre-sizing based on typical OTLP request sizes.
+// These reduce map resizing allocations for common workloads.
+const (
+	defaultRefsCapacity           = 256  // Typical number of unique series per request
+	defaultMetricFamiliesCapacity = 32   // Typical number of unique metric families
+)
+
 func NewCombinedAppender() *MimirAppender {
 	return &MimirAppender{
 		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
 		series:         mimirpb.PreallocTimeseriesSliceFromPool(),
-		refs:           make(map[uint64]labelsIdx),
-		collisionRefs:  make(map[uint64][]labelsIdx),
-		metricFamilies: make(map[string]metadata.Metadata),
+		refs:           make(map[uint64]labelsIdx, defaultRefsCapacity),
+		collisionRefs:  make(map[uint64][]labelsIdx), // Collisions are rare, no need to pre-size
+		metricFamilies: make(map[string]metadata.Metadata, defaultMetricFamiliesCapacity),
 	}
 }
 
@@ -66,8 +73,13 @@ func (c *MimirAppender) Clear() {
 	// Clear metadata
 	c.metadata = c.metadata[:0]
 
-	// Clear deduplication maps
-	clear(c.refs)
+	// Clear deduplication maps. If maps grew significantly, recreate with default capacity
+	// to avoid holding onto large allocations. Otherwise, clear in-place for efficiency.
+	if len(c.refs) > defaultRefsCapacity*4 {
+		c.refs = make(map[uint64]labelsIdx, defaultRefsCapacity)
+	} else {
+		clear(c.refs)
+	}
 	clear(c.collisionRefs)
 
 	// Note: we keep metricFamilies to avoid re-sending metadata for the same metrics

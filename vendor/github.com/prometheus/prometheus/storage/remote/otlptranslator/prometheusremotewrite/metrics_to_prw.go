@@ -94,6 +94,10 @@ type PrometheusConverter struct {
 	resourceLabels *cachedResourceLabels
 	scopeLabels    *cachedScopeLabels
 	labelNamer     otlptranslator.LabelNamer
+
+	// sanitizedLabels caches the results of label name sanitization within a request.
+	// This avoids repeated string allocations for the same label names.
+	sanitizedLabels map[string]string
 }
 
 // targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
@@ -104,10 +108,24 @@ type targetInfoKey struct {
 
 func NewPrometheusConverter(appender CombinedAppender) *PrometheusConverter {
 	return &PrometheusConverter{
-		scratchBuilder: labels.NewScratchBuilder(0),
-		builder:        labels.NewBuilder(labels.EmptyLabels()),
-		appender:       appender,
+		scratchBuilder:  labels.NewScratchBuilder(0),
+		builder:         labels.NewBuilder(labels.EmptyLabels()),
+		appender:        appender,
+		sanitizedLabels: make(map[string]string, 64), // Pre-size for typical label count
 	}
+}
+
+// buildLabelName returns a sanitized label name, using the cache to avoid repeated allocations.
+func (c *PrometheusConverter) buildLabelName(label string) (string, error) {
+	if sanitized, ok := c.sanitizedLabels[label]; ok {
+		return sanitized, nil
+	}
+	sanitized, err := c.labelNamer.Build(label)
+	if err != nil {
+		return "", err
+	}
+	c.sanitizedLabels[label] = sanitized
+	return sanitized, nil
 }
 
 func TranslatorMetricFromOtelMetric(metric pmetric.Metric) otlptranslator.Metric {
@@ -412,7 +430,7 @@ func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, sett
 	// Compute promoted resource attributes
 	if settings.PromoteResourceAttributes != nil {
 		c.scratchBuilder.Reset()
-		settings.PromoteResourceAttributes.addPromotedAttributesToScratch(&c.scratchBuilder, resourceAttrs, c.labelNamer)
+		settings.PromoteResourceAttributes.addPromotedAttributesToScratch(&c.scratchBuilder, resourceAttrs, c.buildLabelName)
 		c.resourceLabels.promotedLabels = c.scratchBuilder.Labels()
 	}
 }
@@ -432,7 +450,7 @@ func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) {
 	// Compute scope attributes
 	c.scratchBuilder.Reset()
 	scope.attributes.Range(func(k string, v pcommon.Value) bool {
-		name, _ := c.labelNamer.Build("otel_scope_" + k)
+		name, _ := c.buildLabelName("otel_scope_" + k)
 		c.scratchBuilder.Add(name, v.AsString())
 		return true
 	})
@@ -618,9 +636,12 @@ func (c *PrometheusConverter) FromResourceMetrics(
 	return annots, errs
 }
 
+// LabelNameBuilder is a function that builds/sanitizes label names.
+type LabelNameBuilder func(string) (string, error)
+
 // addPromotedAttributesToScratch adds promoted resource attributes to a ScratchBuilder.
 // This is used for caching promoted attributes.
-func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labels.ScratchBuilder, resourceAttributes pcommon.Map, labelNamer otlptranslator.LabelNamer) {
+func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labels.ScratchBuilder, resourceAttributes pcommon.Map, buildLabelName LabelNameBuilder) {
 	if s == nil {
 		return
 	}
@@ -628,7 +649,7 @@ func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labe
 	if s.promoteAll {
 		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 			if _, exists := s.attrs[name]; !exists {
-				normalized, err := labelNamer.Build(name)
+				normalized, err := buildLabelName(name)
 				if err != nil {
 					return true // skip on error
 				}
@@ -640,7 +661,7 @@ func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labe
 	}
 	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
 		if _, exists := s.attrs[name]; exists {
-			normalized, err := labelNamer.Build(name)
+			normalized, err := buildLabelName(name)
 			if err != nil {
 				return true // skip on error
 			}

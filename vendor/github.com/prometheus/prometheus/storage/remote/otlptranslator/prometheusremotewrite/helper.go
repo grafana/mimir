@@ -85,16 +85,18 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	c.scratchBuilder.Sort()
 	sortedLabels := c.scratchBuilder.Labels()
 
-	// Use cached labelNamer if available, otherwise create one
-	var labelNamer otlptranslator.LabelNamer
+	// Use cached labelNamer if available, otherwise create one and set it for caching.
+	// The labelNamer must be set on c.labelNamer for buildLabelName to work correctly.
 	if c.resourceLabels != nil {
-		labelNamer = c.labelNamer
+		// labelNamer already set in setResourceContext
 	} else {
-		labelNamer = otlptranslator.LabelNamer{
+		c.labelNamer = otlptranslator.LabelNamer{
 			UTF8Allowed:                 settings.AllowUTF8,
 			UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
 			PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
 		}
+		// Clear the cache since settings may have changed
+		clear(c.sanitizedLabels)
 	}
 
 	if settings.AllowUTF8 {
@@ -109,7 +111,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 			if sortErr != nil {
 				return
 			}
-			finalKey, err := labelNamer.Build(l.Name)
+			finalKey, err := c.buildLabelName(l.Name)
 			if err != nil {
 				sortErr = err
 				return
@@ -152,7 +154,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
 		instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
 
-		err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, labelNamer)
+		err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, c.labelNamer)
 		if err != nil {
 			return labels.EmptyLabels(), err
 		}
@@ -193,7 +195,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		// No cache - compute scope labels from scratch
 		var rangeErr error
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
-			name, err := labelNamer.Build("otel_scope_" + k)
+			name, err := c.buildLabelName("otel_scope_" + k)
 			if err != nil {
 				rangeErr = err
 				return false
@@ -232,7 +234,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		// internal labels should be maintained.
 		if len(name) <= 4 || name[:2] != "__" || name[len(name)-2:] != "__" {
 			var err error
-			name, err = labelNamer.Build(name)
+			name, err = c.buildLabelName(name)
 			if err != nil {
 				return labels.EmptyLabels(), err
 			}

@@ -2246,7 +2246,8 @@ func (d *Distributor) sendWriteRequestToBackends(ctx context.Context, tenantID s
 func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(ingester ring.InstanceDesc, indexes []int) error {
-			req := req.ForIndexes(indexes, initialMetadataIndex)
+			req := req.ForIndexesPooled(indexes, initialMetadataIndex)
+			defer mimirpb.ReuseForIndexesWriteRequest(req)
 
 			h, err := d.ingesterPool.GetClientForInstance(ingester)
 			if err != nil {
@@ -2271,7 +2272,8 @@ func (d *Distributor) sendWriteRequestToIngesters(ctx context.Context, tenantRin
 func (d *Distributor) sendWriteRequestToPartitions(ctx context.Context, tenantID string, tenantRing ring.DoBatchRing, req *mimirpb.WriteRequest, keys []uint32, initialMetadataIndex int, remoteRequestContext func() context.Context, batchOptions ring.DoBatchOptions) error {
 	err := ring.DoBatchWithOptions(ctx, ring.WriteNoExtend, tenantRing, keys,
 		func(partition ring.InstanceDesc, indexes []int) error {
-			req := req.ForIndexes(indexes, initialMetadataIndex)
+			req := req.ForIndexesPooled(indexes, initialMetadataIndex)
+			defer mimirpb.ReuseForIndexesWriteRequest(req)
 
 			// The partition ID is stored in the ring.InstanceDesc Id.
 			partitionID, err := strconv.ParseUint(partition.Id, 10, 31)

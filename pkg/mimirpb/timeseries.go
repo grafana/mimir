@@ -817,6 +817,18 @@ func copyHistogram(src Histogram) Histogram {
 	}
 }
 
+// forIndexesWriteRequestPool pools WriteRequest objects used by ForIndexes to reduce allocations.
+// The pooled WriteRequest has pre-allocated slices for timeseries and metadata.
+var forIndexesWriteRequestPool = zeropool.New(func() *WriteRequest {
+	return &WriteRequest{
+		// Pre-allocate slices with typical capacity for per-ingester batches.
+		// Most deployments have 3 ingesters with replication factor 3, so each
+		// ingester gets roughly 1/3 of the series.
+		Timeseries: make([]PreallocTimeseries, 0, 512),
+		Metadata:   make([]*MetricMetadata, 0, 32),
+	}
+})
+
 // ForIndexes builds a new WriteRequest from the given WriteRequest, containing only the timeseries and metadata for the given indexes.
 // It assumes the indexes before the initialMetadataIndex are timeseries, and the rest are metadata.
 func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *WriteRequest {
@@ -846,6 +858,69 @@ func (m *WriteRequest) ForIndexes(indexes []int, initialMetadataIndex int) *Writ
 		Source:              m.Source,
 		SkipLabelValidation: m.SkipLabelValidation,
 	}
+}
+
+// ForIndexesPooled is like ForIndexes but uses a pooled WriteRequest to reduce allocations.
+// The returned WriteRequest MUST be returned to the pool by calling ReuseForIndexesWriteRequest
+// after it is no longer needed (e.g., after the gRPC call completes).
+func (m *WriteRequest) ForIndexesPooled(indexes []int, initialMetadataIndex int) *WriteRequest {
+	var timeseriesCount, metadataCount int
+	for _, i := range indexes {
+		if i >= initialMetadataIndex {
+			metadataCount++
+		} else {
+			timeseriesCount++
+		}
+	}
+
+	req := forIndexesWriteRequestPool.Get()
+
+	// Ensure slices have sufficient capacity, reusing existing backing arrays when possible.
+	if cap(req.Timeseries) >= timeseriesCount {
+		req.Timeseries = req.Timeseries[:0]
+	} else {
+		req.Timeseries = make([]PreallocTimeseries, 0, timeseriesCount)
+	}
+	if cap(req.Metadata) >= metadataCount {
+		req.Metadata = req.Metadata[:0]
+	} else {
+		req.Metadata = make([]*MetricMetadata, 0, metadataCount)
+	}
+
+	for _, i := range indexes {
+		if i >= initialMetadataIndex {
+			req.Metadata = append(req.Metadata, m.Metadata[i-initialMetadataIndex])
+		} else {
+			req.Timeseries = append(req.Timeseries, m.Timeseries[i])
+		}
+	}
+
+	req.Source = m.Source
+	req.SkipLabelValidation = m.SkipLabelValidation
+
+	return req
+}
+
+// ReuseForIndexesWriteRequest returns a WriteRequest obtained from ForIndexesPooled back to the pool.
+// The WriteRequest must not be used after calling this function.
+func ReuseForIndexesWriteRequest(req *WriteRequest) {
+	if req == nil {
+		return
+	}
+	// Clear references to allow GC of the underlying timeseries/metadata.
+	// We keep the backing arrays for reuse.
+	for i := range req.Timeseries {
+		req.Timeseries[i] = PreallocTimeseries{}
+	}
+	for i := range req.Metadata {
+		req.Metadata[i] = nil
+	}
+	req.Timeseries = req.Timeseries[:0]
+	req.Metadata = req.Metadata[:0]
+	req.Source = 0
+	req.SkipLabelValidation = false
+
+	forIndexesWriteRequestPool.Put(req)
 }
 
 func preallocSliceIfNeeded[T any](size int) []T {
