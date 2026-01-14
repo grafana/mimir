@@ -6297,10 +6297,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
-
-# (experimental) Allow client creation even if initial DNS resolution fails.
-# CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
-[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### s3_storage_backend
