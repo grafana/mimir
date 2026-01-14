@@ -71,7 +71,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnableSkippingHistogramDecoding:                                               true,
 		EnableNarrowBinarySelectors:                                                   true,
 		EnableEliminateDeduplicateAndMerge:                                            true,
-		EnableReduceMatchers:                                                          false,
+		EnableReduceMatchers:                                                          true,
 		EnableProjectionPushdown:                                                      true,
 	}
 }
