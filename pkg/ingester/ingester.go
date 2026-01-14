@@ -621,26 +621,23 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
 		if err != nil {
-			// If starting() fails for any reason (e.g., context canceled), services must be stopped.
-
-			// Lifecycler may be stuck attempting to join; do not wait on Terminated status.
-			i.lifecycler.StopAsync()
-
-			// Clean up goroutines started in New().
+			// If starting() fails for any reason (e.g., context canceled),
+			// stop the watcher started in New() to clean up goroutines.
 			i.subservicesWatcher.Close()
 		}
 	}()
 
 	// First of all we have to check if the shutdown marker is set. This needs to be done
 	// as first thing because, if found, it may change the behaviour of the ingester startup.
-	if exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)); err != nil {
+	var exists bool
+	if exists, err = shutdownmarker.Exists(shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)); err != nil {
 		return errors.Wrap(err, "failed to check ingester shutdown marker")
 	} else if exists {
 		level.Info(i.logger).Log("msg", "detected existing shutdown marker, setting unregister and flush on shutdown", "path", shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir))
 		i.setPrepareShutdown()
 	}
 
-	if err := i.openExistingTSDB(ctx); err != nil {
+	if err = i.openExistingTSDB(ctx); err != nil {
 		// Try to rollback and close opened TSDBs before halting the ingester.
 		i.closeAllTSDB()
 
@@ -659,7 +656,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		//
 		// We pass ingester's service context to ownedSeriesService, to make ownedSeriesService stop when ingester's
 		// context is done (i.e. when ingester fails in Starting state, or when ingester exits Running state).
-		if err := services.StartAndAwaitRunning(ctx, i.ownedSeriesService); err != nil {
+		if err = services.StartAndAwaitRunning(ctx, i.ownedSeriesService); err != nil {
 			return errors.Wrap(err, "failed to start owned series service")
 		}
 	}
@@ -675,13 +672,13 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	// BEFORE the ingester ring lifecycler is started, because once the ingester ring lifecycler will start
 	// it will switch the ingester state in the ring to ACTIVE.
 	if i.ingestReader != nil {
-		if err := services.StartAndAwaitRunning(ctx, i.ingestReader); err != nil {
+		if err = services.StartAndAwaitRunning(ctx, i.ingestReader); err != nil {
 			return errors.Wrap(err, "failed to start partition reader")
 		}
 	}
 
 	// Important: we want to keep lifecycler running until we ask it to stop, so we need to give it independent context
-	if err := i.lifecycler.StartAsync(context.Background()); err != nil {
+	if err = i.lifecycler.StartAsync(context.Background()); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
 	if err = i.lifecycler.AwaitRunning(ctx); err != nil {
