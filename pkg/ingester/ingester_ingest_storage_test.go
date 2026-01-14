@@ -37,6 +37,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
+	"go.uber.org/goleak"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -48,9 +49,9 @@ import (
 )
 
 func TestIngester_Startup_PartitionRing(t *testing.T) {
-	// TODO: a single goroutine remains from the ingester lifecycler stuck waiting to join;
+	// TODO: a single goroutine may remain from an ingester lifecycler stuck waiting to join;
 	//   update dskit to pass a cancellable context or make autoJoin timeout configurable.
-	//util_test.VerifyNoLeak(t)
+	util_test.VerifyNoLeak(t, goleak.IgnoreAnyFunction("github.com/grafana/dskit/ring.(*Lifecycler).autoJoin"))
 	var err error
 
 	cfg := defaultIngesterTestConfig(t)
@@ -157,7 +158,9 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 }
 
 func TestIngester_Start(t *testing.T) {
-	util_test.VerifyNoLeak(t)
+	// TODO: leak detector will fail on leaked goroutine from TestIngester_Startup_PartitionRing;
+	//   revert to util_test.VerifyNoLeak(t) after fix in other test.
+	util_test.VerifyNoLeak(t, goleak.IgnoreAnyFunction("github.com/grafana/dskit/ring.(*Lifecycler).autoJoin"))
 
 	t.Run("should replay the partition at startup (after a restart) and then join the ingesters and partitions ring", func(t *testing.T) {
 		var (
