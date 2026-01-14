@@ -362,8 +362,8 @@ type MultitenantCompactor struct {
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
 	outOfSpace prometheus.Counter
 
-	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler. This metric is only set when 
-	// the compactor is running in scheduler mode
+	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler. This metric is only set when the
+	// compactor is running in scheduler mode.
 	schedulerLastContact prometheus.Gauge
 
 	// Metrics shared across all BucketCompactor instances.
