@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -18,17 +19,17 @@ import (
 // Profile are an implementation of the pprofextended data model.
 
 type Profile struct {
-	OriginalPayloadFormat  string
+	SampleType             ValueType
 	Samples                []*Sample
-	OriginalPayload        []byte
-	AttributeIndices       []int32
 	TimeUnixNano           uint64
 	DurationNano           uint64
-	Period                 int64
-	SampleType             ValueType
 	PeriodType             ValueType
-	DroppedAttributesCount uint32
+	Period                 int64
 	ProfileId              ProfileID
+	DroppedAttributesCount uint32
+	OriginalPayloadFormat  string
+	OriginalPayload        []byte
+	AttributeIndices       []int32
 }
 
 var (
@@ -55,13 +56,12 @@ func DeleteProfile(orig *Profile, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteValueType(&orig.SampleType, false)
 	for i := range orig.Samples {
 		DeleteSample(orig.Samples[i], true)
 	}
-
 	DeleteValueType(&orig.PeriodType, false)
-
 	DeleteProfileID(&orig.ProfileId, false)
 
 	orig.Reset()
@@ -88,15 +88,21 @@ func CopyProfile(dest, src *Profile) *Profile {
 	dest.Samples = CopySamplePtrSlice(dest.Samples, src.Samples)
 
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	dest.DurationNano = src.DurationNano
+
 	CopyValueType(&dest.PeriodType, &src.PeriodType)
 
 	dest.Period = src.Period
+
 	CopyProfileID(&dest.ProfileId, &src.ProfileId)
 
 	dest.DroppedAttributesCount = src.DroppedAttributesCount
+
 	dest.OriginalPayloadFormat = src.OriginalPayloadFormat
+
 	dest.OriginalPayload = src.OriginalPayload
+
 	dest.AttributeIndices = append(dest.AttributeIndices[:0], src.AttributeIndices...)
 
 	return dest
@@ -210,7 +216,6 @@ func (orig *Profile) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -266,33 +271,30 @@ func (orig *Profile) SizeProto() int {
 		l = orig.Samples[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.DurationNano != uint64(0) {
+	if orig.DurationNano != 0 {
 		n += 1 + proto.Sov(uint64(orig.DurationNano))
 	}
 	l = orig.PeriodType.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-	if orig.Period != int64(0) {
+	if orig.Period != 0 {
 		n += 1 + proto.Sov(uint64(orig.Period))
 	}
 	l = orig.ProfileId.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		n += 1 + proto.Sov(uint64(orig.DroppedAttributesCount))
 	}
-
 	l = len(orig.OriginalPayloadFormat)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.OriginalPayload)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	if len(orig.AttributeIndices) > 0 {
 		l = 0
 		for _, e := range orig.AttributeIndices {
@@ -320,13 +322,13 @@ func (orig *Profile) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x12
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
 		buf[pos] = 0x19
 	}
-	if orig.DurationNano != uint64(0) {
+	if orig.DurationNano != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.DurationNano))
 		pos--
 		buf[pos] = 0x20
@@ -337,7 +339,7 @@ func (orig *Profile) MarshalProto(buf []byte) int {
 	pos--
 	buf[pos] = 0x2a
 
-	if orig.Period != int64(0) {
+	if orig.Period != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Period))
 		pos--
 		buf[pos] = 0x30
@@ -348,7 +350,7 @@ func (orig *Profile) MarshalProto(buf []byte) int {
 	pos--
 	buf[pos] = 0x3a
 
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.DroppedAttributesCount))
 		pos--
 		buf[pos] = 0x40
@@ -383,6 +385,10 @@ func (orig *Profile) MarshalProto(buf []byte) int {
 }
 
 func (orig *Profile) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Profile) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -408,7 +414,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.SampleType.UnmarshalProto(buf[startPos:pos])
+			err = orig.SampleType.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -424,7 +430,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Samples = append(orig.Samples, NewSample())
-			err = orig.Samples[len(orig.Samples)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Samples[len(orig.Samples)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -450,6 +456,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.DurationNano = uint64(num)
 
 		case 5:
@@ -463,7 +470,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.PeriodType.UnmarshalProto(buf[startPos:pos])
+			err = orig.PeriodType.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -477,6 +484,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.Period = int64(num)
 
 		case 7:
@@ -490,7 +498,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.ProfileId.UnmarshalProto(buf[startPos:pos])
+			err = orig.ProfileId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -504,6 +512,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.DroppedAttributesCount = uint32(num)
 
 		case 9:
@@ -516,7 +525,7 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.OriginalPayloadFormat = string(buf[startPos:pos])
+			orig.OriginalPayloadFormat = proto.YoloString(buf[startPos:pos])
 
 		case 10:
 			if wireType != proto.WireTypeLen {
@@ -559,6 +568,183 @@ func (orig *Profile) UnmarshalProto(buf []byte) error {
 					return err
 				}
 				orig.AttributeIndices = append(orig.AttributeIndices, int32(num))
+			default:
+				return fmt.Errorf("proto: wrong wireType = %d for field AttributeIndices", wireType)
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipProfileProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SampleType", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipValueTypeProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Samples", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipSampleProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TimeUnixNano", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field DurationNano", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field PeriodType", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipValueTypeProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 6:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Period", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 7:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProfileId", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipProfileIDProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 8:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field DroppedAttributesCount", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 9:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field OriginalPayloadFormat", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 10:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field OriginalPayload", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 11:
+			switch wireType {
+			case proto.WireTypeLen:
+				var length int
+				length, pos, err = proto.ConsumeLen(buf, pos)
+				if err != nil {
+					return err
+				}
+				startPos := pos - length
+
+				for startPos < pos {
+					startPos, err = proto.SkipVarint(buf[:pos], startPos)
+					if err != nil {
+						return err
+					}
+				}
+				if startPos != pos {
+					return fmt.Errorf("proto: invalid field len = %d for field AttributeIndices", pos-startPos)
+				}
+			case proto.WireTypeVarint:
+
+				pos, err = proto.SkipVarint(buf, pos)
+				if err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("proto: wrong wireType = %d for field AttributeIndices", wireType)
 			}

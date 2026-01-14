@@ -45,6 +45,11 @@ func (ms Traces) MoveTo(dest Traces) {
 	*dest.getOrig(), *ms.getOrig() = *ms.getOrig(), *dest.getOrig()
 }
 
+func (ms Traces) ReturnToPool() {
+	ms.getState().AssertMutable()
+	internal.DeleteExportTraceServiceRequest(ms.getOrig(), true)
+}
+
 // ResourceSpans returns the ResourceSpans associated with this Traces.
 func (ms Traces) ResourceSpans() ResourceSpansSlice {
 	return newResourceSpansSlice(&ms.getOrig().ResourceSpans, ms.getState())

@@ -48,6 +48,11 @@ func (ms ScopeMetrics) MoveTo(dest ScopeMetrics) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ScopeMetrics) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteScopeMetrics(ms.orig, true)
+}
+
 // Scope returns the scope associated with this ScopeMetrics.
 func (ms ScopeMetrics) Scope() pcommon.InstrumentationScope {
 	return pcommon.InstrumentationScope(internal.NewInstrumentationScopeWrapper(&ms.orig.Scope, ms.state))

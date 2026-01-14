@@ -45,6 +45,11 @@ func (ms Logs) MoveTo(dest Logs) {
 	*dest.getOrig(), *ms.getOrig() = *ms.getOrig(), *dest.getOrig()
 }
 
+func (ms Logs) ReturnToPool() {
+	ms.getState().AssertMutable()
+	internal.DeleteExportLogsServiceRequest(ms.getOrig(), true)
+}
+
 // ResourceLogs returns the ResourceLogs associated with this Logs.
 func (ms Logs) ResourceLogs() ResourceLogsSlice {
 	return newResourceLogsSlice(&ms.getOrig().ResourceLogs, ms.getState())

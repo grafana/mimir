@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -71,7 +72,9 @@ func CopyInstrumentationScope(dest, src *InstrumentationScope) *InstrumentationS
 		dest = NewInstrumentationScope()
 	}
 	dest.Name = src.Name
+
 	dest.Version = src.Version
+
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.DroppedAttributesCount = src.DroppedAttributesCount
@@ -185,12 +188,10 @@ func (orig *InstrumentationScope) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.Name)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Version)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -199,7 +200,7 @@ func (orig *InstrumentationScope) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		n += 1 + proto.Sov(uint64(orig.DroppedAttributesCount))
 	}
 	return n
@@ -232,7 +233,7 @@ func (orig *InstrumentationScope) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x1a
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.DroppedAttributesCount))
 		pos--
 		buf[pos] = 0x20
@@ -241,6 +242,10 @@ func (orig *InstrumentationScope) MarshalProto(buf []byte) int {
 }
 
 func (orig *InstrumentationScope) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *InstrumentationScope) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -265,7 +270,7 @@ func (orig *InstrumentationScope) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Name = string(buf[startPos:pos])
+			orig.Name = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -277,7 +282,7 @@ func (orig *InstrumentationScope) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Version = string(buf[startPos:pos])
+			orig.Version = proto.YoloString(buf[startPos:pos])
 
 		case 3:
 			if wireType != proto.WireTypeLen {
@@ -290,7 +295,7 @@ func (orig *InstrumentationScope) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -304,7 +309,79 @@ func (orig *InstrumentationScope) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.DroppedAttributesCount = uint32(num)
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipInstrumentationScopeProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Version", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Attributes", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipKeyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field DroppedAttributesCount", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

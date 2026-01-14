@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -18,17 +19,17 @@ import (
 // LogRecord are experimental implementation of OpenTelemetry Log Data Model.
 
 type LogRecord struct {
-	Body                   AnyValue
-	SeverityText           string
-	EventName              string
-	Attributes             []KeyValue
 	TimeUnixNano           uint64
 	ObservedTimeUnixNano   uint64
 	SeverityNumber         SeverityNumber
+	SeverityText           string
+	Body                   AnyValue
+	Attributes             []KeyValue
 	DroppedAttributesCount uint32
 	Flags                  uint32
 	TraceId                TraceID
 	SpanId                 SpanID
+	EventName              string
 }
 
 var (
@@ -60,7 +61,6 @@ func DeleteLogRecord(orig *LogRecord, nullable bool) {
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
-
 	DeleteTraceID(&orig.TraceId, false)
 	DeleteSpanID(&orig.SpanId, false)
 
@@ -84,15 +84,21 @@ func CopyLogRecord(dest, src *LogRecord) *LogRecord {
 		dest = NewLogRecord()
 	}
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	dest.ObservedTimeUnixNano = src.ObservedTimeUnixNano
+
 	dest.SeverityNumber = src.SeverityNumber
+
 	dest.SeverityText = src.SeverityText
+
 	CopyAnyValue(&dest.Body, &src.Body)
 
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.DroppedAttributesCount = src.DroppedAttributesCount
+
 	dest.Flags = src.Flags
+
 	CopyTraceID(&dest.TraceId, &src.TraceId)
 
 	CopySpanID(&dest.SpanId, &src.SpanId)
@@ -252,16 +258,15 @@ func (orig *LogRecord) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.ObservedTimeUnixNano != uint64(0) {
+	if orig.ObservedTimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.SeverityNumber != SeverityNumber(0) {
+	if orig.SeverityNumber != 0 {
 		n += 1 + proto.Sov(uint64(orig.SeverityNumber))
 	}
-
 	l = len(orig.SeverityText)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -272,17 +277,16 @@ func (orig *LogRecord) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		n += 1 + proto.Sov(uint64(orig.DroppedAttributesCount))
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 5
 	}
 	l = orig.TraceId.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
 	l = orig.SpanId.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-
 	l = len(orig.EventName)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -294,19 +298,19 @@ func (orig *LogRecord) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
 		buf[pos] = 0x9
 	}
-	if orig.ObservedTimeUnixNano != uint64(0) {
+	if orig.ObservedTimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.ObservedTimeUnixNano))
 		pos--
 		buf[pos] = 0x59
 	}
-	if orig.SeverityNumber != SeverityNumber(0) {
+	if orig.SeverityNumber != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.SeverityNumber))
 		pos--
 		buf[pos] = 0x10
@@ -332,12 +336,12 @@ func (orig *LogRecord) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x32
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.DroppedAttributesCount))
 		pos--
 		buf[pos] = 0x38
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos -= 4
 		binary.LittleEndian.PutUint32(buf[pos:], uint32(orig.Flags))
 		pos--
@@ -367,6 +371,10 @@ func (orig *LogRecord) MarshalProto(buf []byte) int {
 }
 
 func (orig *LogRecord) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *LogRecord) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -414,6 +422,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.SeverityNumber = SeverityNumber(num)
 
 		case 3:
@@ -426,7 +435,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SeverityText = string(buf[startPos:pos])
+			orig.SeverityText = proto.YoloString(buf[startPos:pos])
 
 		case 5:
 			if wireType != proto.WireTypeLen {
@@ -439,7 +448,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Body.UnmarshalProto(buf[startPos:pos])
+			err = orig.Body.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -455,7 +464,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -469,6 +478,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.DroppedAttributesCount = uint32(num)
 
 		case 8:
@@ -494,7 +504,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.TraceId.UnmarshalProto(buf[startPos:pos])
+			err = orig.TraceId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -510,7 +520,7 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.SpanId.UnmarshalProto(buf[startPos:pos])
+			err = orig.SpanId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -525,7 +535,166 @@ func (orig *LogRecord) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.EventName = string(buf[startPos:pos])
+			orig.EventName = proto.YoloString(buf[startPos:pos])
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipLogRecordProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TimeUnixNano", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 11:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ObservedTimeUnixNano", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeverityNumber", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SeverityText", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Body", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipAnyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 6:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Attributes", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipKeyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 7:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field DroppedAttributesCount", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 8:
+			if wireType != proto.WireTypeI32 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Flags", wireType)
+			}
+
+			pos, err = proto.SkipI32(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 9:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field TraceId", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipTraceIDProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 10:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SpanId", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipSpanIDProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 12:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field EventName", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

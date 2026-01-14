@@ -10,14 +10,15 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 // ExponentialHistogramDataPointBuckets are a set of bucket counts, encoded in a contiguous array of counts.
 type ExponentialHistogramDataPointBuckets struct {
-	BucketCounts []uint64
 	Offset       int32
+	BucketCounts []uint64
 }
 
 var (
@@ -65,6 +66,7 @@ func CopyExponentialHistogramDataPointBuckets(dest, src *ExponentialHistogramDat
 		dest = NewExponentialHistogramDataPointBuckets()
 	}
 	dest.Offset = src.Offset
+
 	dest.BucketCounts = append(dest.BucketCounts[:0], src.BucketCounts...)
 
 	return dest
@@ -139,7 +141,6 @@ func (orig *ExponentialHistogramDataPointBuckets) MarshalJSON(dest *json.Stream)
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -164,10 +165,9 @@ func (orig *ExponentialHistogramDataPointBuckets) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.Offset != int32(0) {
+	if orig.Offset != 0 {
 		n += 1 + proto.Soz(uint64(orig.Offset))
 	}
-
 	if len(orig.BucketCounts) > 0 {
 		l = 0
 		for _, e := range orig.BucketCounts {
@@ -182,7 +182,7 @@ func (orig *ExponentialHistogramDataPointBuckets) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.Offset != int32(0) {
+	if orig.Offset != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64((uint32(orig.Offset)<<1)^uint32(orig.Offset>>31)))
 		pos--
 		buf[pos] = 0x8
@@ -201,6 +201,10 @@ func (orig *ExponentialHistogramDataPointBuckets) MarshalProto(buf []byte) int {
 }
 
 func (orig *ExponentialHistogramDataPointBuckets) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ExponentialHistogramDataPointBuckets) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -224,6 +228,7 @@ func (orig *ExponentialHistogramDataPointBuckets) UnmarshalProto(buf []byte) err
 			if err != nil {
 				return err
 			}
+
 			orig.Offset = int32(uint32(num>>1) ^ uint32(int32((num&1)<<31)>>31))
 		case 2:
 			switch wireType {
@@ -252,6 +257,69 @@ func (orig *ExponentialHistogramDataPointBuckets) UnmarshalProto(buf []byte) err
 					return err
 				}
 				orig.BucketCounts = append(orig.BucketCounts, uint64(num))
+			default:
+				return fmt.Errorf("proto: wrong wireType = %d for field BucketCounts", wireType)
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipExponentialHistogramDataPointBucketsProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Offset", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			switch wireType {
+			case proto.WireTypeLen:
+				var length int
+				length, pos, err = proto.ConsumeLen(buf, pos)
+				if err != nil {
+					return err
+				}
+				startPos := pos - length
+
+				for startPos < pos {
+					startPos, err = proto.SkipVarint(buf[:pos], startPos)
+					if err != nil {
+						return err
+					}
+				}
+				if startPos != pos {
+					return fmt.Errorf("proto: invalid field len = %d for field BucketCounts", pos-startPos)
+				}
+			case proto.WireTypeVarint:
+
+				pos, err = proto.SkipVarint(buf, pos)
+				if err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("proto: wrong wireType = %d for field BucketCounts", wireType)
 			}

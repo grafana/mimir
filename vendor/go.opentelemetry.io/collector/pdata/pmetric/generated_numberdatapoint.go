@@ -48,6 +48,11 @@ func (ms NumberDataPoint) MoveTo(dest NumberDataPoint) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms NumberDataPoint) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteNumberDataPoint(ms.orig, true)
+}
+
 // Attributes returns the Attributes associated with this NumberDataPoint.
 func (ms NumberDataPoint) Attributes() pcommon.Map {
 	return pcommon.Map(internal.NewMapWrapper(&ms.orig.Attributes, ms.state))
@@ -103,7 +108,9 @@ func (ms NumberDataPoint) SetDoubleValue(v float64) {
 	}
 	ov.AsDouble = v
 	ms.orig.Value = ov
-} // IntValue returns the int associated with this NumberDataPoint.
+}
+
+// IntValue returns the int associated with this NumberDataPoint.
 func (ms NumberDataPoint) IntValue() int64 {
 	return ms.orig.GetAsInt()
 }

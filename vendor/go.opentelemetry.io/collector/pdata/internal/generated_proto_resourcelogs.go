@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -46,14 +47,15 @@ func DeleteResourceLogs(orig *ResourceLogs, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteResource(&orig.Resource, false)
 	for i := range orig.ScopeLogs {
 		DeleteScopeLogs(orig.ScopeLogs[i], true)
 	}
-
 	for i := range orig.DeprecatedScopeLogs {
 		DeleteScopeLogs(orig.DeprecatedScopeLogs[i], true)
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolResourceLogs.Put(orig)
@@ -78,6 +80,7 @@ func CopyResourceLogs(dest, src *ResourceLogs) *ResourceLogs {
 	dest.ScopeLogs = CopyScopeLogsPtrSlice(dest.ScopeLogs, src.ScopeLogs)
 
 	dest.SchemaUrl = src.SchemaUrl
+
 	dest.DeprecatedScopeLogs = CopyScopeLogsPtrSlice(dest.DeprecatedScopeLogs, src.DeprecatedScopeLogs)
 
 	return dest
@@ -204,7 +207,6 @@ func (orig *ResourceLogs) SizeProto() int {
 		l = orig.ScopeLogs[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.SchemaUrl)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -254,6 +256,10 @@ func (orig *ResourceLogs) MarshalProto(buf []byte) int {
 }
 
 func (orig *ResourceLogs) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ResourceLogs) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -279,7 +285,7 @@ func (orig *ResourceLogs) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Resource.UnmarshalProto(buf[startPos:pos])
+			err = orig.Resource.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -295,7 +301,7 @@ func (orig *ResourceLogs) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.ScopeLogs = append(orig.ScopeLogs, NewScopeLogs())
-			err = orig.ScopeLogs[len(orig.ScopeLogs)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.ScopeLogs[len(orig.ScopeLogs)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -310,7 +316,7 @@ func (orig *ResourceLogs) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SchemaUrl = string(buf[startPos:pos])
+			orig.SchemaUrl = proto.YoloString(buf[startPos:pos])
 
 		case 1000:
 			if wireType != proto.WireTypeLen {
@@ -323,7 +329,89 @@ func (orig *ResourceLogs) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.DeprecatedScopeLogs = append(orig.DeprecatedScopeLogs, NewScopeLogs())
-			err = orig.DeprecatedScopeLogs[len(orig.DeprecatedScopeLogs)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.DeprecatedScopeLogs[len(orig.DeprecatedScopeLogs)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
+			if err != nil {
+				return err
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipResourceLogsProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Resource", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipResourceProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field ScopeLogs", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipScopeLogsProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SchemaUrl", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 1000:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field DeprecatedScopeLogs", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipScopeLogsProto(buf[startPos:pos])
 			if err != nil {
 				return err
 			}

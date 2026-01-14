@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -64,6 +65,7 @@ func CopyUnixAddr(dest, src *UnixAddr) *UnixAddr {
 		dest = NewUnixAddr()
 	}
 	dest.Name = src.Name
+
 	dest.Net = src.Net
 
 	return dest
@@ -153,12 +155,10 @@ func (orig *UnixAddr) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.Name)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Net)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -190,6 +190,10 @@ func (orig *UnixAddr) MarshalProto(buf []byte) int {
 }
 
 func (orig *UnixAddr) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *UnixAddr) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -214,7 +218,7 @@ func (orig *UnixAddr) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Name = string(buf[startPos:pos])
+			orig.Name = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -226,7 +230,52 @@ func (orig *UnixAddr) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Net = string(buf[startPos:pos])
+			orig.Net = proto.YoloString(buf[startPos:pos])
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipUnixAddrProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Net", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

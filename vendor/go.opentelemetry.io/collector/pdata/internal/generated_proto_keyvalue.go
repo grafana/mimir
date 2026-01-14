@@ -10,13 +10,14 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 type KeyValue struct {
-	Value AnyValue
 	Key   string
+	Value AnyValue
 }
 
 var (
@@ -45,6 +46,7 @@ func DeleteKeyValue(orig *KeyValue, nullable bool) {
 	}
 
 	DeleteAnyValue(&orig.Value, false)
+
 	orig.Reset()
 	if nullable {
 		protoPoolKeyValue.Put(orig)
@@ -65,6 +67,7 @@ func CopyKeyValue(dest, src *KeyValue) *KeyValue {
 		dest = NewKeyValue()
 	}
 	dest.Key = src.Key
+
 	CopyAnyValue(&dest.Value, &src.Value)
 
 	return dest
@@ -153,7 +156,6 @@ func (orig *KeyValue) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.Key)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -185,6 +187,10 @@ func (orig *KeyValue) MarshalProto(buf []byte) int {
 }
 
 func (orig *KeyValue) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *KeyValue) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -209,7 +215,7 @@ func (orig *KeyValue) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Key = string(buf[startPos:pos])
+			orig.Key = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -222,7 +228,57 @@ func (orig *KeyValue) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Value.UnmarshalProto(buf[startPos:pos])
+			err = orig.Value.UnmarshalProtoOpts(buf[startPos:pos], opts)
+			if err != nil {
+				return err
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipKeyValueProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Key", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipAnyValueProto(buf[startPos:pos])
 			if err != nil {
 				return err
 			}

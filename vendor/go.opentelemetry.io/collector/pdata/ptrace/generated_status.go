@@ -48,6 +48,11 @@ func (ms Status) MoveTo(dest Status) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms Status) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteStatus(ms.orig, true)
+}
+
 // Message returns the message associated with this Status.
 func (ms Status) Message() string {
 	return ms.orig.Message

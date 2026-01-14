@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -18,8 +19,8 @@ import (
 // style of encoding attributes which is more convenient
 // for profiles than opentelemetry.proto.common.v1.KeyValue.
 type KeyValueAndUnit struct {
-	Value        AnyValue
 	KeyStrindex  int32
+	Value        AnyValue
 	UnitStrindex int32
 }
 
@@ -70,6 +71,7 @@ func CopyKeyValueAndUnit(dest, src *KeyValueAndUnit) *KeyValueAndUnit {
 		dest = NewKeyValueAndUnit()
 	}
 	dest.KeyStrindex = src.KeyStrindex
+
 	CopyAnyValue(&dest.Value, &src.Value)
 
 	dest.UnitStrindex = src.UnitStrindex
@@ -166,12 +168,12 @@ func (orig *KeyValueAndUnit) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.KeyStrindex != int32(0) {
+	if orig.KeyStrindex != 0 {
 		n += 1 + proto.Sov(uint64(orig.KeyStrindex))
 	}
 	l = orig.Value.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-	if orig.UnitStrindex != int32(0) {
+	if orig.UnitStrindex != 0 {
 		n += 1 + proto.Sov(uint64(orig.UnitStrindex))
 	}
 	return n
@@ -181,7 +183,7 @@ func (orig *KeyValueAndUnit) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.KeyStrindex != int32(0) {
+	if orig.KeyStrindex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.KeyStrindex))
 		pos--
 		buf[pos] = 0x8
@@ -192,7 +194,7 @@ func (orig *KeyValueAndUnit) MarshalProto(buf []byte) int {
 	pos--
 	buf[pos] = 0x12
 
-	if orig.UnitStrindex != int32(0) {
+	if orig.UnitStrindex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.UnitStrindex))
 		pos--
 		buf[pos] = 0x18
@@ -201,6 +203,10 @@ func (orig *KeyValueAndUnit) MarshalProto(buf []byte) int {
 }
 
 func (orig *KeyValueAndUnit) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *KeyValueAndUnit) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -224,6 +230,7 @@ func (orig *KeyValueAndUnit) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.KeyStrindex = int32(num)
 
 		case 2:
@@ -237,7 +244,7 @@ func (orig *KeyValueAndUnit) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Value.UnmarshalProto(buf[startPos:pos])
+			err = orig.Value.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -251,7 +258,69 @@ func (orig *KeyValueAndUnit) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.UnitStrindex = int32(num)
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipKeyValueAndUnitProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field KeyStrindex", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Value", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipAnyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field UnitStrindex", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

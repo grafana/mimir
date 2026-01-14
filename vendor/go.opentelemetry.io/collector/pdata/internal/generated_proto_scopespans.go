@@ -10,15 +10,16 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 // ScopeSpans is a collection of spans from a LibraryInstrumentation.
 type ScopeSpans struct {
-	SchemaUrl string
-	Spans     []*Span
 	Scope     InstrumentationScope
+	Spans     []*Span
+	SchemaUrl string
 }
 
 var (
@@ -45,6 +46,7 @@ func DeleteScopeSpans(orig *ScopeSpans, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteInstrumentationScope(&orig.Scope, false)
 	for i := range orig.Spans {
 		DeleteSpan(orig.Spans[i], true)
@@ -183,7 +185,6 @@ func (orig *ScopeSpans) SizeProto() int {
 		l = orig.Spans[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.SchemaUrl)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -220,6 +221,10 @@ func (orig *ScopeSpans) MarshalProto(buf []byte) int {
 }
 
 func (orig *ScopeSpans) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ScopeSpans) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -245,7 +250,7 @@ func (orig *ScopeSpans) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Scope.UnmarshalProto(buf[startPos:pos])
+			err = orig.Scope.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -261,7 +266,7 @@ func (orig *ScopeSpans) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Spans = append(orig.Spans, NewSpan())
-			err = orig.Spans[len(orig.Spans)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Spans[len(orig.Spans)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -276,7 +281,74 @@ func (orig *ScopeSpans) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.SchemaUrl = string(buf[startPos:pos])
+			orig.SchemaUrl = proto.YoloString(buf[startPos:pos])
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipScopeSpansProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Scope", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipInstrumentationScopeProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Spans", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipSpanProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SchemaUrl", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

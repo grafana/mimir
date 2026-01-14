@@ -51,6 +51,11 @@ func (ms Exemplar) MoveTo(dest Exemplar) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms Exemplar) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteExemplar(ms.orig, true)
+}
+
 // FilteredAttributes returns the FilteredAttributes associated with this Exemplar.
 func (ms Exemplar) FilteredAttributes() pcommon.Map {
 	return pcommon.Map(internal.NewMapWrapper(&ms.orig.FilteredAttributes, ms.state))
@@ -95,7 +100,9 @@ func (ms Exemplar) SetDoubleValue(v float64) {
 	}
 	ov.AsDouble = v
 	ms.orig.Value = ov
-} // IntValue returns the int associated with this Exemplar.
+}
+
+// IntValue returns the int associated with this Exemplar.
 func (ms Exemplar) IntValue() int64 {
 	return ms.orig.GetAsInt()
 }

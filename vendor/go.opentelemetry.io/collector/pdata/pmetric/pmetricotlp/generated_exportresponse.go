@@ -47,6 +47,11 @@ func (ms ExportResponse) MoveTo(dest ExportResponse) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ExportResponse) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteExportMetricsServiceResponse(ms.orig, true)
+}
+
 // PartialSuccess returns the partialsuccess associated with this ExportResponse.
 func (ms ExportResponse) PartialSuccess() ExportPartialSuccess {
 	return newExportPartialSuccess(&ms.orig.PartialSuccess, ms.state)

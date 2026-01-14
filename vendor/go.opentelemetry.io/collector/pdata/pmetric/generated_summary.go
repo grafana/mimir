@@ -47,6 +47,11 @@ func (ms Summary) MoveTo(dest Summary) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms Summary) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteSummary(ms.orig, true)
+}
+
 // DataPoints returns the DataPoints associated with this Summary.
 func (ms Summary) DataPoints() SummaryDataPointSlice {
 	return newSummaryDataPointSlice(&ms.orig.DataPoints, ms.state)

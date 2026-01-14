@@ -47,6 +47,11 @@ func (ms Sum) MoveTo(dest Sum) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms Sum) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteSum(ms.orig, true)
+}
+
 // DataPoints returns the DataPoints associated with this Sum.
 func (ms Sum) DataPoints() NumberDataPointSlice {
 	return newNumberDataPointSlice(&ms.orig.DataPoints, ms.state)

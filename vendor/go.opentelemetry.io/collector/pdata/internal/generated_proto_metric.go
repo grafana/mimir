@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -162,10 +163,12 @@ func DeleteMetric(orig *Metric, nullable bool) {
 		DeleteSummary(ov.Summary, true)
 		ov.Summary = nil
 		ProtoPoolMetric_Summary.Put(ov)
+
 	}
 	for i := range orig.Metadata {
 		DeleteKeyValue(&orig.Metadata[i], false)
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolMetric.Put(orig)
@@ -186,8 +189,11 @@ func CopyMetric(dest, src *Metric) *Metric {
 		dest = NewMetric()
 	}
 	dest.Name = src.Name
+
 	dest.Description = src.Description
+
 	dest.Unit = src.Unit
+
 	switch t := src.Data.(type) {
 	case *Metric_Gauge:
 		var ov *Metric_Gauge
@@ -382,6 +388,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.Gauge.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "sum":
 			{
 				var ov *Metric_Sum
@@ -394,6 +401,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.Sum.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "histogram":
 			{
 				var ov *Metric_Histogram
@@ -406,6 +414,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.Histogram.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "exponentialHistogram", "exponential_histogram":
 			{
 				var ov *Metric_ExponentialHistogram
@@ -418,6 +427,7 @@ func (orig *Metric) UnmarshalJSON(iter *json.Iterator) {
 				ov.ExponentialHistogram.UnmarshalJSON(iter)
 				orig.Data = ov
 			}
+
 		case "summary":
 			{
 				var ov *Metric_Summary
@@ -447,17 +457,14 @@ func (orig *Metric) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.Name)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Description)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Unit)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -580,6 +587,10 @@ func (orig *Metric) MarshalProto(buf []byte) int {
 }
 
 func (orig *Metric) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Metric) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -604,7 +615,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Name = string(buf[startPos:pos])
+			orig.Name = proto.YoloString(buf[startPos:pos])
 
 		case 2:
 			if wireType != proto.WireTypeLen {
@@ -616,7 +627,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Description = string(buf[startPos:pos])
+			orig.Description = proto.YoloString(buf[startPos:pos])
 
 		case 3:
 			if wireType != proto.WireTypeLen {
@@ -628,7 +639,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.Unit = string(buf[startPos:pos])
+			orig.Unit = proto.YoloString(buf[startPos:pos])
 
 		case 5:
 			if wireType != proto.WireTypeLen {
@@ -647,7 +658,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Gauge.Get().(*Metric_Gauge)
 			}
 			ov.Gauge = NewGauge()
-			err = ov.Gauge.UnmarshalProto(buf[startPos:pos])
+			err = ov.Gauge.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -670,7 +681,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Sum.Get().(*Metric_Sum)
 			}
 			ov.Sum = NewSum()
-			err = ov.Sum.UnmarshalProto(buf[startPos:pos])
+			err = ov.Sum.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -693,7 +704,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Histogram.Get().(*Metric_Histogram)
 			}
 			ov.Histogram = NewHistogram()
-			err = ov.Histogram.UnmarshalProto(buf[startPos:pos])
+			err = ov.Histogram.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -716,7 +727,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_ExponentialHistogram.Get().(*Metric_ExponentialHistogram)
 			}
 			ov.ExponentialHistogram = NewExponentialHistogram()
-			err = ov.ExponentialHistogram.UnmarshalProto(buf[startPos:pos])
+			err = ov.ExponentialHistogram.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -739,7 +750,7 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 				ov = ProtoPoolMetric_Summary.Get().(*Metric_Summary)
 			}
 			ov.Summary = NewSummary()
-			err = ov.Summary.UnmarshalProto(buf[startPos:pos])
+			err = ov.Summary.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -756,7 +767,157 @@ func (orig *Metric) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Metadata = append(orig.Metadata, KeyValue{})
-			err = orig.Metadata[len(orig.Metadata)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Metadata[len(orig.Metadata)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
+			if err != nil {
+				return err
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipMetricProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Name", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Description", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Unit", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Gauge", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipGaugeProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 7:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sum", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipSumProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 9:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Histogram", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipHistogramProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 10:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field ExponentialHistogram", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipExponentialHistogramProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 11:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Summary", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipSummaryProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 12:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipKeyValueProto(buf[startPos:pos])
 			if err != nil {
 				return err
 			}

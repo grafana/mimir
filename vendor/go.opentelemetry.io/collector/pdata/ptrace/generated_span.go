@@ -49,6 +49,11 @@ func (ms Span) MoveTo(dest Span) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms Span) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteSpan(ms.orig, true)
+}
+
 // TraceID returns the traceid associated with this Span.
 func (ms Span) TraceID() pcommon.TraceID {
 	return pcommon.TraceID(ms.orig.TraceId)

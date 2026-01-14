@@ -48,6 +48,11 @@ func (ms ResourceSpans) MoveTo(dest ResourceSpans) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ResourceSpans) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteResourceSpans(ms.orig, true)
+}
+
 // Resource returns the resource associated with this ResourceSpans.
 func (ms ResourceSpans) Resource() pcommon.Resource {
 	return pcommon.Resource(internal.NewResourceWrapper(&ms.orig.Resource, ms.state))

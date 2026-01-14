@@ -47,6 +47,11 @@ func (ms Gauge) MoveTo(dest Gauge) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms Gauge) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteGauge(ms.orig, true)
+}
+
 // DataPoints returns the DataPoints associated with this Gauge.
 func (ms Gauge) DataPoints() NumberDataPointSlice {
 	return newNumberDataPointSlice(&ms.orig.DataPoints, ms.state)

@@ -47,6 +47,11 @@ func (ms Histogram) MoveTo(dest Histogram) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms Histogram) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteHistogram(ms.orig, true)
+}
+
 // DataPoints returns the DataPoints associated with this Histogram.
 func (ms Histogram) DataPoints() HistogramDataPointSlice {
 	return newHistogramDataPointSlice(&ms.orig.DataPoints, ms.state)

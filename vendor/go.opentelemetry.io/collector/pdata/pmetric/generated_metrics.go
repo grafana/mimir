@@ -45,6 +45,11 @@ func (ms Metrics) MoveTo(dest Metrics) {
 	*dest.getOrig(), *ms.getOrig() = *ms.getOrig(), *dest.getOrig()
 }
 
+func (ms Metrics) ReturnToPool() {
+	ms.getState().AssertMutable()
+	internal.DeleteExportMetricsServiceRequest(ms.getOrig(), true)
+}
+
 // ResourceMetrics returns the ResourceMetrics associated with this Metrics.
 func (ms Metrics) ResourceMetrics() ResourceMetricsSlice {
 	return newResourceMetricsSlice(&ms.getOrig().ResourceMetrics, ms.getState())

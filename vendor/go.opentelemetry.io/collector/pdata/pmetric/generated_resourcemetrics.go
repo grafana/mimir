@@ -48,6 +48,11 @@ func (ms ResourceMetrics) MoveTo(dest ResourceMetrics) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ResourceMetrics) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteResourceMetrics(ms.orig, true)
+}
+
 // Resource returns the resource associated with this ResourceMetrics.
 func (ms ResourceMetrics) Resource() pcommon.Resource {
 	return pcommon.Resource(internal.NewResourceWrapper(&ms.orig.Resource, ms.state))

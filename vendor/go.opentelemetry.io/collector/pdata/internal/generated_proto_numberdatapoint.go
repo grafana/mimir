@@ -12,6 +12,7 @@ import (
 	"math"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -47,11 +48,11 @@ func (m *NumberDataPoint) GetAsInt() int64 {
 
 // NumberDataPoint is a single data point in a timeseries that describes the time-varying value of a number metric.
 type NumberDataPoint struct {
-	Value             any
 	Attributes        []KeyValue
-	Exemplars         []Exemplar
 	StartTimeUnixNano uint64
 	TimeUnixNano      uint64
+	Value             any
+	Exemplars         []Exemplar
 	Flags             uint32
 }
 
@@ -91,10 +92,10 @@ func DeleteNumberDataPoint(orig *NumberDataPoint, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
-
 	switch ov := orig.Value.(type) {
 	case *NumberDataPoint_AsDouble:
 		if UseProtoPooling.IsEnabled() {
@@ -106,6 +107,7 @@ func DeleteNumberDataPoint(orig *NumberDataPoint, nullable bool) {
 			ov.AsInt = int64(0)
 			ProtoPoolNumberDataPoint_AsInt.Put(ov)
 		}
+
 	}
 	for i := range orig.Exemplars {
 		DeleteExemplar(&orig.Exemplars[i], false)
@@ -133,7 +135,9 @@ func CopyNumberDataPoint(dest, src *NumberDataPoint) *NumberDataPoint {
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.StartTimeUnixNano = src.StartTimeUnixNano
+
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	switch t := src.Value.(type) {
 	case *NumberDataPoint_AsDouble:
 		var ov *NumberDataPoint_AsDouble
@@ -144,7 +148,6 @@ func CopyNumberDataPoint(dest, src *NumberDataPoint) *NumberDataPoint {
 		}
 		ov.AsDouble = t.AsDouble
 		dest.Value = ov
-
 	case *NumberDataPoint_AsInt:
 		var ov *NumberDataPoint_AsInt
 		if !UseProtoPooling.IsEnabled() {
@@ -154,7 +157,6 @@ func CopyNumberDataPoint(dest, src *NumberDataPoint) *NumberDataPoint {
 		}
 		ov.AsInt = t.AsInt
 		dest.Value = ov
-
 	default:
 		dest.Value = nil
 	}
@@ -289,6 +291,7 @@ func (orig *NumberDataPoint) UnmarshalJSON(iter *json.Iterator) {
 				ov.AsDouble = iter.ReadFloat64()
 				orig.Value = ov
 			}
+
 		case "asInt", "as_int":
 			{
 				var ov *NumberDataPoint_AsInt
@@ -323,10 +326,10 @@ func (orig *NumberDataPoint) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
 	switch orig := orig.Value.(type) {
@@ -334,17 +337,15 @@ func (orig *NumberDataPoint) SizeProto() int {
 		_ = orig
 		break
 	case *NumberDataPoint_AsDouble:
-
 		n += 9
 	case *NumberDataPoint_AsInt:
-
 		n += 9
 	}
 	for i := range orig.Exemplars {
 		l = orig.Exemplars[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 1 + proto.Sov(uint64(orig.Flags))
 	}
 	return n
@@ -361,13 +362,13 @@ func (orig *NumberDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x3a
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.StartTimeUnixNano))
 		pos--
 		buf[pos] = 0x11
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
@@ -394,7 +395,7 @@ func (orig *NumberDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x2a
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Flags))
 		pos--
 		buf[pos] = 0x40
@@ -403,6 +404,10 @@ func (orig *NumberDataPoint) MarshalProto(buf []byte) int {
 }
 
 func (orig *NumberDataPoint) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *NumberDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -428,7 +433,7 @@ func (orig *NumberDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -504,7 +509,7 @@ func (orig *NumberDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Exemplars = append(orig.Exemplars, Exemplar{})
-			err = orig.Exemplars[len(orig.Exemplars)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Exemplars[len(orig.Exemplars)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -518,7 +523,115 @@ func (orig *NumberDataPoint) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.Flags = uint32(num)
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipNumberDataPointProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 7:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Attributes", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipKeyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartTimeUnixNano", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TimeUnixNano", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AsDouble", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 6:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AsInt", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Exemplars", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipExemplarProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 8:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Flags", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

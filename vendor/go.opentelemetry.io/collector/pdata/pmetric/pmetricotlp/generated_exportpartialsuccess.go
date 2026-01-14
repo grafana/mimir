@@ -47,6 +47,11 @@ func (ms ExportPartialSuccess) MoveTo(dest ExportPartialSuccess) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ExportPartialSuccess) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteExportMetricsPartialSuccess(ms.orig, true)
+}
+
 // RejectedDataPoints returns the rejecteddatapoints associated with this ExportPartialSuccess.
 func (ms ExportPartialSuccess) RejectedDataPoints() int64 {
 	return ms.orig.RejectedDataPoints

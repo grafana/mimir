@@ -12,6 +12,7 @@ import (
 	"math"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -19,11 +20,11 @@ import (
 // SummaryDataPoint is a single data point in a timeseries that describes the time-varying values of a Summary of double values.
 type SummaryDataPoint struct {
 	Attributes        []KeyValue
-	QuantileValues    []*SummaryDataPointValueAtQuantile
 	StartTimeUnixNano uint64
 	TimeUnixNano      uint64
 	Count             uint64
 	Sum               float64
+	QuantileValues    []*SummaryDataPointValueAtQuantile
 	Flags             uint32
 }
 
@@ -51,10 +52,10 @@ func DeleteSummaryDataPoint(orig *SummaryDataPoint, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
-
 	for i := range orig.QuantileValues {
 		DeleteSummaryDataPointValueAtQuantile(orig.QuantileValues[i], true)
 	}
@@ -81,9 +82,13 @@ func CopySummaryDataPoint(dest, src *SummaryDataPoint) *SummaryDataPoint {
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.StartTimeUnixNano = src.StartTimeUnixNano
+
 	dest.TimeUnixNano = src.TimeUnixNano
+
 	dest.Count = src.Count
+
 	dest.Sum = src.Sum
+
 	dest.QuantileValues = CopySummaryDataPointValueAtQuantilePtrSlice(dest.QuantileValues, src.QuantileValues)
 
 	dest.Flags = src.Flags
@@ -229,23 +234,23 @@ func (orig *SummaryDataPoint) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		n += 9
 	}
-	if orig.Count != uint64(0) {
+	if orig.Count != 0 {
 		n += 9
 	}
-	if orig.Sum != float64(0) {
+	if orig.Sum != 0 {
 		n += 9
 	}
 	for i := range orig.QuantileValues {
 		l = orig.QuantileValues[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 1 + proto.Sov(uint64(orig.Flags))
 	}
 	return n
@@ -262,25 +267,25 @@ func (orig *SummaryDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x3a
 	}
-	if orig.StartTimeUnixNano != uint64(0) {
+	if orig.StartTimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.StartTimeUnixNano))
 		pos--
 		buf[pos] = 0x11
 	}
-	if orig.TimeUnixNano != uint64(0) {
+	if orig.TimeUnixNano != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.TimeUnixNano))
 		pos--
 		buf[pos] = 0x19
 	}
-	if orig.Count != uint64(0) {
+	if orig.Count != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], uint64(orig.Count))
 		pos--
 		buf[pos] = 0x21
 	}
-	if orig.Sum != float64(0) {
+	if orig.Sum != 0 {
 		pos -= 8
 		binary.LittleEndian.PutUint64(buf[pos:], math.Float64bits(orig.Sum))
 		pos--
@@ -293,7 +298,7 @@ func (orig *SummaryDataPoint) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x32
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Flags))
 		pos--
 		buf[pos] = 0x40
@@ -302,6 +307,10 @@ func (orig *SummaryDataPoint) MarshalProto(buf []byte) int {
 }
 
 func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *SummaryDataPoint) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -327,7 +336,7 @@ func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -377,6 +386,7 @@ func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.Sum = math.Float64frombits(num)
 
 		case 6:
@@ -390,7 +400,7 @@ func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.QuantileValues = append(orig.QuantileValues, NewSummaryDataPointValueAtQuantile())
-			err = orig.QuantileValues[len(orig.QuantileValues)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.QuantileValues[len(orig.QuantileValues)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -404,7 +414,115 @@ func (orig *SummaryDataPoint) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.Flags = uint32(num)
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipSummaryDataPointProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 7:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Attributes", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipKeyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field StartTimeUnixNano", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TimeUnixNano", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Count", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			if wireType != proto.WireTypeI64 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sum", wireType)
+			}
+
+			pos, err = proto.SkipI64(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 6:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field QuantileValues", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipSummaryDataPointValueAtQuantileProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 8:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Flags", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

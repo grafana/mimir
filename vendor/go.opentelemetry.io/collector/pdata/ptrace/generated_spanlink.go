@@ -50,6 +50,11 @@ func (ms SpanLink) MoveTo(dest SpanLink) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms SpanLink) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteSpanLink(ms.orig, true)
+}
+
 // TraceID returns the traceid associated with this SpanLink.
 func (ms SpanLink) TraceID() pcommon.TraceID {
 	return pcommon.TraceID(ms.orig.TraceId)

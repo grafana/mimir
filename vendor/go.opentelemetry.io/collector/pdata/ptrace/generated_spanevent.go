@@ -49,6 +49,11 @@ func (ms SpanEvent) MoveTo(dest SpanEvent) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms SpanEvent) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteSpanEvent(ms.orig, true)
+}
+
 // Timestamp returns the timestamp associated with this SpanEvent.
 func (ms SpanEvent) Timestamp() pcommon.Timestamp {
 	return pcommon.Timestamp(ms.orig.TimeUnixNano)

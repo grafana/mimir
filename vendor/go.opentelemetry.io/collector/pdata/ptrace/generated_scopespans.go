@@ -48,6 +48,11 @@ func (ms ScopeSpans) MoveTo(dest ScopeSpans) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ScopeSpans) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteScopeSpans(ms.orig, true)
+}
+
 // Scope returns the scope associated with this ScopeSpans.
 func (ms ScopeSpans) Scope() pcommon.InstrumentationScope {
 	return pcommon.InstrumentationScope(internal.NewInstrumentationScopeWrapper(&ms.orig.Scope, ms.state))

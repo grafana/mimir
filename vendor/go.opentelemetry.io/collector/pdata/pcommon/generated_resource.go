@@ -44,6 +44,11 @@ func (ms Resource) MoveTo(dest Resource) {
 	*dest.getOrig(), *ms.getOrig() = *ms.getOrig(), *dest.getOrig()
 }
 
+func (ms Resource) ReturnToPool() {
+	ms.getState().AssertMutable()
+	internal.DeleteResource(ms.getOrig(), true)
+}
+
 // Attributes returns the Attributes associated with this Resource.
 func (ms Resource) Attributes() Map {
 	return Map(internal.NewMapWrapper(&ms.getOrig().Attributes, ms.getState()))

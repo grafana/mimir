@@ -48,6 +48,11 @@ func (ms LogRecord) MoveTo(dest LogRecord) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms LogRecord) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteLogRecord(ms.orig, true)
+}
+
 // Timestamp returns the timestamp associated with this LogRecord.
 func (ms LogRecord) Timestamp() pcommon.Timestamp {
 	return pcommon.Timestamp(ms.orig.TimeUnixNano)

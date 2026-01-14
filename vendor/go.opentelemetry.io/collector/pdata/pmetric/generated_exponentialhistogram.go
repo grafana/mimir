@@ -48,6 +48,11 @@ func (ms ExponentialHistogram) MoveTo(dest ExponentialHistogram) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ExponentialHistogram) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteExponentialHistogram(ms.orig, true)
+}
+
 // DataPoints returns the DataPoints associated with this ExponentialHistogram.
 func (ms ExponentialHistogram) DataPoints() ExponentialHistogramDataPointSlice {
 	return newExponentialHistogramDataPointSlice(&ms.orig.DataPoints, ms.state)

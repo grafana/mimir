@@ -47,6 +47,11 @@ func (ms SummaryDataPointValueAtQuantile) MoveTo(dest SummaryDataPointValueAtQua
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms SummaryDataPointValueAtQuantile) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteSummaryDataPointValueAtQuantile(ms.orig, true)
+}
+
 // Quantile returns the quantile associated with this SummaryDataPointValueAtQuantile.
 func (ms SummaryDataPointValueAtQuantile) Quantile() float64 {
 	return ms.orig.Quantile

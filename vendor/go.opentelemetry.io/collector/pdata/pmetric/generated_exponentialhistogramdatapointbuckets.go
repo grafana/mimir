@@ -48,6 +48,11 @@ func (ms ExponentialHistogramDataPointBuckets) MoveTo(dest ExponentialHistogramD
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ExponentialHistogramDataPointBuckets) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteExponentialHistogramDataPointBuckets(ms.orig, true)
+}
+
 // Offset returns the offset associated with this ExponentialHistogramDataPointBuckets.
 func (ms ExponentialHistogramDataPointBuckets) Offset() int32 {
 	return ms.orig.Offset

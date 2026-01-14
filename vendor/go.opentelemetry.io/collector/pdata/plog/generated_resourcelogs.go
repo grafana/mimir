@@ -48,6 +48,11 @@ func (ms ResourceLogs) MoveTo(dest ResourceLogs) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ResourceLogs) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteResourceLogs(ms.orig, true)
+}
+
 // Resource returns the resource associated with this ResourceLogs.
 func (ms ResourceLogs) Resource() pcommon.Resource {
 	return pcommon.Resource(internal.NewResourceWrapper(&ms.orig.Resource, ms.state))

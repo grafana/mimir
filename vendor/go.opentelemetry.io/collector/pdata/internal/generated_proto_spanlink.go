@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -19,12 +20,12 @@ import (
 // different trace.
 // See Link definition in OTLP: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentelemetry/proto/trace/v1/trace.proto
 type SpanLink struct {
+	TraceId                TraceID
+	SpanId                 SpanID
 	TraceState             string
 	Attributes             []KeyValue
 	DroppedAttributesCount uint32
 	Flags                  uint32
-	TraceId                TraceID
-	SpanId                 SpanID
 }
 
 var (
@@ -51,9 +52,9 @@ func DeleteSpanLink(orig *SpanLink, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteTraceID(&orig.TraceId, false)
 	DeleteSpanID(&orig.SpanId, false)
-
 	for i := range orig.Attributes {
 		DeleteKeyValue(&orig.Attributes[i], false)
 	}
@@ -82,9 +83,11 @@ func CopySpanLink(dest, src *SpanLink) *SpanLink {
 	CopySpanID(&dest.SpanId, &src.SpanId)
 
 	dest.TraceState = src.TraceState
+
 	dest.Attributes = CopyKeyValueSlice(dest.Attributes, src.Attributes)
 
 	dest.DroppedAttributesCount = src.DroppedAttributesCount
+
 	dest.Flags = src.Flags
 
 	return dest
@@ -214,7 +217,6 @@ func (orig *SpanLink) SizeProto() int {
 	n += 1 + proto.Sov(uint64(l)) + l
 	l = orig.SpanId.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-
 	l = len(orig.TraceState)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -223,10 +225,10 @@ func (orig *SpanLink) SizeProto() int {
 		l = orig.Attributes[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		n += 1 + proto.Sov(uint64(orig.DroppedAttributesCount))
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		n += 5
 	}
 	return n
@@ -263,12 +265,12 @@ func (orig *SpanLink) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x22
 	}
-	if orig.DroppedAttributesCount != uint32(0) {
+	if orig.DroppedAttributesCount != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.DroppedAttributesCount))
 		pos--
 		buf[pos] = 0x28
 	}
-	if orig.Flags != uint32(0) {
+	if orig.Flags != 0 {
 		pos -= 4
 		binary.LittleEndian.PutUint32(buf[pos:], uint32(orig.Flags))
 		pos--
@@ -278,6 +280,10 @@ func (orig *SpanLink) MarshalProto(buf []byte) int {
 }
 
 func (orig *SpanLink) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *SpanLink) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -303,7 +309,7 @@ func (orig *SpanLink) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.TraceId.UnmarshalProto(buf[startPos:pos])
+			err = orig.TraceId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -319,7 +325,7 @@ func (orig *SpanLink) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.SpanId.UnmarshalProto(buf[startPos:pos])
+			err = orig.SpanId.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -334,7 +340,7 @@ func (orig *SpanLink) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.TraceState = string(buf[startPos:pos])
+			orig.TraceState = proto.YoloString(buf[startPos:pos])
 
 		case 4:
 			if wireType != proto.WireTypeLen {
@@ -347,7 +353,7 @@ func (orig *SpanLink) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Attributes = append(orig.Attributes, KeyValue{})
-			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Attributes[len(orig.Attributes)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -361,6 +367,7 @@ func (orig *SpanLink) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.DroppedAttributesCount = uint32(num)
 
 		case 6:
@@ -374,6 +381,109 @@ func (orig *SpanLink) UnmarshalProto(buf []byte) error {
 			}
 
 			orig.Flags = uint32(num)
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipSpanLinkProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field TraceId", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipTraceIDProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SpanId", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipSpanIDProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field TraceState", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Attributes", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipKeyValueProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field DroppedAttributesCount", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 6:
+			if wireType != proto.WireTypeI32 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Flags", wireType)
+			}
+
+			pos, err = proto.SkipI32(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

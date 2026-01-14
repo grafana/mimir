@@ -10,14 +10,15 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 // ExportPartialSuccess represents the details of a partially successful export request.
 type ExportProfilesPartialSuccess struct {
-	ErrorMessage     string
 	RejectedProfiles int64
+	ErrorMessage     string
 }
 
 var (
@@ -65,6 +66,7 @@ func CopyExportProfilesPartialSuccess(dest, src *ExportProfilesPartialSuccess) *
 		dest = NewExportProfilesPartialSuccess()
 	}
 	dest.RejectedProfiles = src.RejectedProfiles
+
 	dest.ErrorMessage = src.ErrorMessage
 
 	return dest
@@ -154,10 +156,9 @@ func (orig *ExportProfilesPartialSuccess) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.RejectedProfiles != int64(0) {
+	if orig.RejectedProfiles != 0 {
 		n += 1 + proto.Sov(uint64(orig.RejectedProfiles))
 	}
-
 	l = len(orig.ErrorMessage)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -169,7 +170,7 @@ func (orig *ExportProfilesPartialSuccess) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.RejectedProfiles != int64(0) {
+	if orig.RejectedProfiles != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.RejectedProfiles))
 		pos--
 		buf[pos] = 0x8
@@ -186,6 +187,10 @@ func (orig *ExportProfilesPartialSuccess) MarshalProto(buf []byte) int {
 }
 
 func (orig *ExportProfilesPartialSuccess) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ExportProfilesPartialSuccess) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -209,6 +214,7 @@ func (orig *ExportProfilesPartialSuccess) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.RejectedProfiles = int64(num)
 
 		case 2:
@@ -221,7 +227,52 @@ func (orig *ExportProfilesPartialSuccess) UnmarshalProto(buf []byte) error {
 				return err
 			}
 			startPos := pos - length
-			orig.ErrorMessage = string(buf[startPos:pos])
+			orig.ErrorMessage = proto.YoloString(buf[startPos:pos])
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipExportProfilesPartialSuccessProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field RejectedProfiles", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field ErrorMessage", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

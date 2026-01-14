@@ -44,6 +44,11 @@ func (ms InstrumentationScope) MoveTo(dest InstrumentationScope) {
 	*dest.getOrig(), *ms.getOrig() = *ms.getOrig(), *dest.getOrig()
 }
 
+func (ms InstrumentationScope) ReturnToPool() {
+	ms.getState().AssertMutable()
+	internal.DeleteInstrumentationScope(ms.getOrig(), true)
+}
+
 // Name returns the name associated with this InstrumentationScope.
 func (ms InstrumentationScope) Name() string {
 	return ms.getOrig().Name

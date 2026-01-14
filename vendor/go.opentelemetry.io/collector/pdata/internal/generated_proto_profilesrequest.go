@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -45,6 +46,7 @@ func DeleteProfilesRequest(orig *ProfilesRequest, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteRequestContext(orig.RequestContext, true)
 	DeleteProfilesData(&orig.ProfilesData, false)
 
@@ -172,7 +174,7 @@ func (orig *ProfilesRequest) SizeProto() int {
 	}
 	l = orig.ProfilesData.SizeProto()
 	n += 1 + proto.Sov(uint64(l)) + l
-	if orig.FormatVersion != uint32(0) {
+	if orig.FormatVersion != 0 {
 		n += 5
 	}
 	return n
@@ -195,7 +197,7 @@ func (orig *ProfilesRequest) MarshalProto(buf []byte) int {
 	pos--
 	buf[pos] = 0x1a
 
-	if orig.FormatVersion != uint32(0) {
+	if orig.FormatVersion != 0 {
 		pos -= 4
 		binary.LittleEndian.PutUint32(buf[pos:], uint32(orig.FormatVersion))
 		pos--
@@ -205,6 +207,10 @@ func (orig *ProfilesRequest) MarshalProto(buf []byte) int {
 }
 
 func (orig *ProfilesRequest) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ProfilesRequest) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -231,7 +237,7 @@ func (orig *ProfilesRequest) UnmarshalProto(buf []byte) error {
 			startPos := pos - length
 
 			orig.RequestContext = NewRequestContext()
-			err = orig.RequestContext.UnmarshalProto(buf[startPos:pos])
+			err = orig.RequestContext.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -247,7 +253,7 @@ func (orig *ProfilesRequest) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.ProfilesData.UnmarshalProto(buf[startPos:pos])
+			err = orig.ProfilesData.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -263,6 +269,73 @@ func (orig *ProfilesRequest) UnmarshalProto(buf []byte) error {
 			}
 
 			orig.FormatVersion = uint32(num)
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipProfilesRequestProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field RequestContext", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipRequestContextProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProfilesData", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipProfilesDataProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 1:
+			if wireType != proto.WireTypeI32 {
+				return fmt.Errorf("proto: wrong wireType = %d for field FormatVersion", wireType)
+			}
+
+			pos, err = proto.SkipI32(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

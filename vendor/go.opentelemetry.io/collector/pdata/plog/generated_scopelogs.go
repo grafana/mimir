@@ -48,6 +48,11 @@ func (ms ScopeLogs) MoveTo(dest ScopeLogs) {
 	*dest.orig, *ms.orig = *ms.orig, *dest.orig
 }
 
+func (ms ScopeLogs) ReturnToPool() {
+	ms.state.AssertMutable()
+	internal.DeleteScopeLogs(ms.orig, true)
+}
+
 // Scope returns the scope associated with this ScopeLogs.
 func (ms ScopeLogs) Scope() pcommon.InstrumentationScope {
 	return pcommon.InstrumentationScope(internal.NewInstrumentationScopeWrapper(&ms.orig.Scope, ms.state))
