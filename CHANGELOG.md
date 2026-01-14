@@ -178,13 +178,15 @@
 * [ENHANCEMENT] Dashboards and recording rules: Add usage-tracker rows to writes, writes-networking, writes-resources dashboards if the config.usage_tracker_enabled var is set. Add usage-tracker client latency recording rules. #13639 #13652
 * [ENHANCEMENT] Recording rules and dashboards: Add `stage` label to `cortex_ingester_queried_series` recording rules and filter Queries dashboard "Series per query" panel to show only `stage=merged_blocks`. #13666
 * [ENHANCEMENT] Dashboards: Add "Owned series" and "Active series" panels to the writes dashboard Headlines row. #13895
-* [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
-* [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
-* [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
 * [ENHANCEMENT] Alerts: Add `IncorrectWebhookConfigurationFailurePolicy`, `BadZoneAwarePodDisruptionBudgetConfiguration` and `HighNumberInflightZpdbRequests` rollout-operator alerts. #13840
 * [ENHANCEMENT] Dashboards: Add additional panels to the rollout-operator dashboard related to the zone aware pod disruption budget controller. #13840
 * [ENHANCEMENT] Dashboards: Sort tooltips in descending order to show main contributors to spike or query. #13827
 * [ENHANCEMENT] Dashboards: Add "By store-gateway disk utilization" panel to the Top Tenants dashboard showing per-tenant disk usage and their shard size. #13917
+* [ENHANCEMENT] Dashboards: Add panels showing the distribution of estimated query memory consumption and rate of fallback to Prometheus' query engine in query-frontends to the Queries dashboard. #14029
+* [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
+* [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
+* [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
+* [BUGFIX] Dashboards: Fix issue where the MQE-related dashboard panels on the Queries dashboard would show data from both queriers and query-frontends, instead of just queriers. #14029
 
 ### Jsonnet
 
