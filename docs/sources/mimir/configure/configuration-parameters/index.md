@@ -175,10 +175,6 @@ api:
 # The ingester block configures the ingester.
 [ingester: <ingester>]
 
-# The flusher block configures the WAL flusher target, used to manually run
-# one-time flushes when scaling down ingesters.
-[flusher: <flusher>]
-
 # The limits block configures default and per-tenant limits imposed by
 # components.
 [limits: <limits>]
@@ -3243,17 +3239,6 @@ local:
   # Path at which alertmanager configurations are stored.
   # CLI flag: -alertmanager-storage.local.path
   [path: <string> | default = ""]
-```
-
-### flusher
-
-The `flusher` block configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
-
-```yaml
-# (advanced) Stop after flush has finished. If false, process will keep running,
-# doing nothing.
-# CLI flag: -flusher.exit-after-flush
-[exit_after_flush: <boolean> | default = true]
 ```
 
 ### ingester_client
