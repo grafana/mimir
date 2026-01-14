@@ -18,7 +18,7 @@ import (
 // ScopeMetrics is a collection of metrics from a LibraryInstrumentation.
 type ScopeMetrics struct {
 	Scope     InstrumentationScope
-	Metrics   []*LazyMetric
+	Metrics   []*Metric
 	SchemaUrl string
 }
 
@@ -49,7 +49,7 @@ func DeleteScopeMetrics(orig *ScopeMetrics, nullable bool) {
 
 	DeleteInstrumentationScope(&orig.Scope, false)
 	for i := range orig.Metrics {
-		DeleteLazyMetric(orig.Metrics[i], true)
+		DeleteMetric(orig.Metrics[i], true)
 	}
 
 	orig.Reset()
@@ -73,7 +73,7 @@ func CopyScopeMetrics(dest, src *ScopeMetrics) *ScopeMetrics {
 	}
 	CopyInstrumentationScope(&dest.Scope, &src.Scope)
 
-	dest.Metrics = CopyLazyMetricPtrSlice(dest.Metrics, src.Metrics)
+	dest.Metrics = CopyMetricPtrSlice(dest.Metrics, src.Metrics)
 
 	dest.SchemaUrl = src.SchemaUrl
 
@@ -163,7 +163,7 @@ func (orig *ScopeMetrics) UnmarshalJSON(iter *json.Iterator) {
 			orig.Scope.UnmarshalJSON(iter)
 		case "metrics":
 			for iter.ReadArray() {
-				orig.Metrics = append(orig.Metrics, NewLazyMetric())
+				orig.Metrics = append(orig.Metrics, NewMetric())
 				orig.Metrics[len(orig.Metrics)-1].UnmarshalJSON(iter)
 			}
 
@@ -250,7 +250,7 @@ func (orig *ScopeMetrics) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOp
 			}
 			startPos := pos - length
 
-			err = orig.Scope.UnmarshalProtoOpts(buf[startPos:pos], opts)
+			err = orig.Scope.UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
 			}
@@ -265,8 +265,8 @@ func (orig *ScopeMetrics) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOp
 				return err
 			}
 			startPos := pos - length
-			orig.Metrics = append(orig.Metrics, NewLazyMetric())
-			err = orig.Metrics[len(orig.Metrics)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
+			orig.Metrics = append(orig.Metrics, NewMetric())
+			err = orig.Metrics[len(orig.Metrics)-1].UnmarshalProto(buf[startPos:pos])
 			if err != nil {
 				return err
 			}
@@ -334,7 +334,7 @@ func SkipScopeMetricsProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = SkipLazyMetricProto(buf[startPos:pos])
+			err = SkipMetricProto(buf[startPos:pos])
 			if err != nil {
 				return err
 			}
@@ -362,7 +362,7 @@ func SkipScopeMetricsProto(buf []byte) error {
 func GenTestScopeMetrics() *ScopeMetrics {
 	orig := NewScopeMetrics()
 	orig.Scope = *GenTestInstrumentationScope()
-	orig.Metrics = []*LazyMetric{{}, GenTestLazyMetric()}
+	orig.Metrics = []*Metric{{}, GenTestMetric()}
 	orig.SchemaUrl = "test_schemaurl"
 	return orig
 }

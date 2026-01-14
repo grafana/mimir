@@ -3,10 +3,7 @@
 
 package pdata // import "go.opentelemetry.io/collector/pdata"
 
-var DefaultUnmarshalOptions = UnmarshalOptions{
-	LazyDecoding: false,
-}
+var DefaultUnmarshalOptions = UnmarshalOptions{}
 
 type UnmarshalOptions struct {
-	LazyDecoding bool
 }

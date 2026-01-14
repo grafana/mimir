@@ -9,8 +9,6 @@ import (
 	"go.opentelemetry.io/collector/pdata/internal"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/otlp"
-
-	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 )
 
@@ -54,14 +52,6 @@ func (ms ExportRequest) UnmarshalProto(data []byte) error {
 		return err
 	}
 	otlp.MigrateMetrics(ms.orig.ResourceMetrics)
-	return nil
-}
-
-func (ms ExportRequest) UnmarshalProtoLazy(data []byte) error {
-	err := ms.orig.UnmarshalProtoOpts(data, &pdata.UnmarshalOptions{LazyDecoding: true})
-	if err != nil {
-		return err
-	}
 	return nil
 }
 

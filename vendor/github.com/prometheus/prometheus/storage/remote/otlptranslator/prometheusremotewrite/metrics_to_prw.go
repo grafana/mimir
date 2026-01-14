@@ -186,6 +186,10 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		resourceMetrics := resourceMetricsSlice.At(i)
 		resource := resourceMetrics.Resource()
 		scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+
+		// Cache resource labels for this ResourceMetrics
+		c.setResourceContext(resource, settings)
+
 		// keep track of the earliest and latest timestamp in the ResourceMetrics for
 		// use with the "target" info metric
 		earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
@@ -193,6 +197,10 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 		for j := 0; j < scopeMetricsSlice.Len(); j++ {
 			scopeMetrics := scopeMetricsSlice.At(j)
 			scope := newScopeFromScopeMetrics(scopeMetrics)
+
+			// Cache scope labels for this ScopeMetrics
+			c.setScopeContext(scope, settings)
+
 			metricSlice := scopeMetrics.Metrics()
 
 			// TODO: decide if instrumentation library information should be exported as labels
@@ -202,11 +210,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 					return annots, errs
 				}
 
-				var metric pmetric.Metric
-				if err := metricSlice.Unmarshal(k, &metric); err != nil {
-					errs = multierr.Append(errs, err)
-					continue
-				}
+				metric := metricSlice.At(k)
 
 				earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
 				temporality, hasTemporality, err := aggregationTemporality(metric)
@@ -338,6 +342,9 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 				errs = multierr.Append(errs, err)
 			}
 		}
+
+		// Clear resource context for the next iteration
+		c.clearResourceContext()
 	}
 
 	return annots, errs
