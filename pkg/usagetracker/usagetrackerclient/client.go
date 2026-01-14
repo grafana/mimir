@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -633,95 +634,126 @@ type batchTrackingClient struct {
 	maxSeriesPerBatch int
 	batchDelay        time.Duration
 
+	batchersMtx sync.Mutex
+	batchers    map[int32]*partitionBatcher
+
 	trackerClient *UsageTrackerClient
 	clientsPool   *client.Pool
-	workers       *concurrency.ReusableGoroutinesPool
-	flushChan     chan struct{}
 	stoppingChan  chan struct{}
 	logger        log.Logger
-
-	seriesMtx   sync.Mutex
-	series      map[int32]map[string][]uint64 // it's a mapping of partition -> user -> series hashes
-	seriesCount int
 }
 
 func newBatchTrackingClient(clientsPool *client.Pool, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient) *batchTrackingClient {
-	c := &batchTrackingClient{
+	return &batchTrackingClient{
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		batchDelay:        batchDelay,
 
-		clientsPool:   clientsPool,
+		batchers: make(map[int32]*partitionBatcher),
+
 		trackerClient: trackerClient,
-		workers:       concurrency.NewReusableGoroutinesPool(16),
-		flushChan:     make(chan struct{}, 1),
+		clientsPool:   clientsPool,
 		stoppingChan:  make(chan struct{}),
 		logger:        logger,
-
-		series: make(map[int32]map[string][]uint64),
 	}
-
-	go c.flushWorker()
-	return c
 }
 
-// TrackSeries adds some series to the pending batches.
 func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series []uint64) {
-	c.seriesMtx.Lock()
-	defer c.seriesMtx.Unlock()
-
-	p, ok := c.series[partition]
+	c.batchersMtx.Lock()
+	b, ok := c.batchers[partition]
 	if !ok {
-		p = make(map[string][]uint64)
-		c.series[partition] = p
+		b = newPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
+		c.batchers[partition] = b
 	}
+	c.batchersMtx.Unlock()
 
-	p[userID] = append(p[userID], series...)
-	c.seriesCount += len(series)
-	if needsFlush := c.seriesCount >= c.maxSeriesPerBatch; needsFlush {
-		select {
-		case c.flushChan <- struct{}{}:
-		default:
-			// The channel is full, we'll flush on the next ticker.
-			break
-		}
+	b.TrackSeries(userID, series)
+}
+
+func (c *batchTrackingClient) Stop() {
+	close(c.stoppingChan)
+}
+
+// partitionBatcher batches series hashes by partition and user. It will be
+// flushed when it either reaches a size threshold or when the per-partition
+// batch delay is reached.
+type partitionBatcher struct {
+	partition int32
+
+	usersMtx    sync.Mutex
+	users       map[string][]uint64 // userID -> series hashes
+	seriesCount int
+
+	trackerClient *UsageTrackerClient
+	clientsPool   *client.Pool
+
+	maxSeriesPerBatch int
+	batchDelay        time.Duration
+	logger            log.Logger
+	stoppingChan      <-chan struct{}
+}
+
+func newPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, clientsPool *client.Pool, stopping <-chan struct{}) *partitionBatcher {
+	b := &partitionBatcher{
+		partition: partition,
+
+		users:       make(map[string][]uint64),
+		seriesCount: 0,
+
+		trackerClient: trackerClient,
+		clientsPool:   clientsPool,
+
+		maxSeriesPerBatch: maxSeriesPerBatch,
+		batchDelay:        batchDelay,
+		logger:            logger,
+		stoppingChan:      stopping,
+	}
+	go b.flushWorker()
+	return b
+}
+
+func (b *partitionBatcher) TrackSeries(userID string, series []uint64) {
+	b.usersMtx.Lock()
+	defer b.usersMtx.Unlock()
+	b.users[userID] = append(b.users[userID], series...)
+	b.seriesCount += len(series)
+
+	if b.seriesCount >= b.maxSeriesPerBatch {
+		b.flushBatchLocked()
 	}
 }
 
-func (c *batchTrackingClient) flushWorker() {
-	ticker := time.NewTicker(c.batchDelay)
-	defer ticker.Stop()
-	// Normally flushes are on the ticker's interval, but we'll also flush in
-	// response to flushChan traffic.
+func (b *partitionBatcher) flushWorker() {
+	t := time.NewTimer(util.DurationWithJitter(b.batchDelay, 0.1))
 
 	for {
 		select {
-		case <-ticker.C:
-			c.flushBatch()
-		case <-c.flushChan:
-			c.flushBatch()
-			// Reset the ticker so it doesn't fire again after a short time.
-			ticker.Reset(c.batchDelay)
-		case <-c.stoppingChan:
+		case <-t.C:
+			b.usersMtx.Lock()
+			b.flushBatchLocked()
+			b.usersMtx.Unlock()
+
+			t.Reset(util.DurationWithJitter(b.batchDelay, 0.1))
+		case <-b.stoppingChan:
+			// flush anything outstanding before returning.
+			b.usersMtx.Lock()
+			b.flushBatchLocked()
+			b.usersMtx.Unlock()
 			return
 		}
 	}
 }
 
-func (c *batchTrackingClient) flushBatch() {
-	c.seriesMtx.Lock()
-	records := c.series
-	c.series = make(map[int32]map[string][]uint64)
-	c.seriesCount = 0
-	c.seriesMtx.Unlock()
+func (b *partitionBatcher) flushBatchLocked() {
+	users := b.users
+	b.users = make(map[string][]uint64)
+	b.seriesCount = 0
 
-	for partition, users := range records {
-		c.workers.Go(func() {
-			c.flush(partition, users)
-		})
+	if len(users) > 0 {
+		go b.flush(users)
 	}
 }
 
-func (c *batchTrackingClient) flush(partition int32, records map[string][]uint64) error {
+func (b *partitionBatcher) flush(records map[string][]uint64) error {
 	// Convert from map to proto format.
 	users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, len(records))
 	for userID, series := range records {
@@ -731,9 +763,9 @@ func (c *batchTrackingClient) flush(partition int32, records map[string][]uint64
 		})
 	}
 
-	// We're making a batch call across potentially many users, so we inject an arbitrary org ID.
+	// We're making a batch call across potentially many users, so we inject an arbitrary fake org ID.
 	batchCtx := user.InjectOrgID(context.Background(), "batch")
-	rejections, err := c.trackerClient.trackSeriesPerPartitionBatch(batchCtx, partition, users)
+	rejections, err := b.trackerClient.trackSeriesPerPartitionBatch(batchCtx, b.partition, users)
 	if err != nil {
 		return err
 	}
@@ -746,15 +778,8 @@ func (c *batchTrackingClient) flush(partition int32, records map[string][]uint64
 				sb.WriteString(", ")
 			}
 		}
-		level.Warn(c.logger).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "rejections", sb.String())
+		level.Warn(b.logger).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "rejections", sb.String())
 	}
 
 	return nil
-}
-
-func (c *batchTrackingClient) Stop() {
-	close(c.stoppingChan)
-	// We flush any outstanding records.
-	c.flushBatch()
-	c.workers.Close()
 }
