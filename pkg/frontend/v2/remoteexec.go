@@ -226,8 +226,9 @@ func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Cont
 
 		resp := b.payload.GetEvaluateQueryResponse()
 		if resp == nil {
+			err := fmt.Errorf("expected EvaluateQueryResponse, got %T", b.payload.Data) // Create the error before we free the buffer below.
 			b.payload.FreeBuffer()
-			return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", b.payload.Data)
+			return nil, nil, err
 		}
 
 		return resp, b.payload.FreeBuffer, nil
@@ -242,8 +243,9 @@ func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Cont
 		// We don't need to check for Error messages below, these are translated to Go errors in ProtobufResponseStream.
 		resp := payload.GetEvaluateQueryResponse()
 		if resp == nil {
+			err := fmt.Errorf("expected EvaluateQueryResponse, got %T", payload.Data) // Create the error before we free the buffer below.
 			payload.FreeBuffer()
-			return nil, nil, fmt.Errorf("expected EvaluateQueryResponse, got %T", payload.Data)
+			return nil, nil, err
 		}
 
 		respNodeState, err := g.getNodeStreamState(resp)
@@ -258,6 +260,8 @@ func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Cont
 
 		if respNodeState.finished {
 			// Node stream is already finished, just free the message and continue to the next message in the stream.
+			// Free the message now (rather than with a defer) given that we're in a loop and don't want to delay this
+			// until the end of the loop.
 			payload.FreeBuffer()
 		} else {
 			respNodeState.buffer.Push(bufferedMessage{payload: payload})
