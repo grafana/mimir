@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -284,6 +285,8 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 		return false, err
 	}
 
+	c.schedulerLastContact.SetToCurrentTime()
+
 	jobID := resp.Key.Id
 	jobTenant := resp.Spec.Tenant
 	jobType := resp.Spec.JobType
@@ -429,12 +432,17 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		if hasNonZeroULIDs(compactedBlockIDs) {
 			compactor.metrics.groupCompactions.Inc()
 		}
+		compactor.metrics.groupCompactionsLastSuccess.SetToCurrentTime()
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 		return compactorschedulerpb.COMPLETE, nil
 	}
 
 	// At this point the compaction has failed. Track the failure.
 	compactor.metrics.groupCompactionRunsFailed.Inc()
+
+	if errors.Is(err, syscall.ENOSPC) {
+		c.outOfSpace.Inc()
+	}
 
 	if handleErr := compactor.handleKnownCompactionErrors(ctx, err); handleErr == nil {
 		return compactorschedulerpb.ABANDON, err
