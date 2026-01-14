@@ -780,6 +780,23 @@ func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, [
 	return firstSpan.Offset - 1, buckets
 }
 
+// OTLPToMimir converts OTLP metrics to Mimir timeseries. This is used in tests
+// to verify the round-trip conversion from Prometheus -> OTLP -> Mimir.
+func OTLPToMimir(ctx context.Context, md pmetric.Metrics, logger log.Logger) ([]mimirpb.PreallocTimeseries, error) {
+	converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
+	timeseries, _, _, err := otelMetricsToSeriesAndMetadata(
+		ctx,
+		converter,
+		md,
+		conversionOptions{},
+		logger,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return timeseries, nil
+}
+
 type otelAttributeValueTooLongError struct {
 	labelValueTooLongError
 }
