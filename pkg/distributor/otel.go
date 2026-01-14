@@ -1266,7 +1266,9 @@ func (p *otlpBatchProcessor) processBatched(
 }
 
 // processBatchedStreaming processes batches using streaming iteration over raw protobuf bytes.
-// This reduces peak memory by parsing and releasing ResourceMetrics one at a time.
+// This reduces peak memory by:
+// 1. Parsing ResourceMetrics one at a time (releasing input memory between batches)
+// 2. Clearing the appender after each push (releasing output memory between batches)
 func (p *otlpBatchProcessor) processBatchedStreaming(
 	ctx context.Context,
 	rawBytes []byte,
@@ -1279,9 +1281,6 @@ func (p *otlpBatchProcessor) processBatchedStreaming(
 	iter := pmetric.NewResourceMetricsIterator(rawBytes, nil)
 	defer iter.Release()
 
-	// Track series/metadata indices for incremental extraction
-	lastSeriesIdx := 0
-	lastMetadataIdx := 0
 	batchCount := 0
 
 	for iter.Next() {
@@ -1301,14 +1300,12 @@ func (p *otlpBatchProcessor) processBatchedStreaming(
 
 		// Push batch when we've accumulated enough ResourceMetrics
 		if batchCount >= batchSize {
-			softErrs, hardErr := p.pushBatch(ctx, appender, &lastSeriesIdx, &lastMetadataIdx)
+			softErrs, hardErr := p.pushBatch(ctx, appender)
 			softErrors = append(softErrors, softErrs...)
 			if hardErr != nil {
 				return softErrors, hardErr
 			}
 			batchCount = 0
-			// Note: Memory from this batch's ResourceMetrics is released when iter.Next()
-			// is called next, BEFORE parsing the next ResourceMetrics
 		}
 	}
 
@@ -1318,7 +1315,7 @@ func (p *otlpBatchProcessor) processBatchedStreaming(
 
 	// Push any remaining series from the last partial batch
 	if batchCount > 0 {
-		softErrs, hardErr := p.pushBatch(ctx, appender, &lastSeriesIdx, &lastMetadataIdx)
+		softErrs, hardErr := p.pushBatch(ctx, appender)
 		softErrors = append(softErrors, softErrs...)
 		if hardErr != nil {
 			return softErrors, hardErr
@@ -1329,6 +1326,7 @@ func (p *otlpBatchProcessor) processBatchedStreaming(
 }
 
 // processBatchedParsed processes batches using the pre-parsed request (for JSON).
+// This reduces peak memory by clearing the appender after each push.
 func (p *otlpBatchProcessor) processBatchedParsed(
 	ctx context.Context,
 	otlpReq pmetricotlp.ExportRequest,
@@ -1344,10 +1342,6 @@ func (p *otlpBatchProcessor) processBatchedParsed(
 		return nil, nil
 	}
 
-	// Track series/metadata indices for incremental extraction
-	lastSeriesIdx := 0
-	lastMetadataIdx := 0
-
 	// Process batches sequentially
 	for i := 0; i < n; i += batchSize {
 		// Check for context cancellation
@@ -1362,7 +1356,6 @@ func (p *otlpBatchProcessor) processBatchedParsed(
 		}
 
 		// Convert batch through shared appender using FromResourceMetrics directly
-		// This avoids the deep copy overhead of creating Metrics wrappers
 		for j := i; j < end; j++ {
 			rm := resourceMetricsSlice.At(j)
 			_, err := converter.converter.FromResourceMetrics(ctx, rm, settings)
@@ -1372,8 +1365,8 @@ func (p *otlpBatchProcessor) processBatchedParsed(
 			}
 		}
 
-		// Push the batch
-		softErrs, hardErr := p.pushBatch(ctx, appender, &lastSeriesIdx, &lastMetadataIdx)
+		// Push the batch and clear appender to release memory
+		softErrs, hardErr := p.pushBatch(ctx, appender)
 		softErrors = append(softErrors, softErrs...)
 		if hardErr != nil {
 			return softErrors, hardErr
@@ -1383,33 +1376,28 @@ func (p *otlpBatchProcessor) processBatchedParsed(
 	return softErrors, nil
 }
 
-// pushBatch extracts new series from the appender and pushes them.
+// pushBatch extracts all series from the appender, pushes them, and clears the appender.
+// This releases memory after each batch to reduce peak memory usage.
 func (p *otlpBatchProcessor) pushBatch(
 	ctx context.Context,
 	appender *otlpappender.MimirAppender,
-	lastSeriesIdx *int,
-	lastMetadataIdx *int,
 ) (softErrors []error, hardErr error) {
-	// Extract only NEW series since last batch
-	allSeries, allMetadata := appender.GetResult()
-	newSeriesCount := len(allSeries) - *lastSeriesIdx
+	series, metadata := appender.GetResult()
 
-	// Skip if no new series in this batch (all deduplicated)
-	if newSeriesCount == 0 {
+	// Skip if no series in this batch
+	if len(series) == 0 {
 		return nil, nil
 	}
 
-	// Create slice views for new series (no copy, just slice headers)
-	newSeries := allSeries[*lastSeriesIdx:]
-	newMetadata := allMetadata[*lastMetadataIdx:]
-
 	// Create and push batch request
-	req := p.createBatchRequest(newSeries, newMetadata)
+	req := p.createBatchRequest(series, metadata)
 	pushErr := p.push(ctx, req)
 
-	// Note: Don't call ReuseSlice here - the series are still owned by the shared appender
-	// They will be cleaned up when the entire request completes
+	// Clean up the request (but not the series - appender.Clear() will handle that)
 	req.CleanUp()
+
+	// Clear the appender to release memory before the next batch
+	appender.Clear()
 
 	if pushErr != nil {
 		if isOTLPHardError(pushErr) {
@@ -1417,10 +1405,6 @@ func (p *otlpBatchProcessor) pushBatch(
 		}
 		softErrors = append(softErrors, pushErr)
 	}
-
-	// Update indices for next batch
-	*lastSeriesIdx = len(allSeries)
-	*lastMetadataIdx = len(allMetadata)
 
 	return softErrors, nil
 }

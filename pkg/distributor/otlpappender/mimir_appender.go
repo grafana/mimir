@@ -56,6 +56,23 @@ func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.Me
 	return c.series, c.metadata
 }
 
+// Clear resets the appender for reuse, returning pooled resources.
+// Call this after pushing a batch to release memory before the next batch.
+func (c *MimirAppender) Clear() {
+	// Return series slice to pool
+	mimirpb.ReuseSlice(c.series)
+	c.series = mimirpb.PreallocTimeseriesSliceFromPool()
+
+	// Clear metadata
+	c.metadata = c.metadata[:0]
+
+	// Clear deduplication maps
+	clear(c.refs)
+	clear(c.collisionRefs)
+
+	// Note: we keep metricFamilies to avoid re-sending metadata for the same metrics
+}
+
 // Len returns the current number of series in the appender.
 func (c *MimirAppender) Len() int {
 	return len(c.series)
