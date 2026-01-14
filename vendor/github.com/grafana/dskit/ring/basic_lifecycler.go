@@ -360,13 +360,6 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 	l.currInstanceDesc = &instanceDesc
 	l.currState.Unlock()
 
-	// Initialize the read-only metric to reflect the current state after registration.
-	if instanceDesc.ReadOnly {
-		l.metrics.readOnly.Set(1)
-	} else {
-		l.metrics.readOnly.Set(0)
-	}
-
 	return nil
 }
 
@@ -461,7 +454,6 @@ func (l *BasicLifecycler) unregisterInstance(ctx context.Context) error {
 
 	l.metrics.tokensToOwn.Set(0)
 	l.metrics.tokensOwned.Set(0)
-	l.metrics.readOnly.Set(0)
 	return nil
 }
 
@@ -566,17 +558,9 @@ func (l *BasicLifecycler) changeReadOnlyState(ctx context.Context, readOnly bool
 	if err != nil {
 		from, _ := l.GetReadOnlyState()
 		level.Warn(l.logger).Log("msg", "failed to change instance read-only state in the ring", "from", from, "to", readOnly, "err", err)
-		return err
 	}
 
-	// Update the metric to reflect the current state.
-	if readOnly {
-		l.metrics.readOnly.Set(1)
-	} else {
-		l.metrics.readOnly.Set(0)
-	}
-
-	return nil
+	return err
 }
 
 // run a function within the lifecycler service goroutine.

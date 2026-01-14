@@ -37,7 +37,6 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
-	"go.uber.org/goleak"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/api"
@@ -48,23 +47,26 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestIngester_Startup_PartitionRing(t *testing.T) {
-	// TODO: a single goroutine may remain from an ingester lifecycler stuck waiting to join;
-	//   update dskit to pass a cancellable context or make autoJoin timeout configurable.
-	util_test.VerifyNoLeak(t, goleak.IgnoreAnyFunction("github.com/grafana/dskit/ring.(*Lifecycler).autoJoin"))
+func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testing.T) {
+	util_test.VerifyNoLeak(t)
 	var err error
 
 	cfg := defaultIngesterTestConfig(t)
+
+	// To simulate a stuck instance ring join process,
+	// we can use a TokenGenerator which will block on CanJoin.
 	cfg.IngesterRing.TokenGenerationStrategy = tokenGenerationSpreadMinimizing
 	cfg.IngesterRing.InstanceZone = "zone-a"
 	cfg.IngesterRing.SpreadMinimizingZones = []string{"zone-a"}
+	// This configures the spread-minimizing TokenGenerator to block in CanJoin
+	// until lower-index ingesters to join the ring and claim tokens.
 	cfg.IngesterRing.SpreadMinimizingJoinRingInOrder = true
 
 	cfg0 := &cfg
-	cfg0.IngesterRing.InstanceID = "ingester-zone-a-0"
+	cfg0.IngesterRing.InstanceID = "ingester-zone-a-0" // spread-minimizing TokenGenerator instanceID=0
 
 	cfg1 := &cfg
-	cfg1.IngesterRing.InstanceID = "ingester-zone-a-1"
+	cfg1.IngesterRing.InstanceID = "ingester-zone-a-1" // spread-minimizing TokenGenerator instanceID=1, same zone
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
@@ -136,16 +138,16 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 	awaitJoinCtx, awaitJoinCancel := context.WithTimeout(context.Background(), 1*time.Second)
 	t.Cleanup(func() { awaitJoinCancel() })
 	err = i1.AwaitRunning(awaitJoinCtx)
-	require.ErrorIs(t, err, context.DeadlineExceeded) // i1 will not start as it blocks on i0 claiming tokens
+	assert.ErrorIs(t, err, context.DeadlineExceeded) // i1 will not start as it blocks on i0 claiming tokens
 
 	// Confirm ingester-zone-a-1 pending instance state
 	i1InstanceState, err := ingesterRing.GetInstanceState(i1.cfg.IngesterRing.InstanceID)
 	require.NoError(t, err)
-	require.Equal(t, ring.PENDING, i1InstanceState)
+	assert.Equal(t, ring.PENDING, i1InstanceState)
 
 	// Confirm ingester-zone-a-1 partition lifecycler ring has not been started
 	i1PartitionLifecyclerState := i1.ingestPartitionLifecycler.State()
-	require.Equal(t, services.New, i1PartitionLifecyclerState)
+	assert.Equal(t, services.New, i1PartitionLifecyclerState)
 
 	// Confirm partition for ingester 1 has not been created yet
 	i1PartitionName, err := ingest.IngesterPartitionID(cfg1.IngesterRing.InstanceID)
@@ -158,9 +160,7 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 }
 
 func TestIngester_Start(t *testing.T) {
-	// TODO: leak detector will fail on leaked goroutine from TestIngester_Startup_PartitionRing;
-	//   revert to util_test.VerifyNoLeak(t) after fix in other test.
-	util_test.VerifyNoLeak(t, goleak.IgnoreAnyFunction("github.com/grafana/dskit/ring.(*Lifecycler).autoJoin"))
+	util_test.VerifyNoLeak(t)
 
 	t.Run("should replay the partition at startup (after a restart) and then join the ingesters and partitions ring", func(t *testing.T) {
 		var (
