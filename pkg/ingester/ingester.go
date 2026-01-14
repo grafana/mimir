@@ -527,6 +527,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+		i.ingestPartitionLifecycler.BasicService = i.ingestPartitionLifecycler.BasicService.WithName("partition-instance-lifecycler")
 
 		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
@@ -545,18 +546,18 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	}
 
 	// Init compaction service, responsible to periodically run TSDB head compactions.
-	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil)
+	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
 	// Init metrics updater service, responsible to periodically update ingester metrics and stats.
-	i.metricsUpdaterService = services.NewBasicService(nil, i.metricsUpdaterServiceRunning, nil)
+	i.metricsUpdaterService = services.NewBasicService(nil, i.metricsUpdaterServiceRunning, nil).WithName("ingester-metrics-updater")
 	i.subservicesWatcher.WatchService(i.metricsUpdaterService)
 
 	// Init metadata purger service, responsible to periodically delete metrics metadata past their retention period.
 	i.metadataPurgerService = services.NewTimerService(metadataPurgePeriod, nil, func(context.Context) error {
 		i.purgeUserMetricsMetadata()
 		return nil
-	}, nil)
+	}, nil).WithName("ingester-metadata-purger")
 	i.subservicesWatcher.WatchService(i.metadataPurgerService)
 
 	// Init head statistics generation service if enabled
@@ -565,7 +566,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 
-	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping)
+	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")
 	return i, nil
 }
 
@@ -620,9 +621,13 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
 		if err != nil {
-			// if starting() fails for any reason (e.g., context canceled),
-			// the lifecycler must be stopped.
-			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+			// If starting() fails for any reason (e.g., context canceled), services must be stopped.
+
+			// Lifecycler may be stuck attempting to join; do not wait on Terminated status.
+			i.lifecycler.StopAsync()
+
+			// Clean up goroutines started in New().
+			i.subservicesWatcher.Close()
 		}
 	}()
 
@@ -679,10 +684,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if err := i.lifecycler.StartAsync(context.Background()); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
-	if err := i.lifecycler.AwaitRunning(ctx); err != nil {
+	if err = i.lifecycler.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
-	if err := ring.WaitInstanceState(ctx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
+	if err = ring.WaitInstanceState(ctx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
 		return errors.Wrap(err, "failed to wait for instance to be active in ring")
 	}
 
@@ -736,7 +741,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		i.circuitBreaker.push.activate()
 	}
 
-	return nil
+	return err
 }
 
 func (i *Ingester) stoppingForFlusher(_ error) error {

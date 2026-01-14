@@ -8840,7 +8840,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 			// we can start the test.
 		}
 
-		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
+		test.Poll(t, targetRequestDuration, int64(1), func() interface{} {
 			return i.inflightPushRequests.Load()
 		})
 

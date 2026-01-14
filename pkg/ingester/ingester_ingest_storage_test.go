@@ -48,6 +48,9 @@ import (
 )
 
 func TestIngester_Startup_PartitionRing(t *testing.T) {
+	// TODO: a single goroutine remains from the ingester lifecycler stuck waiting to join;
+	//   update dskit to pass a cancellable context or make autoJoin timeout configurable.
+	//util_test.VerifyNoLeak(t)
 	var err error
 
 	cfg := defaultIngesterTestConfig(t)
@@ -64,15 +67,15 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
+	ctx := context.Background()
+
 	// Start ingester instance ring & wait
 	ingesterRing, err := ring.New(cfg1.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingesterRing))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingesterRing))
 	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingesterRing))
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingesterRing))
 	})
-
-	ctx := context.Background()
 
 	// Get ingester instance ring desc
 	var ringDesc *ring.Desc
@@ -80,12 +83,20 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 		ringDesc = ring.GetOrCreateRingDesc(in)
 		return ringDesc, true, nil
 	})
+	require.NoError(t, err)
 
 	// Create an ingester and manually add to the ring;
 	// needed to emulate an ingester which is delayed in claiming tokens.
 	i0, _, _ := createTestIngesterWithIngestStorage(
 		t, &cfg, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
 	)
+	t.Cleanup(func() {
+		// Several services are started with New() and only closed on error cases in ingester.starting();
+		// Call start, then stop to clean up goroutines.
+		require.NoError(t, i0.StartAsync(ctx))
+		err := services.StopAndAwaitTerminated(ctx, i0)
+		require.ErrorContains(t, err, "failed to start ingester subservices before partition reader")
+	})
 	i0Ro, i0RoTs := i0.lifecycler.GetReadOnlyState()
 	ringDesc.AddIngester(
 		i0.lifecycler.ID,
@@ -114,18 +125,14 @@ func TestIngester_Startup_PartitionRing(t *testing.T) {
 	i1, _, _ := createTestIngesterWithIngestStorage(
 		t, cfg1, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
 	)
-
-	svcCtx, svcCancel := context.WithTimeout(context.Background(), 3*time.Second)
-	require.NoError(t, i1.StartAsync(svcCtx))
+	require.NoError(t, i1.StartAsync(ctx))
 	t.Cleanup(func() {
-		svcCancel()
+		err := services.StopAndAwaitTerminated(ctx, i1)
+		require.ErrorContains(t, err, "failed to wait for instance to be active in ring")
 	})
 
-	joinCtx, joinCancel := context.WithTimeout(context.Background(), 1*time.Second)
-	t.Cleanup(func() {
-		joinCancel()
-	})
-	err = i1.AwaitRunning(joinCtx)
+	awaitJoinCtx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	err = i1.AwaitRunning(awaitJoinCtx)
 	require.ErrorIs(t, err, context.DeadlineExceeded) // i1 will not start as it blocks on i0 claiming tokens
 
 	// Confirm ingester-zone-a-1 pending instance state
