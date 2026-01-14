@@ -325,7 +325,7 @@ func handleOTLPBatchedStreaming(
 ) {
 	// Parse OTLP request (decompression + protobuf/JSON parsing)
 	rb := util.NewRequestBuffers(requestBufferPool)
-	otlpReq, uncompressedBodySize, tenantID, convOpts, err := parseOTLPRequestForBatching(
+	otlpReq, rawBytes, uncompressedBodySize, tenantID, convOpts, err := parseOTLPRequestForBatching(
 		ctx, r, maxRecvMsgSize, rb, limits,
 		resourceAttributePromotionConfig, keepIdentifyingOTelResourceAttributesConfig,
 		OTLPPushMiddlewares, enableOTLPLazyDeserializing, pushMetrics, logger,
@@ -340,7 +340,11 @@ func handleOTLPBatchedStreaming(
 	pushMetrics.IncOTLPRequest(tenantID)
 	pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
 	pushMetrics.IncOTLPContentType(r.Header.Get("Content-Type"))
-	observeOTLPFieldsCount(pushMetrics, otlpReq)
+	// Only observe field counts when we have a parsed request.
+	// Streaming skips parsing when rawBytes != nil and no middlewares.
+	if rawBytes == nil || len(OTLPPushMiddlewares) > 0 {
+		observeOTLPFieldsCount(pushMetrics, otlpReq)
+	}
 
 	// Create batch processor
 	processor := &otlpBatchProcessor{
@@ -356,8 +360,8 @@ func handleOTLPBatchedStreaming(
 		batchSize:               batchSize,
 	}
 
-	// Process batches
-	softErrors, hardErr := processor.processBatched(ctx, otlpReq, tenantID, convOpts)
+	// Process batches - use streaming iteration for protobuf if rawBytes available
+	softErrors, hardErr := processor.processBatched(ctx, otlpReq, rawBytes, tenantID, convOpts)
 
 	// Cleanup buffer after all batches complete (important for lazy deserialization)
 	rb.CleanUp()
@@ -381,7 +385,8 @@ func handleOTLPBatchedStreaming(
 }
 
 // parseOTLPRequestForBatching parses an OTLP request without converting to mimirpb.
-// It returns the parsed request, tenant ID, and conversion options.
+// It returns the parsed request, raw bytes (for protobuf streaming), tenant ID, and conversion options.
+// rawBytes is non-nil only for protobuf requests and can be used with streaming parsers.
 func parseOTLPRequestForBatching(
 	ctx context.Context,
 	r *http.Request,
@@ -394,7 +399,7 @@ func parseOTLPRequestForBatching(
 	enableOTLPLazyDeserializing bool,
 	pushMetrics *PushMetrics,
 	logger log.Logger,
-) (pmetricotlp.ExportRequest, int, string, conversionOptions, error) {
+) (pmetricotlp.ExportRequest, []byte, int, string, conversionOptions, error) {
 	var emptyReq pmetricotlp.ExportRequest
 	var emptyOpts conversionOptions
 
@@ -418,12 +423,12 @@ func parseOTLPRequestForBatching(
 	case "":
 		compression = util.NoCompression
 	default:
-		return emptyReq, 0, "", emptyOpts, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
+		return emptyReq, nil, 0, "", emptyOpts, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported compression: %s. Only \"gzip\", \"lz4\", \"zstd\", or no compression supported", contentEncoding)
 	}
 
 	// Check content length before decompression
 	if r.ContentLength > int64(maxRecvMsgSize) {
-		return emptyReq, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+		return emptyReq, nil, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 			actual: int(r.ContentLength),
 			limit:  maxRecvMsgSize,
 		}.Error())
@@ -431,33 +436,46 @@ func parseOTLPRequestForBatching(
 
 	// Decode the request
 	var otlpReq pmetricotlp.ExportRequest
+	var rawBytes []byte // Raw protobuf bytes for streaming (nil for JSON)
 	var uncompressedBodySize int
 	var err error
 
 	switch contentType {
 	case pbContentType:
-		exportReq := pmetricotlp.NewExportRequest()
-		var unmarshaler proto.Message
-		if enableOTLPLazyDeserializing {
-			unmarshaler = otlpProtoUnmarshalerLazy{request: &exportReq}
-		} else {
-			unmarshaler = otlpProtoUnmarshaler{request: &exportReq}
-		}
-		uncompressedBodySize, err = util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, unmarshaler, compression)
+		// First decompress to get raw bytes for streaming
+		rawBytes, err = util.DecompressRequest(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, buffers, compression)
 		var tooLargeErr util.MsgSizeTooLargeErr
 		if errors.As(err, &tooLargeErr) {
-			return emptyReq, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+			return emptyReq, nil, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 				compressed: tooLargeErr.Compressed,
 				actual:     tooLargeErr.Actual,
 				limit:      tooLargeErr.Limit,
 			}.Error())
 		}
 		if err != nil {
-			return emptyReq, 0, "", emptyOpts, err
+			return emptyReq, nil, 0, "", emptyOpts, err
 		}
-		otlpReq = exportReq
+		uncompressedBodySize = len(rawBytes)
+
+		// Only parse if middlewares need the full request.
+		// Streaming will parse rawBytes directly, avoiding double-parsing.
+		if len(OTLPPushMiddlewares) > 0 {
+			exportReq := pmetricotlp.NewExportRequest()
+			var unmarshaler proto.Unmarshaler
+			if enableOTLPLazyDeserializing {
+				unmarshaler = otlpProtoUnmarshalerLazy{request: &exportReq}
+			} else {
+				unmarshaler = otlpProtoUnmarshaler{request: &exportReq}
+			}
+			if err = unmarshaler.Unmarshal(rawBytes); err != nil {
+				return emptyReq, nil, 0, "", emptyOpts, err
+			}
+			otlpReq = exportReq
+		}
+		// If no middlewares, otlpReq stays empty - streaming will use rawBytes directly
 
 	case jsonContentType:
+		// JSON doesn't support streaming parsing, so rawBytes stays nil
 		exportReq := pmetricotlp.NewExportRequest()
 		sz := int(r.ContentLength)
 		if sz > 0 {
@@ -469,7 +487,7 @@ func parseOTLPRequestForBatching(
 		case util.Gzip:
 			gzReader, err := gzip.NewReader(reader)
 			if err != nil {
-				return emptyReq, 0, "", emptyOpts, errors.Wrap(err, "create gzip reader")
+				return emptyReq, nil, 0, "", emptyOpts, errors.Wrap(err, "create gzip reader")
 			}
 			defer runutil.CloseWithLogOnErr(logger, gzReader, "close gzip reader")
 			reader = gzReader
@@ -478,41 +496,41 @@ func parseOTLPRequestForBatching(
 		case util.Zstd:
 			reader, err = zstd.NewReader(reader)
 			if err != nil {
-				return emptyReq, 0, "", emptyOpts, errors.Wrap(err, "create zstd reader")
+				return emptyReq, nil, 0, "", emptyOpts, errors.Wrap(err, "create zstd reader")
 			}
 		}
 
 		reader = http.MaxBytesReader(nil, io.NopCloser(reader), int64(maxRecvMsgSize))
 		if _, err := buf.ReadFrom(reader); err != nil {
 			if util.IsRequestBodyTooLarge(err) {
-				return emptyReq, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
+				return emptyReq, nil, 0, "", emptyOpts, httpgrpc.Error(http.StatusRequestEntityTooLarge, distributorMaxOTLPRequestSizeErr{
 					actual: -1,
 					limit:  maxRecvMsgSize,
 				}.Error())
 			}
-			return emptyReq, 0, "", emptyOpts, errors.Wrap(err, "read write request")
+			return emptyReq, nil, 0, "", emptyOpts, errors.Wrap(err, "read write request")
 		}
 		if err := exportReq.UnmarshalJSON(buf.Bytes()); err != nil {
-			return emptyReq, 0, "", emptyOpts, err
+			return emptyReq, nil, 0, "", emptyOpts, err
 		}
 		uncompressedBodySize = buf.Len()
 		otlpReq = exportReq
 
 	default:
-		return emptyReq, 0, "", emptyOpts, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
+		return emptyReq, nil, 0, "", emptyOpts, httpgrpc.Errorf(http.StatusUnsupportedMediaType, "unsupported content type: %s, supported: [%s, %s]", contentType, jsonContentType, pbContentType)
 	}
 
 	// Run middlewares
 	for _, middleware := range OTLPPushMiddlewares {
 		if err := middleware(ctx, &otlpReq); err != nil {
-			return emptyReq, 0, "", emptyOpts, err
+			return emptyReq, nil, 0, "", emptyOpts, err
 		}
 	}
 
 	// Get tenant ID and configuration
 	tenantID, err := tenant.TenantID(ctx)
 	if err != nil {
-		return emptyReq, 0, "", emptyOpts, err
+		return emptyReq, nil, 0, "", emptyOpts, err
 	}
 
 	translationStrategy := limits.OTelTranslationStrategy(tenantID)
@@ -531,7 +549,7 @@ func parseOTLPRequestForBatching(
 		preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 	}
 
-	return otlpReq, uncompressedBodySize, tenantID, convOpts, nil
+	return otlpReq, rawBytes, uncompressedBodySize, tenantID, convOpts, nil
 }
 
 // handleOTLPParseError handles errors that occur during OTLP request parsing.
@@ -1207,19 +1225,15 @@ type otlpBatchProcessor struct {
 // processBatched processes OTLP metrics in batches sequentially.
 // It uses a shared appender across all batches to maintain series deduplication
 // while reducing peak memory by pushing batches incrementally.
+// If rawBytes is non-nil (protobuf), it uses streaming parsing to reduce peak memory.
+// If rawBytes is nil (JSON), it falls back to iterating over the parsed request.
 func (p *otlpBatchProcessor) processBatched(
 	ctx context.Context,
 	otlpReq pmetricotlp.ExportRequest,
+	rawBytes []byte,
 	tenantID string,
 	convOpts conversionOptions,
 ) (softErrors []error, hardErr error) {
-	resourceMetricsSlice := otlpReq.Metrics().ResourceMetrics()
-	n := resourceMetricsSlice.Len()
-
-	if n == 0 {
-		return nil, nil
-	}
-
 	// SHARED appender for entire request - maintains series deduplication
 	appender := otlpappender.NewCombinedAppender()
 	appender.EnableCreatedTimestampZeroIngestion = convOpts.enableCTZeroIngestion
@@ -1242,6 +1256,92 @@ func (p *otlpBatchProcessor) processBatched(
 	batchSize := p.batchSize
 	if batchSize <= 0 {
 		batchSize = 1
+	}
+
+	// Use streaming iteration for protobuf, fall back to parsed request for JSON
+	if rawBytes != nil {
+		return p.processBatchedStreaming(ctx, rawBytes, converter, settings, appender, batchSize)
+	}
+	return p.processBatchedParsed(ctx, otlpReq, converter, settings, appender, batchSize)
+}
+
+// processBatchedStreaming processes batches using streaming iteration over raw protobuf bytes.
+// This reduces peak memory by parsing and releasing ResourceMetrics one at a time.
+func (p *otlpBatchProcessor) processBatchedStreaming(
+	ctx context.Context,
+	rawBytes []byte,
+	converter *otlpMimirConverter,
+	settings prometheusremotewrite.Settings,
+	appender *otlpappender.MimirAppender,
+	batchSize int,
+) (softErrors []error, hardErr error) {
+	// Create streaming iterator over raw protobuf bytes
+	iter := pmetric.NewResourceMetricsIterator(rawBytes, nil)
+	defer iter.Release()
+
+	// Track series/metadata indices for incremental extraction
+	lastSeriesIdx := 0
+	lastMetadataIdx := 0
+	batchCount := 0
+
+	for iter.Next() {
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return softErrors, ctx.Err()
+		}
+
+		rm := iter.Current()
+		_, err := converter.converter.FromResourceMetrics(ctx, rm, settings)
+		if err != nil {
+			// Conversion errors are soft - continue with next ResourceMetrics
+			softErrors = append(softErrors, err)
+		}
+
+		batchCount++
+
+		// Push batch when we've accumulated enough ResourceMetrics
+		if batchCount >= batchSize {
+			softErrs, hardErr := p.pushBatch(ctx, appender, &lastSeriesIdx, &lastMetadataIdx)
+			softErrors = append(softErrors, softErrs...)
+			if hardErr != nil {
+				return softErrors, hardErr
+			}
+			batchCount = 0
+			// Note: Memory from this batch's ResourceMetrics is released when iter.Next()
+			// is called next, BEFORE parsing the next ResourceMetrics
+		}
+	}
+
+	if err := iter.Err(); err != nil {
+		return softErrors, err
+	}
+
+	// Push any remaining series from the last partial batch
+	if batchCount > 0 {
+		softErrs, hardErr := p.pushBatch(ctx, appender, &lastSeriesIdx, &lastMetadataIdx)
+		softErrors = append(softErrors, softErrs...)
+		if hardErr != nil {
+			return softErrors, hardErr
+		}
+	}
+
+	return softErrors, nil
+}
+
+// processBatchedParsed processes batches using the pre-parsed request (for JSON).
+func (p *otlpBatchProcessor) processBatchedParsed(
+	ctx context.Context,
+	otlpReq pmetricotlp.ExportRequest,
+	converter *otlpMimirConverter,
+	settings prometheusremotewrite.Settings,
+	appender *otlpappender.MimirAppender,
+	batchSize int,
+) (softErrors []error, hardErr error) {
+	resourceMetricsSlice := otlpReq.Metrics().ResourceMetrics()
+	n := resourceMetricsSlice.Len()
+
+	if n == 0 {
+		return nil, nil
 	}
 
 	// Track series/metadata indices for incremental extraction
@@ -1272,38 +1372,55 @@ func (p *otlpBatchProcessor) processBatched(
 			}
 		}
 
-		// Extract only NEW series since last batch
-		allSeries, allMetadata := appender.GetResult()
-		newSeriesCount := len(allSeries) - lastSeriesIdx
-
-		// Skip if no new series in this batch (all deduplicated)
-		if newSeriesCount == 0 {
-			continue
+		// Push the batch
+		softErrs, hardErr := p.pushBatch(ctx, appender, &lastSeriesIdx, &lastMetadataIdx)
+		softErrors = append(softErrors, softErrs...)
+		if hardErr != nil {
+			return softErrors, hardErr
 		}
-
-		// Create slice views for new series (no copy, just slice headers)
-		newSeries := allSeries[lastSeriesIdx:]
-		newMetadata := allMetadata[lastMetadataIdx:]
-
-		// Create and push batch request
-		req := p.createBatchRequest(newSeries, newMetadata)
-		pushErr := p.push(ctx, req)
-
-		// Note: Don't call ReuseSlice here - the series are still owned by the shared appender
-		// They will be cleaned up when the entire request completes
-		req.CleanUp()
-
-		if pushErr != nil {
-			if isOTLPHardError(pushErr) {
-				return softErrors, pushErr
-			}
-			softErrors = append(softErrors, pushErr)
-		}
-
-		// Update indices for next batch
-		lastSeriesIdx = len(allSeries)
-		lastMetadataIdx = len(allMetadata)
 	}
+
+	return softErrors, nil
+}
+
+// pushBatch extracts new series from the appender and pushes them.
+func (p *otlpBatchProcessor) pushBatch(
+	ctx context.Context,
+	appender *otlpappender.MimirAppender,
+	lastSeriesIdx *int,
+	lastMetadataIdx *int,
+) (softErrors []error, hardErr error) {
+	// Extract only NEW series since last batch
+	allSeries, allMetadata := appender.GetResult()
+	newSeriesCount := len(allSeries) - *lastSeriesIdx
+
+	// Skip if no new series in this batch (all deduplicated)
+	if newSeriesCount == 0 {
+		return nil, nil
+	}
+
+	// Create slice views for new series (no copy, just slice headers)
+	newSeries := allSeries[*lastSeriesIdx:]
+	newMetadata := allMetadata[*lastMetadataIdx:]
+
+	// Create and push batch request
+	req := p.createBatchRequest(newSeries, newMetadata)
+	pushErr := p.push(ctx, req)
+
+	// Note: Don't call ReuseSlice here - the series are still owned by the shared appender
+	// They will be cleaned up when the entire request completes
+	req.CleanUp()
+
+	if pushErr != nil {
+		if isOTLPHardError(pushErr) {
+			return nil, pushErr
+		}
+		softErrors = append(softErrors, pushErr)
+	}
+
+	// Update indices for next batch
+	*lastSeriesIdx = len(allSeries)
+	*lastMetadataIdx = len(allMetadata)
 
 	return softErrors, nil
 }

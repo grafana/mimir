@@ -267,6 +267,110 @@ func SkipExportMetricsServiceRequestProto(buf []byte) error {
 	return nil
 }
 
+// ResourceMetricsIterator allows streaming iteration over ResourceMetrics
+// without allocating all of them upfront. This reduces peak memory by
+// parsing and releasing ResourceMetrics one at a time.
+type ResourceMetricsIterator struct {
+	buf     []byte
+	pos     int
+	opts    *pdata.UnmarshalOptions
+	current *ResourceMetrics
+	err     error
+}
+
+// NewResourceMetricsIterator creates an iterator over raw protobuf bytes
+// of an ExportMetricsServiceRequest. Call Next() to advance and Current()
+// to get the current ResourceMetrics.
+func NewResourceMetricsIterator(buf []byte, opts *pdata.UnmarshalOptions) *ResourceMetricsIterator {
+	return &ResourceMetricsIterator{
+		buf:  buf,
+		pos:  0,
+		opts: opts,
+	}
+}
+
+// Next advances to the next ResourceMetrics. Returns false when done or on error.
+// After Next returns true, call Current() to get the ResourceMetrics.
+// The previously returned ResourceMetrics is released back to the pool when
+// Next is called, so do not retain references to it.
+func (it *ResourceMetricsIterator) Next() bool {
+	if it.pos >= len(it.buf) || it.err != nil {
+		return false
+	}
+
+	// Release previous ResourceMetrics back to pool
+	if it.current != nil {
+		DeleteResourceMetrics(it.current, true)
+		it.current = nil
+	}
+
+	for it.pos < len(it.buf) {
+		// Parse next tag
+		fieldNum, wireType, newPos, err := proto.ConsumeTag(it.buf, it.pos)
+		if err != nil {
+			it.err = err
+			return false
+		}
+		it.pos = newPos
+
+		// ResourceMetrics is field 1
+		if fieldNum == 1 {
+			if wireType != proto.WireTypeLen {
+				it.err = fmt.Errorf("proto: wrong wireType = %d for field ResourceMetrics", wireType)
+				return false
+			}
+
+			// Parse ResourceMetrics length
+			length, newPos, err := proto.ConsumeLen(it.buf, it.pos)
+			if err != nil {
+				it.err = err
+				return false
+			}
+			startPos := newPos - length
+			it.pos = newPos
+
+			// Parse ResourceMetrics
+			it.current = NewResourceMetrics()
+			if err := it.current.UnmarshalProtoOpts(it.buf[startPos:newPos], it.opts); err != nil {
+				it.err = err
+				DeleteResourceMetrics(it.current, true)
+				it.current = nil
+				return false
+			}
+
+			return true
+		}
+
+		// Skip non-ResourceMetrics fields
+		it.pos, it.err = proto.ConsumeUnknown(it.buf, it.pos, wireType)
+		if it.err != nil {
+			return false
+		}
+	}
+
+	return false
+}
+
+// Current returns the current ResourceMetrics. Valid until Next() is called.
+// Do not retain references after calling Next() or Release().
+func (it *ResourceMetricsIterator) Current() *ResourceMetrics {
+	return it.current
+}
+
+// Err returns any error encountered during iteration.
+func (it *ResourceMetricsIterator) Err() error {
+	return it.err
+}
+
+// Release releases any remaining resources. Call when done iterating.
+// Safe to call multiple times.
+func (it *ResourceMetricsIterator) Release() {
+	if it.current != nil {
+		DeleteResourceMetrics(it.current, true)
+		it.current = nil
+	}
+}
+
 func GenTestExportMetricsServiceRequest() *ExportMetricsServiceRequest {
 	orig := NewExportMetricsServiceRequest()
 	orig.ResourceMetrics = []*ResourceMetrics{{}, GenTestResourceMetrics()}

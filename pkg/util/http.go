@@ -177,6 +177,21 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 	return len(body), nil
 }
 
+// DecompressRequest decompresses a request body and returns the raw bytes.
+// This is useful when you want to process the bytes with a streaming parser
+// instead of unmarshaling into a proto message all at once.
+// The returned bytes are owned by the buffers and must not be used after buffers.CleanUp().
+func DecompressRequest(ctx context.Context, reader io.Reader, expectedSize, maxSize int, buffers *RequestBuffers, compression CompressionType) ([]byte, error) {
+	sp := trace.SpanFromContext(ctx)
+	sp.AddEvent("util.DecompressRequest[start reading]")
+	body, err := decompressRequest(buffers, reader, expectedSize, maxSize, compression, sp)
+	if err != nil {
+		return nil, err
+	}
+	sp.AddEvent("util.DecompressRequest[done]", trace.WithAttributes(attribute.Int("size", len(body))))
+	return body, nil
+}
+
 type MsgSizeTooLargeErr struct {
 	Compressed, Actual, Limit int
 }

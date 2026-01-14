@@ -74,3 +74,10 @@ func (ms ResourceMetrics) CopyTo(dest ResourceMetrics) {
 	dest.state.AssertMutable()
 	internal.CopyResourceMetrics(dest.orig, ms.orig)
 }
+
+// WrapResourceMetrics wraps an internal ResourceMetrics for use with the pmetric API.
+// This is useful for streaming parsers that parse ResourceMetrics one at a time.
+// The returned ResourceMetrics is mutable and shares the underlying data with the input.
+func WrapResourceMetrics(rm *internal.ResourceMetrics) ResourceMetrics {
+	return newResourceMetrics(rm, internal.NewState())
+}
