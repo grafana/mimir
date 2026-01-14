@@ -11,6 +11,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
@@ -20,19 +21,21 @@ import (
 )
 
 func TestProjectionPushdownOptimizationPass(t *testing.T) {
+	// Enable experimental functions so that we can verify they are inspected correctly.
+	parser.EnableExperimentalFunctions = true
+
 	testCases := map[string]struct {
 		expr             string
 		expectedPlan     string
 		expectedModified int
-		expectedSkip     map[string]int
+		expectedSkip     map[plan.SkipReason]int
 	}{
 		"raw vector selector": {
 			expr:             `foo{job="a"}`,
 			expectedPlan:     `- VectorSelector: {job="a", __name__="foo"}`,
 			expectedModified: 0,
-			expectedSkip:     map[string]int{plan.SkipReasonNoAggregations: 1},
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNoAggregations: 1},
 		},
-
 		"binary expression with aggregations": {
 			expr: `avg by (zone) (foo) + avg by (zone) (bar)`,
 			expectedPlan: `
@@ -43,9 +46,8 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 						- VectorSelector: {__name__="bar"}
 			`,
 			expectedModified: 0,
-			expectedSkip:     map[string]int{plan.SkipReasonBinaryOperation: 1},
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonBinaryOperation: 2},
 		},
-
 		"deduplicate node inserted": {
 			expr: `sum by (zone) (rate(foo[5m]))`,
 			expectedPlan: `
@@ -55,19 +57,99 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 							- MatrixSelector: {__name__="foo"}[5m0s]
 			`,
 			expectedModified: 0,
-			expectedSkip:     map[string]int{plan.SkipReasonDeduplicate: 1},
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
 		},
-
-		"ambiguous label requirements": {
-			expr: `avg(foo)`,
+		// Note that the projections pass has logic to inspect label_join or label_replace functions
+		// and extract the required labels but, we abort trying to use projections as soon as we see a
+		// `DeduplicateAndMerge` node.
+		"aggregation with label_join function": {
+			expr: `avg by (job) (label_join(foo, "dst", "-", "src1", "src2"))`,
 			expectedPlan: `
-				- AggregateExpression: avg
+				- AggregateExpression: avg by (job)
+					- DeduplicateAndMerge
+						- FunctionCall: label_join(...)
+							- param 0: VectorSelector: {__name__="foo"}
+							- param 1: StringLiteral: "dst"
+							- param 2: StringLiteral: "-"
+							- param 3: StringLiteral: "src1"
+							- param 4: StringLiteral: "src2"
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
+		},
+		"aggregation with label_replace function": {
+			expr: `avg by (job) (label_replace(foo, "dst", "$1", "src", ".+/(.+)"))`,
+			expectedPlan: `
+				- AggregateExpression: avg by (job)
+					- DeduplicateAndMerge
+						- FunctionCall: label_replace(...)
+							- param 0: VectorSelector: {__name__="foo"}
+							- param 1: StringLiteral: "dst"
+							- param 2: StringLiteral: "$1"
+							- param 3: StringLiteral: "src"
+							- param 4: StringLiteral: ".+/(.+)"
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
+		},
+		"aggregation without label": {
+			expr: `avg without (pod) (foo)`,
+			expectedPlan: `
+				- AggregateExpression: avg without (pod)
 					- VectorSelector: {__name__="foo"}
 			`,
 			expectedModified: 0,
-			expectedSkip:     map[string]int{plan.SkipReasonAmbiguousLabels: 1},
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNotSupported: 1},
 		},
-
+		"aggregations with and without labels": {
+			expr: `avg by (job) (sum without (instance) (foo))`,
+			expectedPlan: `
+				- AggregateExpression: avg by (job)
+					- AggregateExpression: sum without (instance)
+						- VectorSelector: {__name__="foo"}
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNotSupported: 1},
+		},
+		"aggregation with count_values": {
+			expr: `count_values("pod", foo)`,
+			expectedPlan: `
+				- AggregateExpression: count_values
+					- expression: VectorSelector: {__name__="foo"}, include ("__series_hash__", "pod")
+					- parameter: StringLiteral: "pod"
+			`,
+			expectedModified: 1,
+		},
+		"aggregation with sort_by_label": {
+			expr: `sort_by_label(avg by (job) (bar), "zone", "environment")`,
+			expectedPlan: `
+				- FunctionCall: sort_by_label(...)
+					- param 0: AggregateExpression: avg by (job)
+						- VectorSelector: {__name__="bar"}, include ("__series_hash__", "environment", "job", "zone")
+					- param 1: StringLiteral: "zone"
+					- param 2: StringLiteral: "environment"
+			`,
+			expectedModified: 1,
+		},
+		"aggregation with sort_by_label_desc": {
+			expr: `sort_by_label_desc(avg by (job) (bar), "cluster", "region")`,
+			expectedPlan: `
+				- FunctionCall: sort_by_label_desc(...)
+					- param 0: AggregateExpression: avg by (job)
+						- VectorSelector: {__name__="bar"}, include ("__series_hash__", "cluster", "job", "region")
+					- param 1: StringLiteral: "cluster"
+					- param 2: StringLiteral: "region"
+			`,
+			expectedModified: 1,
+		},
+		"aggregation by no labels": {
+			expr: `avg(foo)`,
+			expectedPlan: `
+				- AggregateExpression: avg
+					- VectorSelector: {__name__="foo"}, include ("__series_hash__")
+			`,
+			expectedModified: 1,
+		},
 		"single aggregation by label": {
 			expr: `avg by (job) (foo)`,
 			expectedPlan: `
@@ -87,6 +169,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			opts := streamingpromql.NewTestEngineOpts()
 			planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
+
 			planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 
 			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
@@ -96,7 +179,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 
 			reg := opts.CommonOpts.Reg.(*prometheus.Registry)
 			require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-				# HELP cortex_mimir_query_engine_projection_pushdown_modified_total Total number of queries where projections could be used.
+				# HELP cortex_mimir_query_engine_projection_pushdown_modified_total Total number of selectors where projections could be used.
 				# TYPE cortex_mimir_query_engine_projection_pushdown_modified_total counter
 				cortex_mimir_query_engine_projection_pushdown_modified_total %d
 				`, testCase.expectedModified)), "cortex_mimir_query_engine_projection_pushdown_modified_total",
@@ -104,7 +187,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 
 			for k, v := range testCase.expectedSkip {
 				require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-					# HELP cortex_mimir_query_engine_projection_pushdown_skipped_total Total number of queries where projections could not be used.
+					# HELP cortex_mimir_query_engine_projection_pushdown_skipped_total Total number of selectors where projections could not be used.
 					# TYPE cortex_mimir_query_engine_projection_pushdown_skipped_total counter
 					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="%s"} %d
 					`, k, v)), "cortex_mimir_query_engine_projection_pushdown_skipped_total",

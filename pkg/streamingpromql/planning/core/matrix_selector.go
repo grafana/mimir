@@ -77,7 +77,30 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+	m.ProjectionInclude = m.ProjectionInclude || otherMatrixSelector.ProjectionInclude
+	m.ProjectionLabels = MergeLabelNames(m.ProjectionLabels, otherMatrixSelector.ProjectionLabels)
+
 	return nil
+}
+
+// MergeLabelNames combines two slices of label names, deduplicating and sorting them.
+func MergeLabelNames(lbls1 []string, lbls2 []string) []string {
+	unique := make(map[string]struct{}, len(lbls1)+len(lbls2))
+	for _, l := range lbls1 {
+		unique[l] = struct{}{}
+	}
+
+	for _, l := range lbls2 {
+		unique[l] = struct{}{}
+	}
+
+	ret := make([]string, 0, len(unique))
+	for l := range unique {
+		ret = append(ret, l)
+	}
+
+	slices.Sort(ret)
+	return ret
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
