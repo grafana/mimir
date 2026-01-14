@@ -71,7 +71,9 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
 		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
-		v.Smoothed == otherVectorSelector.Smoothed
+		v.Smoothed == otherVectorSelector.Smoothed &&
+		v.ProjectionInclude == otherVectorSelector.ProjectionInclude &&
+		slices.Equal(v.ProjectionLabels, otherVectorSelector.ProjectionLabels)
 }
 
 func (v *VectorSelector) MergeHints(other planning.Node) error {

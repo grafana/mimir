@@ -4,9 +4,12 @@ package plan
 
 import (
 	"context"
+	"errors"
+	"maps"
 	"slices"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
@@ -26,6 +29,8 @@ const (
 )
 
 var _ optimize.QueryPlanOptimizationPass = &ProjectionPushdownOptimizationPass{}
+
+var errNotEligible = errors.New("expression is not eligible for projection")
 
 type ProjectionPushdownOptimizationPass struct {
 	examined prometheus.Counter
@@ -57,6 +62,152 @@ func (p *ProjectionPushdownOptimizationPass) Name() string {
 }
 
 func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, v planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	return p.apply2(ctx, plan, v)
+}
+
+func (p *ProjectionPushdownOptimizationPass) apply2(ctx context.Context, plan *planning.QueryPlan, v planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	spanlog := spanlogger.FromContext(ctx, p.logger)
+	modified := false
+	p.examined.Inc()
+
+	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+		switch e := node.(type) {
+		case *core.MatrixSelector:
+			m, eligible := examinePath(path)
+			if !eligible {
+				return nil
+			}
+
+			// Unique identifier for each series is always necessary if we are using projections
+			// so that we can deduplicate them in the absence of their full label set.
+			m[ProjectionSeriesHash] = struct{}{}
+
+			required := flattenLabels(m)
+			e.ProjectionInclude = true
+			e.ProjectionLabels = required
+
+			modified = true
+			spanlog.DebugLog(
+				"msg", "applying projection to selector",
+				"selector_matchers", e.Matchers,
+				"required_labels", required,
+			)
+		case *core.VectorSelector:
+			m, eligible := examinePath(path)
+			if !eligible {
+				return nil
+			}
+
+			// Unique identifier for each series is always necessary if we are using projections
+			// so that we can deduplicate them in the absence of their full label set.
+			m[ProjectionSeriesHash] = struct{}{}
+
+			required := flattenLabels(m)
+			e.ProjectionInclude = true
+			e.ProjectionLabels = required
+
+			modified = true
+			spanlog.DebugLog(
+				"msg", "applying projection to selector",
+				"selector_matchers", e.Matchers,
+				"required_labels", required,
+			)
+		}
+		return nil
+	}))
+
+	if modified {
+		p.modified.Inc()
+	}
+
+	return plan, nil
+}
+
+func flattenLabels(m map[string]struct{}) []string {
+	ret := make([]string, 0, len(m))
+	for k := range m {
+		ret = append(ret, k)
+	}
+
+	slices.Sort(ret)
+	return ret
+}
+
+func examinePath(path []planning.Node) (map[string]struct{}, bool) {
+	requiredLabels := make(map[string]struct{})
+	hasAggregation := false
+
+	for i := len(path) - 1; i >= 0; i-- {
+		switch e := path[i].(type) {
+		case *core.AggregateExpression:
+			// TODO: Explain
+			if e.Without {
+				return nil, false
+			}
+
+			for _, l := range e.Grouping {
+				requiredLabels[l] = struct{}{}
+			}
+
+			hasAggregation = true
+		case *core.BinaryExpression:
+			return nil, false
+		case *core.DeduplicateAndMerge:
+			return nil, false
+		case *core.FunctionCall:
+			m, eligible := examineFunction(e)
+			if !eligible {
+				return nil, false
+			}
+
+			maps.Copy(requiredLabels, m)
+		}
+	}
+
+	// TODO: Explain
+	if !hasAggregation && len(requiredLabels) == 0 {
+		return nil, false
+	}
+
+	return requiredLabels, true
+}
+
+func examineFunction(f *core.FunctionCall) (map[string]struct{}, bool) {
+	switch f.Function {
+	case functions.FUNCTION_INFO:
+		// Keep this implementation simple and skip any projection when the
+		// query uses the info function.
+		return nil, false
+	case functions.FUNCTION_LABEL_JOIN:
+		args := functionLabelArgs(f.Args[1])
+		rest := functionLabelArgs(f.Args[3:]...)
+		maps.Copy(args, rest)
+		return args, true
+	case functions.FUNCTION_LABEL_REPLACE:
+		return functionLabelArgs(f.Args[1], f.Args[3]), true
+	case functions.FUNCTION_SORT_BY_LABEL:
+		return functionLabelArgs(f.Args[:1]...), true
+	case functions.FUNCTION_SORT_BY_LABEL_DESC:
+		return functionLabelArgs(f.Args[:1]...), true
+	default:
+		// Not a function that requires any particular label.
+		return nil, true
+	}
+}
+
+func functionLabelArgs(args ...planning.Node) map[string]struct{} {
+	required := make(map[string]struct{})
+
+	for _, arg := range args {
+		if a, ok := arg.(*core.StringLiteral); ok {
+			required[a.Value] = struct{}{}
+		}
+	}
+
+	return required
+}
+
+func (p *ProjectionPushdownOptimizationPass) apply1(ctx context.Context, plan *planning.QueryPlan, v planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	spanlog := spanlogger.FromContext(ctx, p.logger)
 	p.examined.Inc()
 

@@ -66,7 +66,9 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
-		m.Smoothed == otherMatrixSelector.Smoothed
+		m.Smoothed == otherMatrixSelector.Smoothed &&
+		m.ProjectionInclude == otherMatrixSelector.ProjectionInclude &&
+		slices.Equal(m.ProjectionLabels, otherMatrixSelector.ProjectionLabels)
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {
