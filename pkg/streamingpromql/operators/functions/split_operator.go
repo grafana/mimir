@@ -666,8 +666,10 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 		return nil, err
 	}
 	results := make([]T, len(p.ranges))
+	hints := types.SubStepHints{}
 	for rangeIdx, splitRange := range p.ranges {
-		rangeStep, err := step.SubStep(splitRange.Start, splitRange.End)
+		var rangeStep *types.RangeVectorStepData
+		rangeStep, hints, err = step.SubStep(splitRange.Start, splitRange.End, hints)
 		if err != nil {
 			return nil, err
 		}

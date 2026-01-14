@@ -387,7 +387,7 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := step.SubStep(tc.rangeStart, tc.rangeEnd)
+			_, _, err := step.SubStep(tc.rangeStart, tc.rangeEnd, SubStepHints{})
 			require.EqualError(t, err, tc.expectedErr)
 		})
 	}

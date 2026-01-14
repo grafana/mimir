@@ -631,7 +631,7 @@ func TestRingBufferView_SubView(t *testing.T) {
 				require.Equal(t, 4, fullView.Count())
 
 				// Test SubView with range (15, 35] - should get points at T=20, T=30
-				subView := fullView.SubView(15, 35)
+				subView, _ := fullView.SubView(15, 35, 0)
 				require.Equal(t, 2, subView.Count())
 				require.Equal(t, int64(20), subView.First().T)
 				last, hasLast := subView.Last()
@@ -639,12 +639,12 @@ func TestRingBufferView_SubView(t *testing.T) {
 				require.Equal(t, int64(30), last.T)
 
 				// Test SubView with range (5, 45] - should get all points
-				subView = fullView.SubView(5, 45)
+				subView, _ = fullView.SubView(5, 45, 0)
 				require.Equal(t, 4, subView.Count())
 				require.Equal(t, int64(10), subView.First().T)
 
 				// Test SubView with range (25, 45] - should get points at T=30, T=40
-				subView = fullView.SubView(25, 45)
+				subView, _ = fullView.SubView(25, 45, 0)
 				require.Equal(t, 2, subView.Count())
 				require.Equal(t, int64(30), subView.First().T)
 				last, hasLast = subView.Last()
@@ -652,11 +652,11 @@ func TestRingBufferView_SubView(t *testing.T) {
 				require.Equal(t, int64(40), last.T)
 
 				// Test SubView with range (60, 70] - should get no points
-				subView = fullView.SubView(60, 70)
+				subView, _ = fullView.SubView(60, 70, 0)
 				require.Equal(t, 0, subView.Count())
 
 				// Test SubView with range (5, 15] - should get point at T=10
-				subView = fullView.SubView(5, 15)
+				subView, _ = fullView.SubView(5, 15, 0)
 				require.Equal(t, 1, subView.Count())
 				require.Equal(t, int64(10), subView.First().T)
 			})
@@ -721,7 +721,7 @@ func TestRingBufferView_SubView(t *testing.T) {
 				require.Equal(t, 4, fullView.Count())
 
 				// Test SubView with range (15, 35] - should get points at T=20, T=30
-				subView := fullView.SubView(15, 35)
+				subView, _ := fullView.SubView(15, 35, 0)
 				require.Equal(t, 2, subView.Count())
 				require.Equal(t, int64(20), subView.First().T)
 				last, hasLast := subView.Last()
@@ -729,12 +729,12 @@ func TestRingBufferView_SubView(t *testing.T) {
 				require.Equal(t, int64(30), last.T)
 
 				// Test SubView with range (5, 45] - should get all points
-				subView = fullView.SubView(5, 45)
+				subView, _ = fullView.SubView(5, 45, 0)
 				require.Equal(t, 4, subView.Count())
 				require.Equal(t, int64(10), subView.First().T)
 
 				// Test SubView with range (25, 45] - should get points at T=30, T=40
-				subView = fullView.SubView(25, 45)
+				subView, _ = fullView.SubView(25, 45, 0)
 				require.Equal(t, 2, subView.Count())
 				require.Equal(t, int64(30), subView.First().T)
 				last, hasLast = subView.Last()
@@ -742,14 +742,99 @@ func TestRingBufferView_SubView(t *testing.T) {
 				require.Equal(t, int64(40), last.T)
 
 				// Test SubView with range (60, 70] - should get no points
-				subView = fullView.SubView(60, 70)
+				subView, _ = fullView.SubView(60, 70, 0)
 				require.Equal(t, 0, subView.Count())
 
 				// Test SubView with range (5, 15] - should get point at T=10
-				subView = fullView.SubView(5, 15)
+				subView, _ = fullView.SubView(5, 15, 0)
 				require.Equal(t, 1, subView.Count())
 				require.Equal(t, int64(10), subView.First().T)
 			})
 		}
+	})
+}
+
+func TestRingBufferView_SubView_ConsecutiveRanges(t *testing.T) {
+	t.Run("FPoint ring buffer", func(t *testing.T) {
+		buffer := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+
+		// Add points at T=10, 20, 30, 40, 50, 60, 70, 80, 90, 100
+		for i := int64(1); i <= 10; i++ {
+			err := buffer.Append(promql.FPoint{T: i * 10, F: float64(i)})
+			require.NoError(t, err)
+		}
+
+		fullView := buffer.ViewUntilSearchingForwards(101, nil)
+		require.Equal(t, 10, fullView.Count())
+
+		// Create consecutive non-overlapping subviews: (5,30], (30,60], (60,85]
+		// This simulates the query splitting use case
+		var hint int
+
+		// First range: (5, 30] - should get points at T=10, 20, 30
+		subView1, hint := fullView.SubView(5, 30, hint)
+		require.Equal(t, 3, subView1.Count())
+		require.Equal(t, int64(10), subView1.First().T)
+		last1, _ := subView1.Last()
+		require.Equal(t, int64(30), last1.T)
+
+		// Second range: (30, 60] - should get points at T=40, 50, 60
+		// The hint should allow us to skip the first 3 points
+		subView2, hint := fullView.SubView(30, 60, hint)
+		require.Equal(t, 3, subView2.Count())
+		require.Equal(t, int64(40), subView2.First().T)
+		last2, _ := subView2.Last()
+		require.Equal(t, int64(60), last2.T)
+
+		// Third range: (60, 85] - should get points at T=70, 80
+		// The hint should allow us to skip the first 6 points
+		subView3, hint := fullView.SubView(60, 85, hint)
+		require.Equal(t, 2, subView3.Count())
+		require.Equal(t, int64(70), subView3.First().T)
+		last3, _ := subView3.Last()
+		require.Equal(t, int64(80), last3.T)
+
+		// Verify hint value progressed correctly
+		require.Equal(t, 8, hint) // Should point past the last point in subView3
+	})
+
+	t.Run("HPoint ring buffer", func(t *testing.T) {
+		buffer := NewHPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
+
+		// Add points at T=10, 20, 30, 40, 50, 60, 70, 80, 90, 100
+		for i := int64(1); i <= 10; i++ {
+			err := buffer.Append(promql.HPoint{T: i * 10, H: &histogram.FloatHistogram{Count: float64(i)}})
+			require.NoError(t, err)
+		}
+
+		fullView := buffer.ViewUntilSearchingForwards(101, nil)
+		require.Equal(t, 10, fullView.Count())
+
+		// Create consecutive non-overlapping subviews: (5,30], (30,60], (60,85]
+		var hint int
+
+		// First range: (5, 30] - should get points at T=10, 20, 30
+		subView1, hint := fullView.SubView(5, 30, hint)
+		require.Equal(t, 3, subView1.Count())
+		require.Equal(t, int64(10), subView1.First().T)
+		last1, _ := subView1.Last()
+		require.Equal(t, int64(30), last1.T)
+
+		// Second range: (30, 60] - should get points at T=40, 50, 60
+		subView2, hint := fullView.SubView(30, 60, hint)
+		require.Equal(t, 3, subView2.Count())
+		require.Equal(t, int64(40), subView2.First().T)
+		last2, _ := subView2.Last()
+		require.Equal(t, int64(60), last2.T)
+
+		// Third range: (60, 85] - should get points at T=70, 80
+		subView3, hint := fullView.SubView(60, 85, hint)
+		require.Equal(t, 2, subView3.Count())
+		require.Equal(t, int64(70), subView3.First().T)
+		last3, _ := subView3.Last()
+		require.Equal(t, int64(80), last3.T)
+
+		// Verify hint value progressed correctly
+		require.Equal(t, 8, hint)
 	})
 }

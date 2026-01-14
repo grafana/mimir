@@ -364,16 +364,24 @@ func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer,
 }
 
 // SubView returns a new view that is a subset of this view, containing only points with timestamps in the range (minT, maxT].
+// The startHint parameter provides a hint about where to start searching for the minT boundary (pass 0 for the first call).
+// This is particularly useful when creating consecutive subviews where the next subview's start is at or after the previous subview's end.
 // The returned view shares the same underlying buffer and is no longer valid if the buffer is modified.
-func (v HPointRingBufferView) SubView(minT int64, maxT int64) HPointRingBufferView {
+// Returns the new subview and the ending index (relative to the parent view) which should be passed as startHint for the next SubView call.
+func (v HPointRingBufferView) SubView(minT int64, maxT int64, startHint int) (HPointRingBufferView, int) {
 	if v.size == 0 {
-		return HPointRingBufferView{buffer: v.buffer, offset: v.offset, size: 0}
+		return HPointRingBufferView{buffer: v.buffer, offset: v.offset, size: 0}, 0
 	}
 
-	// TODO: for the query splitting use case, the next subview's start index would be equal to the previous subview's end index
-	// so we don't need to iterate through all the points. Also we should reuse the subview instance but just adjust the start
-	// and end when moving to the next subview
-	parentIdx := 0
+	if startHint < 0 {
+		startHint = 0
+	}
+	if startHint >= v.size {
+		// All points have already been consumed
+		return HPointRingBufferView{buffer: v.buffer, offset: v.offset + v.size, size: 0}, v.size
+	}
+
+	parentIdx := startHint
 	for parentIdx < v.size && v.PointAt(parentIdx).T <= minT {
 		parentIdx++
 	}
@@ -385,11 +393,13 @@ func (v HPointRingBufferView) SubView(minT int64, maxT int64) HPointRingBufferVi
 		parentIdx++
 	}
 
+	endIdx := offset + size
+
 	return HPointRingBufferView{
 		buffer: v.buffer,
 		offset: v.offset + offset,
 		size:   size,
-	}
+	}, endIdx
 }
 
 // These hooks exist so we can override them during unit tests.
