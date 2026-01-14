@@ -39,6 +39,12 @@ type MimirAppender struct {
 	// This is needed to not send metadata duplicates all the time.
 	// We could get rid of this if we switched to RW2 all the way through.
 	metricFamilies map[string]metadata.Metadata
+
+	// externalSlices indicates whether series and metadata slices are externally managed
+	// (e.g., by an arena). When true, GetResult syncs back to the external pointers.
+	externalSlices bool
+	timeseriesPtr  *[]mimirpb.PreallocTimeseries
+	metadataPtr    *[]*mimirpb.MetricMetadata
 }
 
 func NewCombinedAppender() *MimirAppender {
@@ -51,8 +57,29 @@ func NewCombinedAppender() *MimirAppender {
 	}
 }
 
+// NewCombinedAppenderWithSlices creates an appender using externally provided slices.
+// This is useful for arena allocation where slices are pre-allocated and reused.
+func NewCombinedAppenderWithSlices(timeseries *[]mimirpb.PreallocTimeseries, md *[]*mimirpb.MetricMetadata) *MimirAppender {
+	return &MimirAppender{
+		ValidIntervalCreatedTimestampZeroIngestion: defaultIntervalForStartTimestamps,
+		series:         *timeseries,
+		metadata:       *md,
+		refs:           make(map[uint64]labelsIdx),
+		collisionRefs:  make(map[uint64][]labelsIdx),
+		metricFamilies: make(map[string]metadata.Metadata),
+		externalSlices: true,
+		timeseriesPtr:  timeseries,
+		metadataPtr:    md,
+	}
+}
+
 // GetResult returns the created timeseries and metadata.
+// If using external slices (arena allocation), this also syncs the slices back.
 func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata) {
+	if c.externalSlices {
+		*c.timeseriesPtr = c.series
+		*c.metadataPtr = c.metadata
+	}
 	return c.series, c.metadata
 }
 
