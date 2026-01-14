@@ -64,15 +64,12 @@ const (
 // Unpaired string values are ignored. String pairs overwrite OTLP labels if collisions happen and
 // if logOnOverwrite is true, the overwrite is logged. Resulting label names are sanitized.
 // If settings.PromoteResourceAttributes is not empty, it's a set of resource attributes that should be promoted to labels.
+//
+// When c.resourceLabels and c.scopeLabels are set (via setResourceContext/setScopeContext), this function
+// uses cached label values instead of recomputing them for each datapoint, significantly improving performance.
 func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attributes pcommon.Map, scope scope, settings Settings,
 	ignoreAttrs []string, logOnOverwrite bool, meta Metadata, extras ...string,
 ) (labels.Labels, error) {
-	resourceAttrs := resource.Attributes()
-	serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
-	instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
-
-	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
-
 	// Ensure attributes are sorted by key for consistent merging of keys which
 	// collide when sanitized.
 	c.scratchBuilder.Reset()
@@ -88,10 +85,16 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 	c.scratchBuilder.Sort()
 	sortedLabels := c.scratchBuilder.Labels()
 
-	labelNamer := otlptranslator.LabelNamer{
-		UTF8Allowed:                 settings.AllowUTF8,
-		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
-		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
+	// Use cached labelNamer if available, otherwise create one
+	var labelNamer otlptranslator.LabelNamer
+	if c.resourceLabels != nil {
+		labelNamer = c.labelNamer
+	} else {
+		labelNamer = otlptranslator.LabelNamer{
+			UTF8Allowed:                 settings.AllowUTF8,
+			UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
+			PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
+		}
 	}
 
 	if settings.AllowUTF8 {
@@ -122,11 +125,72 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		}
 	}
 
-	err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, labelNamer)
-	if err != nil {
-		return labels.EmptyLabels(), err
+	// Use cached resource labels if available, otherwise compute them
+	if c.resourceLabels != nil {
+		// Merge cached promoted resource labels
+		c.resourceLabels.promotedLabels.Range(func(l labels.Label) {
+			if c.builder.Get(l.Name) == "" {
+				c.builder.Set(l.Name, l.Value)
+			}
+		})
+		// Merge cached job/instance labels
+		if c.resourceLabels.jobLabel != "" {
+			c.builder.Set(model.JobLabel, c.resourceLabels.jobLabel)
+		}
+		if c.resourceLabels.instanceLabel != "" {
+			c.builder.Set(model.InstanceLabel, c.resourceLabels.instanceLabel)
+		}
+		// Merge cached external labels
+		for key, value := range c.resourceLabels.externalLabels {
+			if c.builder.Get(key) == "" {
+				c.builder.Set(key, value)
+			}
+		}
+	} else {
+		// No cache - compute resource labels from scratch
+		resourceAttrs := resource.Attributes()
+		serviceName, haveServiceName := resourceAttrs.Get(conventions.AttributeServiceName)
+		instance, haveInstanceID := resourceAttrs.Get(conventions.AttributeServiceInstanceID)
+
+		err := settings.PromoteResourceAttributes.addPromotedAttributes(c.builder, resourceAttrs, labelNamer)
+		if err != nil {
+			return labels.EmptyLabels(), err
+		}
+
+		// Map service.name + service.namespace to job.
+		if haveServiceName {
+			val := serviceName.AsString()
+			if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
+				val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
+			}
+			c.builder.Set(model.JobLabel, val)
+		}
+		// Map service.instance.id to instance.
+		if haveInstanceID {
+			c.builder.Set(model.InstanceLabel, instance.AsString())
+		}
+		for key, value := range settings.ExternalLabels {
+			// External labels have already been sanitized.
+			if existingValue := c.builder.Get(key); existingValue != "" {
+				// Skip external labels if they are overridden by metric attributes.
+				continue
+			}
+			c.builder.Set(key, value)
+		}
 	}
-	if promoteScope {
+
+	// Use cached scope labels if available, otherwise compute them
+	promoteScope := settings.PromoteScopeMetadata && scope.name != ""
+	if c.scopeLabels != nil {
+		// Merge cached scope labels
+		c.scopeLabels.scopeAttrs.Range(func(l labels.Label) {
+			c.builder.Set(l.Name, l.Value)
+		})
+		c.builder.Set("otel_scope_name", c.scopeLabels.scopeName)
+		c.builder.Set("otel_scope_version", c.scopeLabels.scopeVersion)
+		c.builder.Set("otel_scope_schema_url", c.scopeLabels.scopeSchemaURL)
+	} else if promoteScope {
+		// No cache - compute scope labels from scratch
 		var rangeErr error
 		scope.attributes.Range(func(k string, v pcommon.Value) bool {
 			name, err := labelNamer.Build("otel_scope_" + k)
@@ -154,27 +218,6 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 		if meta.Unit != "" {
 			c.builder.Set(model.MetricUnitLabel, unitNamer.Build(meta.Unit))
 		}
-	}
-
-	// Map service.name + service.namespace to job.
-	if haveServiceName {
-		val := serviceName.AsString()
-		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
-			val = fmt.Sprintf("%s/%s", serviceNamespace.AsString(), val)
-		}
-		c.builder.Set(model.JobLabel, val)
-	}
-	// Map service.instance.id to instance.
-	if haveInstanceID {
-		c.builder.Set(model.InstanceLabel, instance.AsString())
-	}
-	for key, value := range settings.ExternalLabels {
-		// External labels have already been sanitized.
-		if existingValue := c.builder.Get(key); existingValue != "" {
-			// Skip external labels if they are overridden by metric attributes.
-			continue
-		}
-		c.builder.Set(key, value)
 	}
 
 	for i := 0; i < len(extras); i += 2 {

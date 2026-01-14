@@ -1261,21 +1261,15 @@ func (p *otlpBatchProcessor) processBatched(
 			end = n
 		}
 
-		// Convert batch through shared appender
-		// We still need to create a Metrics wrapper, but the appender is shared
-		var batchMetrics pmetric.Metrics
-		if batchSize == 1 {
-			batchMetrics = createSingleResourceMetrics(resourceMetricsSlice.At(i))
-		} else {
-			batchMetrics = createBatchedResourceMetrics(resourceMetricsSlice, i, end)
-		}
-
-		// Convert using shared converter/appender - series accumulate with deduplication
-		_, err := converter.converter.FromMetrics(ctx, batchMetrics, settings)
-		if err != nil {
-			// Conversion errors are soft - continue with next batch
-			softErrors = append(softErrors, err)
-			continue
+		// Convert batch through shared appender using FromResourceMetrics directly
+		// This avoids the deep copy overhead of creating Metrics wrappers
+		for j := i; j < end; j++ {
+			rm := resourceMetricsSlice.At(j)
+			_, err := converter.converter.FromResourceMetrics(ctx, rm, settings)
+			if err != nil {
+				// Conversion errors are soft - continue with next ResourceMetrics
+				softErrors = append(softErrors, err)
+			}
 		}
 
 		// Extract only NEW series since last batch
@@ -1324,24 +1318,6 @@ func (p *otlpBatchProcessor) createBatchRequest(metrics []mimirpb.PreallocTimese
 	return NewParsedRequest(writeReq)
 }
 
-// createSingleResourceMetrics extracts a single ResourceMetrics into a new Metrics object.
-func createSingleResourceMetrics(rm pmetric.ResourceMetrics) pmetric.Metrics {
-	md := pmetric.NewMetrics()
-	rm.CopyTo(md.ResourceMetrics().AppendEmpty())
-	return md
-}
-
-// createBatchedResourceMetrics extracts a range of ResourceMetrics into a new Metrics object.
-// This is more efficient than creating one Metrics per ResourceMetrics when batch size > 1.
-func createBatchedResourceMetrics(slice pmetric.ResourceMetricsSlice, start, end int) pmetric.Metrics {
-	md := pmetric.NewMetrics()
-	rmSlice := md.ResourceMetrics()
-	rmSlice.EnsureCapacity(end - start)
-	for i := start; i < end; i++ {
-		slice.At(i).CopyTo(rmSlice.AppendEmpty())
-	}
-	return md
-}
 
 // isOTLPHardError returns true if the error should stop batch processing.
 // Hard errors include context cancellation, deadlines, and critical system errors.

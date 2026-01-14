@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/otlptranslator"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pmetric"
+	conventions "go.opentelemetry.io/collector/semconv/v1.6.1"
 	"go.uber.org/multierr"
 
 	"github.com/prometheus/prometheus/config"
@@ -62,6 +63,24 @@ type Settings struct {
 	LabelNamePreserveMultipleUnderscores bool
 }
 
+// cachedResourceLabels holds precomputed labels constant for all datapoints in a ResourceMetrics.
+// These are computed once per ResourceMetrics boundary and reused for all datapoints.
+type cachedResourceLabels struct {
+	jobLabel       string        // from service.name + service.namespace
+	instanceLabel  string        // from service.instance.id
+	promotedLabels labels.Labels // promoted resource attributes
+	externalLabels map[string]string
+}
+
+// cachedScopeLabels holds precomputed scope metadata labels.
+// These are computed once per ScopeMetrics boundary and reused for all datapoints.
+type cachedScopeLabels struct {
+	scopeName      string
+	scopeVersion   string
+	scopeSchemaURL string
+	scopeAttrs     labels.Labels // otel_scope_* labels
+}
+
 // PrometheusConverter converts from OTel write format to Prometheus remote write format.
 type PrometheusConverter struct {
 	everyN         everyNTimes
@@ -70,6 +89,11 @@ type PrometheusConverter struct {
 	appender       CombinedAppender
 	// seenTargetInfo tracks target_info samples within a batch to prevent duplicates.
 	seenTargetInfo map[targetInfoKey]struct{}
+
+	// Label caching for optimization - computed once per resource/scope boundary
+	resourceLabels *cachedResourceLabels
+	scopeLabels    *cachedScopeLabels
+	labelNamer     otlptranslator.LabelNamer
 }
 
 // targetInfoKey uniquely identifies a target_info sample by its labelset and timestamp.
@@ -357,4 +381,274 @@ func (s *PromoteResourceAttributes) addPromotedAttributes(builder *labels.Builde
 		return true
 	})
 	return err
+}
+
+// setResourceContext precomputes and caches resource-level labels.
+// Called once per ResourceMetrics boundary, before processing any datapoints.
+func (c *PrometheusConverter) setResourceContext(resource pcommon.Resource, settings Settings) {
+	resourceAttrs := resource.Attributes()
+	c.resourceLabels = &cachedResourceLabels{
+		externalLabels: settings.ExternalLabels,
+	}
+
+	// Cache the label namer for reuse
+	c.labelNamer = otlptranslator.LabelNamer{
+		UTF8Allowed:                 settings.AllowUTF8,
+		UnderscoreLabelSanitization: settings.LabelNameUnderscoreSanitization,
+		PreserveMultipleUnderscores: settings.LabelNamePreserveMultipleUnderscores,
+	}
+
+	// Compute job label from service.name + service.namespace
+	if serviceName, ok := resourceAttrs.Get(conventions.AttributeServiceName); ok {
+		val := serviceName.AsString()
+		if serviceNamespace, ok := resourceAttrs.Get(conventions.AttributeServiceNamespace); ok {
+			val = serviceNamespace.AsString() + "/" + val
+		}
+		c.resourceLabels.jobLabel = val
+	}
+
+	// Compute instance label from service.instance.id
+	if instance, ok := resourceAttrs.Get(conventions.AttributeServiceInstanceID); ok {
+		c.resourceLabels.instanceLabel = instance.AsString()
+	}
+
+	// Compute promoted resource attributes
+	if settings.PromoteResourceAttributes != nil {
+		c.scratchBuilder.Reset()
+		settings.PromoteResourceAttributes.addPromotedAttributesToScratch(&c.scratchBuilder, resourceAttrs, c.labelNamer)
+		c.resourceLabels.promotedLabels = c.scratchBuilder.Labels()
+	}
+}
+
+// setScopeContext precomputes and caches scope-level labels.
+// Called once per ScopeMetrics boundary, before processing any metrics.
+func (c *PrometheusConverter) setScopeContext(scope scope, settings Settings) {
+	if !settings.PromoteScopeMetadata || scope.name == "" {
+		c.scopeLabels = nil
+		return
+	}
+	c.scopeLabels = &cachedScopeLabels{
+		scopeName:      scope.name,
+		scopeVersion:   scope.version,
+		scopeSchemaURL: scope.schemaURL,
+	}
+	// Compute scope attributes
+	c.scratchBuilder.Reset()
+	scope.attributes.Range(func(k string, v pcommon.Value) bool {
+		name, _ := c.labelNamer.Build("otel_scope_" + k)
+		c.scratchBuilder.Add(name, v.AsString())
+		return true
+	})
+	c.scopeLabels.scopeAttrs = c.scratchBuilder.Labels()
+}
+
+// clearResourceContext clears cached labels between ResourceMetrics.
+func (c *PrometheusConverter) clearResourceContext() {
+	c.resourceLabels = nil
+	c.scopeLabels = nil
+}
+
+// FromResourceMetrics converts a single ResourceMetrics to Prometheus remote write format.
+// This is more efficient than FromMetrics() when processing individual ResourceMetrics
+// as it avoids creating a wrapper Metrics object.
+func (c *PrometheusConverter) FromResourceMetrics(
+	ctx context.Context,
+	resourceMetrics pmetric.ResourceMetrics,
+	settings Settings,
+) (annots annotations.Annotations, errs error) {
+	namer := otlptranslator.MetricNamer{
+		Namespace:          settings.Namespace,
+		WithMetricSuffixes: settings.AddMetricSuffixes,
+		UTF8Allowed:        settings.AllowUTF8,
+	}
+	unitNamer := otlptranslator.UnitNamer{}
+
+	resource := resourceMetrics.Resource()
+	scopeMetricsSlice := resourceMetrics.ScopeMetrics()
+
+	// Cache resource labels for this ResourceMetrics
+	c.setResourceContext(resource, settings)
+	defer c.clearResourceContext()
+
+	earliestTimestamp := pcommon.Timestamp(math.MaxUint64)
+	latestTimestamp := pcommon.Timestamp(0)
+
+	for j := 0; j < scopeMetricsSlice.Len(); j++ {
+		scopeMetrics := scopeMetricsSlice.At(j)
+		scope := newScopeFromScopeMetrics(scopeMetrics)
+
+		// Cache scope labels for this ScopeMetrics
+		c.setScopeContext(scope, settings)
+
+		metricSlice := scopeMetrics.Metrics()
+		for k := 0; k < metricSlice.Len(); k++ {
+			if err := c.everyN.checkContext(ctx); err != nil {
+				errs = multierr.Append(errs, err)
+				return annots, errs
+			}
+
+			var metric pmetric.Metric
+			if err := metricSlice.Unmarshal(k, &metric); err != nil {
+				errs = multierr.Append(errs, err)
+				continue
+			}
+
+			earliestTimestamp, latestTimestamp = findMinAndMaxTimestamps(metric, earliestTimestamp, latestTimestamp)
+			temporality, hasTemporality, err := aggregationTemporality(metric)
+			if err != nil {
+				errs = multierr.Append(errs, err)
+				continue
+			}
+
+			if hasTemporality &&
+				!(temporality == pmetric.AggregationTemporalityCumulative ||
+					(settings.AllowDeltaTemporality && temporality == pmetric.AggregationTemporalityDelta)) {
+				errs = multierr.Append(errs, fmt.Errorf("invalid temporality and type combination for metric %q", metric.Name()))
+				continue
+			}
+
+			promName, err := namer.Build(TranslatorMetricFromOtelMetric(metric))
+			if err != nil {
+				errs = multierr.Append(errs, err)
+				continue
+			}
+			meta := Metadata{
+				Metadata: metadata.Metadata{
+					Type: otelMetricTypeToPromMetricType(metric),
+					Unit: unitNamer.Build(metric.Unit()),
+					Help: metric.Description(),
+				},
+				MetricFamilyName: promName,
+			}
+
+			// handle individual metrics based on type
+			switch metric.Type() {
+			case pmetric.MetricTypeGauge:
+				dataPoints := metric.Gauge().DataPoints()
+				if dataPoints.Len() == 0 {
+					errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+					break
+				}
+				if err := c.addGaugeNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
+					errs = multierr.Append(errs, err)
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return annots, errs
+					}
+				}
+			case pmetric.MetricTypeSum:
+				dataPoints := metric.Sum().DataPoints()
+				if dataPoints.Len() == 0 {
+					errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+					break
+				}
+				if err := c.addSumNumberDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
+					errs = multierr.Append(errs, err)
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return annots, errs
+					}
+				}
+			case pmetric.MetricTypeHistogram:
+				dataPoints := metric.Histogram().DataPoints()
+				if dataPoints.Len() == 0 {
+					errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+					break
+				}
+				if settings.ConvertHistogramsToNHCB {
+					ws, err := c.addCustomBucketsHistogramDataPoints(
+						ctx, dataPoints, resource, settings, temporality, scope, meta,
+					)
+					annots.Merge(ws)
+					if err != nil {
+						errs = multierr.Append(errs, err)
+						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+							return annots, errs
+						}
+					}
+				} else {
+					if err := c.addHistogramDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
+						errs = multierr.Append(errs, err)
+						if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+							return annots, errs
+						}
+					}
+				}
+			case pmetric.MetricTypeExponentialHistogram:
+				dataPoints := metric.ExponentialHistogram().DataPoints()
+				if dataPoints.Len() == 0 {
+					errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+					break
+				}
+				ws, err := c.addExponentialHistogramDataPoints(
+					ctx,
+					dataPoints,
+					resource,
+					settings,
+					temporality,
+					scope,
+					meta,
+				)
+				annots.Merge(ws)
+				if err != nil {
+					errs = multierr.Append(errs, err)
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return annots, errs
+					}
+				}
+			case pmetric.MetricTypeSummary:
+				dataPoints := metric.Summary().DataPoints()
+				if dataPoints.Len() == 0 {
+					errs = multierr.Append(errs, fmt.Errorf("empty data points. %s is dropped", metric.Name()))
+					break
+				}
+				if err := c.addSummaryDataPoints(ctx, dataPoints, resource, settings, scope, meta); err != nil {
+					errs = multierr.Append(errs, err)
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return annots, errs
+					}
+				}
+			default:
+				errs = multierr.Append(errs, errors.New("unsupported metric type"))
+			}
+		}
+	}
+
+	if earliestTimestamp < pcommon.Timestamp(math.MaxUint64) {
+		if err := c.addResourceTargetInfo(resource, settings, earliestTimestamp.AsTime(), latestTimestamp.AsTime()); err != nil {
+			errs = multierr.Append(errs, err)
+		}
+	}
+
+	return annots, errs
+}
+
+// addPromotedAttributesToScratch adds promoted resource attributes to a ScratchBuilder.
+// This is used for caching promoted attributes.
+func (s *PromoteResourceAttributes) addPromotedAttributesToScratch(builder *labels.ScratchBuilder, resourceAttributes pcommon.Map, labelNamer otlptranslator.LabelNamer) {
+	if s == nil {
+		return
+	}
+
+	if s.promoteAll {
+		resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+			if _, exists := s.attrs[name]; !exists {
+				normalized, err := labelNamer.Build(name)
+				if err != nil {
+					return true // skip on error
+				}
+				builder.Add(normalized, value.AsString())
+			}
+			return true
+		})
+		return
+	}
+	resourceAttributes.Range(func(name string, value pcommon.Value) bool {
+		if _, exists := s.attrs[name]; exists {
+			normalized, err := labelNamer.Build(name)
+			if err != nil {
+				return true // skip on error
+			}
+			builder.Add(normalized, value.AsString())
+		}
+		return true
+	})
 }

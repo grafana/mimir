@@ -2694,35 +2694,3 @@ func TestIsOTLPHardError(t *testing.T) {
 	}
 }
 
-func TestCreateSingleResourceMetrics(t *testing.T) {
-	// Create a ResourceMetrics with some data
-	md := pmetric.NewMetrics()
-	rm := md.ResourceMetrics().AppendEmpty()
-	rm.Resource().Attributes().PutStr("service.name", "test-service")
-	rm.Resource().Attributes().PutStr("service.namespace", "test-namespace")
-
-	sm := rm.ScopeMetrics().AppendEmpty()
-	sm.Scope().SetName("test-scope")
-
-	m := sm.Metrics().AppendEmpty()
-	m.SetName("test_metric")
-	dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
-	dp.SetTimestamp(pcommon.NewTimestampFromTime(time.Now()))
-	dp.SetDoubleValue(42.0)
-
-	// Create single ResourceMetrics from this
-	single := createSingleResourceMetrics(rm)
-
-	// Verify the result
-	require.Equal(t, 1, single.ResourceMetrics().Len())
-
-	singleRM := single.ResourceMetrics().At(0)
-	assert.Equal(t, "test-service", singleRM.Resource().Attributes().AsRaw()["service.name"])
-	assert.Equal(t, "test-namespace", singleRM.Resource().Attributes().AsRaw()["service.namespace"])
-
-	require.Equal(t, 1, singleRM.ScopeMetrics().Len())
-	assert.Equal(t, "test-scope", singleRM.ScopeMetrics().At(0).Scope().Name())
-
-	require.Equal(t, 1, singleRM.ScopeMetrics().At(0).Metrics().Len())
-	assert.Equal(t, "test_metric", singleRM.ScopeMetrics().At(0).Metrics().At(0).Name())
-}
