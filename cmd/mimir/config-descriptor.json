@@ -8117,17 +8117,6 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "dns_ignore_startup_failures",
-                  "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -10136,17 +10125,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -10392,17 +10370,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -10672,17 +10639,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -15939,17 +15895,6 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "dns_ignore_startup_failures",
-                  "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
