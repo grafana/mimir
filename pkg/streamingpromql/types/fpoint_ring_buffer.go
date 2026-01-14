@@ -181,6 +181,7 @@ func (b *FPointRingBuffer) Close() {
 
 type FPointRingBufferView struct {
 	buffer *FPointRingBuffer
+	offset int // Offset from buffer's firstIndex where this view starts
 	size   int
 }
 
@@ -198,16 +199,17 @@ func (v *FPointRingBufferView) UnsafePoints() (head []promql.FPoint, tail []prom
 		return nil, nil
 	}
 
-	endOfHeadSegment := v.buffer.firstIndex + v.size
+	startIndex := (v.buffer.firstIndex + v.offset) & v.buffer.pointsIndexMask
+	endOfHeadSegment := startIndex + v.size
 
 	if endOfHeadSegment > len(v.buffer.points) {
 		// Need to wrap around.
 		endOfTailSegment := endOfHeadSegment - len(v.buffer.points)
 		endOfHeadSegment = len(v.buffer.points)
-		return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
+		return v.buffer.points[startIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
 	}
 
-	return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], nil
+	return v.buffer.points[startIndex:endOfHeadSegment], nil
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -235,7 +237,7 @@ func (v *FPointRingBufferView) CopyPoints() ([]promql.FPoint, error) {
 // ForEach calls f for each point in this buffer view.
 func (v *FPointRingBufferView) ForEach(f func(p promql.FPoint)) {
 	for i := 0; i < v.size; i++ {
-		f(v.buffer.pointAt(i))
+		f(v.buffer.pointAt(v.offset + i))
 	}
 }
 
@@ -246,7 +248,7 @@ func (v *FPointRingBufferView) First() promql.FPoint {
 		panic("Can't get first element of empty buffer")
 	}
 
-	return v.buffer.points[v.buffer.firstIndex]
+	return v.buffer.pointAt(v.offset)
 }
 
 // Last returns the last point in this ring buffer view.
@@ -256,7 +258,7 @@ func (v *FPointRingBufferView) Last() (promql.FPoint, bool) {
 		return promql.FPoint{}, false
 	}
 
-	return v.buffer.pointAt(v.size - 1), true
+	return v.buffer.pointAt(v.offset + v.size - 1), true
 }
 
 // Count returns the number of points in this ring buffer view.
@@ -276,7 +278,7 @@ func (v *FPointRingBufferView) PointAt(i int) promql.FPoint {
 		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
 	}
 
-	return v.buffer.pointAt(i)
+	return v.buffer.pointAt(v.offset + i)
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.
@@ -302,6 +304,36 @@ func (v *FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer
 	}
 
 	return view, buffer, nil
+}
+
+func (v FPointRingBufferView) SubView(minT int64, maxT int64, startHint int) (FPointRingBufferView, int) {
+	if v.size == 0 {
+		return FPointRingBufferView{buffer: v.buffer, offset: v.offset, size: 0}, 0
+	}
+
+	if startHint >= v.size {
+		return FPointRingBufferView{buffer: v.buffer, offset: v.offset + v.size, size: 0}, v.size
+	}
+
+	parentIdx := startHint
+	for parentIdx < v.size && v.PointAt(parentIdx).T <= minT {
+		parentIdx++
+	}
+	offset := parentIdx
+
+	size := 0
+	for parentIdx < v.size && v.PointAt(parentIdx).T <= maxT {
+		size++
+		parentIdx++
+	}
+
+	endIdx := offset + size
+
+	return FPointRingBufferView{
+		buffer: v.buffer,
+		offset: v.offset + offset,
+		size:   size,
+	}, endIdx
 }
 
 // These hooks exist so we can override them during unit tests.

@@ -209,6 +209,7 @@ func (b *HPointRingBuffer) Close() {
 
 type HPointRingBufferView struct {
 	buffer *HPointRingBuffer
+	offset int // Offset from buffer's firstIndex where this view starts
 	size   int
 }
 
@@ -226,16 +227,17 @@ func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promq
 		return nil, nil
 	}
 
-	endOfHeadSegment := v.buffer.firstIndex + v.size
+	startIndex := (v.buffer.firstIndex + v.offset) & v.buffer.pointsIndexMask
+	endOfHeadSegment := startIndex + v.size
 
 	if endOfHeadSegment > len(v.buffer.points) {
 		// Need to wrap around.
 		endOfTailSegment := endOfHeadSegment - len(v.buffer.points)
 		endOfHeadSegment = len(v.buffer.points)
-		return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
+		return v.buffer.points[startIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
 	}
 
-	return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], nil
+	return v.buffer.points[startIndex:endOfHeadSegment], nil
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -279,7 +281,7 @@ func (v HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
 // ForEach calls f for each point in this buffer view.
 func (v HPointRingBufferView) ForEach(f func(p promql.HPoint)) {
 	for i := 0; i < v.size; i++ {
-		f(v.buffer.pointAt(i))
+		f(v.buffer.pointAt(v.offset + i))
 	}
 }
 
@@ -290,7 +292,7 @@ func (v HPointRingBufferView) First() promql.HPoint {
 		panic("Can't get first element of empty buffer")
 	}
 
-	return v.buffer.points[v.buffer.firstIndex]
+	return v.buffer.pointAt(v.offset)
 }
 
 // Last returns the last point in this ring buffer view.
@@ -300,7 +302,7 @@ func (v HPointRingBufferView) Last() (promql.HPoint, bool) {
 		return promql.HPoint{}, false
 	}
 
-	return v.buffer.pointAt(v.size - 1), true
+	return v.buffer.pointAt(v.offset + v.size - 1), true
 }
 
 // Count returns the number of points in this ring buffer view.
@@ -336,7 +338,7 @@ func (v HPointRingBufferView) PointAt(i int) promql.HPoint {
 		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
 	}
 
-	return v.buffer.pointAt(i)
+	return v.buffer.pointAt(v.offset + i)
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.
@@ -363,6 +365,36 @@ func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer,
 	}
 
 	return view, buffer, nil
+}
+
+func (v HPointRingBufferView) SubView(minT int64, maxT int64, startHint int) (HPointRingBufferView, int) {
+	if v.size == 0 {
+		return HPointRingBufferView{buffer: v.buffer, offset: v.offset, size: 0}, 0
+	}
+
+	if startHint >= v.size {
+		return HPointRingBufferView{buffer: v.buffer, offset: v.offset + v.size, size: 0}, v.size
+	}
+
+	parentIdx := startHint
+	for parentIdx < v.size && v.PointAt(parentIdx).T <= minT {
+		parentIdx++
+	}
+	offset := parentIdx
+
+	size := 0
+	for parentIdx < v.size && v.PointAt(parentIdx).T <= maxT {
+		size++
+		parentIdx++
+	}
+
+	endIdx := offset + size
+
+	return HPointRingBufferView{
+		buffer: v.buffer,
+		offset: v.offset + offset,
+		size:   size,
+	}, endIdx
 }
 
 // These hooks exist so we can override them during unit tests.

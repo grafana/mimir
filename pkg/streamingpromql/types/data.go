@@ -6,6 +6,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -174,6 +175,44 @@ type RangeVectorStepData struct {
 	SmoothedBasisForTailPoint    promql.FPoint
 	SmoothedBasisForHeadPointSet bool
 	SmoothedBasisForTailPointSet bool
+}
+
+type SubStepHints struct {
+	FloatHint     int
+	HistogramHint int
+}
+
+// SubStep returns a new RangeVectorStepData with the same StepT but filtered samples for the specified time range.
+// The rangeStart and rangeEnd parameters define the time range (rangeStart, rangeEnd] for the substep.
+// The hints parameter provides starting indices for efficient consecutive substep creation.
+// Returns the new substep data and updated hints for the next substep call.
+func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, hints SubStepHints) (*RangeVectorStepData, SubStepHints, error) {
+	if rangeStart < s.RangeStart {
+		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
+	}
+	if rangeEnd > s.RangeEnd {
+		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
+	}
+	if rangeStart >= rangeEnd {
+		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
+	}
+
+	newStep := &RangeVectorStepData{
+		StepT:      s.StepT,
+		RangeStart: rangeStart,
+		RangeEnd:   rangeEnd,
+	}
+
+	floatSubview, floatEndIdx := s.Floats.SubView(rangeStart, rangeEnd, hints.FloatHint)
+	newStep.Floats = &floatSubview
+
+	histogramSubview, histogramEndIdx := s.Histograms.SubView(rangeStart, rangeEnd, hints.HistogramHint)
+	newStep.Histograms = &histogramSubview
+
+	return newStep, SubStepHints{
+		FloatHint:     floatEndIdx,
+		HistogramHint: histogramEndIdx,
+	}, nil
 }
 
 type ScalarData struct {
