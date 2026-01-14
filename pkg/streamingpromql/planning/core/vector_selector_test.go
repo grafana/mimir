@@ -411,7 +411,7 @@ func TestVectorSelector_Equivalence(t *testing.T) {
 	}
 }
 
-func TestVectorSelector_MergeHints(t *testing.T) {
+func TestVectorSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 	runTest := func(t *testing.T, skipFirst, skipSecond bool, expectSkip bool) {
 		first := &VectorSelector{
 			VectorSelectorDetails: &VectorSelectorDetails{
@@ -443,6 +443,44 @@ func TestVectorSelector_MergeHints(t *testing.T) {
 
 	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
 		runTest(t, true, true, true)
+	})
+}
+
+func TestVectorSelector_MergeHints_ProjectionLabels(t *testing.T) {
+	runTest := func(t *testing.T, lblsFirst, lblsSecond []string, expectLbls []string) {
+		first := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				ProjectionInclude: len(lblsFirst) != 0,
+				ProjectionLabels:  lblsFirst,
+			},
+		}
+		second := &VectorSelector{
+			VectorSelectorDetails: &VectorSelectorDetails{
+				ProjectionInclude: len(lblsSecond) != 0,
+				ProjectionLabels:  lblsSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, len(expectLbls) != 0, first.ProjectionInclude)
+		require.Equal(t, expectLbls, first.ProjectionLabels)
+	}
+
+	t.Run("neither has projection labels set", func(t *testing.T) {
+		runTest(t, nil, nil, []string{})
+	})
+
+	t.Run("first has projection labels set, other does not", func(t *testing.T) {
+		runTest(t, []string{"job", "zone"}, nil, []string{"job", "zone"})
+	})
+
+	t.Run("first has no projection labels, other does", func(t *testing.T) {
+		runTest(t, nil, []string{"instance", "pod"}, []string{"instance", "pod"})
+	})
+
+	t.Run("both have projection labels set", func(t *testing.T) {
+		runTest(t, []string{"job", "cluster"}, []string{"job", "region"}, []string{"cluster", "job", "region"})
 	})
 }
 

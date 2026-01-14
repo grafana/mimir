@@ -562,7 +562,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				2,
 				[]string{"BinaryExpression: LHS + RHS", `LHS: VectorSelector: {__name__="my_three_item_series", idx=~"(0|1|2)"}`},
-				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_three_item_series", idx=~".*"}`},
+				[]string{"BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_three_item_series"}`}, // Note that the wildcard selector has been removed by the "reduce matchers" pass.
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
