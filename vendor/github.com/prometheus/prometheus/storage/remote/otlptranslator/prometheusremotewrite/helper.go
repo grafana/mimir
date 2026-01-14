@@ -114,8 +114,6 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 				sortErr = err
 				return
 			}
-			// Intern the label name to reduce memory for repeated names
-			finalKey = InternLabelName(finalKey)
 			if existingValue := c.builder.Get(finalKey); existingValue != "" {
 				c.builder.Set(finalKey, existingValue+";"+l.Value)
 			} else {
@@ -200,8 +198,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 				rangeErr = err
 				return false
 			}
-			// Intern the label name to reduce memory for repeated names
-			c.builder.Set(InternLabelName(name), v.AsString())
+			c.builder.Set(name, v.AsString())
 			return true
 		})
 		if rangeErr != nil {
@@ -240,8 +237,7 @@ func (c *PrometheusConverter) createAttributes(resource pcommon.Resource, attrib
 				return labels.EmptyLabels(), err
 			}
 		}
-		// Intern the label name to reduce memory for repeated names
-		c.builder.Set(InternLabelName(name), extras[i+1])
+		c.builder.Set(name, extras[i+1])
 	}
 
 	return c.builder.Labels(), nil
@@ -537,8 +533,7 @@ func (c *PrometheusConverter) addLabels(name string, baseLabels labels.Labels, e
 	n := len(extras)
 	n -= n % 2
 	for extrasIdx := 0; extrasIdx < n; extrasIdx += 2 {
-		// Intern the label name to reduce memory for repeated names
-		c.builder.Set(InternLabelName(extras[extrasIdx]), extras[extrasIdx+1])
+		c.builder.Set(extras[extrasIdx], extras[extrasIdx+1])
 	}
 	c.builder.Set(model.MetricNameLabel, name)
 	return c.builder.Labels()

@@ -60,8 +60,15 @@ func (es MetricSlice) At(i int) Metric {
 }
 
 func (es MetricSlice) Unmarshal(i int, m *Metric) error {
+	lazyMetric := (*es.orig)[i]
+	// Fast path: in eager mode, data is already parsed - no allocation needed
+	if !lazyMetric.IsLazy() {
+		*m = newMetric(&lazyMetric.Metric, es.state)
+		return nil
+	}
+	// Lazy mode: need to unmarshal bytes into a buffer
 	var buf internal.LazyMetric
-	res, err := (*es.orig)[i].FinishUnmarshal(&buf.Metric)
+	res, err := lazyMetric.FinishUnmarshal(&buf.Metric)
 	if err != nil {
 		return err
 	}

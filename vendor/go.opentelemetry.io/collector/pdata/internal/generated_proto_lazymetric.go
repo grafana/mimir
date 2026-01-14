@@ -171,6 +171,12 @@ func (orig *LazyMetric) FinishUnmarshal(buf *Metric) (*Metric, error) {
 	return buf, err
 }
 
+// IsLazy returns true if the metric has pending bytes to unmarshal (lazy mode),
+// false if the data is already parsed (eager mode).
+func (orig *LazyMetric) IsLazy() bool {
+	return len(orig.bytes) > 0
+}
+
 func GenTestLazyMetric() *LazyMetric {
 	orig := NewLazyMetric()
 	orig.Metric = *GenTestMetric()

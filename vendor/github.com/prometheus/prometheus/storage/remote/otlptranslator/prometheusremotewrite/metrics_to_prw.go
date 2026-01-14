@@ -186,9 +186,6 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 
 				var metric pmetric.Metric
 				if err := metricSlice.Unmarshal(k, &metric); err != nil {
-					// It shouldn't possible to have an error here, because we eagerly check the
-					// wire format when unmarshalling the all message, but it's hard to guarantee
-					// from the signature, so better be safe.
 					errs = multierr.Append(errs, err)
 					continue
 				}
