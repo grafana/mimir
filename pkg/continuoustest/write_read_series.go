@@ -190,7 +190,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metricName string, metadata []prompb.MetricMetadata, records *MetricHistory) error {
 	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadSeriesTest.writeSamples")
 	defer sp.Finish()
-	logger := log.With(sp, "timestamp", timestamp.String(), "num_series", t.cfg.NumSeries, "metric_name", metricName, "protocol", t.client.Protocol())
+	logger := log.With(sp, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName, "protocol", t.client.Protocol())
 
 	start := time.Now()
 	statusCode, err := t.client.WriteSeries(ctx, series, metadata)
