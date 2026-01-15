@@ -282,6 +282,9 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	resp, err := e.schedulerClient.LeaseJob(ctx, req)
 	if err != nil {
+		if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
+			c.schedulerLastContact.SetToCurrentTime()
+		}
 		return false, err
 	}
 
