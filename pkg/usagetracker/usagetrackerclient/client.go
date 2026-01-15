@@ -64,9 +64,10 @@ type Config struct {
 	// Set to 0 to disable this check (all users eligible for async tracking based on proximity to limit).
 	MinSeriesLimitForAsyncTracking int `yaml:"min_series_limit_for_async_tracking" category:"advanced"`
 
-	UseBatchedTracking bool          `yaml:"use_batched_tracking" category:"experimental"`
-	BatchDelay         time.Duration `yaml:"batch_delay" category:"advanced"`
-	MaxBatchSeries     int           `yaml:"max_batch_series" category:"advanced"`
+	UseBatchedTracking      bool          `yaml:"use_batched_tracking" category:"experimental"`
+	BatchDelay              time.Duration `yaml:"batch_delay" category:"advanced"`
+	MaxBatchSeries          int           `yaml:"max_batch_series" category:"advanced"`
+	TrackSeriesBatchTimeout time.Duration `yaml:"track_series_batch_timeout" category:"advanced"`
 
 	// Allow to inject custom client factory in tests.
 	ClientFactory client.PoolFactory `yaml:"-"`
@@ -102,6 +103,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.UseBatchedTracking, prefix+"use-batched-tracking", false, "Use batched tracking for series. If enabled, the client will track series in batches to reduce RPC traffic.")
 	f.DurationVar(&cfg.BatchDelay, prefix+"batch-delay", 750*time.Millisecond, "Delay between batches. If 0, no delay is used.")
 	f.IntVar(&cfg.MaxBatchSeries, prefix+"max-batch-series", 1_000_000, "Maximum number of series to track in a single batch. If 0, no maximum is used.")
+	f.DurationVar(&cfg.TrackSeriesBatchTimeout, prefix+"track-series-batch-timeout", 2*time.Second, "Timeout for tracking series in a batch. If 0, no timeout is used.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
 }
@@ -464,8 +466,11 @@ func (c *UsageTrackerClient) TrackSeriesPerPartitionBatch(ctx context.Context, p
 			return nil, errors.Errorf("usage-tracker instance %s (%s)", instance.Id, instance.Addr)
 		}
 
+		callCtx, cancel := context.WithTimeout(ctx, c.cfg.TrackSeriesBatchTimeout)
+		defer cancel()
+
 		trackerClient := poolClient.(usagetrackerpb.UsageTrackerClient)
-		trackerRes, err := trackerClient.TrackSeriesBatch(ctx, req)
+		trackerRes, err := trackerClient.TrackSeriesBatch(callCtx, req)
 		if err != nil {
 			return nil, errors.Wrapf(err, "usage-tracker instance %s (%s)", instance.Id, instance.Addr)
 		}
@@ -667,12 +672,13 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxSeriesPerBatch int, bat
 	}
 }
 
+// TrackSeries tracks some series for a user in a partition. It will be batched and flushed asynchronously.
 func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series []uint64) {
 	c.batchersMtx.Lock()
 	b, ok := c.batchers[partition]
 	if !ok {
 		b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
-		b.startFlusher()
+		defer b.startFlusher()
 		c.batchers[partition] = b
 	}
 	c.batchersMtx.Unlock()
@@ -715,7 +721,7 @@ type PartitionBatcher struct {
 	stoppingChan      <-chan struct{}
 }
 
-// NewPartitionBatcher creates a new PartitionBatcher. It is exported for testing.
+// NewPartitionBatcher creates a new PartitionBatcher.
 func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, clientsPool *client.Pool, stopping <-chan struct{}) *PartitionBatcher {
 	return &PartitionBatcher{
 		partition: partition,
@@ -738,6 +744,8 @@ func (b *PartitionBatcher) startFlusher() {
 	go b.flushWorker()
 }
 
+// TrackSeries adds a user and their series to this partition's current batch,
+// flushing it if it exceeds the size threshold.
 func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
 	b.usersMtx.Lock()
 
