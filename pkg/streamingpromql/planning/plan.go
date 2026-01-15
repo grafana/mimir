@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV4
+var MaximumSupportedQueryPlanVersion = QueryPlanV5
 
 // IMPORTANT:
 // Do not change the value or meaning of these constants once they have been merged.

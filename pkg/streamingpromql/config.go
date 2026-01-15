@@ -36,6 +36,7 @@ type EngineOpts struct {
 	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                                            bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 	EnableReduceMatchers                                                          bool `yaml:"enable_reduce_matchers" category:"experimental"`
+	EnableMultiAggregation                                                        bool `yaml:"enable_multi_aggregation" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -46,6 +47,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", false, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
+	f.BoolVar(&o.EnableMultiAggregation, "querier.mimir-query-engine.enable-multi-aggregation", true, "Enable computing multiple aggregations over the same data without buffering.")
 }
 
 func NewTestEngineOpts() EngineOpts {

@@ -1941,6 +1941,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
   [enable_reduce_matchers: <boolean> | default = true]
 
+  # (experimental) Enable computing multiple aggregations over the same data
+  # without buffering.
+  # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
+  [enable_multi_aggregation: <boolean> | default = true]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:
