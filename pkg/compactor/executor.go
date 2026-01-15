@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -208,7 +209,7 @@ func (e *schedulerExecutor) cleanupCompactionDir(logger log.Logger, compactDir s
 }
 
 // startJobStatusUpdater starts a goroutine that sends periodic IN_PROGRESS keep-alive updates
-func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, cancelJob context.CancelCauseFunc) {
+func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, c *MultitenantCompactor, key *compactorschedulerpb.JobKey, spec *compactorschedulerpb.JobSpec, cancelJob context.CancelCauseFunc) {
 	ticker := time.NewTicker(e.cfg.SchedulerUpdateInterval)
 	defer ticker.Stop()
 
@@ -226,6 +227,9 @@ func (e *schedulerExecutor) startJobStatusUpdater(ctx context.Context, key *comp
 					return
 				}
 				level.Warn(e.logger).Log("msg", "failed to send keep-alive update", "job_id", jobId, "tenant", jobTenant, "err", err)
+			} else {
+				// Update scheduler contact timestamp on successful heartbeat
+				c.schedulerLastContact.SetToCurrentTime()
 			}
 		case <-ctx.Done():
 			return
@@ -287,8 +291,15 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 
 	resp, err := e.schedulerClient.LeaseJob(ctx, req)
 	if err != nil {
+		// Leasing a job counts as successful contact if the scheduler returns a job to the compactor or if the scheduler
+		// returns an error indicating no work is available. All other errors are assumed to be a scheduler-side error.
+		if grpcutil.ErrorToStatusCode(err) == codes.NotFound {
+			c.schedulerLastContact.SetToCurrentTime()
+		}
 		return false, err
 	}
+
+	c.schedulerLastContact.SetToCurrentTime()
 
 	jobID := resp.Key.Id
 	jobTenant := resp.Spec.Tenant
@@ -300,7 +311,7 @@ func (e *schedulerExecutor) leaseAndExecuteJob(ctx context.Context, c *Multitena
 	wg.Add(1)
 	// Start async keep-alive updater for periodic IN_PROGRESS messages
 	go func() {
-		e.startJobStatusUpdater(jobCtx, resp.Key, resp.Spec, cancelJob)
+		e.startJobStatusUpdater(jobCtx, c, resp.Key, resp.Spec, cancelJob)
 		wg.Done()
 	}()
 
@@ -435,12 +446,17 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		if hasNonZeroULIDs(compactedBlockIDs) {
 			compactor.metrics.groupCompactions.Inc()
 		}
+		compactor.metrics.groupCompactionsLastSuccess.SetToCurrentTime()
 		level.Info(userLogger).Log("msg", "compaction job completed", "tenant", userID, "compacted_blocks", len(compactedBlockIDs))
 		return compactorschedulerpb.COMPLETE, nil
 	}
 
 	// At this point the compaction has failed. Track the failure.
 	compactor.metrics.groupCompactionRunsFailed.Inc()
+
+	if errors.Is(err, syscall.ENOSPC) {
+		c.outOfSpace.Inc()
+	}
 
 	if handleErr := compactor.handleKnownCompactionErrors(ctx, err); handleErr == nil {
 		return compactorschedulerpb.ABANDON, err
