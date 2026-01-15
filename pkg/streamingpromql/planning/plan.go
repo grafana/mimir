@@ -52,6 +52,9 @@ const QueryPlanV3 = QueryPlanVersion(3)
 // QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
 const QueryPlanV4 = QueryPlanVersion(4)
 
+// QueryPlanV5 introduces support for multi-aggregation nodes.
+const QueryPlanV5 = QueryPlanVersion(5)
+
 type QueryPlan struct {
 	Root       Node
 	Parameters *QueryParameters
