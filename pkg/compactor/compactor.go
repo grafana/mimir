@@ -501,7 +501,7 @@ func newMultitenantCompactor(
 
 	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "cortex_compactor_info",
-		Help: "A metric with a constant '1' value labeled by compactor mode.",
+		Help: "Information about the compactor. The mode label indicates the planning mode (standalone or scheduler).",
 		ConstLabels: prometheus.Labels{
 			"mode": compactorCfg.PlanningMode,
 		},
