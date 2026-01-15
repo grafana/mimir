@@ -833,10 +833,9 @@ func RejectionString(rejections []*usagetrackerpb.TrackSeriesBatchRejection) str
 	}
 
 	r := make([]string, 0, len(userRejections))
-
 	for u, c := range userRejections {
 		r = append(r, fmt.Sprintf("%s (%d)", u, c))
 	}
-
+	slices.Sort(r)
 	return strings.Join(r, ", ")
 }
