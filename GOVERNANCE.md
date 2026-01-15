@@ -30,13 +30,14 @@ Each project must have a [`MAINTAINERS.md`][maintainers] file with at least one 
 
 Team member status may be given to those who have made ongoing contributions to the Mimir project for at least 3 months. This is usually in the form of code improvements and/or notable work on documentation, but organizing events or user support could also be taken into account.
 
-New members may be proposed by any existing member by email to the [team mailing list][team]. It is highly desirable to reach consensus about acceptance of a new member. However, the proposal is ultimately voted on by a formal [supermajority vote](#supermajority-vote).
+- For Grafana Cloud Hosted Metrics engineers, an engineer is automatically added as a team member as soon as they join the on-call rotation without being proposed.
+- For other people, they may be proposed by any existing member by email to the [team mailing list][team]. It is highly desirable to reach consensus about acceptance of a new member. However, the proposal is ultimately voted on by a formal [supermajority vote](#supermajority-vote).
 
 If the new member proposal is accepted, the proposed team member should be contacted privately via email to confirm or deny their acceptance of team membership. This email will also be CC'd to the [team mailing list][team] for record-keeping purposes.
 
 If they choose to accept, the [onboarding](#onboarding) procedure is followed.
 
-Team members may retire at any time by emailing [the team][team].
+Team members may retire at any time by emailing [the team][team]. Grafana Labs employees who stop being Grafana Cloud Hosted Metrics engineers or leave Grafana Labs are assumed to have retired unless they state otherwise.
 
 Team members can be removed by [supermajority vote](#supermajority-vote) on [the team mailing list][team].
 For this vote, the member in question is not eligible to vote and does not count towards the quorum.
