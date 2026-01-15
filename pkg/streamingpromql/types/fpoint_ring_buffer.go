@@ -102,6 +102,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 		size++
 	}
 
+	existing.offset = 0
 	existing.size = size
 	return existing
 }
@@ -112,6 +113,7 @@ func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBu
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
 	}
+	existing.offset = 0
 	existing.size = b.size
 	return existing
 }
@@ -129,6 +131,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 		nextPositionToCheck--
 	}
 
+	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
 	return existing
 }

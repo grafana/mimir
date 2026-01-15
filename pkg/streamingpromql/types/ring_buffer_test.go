@@ -956,3 +956,93 @@ func setupRingBufferTestingPools(t *testing.T) {
 		putHPointSliceForRingBuffer = originalPutHPointSlice
 	})
 }
+
+func TestRingBufferView_ReuseWithNonZeroOffset(t *testing.T) {
+	t.Run("FPoint ViewUntilSearchingForwards resets offset", func(t *testing.T) {
+		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		buf := NewFPointRingBuffer(memoryTracker)
+
+		// Add points T=10, 20, 30, 40, 50
+		for i := int64(1); i <= 5; i++ {
+			require.NoError(t, buf.Append(promql.FPoint{T: i * 10, F: float64(i * 100)}))
+		}
+
+		fullView := buf.ViewUntilSearchingForwards(50, nil)
+		subView, _ := fullView.SubView(25, 45, 0)
+		require.Equal(t, 2, subView.Count())
+		require.Equal(t, int64(30), subView.First().T)
+
+		reusedView := buf.ViewUntilSearchingForwards(40, &subView)
+		require.Equal(t, 4, reusedView.Count())
+		require.Equal(t, int64(10), reusedView.First().T)
+	})
+
+	t.Run("FPoint ViewUntilSearchingBackwards resets offset", func(t *testing.T) {
+		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		buf := NewFPointRingBuffer(memoryTracker)
+
+		for i := int64(1); i <= 5; i++ {
+			require.NoError(t, buf.Append(promql.FPoint{T: i * 10, F: float64(i * 100)}))
+		}
+
+		fullView := buf.ViewUntilSearchingBackwards(50, nil)
+		subView, _ := fullView.SubView(25, 45, 0)
+		require.Equal(t, 2, subView.Count())
+
+		reusedView := buf.ViewUntilSearchingBackwards(40, &subView)
+		require.Equal(t, 4, reusedView.Count())
+		require.Equal(t, int64(10), reusedView.First().T, "First point should be T=10, not affected by previous offset")
+	})
+
+	t.Run("FPoint ViewAll resets offset", func(t *testing.T) {
+		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		buf := NewFPointRingBuffer(memoryTracker)
+
+		for i := int64(1); i <= 5; i++ {
+			require.NoError(t, buf.Append(promql.FPoint{T: i * 10, F: float64(i * 100)}))
+		}
+
+		fullView := buf.ViewAll(nil)
+		subView, _ := fullView.SubView(25, 45, 0)
+		require.Equal(t, 2, subView.Count())
+
+		reusedView := buf.ViewAll(&subView)
+		require.Equal(t, 5, reusedView.Count())
+		require.Equal(t, int64(10), reusedView.First().T)
+	})
+
+	t.Run("HPoint ViewUntilSearchingForwards resets offset", func(t *testing.T) {
+		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		buf := NewHPointRingBuffer(memoryTracker)
+
+		for i := int64(1); i <= 5; i++ {
+			require.NoError(t, buf.Append(promql.HPoint{T: i * 10, H: &histogram.FloatHistogram{Count: float64(i * 100)}}))
+		}
+
+		fullView := buf.ViewUntilSearchingForwards(50, nil)
+		subView, _ := fullView.SubView(25, 45, 0)
+		require.Equal(t, 2, subView.Count())
+		require.Equal(t, int64(30), subView.First().T)
+
+		reusedView := buf.ViewUntilSearchingForwards(40, &subView)
+		require.Equal(t, 4, reusedView.Count())
+		require.Equal(t, int64(10), reusedView.First().T)
+	})
+
+	t.Run("HPoint ViewUntilSearchingBackwards resets offset", func(t *testing.T) {
+		memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+		buf := NewHPointRingBuffer(memoryTracker)
+
+		for i := int64(1); i <= 5; i++ {
+			require.NoError(t, buf.Append(promql.HPoint{T: i * 10, H: &histogram.FloatHistogram{Count: float64(i * 100)}}))
+		}
+
+		fullView := buf.ViewUntilSearchingBackwards(50, nil)
+		subView, _ := fullView.SubView(25, 45, 0)
+		require.Equal(t, 2, subView.Count())
+
+		reusedView := buf.ViewUntilSearchingBackwards(40, &subView)
+		require.Equal(t, 4, reusedView.Count())
+		require.Equal(t, int64(10), reusedView.First().T)
+	})
+}

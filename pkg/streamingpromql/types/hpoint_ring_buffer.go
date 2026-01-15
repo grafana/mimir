@@ -77,6 +77,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPoi
 		size++
 	}
 
+	existing.offset = 0
 	existing.size = size
 	return existing
 }
@@ -94,6 +95,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPo
 		nextPositionToCheck--
 	}
 
+	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
 	return existing
 }
