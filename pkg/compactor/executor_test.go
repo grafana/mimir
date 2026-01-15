@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -537,7 +538,7 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 
 	// New mock compactor w. minimal metrics for testing
 	mockCompactor := &MultitenantCompactor{
-		schedulerLastContact: prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_last_contact"}),
+		schedulerLastContact: promauto.With(nil).NewGauge(prometheus.GaugeOpts{Name: "test_last_contact"}),
 	}
 
 	go schedulerExec.startJobStatusUpdater(ctx, mockCompactor, jobKey, jobSpec, jobCancelFunc)
