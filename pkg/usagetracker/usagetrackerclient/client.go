@@ -733,7 +733,6 @@ type PartitionBatcher struct {
 	stoppingChan      <-chan struct{}
 }
 
-// NewPartitionBatcher creates a new PartitionBatcher.
 func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, clientsPool *client.Pool, stopping <-chan struct{}) *PartitionBatcher {
 	return &PartitionBatcher{
 		partition: partition,
