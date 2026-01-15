@@ -599,8 +599,8 @@ github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86 h1:aTwfQuroOm
 github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86/go.mod h1:h60o12SZn/ua/j0B6iKAZezA4eDaGsIuPO70eOaJ6WE=
 github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d h1:k4NIVPYPP0sLJoGNzGwoQs2MpnWTvTcgbWPCzfdX66c=
 github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d/go.mod h1:vRYWnXvI6aWGpsdY/mOT/cbeVRBlPWtBNDb7kGR3uKM=
-github.com/grafana/mimir-prometheus v1.8.2-0.20260105042900-3b527c17e102 h1:PhVPR0KzY7oPpKh93rOyJ/8iDr/IJf+kCSZgZU4I80Y=
-github.com/grafana/mimir-prometheus v1.8.2-0.20260105042900-3b527c17e102/go.mod h1:MD4sUVltHRp9pnmcOF406cfHmrxDBW2WDEnp1sIM6qI=
+github.com/grafana/mimir-prometheus v1.8.2-0.20260115103727-ffaf73ac31dc h1:JwP+8JO2YT94irwRZQzqlw3rm2DEbnmHLHS50Y+abN0=
+github.com/grafana/mimir-prometheus v1.8.2-0.20260115103727-ffaf73ac31dc/go.mod h1:z/oGfDGINVxZU66yxasDfmZvCmY/n3rwncvcXfldXwE=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956 h1:em1oddjXL8c1tL0iFdtVtPloq2hRPen2MJQKoAWpxu0=
 github.com/grafana/opentracing-contrib-go-stdlib v0.0.0-20230509071955-f410e79da956/go.mod h1:qtI1ogk+2JhVPIXVc6q+NHziSmy2W5GbdQZFUHADCBU=
 github.com/grafana/otel-profiling-go v0.5.1 h1:stVPKAFZSa7eGiqbYuG25VcqYksR6iWvF3YH66t4qL8=
@@ -1134,8 +1134,6 @@ go.opentelemetry.io/collector/processor/processortest v0.142.0 h1:wQnJeXDejBL6r8
 go.opentelemetry.io/collector/processor/processortest v0.142.0/go.mod h1:QU5SWj0L+92MSvQxZDjwWCsKssNDm+nD6SHn7IvviUE=
 go.opentelemetry.io/collector/processor/xprocessor v0.142.0 h1:7a1Crxrd5iBMVnebTxkcqxVkRHAlOBUUmNTUVUTnlCU=
 go.opentelemetry.io/collector/processor/xprocessor v0.142.0/go.mod h1:LY/GS2DiJILJKS3ynU3eOLLWSP8CmN1FtdpAMsVV8AU=
-go.opentelemetry.io/collector/semconv v0.128.0 h1:MzYOz7Vgb3Kf5D7b49pqqgeUhEmOCuT10bIXb/Cc+k4=
-go.opentelemetry.io/collector/semconv v0.128.0/go.mod h1:OPXer4l43X23cnjLXIZnRj/qQOjSuq4TgBLI76P9hns=
 go.opentelemetry.io/contrib/bridges/prometheus v0.63.0 h1:/Rij/t18Y7rUayNg7Id6rPrEnHgorxYabm2E6wUdPP4=
 go.opentelemetry.io/contrib/bridges/prometheus v0.63.0/go.mod h1:AdyDPn6pkbkt2w01n3BubRVk7xAsCRq1Yg1mpfyA/0E=
 go.opentelemetry.io/contrib/detectors/gcp v1.38.0 h1:ZoYbqX7OaA/TAikspPl3ozPI6iY6LiIY9I8cUfm+pJs=
