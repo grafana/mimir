@@ -367,17 +367,17 @@ func newOTLPParser(
 		pushMetrics.IncOTLPContentType(contentType)
 		observeOTLPFieldsCount(pushMetrics, otlpReq)
 
-		convOpts := conversionOptions{
-			addSuffixes:                       translationStrategy.ShouldAddSuffixes(),
-			enableCTZeroIngestion:             enableCTZeroIngestion,
-			keepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
-			convertHistogramsToNHCB:           convertHistogramsToNHCB,
-			promoteScopeMetadata:              promoteScopeMetadata,
-			promoteResourceAttributes:         promoteResourceAttributes,
-			allowDeltaTemporality:             allowDeltaTemporality,
-			allowUTF8:                         !translationStrategy.ShouldEscape(),
-			underscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
-			preserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
+		convOpts := ConversionOptions{
+			AddSuffixes:                       translationStrategy.ShouldAddSuffixes(),
+			EnableCTZeroIngestion:             enableCTZeroIngestion,
+			KeepIdentifyingResourceAttributes: keepIdentifyingResourceAttributes,
+			ConvertHistogramsToNHCB:           convertHistogramsToNHCB,
+			PromoteScopeMetadata:              promoteScopeMetadata,
+			PromoteResourceAttributes:         promoteResourceAttributes,
+			AllowDeltaTemporality:             allowDeltaTemporality,
+			AllowUTF8:                         !translationStrategy.ShouldEscape(),
+			UnderscoreSanitization:            limits.OTelLabelNameUnderscoreSanitization(tenantID),
+			PreserveMultipleUnderscores:       limits.OTelLabelNamePreserveMultipleUnderscores(tenantID),
 		}
 		metrics, metadata, metricsDropped, err := otelMetricsToSeriesAndMetadata(
 			ctx,
@@ -563,38 +563,39 @@ func (o otlpProtoUnmarshaler) Unmarshal(data []byte) error {
 	return o.request.UnmarshalProto(data)
 }
 
-type conversionOptions struct {
-	addSuffixes                       bool
-	enableCTZeroIngestion             bool
-	keepIdentifyingResourceAttributes bool
-	convertHistogramsToNHCB           bool
-	promoteScopeMetadata              bool
-	promoteResourceAttributes         []string
-	allowDeltaTemporality             bool
-	allowUTF8                         bool
-	underscoreSanitization            bool
-	preserveMultipleUnderscores       bool
+// ConversionOptions configures the OTLP to Mimir conversion.
+type ConversionOptions struct {
+	AddSuffixes                       bool
+	EnableCTZeroIngestion             bool
+	KeepIdentifyingResourceAttributes bool
+	ConvertHistogramsToNHCB           bool
+	PromoteScopeMetadata              bool
+	PromoteResourceAttributes         []string
+	AllowDeltaTemporality             bool
+	AllowUTF8                         bool
+	UnderscoreSanitization            bool
+	PreserveMultipleUnderscores       bool
 }
 
 func otelMetricsToSeriesAndMetadata(
 	ctx context.Context,
 	converter *otlpMimirConverter,
 	md pmetric.Metrics,
-	opts conversionOptions,
+	opts ConversionOptions,
 	logger log.Logger,
 ) ([]mimirpb.PreallocTimeseries, []*mimirpb.MetricMetadata, int, error) {
 	settings := prometheusremotewrite.Settings{
-		AddMetricSuffixes:                    opts.addSuffixes,
-		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.promoteResourceAttributes}),
-		KeepIdentifyingResourceAttributes:    opts.keepIdentifyingResourceAttributes,
-		ConvertHistogramsToNHCB:              opts.convertHistogramsToNHCB,
-		PromoteScopeMetadata:                 opts.promoteScopeMetadata,
-		AllowDeltaTemporality:                opts.allowDeltaTemporality,
-		AllowUTF8:                            opts.allowUTF8,
-		LabelNameUnderscoreSanitization:      opts.underscoreSanitization,
-		LabelNamePreserveMultipleUnderscores: opts.preserveMultipleUnderscores,
+		AddMetricSuffixes:                    opts.AddSuffixes,
+		PromoteResourceAttributes:            prometheusremotewrite.NewPromoteResourceAttributes(config.OTLPConfig{PromoteResourceAttributes: opts.PromoteResourceAttributes}),
+		KeepIdentifyingResourceAttributes:    opts.KeepIdentifyingResourceAttributes,
+		ConvertHistogramsToNHCB:              opts.ConvertHistogramsToNHCB,
+		PromoteScopeMetadata:                 opts.PromoteScopeMetadata,
+		AllowDeltaTemporality:                opts.AllowDeltaTemporality,
+		AllowUTF8:                            opts.AllowUTF8,
+		LabelNameUnderscoreSanitization:      opts.UnderscoreSanitization,
+		LabelNamePreserveMultipleUnderscores: opts.PreserveMultipleUnderscores,
 	}
-	converter.appender.EnableCreatedTimestampZeroIngestion = opts.enableCTZeroIngestion
+	converter.appender.EnableCreatedTimestampZeroIngestion = opts.EnableCTZeroIngestion
 	mimirTS, metadata := converter.ToSeriesAndMetadata(ctx, md, settings, logger)
 
 	dropped := converter.DroppedTotal()
@@ -782,15 +783,9 @@ func translateBucketsLayout(spans []prompb.BucketSpan, deltas []int64) (int32, [
 
 // OTLPToMimir converts OTLP metrics to Mimir timeseries. This is used in tests
 // to verify the round-trip conversion from Prometheus -> OTLP -> Mimir.
-func OTLPToMimir(ctx context.Context, md pmetric.Metrics, logger log.Logger) ([]mimirpb.PreallocTimeseries, error) {
+func OTLPToMimir(ctx context.Context, md pmetric.Metrics, opts ConversionOptions, logger log.Logger) ([]mimirpb.PreallocTimeseries, error) {
 	converter := newOTLPMimirConverter(otlpappender.NewCombinedAppender())
-	timeseries, _, _, err := otelMetricsToSeriesAndMetadata(
-		ctx,
-		converter,
-		md,
-		conversionOptions{},
-		logger,
-	)
+	timeseries, _, _, err := otelMetricsToSeriesAndMetadata(ctx, converter, md, opts, logger)
 	if err != nil {
 		return nil, err
 	}

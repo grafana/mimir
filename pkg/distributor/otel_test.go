@@ -621,12 +621,12 @@ func TestOTelMetricsToTimeSeries(t *testing.T) {
 				context.Background(),
 				converter,
 				md,
-				conversionOptions{
-					addSuffixes:                       true,
-					keepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
-					promoteResourceAttributes:         tc.promoteResourceAttributes,
-					underscoreSanitization:            tc.underscoreSanitization,
-					preserveMultipleUnderscores:       tc.preserveMultipleUnderscores,
+				ConversionOptions{
+					AddSuffixes:                       true,
+					KeepIdentifyingResourceAttributes: tc.keepIdentifyingResourceAttributes,
+					PromoteResourceAttributes:         tc.promoteResourceAttributes,
+					UnderscoreSanitization:            tc.underscoreSanitization,
+					PreserveMultipleUnderscores:       tc.preserveMultipleUnderscores,
 				},
 				log.NewNopLogger(),
 			)
@@ -697,9 +697,9 @@ func TestConvertOTelHistograms(t *testing.T) {
 			context.Background(),
 			converter,
 			md,
-			conversionOptions{
-				addSuffixes:             true,
-				convertHistogramsToNHCB: convertHistogramsToNHCB,
+			ConversionOptions{
+				AddSuffixes:             true,
+				ConvertHistogramsToNHCB: convertHistogramsToNHCB,
 			},
 			log.NewNopLogger(),
 		)
@@ -908,9 +908,9 @@ func TestOTelDeltaIngestion(t *testing.T) {
 				context.Background(),
 				converter,
 				tc.input,
-				conversionOptions{
-					convertHistogramsToNHCB: true,
-					allowDeltaTemporality:   tc.allowDelta,
+				ConversionOptions{
+					ConvertHistogramsToNHCB: true,
+					AllowDeltaTemporality:   tc.allowDelta,
 				},
 				log.NewNopLogger(),
 			)
@@ -929,7 +929,7 @@ func TestOTelDeltaIngestion(t *testing.T) {
 	}
 }
 
-// TestOTelCTZeroIngestion checks that when conversionOptions.enableCTZeroIngestion is true,
+// TestOTelCTZeroIngestion checks that when ConversionOptions.EnableCTZeroIngestion is true,
 // the otel start time is turned into the created timestamp of the resulting time series.
 // Also check what happens if the option is off.
 func TestOTelCTZeroIngestion(t *testing.T) {
@@ -998,10 +998,10 @@ func TestOTelCTZeroIngestion(t *testing.T) {
 				context.Background(),
 				converter,
 				tc.input,
-				conversionOptions{
-					addSuffixes:             true,
-					enableCTZeroIngestion:   tc.enableCTZero,
-					convertHistogramsToNHCB: true,
+				ConversionOptions{
+					AddSuffixes:             true,
+					EnableCTZeroIngestion:   tc.enableCTZero,
+					ConvertHistogramsToNHCB: true,
 				},
 				log.NewNopLogger(),
 			)

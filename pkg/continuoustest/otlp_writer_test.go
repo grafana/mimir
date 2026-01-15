@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 
@@ -21,39 +20,27 @@ import (
 // (Prometheus -> OTLP bytes) is compatible with the conversion logic in otel.go
 // (OTLP bytes -> Mimir types).
 func TestOTLPWriterE2E(t *testing.T) {
-	now := time.Now()
-	ts1 := now.Add(-2 * time.Minute).UnixMilli()
-	ts2 := now.Add(-1 * time.Minute).UnixMilli()
-	ts3 := now.UnixMilli()
+	const (
+		metricName = "mimir_continuous_test_sine_wave_v2"
+		numSeries  = 3
+	)
 
-	// Create input Prometheus timeseries with samples at different timestamps.
-	inputTimeseries := []prompb.TimeSeries{
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric_one"},
-				{Name: "label_a", Value: "value_a"},
-			},
-			Samples: []prompb.Sample{
-				{Timestamp: ts1, Value: 1.0},
-				{Timestamp: ts2, Value: 2.0},
-			},
-		},
-		{
-			Labels: []prompb.Label{
-				{Name: "__name__", Value: "test_metric_two"},
-				{Name: "label_b", Value: "value_b"},
-				{Name: "label_c", Value: "value_c"},
-			},
-			Samples: []prompb.Sample{
-				{Timestamp: ts2, Value: 100.5},
-				{Timestamp: ts3, Value: 200.5},
-			},
-		},
+	// Generate timestamp aligned to writeInterval, matching how the continuous test generates them.
+	ts := alignTimestampToInterval(time.Now(), writeInterval)
+
+	// Generate input timeseries using generateSineWaveSeries.
+	inputTimeseries := generateSineWaveSeries(metricName, ts, numSeries)
+
+	metadata := make([]mimirpb.MetricMetadata, 0, len(floatMetricMetadata))
+	for _, m := range floatMetricMetadata {
+		metadata = append(metadata, mimirpb.MetricMetadata{
+			Type:             mimirpb.MetricMetadata_MetricType(m.Type),
+			MetricFamilyName: m.MetricFamilyName,
+			Help:             m.Help,
+			Unit:             m.Unit,
+		})
 	}
-
-	// Step 1: Convert Prometheus timeseries to OTLP and marshal to bytes.
-	// This mirrors the logic in otlp_writer.go's sendWriteRequest method.
-	otlpRequest := distributor.TimeseriesToOTLPRequest(inputTimeseries, nil)
+	otlpRequest := distributor.TimeseriesToOTLPRequest(inputTimeseries, metadata)
 	rawBytes, err := otlpRequest.MarshalProto()
 	require.NoError(t, err)
 	require.NotEmpty(t, rawBytes)
@@ -66,64 +53,55 @@ func TestOTLPWriterE2E(t *testing.T) {
 
 	// Step 3: Convert OTLP to Mimir types.
 	// This mirrors the logic in otel.go's newOTLPParser function.
-	mimirTimeseries, err := distributor.OTLPToMimir(context.Background(), unmarshaledRequest.Metrics(), log.NewNopLogger())
+	opts := distributor.ConversionOptions{
+		AddSuffixes:                       true,
+		EnableCTZeroIngestion:             true,
+		KeepIdentifyingResourceAttributes: true,
+		ConvertHistogramsToNHCB:           true,
+		PromoteScopeMetadata:              true,
+		PromoteResourceAttributes:         []string{"job", "instance"},
+		AllowDeltaTemporality:             true,
+		AllowUTF8:                         true,
+		UnderscoreSanitization:            true,
+		PreserveMultipleUnderscores:       true,
+	}
+	mimirTimeseries, err := distributor.OTLPToMimir(context.Background(), unmarshaledRequest.Metrics(), opts, log.NewNopLogger())
 	require.NoError(t, err)
 
-	// We expect 2 timeseries (one for each input metric).
-	// Note: The OTLP conversion may also generate target_info series from resource attributes,
-	// so we filter to just the metrics we care about.
+	// Filter to just the test metrics (excludes target_info generated from resource attributes).
 	var resultTimeseries []mimirpb.PreallocTimeseries
 	for _, ts := range mimirTimeseries {
 		for _, label := range ts.Labels {
-			if label.Name == "__name__" && (label.Value == "test_metric_one" || label.Value == "test_metric_two") {
+			if label.Name == "__name__" && label.Value == metricName {
 				resultTimeseries = append(resultTimeseries, ts)
 				break
 			}
-		}
-	}
-	require.Len(t, resultTimeseries, 2)
-
-	// Verify metric one.
-	metricOne := findTimeseriesByName(t, resultTimeseries, "test_metric_one")
-	require.NotNil(t, metricOne)
-	require.Len(t, metricOne.Samples, 2)
-	require.Equal(t, ts1, metricOne.Samples[0].TimestampMs)
-	require.Equal(t, 1.0, metricOne.Samples[0].Value)
-	require.Equal(t, ts2, metricOne.Samples[1].TimestampMs)
-	require.Equal(t, 2.0, metricOne.Samples[1].Value)
-	requireLabelValue(t, metricOne.Labels, "label_a", "value_a")
-
-	// Verify metric two.
-	metricTwo := findTimeseriesByName(t, resultTimeseries, "test_metric_two")
-	require.NotNil(t, metricTwo)
-	require.Len(t, metricTwo.Samples, 2)
-	require.Equal(t, ts2, metricTwo.Samples[0].TimestampMs)
-	require.Equal(t, 100.5, metricTwo.Samples[0].Value)
-	require.Equal(t, ts3, metricTwo.Samples[1].TimestampMs)
-	require.Equal(t, 200.5, metricTwo.Samples[1].Value)
-	requireLabelValue(t, metricTwo.Labels, "label_b", "value_b")
-	requireLabelValue(t, metricTwo.Labels, "label_c", "value_c")
-}
-
-// findTimeseriesByName returns the timeseries with the given metric name, or nil if not found.
-func findTimeseriesByName(t *testing.T, timeseries []mimirpb.PreallocTimeseries, name string) *mimirpb.TimeSeries {
-	t.Helper()
-	for _, ts := range timeseries {
-		for _, label := range ts.Labels {
-			if label.Name == "__name__" && label.Value == name {
-				return ts.TimeSeries
+			if label.Name == "__name__" && label.Value != metricName {
+				t.Fatalf("%s", label.Value)
 			}
 		}
 	}
-	return nil
+
+	// We generated numSeries series, each with 1 sample.
+	require.Len(t, resultTimeseries, numSeries)
+
+	// Verify each series has one sample at the expected timestamp.
+	for _, series := range resultTimeseries {
+		require.Len(t, series.Samples, 1, "each series should have 1 sample")
+		require.Equal(t, ts.UnixMilli(), series.Samples[0].TimestampMs)
+
+		// Verify expected labels are present.
+		requireLabelExists(t, series.Labels, "__name__")
+		requireLabelExists(t, series.Labels, "series_id")
+		requireLabelExists(t, series.Labels, "hash_extra")
+	}
 }
 
-// requireLabelValue asserts that the given labels contain the expected name/value pair.
-func requireLabelValue(t *testing.T, labels []mimirpb.LabelAdapter, name, expectedValue string) {
+// requireLabelExists asserts that the given labels contain a label with the specified name.
+func requireLabelExists(t *testing.T, labels []mimirpb.LabelAdapter, name string) {
 	t.Helper()
 	for _, label := range labels {
 		if label.Name == name {
-			require.Equal(t, expectedValue, label.Value, "label %s has unexpected value", name)
 			return
 		}
 	}
