@@ -998,6 +998,97 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			},
 		)
 	})
+
+	t.Run("should flush batch when max series count is exceeded", func(t *testing.T) {
+		t.Parallel()
+
+		partitionRing, instanceRing, registerer := prepareTest()
+
+		// Mock the usage-tracker server.
+		instances := map[string]*usageTrackerMock{
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-a-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+		}
+
+		clientCfg := createTestClientConfig()
+		clientCfg.PreferAvailabilityZone = "zone-b"
+		clientCfg.UseBatchedTracking = true
+		clientCfg.MaxBatchSeries = 5             // Set a low threshold to trigger flush
+		clientCfg.BatchDelay = 1_000 * time.Hour // Effectively disable timed batch flushing
+
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+			mock, ok := instances[instance.Id]
+			if ok {
+				return mock, nil
+			}
+
+			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
+		})
+
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+		})
+
+		// Generate the series hashes so that we can predict in which partition they're sharded to.
+		partitions := partitionRing.PartitionRing().Partitions()
+		require.Len(t, partitions, 2)
+		slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+
+		require.Equal(t, int32(1), partitions[0].Id)
+		require.Equal(t, int32(2), partitions[1].Id)
+
+		series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+		series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
+		series4Partition1 := uint64(partitions[0].Tokens[0] - 2)
+		series5Partition1 := uint64(partitions[0].Tokens[1] - 2)
+		series6Partition1 := uint64(partitions[0].Tokens[2] - 2) // This will exceed the threshold
+
+		// Add series that will exceed the max batch series threshold (5)
+		// First 3 series should not trigger flush
+		err := c.TrackSeriesAsync(t.Context(), "user-1", []uint64{series1Partition1, series2Partition1, series3Partition1})
+		require.NoError(t, err)
+
+		// Verify no flush yet
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		// Add 3 more series (total 6, exceeding threshold of 5)
+		err = c.TrackSeriesAsync(t.Context(), "user-2", []uint64{series4Partition1, series5Partition1, series6Partition1})
+		require.NoError(t, err)
+
+		// Wait a bit for the async flush to complete
+		// FIXME: this will flake.
+		time.Sleep(100 * time.Millisecond)
+
+		// Should have automatically flushed when threshold was exceeded
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		// Verify the flushed batch contains all 6 series
+		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
+		batchReq := req.(*usagetrackerpb.TrackSeriesBatchRequest)
+		require.Len(t, batchReq.Partitions, 1)
+		require.Equal(t, int32(1), batchReq.Partitions[0].Partition)
+		require.Len(t, batchReq.Partitions[0].Users, 2)
+		require.EqualValues(t, batchReq.Partitions[0].Users,
+			[]*usagetrackerpb.TrackSeriesBatchUser{
+				{
+					UserID:       "user-1",
+					SeriesHashes: []uint64{series1Partition1, series2Partition1, series3Partition1},
+				},
+				{
+					UserID:       "user-2",
+					SeriesHashes: []uint64{series4Partition1, series5Partition1, series6Partition1},
+				},
+			},
+		)
+	})
 }
 
 func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {

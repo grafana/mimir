@@ -672,7 +672,7 @@ func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series
 	b, ok := c.batchers[partition]
 	if !ok {
 		b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
-		b.runWorker()
+		b.startFlusher()
 		c.batchers[partition] = b
 	}
 	c.batchersMtx.Unlock()
@@ -707,6 +707,7 @@ type PartitionBatcher struct {
 
 	trackerClient *UsageTrackerClient
 	clientsPool   *client.Pool
+	workersPool   *concurrency.ReusableGoroutinesPool
 
 	maxSeriesPerBatch int
 	batchDelay        time.Duration
@@ -724,6 +725,7 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 
 		trackerClient: trackerClient,
 		clientsPool:   clientsPool,
+		workersPool:   concurrency.NewReusableGoroutinesPool(2),
 
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		batchDelay:        batchDelay,
@@ -732,7 +734,7 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 	}
 }
 
-func (b *PartitionBatcher) runWorker() {
+func (b *PartitionBatcher) startFlusher() {
 	go b.flushWorker()
 }
 
@@ -788,7 +790,9 @@ func (b *PartitionBatcher) flushBatchLocked(synchronous bool) {
 		if synchronous {
 			b.flush(users)
 		} else {
-			go b.flush(users)
+			b.workersPool.Go(func() {
+				b.flush(users)
+			})
 		}
 	}
 }
