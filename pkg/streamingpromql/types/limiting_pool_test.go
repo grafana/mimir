@@ -302,8 +302,7 @@ func TestLimitingBucketedPool_AppendToSlice_Error(t *testing.T) {
 
 	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
 	require.Error(t, err)
-	// Memory isn't decreased when AppendToSlice fails (though the slice is put back into the pool)
-	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestLimitingBucketedPool_MaxExpectedPointsPerSeriesConstantIsPowerOfTwo(t *testing.T) {
