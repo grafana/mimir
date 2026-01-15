@@ -120,6 +120,16 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			`,
 			expectedModified: 1,
 		},
+		"aggregation with count_values by": {
+			expr: `count_values by (job) ("pod", foo)`,
+			expectedPlan: `
+				- AggregateExpression: count_values by (job)
+					- expression: VectorSelector: {__name__="foo"}, include ("__series_hash__", "job", "pod")
+					- parameter: StringLiteral: "pod"
+			`,
+			expectedModified: 1,
+		},
+
 		"aggregation with sort_by_label": {
 			expr: `sort_by_label(avg by (job) (bar), "zone", "environment")`,
 			expectedPlan: `

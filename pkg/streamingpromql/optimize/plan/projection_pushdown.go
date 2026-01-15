@@ -194,22 +194,20 @@ func examinePath(path []planning.Node) (map[string]struct{}, SkipReason) {
 }
 
 func examineAggregate(a *core.AggregateExpression) (map[string]struct{}, SkipReason) {
-	requiredLabels := make(map[string]struct{})
+	// In order to keep this implementation simple, we only support including specific
+	// fields as part of a projection - not excluding all fields except specific ones.
+	if a.Without {
+		return nil, SkipReasonNotSupported
+	}
 
-	switch a.Op {
-	case core.AGGREGATION_COUNT_VALUES:
+	requiredLabels := make(map[string]struct{})
+	for _, l := range a.Grouping {
+		requiredLabels[l] = struct{}{}
+	}
+
+	if a.Op == core.AGGREGATION_COUNT_VALUES {
 		if l, ok := a.Param.(*core.StringLiteral); ok {
 			requiredLabels[l.Value] = struct{}{}
-		}
-	default:
-		// In order to keep this implementation simple, we only support including specific
-		// fields as part of a projection - not excluding all fields except specific ones.
-		if a.Without {
-			return nil, SkipReasonNotSupported
-		}
-
-		for _, l := range a.Grouping {
-			requiredLabels[l] = struct{}{}
 		}
 	}
 
