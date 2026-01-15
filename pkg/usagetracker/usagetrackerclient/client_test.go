@@ -47,7 +47,14 @@ func (m *mockLimitsProvider) MaxActiveOrGlobalSeriesPerUser(userID string) int {
 	return 0 // No limit
 }
 
-var noOpObserver = &usagetrackerclient.NoopUsageTrackerRejectionObserver{}
+type noopUsageTrackerRejectionObserver struct{}
+
+func (n *noopUsageTrackerRejectionObserver) ObserveUsageTrackerRejections(_ string, _ int) {
+}
+
+var _ usagetrackerclient.UsageTrackerRejectionObserver = (*noopUsageTrackerRejectionObserver)(nil)
+
+var noOpObserver = &noopUsageTrackerRejectionObserver{}
 
 type testRejectionObserver struct {
 	rejections map[string]int

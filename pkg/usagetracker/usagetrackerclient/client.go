@@ -45,13 +45,6 @@ type UsageTrackerRejectionObserver interface {
 	ObserveUsageTrackerRejections(userID string, rejections int)
 }
 
-type NoopUsageTrackerRejectionObserver struct{}
-
-func (n *NoopUsageTrackerRejectionObserver) ObserveUsageTrackerRejections(_ string, _ int) {
-}
-
-var _ UsageTrackerRejectionObserver = (*NoopUsageTrackerRejectionObserver)(nil)
-
 type Config struct {
 	IgnoreRejectedSeries bool `yaml:"ignore_rejected_series" category:"experimental"`
 	IgnoreErrors         bool `yaml:"ignore_errors" category:"experimental"`
