@@ -742,7 +742,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			return nil, errors.New("usage-tracker instance ring is required")
 		}
 
-		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg)
+		d.usageTrackerClient = usagetrackerclient.NewUsageTrackerClient("distributor", d.cfg.UsageTrackerClient, usageTrackerPartitionRing, usageTrackerInstanceRing, d.limits, log, reg, d)
 		subservices = append(subservices, d.usageTrackerClient)
 	}
 
@@ -1682,6 +1682,12 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 		}
 	}
 }
+
+func (d *Distributor) ObserveUsageTrackerRejections(userID string, rejections int) {
+	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Add(float64(rejections))
+}
+
+var _ usagetrackerclient.UsageTrackerRejectionObserver = (*Distributor)(nil)
 
 // filterOutRejectedSeries filters out time series from the WriteRequest based on rejected hashes and returns discarded samples count.
 // It updates the WriteRequest in place and optimizes memory by reusing preallocated time series.

@@ -41,6 +41,17 @@ type limitsProvider interface {
 	MaxActiveOrGlobalSeriesPerUser(userID string) int
 }
 
+type UsageTrackerRejectionObserver interface {
+	ObserveUsageTrackerRejections(userID string, rejections int)
+}
+
+type NoopUsageTrackerRejectionObserver struct{}
+
+func (n *NoopUsageTrackerRejectionObserver) ObserveUsageTrackerRejections(_ string, _ int) {
+}
+
+var _ UsageTrackerRejectionObserver = (*NoopUsageTrackerRejectionObserver)(nil)
+
 type Config struct {
 	IgnoreRejectedSeries bool `yaml:"ignore_rejected_series" category:"experimental"`
 	IgnoreErrors         bool `yaml:"ignore_errors" category:"experimental"`
@@ -130,6 +141,9 @@ type UsageTrackerClient struct {
 	usersCloseToLimit       []string
 	usersCloseToLimitLoaded bool
 
+	// Observer for usage tracker series rejections.
+	rejectionObserver UsageTrackerRejectionObserver
+
 	// Metrics.
 	trackSeriesDuration                 *prometheus.HistogramVec
 	usersCloseToLimitCount              prometheus.Gauge
@@ -138,15 +152,16 @@ type UsageTrackerClient struct {
 	batchTrackingFlushedOnSizeThreshold prometheus.Counter
 }
 
-func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
+func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer, rejectionObserver UsageTrackerRejectionObserver) *UsageTrackerClient {
 	clientsPool := newUsageTrackerClientPool(client.NewRingServiceDiscovery(instanceRing), clientName, clientCfg, logger, registerer)
 
 	c := &UsageTrackerClient{
-		cfg:           clientCfg,
-		logger:        logger,
-		limits:        limits,
-		partitionRing: partitionRing,
-		clientsPool:   clientsPool,
+		cfg:               clientCfg,
+		logger:            logger,
+		limits:            limits,
+		partitionRing:     partitionRing,
+		clientsPool:       clientsPool,
+		rejectionObserver: rejectionObserver,
 
 		trackSeriesWorkersPool: concurrency.NewReusableGoroutinesPool(clientCfg.ReusableWorkers),
 		trackSeriesDuration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
@@ -678,6 +693,7 @@ func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series
 	b, ok := c.batchers[partition]
 	if !ok {
 		b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
+		// May as well start the flusher outside of the lock.
 		defer b.startFlusher()
 		c.batchers[partition] = b
 	}
@@ -806,6 +822,12 @@ func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) e
 
 	if len(rejections) > 0 {
 		level.Warn(b.logger).Log("msg", "ingested some series that should have been rejected, because they were batch-tracked asynchronously", "rejections", RejectionString(rejections))
+
+		for _, rejection := range rejections {
+			for _, user := range rejection.Users {
+				b.trackerClient.rejectionObserver.ObserveUsageTrackerRejections(user.UserID, len(user.RejectedSeriesHashes))
+			}
+		}
 	}
 
 	return nil

@@ -47,6 +47,18 @@ func (m *mockLimitsProvider) MaxActiveOrGlobalSeriesPerUser(userID string) int {
 	return 0 // No limit
 }
 
+var noOpObserver = &usagetrackerclient.NoopUsageTrackerRejectionObserver{}
+
+type testRejectionObserver struct {
+	rejections map[string]int
+}
+
+func (o *testRejectionObserver) ObserveUsageTrackerRejections(userID string, rejections int) {
+	o.rejections[userID] += rejections
+}
+
+var _ usagetrackerclient.UsageTrackerRejectionObserver = (*testRejectionObserver)(nil)
+
 // prepareTestRings is a helper function that sets up the rings needed for testing.
 func prepareTestRings(t testing.TB, ctx context.Context) (*ring.MultiPartitionInstanceRing, *ring.Ring, prometheus.Registerer) {
 	logger := log.NewNopLogger()
@@ -156,7 +168,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -220,7 +232,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -278,7 +290,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -370,7 +382,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 				return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 			})
 
-			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -442,7 +454,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -498,7 +510,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -535,7 +547,7 @@ func TestUsageTrackerClient_TrackSeries(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, noOpObserver)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -776,7 +788,7 @@ func TestUsageTrackerClient_CanTrackAsync(t *testing.T) {
 
 			// Create and start the client
 			// StartAndAwaitRunning ensures that starting() has completed, which populates the cache
-			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, limitsProvider, logger, registerer)
+			c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, limitsProvider, logger, registerer, noOpObserver)
 			require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -842,7 +854,11 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		r := &testRejectionObserver{
+			rejections: make(map[string]int),
+		}
+
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -880,6 +896,9 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		require.Equal(t, 0, r.rejections["user-1"])
+		require.Equal(t, 0, r.rejections["user-2"])
 
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		batchReq := req.(*usagetrackerpb.TrackSeriesBatchRequest)
@@ -927,7 +946,11 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		r := &testRejectionObserver{
+			rejections: make(map[string]int),
+		}
+
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -951,6 +974,9 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		require.NoError(t, err)
 		err = c.TrackSeriesAsync(t.Context(), "user-2", []uint64{series4Partition2, series5Partition2})
 		require.NoError(t, err)
+
+		require.Equal(t, 0, r.rejections["user-1"])
+		require.Equal(t, 0, r.rejections["user-2"])
 
 		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
@@ -1027,7 +1053,11 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
 		})
 
-		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		r := &testRejectionObserver{
+			rejections: make(map[string]int),
+		}
+
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
 		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
@@ -1070,6 +1100,9 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
+		require.Equal(t, 0, r.rejections["user-1"])
+		require.Equal(t, 0, r.rejections["user-2"])
+
 		// Verify the flushed batch contains all 6 series
 		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
 		batchReq := req.(*usagetrackerpb.TrackSeriesBatchRequest)
@@ -1085,6 +1118,133 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 				{
 					UserID:       "user-2",
 					SeriesHashes: []uint64{series4Partition1, series5Partition1, series6Partition1},
+				},
+			},
+		)
+	})
+
+	t.Run("should observe rejections when user exceeds their limit", func(t *testing.T) {
+		t.Parallel()
+
+		partitionRing, instanceRing, registerer := prepareTest()
+
+		// Generate the series hashes so that we can predict in which partition they're sharded to.
+		partitions := partitionRing.PartitionRing().Partitions()
+		require.Len(t, partitions, 2)
+		slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+
+		require.Equal(t, int32(1), partitions[0].Id)
+		require.Equal(t, int32(2), partitions[1].Id)
+
+		series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+		series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
+		series4Partition1 := uint64(partitions[0].Tokens[0] - 2)
+		series5Partition1 := uint64(partitions[0].Tokens[1] - 2)
+
+		// Mock the usage-tracker server to return rejections for user-1 when they exceed their limit.
+		instances := map[string]*usageTrackerMock{
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{
+				Rejections: []*usagetrackerpb.TrackSeriesBatchRejection{
+					{
+						Partition: 1,
+						Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+							{
+								UserID:               "user-1",
+								RejectedSeriesHashes: []uint64{series3Partition1, series4Partition1},
+							},
+						},
+					},
+				},
+			}, nil),
+			"usage-tracker-zone-a-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{
+				Rejections: []*usagetrackerpb.TrackSeriesBatchRejection{
+					{
+						Partition: 1,
+						Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+							{
+								UserID:               "user-1",
+								RejectedSeriesHashes: []uint64{series3Partition1, series4Partition1},
+							},
+						},
+					},
+				},
+			}, nil),
+			"usage-tracker-zone-b-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+		}
+
+		clientCfg := createTestClientConfig()
+		clientCfg.PreferAvailabilityZone = "zone-b"
+		clientCfg.UseBatchedTracking = true
+		clientCfg.BatchDelay = 1_000 * time.Hour // Effectively disable timed batch flushing - we'll flush manually.
+
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+			mock, ok := instances[instance.Id]
+			if ok {
+				return mock, nil
+			}
+
+			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
+		})
+
+		r := &testRejectionObserver{
+			rejections: make(map[string]int),
+		}
+
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer, r)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+		})
+
+		// Track series for user-1, some of which will be rejected
+		err := c.TrackSeriesAsync(t.Context(), "user-1", []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition1, series5Partition1})
+		require.NoError(t, err)
+
+		// Track series for user-2, which should not be rejected
+		err = c.TrackSeriesAsync(t.Context(), "user-2", []uint64{series1Partition1})
+		require.NoError(t, err)
+
+		// Verify no calls yet before flush
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		// No rejections observed yet
+		require.Equal(t, 0, r.rejections["user-1"])
+		require.Equal(t, 0, r.rejections["user-2"])
+
+		// Flush the batch
+		batchClient := c.BatchClient()
+		batchClient.TestFlush()
+
+		// Should have tracked series to usage-tracker replicas in the preferred zone
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		// Verify rejections were observed for user-1 (2 series rejected)
+		require.Equal(t, 2, r.rejections["user-1"])
+		require.Equal(t, 0, r.rejections["user-2"])
+
+		// Verify the batch request contains all series
+		req := instances["usage-tracker-zone-b-1"].Calls[0].Arguments.Get(1)
+		batchReq := req.(*usagetrackerpb.TrackSeriesBatchRequest)
+		require.Len(t, batchReq.Partitions, 1)
+		require.Equal(t, int32(1), batchReq.Partitions[0].Partition)
+		require.Len(t, batchReq.Partitions[0].Users, 2)
+		require.EqualValues(t, batchReq.Partitions[0].Users,
+			[]*usagetrackerpb.TrackSeriesBatchUser{
+				{
+					UserID:       "user-1",
+					SeriesHashes: []uint64{series1Partition1, series2Partition1, series3Partition1, series4Partition1, series5Partition1},
+				},
+				{
+					UserID:       "user-2",
+					SeriesHashes: []uint64{series1Partition1},
 				},
 			},
 		)
