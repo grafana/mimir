@@ -3,7 +3,6 @@
 package usagetrackerclient
 
 import (
-	"container/list"
 	"context"
 	"flag"
 	"fmt"
@@ -703,7 +702,7 @@ type PartitionBatcher struct {
 	partition int32
 
 	usersMtx    sync.Mutex
-	userSeries  map[string]userSeries // userID -> list of series hash slices
+	userSeries  []*usagetrackerpb.TrackSeriesBatchUser
 	seriesCount int
 
 	trackerClient *UsageTrackerClient
@@ -720,7 +719,7 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 	return &PartitionBatcher{
 		partition: partition,
 
-		userSeries:  make(map[string]userSeries),
+		userSeries:  nil,
 		seriesCount: 0,
 
 		trackerClient: trackerClient,
@@ -740,16 +739,10 @@ func (b *PartitionBatcher) runWorker() {
 func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
 	b.usersMtx.Lock()
 
-	us, ok := b.userSeries[userID]
-	if !ok {
-		us = userSeries{
-			series:      list.New(),
-			seriesCount: 0,
-		}
-		b.userSeries[userID] = us
-	}
-	us.series.PushBack(series)
-	us.seriesCount += len(series)
+	b.userSeries = append(b.userSeries, &usagetrackerpb.TrackSeriesBatchUser{
+		UserID:       userID,
+		SeriesHashes: series,
+	})
 	b.seriesCount += len(series)
 
 	flushExceedsThreshold := false
@@ -786,14 +779,9 @@ func (b *PartitionBatcher) flushWorker() {
 	}
 }
 
-type userSeries struct {
-	series      *list.List
-	seriesCount int
-}
-
 func (b *PartitionBatcher) flushBatchLocked(synchronous bool) {
 	users := b.userSeries
-	b.userSeries = make(map[string]userSeries)
+	b.userSeries = nil
 	b.seriesCount = 0
 
 	if len(users) > 0 {
@@ -805,22 +793,7 @@ func (b *PartitionBatcher) flushBatchLocked(synchronous bool) {
 	}
 }
 
-func (b *PartitionBatcher) flush(records map[string]userSeries) error {
-	// Convert from map to proto format.
-	users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, len(records))
-	for userID, us := range records {
-		// We have a list of slices and we know the total number of series, so
-		// we pre-alloc and copy the series hashes in.
-		series := make([]uint64, 0, us.seriesCount)
-		for e := us.series.Front(); e != nil; e = e.Next() {
-			series = append(series, e.Value.([]uint64)...)
-		}
-		users = append(users, &usagetrackerpb.TrackSeriesBatchUser{
-			UserID:       userID,
-			SeriesHashes: series,
-		})
-	}
-
+func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) error {
 	// We're making a batch call across potentially many users, so we inject an arbitrary fake org ID.
 	batchCtx := user.InjectOrgID(context.Background(), "batch")
 	rejections, err := b.trackerClient.TrackSeriesPerPartitionBatch(batchCtx, b.partition, users)
