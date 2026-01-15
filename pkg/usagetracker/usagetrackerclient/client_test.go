@@ -1233,8 +1233,8 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
 		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
 
-		// Verify rejections were observed for user-1 (2 series rejected)
-		require.Equal(t, 2, r.rejections["user-1"])
+		// Verify rejections were observed for user-1 (1 Track call had rejection(s))
+		require.Equal(t, 1, r.rejections["user-1"])
 		require.Equal(t, 0, r.rejections["user-2"])
 
 		// Verify the batch request contains all series
