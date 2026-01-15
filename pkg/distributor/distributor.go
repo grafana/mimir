@@ -1603,6 +1603,8 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			// User is far from limit.
 			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
 
+			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+
 			if d.cfg.UsageTrackerClient.UseBatchedTracking {
 				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, userID, seriesHashes); err != nil {
 					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
@@ -1645,7 +1647,6 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 }
 
 func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Context, userID string, seriesHashes []uint64) func() {
-	d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
 	done := make(chan struct{}, 1)
 	t0 := time.Now()
 	asyncTrackingCtx, cancelAsyncTracking := context.WithCancelCause(ctx)
