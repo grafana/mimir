@@ -899,6 +899,105 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 			},
 		)
 	})
+
+	t.Run("should fallback to the other zone if a usage-tracker instance in the preferred zone is failing", func(t *testing.T) {
+		t.Parallel()
+
+		partitionRing, instanceRing, registerer := prepareTest()
+
+		// Mock the usage-tracker server.
+		instances := map[string]*usageTrackerMock{
+			"usage-tracker-zone-a-1": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-a-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+			"usage-tracker-zone-b-1": newUsageTrackerMockWithBatchResponse(nil, errors.New("failing instance")),
+			"usage-tracker-zone-b-2": newUsageTrackerMockWithBatchResponse(&usagetrackerpb.TrackSeriesBatchResponse{}, nil),
+		}
+
+		clientCfg := createTestClientConfig()
+		clientCfg.PreferAvailabilityZone = "zone-b"
+		clientCfg.UseBatchedTracking = true
+		clientCfg.BatchDelay = 1_000 * time.Hour // Effectively disable timed batch flushing - we'll flush manually.
+
+		clientCfg.ClientFactory = ring_client.PoolInstFunc(func(instance ring.InstanceDesc) (ring_client.PoolClient, error) {
+			mock, ok := instances[instance.Id]
+			if ok {
+				return mock, nil
+			}
+
+			return nil, fmt.Errorf("usage-tracker with ID %s not found", instance.Id)
+		})
+
+		c := usagetrackerclient.NewUsageTrackerClient("test", clientCfg, partitionRing, instanceRing, newMockLimitsProvider(), logger, registerer)
+		require.NoError(t, services.StartAndAwaitRunning(ctx, c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(ctx, c))
+		})
+
+		// Generate the series hashes so that we can predict in which partition they're sharded to.
+		partitions := partitionRing.PartitionRing().Partitions()
+		require.Len(t, partitions, 2)
+		slices.SortFunc(partitions, func(a, b ring.PartitionDesc) int { return int(a.Id - b.Id) })
+
+		require.Equal(t, int32(1), partitions[0].Id)
+		require.Equal(t, int32(2), partitions[1].Id)
+
+		series1Partition1 := uint64(partitions[0].Tokens[0] - 1)
+		series2Partition1 := uint64(partitions[0].Tokens[1] - 1)
+		series3Partition1 := uint64(partitions[0].Tokens[2] - 1)
+		series4Partition2 := uint64(partitions[1].Tokens[0] - 1)
+		series5Partition2 := uint64(partitions[1].Tokens[1] - 1)
+
+		err := c.TrackSeriesAsync(t.Context(), "user-1", []uint64{series1Partition1, series2Partition1, series3Partition1})
+		require.NoError(t, err)
+		err = c.TrackSeriesAsync(t.Context(), "user-2", []uint64{series4Partition2, series5Partition2})
+		require.NoError(t, err)
+
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		batchClient := c.BatchClient()
+		batchClient.TestFlush()
+
+		// Should have attempted to track series to usage-tracker replicas in the preferred zone first.
+		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+
+		// Should have fallen back to the other zone for partition 1.
+		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
+		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+
+		// Verify the fallback request for partition 1.
+		req := instances["usage-tracker-zone-a-1"].Calls[0].Arguments.Get(1)
+		batchReq := req.(*usagetrackerpb.TrackSeriesBatchRequest)
+		require.Len(t, batchReq.Partitions, 1)
+		require.Equal(t, int32(1), batchReq.Partitions[0].Partition)
+		require.Len(t, batchReq.Partitions[0].Users, 1)
+		require.EqualValues(t, batchReq.Partitions[0].Users,
+			[]*usagetrackerpb.TrackSeriesBatchUser{
+				{
+					UserID:       "user-1",
+					SeriesHashes: []uint64{series1Partition1, series2Partition1, series3Partition1},
+				},
+			},
+		)
+
+		// Verify the successful request for partition 2 (zone-b-2 worked).
+		req = instances["usage-tracker-zone-b-2"].Calls[0].Arguments.Get(1)
+		batchReq = req.(*usagetrackerpb.TrackSeriesBatchRequest)
+		require.Len(t, batchReq.Partitions, 1)
+		require.Equal(t, int32(2), batchReq.Partitions[0].Partition)
+		require.Len(t, batchReq.Partitions[0].Users, 1)
+		require.EqualValues(t, batchReq.Partitions[0].Users,
+			[]*usagetrackerpb.TrackSeriesBatchUser{
+				{
+					UserID:       "user-2",
+					SeriesHashes: []uint64{series4Partition2, series5Partition2},
+				},
+			},
+		)
+	})
 }
 
 func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
