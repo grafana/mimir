@@ -42,7 +42,7 @@ type limitsProvider interface {
 }
 
 type UsageTrackerRejectionObserver interface {
-	ObserveUsageTrackerRejections(userID string, rejections int)
+	ObserveUsageTrackerRejection(userID string)
 }
 
 type Config struct {
@@ -823,7 +823,7 @@ func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) e
 
 		for _, rejection := range rejections {
 			for _, user := range rejection.Users {
-				b.trackerClient.rejectionObserver.ObserveUsageTrackerRejections(user.UserID, len(user.RejectedSeriesHashes))
+				b.trackerClient.rejectionObserver.ObserveUsageTrackerRejection(user.UserID)
 			}
 		}
 	}

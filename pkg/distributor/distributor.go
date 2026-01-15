@@ -1683,8 +1683,8 @@ func (d *Distributor) parallelUsageTrackerClientTrackSeriesCall(ctx context.Cont
 	}
 }
 
-func (d *Distributor) ObserveUsageTrackerRejections(userID string, rejections int) {
-	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Add(float64(rejections))
+func (d *Distributor) ObserveUsageTrackerRejection(userID string) {
+	d.asyncUsageTrackerCallsWithRejectedSeries.WithLabelValues(userID).Inc()
 }
 
 var _ usagetrackerclient.UsageTrackerRejectionObserver = (*Distributor)(nil)
