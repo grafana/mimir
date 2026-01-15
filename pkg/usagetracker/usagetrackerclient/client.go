@@ -100,7 +100,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.IntVar(&cfg.MinSeriesLimitForAsyncTracking, prefix+"min-series-limit-for-async-tracking", 0, "Minimum series limit for a user to be eligible for async tracking. Users with a series limit below this threshold will always be tracked synchronously. Set to 0 to disable this check.")
 
 	f.BoolVar(&cfg.UseBatchedTracking, prefix+"use-batched-tracking", false, "Use batched tracking for series. If enabled, the client will track series in batches to reduce RPC traffic.")
-	f.DurationVar(&cfg.BatchDelay, prefix+"batch-delay", 150*time.Millisecond, "Delay between batches. If 0, no delay is used.")
+	f.DurationVar(&cfg.BatchDelay, prefix+"batch-delay", 750*time.Millisecond, "Delay between batches. If 0, no delay is used.")
 	f.IntVar(&cfg.MaxBatchSeries, prefix+"max-batch-series", 1_000_000, "Maximum number of series to track in a single batch. If 0, no maximum is used.")
 
 	cfg.GRPCClientConfig.RegisterFlagsWithPrefix(prefix+"grpc-client-config", f)
@@ -120,6 +120,7 @@ type UsageTrackerClient struct {
 	// trackSeriesWorkersPool is the pool of workers used to send requests to usage-tracker instances.
 	trackSeriesWorkersPool *concurrency.ReusableGoroutinesPool
 
+	// batchTrackingClient manages batch per-partition series tracking.
 	batchTrackingClient *batchTrackingClient
 
 	// Cache for users close to their limits.
@@ -425,7 +426,7 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 	)
 }
 
-func (c *UsageTrackerClient) trackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
+func (c *UsageTrackerClient) TrackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
 	if err != nil {
@@ -630,6 +631,10 @@ func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 	return !found
 }
 
+func (c *UsageTrackerClient) BatchClient() *batchTrackingClient {
+	return c.batchTrackingClient
+}
+
 type batchTrackingClient struct {
 	maxSeriesPerBatch int
 	batchDelay        time.Duration
@@ -673,6 +678,17 @@ func (c *batchTrackingClient) Stop() {
 	close(c.stoppingChan)
 }
 
+// TestFlush flushes all batchers. This is only used for testing.
+func (c *batchTrackingClient) TestFlush() {
+	c.batchersMtx.Lock()
+	defer c.batchersMtx.Unlock()
+	for _, b := range c.batchers {
+		b.usersMtx.Lock()
+		b.flushBatchLocked(true)
+		b.usersMtx.Unlock()
+	}
+}
+
 // partitionBatcher batches series hashes by partition and user. It will be
 // flushed when it either reaches a size threshold or when the per-partition
 // batch delay is reached.
@@ -680,7 +696,7 @@ type partitionBatcher struct {
 	partition int32
 
 	usersMtx    sync.Mutex
-	users       map[string][]uint64 // userID -> series hashes
+	userSeries  map[string][]uint64 // userID -> series hashes
 	seriesCount int
 
 	trackerClient *UsageTrackerClient
@@ -696,7 +712,7 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 	b := &partitionBatcher{
 		partition: partition,
 
-		users:       make(map[string][]uint64),
+		userSeries:  make(map[string][]uint64),
 		seriesCount: 0,
 
 		trackerClient: trackerClient,
@@ -714,11 +730,11 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 func (b *partitionBatcher) TrackSeries(userID string, series []uint64) {
 	b.usersMtx.Lock()
 	defer b.usersMtx.Unlock()
-	b.users[userID] = append(b.users[userID], series...)
+	b.userSeries[userID] = append(b.userSeries[userID], series...)
 	b.seriesCount += len(series)
 
 	if b.seriesCount >= b.maxSeriesPerBatch {
-		b.flushBatchLocked()
+		b.flushBatchLocked(false)
 	}
 }
 
@@ -729,27 +745,31 @@ func (b *partitionBatcher) flushWorker() {
 		select {
 		case <-t.C:
 			b.usersMtx.Lock()
-			b.flushBatchLocked()
+			b.flushBatchLocked(true)
 			b.usersMtx.Unlock()
 
 			t.Reset(util.DurationWithJitter(b.batchDelay, 0.1))
 		case <-b.stoppingChan:
 			// flush anything outstanding before returning.
 			b.usersMtx.Lock()
-			b.flushBatchLocked()
+			b.flushBatchLocked(false)
 			b.usersMtx.Unlock()
 			return
 		}
 	}
 }
 
-func (b *partitionBatcher) flushBatchLocked() {
-	users := b.users
-	b.users = make(map[string][]uint64)
+func (b *partitionBatcher) flushBatchLocked(synchronous bool) {
+	users := b.userSeries
+	b.userSeries = make(map[string][]uint64)
 	b.seriesCount = 0
 
 	if len(users) > 0 {
-		go b.flush(users)
+		if synchronous {
+			b.flush(users)
+		} else {
+			go b.flush(users)
+		}
 	}
 }
 
@@ -765,7 +785,7 @@ func (b *partitionBatcher) flush(records map[string][]uint64) error {
 
 	// We're making a batch call across potentially many users, so we inject an arbitrary fake org ID.
 	batchCtx := user.InjectOrgID(context.Background(), "batch")
-	rejections, err := b.trackerClient.trackSeriesPerPartitionBatch(batchCtx, b.partition, users)
+	rejections, err := b.trackerClient.TrackSeriesPerPartitionBatch(batchCtx, b.partition, users)
 	if err != nil {
 		return err
 	}
