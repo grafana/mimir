@@ -87,6 +87,7 @@ require (
 	github.com/twmb/franz-go/plugin/kprom v1.3.0
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 	github.com/xlab/treeprint v1.2.0
+	go.etcd.io/bbolt v1.4.3
 	go.opentelemetry.io/collector/pdata v1.47.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.38.0

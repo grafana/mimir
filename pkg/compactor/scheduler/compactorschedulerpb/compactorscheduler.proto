@@ -77,3 +77,15 @@ message UpdateCompactionJobRequest {
 }
 
 message UpdateJobResponse {}
+
+message StoredJobInfo {
+  int64 creationTime = 1;
+	int64 leaseCreationTime = 2;
+	int32 numLeases = 3;
+	int64 epoch = 4;     
+}
+
+message StoredCompactionJob {
+  StoredJobInfo info = 1;
+  CompactionJob job = 2;
+}

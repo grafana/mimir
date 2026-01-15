@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/thanos-io/objstore"
+	"go.etcd.io/bbolt"
+	bbolt_errors "go.etcd.io/bbolt/errors"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -23,14 +26,16 @@ type Spawner struct {
 	services.Service
 
 	logger               log.Logger
+	metrics              *schedulerMetrics
 	clock                clock.Clock
 	allowedTenants       *util.AllowList
 	bkt                  objstore.Bucket
+	db                   *bbolt.DB
 	planningInterval     time.Duration
 	userDiscoveryBackoff backoff.Config
 	rotator              *Rotator
+	maxLeases            int
 
-	// Mutable state
 	planMap     map[string]time.Time
 	planTracker *JobTracker[struct{}]
 }
@@ -41,23 +46,33 @@ func NewSpawner(
 	rotator *Rotator,
 	planTracker *JobTracker[struct{}],
 	bkt objstore.Bucket,
+	db *bbolt.DB,
+	metrics *schedulerMetrics,
 	logger log.Logger) *Spawner {
 	s := &Spawner{
 		logger:               logger,
+		metrics:              metrics,
 		clock:                clock.New(),
 		allowedTenants:       allowList,
 		bkt:                  bkt,
+		db:                   db,
 		planningInterval:     cfg.planningInterval,
 		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
 		rotator:              rotator,
 		planMap:              make(map[string]time.Time),
 		planTracker:          planTracker,
+		maxLeases:            cfg.maxLeases,
 	}
 	s.Service = services.NewTimerService(cfg.planningCheckInterval, s.start, s.iter, nil)
 	return s
 }
 
 func (s *Spawner) start(ctx context.Context) error {
+	// The rotator gets prepoluated upon recovery, use that to determine tenants that are already active
+	for tenant := range s.rotator.tenantStateMap {
+		s.planMap[tenant] = time.Time{}
+	}
+
 	b := backoff.New(ctx, s.userDiscoveryBackoff)
 	var err error
 	for b.Ongoing() {
@@ -115,6 +130,17 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 
 		if _, ok := s.planMap[tenant]; !ok {
 			// Discovered a new tenant
+			err := s.db.Update(func(tx *bbolt.Tx) error {
+				// TODO extract prefixing
+				_, err := tx.CreateBucket([]byte("u" + tenant))
+				return err
+			})
+			if err != nil {
+				return err
+			}
+			// TODO: extract prefixing
+			tracker := NewJobTracker(s.db, []byte("u"+tenant), serializeCompactionJob, deserializeCompactionJob, s.maxLeases, "compaction", s.metrics)
+			s.rotator.AddTenant(tenant, tracker)
 			s.planMap[tenant] = time.Time{}
 		}
 	}
@@ -124,6 +150,14 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 			level.Info(s.logger).Log("msg", "removing empty tenant from compactor scheduler", "tenant", tenant)
 			s.planTracker.RemoveForcefully(tenant)
 			s.rotator.RemoveTenant(tenant)
+			err := s.db.Update(func(tx *bbolt.Tx) error {
+				// TODO extract prefixing
+				return tx.DeleteBucket([]byte("u" + tenant))
+			})
+			if err != nil && !errors.Is(err, bbolt_errors.ErrBucketNotFound) {
+				level.Error(s.logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "tenant", tenant, "error", err)
+				return err
+			}
 			delete(s.planMap, tenant)
 		}
 	}

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/benbjohnson/clock"
@@ -16,6 +18,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.etcd.io/bbolt"
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/mimir/pkg/compactor"
@@ -32,6 +35,7 @@ type Config struct {
 	planningCheckInterval time.Duration
 	planningInterval      time.Duration
 	userDiscoveryBackoff  backoff.Config
+	dbPath                string
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -40,6 +44,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.leaseCheckInterval, "compactor-scheduler.lease-check-interval", 3*time.Minute, "How often the scheduler will check for expired leases to make the work items pending again.")
 	f.DurationVar(&cfg.planningCheckInterval, "compactor-scheduler.planning-check-interval", time.Minute, "How often the scheduler will check all tenants to see if a planning job needs to be submitted.")
 	f.DurationVar(&cfg.planningInterval, "compactor-scheduler.planning-interval", 30*time.Minute, "How often the plan jobs will be created by the scheduler.")
+	f.StringVar(&cfg.dbPath, "compactor-scheduler.db-path", "", "The path to the bbolt database file for the compactor scheduler.")
 	cfg.userDiscoveryBackoff.RegisterFlagsWithPrefix("compactor-scheduler", f)
 }
 
@@ -59,6 +64,9 @@ func (cfg *Config) Validate() error {
 	if cfg.planningInterval <= 0 {
 		return errors.New("compactor-scheduler.planning-interval must be positive")
 	}
+	if cfg.dbPath == "" {
+		return errors.New("compactor-scheduler.db-path must be set")
+	}
 	return nil
 }
 
@@ -71,6 +79,7 @@ type Scheduler struct {
 	services.Service
 
 	cfg                Config
+	db                 *bbolt.DB
 	rotator            *Rotator
 	planTracker        *JobTracker[struct{}]
 	subservicesManager *services.Manager
@@ -86,11 +95,23 @@ func NewCompactorScheduler(
 	registerer prometheus.Registerer) (*Scheduler, error) {
 
 	metrics := newSchedulerMetrics(registerer)
-	planTracker := NewJobTracker[struct{}](InfiniteLeases, "planning", metrics)
+
+	db, err := bbolt.Open(cfg.dbPath, 0600, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
+	}
+
+	allowList := util.NewAllowList(compactorCfg.EnabledTenants, compactorCfg.DisabledTenants)
+
+	planTracker, tenantStateMap, err := recoverState(db, allowList, cfg.maxLeases, metrics)
+	if err != nil {
+		return nil, fmt.Errorf("failed recovering state: %w", err)
+	}
 
 	scheduler := &Scheduler{
 		cfg:         cfg,
-		rotator:     NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, cfg.maxLeases, metrics),
+		db:          db,
+		rotator:     NewRotator(db, planTracker, tenantStateMap, cfg.leaseDuration, cfg.leaseCheckInterval, metrics, logger),
 		planTracker: planTracker,
 		logger:      logger,
 		clock:       clock.New(),
@@ -104,10 +125,12 @@ func NewCompactorScheduler(
 
 	planSpawner := NewSpawner(
 		cfg,
-		util.NewAllowList(compactorCfg.EnabledTenants, compactorCfg.DisabledTenants),
+		allowList,
 		scheduler.rotator,
 		scheduler.planTracker,
 		bkt,
+		db,
+		metrics,
 		logger,
 	)
 
@@ -122,6 +145,112 @@ func NewCompactorScheduler(
 
 	return scheduler, nil
 
+}
+
+func recoverState(db *bbolt.DB, allowedTenants *util.AllowList, maxLeases int, metrics *schedulerMetrics) (*JobTracker[struct{}], map[string]*TenantRotationState, error) {
+	var planTracker *JobTracker[struct{}]
+	m := make(map[string]*TenantRotationState)
+
+	// Iterate through each bucket and create the corresponding JobTracker
+	err := db.Update(func(tx *bbolt.Tx) error {
+		return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
+			bucketName := string(name)
+
+			if bucketName == "planning" {
+				pt, err := createPlanningTracker(db, b, metrics)
+				if err != nil {
+					return err
+				}
+				planTracker = pt
+				return nil
+			}
+
+			// Must be a tenant bucket
+			if len(bucketName) <= 1 || !strings.HasPrefix(bucketName, "u") {
+				return fmt.Errorf("invalid tenant name in database: %s", bucketName)
+			}
+			tenant, _ := strings.CutPrefix(bucketName, "u")
+			if !allowedTenants.IsAllowed(tenant) {
+				// This tenant is no longer allowed, remove their bucket
+				return tx.DeleteBucket(name)
+			}
+
+			jt := NewJobTracker(
+				db,
+				[]byte(bucketName), // can't reuse name bytes directly due to its lifetime tied to transaction
+				serializeCompactionJob,
+				deserializeCompactionJob,
+				maxLeases,
+				"compaction",
+				metrics,
+			)
+			err := jt.recover(b)
+			if err != nil {
+				return err
+			}
+			m[tenant] = &TenantRotationState{
+				tracker:       jt,
+				rotationIndex: outsideRotation,
+			}
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	if planTracker == nil {
+		// Create the planning bucket for the first time
+		err := db.Update(func(tx *bbolt.Tx) error {
+			_, err := tx.CreateBucket([]byte("planning"))
+			return err
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		planTracker, err = createPlanningTracker(db, nil, metrics)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	return planTracker, m, nil
+}
+
+func createPlanningTracker(db *bbolt.DB, b *bbolt.Bucket, metrics *schedulerMetrics) (*JobTracker[struct{}], error) {
+	tracker := NewJobTracker(
+		db,
+		[]byte("planning"),
+		func(j *Job[struct{}]) ([]byte, error) {
+			info := compactorschedulerpb.StoredJobInfo{
+				CreationTime:      j.creationTime.Unix(),
+				LeaseCreationTime: j.leaseCreationTime.Unix(),
+				NumLeases:         int32(j.numLeases),
+				Epoch:             j.epoch,
+			}
+			return info.Marshal()
+		},
+		func(b []byte) (*Job[struct{}], error) {
+			var info compactorschedulerpb.StoredJobInfo
+			if err := info.Unmarshal(b); err != nil {
+				return nil, err
+			}
+			return &Job[struct{}]{
+				value:             struct{}{},
+				creationTime:      time.Unix(info.CreationTime, 0),
+				leaseCreationTime: time.Unix(info.LeaseCreationTime, 0),
+				numLeases:         int(info.NumLeases),
+				epoch:             info.Epoch,
+			}, nil
+		},
+		InfiniteLeases,
+		"planning",
+		metrics,
+	)
+	if b != nil {
+		if err := tracker.recover(b); err != nil {
+			return nil, err
+		}
+	}
+	return tracker, nil
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
@@ -140,16 +269,29 @@ func (s *Scheduler) run(ctx context.Context) error {
 }
 
 func (s *Scheduler) stop(err error) error {
-	return services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager)
+	// We want the other services to stop first since they may also use the database
+	stopErr := services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager)
+
+	// Regardless of stopErr value, try to close database
+	if err := s.db.Close(); err != nil {
+		level.Error(s.logger).Log("msg", "failed to close database", "err", err)
+		return err
+	}
+
+	return stopErr
 }
 
 func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 	// Plan jobs are checked first
-	tenant, _, epoch, ok := s.planTracker.Lease(func(tenant string, _ struct{}) bool {
+	tenant, _, epoch, ok, err := s.planTracker.Lease(func(tenant string, _ struct{}) bool {
 		// TODO: Using req.WorkerId, can this worker plan for this tenant?
 		// Calculating this under a write lock is likely undesirable, the list of known tenants is in the planSpawner too
 		return true
 	})
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed leasing plan job: %w", err)
+		return nil, err
+	}
 	if ok {
 		level.Info(s.logger).Log("msg", "leasing plan job", "tenant", tenant, "epoch", epoch, "worker", req.WorkerId)
 		return &compactorschedulerpb.LeaseJobResponse{
@@ -164,10 +306,13 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 	}
 
 	// There were no pending plan jobs, check for compaction jobs
-	response, ok := s.rotator.LeaseJob(ctx, func(_ string, _ *CompactionJob) bool {
+	response, ok, err := s.rotator.LeaseJob(ctx, func(_ string, _ *CompactionJob) bool {
 		return true
 	})
-
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed leasing compaction job: %w", err)
+		return nil, err
+	}
 	if ok {
 		level.Info(s.logger).Log("msg", "leasing compaction job", "tenant", response.Spec.Tenant, "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
@@ -178,7 +323,12 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 }
 
 func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
-	if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
+	removed, _, err := s.planTracker.Remove(req.Key.Id, req.Key.Epoch)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed removing plan job: %w", err)
+		return nil, err
+	}
+	if removed {
 		level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 		now := s.clock.Now()
 		jobs := make([]*Job[*CompactionJob], 0, len(req.Jobs))
@@ -193,9 +343,14 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 				s.clock,
 			))
 		}
-		s.rotator.OfferJobs(req.Key.Id, jobs, func(_ *CompactionJob, _ *CompactionJob) bool {
-			return true
+		_, err := s.rotator.OfferJobs(req.Key.Id, jobs, func(previous *CompactionJob, new *CompactionJob) bool {
+			// Replace an existing job with the same ID if it has differs in type of compaction or has different blocks
+			return previous.isSplit != new.isSplit || !slices.EqualFunc(previous.blocks, new.blocks, slices.Equal)
 		})
+		if err != nil {
+			level.Error(s.logger).Log("msg", "failed offering result of plan job: %w", err)
+			return nil, err
+		}
 		return &compactorschedulerpb.PlannedJobsResponse{}, nil
 	}
 
@@ -213,11 +368,19 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 	case compactorschedulerpb.COMPLETE:
 		fallthrough
 	case compactorschedulerpb.ABANDON:
-		if removed, _ := s.planTracker.Remove(req.Key.Id, req.Key.Epoch); removed {
+		removed, _, err := s.planTracker.Remove(req.Key.Id, req.Key.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
 			return ok()
 		}
 	case compactorschedulerpb.REASSIGN:
-		if canceled, _ := s.planTracker.CancelLease(req.Key.Id, req.Key.Epoch); canceled {
+		canceled, _, err := s.planTracker.CancelLease(req.Key.Id, req.Key.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		if canceled {
 			return ok()
 		}
 	default:
@@ -238,11 +401,19 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	case compactorschedulerpb.COMPLETE:
 		fallthrough
 	case compactorschedulerpb.ABANDON:
-		if s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch) {
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
 			return ok()
 		}
 	case compactorschedulerpb.REASSIGN:
-		if s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
+		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
+		if err != nil {
+			return nil, err
+		}
+		if canceled {
 			return ok()
 		}
 	default:
