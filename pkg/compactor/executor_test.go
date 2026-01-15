@@ -535,7 +535,12 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 	jobKey := &compactorschedulerpb.JobKey{Id: "test-job"}
 	jobSpec := &compactorschedulerpb.JobSpec{Tenant: "test-tenant", JobType: compactorschedulerpb.COMPACTION}
 
-	go schedulerExec.startJobStatusUpdater(ctx, jobKey, jobSpec, jobCancelFunc)
+	// New mock compactor w. minimal metrics for testing
+	mockCompactor := &MultitenantCompactor{
+		schedulerLastContact: prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_last_contact"}),
+	}
+
+	go schedulerExec.startJobStatusUpdater(ctx, mockCompactor, jobKey, jobSpec, jobCancelFunc)
 
 	// Wait for the job to cancel after NOT_FOUND
 	select {
