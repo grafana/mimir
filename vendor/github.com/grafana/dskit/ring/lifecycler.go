@@ -243,7 +243,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 	}
 
 	l.BasicService = services.
-		NewBasicService(l.starting, l.loop, l.stopping).
+		NewBasicService(nil, l.loop, l.stopping).
 		WithName(fmt.Sprintf("%s ring lifecycler", ringName))
 
 	return l, nil
@@ -538,16 +538,13 @@ func (i *Lifecycler) Zones() []string {
 	return i.zones
 }
 
-func (i *Lifecycler) starting(ctx context.Context) error {
+func (i *Lifecycler) loop(ctx context.Context) error {
 	// First, see if we exist in the cluster, update our state to match if we do,
 	// and add ourselves (without tokens) if we don't.
 	if err := i.initRing(ctx); err != nil {
 		return errors.Wrapf(err, "failed to join the ring %s", i.RingName)
 	}
-	return nil
-}
 
-func (i *Lifecycler) loop(ctx context.Context) error {
 	// We do various period tasks
 	autoJoinAfter := time.After(i.cfg.JoinAfter)
 	var observeChan <-chan time.Time
