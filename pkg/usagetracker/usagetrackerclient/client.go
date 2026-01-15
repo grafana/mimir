@@ -3,6 +3,7 @@
 package usagetrackerclient
 
 import (
+	"container/list"
 	"context"
 	"flag"
 	"fmt"
@@ -645,7 +646,7 @@ type batchTrackingClient struct {
 	batchDelay        time.Duration
 
 	batchersMtx sync.Mutex
-	batchers    map[int32]*partitionBatcher
+	batchers    map[int32]*PartitionBatcher
 
 	trackerClient *UsageTrackerClient
 	clientsPool   *client.Pool
@@ -658,7 +659,7 @@ func newBatchTrackingClient(clientsPool *client.Pool, maxSeriesPerBatch int, bat
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		batchDelay:        batchDelay,
 
-		batchers: make(map[int32]*partitionBatcher),
+		batchers: make(map[int32]*PartitionBatcher),
 
 		trackerClient: trackerClient,
 		clientsPool:   clientsPool,
@@ -671,7 +672,8 @@ func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series
 	c.batchersMtx.Lock()
 	b, ok := c.batchers[partition]
 	if !ok {
-		b = newPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
+		b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
+		b.runWorker()
 		c.batchers[partition] = b
 	}
 	c.batchersMtx.Unlock()
@@ -694,14 +696,14 @@ func (c *batchTrackingClient) TestFlush() {
 	}
 }
 
-// partitionBatcher batches series hashes by partition and user. It will be
+// PartitionBatcher batches series hashes by partition and user. It will be
 // flushed when it either reaches a size threshold or when the per-partition
 // batch delay is reached.
-type partitionBatcher struct {
+type PartitionBatcher struct {
 	partition int32
 
 	usersMtx    sync.Mutex
-	userSeries  map[string][]uint64 // userID -> series hashes
+	userSeries  map[string]userSeries // userID -> list of series hash slices
 	seriesCount int
 
 	trackerClient *UsageTrackerClient
@@ -713,11 +715,12 @@ type partitionBatcher struct {
 	stoppingChan      <-chan struct{}
 }
 
-func newPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, clientsPool *client.Pool, stopping <-chan struct{}) *partitionBatcher {
-	b := &partitionBatcher{
+// NewPartitionBatcher creates a new PartitionBatcher. It is exported for testing.
+func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, clientsPool *client.Pool, stopping <-chan struct{}) *PartitionBatcher {
+	return &PartitionBatcher{
 		partition: partition,
 
-		userSeries:  make(map[string][]uint64),
+		userSeries:  make(map[string]userSeries),
 		seriesCount: 0,
 
 		trackerClient: trackerClient,
@@ -728,17 +731,29 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 		logger:            logger,
 		stoppingChan:      stopping,
 	}
-	go b.flushWorker()
-	return b
 }
 
-func (b *partitionBatcher) TrackSeries(userID string, series []uint64) {
+func (b *PartitionBatcher) runWorker() {
+	go b.flushWorker()
+}
+
+func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
 	b.usersMtx.Lock()
-	b.userSeries[userID] = append(b.userSeries[userID], series...)
+
+	us, ok := b.userSeries[userID]
+	if !ok {
+		us = userSeries{
+			series:      list.New(),
+			seriesCount: 0,
+		}
+		b.userSeries[userID] = us
+	}
+	us.series.PushBack(series)
+	us.seriesCount += len(series)
 	b.seriesCount += len(series)
 
 	flushExceedsThreshold := false
-	if b.seriesCount >= b.maxSeriesPerBatch {
+	if b.maxSeriesPerBatch > 0 && b.seriesCount >= b.maxSeriesPerBatch {
 		flushExceedsThreshold = true
 		b.flushBatchLocked(false)
 	}
@@ -750,7 +765,7 @@ func (b *partitionBatcher) TrackSeries(userID string, series []uint64) {
 	}
 }
 
-func (b *partitionBatcher) flushWorker() {
+func (b *PartitionBatcher) flushWorker() {
 	t := time.NewTimer(util.DurationWithJitter(b.batchDelay, 0.1))
 
 	for {
@@ -771,9 +786,14 @@ func (b *partitionBatcher) flushWorker() {
 	}
 }
 
-func (b *partitionBatcher) flushBatchLocked(synchronous bool) {
+type userSeries struct {
+	series      *list.List
+	seriesCount int
+}
+
+func (b *PartitionBatcher) flushBatchLocked(synchronous bool) {
 	users := b.userSeries
-	b.userSeries = make(map[string][]uint64)
+	b.userSeries = make(map[string]userSeries)
 	b.seriesCount = 0
 
 	if len(users) > 0 {
@@ -785,10 +805,16 @@ func (b *partitionBatcher) flushBatchLocked(synchronous bool) {
 	}
 }
 
-func (b *partitionBatcher) flush(records map[string][]uint64) error {
+func (b *PartitionBatcher) flush(records map[string]userSeries) error {
 	// Convert from map to proto format.
 	users := make([]*usagetrackerpb.TrackSeriesBatchUser, 0, len(records))
-	for userID, series := range records {
+	for userID, us := range records {
+		// We have a list of slices and we know the total number of series, so
+		// we pre-alloc and copy the series hashes in.
+		series := make([]uint64, 0, us.seriesCount)
+		for e := us.series.Front(); e != nil; e = e.Next() {
+			series = append(series, e.Value.([]uint64)...)
+		}
 		users = append(users, &usagetrackerpb.TrackSeriesBatchUser{
 			UserID:       userID,
 			SeriesHashes: series,

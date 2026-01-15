@@ -48,7 +48,7 @@ func (m *mockLimitsProvider) MaxActiveOrGlobalSeriesPerUser(userID string) int {
 }
 
 // prepareTestRings is a helper function that sets up the rings needed for testing.
-func prepareTestRings(t *testing.T, ctx context.Context) (*ring.MultiPartitionInstanceRing, *ring.Ring, prometheus.Registerer) {
+func prepareTestRings(t testing.TB, ctx context.Context) (*ring.MultiPartitionInstanceRing, *ring.Ring, prometheus.Registerer) {
 	logger := log.NewNopLogger()
 	registerer := prometheus.NewPedanticRegistry()
 
@@ -886,9 +886,45 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		require.Len(t, batchReq.Partitions, 1)
 		require.Equal(t, int32(1), batchReq.Partitions[0].Partition)
 		require.Len(t, batchReq.Partitions[0].Users, 2)
-		require.Equal(t, "user-1", batchReq.Partitions[0].Users[1].UserID)
-		require.ElementsMatch(t, []uint64{series1Partition1, series2Partition1, series3Partition1}, batchReq.Partitions[0].Users[1].SeriesHashes)
-		require.Equal(t, "user-2", batchReq.Partitions[0].Users[0].UserID)
-		require.ElementsMatch(t, []uint64{series4Partition1, series5Partition1}, batchReq.Partitions[0].Users[0].SeriesHashes)
+		require.EqualValues(t, batchReq.Partitions[0].Users,
+			[]*usagetrackerpb.TrackSeriesBatchUser{
+				{
+					UserID:       "user-1",
+					SeriesHashes: []uint64{series1Partition1, series2Partition1, series3Partition1},
+				},
+				{
+					UserID:       "user-2",
+					SeriesHashes: []uint64{series4Partition1, series5Partition1},
+				},
+			},
+		)
 	})
+}
+
+func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
+	logger := log.NewNopLogger()
+	stopping := make(chan struct{})
+	defer close(stopping)
+
+	// Create partitionBatcher with high thresholds to avoid flushes during benchmark
+	batcher := usagetrackerclient.NewPartitionBatcher(
+		1,               // partition
+		0,               // never flush due to size threshold
+		1_000*time.Hour, // batchDelay (very long)
+		logger,
+		nil, // trackerClient (not needed if no flushes)
+		nil, // clientsPool (not needed if no flushes)
+		stopping,
+	)
+
+	// Generate 100 series hashes
+	series := make([]uint64, 100)
+	for i := range series {
+		series[i] = uint64(i)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		batcher.TrackSeries("user-1", series)
+	}
 }
