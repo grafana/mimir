@@ -396,6 +396,8 @@ func (c *UsageTrackerClient) trackSeriesPerPartition(ctx context.Context, userID
 	return res[0], nil
 }
 
+// TrackSeriesAsync tracks series asynchronously. It will batch the series by partition and user
+// and flush the batches when the batch size or batch delay is reached.
 func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string, series []uint64) (returnErr error) {
 	// Nothing to do if there are no series to track.
 	if len(series) == 0 {
@@ -441,6 +443,9 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 	)
 }
 
+// TrackSeriesPerPartitionBatch tracks series per partition batch. It is called
+// to track an accumulated batch of series. It will return the list of rejections
+// for each user.
 func (c *UsageTrackerClient) TrackSeriesPerPartitionBatch(ctx context.Context, partitionID int32, users []*usagetrackerpb.TrackSeriesBatchUser) ([]*usagetrackerpb.TrackSeriesBatchRejection, error) {
 	// Get the usage-tracker instances for the input partition.
 	set, err := c.partitionRing.GetReplicationSetForPartitionAndOperation(partitionID, TrackSeriesOp)
