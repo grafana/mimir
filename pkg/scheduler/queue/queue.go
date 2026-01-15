@@ -127,7 +127,6 @@ type RequestQueue struct {
 	waitingDequeueRequests                chan *QuerierWorkerDequeueRequest
 	waitingDequeueRequestsToDispatch      *list.List
 	waitingDequeueRequestsToDispatchCount *atomic.Int64
-	schedulerInflightRequests             *atomic.Int64
 
 	// QueryComponentUtilization encapsulates tracking requests from the time they are forwarded to a querier
 	// to the time are completed by the querier or failed due to cancel, timeout, or disconnect.
@@ -220,7 +219,6 @@ func NewRequestQueue(
 	queueLength *prometheus.GaugeVec,
 	discardedRequests *prometheus.CounterVec,
 	enqueueDuration prometheus.Histogram,
-	schedulerInflightRequests *atomic.Int64,
 	querierInflightRequestsMetric *prometheus.SummaryVec,
 ) (*RequestQueue, error) {
 	queryComponentCapacity, err := NewQueryComponentUtilization(querierInflightRequestsMetric)
@@ -251,7 +249,6 @@ func NewRequestQueue(
 		waitingDequeueRequests:                make(chan *QuerierWorkerDequeueRequest),
 		waitingDequeueRequestsToDispatch:      list.New(),
 		waitingDequeueRequestsToDispatchCount: atomic.NewInt64(0),
-		schedulerInflightRequests:             schedulerInflightRequests,
 
 		QueryComponentUtilization: queryComponentCapacity,
 		queueBroker:               newQueueBroker(maxOutstandingPerTenant, forgetDelay),
@@ -348,7 +345,7 @@ func (q *RequestQueue) dispatcherLoop() {
 			// to ensure that we do not terminate the querier and frontend connections before everything has been cleanly processed.
 			// If we exit while there are inflight requests, the queriers will receive a context cancellation and return an error to the frontend/user
 			// And if there are pending items in the queue that are not yet inflight, we still need to dispatch them to the queriers.
-			if q.schedulerInflightRequests.Load() == 0 && q.queueBroker.itemCount() == 0 {
+			if q.queueBroker.itemCount() == 0 {
 				// If the queue is stopping and theres no connected query workers,
 				// we exit immediately because there is no way for (any) remaining queries to be processed
 				if q.connectedQuerierWorkers.Load() == 0 {
@@ -382,7 +379,6 @@ func (q *RequestQueue) dispatcherLoop() {
 			level.Debug(q.log).Log(
 				"msg", "queue is stopping but query queue is not empty, waiting for query workers to complete remaining requests",
 				"queued_requests", q.queueBroker.itemCount(),
-				"scheduler_inflight", q.schedulerInflightRequests.Load(),
 			)
 		}
 	}

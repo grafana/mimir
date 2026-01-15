@@ -83,6 +83,30 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 	return m
 }
 
+func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	metrics := newIngesterMetrics(reg, false, nil, nil, nil, nil)
+
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
+
+	const numGoroutines = 100
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			metrics.increaseForcedCompactions()
+			time.Sleep(10 * time.Millisecond)
+			metrics.decreaseForcedCompactions()
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int64(0), metrics.forcedCompactionsCount)
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
+}
+
 func TestIngester_StartPushRequest(t *testing.T) {
 	const reqSize = 10
 	instanceLimits := &InstanceLimits{}

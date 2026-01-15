@@ -1352,6 +1352,110 @@
             "panels": [
                {
                   "datasource": "$datasource",
+                  "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
+                  "id": 20,
+                  "options": {
+                     "calculate": true,
+                     "calculation": {
+                        "xBuckets": {
+                           "mode": "count",
+                           "value": 60
+                        },
+                        "yBuckets": {
+                           "mode": "count",
+                           "value": 40
+                        }
+                     },
+                     "cellGap": 0,
+                     "cellValues": {
+                        "unit": "reqps"
+                     },
+                     "legend": {
+                        "show": false
+                     },
+                     "tooltip": {
+                        "yHistogram": true
+                     },
+                     "yAxis": {
+                        "min": 0,
+                        "unit": "bytes"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))",
+                        "format": "time_series",
+                        "legendFormat": "Estimated memory consumption",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Estimated per-query memory consumption",
+                  "type": "heatmap"
+               },
+               {
+                  "datasource": "$datasource",
+                  "description": "### Fallback to Prometheus' query engine\nThe rate of queries that fell back to Prometheus' query engine in query-frontends. Only applicable if the Mimir query engine (MQE) is enabled.\n\n",
+                  "fieldConfig": {
+                     "defaults": {
+                        "custom": {
+                           "drawStyle": "line",
+                           "fillOpacity": 1,
+                           "lineWidth": 1,
+                           "pointSize": 5,
+                           "showPoints": "never",
+                           "spanNulls": false,
+                           "stacking": {
+                              "group": "A",
+                              "mode": "none"
+                           }
+                        },
+                        "min": 0,
+                        "thresholds": {
+                           "mode": "absolute",
+                           "steps": [ ]
+                        },
+                        "unit": "reqps"
+                     },
+                     "overrides": [ ]
+                  },
+                  "id": 21,
+                  "links": [ ],
+                  "options": {
+                     "legend": {
+                        "showLegend": true
+                     },
+                     "tooltip": {
+                        "mode": "multi",
+                        "sort": "none"
+                     }
+                  },
+                  "span": 6,
+                  "targets": [
+                     {
+                        "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval])) or vector(0)",
+                        "format": "time_series",
+                        "legendFormat": "Queries",
+                        "legendLink": null
+                     }
+                  ],
+                  "title": "Fallback to Prometheus' query engine",
+                  "type": "timeseries"
+               }
+            ],
+            "repeat": null,
+            "repeatIteration": null,
+            "repeatRowId": null,
+            "showTitle": true,
+            "title": "Query-frontend - query engine",
+            "titleSize": "h6"
+         },
+         {
+            "collapse": false,
+            "height": "250px",
+            "panels": [
+               {
+                  "datasource": "$datasource",
                   "fieldConfig": {
                      "defaults": {
                         "custom": {
@@ -1375,7 +1479,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 20,
+                  "id": 22,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1454,7 +1558,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 21,
+                  "id": 23,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1533,7 +1637,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 22,
+                  "id": 24,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -1656,7 +1760,7 @@
                         }
                      ]
                   },
-                  "id": 23,
+                  "id": 25,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1743,7 +1847,7 @@
                         }
                      ]
                   },
-                  "id": 24,
+                  "id": 26,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1810,7 +1914,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 25,
+                  "id": 27,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1920,7 +2024,7 @@
                         }
                      ]
                   },
-                  "id": 26,
+                  "id": 28,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -1975,7 +2079,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 27,
+                  "id": 29,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2042,7 +2146,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 28,
+                  "id": 30,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2120,7 +2224,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 29,
+                  "id": 31,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2217,7 +2321,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 30,
+                  "id": 32,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2332,7 +2436,7 @@
                         }
                      ]
                   },
-                  "id": 31,
+                  "id": 33,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2394,7 +2498,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 32,
+                  "id": 34,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2426,7 +2530,7 @@
                {
                   "datasource": "$datasource",
                   "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                  "id": 33,
+                  "id": 35,
                   "options": {
                      "calculate": true,
                      "calculation": {
@@ -2457,7 +2561,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))",
+                        "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}[$__rate_interval]))",
                         "format": "time_series",
                         "legendFormat": "Estimated memory consumption",
                         "legendLink": null
@@ -2492,7 +2596,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 34,
+                  "id": 36,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2506,7 +2610,7 @@
                   "span": 4,
                   "targets": [
                      {
-                        "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)",
+                        "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}[$__rate_interval])) or vector(0)",
                         "format": "time_series",
                         "legendFormat": "Queries",
                         "legendLink": null
@@ -2552,7 +2656,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 35,
+                  "id": 37,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2643,7 +2747,7 @@
                         }
                      ]
                   },
-                  "id": 36,
+                  "id": 38,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2697,7 +2801,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 37,
+                  "id": 39,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -2807,7 +2911,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 38,
+                  "id": 40,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2861,7 +2965,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 39,
+                  "id": 41,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2909,7 +3013,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 40,
+                  "id": 42,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -2969,7 +3073,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 41,
+                  "id": 43,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3023,7 +3127,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 42,
+                  "id": 44,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3079,7 +3183,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 43,
+                  "id": 45,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3146,7 +3250,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 44,
+                  "id": 46,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3225,7 +3329,7 @@
                         }
                      ]
                   },
-                  "id": 45,
+                  "id": 47,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3310,7 +3414,7 @@
                         }
                      ]
                   },
-                  "id": 46,
+                  "id": 48,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3376,7 +3480,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 47,
+                  "id": 49,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3424,7 +3528,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 48,
+                  "id": 50,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3522,7 +3626,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 49,
+                  "id": 51,
                   "links": [ ],
                   "nullPointMode": "null as zero",
                   "options": {
@@ -3632,7 +3736,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 50,
+                  "id": 52,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3681,7 +3785,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 51,
+                  "id": 53,
                   "links": [ ],
                   "options": {
                      "legend": {
@@ -3730,7 +3834,7 @@
                      },
                      "overrides": [ ]
                   },
-                  "id": 52,
+                  "id": 54,
                   "links": [ ],
                   "options": {
                      "legend": {

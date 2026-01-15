@@ -6,6 +6,7 @@
 package ingester
 
 import (
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -74,6 +75,11 @@ type ingesterMetrics struct {
 	appenderAddDuration                prometheus.Histogram
 	appenderCommitDuration             prometheus.Histogram
 	idleTsdbChecks                     *prometheus.CounterVec
+
+	// Reference counter for forced/idle compactions across all user TSDBs.
+	// Used to set forcedCompactionInProgress to 1 when any compaction is running, 0 when all complete.
+	forcedCompactionsCount int64
+	forcedCompactionsMtx   sync.Mutex
 
 	// Open all existing TSDBs metrics
 	openExistingTSDB prometheus.Counter
@@ -370,7 +376,7 @@ func newIngesterMetrics(
 		}),
 		forcedCompactionInProgress: promauto.With(r).NewGauge(prometheus.GaugeOpts{
 			Name: "cortex_ingester_tsdb_forced_compactions_in_progress",
-			Help: "Reports 1 if there's a forced TSDB head compaction in progress, 0 otherwise.",
+			Help: "Reports 1 if there's a forced or idle TSDB head compaction in progress, 0 otherwise.",
 		}),
 		perTenantEarlyCompactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_per_tenant_early_compactions_triggered_total",
@@ -458,6 +464,31 @@ func (m *ingesterMetrics) deletePerUserCustomTrackerMetrics(userID string, custo
 		m.activeSeriesCustomTrackersPerUserNativeHistograms.DeleteLabelValues(userID, name)
 		m.activeNativeHistogramBucketsCustomTrackersPerUser.DeleteLabelValues(userID, name)
 	}
+}
+
+func (m *ingesterMetrics) increaseForcedCompactions() {
+	m.forcedCompactionsMtx.Lock()
+	defer m.forcedCompactionsMtx.Unlock()
+	m.forcedCompactionsCount++
+	if m.forcedCompactionsCount == 1 {
+		m.forcedCompactionInProgress.Set(1)
+	}
+}
+
+func (m *ingesterMetrics) decreaseForcedCompactions() {
+	m.forcedCompactionsMtx.Lock()
+	defer m.forcedCompactionsMtx.Unlock()
+	m.forcedCompactionsCount--
+	if m.forcedCompactionsCount == 0 {
+		m.forcedCompactionInProgress.Set(0)
+	}
+}
+
+func (m *ingesterMetrics) resetForcedCompactions() {
+	m.forcedCompactionsMtx.Lock()
+	defer m.forcedCompactionsMtx.Unlock()
+	m.forcedCompactionsCount = 0
+	m.forcedCompactionInProgress.Set(0)
 }
 
 type discardedMetrics struct {
