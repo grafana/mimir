@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -21,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -648,14 +648,7 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 
 			b, err := io.ReadAll(f)
 			require.NoError(t, err)
-
-			// Split test file on 'clear' statements and run each section with a fresh cache.
-			// This ensures that when tests use 'clear' to reset storage and load new data,
-			// the cache is also cleared so we don't get stale cached results.
-			// TODO: Instead of this hacky string splitting, properly hook into promqltest's
-			// clear statement handling
 			testScript := string(b)
-			sections := strings.Split(testScript, "\nclear\n")
 
 			opts := NewTestEngineOpts()
 			opts.InstantQuerySplitting.Enabled = true
@@ -664,31 +657,25 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			for i, section := range sections {
-				section = strings.TrimSpace(section)
-				if section == "" {
-					continue
+			cacheBackend := newTestCacheBackend()
+			cacheFactory := cache.NewResultsCacheWithBackend(cacheBackend, prometheus.NewRegistry(), log.NewNopLogger())
+
+			innerEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, cacheFactory)
+			require.NoError(t, err)
+
+			engine := &engineWithOrgID{engine: innerEngine, orgID: "test-user"}
+
+			newStorage := func(t testutil.T) storage.Storage {
+				base := promqltest.LoadedStorage(t, "")
+				return &storageWithCloseCallback{
+					Storage: base,
+					// storage.Close() is called every time there's a clear command in the promql test
+					// We also want to clear the cache data on clear, so hook onto that event to reset the cache
+					onClose: cacheBackend.Reset,
 				}
-
-				backend := newTestCacheBackend()
-				irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
-
-				// Create a new registry for each engine to avoid duplicate metric registration
-				optsWithNewReg := opts
-				optsWithNewReg.CommonOpts.Reg = prometheus.NewRegistry()
-
-				innerEngine, err := newEngineWithCache(optsWithNewReg, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, irCache)
-				require.NoError(t, err)
-
-				engine := &engineWithOrgID{engine: innerEngine, orgID: "test-user"}
-
-				// Add 'clear' back so promqltest knows to reset storage
-				if i > 0 {
-					section = "clear\n" + section
-				}
-
-				promqltest.RunTest(t, section, engine)
 			}
+
+			promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
 		})
 	}
 }
@@ -789,6 +776,13 @@ func (c *testCacheBackend) SetMultiAsync(data map[string][]byte, _ time.Duration
 	}
 }
 
+func (c *testCacheBackend) Reset() {
+	c.items = make(map[string][]byte)
+	c.hits = 0
+	c.sets = 0
+	c.gets = 0
+}
+
 type wrappedQueryable struct {
 	inner    storage.Queryable
 	onSelect func(mint, maxt int64)
@@ -799,6 +793,18 @@ func (w *wrappedQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 		w.onSelect(mint, maxt)
 	}
 	return w.inner.Querier(mint, maxt)
+}
+
+type storageWithCloseCallback struct {
+	storage.Storage
+	onClose func()
+}
+
+func (s *storageWithCloseCallback) Close() error {
+	if s.onClose != nil {
+		s.onClose()
+	}
+	return s.Storage.Close()
 }
 
 // engineWithOrgID wraps a query engine to return queries with orgID injection.
