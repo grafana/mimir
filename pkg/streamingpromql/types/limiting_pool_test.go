@@ -240,6 +240,37 @@ func TestLimitingPool_Mangling(t *testing.T) {
 	require.Equal(t, []int{123, 123, 123, 123}, sCopy, "returned slice should be mangled when mangling is enabled")
 }
 
+func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	p := NewLimitingBucketedPool(
+		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		limiter.FPointSlices,
+		FPointSize,
+		false,
+		nil,
+		nil,
+	)
+
+	s, err := p.Get(2, tracker)
+	require.NoError(t, err)
+	require.Equal(t, 2, cap(s))
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	require.Len(t, s, 2)
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 3, F: 3.0}, promql.FPoint{T: 4, F: 4.0}, promql.FPoint{T: 5, F: 5.0})
+	require.NoError(t, err)
+	require.Len(t, s, 5)
+	require.Equal(t, 8, cap(s)) // Slice should have increased in size
+	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}, {T: 4, F: 4.0}, {T: 5, F: 5.0}}, s)
+
+	p.Put(&s, tracker)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
 func TestLimitingBucketedPool_MaxExpectedPointsPerSeriesConstantIsPowerOfTwo(t *testing.T) {
 	// Although not strictly required (as the code should handle MaxExpectedPointsPerSeries not being a power of two correctly),
 	// it is best that we keep it as one for now.
