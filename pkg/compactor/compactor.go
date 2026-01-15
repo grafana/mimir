@@ -362,6 +362,10 @@ type MultitenantCompactor struct {
 	// so alerts need to be able to treat it with higher priority than other compaction errors.
 	outOfSpace prometheus.Counter
 
+	// schedulerLastContact tracks the last time a compactor successfully contacted the scheduler. This metric is only set when the
+	// compactor is running in scheduler mode.
+	schedulerLastContact prometheus.Gauge
+
 	// Metrics shared across all BucketCompactor instances.
 	bucketCompactorMetrics *BucketCompactorMetrics
 
@@ -465,6 +469,10 @@ func newMultitenantCompactor(
 			Name: "cortex_compactor_disk_out_of_space_errors_total",
 			Help: "Number of times a compaction failed because the compactor disk was out of space.",
 		}),
+		schedulerLastContact: promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_compactor_scheduler_last_contact_timestamp_seconds",
+			Help: "Unix timestamp of the last successful contact with the scheduler. Only updated in scheduler mode.",
+		}),
 		blocksMarkedForDeletion: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name:        blocksMarkedForDeletionName,
 			Help:        blocksMarkedForDeletionHelp,
@@ -490,6 +498,14 @@ func newMultitenantCompactor(
 	}, func() float64 {
 		return float64(c.blockUploadValidations.Load())
 	})
+
+	promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_compactor_info",
+		Help: "Information about the compactor. The mode label indicates the planning mode (standalone or scheduler).",
+		ConstLabels: prometheus.Labels{
+			"mode": compactorCfg.PlanningMode,
+		},
+	}, func() float64 { return 1 })
 
 	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, registerer)
 
