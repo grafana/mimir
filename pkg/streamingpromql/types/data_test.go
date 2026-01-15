@@ -440,7 +440,7 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 			name:        "rangeEnd after parent end",
 			rangeStart:  150,
 			rangeEnd:    250,
-			expectedErr: "substep start (250) is after parent step's end (200)",
+			expectedErr: "substep end (250) is after parent step's end (200)",
 		},
 		{
 			name:        "rangeStart equals end",

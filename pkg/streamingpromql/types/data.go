@@ -191,7 +191,7 @@ func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, hints SubStepH
 		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
 	}
 	if rangeEnd > s.RangeEnd {
-		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
+		return nil, SubStepHints{}, fmt.Errorf("substep end (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
 	}
 	if rangeStart >= rangeEnd {
 		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
