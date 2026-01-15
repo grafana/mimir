@@ -242,13 +242,16 @@ func TestLimitingPool_Mangling(t *testing.T) {
 
 func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	onPutHookPointCount := 0
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		limiter.FPointSlices,
 		FPointSize,
 		false,
 		nil,
-		nil,
+		func(s []promql.FPoint, _ *limiter.MemoryConsumptionTracker) {
+			onPutHookPointCount += len(s)
+		},
 	)
 
 	s, err := p.Get(2, tracker)
@@ -267,8 +270,39 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 	require.Equal(t, []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}, {T: 4, F: 4.0}, {T: 5, F: 5.0}}, s)
 
+	require.Equal(t, 0, onPutHookPointCount)
+
 	p.Put(&s, tracker)
 	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, 5, onPutHookPointCount)
+}
+
+func TestLimitingBucketedPool_AppendToSlice_Error(t *testing.T) {
+	_, metric := createRejectedMetric()
+
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 2*FPointSize, metric, "")
+	p := NewLimitingBucketedPool(
+		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		limiter.FPointSlices,
+		FPointSize,
+		false,
+		nil,
+		nil,
+	)
+
+	s, err := p.Get(2, tracker)
+	require.NoError(t, err)
+	require.Equal(t, 2, cap(s))
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	require.NoError(t, err)
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	require.Error(t, err)
+	// Memory isn't decreased when AppendToSlice fails (though the slice is put back into the pool)
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestLimitingBucketedPool_MaxExpectedPointsPerSeriesConstantIsPowerOfTwo(t *testing.T) {

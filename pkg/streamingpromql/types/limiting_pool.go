@@ -261,7 +261,6 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 
 // AppendToSlice appends items to a slice retrieved from the pool and tracks any slice capacity growth.
 // If the capacity is insufficient, it gets a new slice from the pool and returns the old one.
-// The caller is expected to do the memory tracking for the new items appended to the slice.
 func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryConsumptionTracker, items ...E) (S, error) {
 	requiredLen := len(s) + len(items)
 
