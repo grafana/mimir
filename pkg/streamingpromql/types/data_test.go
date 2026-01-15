@@ -358,7 +358,7 @@ func TestRangeVectorStepData_SubStep(t *testing.T) {
 	}
 
 	t.Run("single substep", func(t *testing.T) {
-		substep, hints, err := step.SubStep(120, 160, SubStepHints{})
+		substep, err := step.SubStep(120, 160, nil)
 		require.NoError(t, err)
 
 		require.Equal(t, int64(200), substep.StepT)
@@ -378,16 +378,10 @@ func TestRangeVectorStepData_SubStep(t *testing.T) {
 		lastH, hasLastH := substep.Histograms.Last()
 		require.True(t, hasLastH)
 		require.Equal(t, int64(155), lastH.T)
-
-		// Verify hints were updated (hints are indices in parent view)
-		// Float points: skipped T=110,120 (2 points), selected T=130,140,150,160 (4 points), hint=6
-		require.Equal(t, 6, hints.FloatHint)
-		// Histogram points: skipped T=115 (1 point), selected T=135,155 (2 points), hint=3
-		require.Equal(t, 3, hints.HistogramHint)
 	})
 
 	t.Run("substep with no matching points", func(t *testing.T) {
-		substep, _, err := step.SubStep(195, 200, SubStepHints{})
+		substep, err := step.SubStep(195, 200, nil)
 		require.NoError(t, err)
 
 		require.Equal(t, int64(200), substep.StepT)
@@ -399,7 +393,7 @@ func TestRangeVectorStepData_SubStep(t *testing.T) {
 
 	t.Run("substep spanning entire parent range", func(t *testing.T) {
 		// Create substep for entire parent range (100, 200]
-		substep, _, err := step.SubStep(100, 200, SubStepHints{})
+		substep, err := step.SubStep(100, 200, nil)
 		require.NoError(t, err)
 
 		// Should have all points
@@ -464,7 +458,7 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := step.SubStep(tc.rangeStart, tc.rangeEnd, SubStepHints{})
+			_, err := step.SubStep(tc.rangeStart, tc.rangeEnd, nil)
 			require.EqualError(t, err, tc.expectedErr)
 		})
 	}

@@ -177,42 +177,33 @@ type RangeVectorStepData struct {
 	SmoothedBasisForTailPointSet bool
 }
 
-type SubStepHints struct {
-	FloatHint     int
-	HistogramHint int
-}
-
-// SubStep returns a new RangeVectorStepData with the same StepT but filtered samples for the specified time range.
-// The rangeStart and rangeEnd parameters define the time range (rangeStart, rangeEnd] for the substep.
-// The hints parameter provides starting indices for efficient consecutive substep creation.
-// Returns the new substep data and updated hints for the next substep call.
-func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, hints SubStepHints) (*RangeVectorStepData, SubStepHints, error) {
+// SubStep returns a substep with the same StepT but filtered to range (rangeStart, rangeEnd].
+// If previousSubStep is provided, it will be reused to create the new substep. previousSubStep must be a previous
+// substep for the same parent step, and the next step is assumed to cover a later range (we only start searching from
+// after the samples of the previous subviews).
+func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, previousSubStep *RangeVectorStepData) (*RangeVectorStepData, error) {
 	if rangeStart < s.RangeStart {
-		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
+		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
 	}
 	if rangeEnd > s.RangeEnd {
-		return nil, SubStepHints{}, fmt.Errorf("substep end (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
+		return nil, fmt.Errorf("substep end (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
 	}
 	if rangeStart >= rangeEnd {
-		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
+		return nil, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
 	}
 
-	newStep := &RangeVectorStepData{
-		StepT:      s.StepT,
-		RangeStart: rangeStart,
-		RangeEnd:   rangeEnd,
+	if previousSubStep == nil {
+		previousSubStep = &RangeVectorStepData{}
 	}
 
-	floatSubview, floatEndIdx := s.Floats.SubView(rangeStart, rangeEnd, hints.FloatHint)
-	newStep.Floats = &floatSubview
+	previousSubStep.StepT = s.StepT
+	previousSubStep.RangeStart = rangeStart
+	previousSubStep.RangeEnd = rangeEnd
 
-	histogramSubview, histogramEndIdx := s.Histograms.SubView(rangeStart, rangeEnd, hints.HistogramHint)
-	newStep.Histograms = &histogramSubview
+	previousSubStep.Floats = s.Floats.SubView(rangeStart, rangeEnd, previousSubStep.Floats)
+	previousSubStep.Histograms = s.Histograms.SubView(rangeStart, rangeEnd, previousSubStep.Histograms)
 
-	return newStep, SubStepHints{
-		FloatHint:     floatEndIdx,
-		HistogramHint: histogramEndIdx,
-	}, nil
+	return previousSubStep, nil
 }
 
 type ScalarData struct {
