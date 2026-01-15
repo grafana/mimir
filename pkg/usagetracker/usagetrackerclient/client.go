@@ -735,7 +735,7 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 
 		maxSeriesPerBatch: maxSeriesPerBatch,
 		batchDelay:        batchDelay,
-		logger:            logger,
+		logger:            log.With(logger, "partition", partition),
 		stoppingChan:      stopping,
 	}
 }
@@ -810,19 +810,33 @@ func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) e
 	batchCtx := user.InjectOrgID(context.Background(), "batch")
 	rejections, err := b.trackerClient.TrackSeriesPerPartitionBatch(batchCtx, b.partition, users)
 	if err != nil {
+		level.Error(b.logger).Log("msg", "failed to track series in partition batch", "err", err)
 		return err
 	}
 
 	if len(rejections) > 0 {
-		var sb strings.Builder
-		for i, rejection := range rejections {
-			sb.WriteString(fmt.Sprintf("%s (%d rejected)", rejection.Users[0].UserID, len(rejection.Users[0].RejectedSeriesHashes)))
-			if i < len(rejections)-1 {
-				sb.WriteString(", ")
-			}
-		}
-		level.Warn(b.logger).Log("msg", "ingested some series that should have been rejected, because they were tracked asynchronously", "rejections", sb.String())
+		level.Warn(b.logger).Log("msg", "ingested some series that should have been rejected, because they were batch-tracked asynchronously", "rejections", RejectionString(rejections))
 	}
 
 	return nil
+}
+
+// RejectionString returns a string representation of the rejections.
+func RejectionString(rejections []*usagetrackerpb.TrackSeriesBatchRejection) string {
+	userRejections := make(map[string]int)
+	for _, rejection := range rejections {
+		for _, user := range rejection.Users {
+			if c := len(user.RejectedSeriesHashes); c > 0 {
+				userRejections[user.UserID] += c
+			}
+		}
+	}
+
+	r := make([]string, 0, len(userRejections))
+
+	for u, c := range userRejections {
+		r = append(r, fmt.Sprintf("%s (%d)", u, c))
+	}
+
+	return strings.Join(r, ", ")
 }

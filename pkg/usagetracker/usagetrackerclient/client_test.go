@@ -1091,6 +1091,88 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 	})
 }
 
+func TestRejectionString(t *testing.T) {
+	tests := []struct {
+		name       string
+		rejections []*usagetrackerpb.TrackSeriesBatchRejection
+		expected   string
+	}{
+		{
+			name:       "no rejections",
+			rejections: []*usagetrackerpb.TrackSeriesBatchRejection{},
+			expected:   "",
+		},
+		{
+			name: "multiple different users",
+			rejections: []*usagetrackerpb.TrackSeriesBatchRejection{
+				{
+					Partition: 1,
+					Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+						{
+							UserID:               "user-1",
+							RejectedSeriesHashes: []uint64{1, 2, 3},
+						},
+						{
+							UserID:               "user-2",
+							RejectedSeriesHashes: []uint64{4, 5, 6},
+						},
+					},
+				},
+			},
+			expected: "user-1 (3), user-2 (3)",
+		},
+		{
+			name: "same user with multiple rejections",
+			rejections: []*usagetrackerpb.TrackSeriesBatchRejection{
+				{
+					Partition: 1,
+					Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+						{
+							UserID:               "user-1",
+							RejectedSeriesHashes: []uint64{1, 2, 3},
+						},
+						{
+							UserID:               "user-1",
+							RejectedSeriesHashes: []uint64{4, 5, 6},
+						},
+					},
+				},
+			},
+			expected: "user-1 (6)",
+		},
+		{
+			name: "same user across partitions",
+			rejections: []*usagetrackerpb.TrackSeriesBatchRejection{
+				{
+					Partition: 1,
+					Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+						{
+							UserID:               "user-1",
+							RejectedSeriesHashes: []uint64{1, 2, 3},
+						},
+					},
+				},
+				{
+					Partition: 2,
+					Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+						{
+							UserID:               "user-1",
+							RejectedSeriesHashes: []uint64{4, 5, 6},
+						},
+					},
+				},
+			},
+			expected: "user-1 (6)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.expected, usagetrackerclient.RejectionString(tt.rejections))
+		})
+	}
+}
+
 func BenchmarkPartitionBatcher_TrackSeries(b *testing.B) {
 	logger := log.NewNopLogger()
 	stopping := make(chan struct{})
