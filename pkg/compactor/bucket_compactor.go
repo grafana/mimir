@@ -777,6 +777,7 @@ type BucketCompactorMetrics struct {
 	groupCompactionRunsCompleted             prometheus.Counter
 	groupCompactionRunsFailed                prometheus.Counter
 	groupCompactions                         prometheus.Counter
+	groupCompactionsLastSuccess              prometheus.Gauge
 	blockCompactionDelay                     *prometheus.HistogramVec
 	compactionBlocksVerificationFailed       prometheus.Counter
 	compactionBlocksBuildSparseHeadersFailed prometheus.Counter
@@ -808,6 +809,10 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 		groupCompactions: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_group_compactions_total",
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
+		}),
+		groupCompactionsLastSuccess: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name: "cortex_compactor_last_successful_group_compaction_timestamp_seconds",
+			Help: "Unix timestamp of the last successful group compaction run.",
 		}),
 		blockCompactionDelay: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 			Name:                            "cortex_compactor_block_compaction_delay_seconds",
@@ -1014,6 +1019,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 						if hasNonZeroULIDs(compactedBlockIDs) {
 							c.metrics.groupCompactions.Inc()
 						}
+						c.metrics.groupCompactionsLastSuccess.SetToCurrentTime()
 
 						if shouldRerunJob {
 							mtx.Lock()
