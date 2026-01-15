@@ -129,10 +129,11 @@ type UsageTrackerClient struct {
 	usersCloseToLimitLoaded bool
 
 	// Metrics.
-	trackSeriesDuration                *prometheus.HistogramVec
-	usersCloseToLimitCount             prometheus.Gauge
-	usersCloseToLimitLastUpdateSeconds prometheus.Gauge
-	usersCloseToLimitUpdateFailures    prometheus.Counter
+	trackSeriesDuration                 *prometheus.HistogramVec
+	usersCloseToLimitCount              prometheus.Gauge
+	usersCloseToLimitLastUpdateSeconds  prometheus.Gauge
+	usersCloseToLimitUpdateFailures     prometheus.Counter
+	batchTrackingFlushedOnSizeThreshold prometheus.Counter
 }
 
 func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *ring.MultiPartitionInstanceRing, instanceRing ring.ReadRing, limits limitsProvider, logger log.Logger, registerer prometheus.Registerer) *UsageTrackerClient {
@@ -165,6 +166,10 @@ func NewUsageTrackerClient(clientName string, clientCfg Config, partitionRing *r
 		usersCloseToLimitUpdateFailures: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_usage_tracker_client_users_close_to_limit_update_failures_total",
 			Help: "Total number of failed attempts to update the users close to limit cache.",
+		}),
+		batchTrackingFlushedOnSizeThreshold: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_usage_tracker_client_batch_tracking_flushed_on_size_threshold_total",
+			Help: "Total number of times the batch tracking client flushed a batch due to exceeding the size threshold.",
 		}),
 	}
 
@@ -729,12 +734,19 @@ func newPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 
 func (b *partitionBatcher) TrackSeries(userID string, series []uint64) {
 	b.usersMtx.Lock()
-	defer b.usersMtx.Unlock()
 	b.userSeries[userID] = append(b.userSeries[userID], series...)
 	b.seriesCount += len(series)
 
+	flushExceedsThreshold := false
 	if b.seriesCount >= b.maxSeriesPerBatch {
+		flushExceedsThreshold = true
 		b.flushBatchLocked(false)
+	}
+
+	b.usersMtx.Unlock()
+
+	if flushExceedsThreshold {
+		b.trackerClient.batchTrackingFlushedOnSizeThreshold.Inc()
 	}
 }
 
