@@ -207,7 +207,7 @@ func TestIngester_Start(t *testing.T) {
 		})
 
 		// We expect the ingester run TSDB Head compaction at higher frequency while catching up.
-		firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.lifecycler.Zones())
+		firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.ring.Zones())
 		assert.Equal(t, headCompactionIntervalWhileStarting, firstInterval)
 		assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
 
@@ -319,7 +319,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			// Wait until the ingester is healthy.
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
-				return ingester.lifecycler.HealthyInstancesCount()
+				return healthyInstancesCount(ingester.ring)
 			})
 
 			// Create a Kafka writer and then write a series.
@@ -386,7 +386,7 @@ func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
 
 	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
-		return ingester.lifecycler.HealthyInstancesCount()
+		return healthyInstancesCount(ingester.ring)
 	})
 
 	t.Run("should not allow to cancel the prepare shutdown, because unsupported by the ingest storage", func(t *testing.T) {
@@ -443,7 +443,7 @@ func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
 
 		// Wait until it's healthy
 		test.Poll(t, 5*time.Second, 1, func() interface{} {
-			return ingester.lifecycler.HealthyInstancesCount()
+			return healthyInstancesCount(ingester.ring)
 		})
 
 		return ingester, watcher, editor
@@ -971,7 +971,10 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, prw))
 	})
 
-	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, nil, reg, logger)
+	// Create and start the ingesters ring.
+	ingestersRing := createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
+
+	ingester, err := New(*ingesterCfg, overrides, ingestersRing, prw, nil, nil, reg, logger)
 	require.NoError(t, err)
 
 	return ingester, kafkaCluster, prw

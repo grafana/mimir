@@ -99,7 +99,8 @@ const (
 	usageStatsUpdateInterval = usagestats.DefaultReportSendInterval / 10
 
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
-	IngesterRingKey = "ring"
+	IngesterRingKey  = "ring"
+	IngesterRingName = "ingester"
 
 	// PartitionRingKey is the key under which we store the partitions ring used by the "ingest storage".
 	PartitionRingKey  = "ingester-partitions"
@@ -290,6 +291,7 @@ type Ingester struct {
 	logger  log.Logger
 
 	lifecycler            *ring.Lifecycler
+	ring                  ring.ReadRing
 	limits                *validation.Overrides
 	limiter               *Limiter
 	subservicesWatcher    *services.FailureWatcher
@@ -308,8 +310,8 @@ type Ingester struct {
 
 	bucket objstore.Bucket
 
-	// Value used by shipper as external label.
-	shipperIngesterID string
+	// Ingester ID, used by shipper as external label.
+	ingesterID string
 
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
@@ -460,7 +462,9 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}, i.maxTsdbHeadTimestamp)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	i.ring = ingestersRing
+
+	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, IngesterRingName, IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +478,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer))
 	}
 
-	i.shipperIngesterID = i.lifecycler.ID
+	i.ingesterID = i.lifecycler.ID
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
@@ -589,7 +593,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 	}
 	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
-	i.shipperIngesterID = "flusher"
+	i.ingesterID = "flusher"
 	i.limiter = NewLimiter(limits, flusherLimiterStrategy{})
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
@@ -3143,7 +3147,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// interval. Then, the next compactions will happen at a regular interval. This logic
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
-	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones())
+	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.ring.Zones())
 
 	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
 	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
@@ -3176,7 +3180,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 			// If the ingester state is no longer "Starting", we switch to a different interval.
 			// We only compare the standard interval because the first interval may be random due to jittering.
-			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
+			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.ring.Zones()); standardInterval != newStandardInterval {
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 

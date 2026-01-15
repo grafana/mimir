@@ -6898,7 +6898,7 @@ func startAndWaitHealthy(t testing.TB, i *Ingester, r ring.ReadRing) {
 
 func createAndStartRing(t testing.TB, ringConfig ring.Config) *ring.Ring {
 	// Start the ingester ring
-	rng, err := ring.New(ringConfig, "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	rng, err := ring.New(ringConfig, IngesterRingName, IngesterRingKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
 	t.Cleanup(func() {
@@ -6913,6 +6913,16 @@ type noDebugNoopLogger struct{}
 
 func (noDebugNoopLogger) Log(...interface{}) error { return nil }
 func (noDebugNoopLogger) DebugEnabled() bool       { return false }
+
+// healthyInstancesCount returns the number of healthy instances in the ring for the Write operation.
+// This helper is designed to be used with test.Poll().
+func healthyInstancesCount(r ring.ReadRing) int {
+	rs, err := r.GetAllHealthy(ring.Write)
+	if err != nil {
+		return 0
+	}
+	return len(rs.Instances)
+}
 
 func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 	t.Parallel()
@@ -8793,7 +8803,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		// Wait until the ingester is healthy
 		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-			return i.lifecycler.HealthyInstancesCount()
+			return healthyInstancesCount(i.ring)
 		})
 
 		// Re-enable push gRPC method to simulate migration period, when ingester can receive requests from gRPC
@@ -12059,7 +12069,7 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 			})
 
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
-				return ingester.lifecycler.HealthyInstancesCount()
+				return healthyInstancesCount(ingester.ring)
 			})
 		}
 
@@ -12123,7 +12133,7 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 		expectedHealthyIngesters = 0
 	}
 	test.Poll(t, 100*time.Millisecond, expectedHealthyIngesters, func() interface{} {
-		return i.lifecycler.HealthyInstancesCount()
+		return healthyInstancesCount(i.ring)
 	})
 }
 
