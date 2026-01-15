@@ -2583,6 +2583,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_multi_aggregation",
+              "required": false,
+              "desc": "Enable computing multiple aggregations over the same data without buffering.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-multi-aggregation",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
