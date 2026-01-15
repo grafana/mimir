@@ -623,7 +623,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		if err != nil {
 			// If starting() fails for any reason (e.g., context canceled), services must be stopped.
 
-			// Clean up goroutines started in New().
+			// Subservices watcher was started in New();
+			// Failure to close it can block subservices from shutting down
+			// and leave hanging goroutines after exit.
 			i.subservicesWatcher.Close()
 
 			// Stop any services that may have been started in this method.
