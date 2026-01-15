@@ -81,7 +81,6 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	}
 
 	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
-	v.ProjectionInclude = v.ProjectionInclude || otherVectorSelector.ProjectionInclude
 	v.ProjectionLabels = MergeLabelNames(v.ProjectionLabels, otherVectorSelector.ProjectionLabels)
 
 	return nil
@@ -105,7 +104,6 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Smoothed:                 v.Smoothed,
 		ProjectionLabels:         v.ProjectionLabels,
-		ProjectionInclude:        v.ProjectionInclude,
 	}
 
 	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps)), nil

@@ -77,7 +77,6 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
-	m.ProjectionInclude = m.ProjectionInclude || otherMatrixSelector.ProjectionInclude
 	m.ProjectionLabels = MergeLabelNames(m.ProjectionLabels, otherMatrixSelector.ProjectionLabels)
 
 	return nil
@@ -123,7 +122,6 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
 		ProjectionLabels:         m.ProjectionLabels,
-		ProjectionInclude:        m.ProjectionInclude,
 	}
 
 	if m.Anchored || m.Smoothed {
