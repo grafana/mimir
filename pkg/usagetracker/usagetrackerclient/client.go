@@ -690,14 +690,12 @@ func (c *batchTrackingClient) Stop() {
 	close(c.stoppingChan)
 }
 
-// TestFlush flushes all batchers. This is only used for testing.
+// TestFlush synchronously flushes all batchers. This is only used for testing.
 func (c *batchTrackingClient) TestFlush() {
 	c.batchersMtx.Lock()
 	defer c.batchersMtx.Unlock()
 	for _, b := range c.batchers {
-		b.usersMtx.Lock()
-		b.flushBatchLocked(true)
-		b.usersMtx.Unlock()
+		b.flushBatch(true)
 	}
 }
 
@@ -748,23 +746,17 @@ func (b *PartitionBatcher) startFlusher() {
 // flushing it if it exceeds the size threshold.
 func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
 	b.usersMtx.Lock()
-
 	b.userSeries = append(b.userSeries, &usagetrackerpb.TrackSeriesBatchUser{
 		UserID:       userID,
 		SeriesHashes: series,
 	})
 	b.seriesCount += len(series)
-
-	flushExceedsThreshold := false
-	if b.maxSeriesPerBatch > 0 && b.seriesCount >= b.maxSeriesPerBatch {
-		flushExceedsThreshold = true
-		b.flushBatchLocked(false)
-	}
-
+	needsFlush := b.maxSeriesPerBatch > 0 && b.seriesCount >= b.maxSeriesPerBatch
 	b.usersMtx.Unlock()
 
-	if flushExceedsThreshold {
+	if needsFlush {
 		b.trackerClient.batchTrackingFlushedOnSizeThreshold.Inc()
+		b.flushBatch(false)
 	}
 }
 
@@ -774,25 +766,23 @@ func (b *PartitionBatcher) flushWorker() {
 	for {
 		select {
 		case <-t.C:
-			b.usersMtx.Lock()
-			b.flushBatchLocked(true)
-			b.usersMtx.Unlock()
-
+			b.flushBatch(false)
 			t.Reset(util.DurationWithJitter(b.batchDelay, 0.1))
 		case <-b.stoppingChan:
 			// flush anything outstanding before returning.
-			b.usersMtx.Lock()
-			b.flushBatchLocked(false)
-			b.usersMtx.Unlock()
+			b.workersPool.Close()
+			b.flushBatch(true)
 			return
 		}
 	}
 }
 
-func (b *PartitionBatcher) flushBatchLocked(synchronous bool) {
+func (b *PartitionBatcher) flushBatch(synchronous bool) {
+	b.usersMtx.Lock()
 	users := b.userSeries
 	b.userSeries = nil
 	b.seriesCount = 0
+	b.usersMtx.Unlock()
 
 	if len(users) > 0 {
 		if synchronous {
