@@ -48,8 +48,7 @@ type Selector struct {
 	// Pass the set of labels required for the query to the Querier to avoid transferring labels that aren't needed
 	// back and forth between the querier and storage layer (ingesters, store-gateways). The storage layer may also
 	// apply further optimizations based on this information.
-	ProjectionLabels  []string
-	ProjectionInclude bool
+	ProjectionLabels []string
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
@@ -143,8 +142,7 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		Range: s.Range.Milliseconds(),
 
 		// Mimir Queriers don't use projection hints for anything at time of writing.
-		ProjectionLabels:  s.ProjectionLabels,
-		ProjectionInclude: s.ProjectionInclude,
+		ProjectionLabels: s.ProjectionLabels,
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//

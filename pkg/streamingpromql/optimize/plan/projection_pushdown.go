@@ -102,7 +102,6 @@ func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *pl
 			m[ProjectionSeriesHash] = struct{}{}
 
 			required := flattenLabels(m)
-			e.ProjectionInclude = true
 			e.ProjectionLabels = required
 
 			modified++
@@ -125,7 +124,6 @@ func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *pl
 			m[ProjectionSeriesHash] = struct{}{}
 
 			required := flattenLabels(m)
-			e.ProjectionInclude = true
 			e.ProjectionLabels = required
 
 			modified++

@@ -450,20 +450,17 @@ func TestVectorSelector_MergeHints_ProjectionLabels(t *testing.T) {
 	runTest := func(t *testing.T, lblsFirst, lblsSecond []string, expectLbls []string) {
 		first := &VectorSelector{
 			VectorSelectorDetails: &VectorSelectorDetails{
-				ProjectionInclude: len(lblsFirst) != 0,
-				ProjectionLabels:  lblsFirst,
+				ProjectionLabels: lblsFirst,
 			},
 		}
 		second := &VectorSelector{
 			VectorSelectorDetails: &VectorSelectorDetails{
-				ProjectionInclude: len(lblsSecond) != 0,
-				ProjectionLabels:  lblsSecond,
+				ProjectionLabels: lblsSecond,
 			},
 		}
 
 		err := first.MergeHints(second)
 		require.NoError(t, err)
-		require.Equal(t, len(expectLbls) != 0, first.ProjectionInclude)
 		require.Equal(t, expectLbls, first.ProjectionLabels)
 	}
 
@@ -472,15 +469,15 @@ func TestVectorSelector_MergeHints_ProjectionLabels(t *testing.T) {
 	})
 
 	t.Run("first has projection labels set, other does not", func(t *testing.T) {
-		runTest(t, []string{"job", "zone"}, nil, []string{"job", "zone"})
+		runTest(t, []string{"__series_hash__", "job", "zone"}, nil, []string{"__series_hash__", "job", "zone"})
 	})
 
 	t.Run("first has no projection labels, other does", func(t *testing.T) {
-		runTest(t, nil, []string{"instance", "pod"}, []string{"instance", "pod"})
+		runTest(t, nil, []string{"__series_hash__", "instance", "pod"}, []string{"__series_hash__", "instance", "pod"})
 	})
 
 	t.Run("both have projection labels set", func(t *testing.T) {
-		runTest(t, []string{"job", "cluster"}, []string{"job", "region"}, []string{"cluster", "job", "region"})
+		runTest(t, []string{"__series_hash__", "job", "cluster"}, []string{"__series_hash__", "job", "region"}, []string{"__series_hash__", "cluster", "job", "region"})
 	})
 }
 
