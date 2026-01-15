@@ -260,6 +260,7 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	require.NoError(t, err)
 	require.Len(t, s, 2)
 	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 
