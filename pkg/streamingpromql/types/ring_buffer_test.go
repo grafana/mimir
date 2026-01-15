@@ -583,7 +583,7 @@ func TestRingBufferView_SubView(t *testing.T) {
 					// Verify wraparound occurred
 					view := buf.ViewUntilSearchingBackwards(40, nil)
 					head, tail := view.UnsafePoints()
-					if tail == nil || len(tail) == 0 {
+					if len(tail) == 0 {
 						panic("expected wraparound: tail should be non-nil and non-empty")
 					}
 					if len(head) == 0 {
@@ -727,7 +727,7 @@ func TestRingBufferView_SubView(t *testing.T) {
 
 					view := buf.ViewUntilSearchingBackwards(40, nil)
 					head, tail := view.UnsafePoints()
-					if tail == nil || len(tail) == 0 {
+					if len(tail) == 0 {
 						panic("expected wraparound: tail should be non-nil and non-empty")
 					}
 					if len(head) == 0 {
