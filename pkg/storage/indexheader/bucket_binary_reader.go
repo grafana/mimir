@@ -299,7 +299,7 @@ func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, 
 
 // Close implements Reader.
 func (r *BucketBinaryReader) Close() error {
-	r.factory.Stop()
+	r.factory.Close()
 	return nil
 }
 
