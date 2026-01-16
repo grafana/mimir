@@ -5504,6 +5504,17 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.verify-on-load
     [verify_on_load: <boolean> | default = false]
 
+    bucket_reader:
+      # (experimental) Enable reading TSDB index-header sections from object
+      # storage instead of loading to and reading from local disk.
+      # CLI flag: -bucket-reader.enabled
+      [enabled: <boolean> | default = true]
+
+      # (experimental) Index sections to read from object storage instead of
+      # local disk. Valid sections: all
+      # CLI flag: -bucket-reader.index-sections
+      [index_sections: <string> | default = "all"]
+
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
