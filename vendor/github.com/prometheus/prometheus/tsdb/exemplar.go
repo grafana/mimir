@@ -320,17 +320,17 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 // grow the circular buffer to have size l by allocating a new slice and copying
 // the old data to it. After growing, ce.nextIndex points to the next free entry
 // in the buffer. This function must be called with the lock acquired.
-func (ce *CircularExemplarStorage) grow(l int64) int {
+func (ce *CircularExemplarStorage) grow(l int64) (migrated int) {
 	oldSize := len(ce.exemplars)
 	newSlice := make([]circularBufferEntry, l)
 	ranges := []intRange{
 		{from: ce.nextIndex, to: oldSize},
 		{from: 0, to: ce.nextIndex},
 	}
-	totalCopied, _ := copyExemplarRanges(ce.index, newSlice, ce.exemplars, ranges)
+	totalCopied, migrated := copyExemplarRanges(ce.index, newSlice, ce.exemplars, ranges)
 	ce.nextIndex = totalCopied
 	ce.exemplars = newSlice
-	return oldSize
+	return migrated
 }
 
 // shrink the circular buffer by either trimming from the right or deleting the
