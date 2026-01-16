@@ -30,7 +30,7 @@
               (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
               and
               (cortex_compactor_last_successful_run_timestamp_seconds > 0)
-              and
+              and ignoring(mode)
               (cortex_compactor_info{mode="standalone"} == 1)
             )
           |||,
@@ -51,7 +51,7 @@
             # so this alert correctly doesn't fire if compactor has nothing to do.
             (
               (cortex_compactor_last_successful_run_timestamp_seconds == 0)
-              and
+              and ignoring(mode)
               (cortex_compactor_info{mode="standalone"} == 1)
             )
           |||,
@@ -72,7 +72,7 @@
               (time() - cortex_compactor_scheduler_last_contact_timestamp_seconds > 900)
               and
               (cortex_compactor_scheduler_last_contact_timestamp_seconds > 0)
-              and
+              and ignoring(mode)
               (cortex_compactor_info{mode="scheduler"} == 1)
             )
           |||,
@@ -91,7 +91,7 @@
           expr: |||
             (
               (cortex_compactor_scheduler_last_contact_timestamp_seconds == 0)
-              and
+              and ignoring(mode)
               (cortex_compactor_info{mode="scheduler"} == 1)
             )
           |||,
@@ -112,7 +112,7 @@
               (time() - cortex_compactor_last_successful_group_compaction_timestamp_seconds > 60 * 60 * 24)
               and
               (cortex_compactor_last_successful_group_compaction_timestamp_seconds > 0)
-              and
+              and ignoring(mode)
               (cortex_compactor_info{mode="scheduler"} == 1)
             )
           |||,
@@ -131,7 +131,7 @@
           expr: |||
             (
               (cortex_compactor_last_successful_group_compaction_timestamp_seconds == 0)
-              and
+              and ignoring(mode)
               (cortex_compactor_info{mode="scheduler"} == 1)
             )
           |||,
@@ -149,7 +149,7 @@
           expr: |||
             (
               increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
-              and
+              and ignoring(mode)
               (cortex_compactor_info{mode="standalone"} == 1)
             )
           |||,
