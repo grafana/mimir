@@ -962,12 +962,6 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	// These configuration options are hidden in the auto-generated documentation (see pkg/util/configdoc).
 	cfg.Server.GRPCServerRecvBufferPoolsEnabled = false
 
-	// Increase read buffer size to allow more frames to accumulate before the netpoller wakes to read them.
-	// This improves TCP batching when clients send jittered batch flushes, allowing the server to read
-	// multiple frames in a single syscall.
-	//cfg.Server.GRPCOptions = append(cfg.Server.GRPCOptions, grpc.ReadBufferSize(1024*1024))  // 1MB instead of default 32KB
-	//cfg.Server.GRPCOptions = append(cfg.Server.GRPCOptions, grpc.WriteBufferSize(1024*1024)) // 1MB instead of default 32KB
-
 	// Inject the registerer in the Server config too.
 	cfg.Server.Registerer = reg
 

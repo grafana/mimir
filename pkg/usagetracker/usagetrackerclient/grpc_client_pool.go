@@ -70,9 +70,6 @@ func dialUsageTracker(clientCfg grpcclient.Config, instance ring.InstanceDesc, r
 		return nil, err
 	}
 
-	opts = append(opts, grpc.WithReadBufferSize(1024*1024))  // 1MB instead of default 32KB
-	opts = append(opts, grpc.WithWriteBufferSize(1024*1024)) // 1MB instead of default 32KB
-
 	// nolint:staticcheck // grpc.Dial() has been deprecated; we'll address it before upgrading to gRPC 2.
 	conn, err := grpc.Dial(instance.Addr, opts...)
 	if err != nil {
