@@ -62,10 +62,10 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 	// until lower-index ingesters to join the ring and claim tokens.
 	cfg.IngesterRing.SpreadMinimizingJoinRingInOrder = true
 
-	cfg0 := &cfg
+	cfg0 := cfg
 	cfg0.IngesterRing.InstanceID = "ingester-zone-a-0" // spread-minimizing TokenGenerator instanceID=0
 
-	cfg1 := &cfg
+	cfg1 := cfg
 	cfg1.IngesterRing.InstanceID = "ingester-zone-a-1" // spread-minimizing TokenGenerator instanceID=1, same zone
 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
@@ -91,15 +91,18 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 	// Create an ingester and manually add to the ring;
 	// needed to emulate an ingester which is delayed in claiming tokens.
 	i0, _, _ := createTestIngesterWithIngestStorage(
-		t, &cfg, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
+		t, &cfg0, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
 	)
 	t.Cleanup(func() {
-		// Several services are started with New() and only closed on error cases in ingester.starting();
-		// Call start, which will fail and to trigger goroutine cleanup.
-		require.NoError(t, i0.StartAsync(ctx))
+		// Some services are started when the ingester is created with New()
+		// and only closed when defer is triggered by error cases in ingester.starting();
+		// Call ingester.starting(), with a canceled context to guaranteed failure and trigger that goroutine cleanup.
+		i0Ctx, i0Cancel := context.WithCancel(context.Background())
+		i0Cancel()
+		require.NoError(t, i0.StartAsync(i0Ctx))
 		err := services.StopAndAwaitTerminated(ctx, i0)
-		// Error is propagated from failure in ingester.starting().
-		require.ErrorContains(t, err, "failed to start ingester subservices before partition reader")
+		// Service failure case error is propagated from error returned by ingester.starting().
+		require.ErrorIs(t, err, context.Canceled)
 	})
 	i0Ro, i0RoTs := i0.lifecycler.GetReadOnlyState()
 	ringDesc.AddIngester(
@@ -127,7 +130,7 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 	// It will proceed after the currently-hardcoded ring.LifeCycler.canJoinTimeout deadline of 5 minutes,
 	// which will not trigger before the end of the test.
 	i1, _, _ := createTestIngesterWithIngestStorage(
-		t, cfg1, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
+		t, &cfg1, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
 	)
 	require.NoError(t, i1.StartAsync(ctx))
 	t.Cleanup(func() {
@@ -149,14 +152,9 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 	i1PartitionLifecyclerState := i1.ingestPartitionLifecycler.State()
 	assert.Equal(t, services.New, i1PartitionLifecyclerState)
 
-	// Confirm partition for ingester 1 has not been created yet
-	i1PartitionName, err := ingest.IngesterPartitionID(cfg1.IngesterRing.InstanceID)
-	require.NoError(t, err)
-	partitionRingDescVal, err := ingesterRing.KVClient.Get(ctx, PartitionRingKey)
-	require.NoError(t, err)
-	partitionRingDesc := ring.GetOrCreatePartitionRingDesc(partitionRingDescVal)
-	_, exists := partitionRingDesc.Partitions[i1PartitionName]
-	require.False(t, exists)
+	partitionState, _, err := i1.ingestPartitionLifecycler.GetPartitionState(ctx)
+	require.ErrorIs(t, err, ring.ErrPartitionDoesNotExist)
+	require.Equal(t, ring.PartitionUnknown, partitionState)
 }
 
 func TestIngester_Start(t *testing.T) {
