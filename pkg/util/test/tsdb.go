@@ -19,7 +19,7 @@ type Series struct {
 // a sample can only be a float, histogram, or float histogram.
 // This is not enforced in a constructor for convenience in test code.
 type Sample struct {
-	STS, TS   int64  // Start Timestamp and Timestamp
+	STS, TS   int64 // Start Timestamp and Timestamp
 	Val       float64
 	Hist      *histogram.Histogram
 	FloatHist *histogram.FloatHistogram
