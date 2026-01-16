@@ -140,6 +140,7 @@
 * [BUGFIX] Query-frontend: Fix `step()` duration expression returning 1000x larger value. #13920
 * [BUGFIX] Store-gateway: Fix parent-child relationship in LabelNames and LabelValues trace spans. #13932
 * [BUGFIX] MQE: Map remote execution storage errors correctly. #13944
+* [BUGFIX] Ingester: Query all ingesters when shuffle sharding is disabled. #14041
 
 ### Mixin
 
