@@ -23,6 +23,7 @@
 * [CHANGE] Ingester: Remove metric `cortex_ingester_owned_target_info_series`; if needed this is better done as a custom active series tracker. #13831
 * [CHANGE] Store-gateway: Warn when loading index headers based on TSDB blocks that use v1 of the index file format. #13834
 * [CHANGE] Cache: Remove the experimental setting `-<prefix>.memcached.dns-ignore-startup-failures` that allowed failure to discover Memcached servers to be a soft error and always consider failure to discover Memcached servers a hard error. #14038
+* [CHANGE] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14052
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
@@ -102,7 +103,6 @@
 * [ENHANCEMENT] Add experimental flag `common.instrument-reference-leaks-percentage` to leaked references to gRPC buffers. #13609
 * [ENHANCEMENT] Ingester: Reduce likelihood of ingestion being paused while idle TSDB compaction is in progress. #13978
 * [ENHANCEMENT] Ingester: Extend `cortex_ingester_tsdb_forced_compactions_in_progress` metric to report a value of 1 when there's an idle or forced TSDB head compaction in progress. #13979
-* [ENHANCEMENT] Ruler: Add path traversal checks when parsing namespaces and groups. #14052
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
