@@ -1222,12 +1222,11 @@ func (s *BucketStore) recordBucketIndexDiscoveryDiff(ctx context.Context) {
 	meta := s.bucketIndexMeta.Metadata()
 	diff := meta.UpdatedAt - reqUpdatedAt
 
-	logger := log.With(s.logger, "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
-
+	logger := log.With(spanlogger.FromContext(ctx, s.logger), "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
 	if diff < 0 {
-		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "bucket index version (updated_at) is older than requested")
+		level.Warn(logger).Log("msg", "bucket index version (updated_at) is older than requested")
 	} else {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "bucket index versions (updated_at)")
+		level.Debug(logger).Log("msg", "bucket index versions (updated_at)")
 	}
 }
 
