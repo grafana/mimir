@@ -10,8 +10,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,7 +58,7 @@ func (c *MimirClient) DeleteAlermanagerConfig(ctx context.Context) error {
 func (c *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[string]string, error) {
 	res, err := c.doRequest(ctx, alertmanagerAPIPath, "GET", nil, -1)
 	if err != nil {
-		log.Debugln("no alert config present in response")
+		level.Debug(c.logger).Log("msg", "no alert config present in response")
 		return "", nil, err
 	}
 
@@ -71,9 +71,7 @@ func (c *MimirClient) GetAlertmanagerConfig(ctx context.Context) (string, map[st
 	compat := configCompat{}
 	err = yaml.Unmarshal(body, &compat)
 	if err != nil {
-		log.WithFields(log.Fields{
-			"body": string(body),
-		}).Debugln("failed to unmarshal rule group from response")
+		level.Debug(c.logger).Log("msg", "failed to unmarshal rule group from response", "body", string(body))
 
 		return "", nil, errors.Wrap(err, "unable to unmarshal response")
 	}

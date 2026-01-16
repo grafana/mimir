@@ -14,9 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -30,9 +31,9 @@ var (
 )
 
 // ParseFiles returns a formatted set of prometheus rule groups
-func ParseFiles(backend string, files []string, scheme model.ValidationScheme) (map[string]RuleNamespace, error) {
+func ParseFiles(backend string, files []string, scheme model.ValidationScheme, logger log.Logger) (map[string]RuleNamespace, error) {
 	ruleSet := map[string]RuleNamespace{}
-	var parseFn func(f string, scheme model.ValidationScheme) ([]RuleNamespace, []error)
+	var parseFn func(f string, scheme model.ValidationScheme, logger log.Logger) ([]RuleNamespace, []error)
 	switch backend {
 	case MimirBackend:
 		parseFn = Parse
@@ -41,9 +42,9 @@ func ParseFiles(backend string, files []string, scheme model.ValidationScheme) (
 	}
 
 	for _, f := range files {
-		nss, errs := parseFn(f, scheme)
+		nss, errs := parseFn(f, scheme, logger)
 		for _, err := range errs {
-			log.WithError(err).WithField("file", f).Errorln("unable to parse rules file")
+			level.Error(logger).Log("msg", "unable to parse rules file", "file", f, "err", err)
 			return nil, errFileReadError
 		}
 
@@ -60,10 +61,7 @@ func ParseFiles(backend string, files []string, scheme model.ValidationScheme) (
 
 			_, exists := ruleSet[namespace]
 			if exists {
-				log.WithFields(log.Fields{
-					"namespace": namespace,
-					"file":      f,
-				}).Errorln("repeated namespace attempted to be loaded")
+				level.Error(logger).Log("msg", "repeated namespace attempted to be loaded", "namespace", namespace, "file", f)
 				return nil, errFileReadError
 			}
 			ruleSet[namespace] = ns
@@ -73,10 +71,10 @@ func ParseFiles(backend string, files []string, scheme model.ValidationScheme) (
 }
 
 // Parse parses and validates a set of rules.
-func Parse(f string, scheme model.ValidationScheme) ([]RuleNamespace, []error) {
+func Parse(f string, scheme model.ValidationScheme, logger log.Logger) ([]RuleNamespace, []error) {
 	content, err := loadFile(f)
 	if err != nil {
-		log.WithError(err).WithField("file", f).Errorln("unable to load rules file")
+		level.Error(logger).Log("msg", "unable to load rules file", "file", f, "err", err)
 		return nil, []error{errFileReadError}
 	}
 
