@@ -1,6 +1,5 @@
 package cache
 
-// TODO: this may just be temporary during testing
 type CacheStats struct {
 	ReadEntries    int
 	WrittenEntries int

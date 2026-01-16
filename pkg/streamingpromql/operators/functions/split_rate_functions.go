@@ -13,8 +13,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var SplitRate = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(true), RateCodec, Rate, FUNCTION_RATE)
-var SplitIncrease = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, Increase, FUNCTION_INCREASE)
+var SplitRate = &RangeVectorSplittingMetadata{
+	OperatorFactory:       NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(true), RateCodec, Rate, FUNCTION_RATE),
+	RangeVectorChildIndex: 0,
+}
+
+var SplitIncrease = &RangeVectorSplittingMetadata{
+	OperatorFactory:       NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, Increase, FUNCTION_INCREASE),
+	RangeVectorChildIndex: 0,
+}
 
 func rateGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, error) {
 	fHead, fTail := step.Floats.UnsafePoints()

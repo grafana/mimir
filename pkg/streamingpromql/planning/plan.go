@@ -251,9 +251,6 @@ type SplitNode interface {
 	// RangeVectorSplittingCacheKey returns a cache key for this node's intermediate results.
 	RangeVectorSplittingCacheKey() string
 
-	// GetRange returns the time range duration for this range vector operation.
-	GetRange() time.Duration
-
 	GetRangeParams() RangeParams
 }
 

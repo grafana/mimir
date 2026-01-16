@@ -157,11 +157,10 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 
 	f, exists := functions.RegisteredFunctions[innerFunctionCall.Function]
 	if !exists {
-		// TODO: log function string
-		return nil, fmt.Errorf("function '%v' not found in functions list", innerFunctionCall.Function)
+		return nil, fmt.Errorf("function '%v' not found in functions list", innerFunctionCall.Function.PromQLName())
 	}
-	if f.SplitOperatorFactory == nil {
-		return nil, fmt.Errorf("function %v does not support range vector splitting", innerFunctionCall.Function)
+	if f.RangeVectorSplitting == nil {
+		return nil, fmt.Errorf("function %v does not support range vector splitting", innerFunctionCall.Function.PromQLName())
 	}
 
 	ranges := make([]functions.Range, len(s.SplitFunctionCallDetails.SplitRanges))
@@ -178,8 +177,8 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, err
 	}
 
-	splitOp, err := f.SplitOperatorFactory(
-		s.Inner.Child(0),
+	splitOp, err := f.RangeVectorSplitting.OperatorFactory(
+		s.Inner.Child(f.RangeVectorSplitting.RangeVectorChildIndex),
 		materializer,
 		timeRange,
 		ranges,

@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"runtime"
 	"strings"
 	"time"
 
@@ -34,14 +33,15 @@ import (
 // FunctionOverRangeVectorSplit performs range vector function calculation with intermediate result caching.
 // T is the type of intermediate result produced by the function's generate step.
 type FunctionOverRangeVectorSplit[T any] struct {
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	FuncId                   Function
-	FuncDef                  FunctionOverRangeVectorDefinition
-	Annotations              *annotations.Annotations
-	metricNames              *operators.MetricNames
-	timeRange                types.QueryTimeRange
-	enableDelayedNameRemoval bool
-	expressionPosition       posrange.PositionRange
+	MemoryConsumptionTracker    *limiter.MemoryConsumptionTracker
+	FuncId                      Function
+	FuncDef                     FunctionOverRangeVectorDefinition
+	Annotations                 *annotations.Annotations
+	metricNames                 *operators.MetricNames
+	timeRange                   types.QueryTimeRange
+	enableDelayedNameRemoval    bool
+	expressionPosition          posrange.PositionRange // Function's expression position (e.g., rate(foo[5m]))
+	innerNodeExpressionPosition posrange.PositionRange // Inner node's expression position (e.g., foo[5m]) - used for annotations
 
 	seriesValidationFunc RangeVectorSeriesValidationFunction
 
@@ -61,7 +61,9 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	seriesToSplits   [][]SplitSeries
 	currentSeriesIdx int
 
-	finalized  bool
+	fullyEvaluated bool
+	finalized      bool
+
 	logger     log.Logger
 	cacheStats *cache.CacheStats
 
@@ -97,24 +99,30 @@ func NewSplittingFunctionOverRangeVector[T any](
 		return nil, fmt.Errorf("FunctionOverRangeVectorSplit only supports instant queries")
 	}
 
+	innerNodeExpressionPosition, err := innerNode.ExpressionPosition()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inner node expression position: %w", err)
+	}
+
 	o := &FunctionOverRangeVectorSplit[T]{
-		innerNode:                innerNode,
-		materializer:             materializer,
-		queryTimeRange:           timeRange,
-		splitRanges:              ranges,
-		innerCacheKey:            innerCacheKey,
-		cache:                    cache.NewCache(cacheFactory, codec),
-		FuncId:                   funcId,
-		FuncDef:                  funcDef,
-		generateFunc:             generateFunc,
-		combineFunc:              combineFunc,
-		Annotations:              annotations,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		expressionPosition:       expressionPosition,
-		timeRange:                timeRange,
-		enableDelayedNameRemoval: enableDelayedNameRemoval,
-		logger:                   logger,
-		cacheStats:               &cache.CacheStats{},
+		innerNode:                   innerNode,
+		materializer:                materializer,
+		queryTimeRange:              timeRange,
+		splitRanges:                 ranges,
+		innerCacheKey:               innerCacheKey,
+		cache:                       cache.NewCache(cacheFactory, codec),
+		FuncId:                      funcId,
+		FuncDef:                     funcDef,
+		generateFunc:                generateFunc,
+		combineFunc:                 combineFunc,
+		Annotations:                 annotations,
+		MemoryConsumptionTracker:    memoryConsumptionTracker,
+		expressionPosition:          expressionPosition,
+		innerNodeExpressionPosition: innerNodeExpressionPosition,
+		timeRange:                   timeRange,
+		enableDelayedNameRemoval:    enableDelayedNameRemoval,
+		logger:                      logger,
+		cacheStats:                  &cache.CacheStats{},
 	}
 
 	if funcDef.SeriesValidationFuncFactory != nil {
@@ -290,7 +298,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 		labelBytes = serieMetadata.Labels.Bytes(labelBytes)
 		key := string(labelBytes)
 
-		// TODO: is it possible to have the same metadata returned twice in metadata metadata?
+		// Storage guarantees unique series, so each label set appears only once.
 		seriesMap[key] = splitLocalIdx
 		seriesToSplits = append(seriesToSplits, []SplitSeries{{0, splitLocalIdx}})
 	}
@@ -312,7 +320,6 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 				seriesMap[key] = mergedIdx
 				mergedMetadata, err = types.SeriesMetadataSlicePool.AppendToSlice(mergedMetadata, m.MemoryConsumptionTracker, serieMetadata)
 				if err != nil {
-					// TODO: do we need to return the splitMetadata slice back to the pool here if there's an error?
 					return nil, nil, err
 				}
 				seriesToSplits = append(seriesToSplits, nil)
@@ -336,38 +343,10 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 	return mergedMetadata, seriesToSplits, nil
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (result types.InstantVectorSeriesData, err error) {
+func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
 	if m.currentSeriesIdx >= len(m.seriesToSplits) {
 		return types.InstantVectorSeriesData{}, types.EOS
 	}
-
-	// recovering from panics for now to make debugging easier
-	defer func() {
-		if r := recover(); r != nil {
-			// Capture stack trace
-			buf := make([]byte, 4096)
-			n := runtime.Stack(buf, false)
-			stackTrace := string(buf[:n])
-
-			// Log panic details for debugging
-			level.Error(m.logger).Log(
-				"msg", "panic in FunctionOverRangeVectorSplit.NextSeries",
-				"panic", r,
-				"function", m.FuncId.PromQLName(),
-				"inner_cache_key", m.innerCacheKey,
-				"query_start_ms", m.queryTimeRange.StartT,
-				"query_end_ms", m.queryTimeRange.EndT,
-				"currentSeriesIdx", m.currentSeriesIdx,
-				"totalSeries", len(m.seriesToSplits),
-				"splits_total", len(m.splits),
-				"stack_trace", stackTrace,
-			)
-			err = fmt.Errorf("panic in FunctionOverRangeVectorSplit.NextSeries (series %d/%d, function %s): %v\nStack trace:\n%s",
-				m.currentSeriesIdx, len(m.seriesToSplits), m.FuncId.PromQLName(), r, stackTrace)
-			result = types.InstantVectorSeriesData{}
-		}
-		m.currentSeriesIdx++
-	}()
 
 	splitSeriesList := m.seriesToSplits[m.currentSeriesIdx]
 
@@ -409,42 +388,37 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (resul
 		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotation)
 	}
 
+	if m.currentSeriesIdx == len(m.seriesToSplits)-1 {
+		m.fullyEvaluated = true
+	}
+
+	m.currentSeriesIdx++
 	return data, nil
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
-	// TODO: handle error
-	pos, _ := m.innerNode.ExpressionPosition()
-
-	m.Annotations.Add(generator(metricName, pos))
+	m.Annotations.Add(generator(metricName, m.innerNodeExpressionPosition))
 }
 
-// TODO: cater for this case
-// It must be safe to call Finalize even if Prepare, SeriesMetadata, NextSeries, NextStepSamples or Finalize have not been called.
-// We shouldn't write to cache if series metadata is set but series samples aren't
 func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
-	if m.finalized {
+	// Only cache if we haven't tried caching already, and if all the series were processed.
+	if m.finalized || !m.fullyEvaluated {
 		return nil
 	}
 
 	m.finalizeStart = time.Now()
 
-	// Only flush and log if we completed processing all series
-	// TODO: refine - doesn't properly account for the case where last series fails
-	completedAllSeries := m.currentSeriesIdx >= len(m.seriesToSplits)
-	if !completedAllSeries {
-		return nil
-	}
-
 	logger := spanlogger.FromContext(ctx, m.logger)
 
-	var cachedCount, uncachedCount int
+	var cachedSplitCount, uncachedSplitCount, uncachedRangeCount, cachedRangeCount int
 	for _, split := range m.splits {
 		if split.IsCached() {
-			cachedCount++
+			cachedSplitCount++
+			cachedRangeCount += split.RangeCount()
 		} else {
-			uncachedCount++
+			uncachedSplitCount++
+			uncachedRangeCount += split.RangeCount()
 		}
 	}
 
@@ -456,7 +430,8 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 
 	m.finalizeEnd = time.Now()
 
-	// TODO: currently at info level while testing, may also modify and remove some stats post tests
+	// Logging stats at info level while feature is experimental and being tested.
+	// TODO: reduce log level to debug and remove overly detailed stats when feature is mature.
 	level.Info(logger).Log(
 		"msg", "range vector splitting stats",
 		"function", m.FuncId.PromQLName(),
@@ -465,13 +440,16 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"query_end_ms", m.queryTimeRange.EndT,
 		"inner_describe", m.innerNode.Describe(),
 		"splits_total", len(m.splits),
-		"splits_cached", cachedCount,
-		"splits_uncached", uncachedCount,
+		"splits_cached", cachedSplitCount,
+		"splits_uncached", uncachedSplitCount,
+		"ranges_total", uncachedRangeCount+cachedSplitCount,
+		"ranges_cached", cachedSplitCount,
+		"ranges_uncached", uncachedRangeCount,
 		"cache_entries_read", m.cacheStats.ReadEntries,
 		"cache_entries_written", m.cacheStats.WrittenEntries,
 		"max_series_per_entry", m.cacheStats.MaxSeries,
 		"min_series_per_entry", m.cacheStats.MinSeries,
-		"total_series", m.cacheStats.TotalSeries,
+		"total_series_across_entries", m.cacheStats.TotalSeries,
 		"max_bytes_per_entry", m.cacheStats.MaxBytes,
 		"min_bytes_per_entry", m.cacheStats.MinBytes,
 		"total_cache_bytes", m.cacheStats.TotalBytes,
@@ -501,6 +479,7 @@ type Split[T any] interface {
 	Finalize(ctx context.Context) error
 	Close()
 	IsCached() bool
+	RangeCount() int
 }
 
 type SplitSeries struct {
@@ -516,6 +495,10 @@ type CachedSplit[T any] struct {
 	results     []T
 
 	parent *FunctionOverRangeVectorSplit[T]
+}
+
+func (c *CachedSplit[T]) RangeCount() int {
+	return 1
 }
 
 func NewCachedSplit[T any](
@@ -603,6 +586,10 @@ type UncachedSplit[T any] struct {
 
 	finalized    bool
 	resultGetter *ResultGetter[T]
+}
+
+func (p *UncachedSplit[T]) RangeCount() int {
+	return len(p.ranges)
 }
 
 func NewUncachedSplit[T any](
@@ -695,13 +682,7 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 
 func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, generator types.AnnotationGenerator) {
 	metricName := p.parent.metricNames.GetMetricNameForSeries(p.parent.currentSeriesIdx)
-	pos, err := p.parent.innerNode.ExpressionPosition()
-	if err != nil {
-		level.Warn(p.parent.logger).Log("msg", "failed to get expression position for annotation", "err", err)
-		return
-	}
-
-	annotationErr := generator(metricName, pos)
+	annotationErr := generator(metricName, p.parent.innerNodeExpressionPosition)
 	p.parent.Annotations.Add(annotationErr)
 
 	annotationsMap := p.rangeAnnotations[rangeIdx]

@@ -56,7 +56,6 @@ func NewOptimizationPass(splitInterval time.Duration, limits limitsProvider, tim
 			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total",
 			Help: "Total number of range vector splitting nodes introduced by the range vector splitting optimization pass.",
 		}),
-		// TODO: narrow down what nodes count as "inspected"? e.g. some function might never be able to be split - need to be function over range vector, not point in adding. maybe should just include function nodes that can be split
 		functionNodesInspected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_range_vector_splitting_function_nodes_inspected_total",
 			Help: "Total number of function nodes inspected by range vector splitting to decide whether to split.",
@@ -143,8 +142,6 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 // TODO: consider if the modifier adjustments are worth it when the supported nodes/functions are expanded.
 //   - For subqueries the resulting time range might not be indicative of the actual queried timerange depending on the
 //     inner nodes for the subquery, so the split ranges might not align with the stored blocks after the adjustments.
-//   - Similar for smoothed and anchored modifiers - these will load more data than for the specified range so the
-//     adjustments won't work as well (as-is).
 //   - For functions that require timestamps (e.g. ts_of_min_over_time), we will need to shift the result timestamps to
 //     accommodate for the adjustment done for modifiers.
 //   - We probably shouldn't cache intermediate results queries for @ modifiers at all. Caching is good for cases like
@@ -163,17 +160,11 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	if !ok {
 		return nil, &errNotApplied{reason: "function_not_found"}
 	}
-	if f.SplitOperatorFactory == nil {
+	if f.RangeVectorSplitting == nil {
 		return nil, &errNotApplied{reason: "unsupported_function"}
 	}
 
-	if functionCall.ChildCount() == 0 {
-		// Unexpected if function is supported for splitting
-		return nil, errors.New("function has no children")
-	}
-
-	// TODO: not all splittable functions will have the first child as the range vector operator
-	inner, ok := functionCall.Child(0).(planning.SplitNode)
+	inner, ok := functionCall.Child(f.RangeVectorSplitting.RangeVectorChildIndex).(planning.SplitNode)
 	if !ok || !inner.IsSplittable() {
 		return nil, &errNotApplied{reason: "unsupported_inner_node"}
 	}

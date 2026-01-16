@@ -16,7 +16,10 @@ import (
 )
 
 // TODO: investigate Kahan summation more, are we using the compensation correctly?
-var SplitSumOverTime = NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, SumOverTime, FUNCTION_SUM_OVER_TIME)
+var SplitSumOverTime = &RangeVectorSplittingMetadata{
+	OperatorFactory:       NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, SumOverTime, FUNCTION_SUM_OVER_TIME),
+	RangeVectorChildIndex: 0,
+}
 
 func sumOverTimeGenerate(
 	step *types.RangeVectorStepData,
@@ -120,13 +123,16 @@ func (c singleSampleCodec) Unmarshal(bytes []byte) ([]SingleSampleIntermediate, 
 
 var SingleSampleCodec = singleSampleCodec{}
 
-var SplitCountOverTime = NewSplitOperatorFactory[SingleSampleIntermediate](
-	countOverTimeGenerate,
-	countOverTimeCombine,
-	SingleSampleCodec,
-	CountOverTime,
-	FUNCTION_COUNT_OVER_TIME,
-)
+var SplitCountOverTime = &RangeVectorSplittingMetadata{
+	OperatorFactory: NewSplitOperatorFactory[SingleSampleIntermediate](
+		countOverTimeGenerate,
+		countOverTimeCombine,
+		SingleSampleCodec,
+		CountOverTime,
+		FUNCTION_COUNT_OVER_TIME,
+	),
+	RangeVectorChildIndex: 0,
+}
 
 func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (SingleSampleIntermediate, error) {
 	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
@@ -150,13 +156,16 @@ func countOverTimeCombine(pieces []SingleSampleIntermediate, _ types.EmitAnnotat
 	return totalCount, hasValue, nil, nil
 }
 
-var SplitMinOverTime = NewSplitOperatorFactory[SingleSampleIntermediate](
-	minOverTimeGenerate,
-	minOverTimeCombine,
-	SingleSampleCodec,
-	MinOverTime,
-	FUNCTION_MIN_OVER_TIME,
-)
+var SplitMinOverTime = &RangeVectorSplittingMetadata{
+	OperatorFactory: NewSplitOperatorFactory[SingleSampleIntermediate](
+		minOverTimeGenerate,
+		minOverTimeCombine,
+		SingleSampleCodec,
+		MinOverTime,
+		FUNCTION_MIN_OVER_TIME,
+	),
+	RangeVectorChildIndex: 0,
+}
 
 func minOverTimeGenerate(
 	step *types.RangeVectorStepData,
@@ -207,13 +216,16 @@ func minOverTimeCombine(pieces []SingleSampleIntermediate, emitAnnotation types.
 	return minF, hasFloat, nil, nil
 }
 
-var SplitMaxOverTime = NewSplitOperatorFactory[SingleSampleIntermediate](
-	maxOverTimeGenerate,
-	maxOverTimeCombine,
-	SingleSampleCodec,
-	MaxOverTime,
-	FUNCTION_MAX_OVER_TIME,
-)
+var SplitMaxOverTime = &RangeVectorSplittingMetadata{
+	OperatorFactory: NewSplitOperatorFactory[SingleSampleIntermediate](
+		maxOverTimeGenerate,
+		maxOverTimeCombine,
+		SingleSampleCodec,
+		MaxOverTime,
+		FUNCTION_MAX_OVER_TIME,
+	),
+	RangeVectorChildIndex: 0,
+}
 
 func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (SingleSampleIntermediate, error) {
 	f, hasFloat, h, err := maxOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
