@@ -118,7 +118,7 @@ func SplitWriteRequestByMaxMarshalSizeRW2(req *WriteRequest, reqSize, maxSize in
 	}
 
 	if len(nextReq.TimeseriesRW2) > 0 {
-		// Finalize the next partial request.
+		// Finalize the last partial request.
 		nextReq.SymbolsRW2 = nextReqSymbols.Symbols()
 		partialReqs = append(partialReqs, nextReq)
 	}
@@ -250,7 +250,7 @@ func splitMetadataByMaxMarshalSize(req *WriteRequest, reqSize, maxSize int) []*W
 	}
 
 	if nextReqMetadataLength > 0 {
-		// Flush the last partial request.
+		// Finalize the last partial request.
 		nextReq.Metadata = req.Metadata[nextReqMetadataStart : nextReqMetadataStart+nextReqMetadataLength]
 		partialReqs = append(partialReqs, nextReq)
 	}
