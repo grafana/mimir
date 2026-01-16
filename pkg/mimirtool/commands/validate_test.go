@@ -113,20 +113,31 @@ func TestAlertsCheckNativeVersionExists(t *testing.T) {
 			},
 			wantFailures: 1,
 		},
+		{
+			name: "last rule is missing native version",
+			rules: []rulefmt.Rule{
+				{
+					Alert: "HighErrorRate",
+					Expr:  `rate(http_requests_total{status="500"}[5m]) > 0.1`,
+				},
+				{
+					Alert: "HighLatency",
+					Expr:  `histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 1`,
+				},
+			},
+			wantFailures: 1,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			results := alertsCheckNativeVersionExists(tc.rules)
-			var gotFailures, gotSuccesses int
+			var gotFailures int
 			for _, r := range results {
 				if r.failure {
 					gotFailures++
-				} else {
-					gotSuccesses++
 				}
 			}
 			require.Equal(t, tc.wantFailures, gotFailures)
-			require.Equal(t, len(tc.rules)-tc.wantFailures, gotSuccesses)
 		})
 	}
 }

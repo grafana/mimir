@@ -4,6 +4,7 @@ package commands
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -27,10 +28,10 @@ type ValidateAlertFilesCommand struct {
 
 // Register registers the validate command and its subcommands with the kingpin application.
 func (cmd *ValidateCommand) Register(app *kingpin.Application, _ EnvVarNames) {
-	validateCmd := app.Command("validate", "Validate Prometheus rule files.")
+	validateCmd := app.Command("validate", "Validate Prometheus files.")
 
 	alertsCmd := &ValidateAlertFilesCommand{}
-	validateAlertsCmd := validateCmd.Command("alerts-file", "Load alert rule files and print alert names with their expressions.").Action(alertsCmd.run)
+	validateAlertsCmd := validateCmd.Command("alerts-file", "Load alert rule files and run validations on them.").Action(alertsCmd.run)
 	validateAlertsCmd.Arg("files", "Alert rule files to validate").Required().ExistingFilesVar(&alertsCmd.Files)
 	validateAlertsCmd.Flag("verbose", "Print verbose output").Default("false").BoolVar(&alertsCmd.Verbose)
 	validateAlertsCmd.Flag("set-exit-code", "Set exit code 1 on failures").Default("false").BoolVar(&alertsCmd.SetExitCode)
@@ -90,10 +91,23 @@ func (cmd *ValidateAlertFilesCommand) run(_ *kingpin.ParseContext) error {
 	return nil
 }
 
+// alertsCheckNativeVersionExists ensures that alerts using classic histograms
+// have an equivalent native histogram version following them. This is a very
+// basic check that can't ensure two promql expressions are semantically
+// identical.
+//
+// Classic histogram usage is determined by searching for vector selectors with
+// _bucket, _sum, or _count suffixes in the alert expression.
+//
+// Two rules are considered equivalent when they have:
+//   - The same alert name, and
+//   - Compatible vector selectors: the native version must have a vector selector
+//     with the same metric name (after removing histogram suffixes, e.g.
+//     some_metric_count == some_metric) and identical label matchers.
 func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 	var failures []alertCheckResult
-	for i := 0; i < len(rules)-1; i++ {
-		thisRule, err := parser.ParseExpr(rules[i].Expr)
+	for i := 0; i < len(rules); i++ {
+		classicSelectors, err := findClassicHistogramSelectors(rules[i].Expr)
 		if err != nil {
 			failures = append(failures, alertCheckResult{
 				failure:   true,
@@ -102,38 +116,30 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 			})
 			continue
 		}
-		var nativeSelectors []*parser.VectorSelector
-		parser.Inspect(thisRule, func(node parser.Node, nodes []parser.Node) error {
-			if vs, ok := node.(*parser.VectorSelector); ok {
-				for _, suffix := range []string{"_bucket", "_count", "_sum"} {
-					if strings.HasSuffix(vs.Name, suffix) {
-						nativeSelectors = append(nativeSelectors, vs)
-						break
-					}
-				}
-			}
-			return nil
-		})
-		if len(nativeSelectors) == 0 {
+
+		// Skip rules without classic histogram selectors
+		if len(classicSelectors) == 0 {
 			failures = append(failures, alertCheckResult{
 				alertName: rules[i].Alert,
-				message:   "skipped (no native selectors)",
+				message:   "skipped (no classic histogram selectors)",
+			})
+			continue
+		}
+
+		// Check if this is the last rule - no native version can follow
+		if i == len(rules)-1 {
+			failures = append(failures, alertCheckResult{
+				failure:   true,
+				alertName: rules[i].Alert,
+				message:   fmt.Sprintf("rule with metric %q should have a native version, but is the last rule", formatSelectorList(classicSelectors)),
 			})
 			continue
 		}
 		if rules[i].Alert != rules[i+1].Alert {
-			var selector string
-			for j, ns := range nativeSelectors {
-				if j == 0 {
-					selector = ns.String()
-				} else {
-					selector += ", " + ns.String()
-				}
-			}
 			failures = append(failures, alertCheckResult{
 				failure:   true,
 				alertName: rules[i].Alert,
-				message:   fmt.Sprintf("rule with metric %q should have a native version, but got %q", selector, rules[i+1].Alert),
+				message:   fmt.Sprintf("rule with metric %q should have a native version, but got %q", formatSelectorList(classicSelectors), rules[i+1].Alert),
 			})
 			continue
 		}
@@ -147,12 +153,12 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 			continue
 		}
 		found := map[int]*parser.VectorSelector{}
-		parser.Inspect(nextRule, func(node parser.Node, nodes []parser.Node) error {
+		parser.Inspect(nextRule, func(node parser.Node, _ []parser.Node) error {
 			if vs, ok := node.(*parser.VectorSelector); ok {
-				for index, nvs := range nativeSelectors {
-					for _, suffix := range []string{"_bucket", "_count", "_sum"} {
-						if vs.Name == strings.TrimSuffix(nvs.Name, suffix) {
-							if labelMatchersEqual(vs.LabelMatchers, nvs.LabelMatchers) {
+				for index, classicSelector := range classicSelectors {
+					for _, suffix := range classicHistogramSuffixes {
+						if vs.Name == strings.TrimSuffix(classicSelector.Name, suffix) {
+							if nonNameLabelMatchersEqual(vs.LabelMatchers, classicSelector.LabelMatchers) {
 								found[index] = vs
 							}
 							break
@@ -162,7 +168,7 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 			}
 			return nil
 		})
-		if len(found) < len(nativeSelectors) {
+		if len(found) < len(classicSelectors) {
 			failures = append(failures, alertCheckResult{
 				failure:   true,
 				alertName: rules[i].Alert,
@@ -170,24 +176,68 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 			})
 			continue
 		}
-		failures = append(failures, alertCheckResult{
-			alertName: rules[i].Alert,
-			message:   "valid",
-		})
-	}
 
-	failures = append(failures, alertCheckResult{
-		alertName: rules[len(rules)-1].Alert,
-		message:   "nothing to validate",
-	})
+		// Report this rule and the next rule as valid.
+		failures = append(failures,
+			alertCheckResult{
+				alertName: rules[i].Alert,
+				message:   "valid",
+			}, alertCheckResult{
+				alertName: rules[i+1].Alert,
+				message:   "valid",
+			},
+		)
+		i += 1
+	}
 
 	return failures
 }
 
-func labelMatchersEqual(a, b []*labels.Matcher) bool {
+// classicHistogramSuffixes are the metric name suffixes that indicate classic histogram usage.
+var classicHistogramSuffixes = []string{"_bucket", "_count", "_sum"}
+
+// findClassicHistogramSelectors parses the expression and returns all vector selectors
+// that reference classic histogram metrics (identified by _bucket, _count, _sum suffixes).
+func findClassicHistogramSelectors(expr string) ([]*parser.VectorSelector, error) {
+	parsed, err := parser.ParseExpr(expr)
+	if err != nil {
+		return nil, err
+	}
+
+	var selectors []*parser.VectorSelector
+	parser.Inspect(parsed, func(node parser.Node, _ []parser.Node) error {
+		if vs, ok := node.(*parser.VectorSelector); ok {
+			for _, suffix := range classicHistogramSuffixes {
+				if strings.HasSuffix(vs.Name, suffix) {
+					selectors = append(selectors, vs)
+					break
+				}
+			}
+		}
+		return nil
+	})
+	return selectors, nil
+}
+
+// formatSelectorList formats a list of vector selectors as a comma-separated string.
+func formatSelectorList(selectors []*parser.VectorSelector) string {
+	var result string
+	for i, s := range selectors {
+		if i == 0 {
+			result = s.String()
+		} else {
+			result += ", " + s.String()
+		}
+	}
+	return result
+}
+
+func nonNameLabelMatchersEqual(a, b []*labels.Matcher) bool {
 	if len(a) != len(b) {
 		return false
 	}
+	sortLabelMatchers(a)
+	sortLabelMatchers(b)
 	for i := range a {
 		if a[i].Name == model.MetricNameLabel || b[i].Name == model.MetricNameLabel {
 			continue
@@ -203,4 +253,10 @@ func labelMatchersEqual(a, b []*labels.Matcher) bool {
 		}
 	}
 	return true
+}
+
+func sortLabelMatchers(a []*labels.Matcher) {
+	sort.Slice(a, func(i, j int) bool {
+		return a[i].Name < a[j].Name
+	})
 }
