@@ -465,15 +465,15 @@ func TestVectorSelector_MergeHints_ProjectionLabels(t *testing.T) {
 	}
 
 	t.Run("neither has projection labels set", func(t *testing.T) {
-		runTest(t, nil, nil, []string{})
+		runTest(t, nil, nil, nil)
 	})
 
 	t.Run("first has projection labels set, other does not", func(t *testing.T) {
-		runTest(t, []string{"__series_hash__", "job", "zone"}, nil, []string{"__series_hash__", "job", "zone"})
+		runTest(t, []string{"__series_hash__", "job", "zone"}, nil, nil)
 	})
 
 	t.Run("first has no projection labels, other does", func(t *testing.T) {
-		runTest(t, nil, []string{"__series_hash__", "instance", "pod"}, []string{"__series_hash__", "instance", "pod"})
+		runTest(t, nil, []string{"__series_hash__", "instance", "pod"}, nil)
 	})
 
 	t.Run("both have projection labels set", func(t *testing.T) {

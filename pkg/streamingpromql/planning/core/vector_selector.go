@@ -81,7 +81,7 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	}
 
 	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
-	v.ProjectionLabels = MergeLabelNames(v.ProjectionLabels, otherVectorSelector.ProjectionLabels)
+	v.ProjectionLabels = MergeProjectionLabels(v.ProjectionLabels, otherVectorSelector.ProjectionLabels)
 
 	return nil
 }

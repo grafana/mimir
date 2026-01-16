@@ -142,7 +142,8 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		Range: s.Range.Milliseconds(),
 
 		// Mimir Queriers don't use projection hints for anything at time of writing.
-		ProjectionLabels: s.ProjectionLabels,
+		ProjectionInclude: true, // We only support including, not excluding, labels.
+		ProjectionLabels:  s.ProjectionLabels,
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//
