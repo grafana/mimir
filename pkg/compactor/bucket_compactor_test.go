@@ -8,6 +8,8 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -122,7 +124,7 @@ func TestBucketCompactor_FilterOwnJobs(t *testing.T) {
 	cfg := indexheader.Config{VerifyOnLoad: true}
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, false, 4, m, false, 32, cfg, 8)
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 0, false, 4, m, 32, cfg, 8)
 			require.NoError(t, err)
 
 			res, err := bc.filterOwnJobs(jobsFn())
@@ -159,7 +161,7 @@ func TestBlockMaxTimeDeltas(t *testing.T) {
 	metrics := NewBucketCompactorMetrics(promauto.With(nil).NewCounter(prometheus.CounterOpts{}), nil)
 	cfg := indexheader.Config{VerifyOnLoad: true}
 	now := time.UnixMilli(1500002900159)
-	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, false, 4, metrics, true, 32, cfg, 8)
+	bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, nil, nil, 0, false, 4, metrics, 32, cfg, 8)
 	require.NoError(t, err)
 
 	deltas := bc.blockMaxTimeDeltas(now, []*Job{j1, j2})
@@ -333,4 +335,61 @@ func TestCompactedBlocksTimeRangeVerification(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPostingsOffsetTableErrorStringDetection(t *testing.T) {
+	// This test verifies that we can detect the postings offset table size error
+	// from Prometheus TSDB. If this test fails, it means Prometheus has changed
+	// the error message format and we need to update IsPostingsOffsetTableSizeError().
+	//
+	// The error originates from:
+	// - vendor/github.com/prometheus/prometheus/tsdb/index/index.go (writeLengthAndHash)
+
+	t.Run("detects actual error strings from Prometheus TSDB source", func(t *testing.T) {
+		// Read the actual error strings from Prometheus vendored source code
+		indexSourceFile, err := filepath.Abs(filepath.Join("..", "..", "vendor", "github.com", "prometheus", "prometheus", "tsdb", "index", "index.go"))
+		require.NoError(t, err)
+		indexSource, err := os.ReadFile(indexSourceFile)
+		require.NoError(t, err)
+
+		// Verify the error strings we're looking for exist in Prometheus source
+		require.Contains(t, string(indexSource), `length size exceeds 4 bytes:`,
+			"Prometheus error message format changed! Update IsPostingsOffsetTableSizeError()")
+		require.Contains(t, string(indexSource), `postings offset table`,
+			"Prometheus error message format changed! Update IsPostingsOffsetTableSizeError()")
+
+		// Now test that our detection works with the actual error chain
+		err = fmt.Errorf("compact blocks 01ABC,02DEF: %w",
+			fmt.Errorf("closing index writer: %w",
+				fmt.Errorf("postings offset table length/crc32 write error: %w",
+					fmt.Errorf("length size exceeds 4 bytes: 5000000000"))))
+
+		require.True(t, IsPostingsOffsetTableSizeError(err), "should detect postings offset table size error from Prometheus TSDB")
+	})
+
+	t.Run("does not detect unrelated errors", func(t *testing.T) {
+		testCases := []struct {
+			name string
+			err  error
+		}{
+			{
+				name: "completely unrelated error",
+				err:  fmt.Errorf("some other error"),
+			},
+			{
+				name: "has length error but missing postings table",
+				err:  fmt.Errorf("length size exceeds 4 bytes: 100"),
+			},
+			{
+				name: "has postings table but missing length error",
+				err:  fmt.Errorf("postings offset table error"),
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				require.False(t, IsPostingsOffsetTableSizeError(tc.err), "should not detect error: %v", tc.err)
+			})
+		}
+	})
 }

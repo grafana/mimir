@@ -901,6 +901,17 @@
               "fieldFlag": "distributor.health-check-ingesters",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "ingester_health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for ingester health checks. If an ingester connection consistently fails health checks for this period, any open connections are closed. The distributor or querier will attempt to reconnect to the ingester if a subsequent request is made to the ingester. Set to 0 to immediately remove ingester connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "distributor.ingester-health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -1890,6 +1901,17 @@
             },
             {
               "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "distributor.reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -2279,6 +2301,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If a store-gateway connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the store-gateway if a subsequent request is made to the store-gateway. Set to 0 to immediately remove store-gateway connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.store-gateway-client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -4640,6 +4673,17 @@
             },
             {
               "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.push-reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4788,6 +4832,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 5,
               "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor-decay",
               "fieldType": "float",
               "fieldCategory": "experimental"
             },
@@ -5265,6 +5320,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.ignore-ooo-exemplars",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_head_compaction_owned_series_threshold",
+          "required": false,
+          "desc": "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.early-head-compaction-owned-series-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_head_compaction_min_estimated_series_reduction_percentage",
+          "required": false,
+          "desc": "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15,
+          "fieldFlag": "ingester.early-head-compaction-min-estimated-series-reduction-percentage",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {
@@ -6287,6 +6364,17 @@
         },
         {
           "kind": "field",
+          "name": "store_gateway_tenant_shard_size_per_zone",
+          "required": false,
+          "desc": "The tenant's shard size per availability zone when zone-awareness is enabled, used when store-gateway sharding is enabled. The total shard size is computed as this value multiplied by the number of zones. This option takes precedence over -store-gateway.tenant-shard-size.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "store-gateway.tenant-shard-size-per-zone",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
           "name": "compactor_blocks_retention_period",
           "required": false,
           "desc": "Delete blocks containing samples older than the specified retention period. Also used by query-frontend to avoid querying beyond the retention period by instant, range or remote read queries. 0 to disable.",
@@ -7058,6 +7146,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "querier.frontend-client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -7352,20 +7451,9 @@
           "required": false,
           "desc": "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).",
           "fieldValue": null,
-          "fieldDefaultValue": false,
+          "fieldDefaultValue": true,
           "fieldFlag": "querier.response-streaming-enabled",
           "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
-          "kind": "field",
-          "name": "frontend_health_check_grace_period",
-          "required": false,
-          "desc": "The grace period for query-frontend health checks. If a query-frontend connection consistently fails health checks for this period, any open connections are closed. The querier will attempt to reconnect to the query-frontend if a subsequent request is received from it. Set to 0 to immediately remove query-frontend connections on the first health check failure.",
-          "fieldValue": null,
-          "fieldDefaultValue": 0,
-          "fieldFlag": "querier.frontend-health-check-grace-period",
-          "fieldType": "duration",
           "fieldCategory": "experimental"
         }
       ],
@@ -8029,17 +8117,6 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "dns_ignore_startup_failures",
-                  "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -8610,6 +8687,17 @@
               "fieldDefaultValue": 500,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
               "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_sequential_pusher_enabled",
+              "required": false,
+              "desc": "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -9100,7 +9188,7 @@
               "required": false,
               "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "blocks-storage.gcs.enable-upload-retries",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -10037,17 +10125,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -10293,17 +10370,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -10573,17 +10639,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -11092,6 +11147,17 @@
               "fieldDefaultValue": 46800000000000,
               "fieldFlag": "blocks-storage.tsdb.close-idle-tsdb-timeout",
               "fieldType": "duration",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
+              "name": "close_idle_tsdb_when_shipping_disabled",
+              "required": false,
+              "desc": "True to allow closing of idle TSDBs even when block shipping is disabled. When enabled, idle TSDBs with an empty head will be closed and deleted from local disk regardless of shipping status. This helps prevent accumulation of idle users with 0 series.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled",
+              "fieldType": "boolean",
               "fieldCategory": "advanced"
             },
             {
@@ -12116,17 +12182,6 @@
           "fieldFlag": "compactor.compaction-jobs-order",
           "fieldType": "string",
           "fieldCategory": "advanced"
-        },
-        {
-          "kind": "field",
-          "name": "upload_sparse_index_headers",
-          "required": false,
-          "desc": "If enabled, the compactor constructs and uploads sparse index headers to object storage during each compaction cycle. This allows store-gateway instances to use the sparse headers from object storage instead of recreating them locally.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "compactor.upload-sparse-index-headers",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,
@@ -13333,6 +13388,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If a ruler connection consistently fails health checks for this period, any open connections are closed. The ruler will attempt to reconnect to that ruler if a subsequent request is made to that ruler. Set to 0 to immediately remove ruler connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "ruler.client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -14954,7 +15020,7 @@
               "required": false,
               "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "ruler-storage.gcs.enable-upload-retries",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -15829,17 +15895,6 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "dns_ignore_startup_failures",
-                  "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -16729,6 +16784,17 @@
               ],
               "fieldValue": null,
               "fieldDefaultValue": null
+            },
+            {
+              "kind": "field",
+              "name": "health_check_grace_period",
+              "required": false,
+              "desc": "The grace period for health checks. If an alertmanager connection consistently fails health checks for this period, any open connections are closed. The alertmanager will attempt to reconnect to that alertmanager if a subsequent request is made to that alertmanager. Set to 0 to immediately remove alertmanager connections on the first health check failure.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "alertmanager.alertmanager-client.health-check-grace-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -17245,7 +17311,7 @@
               "required": false,
               "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "alertmanager-storage.gcs.enable-upload-retries",
               "fieldType": "boolean",
               "fieldCategory": "advanced"
@@ -19693,7 +19759,7 @@
           "required": false,
           "desc": "Comma-separated list of metrics to include in the exporter. Metric names must match yaml tags from the limits section of the configuration.",
           "fieldValue": null,
-          "fieldDefaultValue": "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant",
+          "fieldDefaultValue": "ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group",
           "fieldFlag": "overrides-exporter.enabled-metrics",
           "fieldType": "string"
         }
@@ -20137,7 +20203,7 @@
                   "required": false,
                   "desc": "Enable automatic retries for GCS uploads using the RetryAlways policy. Uploads will be retried on transient errors. Note: this does not guarantee idempotency.",
                   "fieldValue": null,
-                  "fieldDefaultValue": false,
+                  "fieldDefaultValue": true,
                   "fieldFlag": "common.storage.gcs.enable-upload-retries",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
@@ -20785,6 +20851,49 @@
               "fieldDefaultValue": "",
               "fieldFlag": "common.client-cluster-validation.label",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "instrument_ref_leaks",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "percentage",
+              "required": false,
+              "desc": "Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "common.instrument-reference-leaks.percentage",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "before_reuse_period",
+              "required": false,
+              "desc": "Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection.",
+              "fieldValue": null,
+              "fieldDefaultValue": 120000000000,
+              "fieldFlag": "common.instrument-reference-leaks.before-reuse-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_instrumented_bytes",
+              "required": false,
+              "desc": "Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "common.instrument-reference-leaks.max-inflight-instrumented-bytes",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             }
           ],

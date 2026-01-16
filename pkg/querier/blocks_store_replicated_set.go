@@ -12,7 +12,6 @@ import (
 	"slices"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
@@ -57,7 +56,7 @@ func newBlocksStoreReplicationSet(
 	dynamicReplication storegateway.DynamicReplication,
 	preferredZones []string,
 	limits BlocksStoreLimits,
-	clientConfig grpcclient.Config,
+	clientConfig StoreGatewayClientConfig,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) (*blocksStoreReplicationSet, error) {

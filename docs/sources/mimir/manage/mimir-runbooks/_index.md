@@ -754,11 +754,11 @@ How to **fix** it:
   ./tools/mark-blocks/mark-blocks -backend gcs -gcs.bucket-name <bucket> -mark-type no-compact -tenant <tenant-id> -details "focus on newer blocks" -blocks "<block 1>,<block 2>..."
   ```
 
-### MimirCompactorSkippedUnhealthyBlocks
+### MimirCompactorSkippedBlocks
 
-This alert fires when compactor tries to compact a block, but finds that given block is unhealthy. This indicates a bug in Prometheus TSDB library and should be investigated.
+This alert fires when compactor tries to compact a block, fails, and automatically marks one or more blocks as `no-compact` to unblock future compactions. There are several reasons this can happen, each meriting investigation.
 
-#### Compactor is failing because of `not healthy index found`
+#### Compaction is failing because of `not healthy index found` (reason: `critical`)
 
 The compactor may fail to compact blocks due to a corrupted block index found in one of the source blocks:
 
@@ -787,9 +787,22 @@ Where:
 - `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
 - `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
+#### Compaction is failing because of `postings offset table size limit` (reason: `postings-offset-table-too-large`)
+
+The compactor may fail to compact blocks due to the size of the postings offset table of the result block exceeding 4GiB (its length exceeds 4 bytes):
+
+```
+ts=2025-12-23T00:37:18.252772Z caller=bucket_compactor.go:272 level=error component=compactor user=test groupKey=0@17241709254077376921-merge-7_of_16-1765497600000-1765584000000 job_type=merge minTime="2025-12-12 00:00:00 +0000 UTC" maxTime="2025-12-13 00:00:00 +0000 UTC" msg="compaction job failed" duration=5m54.874925125s duration_ms=354874 err="compact blocks 01KCA08M9RP54T810CKNQ0H4TZ,01KCBGA8D2WD2HV431NTFZ1M84: writing block: closing index writer: postings offset table length/crc32 write error: length size exceeds 4 bytes: 4460043400" block_count=2
+
+```
+
+The cause is high label cardinality in the source blocks. When this happens, the input blocks will be marked as `no-compact` by the compactor in order to prevent the next execution from being blocked.
+
+If this happens once for a tenant when compacting 12 hour blocks into 24 hour blocks, it's possible they had increased cardinality just on that one day and we don't need to take corrective action. However, if this happens multiple times for a tenant, or is happening in earlier stages of compaction, you should increase the `compactor_split_and_merge_shards` for the tenant.
+
 ### MimirCompactorBuildingSparseIndexFailed
 
-This alert fires when `-compactor.upload-sparse-index-headers` is set to `true` but the compactor fails to build some sparse index headers.
+This alert fires when the compactor fails to build some sparse index headers.
 
 How to **investigate**:
 
@@ -1459,6 +1472,18 @@ How to **investigate**:
   {name="rollout-operator",namespace="<namespace>"}
   ```
 
+### MimirBadZoneAwarePodDisruptionBudgetConfiguration
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#incorrectwebhookconfigurationfailurepolicy)
+
+### MimirIncorrectWebhookConfigurationFailurePolicy
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#badzoneawarepoddisruptionbudgetconfiguration)
+
+### MimirHighNumberInflightZpdbRequests
+
+See [rollout-operator runbook](https://github.com/grafana/rollout-operator/blob/main/docs/runbooks.md#highnumberinflightzpdbrequests)
+
 ### MimirIngestedDataTooFarInTheFuture
 
 This alert fires when one or more Mimir ingesters accepts a sample with timestamp that is too far in the future.
@@ -1552,7 +1577,13 @@ How to **investigate** and **fix** it:
 
 - Check if disk utilization unbalance is caused by shuffle sharding
 
-  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. To investigate it you can run the following command for a given store-gateway replica. The command returns the top 10 tenants by disk utilization (in megabytes):
+  - Investigate which tenants use most of the store-gateway disk in the replicas with highest disk utilization. You can query the `cortex_bucket_store_blocks_loaded_size_bytes` metric to see per-tenant disk utilization across all store-gateway replicas. For example, to find the top 10 tenants by disk utilization on a specific store-gateway pod:
+
+    ```
+    topk(10, cortex_bucket_store_blocks_loaded_size_bytes{pod="$POD"})
+    ```
+
+  - Alternatively, you can run the following command for a given store-gateway replica to check disk utilization directly on the pod. The command returns the top 10 tenants by disk utilization (in megabytes):
 
     ```
     kubectl --context $CLUSTER --namespace $NAMESPACE debug pod/$POD --image=alpine:latest --target=store-gateway --container=debug -ti -- sh -c 'du -sm /proc/1/root/data/tsdb/* | sort -n -r | head -10'

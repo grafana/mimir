@@ -12,6 +12,7 @@ option (gogoproto.unmarshaler_all) = true;
 
 service UsageTracker {
   rpc TrackSeries(TrackSeriesRequest) returns (TrackSeriesResponse);
+  rpc TrackSeriesBatch(TrackSeriesBatchRequest) returns (TrackSeriesBatchResponse);
   rpc GetUsersCloseToLimit(GetUsersCloseToLimitRequest) returns (GetUsersCloseToLimitResponse);
 }
 
@@ -29,6 +30,46 @@ message TrackSeriesRequest {
 message TrackSeriesResponse {
   // The hashes of the series that have been rejected because the tenant is over the limit.
   repeated uint64 rejectedSeriesHashes = 1;
+}
+
+message TrackSeriesBatchUser {
+  // The tenant owning the series.
+  string userID = 1;
+
+  // The hashes of the series to track.
+  repeated uint64 seriesHashes = 2;
+}
+
+message TrackSeriesBatchPartition {
+  // Partition that the series belong to.
+  int32 partition = 1;
+
+  // The users along with their series to track.
+  repeated TrackSeriesBatchUser users = 2;
+}
+
+message TrackSeriesBatchRequest {
+  repeated TrackSeriesBatchPartition partitions = 1;
+}
+
+message TrackSeriesBatchRejectionUser {
+  // UserID for the request that contained rejected hashes.
+  string userID = 1;
+
+  // The hashes of the series that have been rejected because the tenant is over the limit.
+  repeated uint64 rejectedSeriesHashes = 2;
+}
+
+message TrackSeriesBatchRejection {
+  // Partition that the rejected series belong to.
+  int32 partition = 1;
+
+  // The users along with their rejected series.
+  repeated TrackSeriesBatchRejectionUser users = 2;
+}
+
+message TrackSeriesBatchResponse {
+  repeated TrackSeriesBatchRejection rejections = 1;
 }
 
 message SeriesCreatedEvent {

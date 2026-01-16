@@ -42,9 +42,10 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 	backendOther2 := NewProxyBackend("backend-3", backendURL3, time.Second, false, false, "", defaultBackendConfig())
 
 	tests := map[string]struct {
-		backends  []ProxyBackendInterface
-		responses []*backendResponse
-		expected  ProxyBackendInterface
+		backends    []ProxyBackendInterface
+		responses   []*backendResponse
+		expected    ProxyBackendInterface
+		expectedErr string
 	}{
 		"the preferred backend is the 1st response received": {
 			backends: []ProxyBackendInterface{backendPref, backendOther1},
@@ -109,6 +110,13 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			},
 			expected: backendOther1,
 		},
+		"an error occurs": {
+			backends: []ProxyBackendInterface{backendOther1, backendOther2},
+			responses: []*backendResponse{
+				{err: errors.New("something went wrong")},
+			},
+			expectedErr: "something went wrong",
+		},
 	}
 
 	for testName, testData := range tests {
@@ -128,7 +136,11 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 
 			// Wait for the selected backend response.
 			actual := endpoint.waitBackendResponseForDownstream(resCh)
-			assert.Equal(t, testData.expected, actual.backend)
+			if testData.expectedErr != "" {
+				assert.EqualError(t, actual.err, testData.expectedErr)
+			} else {
+				assert.Equal(t, testData.expected, actual.backend)
+			}
 		})
 	}
 }

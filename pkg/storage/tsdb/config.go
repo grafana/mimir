@@ -199,6 +199,7 @@ type TSDBConfig struct {
 	WALReplayConcurrency                int           `yaml:"wal_replay_concurrency" category:"advanced"`
 	FlushBlocksOnShutdown               bool          `yaml:"flush_blocks_on_shutdown" category:"advanced"`
 	CloseIdleTSDBTimeout                time.Duration `yaml:"close_idle_tsdb_timeout" category:"advanced"`
+	CloseIdleTSDBWhenShippingDisabled   bool          `yaml:"close_idle_tsdb_when_shipping_disabled" category:"advanced"`
 	MemorySnapshotOnShutdown            bool          `yaml:"memory_snapshot_on_shutdown" category:"experimental"`
 	HeadChunksWriteQueueSize            int           `yaml:"head_chunks_write_queue_size" category:"advanced"`
 	BiggerOutOfOrderBlocksForOldSamples bool          `yaml:"bigger_out_of_order_blocks_for_old_samples" category:"experimental"`
@@ -317,6 +318,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.WALReplayConcurrency, "blocks-storage.tsdb.wal-replay-concurrency", 0, "Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.")
 	f.BoolVar(&cfg.FlushBlocksOnShutdown, "blocks-storage.tsdb.flush-blocks-on-shutdown", false, "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.")
 	f.DurationVar(&cfg.CloseIdleTSDBTimeout, "blocks-storage.tsdb.close-idle-tsdb-timeout", 13*time.Hour, "If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.")
+	f.BoolVar(&cfg.CloseIdleTSDBWhenShippingDisabled, "blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled", false, "True to allow closing of idle TSDBs even when block shipping is disabled. When enabled, idle TSDBs with an empty head will be closed and deleted from local disk regardless of shipping status. This helps prevent accumulation of idle users with 0 series.")
 	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
 	f.IntVar(&cfg.HeadChunksWriteQueueSize, "blocks-storage.tsdb.head-chunks-write-queue-size", 1000000, headChunksWriteQueueSizeHelp)
 	f.IntVar(&cfg.OutOfOrderCapacityMax, "blocks-storage.tsdb.out-of-order-capacity-max", 32, "Maximum capacity for out of order chunks, in samples between 1 and 255.")

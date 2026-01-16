@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	prototypes "github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/server"
 	"github.com/grafana/dskit/user"
 	"github.com/grafana/regexp"
@@ -450,11 +451,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: createQueryRequest(`sum by (idx) (rate(my_series{idx="0"}[11s])) + quantile by (idx) (2, my_series{idx="0"})`, types.NewInstantQueryTimeRange(startT.Add(30*time.Second))),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
-					7,
+					6,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 				),
 				newInstantVectorSeriesDataMessage(
-					7,
+					6,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 30_000, Value: math.Inf(1)},
@@ -649,8 +650,8 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				`max_over_time(my_series[11s:10s]) + min_over_time(my_other_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				1,
-				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS", "LHS: FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
@@ -810,7 +811,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				1,
 				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
 				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(0,
@@ -1500,4 +1501,113 @@ func newRangeVectorStepDataMessage(data querierpb.EvaluateQueryResponseRangeVect
 			},
 		},
 	}
+}
+
+func TestDispatcher_RingErrorTranslation(t *testing.T) {
+	opts := streamingpromql.NewTestEngineOpts()
+	opts.Pedantic = true
+	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	startT := timestamp.Time(0)
+
+	testCases := map[string]struct {
+		storageError         error
+		expectedErrorMessage string
+		expectedErrorType    mimirpb.QueryErrorType
+	}{
+		"ring error - too many unhealthy instances": {
+			storageError:         ring.ErrTooManyUnhealthyInstances,
+			expectedErrorMessage: "too many unhealthy instances in the ring",
+			expectedErrorType:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+		},
+		"ring error - too many unhealthy instances (wrapped)": {
+			storageError:         fmt.Errorf("partition 1: %w", ring.ErrTooManyUnhealthyInstances),
+			expectedErrorMessage: "partition 1: too many unhealthy instances in the ring",
+			expectedErrorType:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+		},
+		"ring error - empty ring": {
+			storageError:         ring.ErrEmptyRing,
+			expectedErrorMessage: "empty ring",
+			expectedErrorType:    mimirpb.QUERY_ERROR_TYPE_INTERNAL,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			tenantID := "tenant-1"
+			ctx := user.InjectOrgID(context.Background(), tenantID)
+			_, ctx = stats.ContextWithEmptyStats(ctx)
+
+			errorStorage := &errorReturningStorage{err: testCase.storageError}
+
+			plan, err := planner.NewQueryPlan(context.Background(), `my_series`, types.NewInstantQueryTimeRange(startT), streamingpromql.NoopPlanningObserver{})
+			require.NoError(t, err)
+
+			encodedPlan, nodeIndices, err := plan.ToEncodedPlan(false, true, plan.Root)
+			require.NoError(t, err)
+
+			body := &querierpb.EvaluateQueryRequest{
+				Plan: *encodedPlan,
+				Nodes: []querierpb.EvaluationNode{
+					{
+						TimeRange: encodedPlan.TimeRange,
+						NodeIndex: nodeIndices[0],
+					},
+				},
+				BatchSize: 1,
+			}
+
+			req, err := prototypes.MarshalAny(body)
+			require.NoError(t, err)
+
+			route, err := prototypes.AnyMessageName(req)
+			require.NoError(t, err)
+
+			reg, requestMetrics, serverMetrics := newMetrics()
+			stream := &mockQueryResultStream{t: t, route: route, reg: reg}
+			dispatcher := NewDispatcher(engine, errorStorage, requestMetrics, serverMetrics, &propagation.NoopExtractor{}, opts.Logger)
+
+			dispatcher.HandleProtobuf(ctx, req, propagation.MapCarrier{}, stream)
+
+			require.Len(t, stream.messages, 1)
+			require.NotNil(t, stream.messages[0].GetError())
+			require.Equal(t, testCase.expectedErrorType, stream.messages[0].GetError().Type)
+			require.Contains(t, stream.messages[0].GetError().Message, testCase.expectedErrorMessage)
+		})
+	}
+}
+
+type errorReturningStorage struct {
+	err error
+}
+
+func (e *errorReturningStorage) Querier(mint, maxt int64) (storage.Querier, error) {
+	return &errorReturningQuerier{err: e.err}, nil
+}
+
+func (e *errorReturningStorage) ChunkQuerier(mint, maxt int64) (storage.ChunkQuerier, error) {
+	return nil, errors.New("chunk querier not supported")
+}
+
+type errorReturningQuerier struct {
+	err error
+}
+
+func (e *errorReturningQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	return storage.ErrSeriesSet(e.err)
+}
+
+func (e *errorReturningQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, e.err
+}
+
+func (e *errorReturningQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return nil, nil, e.err
+}
+
+func (e *errorReturningQuerier) Close() error {
+	return nil
 }

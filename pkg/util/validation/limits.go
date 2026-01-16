@@ -174,6 +174,9 @@ type Limits struct {
 	// Exemplars
 	MaxGlobalExemplarsPerUser int  `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user" category:"experimental"`
 	IgnoreOOOExemplars        bool `yaml:"ignore_ooo_exemplars" json:"ignore_ooo_exemplars" category:"experimental"`
+	// Per-tenant early head compaction
+	EarlyHeadCompactionOwnedSeriesThreshold                  int `yaml:"early_head_compaction_owned_series_threshold" json:"early_head_compaction_owned_series_threshold" category:"experimental"`
+	EarlyHeadCompactionMinEstimatedSeriesReductionPercentage int `yaml:"early_head_compaction_min_estimated_series_reduction_percentage" json:"early_head_compaction_min_estimated_series_reduction_percentage" category:"experimental"`
 	// Native histograms
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 
@@ -258,7 +261,8 @@ type Limits struct {
 	RulerMaxRuleEvaluationResults                         int                               `yaml:"ruler_max_rule_evaluation_results" json:"ruler_max_rule_evaluation_results" category:"experimental"`
 
 	// Store-gateway.
-	StoreGatewayTenantShardSize int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
+	StoreGatewayTenantShardSize        int `yaml:"store_gateway_tenant_shard_size" json:"store_gateway_tenant_shard_size"`
+	StoreGatewayTenantShardSizePerZone int `yaml:"store_gateway_tenant_shard_size_per_zone" json:"store_gateway_tenant_shard_size_per_zone" category:"experimental"`
 
 	// Compactor.
 	CompactorBlocksRetentionPeriod        model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
@@ -385,6 +389,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.OutOfOrderTimeWindow, "ingester.out-of-order-time-window", fmt.Sprintf("Non-zero value enables out-of-order support for most recent samples that are within the time window in relation to the TSDB's maximum time, i.e., within [db.maxTime-timeWindow, db.maxTime]). The ingester will need more memory as a factor of rate of out-of-order samples being ingested and the number of series that are getting out-of-order samples. If query falls into this window, cached results will use value from -%s option to specify TTL for resulting cache entry.", resultsCacheTTLForOutOfOrderWindowFlag))
 	f.BoolVar(&l.NativeHistogramsIngestionEnabled, "ingester.native-histograms-ingestion-enabled", true, "Enable ingestion of native histogram samples. If false, native histogram samples are ignored without an error. To query native histograms with query-sharding enabled make sure to set -query-frontend.query-result-response-format to 'protobuf'.")
 	f.BoolVar(&l.OutOfOrderBlocksExternalLabelEnabled, "ingester.out-of-order-blocks-external-label-enabled", false, "Whether the shipper should label out-of-order blocks with an external label before uploading them. Setting this label will compact out-of-order blocks separately from non-out-of-order blocks")
+	f.IntVar(&l.EarlyHeadCompactionOwnedSeriesThreshold, "ingester.early-head-compaction-owned-series-threshold", 0, "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.")
+	f.IntVar(&l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage, "ingester.early-head-compaction-min-estimated-series-reduction-percentage", 15, "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.")
 
 	f.StringVar(&l.SeparateMetricsGroupLabel, "validation.separate-metrics-group-label", "", "Label used to define the group label for metrics separation. For each write request, the group is obtained from the first non-empty group label from the first timeseries in the incoming list of timeseries. Specific distributor and ingester metrics will be further separated adding a 'group' label with group label's value. Currently applies to the following metrics: cortex_discarded_samples_total")
 
@@ -485,6 +491,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The tenant's shard size, used when store-gateway sharding is enabled. Value of 0 disables shuffle sharding for the tenant, that is all tenant blocks are sharded across all store-gateway replicas.")
+	f.IntVar(&l.StoreGatewayTenantShardSizePerZone, "store-gateway.tenant-shard-size-per-zone", 0, "The tenant's shard size per availability zone when zone-awareness is enabled, used when store-gateway sharding is enabled. The total shard size is computed as this value multiplied by the number of zones. This option takes precedence over -store-gateway.tenant-shard-size.")
 
 	// Alertmanager.
 	f.Var(&l.AlertmanagerReceiversBlockCIDRNetworks, "alertmanager.receivers-firewall-block-cidr-networks", "Comma-separated list of network CIDRs to block in Alertmanager receiver integrations.")
@@ -680,6 +687,10 @@ func (l *Limits) Validate() error {
 		return err
 	}
 
+	if l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
+		return fmt.Errorf("early_head_compaction_min_estimated_series_reduction_percentage must be between 0 and 100")
+	}
+
 	return nil
 }
 
@@ -864,9 +875,22 @@ func (o *Overrides) PastGracePeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).PastGracePeriod)
 }
 
-// MaxActiveSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
-func (o *Overrides) MaxActiveSeriesPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxActiveSeriesPerUser
+// MaxActiveOrGlobalSeriesPerUser returns the maximum number of active series a user is allowed to store across the cluster.
+// It will automatically fall back to the MaxGlobalSeriesPerUser setting if MaxActiveSeriesPerUser is unset.
+// This means that for users who have any overrides defined, the fallback order is:
+// - Tenant's MaxActiveSeriesPerUser
+// - Default MaxActiveSeriesPerUser
+// - Tenant's MaxGlobalSeriesPerUser
+// - Default MaxGlobalSeriesPerUser
+// And for tenants without overrides it's just:
+// - Default MaxActiveSeriesPerUser
+// - Default MaxGlobalSeriesPerUser
+func (o *Overrides) MaxActiveOrGlobalSeriesPerUser(userID string) int {
+	overrides := o.getOverridesForUser(userID)
+	if maxActive := overrides.MaxActiveSeriesPerUser; maxActive > 0 {
+		return maxActive
+	}
+	return overrides.MaxGlobalSeriesPerUser
 }
 
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
@@ -877,6 +901,16 @@ func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerMetric
+}
+
+// EarlyHeadCompactionOwnedSeriesThreshold returns the per-tenant early compaction owned series threshold.
+func (o *Overrides) EarlyHeadCompactionOwnedSeriesThreshold(userID string) int {
+	return o.getOverridesForUser(userID).EarlyHeadCompactionOwnedSeriesThreshold
+}
+
+// EarlyHeadCompactionMinEstimatedSeriesReductionPercentage returns the minimum estimated reduction percentage for per-tenant early compaction.
+func (o *Overrides) EarlyHeadCompactionMinEstimatedSeriesReductionPercentage(userID string) int {
+	return o.getOverridesForUser(userID).EarlyHeadCompactionMinEstimatedSeriesReductionPercentage
 }
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
@@ -1269,6 +1303,11 @@ func (o *Overrides) RulerMaxRuleEvaluationResults(userID string) int {
 // StoreGatewayTenantShardSize returns the store-gateway shard size for a given user.
 func (o *Overrides) StoreGatewayTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).StoreGatewayTenantShardSize
+}
+
+// StoreGatewayTenantShardSizePerZone returns the store-gateway shard size per zone for a given user.
+func (o *Overrides) StoreGatewayTenantShardSizePerZone(userID string) int {
+	return o.getOverridesForUser(userID).StoreGatewayTenantShardSizePerZone
 }
 
 // MaxHAClusters returns maximum number of clusters that HA tracker will track for a user.

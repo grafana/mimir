@@ -102,7 +102,8 @@ local filename = 'mimir-top-tenants.json';
             in_memory_series_per_user_at_start: in_memory_series_per_user_query(at='@ start()'),
           },
           '{{ user }}',
-        )
+        ) +
+        $.showAllTooltip,
       ),
     )
 
@@ -140,7 +141,8 @@ local filename = 'mimir-top-tenants.json';
             job: $.jobMatcher($._config.job_names.distributor),
           },
           '{{ user }}',
-        )
+        ) +
+        $.showAllTooltip,
       ),
     )
 
@@ -150,7 +152,7 @@ local filename = 'mimir-top-tenants.json';
         $.panel('Top $limit users by query expression length') +
         $.tablePanel(
           |||
-            topk($limit, 
+            topk($limit,
               histogram_quantile(
                 0.99,
                 sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{%(job)s}[$__rate_interval]))
@@ -238,7 +240,8 @@ local filename = 'mimir-top-tenants.json';
             job: $.jobMatcher($._config.job_names.ingester + $._config.job_names.distributor),
           },
           '{{ user }}',
-        )
+        ) +
+        $.showAllTooltip,
       ),
     )
 
@@ -331,6 +334,26 @@ local filename = 'mimir-top-tenants.json';
           ], {
             user: { alias: 'user', unit: 'string' },
             Value: { alias: 'Compaction Jobs', decimals: 0 },
+          }
+        )
+      ),
+    )
+
+    .addRow(
+      ($.row('By store-gateway disk utilization') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by per-store-gateway disk utilization') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            |||
+              topk($limit,
+                max by (user) (sum by (user, %s) (cortex_bucket_store_blocks_loaded_size_bytes{%s}))
+              )
+            ||| % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)],
+          ], {
+            user: { alias: 'user', unit: 'string' },
+            Value: { alias: 'per-instance disk usage', unit: 'bytes' },
           }
         )
       ),

@@ -206,6 +206,20 @@ type HeadOptions struct {
 	// Optional hash function applied to each new series. Computed hash value is preserved for each series in the head,
 	// and values can be iterated by using Head.ForEachSecondaryHash method.
 	SecondaryHashFunction func(labels.Labels) uint32
+
+	// EnableSTAsZeroSample represents 'created-timestamp-zero-ingestion' feature flag.
+	// If true, ST, if non-empty and earlier than sample timestamp, will be stored
+	// as a zero sample before the actual sample.
+	//
+	// The zero sample is best-effort, only debug log on failure is emitted.
+	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
+	// is implemented.
+	EnableSTAsZeroSample bool
+
+	// EnableMetadataWALRecords represents 'metadata-wal-records' feature flag.
+	// NOTE(bwplotka): This feature might be deprecated and removed once PROM-60
+	// is implemented.
+	EnableMetadataWALRecords bool
 }
 
 const (

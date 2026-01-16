@@ -72,6 +72,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/rw2util"
 	util_test "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -80,6 +81,30 @@ func mustNewActiveSeriesCustomTrackersConfigFromMap(t *testing.T, source map[str
 	m, err := asmodel.NewCustomTrackersConfig(source)
 	require.NoError(t, err)
 	return m
+}
+
+func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	metrics := newIngesterMetrics(reg, false, nil, nil, nil, nil)
+
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
+
+	const numGoroutines = 100
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			metrics.increaseForcedCompactions()
+			time.Sleep(10 * time.Millisecond)
+			metrics.decreaseForcedCompactions()
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, int64(0), metrics.forcedCompactionsCount)
+	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
 }
 
 func TestIngester_StartPushRequest(t *testing.T) {
@@ -6873,7 +6898,7 @@ func startAndWaitHealthy(t testing.TB, i *Ingester, r ring.ReadRing) {
 
 func createAndStartRing(t testing.TB, ringConfig ring.Config) *ring.Ring {
 	// Start the ingester ring
-	rng, err := ring.New(ringConfig, "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	rng, err := ring.New(ringConfig, IngesterRingName, IngesterRingKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), rng))
 	t.Cleanup(func() {
@@ -6888,6 +6913,16 @@ type noDebugNoopLogger struct{}
 
 func (noDebugNoopLogger) Log(...interface{}) error { return nil }
 func (noDebugNoopLogger) DebugEnabled() bool       { return false }
+
+// healthyInstancesCount returns the number of healthy instances in the ring for the Write operation.
+// This helper is designed to be used with test.Poll().
+func healthyInstancesCount(r ring.ReadRing) int {
+	rs, err := r.GetAllHealthy(ring.Write)
+	if err != nil {
+		return 0
+	}
+	return len(rs.Instances)
+}
 
 func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 	t.Parallel()
@@ -8043,6 +8078,35 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
     `), metricsToCheck...))
 }
 
+func TestIngesterCloseIdleTSDBWhenShippingDisabled(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
+	cfg.BlocksStorageConfig.TSDB.ShipInterval = 0                         // Disable shipping
+	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBWhenShippingDisabled = true // Enforce closing of idle TSDB
+
+	reg := prometheus.NewRegistry()
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	pushSingleSampleWithMetadata(t, i)
+	require.Equal(t, int64(1), i.seriesCount.Load())
+
+	// Wait until TSDB has been closed and removed.
+	test.Poll(t, 20*time.Second, 0, func() interface{} {
+		i.tsdbsMtx.Lock()
+		defer i.tsdbsMtx.Unlock()
+		return len(i.tsdbs)
+	})
+
+	require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
+	i.updateActiveSeries(time.Now())
+	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
+}
+
 func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
 	db := i.getTSDB(userID)
 	require.NotNil(t, db)
@@ -8730,7 +8794,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
 		reg := prometheus.NewPedanticRegistry()
-		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg, util_test.NewTestingLogger(t))
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 		t.Cleanup(func() {
@@ -8739,7 +8803,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 		// Wait until the ingester is healthy
 		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-			return i.lifecycler.HealthyInstancesCount()
+			return healthyInstancesCount(i.ring)
 		})
 
 		// Re-enable push gRPC method to simulate migration period, when ingester can receive requests from gRPC
@@ -9134,6 +9198,44 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 		cortex_ingester_memory_metadata_removed_total{user="3"} 30
 	`), metricNames...))
 
+}
+
+func TestIngesterNoRW2MetadataRefLeaks(t *testing.T) {
+	reg := prometheus.NewPedanticRegistry()
+	cfg := defaultIngesterTestConfig(t)
+	cfg.MetadataRetainPeriod = 20 * time.Second
+
+	ing, r, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), nil, "", reg)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, ing, r)
+
+	syms := rw2util.NewSymbolTableBuilder(nil)
+	orig := makeTestRW2WriteRequest(syms)
+	buf, err := orig.Marshal()
+	require.NoError(t, err)
+
+	var wr mimirpb.PreallocWriteRequest
+	wr.UnmarshalFromRW2 = true
+	wr.SkipNormalizeMetadataMetricName = true
+	wr.SkipDeduplicateMetadata = true
+	err = mimirpb.Unmarshal(buf, &wr)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err = ing.Push(ctx, &wr.WriteRequest)
+	require.NoError(t, err)
+
+	meta, err := ing.MetricsMetadata(ctx, &client.MetricsMetadataRequest{
+		Metric: "test_metric_total",
+		Limit:  1, LimitPerMetric: 1,
+	})
+	require.NoError(t, err)
+	require.Equal(t, []*mimirpb.MetricMetadata{{
+		MetricFamilyName: "test_metric_total",
+		Type:             mimirpb.COUNTER,
+		Help:             "test_metric_help",
+		Unit:             "test_metric_unit",
+	}}, meta.Metadata)
 }
 
 func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
@@ -11958,7 +12060,7 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 	}
 
 	setup := func(t *testing.T, start bool, cfg Config) *Ingester {
-		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
 
 		if start {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
@@ -11967,7 +12069,7 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 			})
 
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
-				return ingester.lifecycler.HealthyInstancesCount()
+				return healthyInstancesCount(ingester.ring)
 			})
 		}
 
@@ -12031,7 +12133,7 @@ func (i *failingIngester) startWaitAndCheck(ctx context.Context, t *testing.T) {
 		expectedHealthyIngesters = 0
 	}
 	test.Poll(t, 100*time.Millisecond, expectedHealthyIngesters, func() interface{} {
-		return i.lifecycler.HealthyInstancesCount()
+		return healthyInstancesCount(i.ring)
 	})
 }
 
@@ -12254,4 +12356,35 @@ func TestIngester_NotifyPreCommit(t *testing.T) {
 
 	// As there are three users, fsync should have been called at least three times
 	assert.GreaterOrEqual(t, fsyncCountAfter-fsyncCountBefore, uint64(3))
+}
+
+func makeTestRW2WriteRequest(syms *rw2util.SymbolTableBuilder) *mimirpb.WriteRequest {
+	req := &mimirpb.WriteRequest{
+		TimeseriesRW2: []mimirpb.TimeSeriesRW2{
+			{
+				LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("job"), syms.GetSymbol("test_job")},
+				Samples: []mimirpb.Sample{
+					{
+						Value:       123.456,
+						TimestampMs: 1234567890,
+					},
+				},
+				Exemplars: []mimirpb.ExemplarRW2{
+					{
+						Value:      123.456,
+						Timestamp:  1234567890,
+						LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total"), syms.GetSymbol("traceID"), syms.GetSymbol("1234567890abcdef")},
+					},
+				},
+				Metadata: mimirpb.MetadataRW2{
+					Type:    mimirpb.METRIC_TYPE_COUNTER,
+					HelpRef: syms.GetSymbol("test_metric_help"),
+					UnitRef: syms.GetSymbol("test_metric_unit"),
+				},
+			},
+		},
+	}
+	req.SymbolsRW2 = syms.GetSymbols()
+
+	return req
 }

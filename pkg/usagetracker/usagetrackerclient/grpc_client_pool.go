@@ -25,9 +25,10 @@ import (
 
 func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName string, clientConfig Config, logger log.Logger, registerer prometheus.Registerer) *client.Pool {
 	poolCfg := client.PoolConfig{
-		CheckInterval:      10 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 10 * time.Second,
+		CheckInterval:          10 * time.Second,
+		HealthCheckEnabled:     true,
+		HealthCheckTimeout:     10 * time.Second,
+		HealthCheckGracePeriod: clientConfig.GRPCClientConfig.HealthCheckGracePeriod,
 	}
 
 	clientsCount := promauto.With(registerer).NewGauge(prometheus.GaugeOpts{
@@ -41,7 +42,7 @@ func newUsageTrackerClientPool(discovery client.PoolServiceDiscovery, clientName
 	if clientConfig.ClientFactory != nil {
 		factory = clientConfig.ClientFactory
 	} else {
-		factory = newUsageTrackerClientFactory(clientName, clientConfig.GRPCClientConfig, registerer, logger)
+		factory = newUsageTrackerClientFactory(clientName, clientConfig.GRPCClientConfig.Config, registerer, logger)
 	}
 
 	return client.NewPool("usage-tracker", poolCfg, discovery, factory, clientsCount, logger)

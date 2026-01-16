@@ -449,7 +449,7 @@ overrides_exporter:
   # Comma-separated list of metrics to include in the exporter. Metric names
   # must match yaml tags from the limits section of the configuration.
   # CLI flag: -overrides-exporter.enabled-metrics
-  [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
+  [enabled_metrics: <string> | default = "ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group"]
 
 # The common block holds configurations that configure multiple components at a
 # time.
@@ -518,6 +518,25 @@ client_cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
+
+instrument_ref_leaks:
+  # (experimental) Percentage [0-100] of request or message buffers to
+  # instrument for reference leaks. Set to 0 to disable.
+  # CLI flag: -common.instrument-reference-leaks.percentage
+  [percentage: <float> | default = 0]
+
+  # (experimental) Period after a buffer instrumented for referenced leaks is
+  # nominally freed until the buffer is uninstrumented and effectively freed to
+  # be reused. After this period, any lingering references to the buffer may
+  # potentially be dereferenced again with no detection.
+  # CLI flag: -common.instrument-reference-leaks.before-reuse-period
+  [before_reuse_period: <duration> | default = 2m]
+
+  # (experimental) Maximum sum of length of buffers instrumented at any given
+  # time, in bytes. When surpassed, incoming buffers will not be instrumented,
+  # regardless of the configured percentage. Zero means no limit.
+  # CLI flag: -common.instrument-reference-leaks.max-inflight-instrumented-bytes
+  [max_inflight_instrumented_bytes: <int> | default = 0]
 ```
 
 ### server
@@ -839,6 +858,14 @@ pool:
   # CLI flag: -distributor.health-check-ingesters
   [health_check_ingesters: <boolean> | default = true]
 
+  # (experimental) The grace period for ingester health checks. If an ingester
+  # connection consistently fails health checks for this period, any open
+  # connections are closed. The distributor or querier will attempt to reconnect
+  # to the ingester if a subsequent request is made to the ingester. Set to 0 to
+  # immediately remove ingester connections on the first health check failure.
+  # CLI flag: -distributor.ingester-health-check-grace-period
+  [ingester_health_check_grace_period: <duration> | default = 0s]
+
 retry_after_header:
   # (advanced) Enables inclusion of the Retry-After header in the response: true
   # includes it for client retry guidance, false omits it.
@@ -1057,6 +1084,11 @@ reactive_limiter:
   # requests
   # CLI flag: -distributor.reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
+
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1502,6 +1534,11 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1565,6 +1602,11 @@ read_reactive_limiter:
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.read-reactive-limiter.recent-window-min-duration
@@ -1620,11 +1662,153 @@ The `querier` block configures the querier.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 12h]
 
-# The grpc_client block configures the gRPC client used to communicate between
-# two Mimir components.
-# The CLI flags prefix for this block configuration is:
-# querier.store-gateway-client
-[store_gateway_client: <grpc_client>]
+store_gateway_client:
+  # (advanced) gRPC client max receive message size (bytes).
+  # CLI flag: -querier.store-gateway-client.grpc-max-recv-msg-size
+  [max_recv_msg_size: <int> | default = 104857600]
+
+  # (advanced) gRPC client max send message size (bytes).
+  # CLI flag: -querier.store-gateway-client.grpc-max-send-msg-size
+  [max_send_msg_size: <int> | default = 104857600]
+
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy' and '' (disable compression)
+  # CLI flag: -querier.store-gateway-client.grpc-compression
+  [grpc_compression: <string> | default = ""]
+
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
+  # CLI flag: -querier.store-gateway-client.grpc-client-rate-limit
+  [rate_limit: <float> | default = 0]
+
+  # (advanced) Rate limit burst for gRPC client.
+  # CLI flag: -querier.store-gateway-client.grpc-client-rate-limit-burst
+  [rate_limit_burst: <int> | default = 0]
+
+  # (advanced) Enable backoff and retry when we hit rate limits.
+  # CLI flag: -querier.store-gateway-client.backoff-on-ratelimits
+  [backoff_on_ratelimits: <boolean> | default = false]
+
+  backoff_config:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -querier.store-gateway-client.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -querier.store-gateway-client.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -querier.store-gateway-client.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (experimental) Initial stream window size. Values less than the default are
+  # not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -querier.store-gateway-client.initial-stream-window-size
+  [initial_stream_window_size: <int> | default = 63KiB1023B]
+
+  # (experimental) Initial connection window size. Values less than the default
+  # are not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -querier.store-gateway-client.initial-connection-window-size
+  [initial_connection_window_size: <int> | default = 63KiB1023B]
+
+  # (advanced) Enable TLS in the gRPC client. This flag needs to be enabled when
+  # any other TLS flag is set. If set to false, insecure connection to gRPC
+  # server will be used.
+  # CLI flag: -querier.store-gateway-client.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -querier.store-gateway-client.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -querier.store-gateway-client.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -querier.store-gateway-client.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -querier.store-gateway-client.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -querier.store-gateway-client.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -querier.store-gateway-client.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -querier.store-gateway-client.tls-min-version
+  [tls_min_version: <string> | default = ""]
+
+  # (advanced) The maximum amount of time to establish a connection. A value of
+  # 0 means default gRPC client connect timeout and backoff.
+  # CLI flag: -querier.store-gateway-client.connect-timeout
+  [connect_timeout: <duration> | default = 5s]
+
+  # (advanced) Initial backoff delay after first connection failure. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -querier.store-gateway-client.connect-backoff-base-delay
+  [connect_backoff_base_delay: <duration> | default = 1s]
+
+  # (advanced) Maximum backoff delay when establishing a connection. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -querier.store-gateway-client.connect-backoff-max-delay
+  [connect_backoff_max_delay: <duration> | default = 5s]
+
+  cluster_validation:
+    # (experimental) Primary cluster validation label.
+    # CLI flag: -querier.store-gateway-client.cluster-validation.label
+    [label: <string> | default = ""]
+
+  # (experimental) The grace period for health checks. If a store-gateway
+  # connection consistently fails health checks for this period, any open
+  # connections are closed. The querier will attempt to reconnect to the
+  # store-gateway if a subsequent request is made to the store-gateway. Set to 0
+  # to immediately remove store-gateway connections on the first health check
+  # failure.
+  # CLI flag: -querier.store-gateway-client.health-check-grace-period
+  [health_check_grace_period: <duration> | default = 0s]
 
 # (advanced) Fetch in-memory series from the minimum set of required ingesters,
 # selecting only ingesters which may have received series since
@@ -2157,8 +2341,152 @@ The `ruler` block configures the ruler.
 [external_url: <url> | default = ]
 
 # Configures the gRPC client used to communicate between ruler instances.
-# The CLI flags prefix for this block configuration is: ruler.client
-[ruler_client: <grpc_client>]
+ruler_client:
+  # (advanced) gRPC client max receive message size (bytes).
+  # CLI flag: -ruler.client.grpc-max-recv-msg-size
+  [max_recv_msg_size: <int> | default = 104857600]
+
+  # (advanced) gRPC client max send message size (bytes).
+  # CLI flag: -ruler.client.grpc-max-send-msg-size
+  [max_send_msg_size: <int> | default = 104857600]
+
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy', 's2' and '' (disable compression)
+  # CLI flag: -ruler.client.grpc-compression
+  [grpc_compression: <string> | default = ""]
+
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
+  # CLI flag: -ruler.client.grpc-client-rate-limit
+  [rate_limit: <float> | default = 0]
+
+  # (advanced) Rate limit burst for gRPC client.
+  # CLI flag: -ruler.client.grpc-client-rate-limit-burst
+  [rate_limit_burst: <int> | default = 0]
+
+  # (advanced) Enable backoff and retry when we hit rate limits.
+  # CLI flag: -ruler.client.backoff-on-ratelimits
+  [backoff_on_ratelimits: <boolean> | default = false]
+
+  backoff_config:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -ruler.client.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -ruler.client.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -ruler.client.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (experimental) Initial stream window size. Values less than the default are
+  # not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -ruler.client.initial-stream-window-size
+  [initial_stream_window_size: <int> | default = 63KiB1023B]
+
+  # (experimental) Initial connection window size. Values less than the default
+  # are not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -ruler.client.initial-connection-window-size
+  [initial_connection_window_size: <int> | default = 63KiB1023B]
+
+  # (advanced) Enable TLS in the gRPC client. This flag needs to be enabled when
+  # any other TLS flag is set. If set to false, insecure connection to gRPC
+  # server will be used.
+  # CLI flag: -ruler.client.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -ruler.client.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -ruler.client.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -ruler.client.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -ruler.client.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -ruler.client.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -ruler.client.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -ruler.client.tls-min-version
+  [tls_min_version: <string> | default = ""]
+
+  # (advanced) The maximum amount of time to establish a connection. A value of
+  # 0 means default gRPC client connect timeout and backoff.
+  # CLI flag: -ruler.client.connect-timeout
+  [connect_timeout: <duration> | default = 5s]
+
+  # (advanced) Initial backoff delay after first connection failure. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -ruler.client.connect-backoff-base-delay
+  [connect_backoff_base_delay: <duration> | default = 1s]
+
+  # (advanced) Maximum backoff delay when establishing a connection. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -ruler.client.connect-backoff-max-delay
+  [connect_backoff_max_delay: <duration> | default = 5s]
+
+  cluster_validation:
+    # (experimental) Primary cluster validation label.
+    # CLI flag: -ruler.client.cluster-validation.label
+    [label: <string> | default = ""]
+
+  # (experimental) The grace period for health checks. If a ruler connection
+  # consistently fails health checks for this period, any open connections are
+  # closed. The ruler will attempt to reconnect to that ruler if a subsequent
+  # request is made to that ruler. Set to 0 to immediately remove ruler
+  # connections on the first health check failure.
+  # CLI flag: -ruler.client.health-check-grace-period
+  [health_check_grace_period: <duration> | default = 0s]
 
 # (advanced) How frequently to evaluate rules
 # CLI flag: -ruler.evaluation-interval
@@ -2811,6 +3139,15 @@ alertmanager_client:
     # CLI flag: -alertmanager.alertmanager-client.cluster-validation.label
     [label: <string> | default = ""]
 
+  # (experimental) The grace period for health checks. If an alertmanager
+  # connection consistently fails health checks for this period, any open
+  # connections are closed. The alertmanager will attempt to reconnect to that
+  # alertmanager if a subsequent request is made to that alertmanager. Set to 0
+  # to immediately remove alertmanager connections on the first health check
+  # failure.
+  # CLI flag: -alertmanager.alertmanager-client.health-check-grace-period
+  [health_check_grace_period: <duration> | default = 0s]
+
 # (advanced) The interval between persisting the current alertmanager state
 # (notification log and silences) to object storage. This is only used when
 # sharding is enabled. This state is read when all replicas for a shard can not
@@ -2930,12 +3267,9 @@ The `ingester_client` block configures how the distributors connect to the inges
 The `grpc_client` block configures the gRPC client used to communicate between two Mimir components. The supported CLI flags `<prefix>` used to reference this configuration block are:
 
 - `ingester.client`
-- `querier.frontend-client`
 - `querier.scheduler-client`
-- `querier.store-gateway-client`
 - `query-frontend.grpc-client-config`
 - `query-scheduler.grpc-client-config`
-- `ruler.client`
 - `ruler.query-frontend.grpc-client-config`
 
 &nbsp;
@@ -3104,8 +3438,153 @@ The `frontend_worker` block configures the worker running within the querier, pi
 
 # Configures the gRPC client used to communicate between the querier and the
 # query-frontend.
-# The CLI flags prefix for this block configuration is: querier.frontend-client
-[grpc_client_config: <grpc_client>]
+grpc_client_config:
+  # (advanced) gRPC client max receive message size (bytes).
+  # CLI flag: -querier.frontend-client.grpc-max-recv-msg-size
+  [max_recv_msg_size: <int> | default = 104857600]
+
+  # (advanced) gRPC client max send message size (bytes).
+  # CLI flag: -querier.frontend-client.grpc-max-send-msg-size
+  [max_send_msg_size: <int> | default = 104857600]
+
+  # (advanced) Use compression when sending messages. Supported values are:
+  # 'gzip', 'snappy', 's2' and '' (disable compression)
+  # CLI flag: -querier.frontend-client.grpc-compression
+  [grpc_compression: <string> | default = ""]
+
+  # (advanced) Rate limit for gRPC client; 0 means disabled.
+  # CLI flag: -querier.frontend-client.grpc-client-rate-limit
+  [rate_limit: <float> | default = 0]
+
+  # (advanced) Rate limit burst for gRPC client.
+  # CLI flag: -querier.frontend-client.grpc-client-rate-limit-burst
+  [rate_limit_burst: <int> | default = 0]
+
+  # (advanced) Enable backoff and retry when we hit rate limits.
+  # CLI flag: -querier.frontend-client.backoff-on-ratelimits
+  [backoff_on_ratelimits: <boolean> | default = false]
+
+  backoff_config:
+    # (advanced) Minimum delay when backing off.
+    # CLI flag: -querier.frontend-client.backoff-min-period
+    [min_period: <duration> | default = 100ms]
+
+    # (advanced) Maximum delay when backing off.
+    # CLI flag: -querier.frontend-client.backoff-max-period
+    [max_period: <duration> | default = 10s]
+
+    # (advanced) Number of times to backoff and retry before failing.
+    # CLI flag: -querier.frontend-client.backoff-retries
+    [max_retries: <int> | default = 10]
+
+  # (experimental) Initial stream window size. Values less than the default are
+  # not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -querier.frontend-client.initial-stream-window-size
+  [initial_stream_window_size: <int> | default = 63KiB1023B]
+
+  # (experimental) Initial connection window size. Values less than the default
+  # are not supported and are ignored. Setting this to a value other than the
+  # default disables the BDP estimator.
+  # CLI flag: -querier.frontend-client.initial-connection-window-size
+  [initial_connection_window_size: <int> | default = 63KiB1023B]
+
+  # (advanced) Enable TLS in the gRPC client. This flag needs to be enabled when
+  # any other TLS flag is set. If set to false, insecure connection to gRPC
+  # server will be used.
+  # CLI flag: -querier.frontend-client.tls-enabled
+  [tls_enabled: <boolean> | default = false]
+
+  # (advanced) Path to the client certificate, which will be used for
+  # authenticating with the server. Also requires the key path to be configured.
+  # CLI flag: -querier.frontend-client.tls-cert-path
+  [tls_cert_path: <string> | default = ""]
+
+  # (advanced) Path to the key for the client certificate. Also requires the
+  # client certificate to be configured.
+  # CLI flag: -querier.frontend-client.tls-key-path
+  [tls_key_path: <string> | default = ""]
+
+  # (advanced) Path to the CA certificates to validate server certificate
+  # against. If not set, the host's root CA certificates are used.
+  # CLI flag: -querier.frontend-client.tls-ca-path
+  [tls_ca_path: <string> | default = ""]
+
+  # (advanced) Override the expected name on the server certificate.
+  # CLI flag: -querier.frontend-client.tls-server-name
+  [tls_server_name: <string> | default = ""]
+
+  # (advanced) Skip validating server certificate.
+  # CLI flag: -querier.frontend-client.tls-insecure-skip-verify
+  [tls_insecure_skip_verify: <boolean> | default = false]
+
+  # (advanced) Override the default cipher suite list (separated by commas).
+  # Allowed values:
+  #
+  # Secure Ciphers:
+  # - TLS_AES_128_GCM_SHA256
+  # - TLS_AES_256_GCM_SHA384
+  # - TLS_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  # - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+  #
+  # Insecure Ciphers:
+  # - TLS_RSA_WITH_RC4_128_SHA
+  # - TLS_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA
+  # - TLS_RSA_WITH_AES_256_CBC_SHA
+  # - TLS_RSA_WITH_AES_128_CBC_SHA256
+  # - TLS_RSA_WITH_AES_128_GCM_SHA256
+  # - TLS_RSA_WITH_AES_256_GCM_SHA384
+  # - TLS_ECDHE_ECDSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_RC4_128_SHA
+  # - TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA
+  # - TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+  # - TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+  # CLI flag: -querier.frontend-client.tls-cipher-suites
+  [tls_cipher_suites: <string> | default = ""]
+
+  # (advanced) Override the default minimum TLS version. Allowed values:
+  # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
+  # CLI flag: -querier.frontend-client.tls-min-version
+  [tls_min_version: <string> | default = ""]
+
+  # (advanced) The maximum amount of time to establish a connection. A value of
+  # 0 means default gRPC client connect timeout and backoff.
+  # CLI flag: -querier.frontend-client.connect-timeout
+  [connect_timeout: <duration> | default = 5s]
+
+  # (advanced) Initial backoff delay after first connection failure. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -querier.frontend-client.connect-backoff-base-delay
+  [connect_backoff_base_delay: <duration> | default = 1s]
+
+  # (advanced) Maximum backoff delay when establishing a connection. Only
+  # relevant if ConnectTimeout > 0.
+  # CLI flag: -querier.frontend-client.connect-backoff-max-delay
+  [connect_backoff_max_delay: <duration> | default = 5s]
+
+  cluster_validation:
+    # (experimental) Primary cluster validation label.
+    # CLI flag: -querier.frontend-client.cluster-validation.label
+    [label: <string> | default = ""]
+
+  # (experimental) The grace period for health checks. If a query-frontend
+  # connection consistently fails health checks for this period, any open
+  # connections are closed. The querier will attempt to reconnect to the
+  # query-frontend if a subsequent request is received from it. Set to 0 to
+  # immediately remove query-frontend connections on the first health check
+  # failure.
+  # CLI flag: -querier.frontend-client.health-check-grace-period
+  [health_check_grace_period: <duration> | default = 0s]
 
 # Configures the gRPC client used to communicate between the querier and the
 # query-scheduler.
@@ -3116,16 +3595,7 @@ The `frontend_worker` block configures the worker running within the querier, pi
 # for response types that support it (currently only `active_series` responses
 # do).
 # CLI flag: -querier.response-streaming-enabled
-[response_streaming_enabled: <boolean> | default = false]
-
-# (experimental) The grace period for query-frontend health checks. If a
-# query-frontend connection consistently fails health checks for this period,
-# any open connections are closed. The querier will attempt to reconnect to the
-# query-frontend if a subsequent request is received from it. Set to 0 to
-# immediately remove query-frontend connections on the first health check
-# failure.
-# CLI flag: -querier.frontend-health-check-grace-period
-[frontend_health_check_grace_period: <duration> | default = 0s]
+[response_streaming_enabled: <boolean> | default = true]
 ```
 
 ### etcd
@@ -3721,6 +4191,16 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ignore-ooo-exemplars
 [ignore_ooo_exemplars: <boolean> | default = false]
 
+# (experimental) When the number of owned series for a tenant exceeds this
+# threshold, trigger early head compaction. 0 to disable.
+# CLI flag: -ingester.early-head-compaction-owned-series-threshold
+[early_head_compaction_owned_series_threshold: <int> | default = 0]
+
+# (experimental) Minimum estimated series reduction percentage (0-100) required
+# to trigger per-tenant early compaction.
+# CLI flag: -ingester.early-head-compaction-min-estimated-series-reduction-percentage
+[early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
+
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error. To query native histograms
 # with query-sharding enabled make sure to set
@@ -4287,6 +4767,13 @@ ruler_alertmanager_client_config:
 # CLI flag: -store-gateway.tenant-shard-size
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
+# (experimental) The tenant's shard size per availability zone when
+# zone-awareness is enabled, used when store-gateway sharding is enabled. The
+# total shard size is computed as this value multiplied by the number of zones.
+# This option takes precedence over -store-gateway.tenant-shard-size.
+# CLI flag: -store-gateway.tenant-shard-size-per-zone
+[store_gateway_tenant_shard_size_per_zone: <int> | default = 0]
+
 # Delete blocks containing samples older than the specified retention period.
 # Also used by query-frontend to avoid querying beyond the retention period by
 # instant, range or remote read queries. 0 to disable.
@@ -4714,6 +5201,11 @@ kafka:
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
   [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
 
+  # (experimental) When enabled, tenants with few timeseries use a simpler
+  # sequential pusher instead of parallel shards.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
+  [ingestion_concurrency_sequential_pusher_enabled: <boolean> | default = true]
+
 migration:
   # When both this option and ingest storage are enabled, distributors write to
   # both Kafka and ingesters. A write request is considered successful only when
@@ -5129,6 +5621,13 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
   [close_idle_tsdb_timeout: <duration> | default = 13h]
 
+  # (advanced) True to allow closing of idle TSDBs even when block shipping is
+  # disabled. When enabled, idle TSDBs with an empty head will be closed and
+  # deleted from local disk regardless of shipping status. This helps prevent
+  # accumulation of idle users with 0 series.
+  # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-when-shipping-disabled
+  [close_idle_tsdb_when_shipping_disabled: <boolean> | default = false]
+
   # (experimental) True to enable snapshotting of in-memory TSDB data on disk
   # when shutting down.
   # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
@@ -5500,13 +5999,6 @@ sharding_ring:
 # smallest-range-oldest-blocks-first, newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
-
-# (experimental) If enabled, the compactor constructs and uploads sparse index
-# headers to object storage during each compaction cycle. This allows
-# store-gateway instances to use the sparse headers from object storage instead
-# of recreating them locally.
-# CLI flag: -compactor.upload-sparse-index-headers
-[upload_sparse_index_headers: <boolean> | default = true]
 ```
 
 ### store_gateway
@@ -5805,10 +6297,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
-
-# (experimental) Allow client creation even if initial DNS resolution fails.
-# CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
-[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### s3_storage_backend
@@ -6020,7 +6508,7 @@ The gcs_backend block configures the connection to Google Cloud Storage object s
 # policy. Uploads will be retried on transient errors. Note: this does not
 # guarantee idempotency.
 # CLI flag: -<prefix>.gcs.enable-upload-retries
-[enable_upload_retries: <boolean> | default = false]
+[enable_upload_retries: <boolean> | default = true]
 
 # (advanced) Maximum number of attempts for GCS operations (0 = unlimited, 1 =
 # no retries). Applies to both regular and upload retry modes.

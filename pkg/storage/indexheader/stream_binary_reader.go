@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 
@@ -33,17 +35,22 @@ import (
 )
 
 type StreamBinaryReaderMetrics struct {
-	decbufFactory *streamencoding.DecbufFactoryMetrics
+	decbufFactory      *streamencoding.DecbufFactoryMetrics
+	indexVersionLoaded *prometheus.CounterVec
 }
 
 func NewStreamBinaryReaderMetrics(reg prometheus.Registerer) *StreamBinaryReaderMetrics {
 	return &StreamBinaryReaderMetrics{
 		decbufFactory: streamencoding.NewDecbufFactoryMetrics(reg),
+		indexVersionLoaded: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "indexheader_tsdb_index_loaded_total",
+			Help: "Total number of index headers loaded by TSDB index file format version.",
+		}, []string{"version"}),
 	}
 }
 
 type StreamBinaryReader struct {
-	factory *streamencoding.DecbufFactory
+	factory streamencoding.DecbufFactory
 	toc     *BinaryTOC
 
 	// Symbols struct that keeps only 1/postingOffsetsInMemSampling in the memory, then looks up the
@@ -108,7 +115,7 @@ func NewFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 	logger = log.With(logger, "id", id, "path", sparseHeadersPath, "inmem_sampling_rate", postingOffsetsInMemSampling)
 
 	r := &StreamBinaryReader{
-		factory: streamencoding.NewDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
+		factory: streamencoding.NewFilePoolDecbufFactory(binPath, cfg.MaxIdleFileHandles, metrics.decbufFactory),
 	}
 
 	// Create a new raw decoding buffer with access to the entire index-header file to
@@ -145,6 +152,15 @@ func NewFileStreamBinaryReader(ctx context.Context, binPath string, id ulid.ULID
 
 	if r.version != BinaryFormatV1 {
 		return nil, fmt.Errorf("unknown index-header file version %d", r.version)
+	}
+
+	// Keep track of the TSDB index file format version. We want to remove support for
+	// the v1 format but need to confirm that we don't have any uses of it. Mimir has
+	// never written the v1 format but it's possible that instances of it were uploaded
+	// via the compactor. See https://github.com/grafana/mimir/issues/13808
+	metrics.indexVersionLoaded.WithLabelValues(strconv.Itoa(r.indexVersion)).Inc()
+	if r.indexVersion != index.FormatV2 {
+		level.Warn(logger).Log("msg", "deprecated TSDB index version loaded for index-header", "version", r.indexVersion)
 	}
 
 	r.toc, err = newBinaryTOCFromFile(d, indexHeaderSize)
@@ -471,8 +487,7 @@ func (r *StreamBinaryReader) LabelNames(context.Context) ([]string, error) {
 }
 
 func (r *StreamBinaryReader) Close() error {
-	r.factory.Stop()
-	return nil
+	return r.factory.Close()
 }
 
 // TOC returns the table of contents for the index-header.

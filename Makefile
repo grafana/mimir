@@ -224,7 +224,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER ?= true
-LATEST_BUILD_IMAGE_TAG ?= pr13755-74bc46444f
+LATEST_BUILD_IMAGE_TAG ?= pr13952-5e5dcac988
 
 # TTY is parameterized to allow CI and scripts to run builds,
 # as it currently disallows TTY devices.
@@ -627,6 +627,18 @@ check-helm-tests: build-helm-tests helm-conftest-test
 
 endif
 
+%.pb.go.expdiff: ## Regenerates expected diff files from the current content of .pb.go files.
+%.pb.go.expdiff: %.pb.go
+	@echo "Regenerating $@"
+	$(eval PBGO_FILE := $(patsubst %.pb.go.expdiff,%.pb.go,$@))
+	$(eval PROTO_FILE := $(patsubst %.pb.go.expdiff,%.proto,$@))
+	@cp $(PBGO_FILE) $(PBGO_FILE).bak
+	@touch $(PROTO_FILE)
+	@$(MAKE) -B $(PBGO_FILE)
+	@git diff --no-index $(PBGO_FILE).bak $(PBGO_FILE) | sed 's/.pb.go.bak/.pb.go/g' > $@ || true
+	@rm $(PBGO_FILE).bak
+	@./tools/apply-expected-diffs.sh $(PBGO_FILE)
+
 .PHONY: check-makefiles
 check-makefiles: ## Check the makefiles format.
 check-makefiles: format-makefiles
@@ -752,6 +764,7 @@ check-helm-jsonnet-diff: operations/helm/charts/mimir-distributed/charts build-j
 	@./operations/compare-helm-with-jsonnet/compare-helm-with-jsonnet.sh
 
 build-jsonnet-tests: ## Build the jsonnet tests.
+	@rm -f ./operations/mimir-tests/*-generated.yaml
 	@./operations/mimir-tests/build.sh
 
 jsonnet-conftest-quick-test: ## Does not rebuild the yaml manifests, use the target jsonnet-conftest-test for that
