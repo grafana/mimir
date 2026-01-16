@@ -11,8 +11,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/google/go-github/v81/github"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -24,9 +25,9 @@ var (
 )
 
 // CheckLatest asks GitHub
-func CheckLatest(version string) {
+func CheckLatest(version string, logger log.Logger) {
 	if version != "" {
-		latest, latestURL, err := getLatestFromGitHub()
+		latest, latestURL, err := getLatestFromGitHub(logger)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -41,17 +42,17 @@ func CheckLatest(version string) {
 	}
 }
 
-func getLatestFromGitHub() (string, string, error) {
+func getLatestFromGitHub(logger log.Logger) (string, string, error) {
 	fmt.Print("checking latest version... ")
 	c := github.NewClient(nil)
 	repoRelease, resp, err := c.Repositories.GetLatestRelease(context.Background(), "grafana", "mimir")
 	if err != nil {
-		log.WithFields(log.Fields{"err": err}).Debugln("error while retrieving the latest version")
+		level.Debug(logger).Log("msg", "error while retrieving the latest version", "err", err)
 		return "", "", errUnableToRetrieveLatestVersion
 	}
 
 	if resp.StatusCode/100 != 2 {
-		log.WithFields(log.Fields{"status": resp.StatusCode}).Debugln("non-2xx status code while contacting the GitHub API")
+		level.Debug(logger).Log("msg", "non-2xx status code while contacting the GitHub API", "status", resp.StatusCode)
 		return "", "", errUnableToRetrieveLatestVersion
 	}
 

@@ -118,15 +118,15 @@ overrides:
 
 		// Upload block using mimirtool, should work since upload is enabled for user.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
-		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block1))
+		require.Contains(t, output, fmt.Sprintf("block=%s msg=\"block uploaded successfully\"", block1))
 		require.NoError(t, err)
 	}
 
 	{
 		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problems.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1, block2)
-		require.Contains(t, output, fmt.Sprintf("msg=\"block already exists on the server\" path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
-		require.Contains(t, output, fmt.Sprintf("msg=\"block uploaded successfully\" block=%s", block2))
+		require.Contains(t, output, fmt.Sprintf("path=%s msg=\"block already exists on the server\"", path.Join(e2e.ContainerSharedDir, block1.String())))
+		require.Contains(t, output, fmt.Sprintf("block=%s msg=\"block uploaded successfully\"", block2))
 
 		// If blocks exist, it's not an error.
 		require.NoError(t, err)
@@ -162,7 +162,7 @@ overrides:
 		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
 
 		output, err := runMimirtoolBackfill(tmpDir, compactor, b)
-		require.Regexp(t, fmt.Sprintf("msg=\"failed uploading block\"[^\n]+path=%s", path.Join(e2e.ContainerSharedDir, b.String())), output)
+		require.Regexp(t, fmt.Sprintf("path=%s[^\n]+msg=\"failed uploading block\"", path.Join(e2e.ContainerSharedDir, b.String())), output)
 		require.Error(t, err)
 	}
 

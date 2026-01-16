@@ -692,6 +692,7 @@
 
 ### Mimirtool
 
+* [CHANGE] Changed logging library from logrus to go-kit/log. Log output format has changed to logfmt. The `fatal` log level is no longer supported; use `error` instead. #14059
 * [FEATURE] Add `--enable-experimental-functions` flag to commands that parse PromQL to allow parsing experimental functions such as `sort_by_label()`.
 * [ENHANCEMENT] Add `--block-size` CLI flag to `remote-read export` that allows setting the output block size. #12025
 * [BUGFIX] Fix issue where `remote-read` doesn't behave like other mimirtool commands for authentication. #11402

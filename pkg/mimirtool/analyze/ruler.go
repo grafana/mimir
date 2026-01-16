@@ -8,10 +8,11 @@ package analyze
 import (
 	"slices"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
@@ -29,7 +30,7 @@ type RuleGroupMetrics struct {
 	ParseErrors []string `json:"parse_errors"`
 }
 
-func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns string) error {
+func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns string, logger log.Logger) error {
 	var (
 		ruleMetrics = make(map[string]struct{})
 		refMetrics  = make(map[string]struct{})
@@ -45,7 +46,7 @@ func ParseMetricsInRuleGroup(mir *MetricsInRuler, group rwrulefmt.RuleGroup, ns 
 		expr, err := parser.ParseExpr(query)
 		if err != nil {
 			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
-			log.Debugln("msg", "promql parse error", "err", err, "query", query)
+			level.Debug(logger).Log("msg", "promql parse error", "err", err, "query", query)
 			continue
 		}
 
