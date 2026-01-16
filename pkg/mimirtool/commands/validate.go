@@ -147,6 +147,10 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 		if err != nil {
 			failures = append(failures, alertCheckResult{
 				failure:   true,
+				alertName: rules[i].Alert,
+				message:   fmt.Sprintf("could not validate native version - failed to parse next rule expression: %v", err),
+			}, alertCheckResult{
+				failure:   true,
 				alertName: rules[i+1].Alert,
 				message:   fmt.Sprintf("failed to parse rule expression: %v", err),
 			})
@@ -157,9 +161,13 @@ func alertsCheckNativeVersionExists(rules []rulefmt.Rule) []alertCheckResult {
 			if vs, ok := node.(*parser.VectorSelector); ok {
 				for index, classicSelector := range classicSelectors {
 					for _, suffix := range classicHistogramSuffixes {
-						if vs.Name == strings.TrimSuffix(classicSelector.Name, suffix) {
-							if nonNameLabelMatchersEqual(vs.LabelMatchers, classicSelector.LabelMatchers) {
-								found[index] = vs
+						// Only check the suffix that the classic selector actually ends with
+						if strings.HasSuffix(classicSelector.Name, suffix) {
+							baseName := strings.TrimSuffix(classicSelector.Name, suffix)
+							if vs.Name == baseName {
+								if nonNameLabelMatchersEqual(vs.LabelMatchers, classicSelector.LabelMatchers) {
+									found[index] = vs
+								}
 							}
 							break
 						}
