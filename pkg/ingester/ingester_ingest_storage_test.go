@@ -96,7 +96,7 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 	t.Cleanup(func() {
 		// Some services are started when the ingester is created with New()
 		// and only closed when defer is triggered by error cases in ingester.starting();
-		// Call ingester.starting(), with a canceled context to guaranteed failure and trigger that goroutine cleanup.
+		// Call ingester.starting(), with a canceled context to guarantee failure and trigger that goroutine cleanup.
 		i0Ctx, i0Cancel := context.WithCancel(context.Background())
 		i0Cancel()
 		require.NoError(t, i0.StartAsync(i0Ctx))
@@ -152,6 +152,7 @@ func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testi
 	i1PartitionLifecyclerState := i1.ingestPartitionLifecycler.State()
 	assert.Equal(t, services.New, i1PartitionLifecyclerState)
 
+	// Confirm partition 1 does not exist in partition ring
 	partitionState, _, err := i1.ingestPartitionLifecycler.GetPartitionState(ctx)
 	require.ErrorIs(t, err, ring.ErrPartitionDoesNotExist)
 	require.Equal(t, ring.PartitionUnknown, partitionState)
