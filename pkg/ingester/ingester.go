@@ -628,21 +628,21 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			// and leave hanging goroutines after exit.
 			i.subservicesWatcher.Close()
 
-			// Stop any services that may have been started in this method.
-			if i.ownedSeriesService != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
-			}
-			if i.subservicesForPartitionReplay != nil {
-				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesForPartitionReplay)
-			}
-			if i.ingestReader != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.ingestReader)
+			// Stop any services that may have been started in this method, in reverse order.
+			if i.subservicesAfterIngesterRingLifecycler != nil {
+				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesAfterIngesterRingLifecycler)
 			}
 			if i.lifecycler != nil {
 				_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
 			}
-			if i.subservicesAfterIngesterRingLifecycler != nil {
-				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesAfterIngesterRingLifecycler)
+			if i.ingestReader != nil {
+				_ = services.StopAndAwaitTerminated(context.Background(), i.ingestReader)
+			}
+			if i.subservicesForPartitionReplay != nil {
+				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesForPartitionReplay)
+			}
+			if i.ownedSeriesService != nil {
+				_ = services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
 			}
 		}
 	}()
