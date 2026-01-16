@@ -104,10 +104,11 @@ func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 	return Decbuf{E: fmt.Errorf("NewRawDecbuf is not supported: %w", errors.ErrUnsupported)}
 }
 
-// Stop cleans up resources associated with this BucketDecbufFactory.
+// Close cleans up resources associated with this BucketDecbufFactory.
 // For bucket-based implementation, there are no resources to clean up.
-func (bf *BucketDecbufFactory) Stop() {
+func (bf *BucketDecbufFactory) Close() error {
 	// Nothing to do for bucket-based implementation
+	return nil
 }
 
 // streamReader wraps an io.ReadCloser and provides the reader interface for streaming data.
@@ -138,17 +139,18 @@ func newStreamReader(rc io.ReadCloser, pos, length int) *streamReader {
 	return r
 }
 
-// resetAt moves the cursor position to the given offset in the data segment.
-// Attempting to resetAt to the end of the file segment is valid. Attempting to resetAt _beyond_ the end of the file
-// segment will return an error.
-func (r *streamReader) resetAt(off int) error {
+func (r *streamReader) Reset() error {
+	return r.ResetAt(0)
+}
+
+func (r *streamReader) ResetAt(off int) error {
 	if off > r.length {
 		return ErrInvalidSize
 	}
 
-	if dist := off - r.pos; dist > 0 && dist < r.buffered() {
+	if dist := off - r.pos; dist > 0 && dist < r.Buffered() {
 		// skip ahead by discarding the distance bytes
-		return r.skip(dist)
+		return r.Skip(dist)
 	}
 
 	// Objstore hides the io.ReadSeekCloser, that the underlying bucket clients implement.
@@ -163,9 +165,8 @@ func (r *streamReader) resetAt(off int) error {
 	return nil
 }
 
-// skip advances the cursor position by the given number of bytes.
-func (r *streamReader) skip(l int) error {
-	if l > r.len() {
+func (r *streamReader) Skip(l int) error {
+	if l > r.Len() {
 		return ErrInvalidSize
 	}
 
@@ -178,8 +179,7 @@ func (r *streamReader) skip(l int) error {
 	return err
 }
 
-// peek returns at most the given number of bytes without consuming them.
-func (r *streamReader) peek(n int) ([]byte, error) {
+func (r *streamReader) Peek(n int) ([]byte, error) {
 	b, err := r.buf.Peek(n)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
@@ -192,11 +192,10 @@ func (r *streamReader) peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-// read returns the given number of bytes, consuming them.
-func (r *streamReader) read(n int) ([]byte, error) {
+func (r *streamReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
 
-	err := r.readInto(b)
+	err := r.ReadInto(b)
 	if err != nil {
 		return nil, err
 	}
@@ -204,8 +203,7 @@ func (r *streamReader) read(n int) ([]byte, error) {
 	return b, nil
 }
 
-// readInto reads len(b) bytes into b, consuming them.
-func (r *streamReader) readInto(b []byte) error {
+func (r *streamReader) ReadInto(b []byte) error {
 	n, err := io.ReadFull(r.buf, b)
 	if n > 0 {
 		r.pos += n
@@ -220,28 +218,23 @@ func (r *streamReader) readInto(b []byte) error {
 	return nil
 }
 
-// size returns the length of the underlying buffer in bytes.
-func (r *streamReader) size() int {
-	return r.buf.Size()
-}
-
-// len returns the remaining number of bytes in the stream.
-func (r *streamReader) len() int {
-	return r.length - r.pos
-}
-
-// position returns the current position.
-func (r *streamReader) position() int {
+func (r *streamReader) Offset() int {
 	return r.pos
 }
 
-// buffered returns the number of bytes that can be read without I/O.
-func (r *streamReader) buffered() int {
+func (r *streamReader) Len() int {
+	return r.length - r.pos
+}
+
+func (r *streamReader) Size() int {
+	return r.buf.Size()
+}
+
+func (r *streamReader) Buffered() int {
 	return r.buf.Buffered()
 }
 
-// close cleans up the underlying resources.
-func (r *streamReader) close() error {
+func (r *streamReader) Close() error {
 	err := r.rc.Close()
 	netbufPool.Put(r.buf)
 	return err
