@@ -1118,11 +1118,11 @@ spec:
               severity: critical
           - alert: MimirCompactorNotRunningCompaction
             annotations:
-              message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not contacted the scheduler in the last 5 minutes.
+              message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not contacted the scheduler in the last 15 minutes.
               runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
             expr: |
               (
-                (time() - cortex_compactor_scheduler_last_contact_timestamp_seconds > 60 * 5)
+                (time() - cortex_compactor_scheduler_last_contact_timestamp_seconds > 900)
                 and
                 (cortex_compactor_scheduler_last_contact_timestamp_seconds > 0)
                 and
