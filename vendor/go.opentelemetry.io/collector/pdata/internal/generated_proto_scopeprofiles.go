@@ -10,15 +10,16 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 // ScopeProfiles is a collection of profiles from a LibraryInstrumentation.
 type ScopeProfiles struct {
-	SchemaUrl string
-	Profiles  []*Profile
 	Scope     InstrumentationScope
+	Profiles  []*Profile
+	SchemaUrl string
 }
 
 var (
@@ -45,6 +46,7 @@ func DeleteScopeProfiles(orig *ScopeProfiles, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	DeleteInstrumentationScope(&orig.Scope, false)
 	for i := range orig.Profiles {
 		DeleteProfile(orig.Profiles[i], true)
@@ -183,7 +185,6 @@ func (orig *ScopeProfiles) SizeProto() int {
 		l = orig.Profiles[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.SchemaUrl)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -220,6 +221,10 @@ func (orig *ScopeProfiles) MarshalProto(buf []byte) int {
 }
 
 func (orig *ScopeProfiles) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ScopeProfiles) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -245,7 +250,7 @@ func (orig *ScopeProfiles) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 
-			err = orig.Scope.UnmarshalProto(buf[startPos:pos])
+			err = orig.Scope.UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -261,7 +266,7 @@ func (orig *ScopeProfiles) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Profiles = append(orig.Profiles, NewProfile())
-			err = orig.Profiles[len(orig.Profiles)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Profiles[len(orig.Profiles)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -277,6 +282,73 @@ func (orig *ScopeProfiles) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.SchemaUrl = string(buf[startPos:pos])
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipScopeProfilesProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Scope", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipInstrumentationScopeProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Profiles", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipProfileProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SchemaUrl", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

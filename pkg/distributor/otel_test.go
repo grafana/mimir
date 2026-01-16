@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1113,9 +1114,14 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
+
 	handler := OTLPHandler(
 		10000000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, pushFunc, nil, nil, log.NewNopLogger(),
+	)
+	handlerLazy := OTLPHandler(
+		10000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, true, pushFunc, nil, nil, log.NewNopLogger(),
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1125,6 +1131,18 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("protobuf-lazy", func(b *testing.B) {
+		req := createOTLPProtoRequest(b, exportReq, "")
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handlerLazy.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
 			req.Body.(*reusableReader).Reset()
 		}
@@ -1204,12 +1222,33 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 		return nil
 	}
 	limits := validation.MockDefaultOverrides()
-	handler := OTLPHandler(
-		200000000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
-	)
 
-	b.Run("protobuf", func(b *testing.B) {
+	b.Run("not-lazy", func(b *testing.B) {
+		handler := OTLPHandler(
+			200000000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, false, pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+
+		b.ResetTimer()
+		for range b.N {
+			resp := httptest.NewRecorder()
+			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("lazy", func(b *testing.B) {
+		handler := OTLPHandler(
+			200000000, nil, nil, limits, nil, nil,
+			RetryConfig{}, nil, true, pushFunc, nil, nil, log.NewNopLogger(),
+		)
+
 		md := pmetric.NewMetrics()
 		createResourceMetrics(md)
 		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
@@ -1753,7 +1792,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 			handler := OTLPHandler(
 				tt.maxMsgSize, nil, nil, limits,
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
-				retryConfig, nil, pusher, nil, nil,
+				retryConfig, nil, false, pusher, nil, nil,
 				util_log.MakeLeveledLogger(logs, "info"),
 			)
 
@@ -1847,7 +1886,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			assert.NoError(t, err)
 			assert.Len(t, request.Timeseries, 3)
@@ -1892,7 +1931,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp := httptest.NewRecorder()
 	handler := OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -1921,7 +1960,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 	resp = httptest.NewRecorder()
 	handler = OTLPHandler(
 		100000, nil, nil, limits, nil, nil,
-		RetryConfig{}, nil, func(_ context.Context, pushReq *Request) error {
+		RetryConfig{}, nil, false, func(_ context.Context, pushReq *Request) error {
 			request, err := pushReq.WriteRequest()
 			t.Cleanup(pushReq.CleanUp)
 			require.NoError(t, err)
@@ -1952,7 +1991,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 
 	handler := OTLPHandler(
 		140, nil, nil, nil, nil, nil,
-		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+		RetryConfig{}, nil, false, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
@@ -2262,10 +2301,13 @@ func TestOTLPResponseContentType(t *testing.T) {
 					"test": {NameValidationScheme: model.LegacyValidation, OTelMetricSuffixesEnabled: false},
 				}),
 			)
-			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
-				_, err := req.WriteRequest()
-				return err
-			}, nil, nil, log.NewNopLogger())
+			handler := OTLPHandler(
+				100000, nil, nil, limits, nil, nil,
+				RetryConfig{}, nil, false, func(_ context.Context, req *Request) error {
+					_, err := req.WriteRequest()
+					return err
+				}, nil, nil, log.NewNopLogger(),
+			)
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, tc.req)
 
@@ -2289,4 +2331,85 @@ type fakeResourceAttributePromotionConfig struct {
 
 func (c fakeResourceAttributePromotionConfig) PromoteOTelResourceAttributes(string) []string {
 	return c.promote
+}
+
+// BenchmarkOTLPHandlerPeakMemory measures peak heap usage during OTLP request processing.
+// This benchmark processes one request at a time with explicit GC to isolate memory usage.
+// Run with: go test -bench BenchmarkOTLPHandlerPeakMemory -benchmem -memprofile mem.out
+// Analyze with: go tool pprof -top mem.out
+func BenchmarkOTLPHandlerPeakMemory(b *testing.B) {
+	limits := validation.MockDefaultOverrides()
+	pushFunc := func(_ context.Context, pushReq *Request) error {
+		_, _ = pushReq.WriteRequest()
+		pushReq.CleanUp()
+		return nil
+	}
+
+	createResourceMetrics := func(md pmetric.Metrics) {
+		// Create 100 ResourceMetrics with 100 metrics each = 10,000 total metrics
+		now := pcommon.NewTimestampFromTime(time.Now())
+		for i := 0; i < 100; i++ {
+			rm := md.ResourceMetrics().AppendEmpty()
+			rm.Resource().Attributes().PutStr("service.name", fmt.Sprintf("service-%d", i))
+			sm := rm.ScopeMetrics().AppendEmpty()
+			for j := 0; j < 100; j++ {
+				m := sm.Metrics().AppendEmpty()
+				m.SetName(fmt.Sprintf("metric_%d_%d", i, j))
+				dp := m.SetEmptyGauge().DataPoints().AppendEmpty()
+				dp.SetTimestamp(now)
+				dp.SetDoubleValue(float64(i*100 + j))
+				dp.Attributes().PutStr("label1", fmt.Sprintf("value_%d", j%10))
+				dp.Attributes().PutStr("label2", fmt.Sprintf("value_%d", j%5))
+			}
+		}
+	}
+
+	testCases := []struct {
+		name       string
+		enableLazy bool
+	}{
+		{"baseline", false},
+		{"lazy", true},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			handler := OTLPHandler(
+				200000000, nil, nil, limits, nil, nil,
+				RetryConfig{}, nil, tc.enableLazy, pushFunc, nil, nil, log.NewNopLogger(),
+			)
+
+			md := pmetric.NewMetrics()
+			createResourceMetrics(md)
+			exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+			req := createOTLPProtoRequest(b, exportReq, "")
+
+			var memStats runtime.MemStats
+
+			b.ResetTimer()
+			for i := range b.N {
+				b.StopTimer()
+				runtime.GC()
+				runtime.ReadMemStats(&memStats)
+				heapBefore := memStats.HeapAlloc
+
+				b.StartTimer()
+				resp := httptest.NewRecorder()
+				handler.ServeHTTP(resp, req)
+				b.StopTimer()
+
+				require.Equal(b, http.StatusOK, resp.Code)
+
+				runtime.ReadMemStats(&memStats)
+				heapAfter := memStats.HeapAlloc
+
+				if i == b.N-1 {
+					b.ReportMetric(float64(heapAfter-heapBefore), "heap-growth-bytes/op")
+				}
+
+				req.Body.(*reusableReader).Reset()
+				b.StartTimer()
+			}
+		})
+	}
 }

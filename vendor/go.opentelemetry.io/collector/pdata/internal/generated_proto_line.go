@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -66,7 +67,9 @@ func CopyLine(dest, src *Line) *Line {
 		dest = NewLine()
 	}
 	dest.FunctionIndex = src.FunctionIndex
+
 	dest.Line = src.Line
+
 	dest.Column = src.Column
 
 	return dest
@@ -162,13 +165,13 @@ func (orig *Line) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.FunctionIndex != int32(0) {
+	if orig.FunctionIndex != 0 {
 		n += 1 + proto.Sov(uint64(orig.FunctionIndex))
 	}
-	if orig.Line != int64(0) {
+	if orig.Line != 0 {
 		n += 1 + proto.Sov(uint64(orig.Line))
 	}
-	if orig.Column != int64(0) {
+	if orig.Column != 0 {
 		n += 1 + proto.Sov(uint64(orig.Column))
 	}
 	return n
@@ -178,17 +181,17 @@ func (orig *Line) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.FunctionIndex != int32(0) {
+	if orig.FunctionIndex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.FunctionIndex))
 		pos--
 		buf[pos] = 0x8
 	}
-	if orig.Line != int64(0) {
+	if orig.Line != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Line))
 		pos--
 		buf[pos] = 0x10
 	}
-	if orig.Column != int64(0) {
+	if orig.Column != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Column))
 		pos--
 		buf[pos] = 0x18
@@ -197,6 +200,10 @@ func (orig *Line) MarshalProto(buf []byte) int {
 }
 
 func (orig *Line) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Line) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -220,6 +227,7 @@ func (orig *Line) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.FunctionIndex = int32(num)
 
 		case 2:
@@ -231,6 +239,7 @@ func (orig *Line) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.Line = int64(num)
 
 		case 3:
@@ -242,7 +251,63 @@ func (orig *Line) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.Column = int64(num)
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipLineProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field FunctionIndex", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Line", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Column", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

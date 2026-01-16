@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -49,6 +50,7 @@ func DeleteProfilesDictionary(orig *ProfilesDictionary, nullable bool) {
 		orig.Reset()
 		return
 	}
+
 	for i := range orig.MappingTable {
 		DeleteMapping(orig.MappingTable[i], true)
 	}
@@ -61,13 +63,13 @@ func DeleteProfilesDictionary(orig *ProfilesDictionary, nullable bool) {
 	for i := range orig.LinkTable {
 		DeleteLink(orig.LinkTable[i], true)
 	}
-
 	for i := range orig.AttributeTable {
 		DeleteKeyValueAndUnit(orig.AttributeTable[i], true)
 	}
 	for i := range orig.StackTable {
 		DeleteStack(orig.StackTable[i], true)
 	}
+
 	orig.Reset()
 	if nullable {
 		protoPoolProfilesDictionary.Put(orig)
@@ -96,7 +98,6 @@ func CopyProfilesDictionary(dest, src *ProfilesDictionary) *ProfilesDictionary {
 	dest.LinkTable = CopyLinkPtrSlice(dest.LinkTable, src.LinkTable)
 
 	dest.StringTable = append(dest.StringTable[:0], src.StringTable...)
-
 	dest.AttributeTable = CopyKeyValueAndUnitPtrSlice(dest.AttributeTable, src.AttributeTable)
 
 	dest.StackTable = CopyStackPtrSlice(dest.StackTable, src.StackTable)
@@ -209,7 +210,6 @@ func (orig *ProfilesDictionary) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	if len(orig.AttributeTable) > 0 {
 		dest.WriteObjectField("attributeTable")
 		dest.WriteArrayStart()
@@ -377,6 +377,10 @@ func (orig *ProfilesDictionary) MarshalProto(buf []byte) int {
 }
 
 func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *ProfilesDictionary) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -402,7 +406,7 @@ func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.MappingTable = append(orig.MappingTable, NewMapping())
-			err = orig.MappingTable[len(orig.MappingTable)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.MappingTable[len(orig.MappingTable)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -418,7 +422,7 @@ func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.LocationTable = append(orig.LocationTable, NewLocation())
-			err = orig.LocationTable[len(orig.LocationTable)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.LocationTable[len(orig.LocationTable)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -434,7 +438,7 @@ func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.FunctionTable = append(orig.FunctionTable, NewFunction())
-			err = orig.FunctionTable[len(orig.FunctionTable)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.FunctionTable[len(orig.FunctionTable)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -450,7 +454,7 @@ func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.LinkTable = append(orig.LinkTable, NewLink())
-			err = orig.LinkTable[len(orig.LinkTable)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.LinkTable[len(orig.LinkTable)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -478,7 +482,7 @@ func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.AttributeTable = append(orig.AttributeTable, NewKeyValueAndUnit())
-			err = orig.AttributeTable[len(orig.AttributeTable)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.AttributeTable[len(orig.AttributeTable)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -494,7 +498,137 @@ func (orig *ProfilesDictionary) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.StackTable = append(orig.StackTable, NewStack())
-			err = orig.StackTable[len(orig.StackTable)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.StackTable[len(orig.StackTable)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
+			if err != nil {
+				return err
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipProfilesDictionaryProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field MappingTable", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipMappingProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field LocationTable", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipLocationProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field FunctionTable", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipFunctionProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field LinkTable", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipLinkProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field StringTable", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 6:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field AttributeTable", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipKeyValueAndUnitProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+
+		case 7:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field StackTable", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipStackProto(buf[startPos:pos])
 			if err != nil {
 				return err
 			}

@@ -10,17 +10,18 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 // Mapping describes the mapping of a binary in memory, including its address range, file offset, and metadata like build ID
 type Mapping struct {
-	AttributeIndices []int32
 	MemoryStart      uint64
 	MemoryLimit      uint64
 	FileOffset       uint64
 	FilenameStrindex int32
+	AttributeIndices []int32
 }
 
 var (
@@ -68,9 +69,13 @@ func CopyMapping(dest, src *Mapping) *Mapping {
 		dest = NewMapping()
 	}
 	dest.MemoryStart = src.MemoryStart
+
 	dest.MemoryLimit = src.MemoryLimit
+
 	dest.FileOffset = src.FileOffset
+
 	dest.FilenameStrindex = src.FilenameStrindex
+
 	dest.AttributeIndices = append(dest.AttributeIndices[:0], src.AttributeIndices...)
 
 	return dest
@@ -157,7 +162,6 @@ func (orig *Mapping) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -188,19 +192,18 @@ func (orig *Mapping) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.MemoryStart != uint64(0) {
+	if orig.MemoryStart != 0 {
 		n += 1 + proto.Sov(uint64(orig.MemoryStart))
 	}
-	if orig.MemoryLimit != uint64(0) {
+	if orig.MemoryLimit != 0 {
 		n += 1 + proto.Sov(uint64(orig.MemoryLimit))
 	}
-	if orig.FileOffset != uint64(0) {
+	if orig.FileOffset != 0 {
 		n += 1 + proto.Sov(uint64(orig.FileOffset))
 	}
-	if orig.FilenameStrindex != int32(0) {
+	if orig.FilenameStrindex != 0 {
 		n += 1 + proto.Sov(uint64(orig.FilenameStrindex))
 	}
-
 	if len(orig.AttributeIndices) > 0 {
 		l = 0
 		for _, e := range orig.AttributeIndices {
@@ -215,22 +218,22 @@ func (orig *Mapping) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.MemoryStart != uint64(0) {
+	if orig.MemoryStart != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.MemoryStart))
 		pos--
 		buf[pos] = 0x8
 	}
-	if orig.MemoryLimit != uint64(0) {
+	if orig.MemoryLimit != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.MemoryLimit))
 		pos--
 		buf[pos] = 0x10
 	}
-	if orig.FileOffset != uint64(0) {
+	if orig.FileOffset != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.FileOffset))
 		pos--
 		buf[pos] = 0x18
 	}
-	if orig.FilenameStrindex != int32(0) {
+	if orig.FilenameStrindex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.FilenameStrindex))
 		pos--
 		buf[pos] = 0x20
@@ -249,6 +252,10 @@ func (orig *Mapping) MarshalProto(buf []byte) int {
 }
 
 func (orig *Mapping) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Mapping) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -272,6 +279,7 @@ func (orig *Mapping) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.MemoryStart = uint64(num)
 
 		case 2:
@@ -283,6 +291,7 @@ func (orig *Mapping) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.MemoryLimit = uint64(num)
 
 		case 3:
@@ -294,6 +303,7 @@ func (orig *Mapping) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.FileOffset = uint64(num)
 
 		case 4:
@@ -305,6 +315,7 @@ func (orig *Mapping) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.FilenameStrindex = int32(num)
 		case 5:
 			switch wireType {
@@ -333,6 +344,99 @@ func (orig *Mapping) UnmarshalProto(buf []byte) error {
 					return err
 				}
 				orig.AttributeIndices = append(orig.AttributeIndices, int32(num))
+			default:
+				return fmt.Errorf("proto: wrong wireType = %d for field AttributeIndices", wireType)
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipMappingProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field MemoryStart", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field MemoryLimit", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field FileOffset", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field FilenameStrindex", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			switch wireType {
+			case proto.WireTypeLen:
+				var length int
+				length, pos, err = proto.ConsumeLen(buf, pos)
+				if err != nil {
+					return err
+				}
+				startPos := pos - length
+
+				for startPos < pos {
+					startPos, err = proto.SkipVarint(buf[:pos], startPos)
+					if err != nil {
+						return err
+					}
+				}
+				if startPos != pos {
+					return fmt.Errorf("proto: invalid field len = %d for field AttributeIndices", pos-startPos)
+				}
+			case proto.WireTypeVarint:
+
+				pos, err = proto.SkipVarint(buf, pos)
+				if err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("proto: wrong wireType = %d for field AttributeIndices", wireType)
 			}

@@ -11,17 +11,18 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 // Sample represents each record value encountered within a profiled program.
 type Sample struct {
+	StackIndex         int32
 	Values             []int64
 	AttributeIndices   []int32
-	TimestampsUnixNano []uint64
-	StackIndex         int32
 	LinkIndex          int32
+	TimestampsUnixNano []uint64
 }
 
 var (
@@ -69,11 +70,11 @@ func CopySample(dest, src *Sample) *Sample {
 		dest = NewSample()
 	}
 	dest.StackIndex = src.StackIndex
+
 	dest.Values = append(dest.Values[:0], src.Values...)
-
 	dest.AttributeIndices = append(dest.AttributeIndices[:0], src.AttributeIndices...)
-
 	dest.LinkIndex = src.LinkIndex
+
 	dest.TimestampsUnixNano = append(dest.TimestampsUnixNano[:0], src.TimestampsUnixNano...)
 
 	return dest
@@ -148,7 +149,6 @@ func (orig *Sample) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	if len(orig.AttributeIndices) > 0 {
 		dest.WriteObjectField("attributeIndices")
 		dest.WriteArrayStart()
@@ -159,7 +159,6 @@ func (orig *Sample) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	if orig.LinkIndex != int32(0) {
 		dest.WriteObjectField("linkIndex")
 		dest.WriteInt32(orig.LinkIndex)
@@ -174,7 +173,6 @@ func (orig *Sample) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -211,10 +209,9 @@ func (orig *Sample) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.StackIndex != int32(0) {
+	if orig.StackIndex != 0 {
 		n += 1 + proto.Sov(uint64(orig.StackIndex))
 	}
-
 	if len(orig.Values) > 0 {
 		l = 0
 		for _, e := range orig.Values {
@@ -222,7 +219,6 @@ func (orig *Sample) SizeProto() int {
 		}
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	if len(orig.AttributeIndices) > 0 {
 		l = 0
 		for _, e := range orig.AttributeIndices {
@@ -230,7 +226,7 @@ func (orig *Sample) SizeProto() int {
 		}
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-	if orig.LinkIndex != int32(0) {
+	if orig.LinkIndex != 0 {
 		n += 1 + proto.Sov(uint64(orig.LinkIndex))
 	}
 	l = len(orig.TimestampsUnixNano)
@@ -245,7 +241,7 @@ func (orig *Sample) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.StackIndex != int32(0) {
+	if orig.StackIndex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.StackIndex))
 		pos--
 		buf[pos] = 0x8
@@ -270,7 +266,7 @@ func (orig *Sample) MarshalProto(buf []byte) int {
 		pos--
 		buf[pos] = 0x1a
 	}
-	if orig.LinkIndex != int32(0) {
+	if orig.LinkIndex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.LinkIndex))
 		pos--
 		buf[pos] = 0x20
@@ -289,6 +285,10 @@ func (orig *Sample) MarshalProto(buf []byte) int {
 }
 
 func (orig *Sample) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Sample) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -312,6 +312,7 @@ func (orig *Sample) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.StackIndex = int32(num)
 		case 2:
 			switch wireType {
@@ -383,6 +384,7 @@ func (orig *Sample) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.LinkIndex = int32(num)
 		case 5:
 			switch wireType {
@@ -413,6 +415,137 @@ func (orig *Sample) UnmarshalProto(buf []byte) error {
 					return err
 				}
 				orig.TimestampsUnixNano = append(orig.TimestampsUnixNano, uint64(num))
+			default:
+				return fmt.Errorf("proto: wrong wireType = %d for field TimestampsUnixNano", wireType)
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipSampleProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field StackIndex", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			switch wireType {
+			case proto.WireTypeLen:
+				var length int
+				length, pos, err = proto.ConsumeLen(buf, pos)
+				if err != nil {
+					return err
+				}
+				startPos := pos - length
+
+				for startPos < pos {
+					startPos, err = proto.SkipVarint(buf[:pos], startPos)
+					if err != nil {
+						return err
+					}
+				}
+				if startPos != pos {
+					return fmt.Errorf("proto: invalid field len = %d for field Values", pos-startPos)
+				}
+			case proto.WireTypeVarint:
+
+				pos, err = proto.SkipVarint(buf, pos)
+				if err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("proto: wrong wireType = %d for field Values", wireType)
+			}
+		case 3:
+			switch wireType {
+			case proto.WireTypeLen:
+				var length int
+				length, pos, err = proto.ConsumeLen(buf, pos)
+				if err != nil {
+					return err
+				}
+				startPos := pos - length
+
+				for startPos < pos {
+					startPos, err = proto.SkipVarint(buf[:pos], startPos)
+					if err != nil {
+						return err
+					}
+				}
+				if startPos != pos {
+					return fmt.Errorf("proto: invalid field len = %d for field AttributeIndices", pos-startPos)
+				}
+			case proto.WireTypeVarint:
+
+				pos, err = proto.SkipVarint(buf, pos)
+				if err != nil {
+					return err
+				}
+			default:
+				return fmt.Errorf("proto: wrong wireType = %d for field AttributeIndices", wireType)
+			}
+
+		case 4:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field LinkIndex", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 5:
+			switch wireType {
+			case proto.WireTypeLen:
+				var length int
+				length, pos, err = proto.ConsumeLen(buf, pos)
+				if err != nil {
+					return err
+				}
+				startPos := pos - length
+				size := length / 8
+
+				for i := 0; i < size; i++ {
+					startPos, err = proto.SkipI64(buf[:pos], startPos)
+					if err != nil {
+						return err
+					}
+				}
+				if startPos != pos {
+					return fmt.Errorf("proto: invalid field len = %d for field TimestampsUnixNano", pos-startPos)
+				}
+			case proto.WireTypeI64:
+
+				pos, err = proto.SkipI64(buf, pos)
+				if err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("proto: wrong wireType = %d for field TimestampsUnixNano", wireType)
 			}

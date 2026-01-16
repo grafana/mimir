@@ -10,16 +10,17 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 // Location describes function and line table debug information.
 type Location struct {
+	MappingIndex     int32
+	Address          uint64
 	Lines            []*Line
 	AttributeIndices []int32
-	Address          uint64
-	MappingIndex     int32
 }
 
 var (
@@ -71,7 +72,9 @@ func CopyLocation(dest, src *Location) *Location {
 		dest = NewLocation()
 	}
 	dest.MappingIndex = src.MappingIndex
+
 	dest.Address = src.Address
+
 	dest.Lines = CopyLinePtrSlice(dest.Lines, src.Lines)
 
 	dest.AttributeIndices = append(dest.AttributeIndices[:0], src.AttributeIndices...)
@@ -162,7 +165,6 @@ func (orig *Location) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -195,17 +197,16 @@ func (orig *Location) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-	if orig.MappingIndex != int32(0) {
+	if orig.MappingIndex != 0 {
 		n += 1 + proto.Sov(uint64(orig.MappingIndex))
 	}
-	if orig.Address != uint64(0) {
+	if orig.Address != 0 {
 		n += 1 + proto.Sov(uint64(orig.Address))
 	}
 	for i := range orig.Lines {
 		l = orig.Lines[i].SizeProto()
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	if len(orig.AttributeIndices) > 0 {
 		l = 0
 		for _, e := range orig.AttributeIndices {
@@ -220,12 +221,12 @@ func (orig *Location) MarshalProto(buf []byte) int {
 	pos := len(buf)
 	var l int
 	_ = l
-	if orig.MappingIndex != int32(0) {
+	if orig.MappingIndex != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.MappingIndex))
 		pos--
 		buf[pos] = 0x8
 	}
-	if orig.Address != uint64(0) {
+	if orig.Address != 0 {
 		pos = proto.EncodeVarint(buf, pos, uint64(orig.Address))
 		pos--
 		buf[pos] = 0x10
@@ -251,6 +252,10 @@ func (orig *Location) MarshalProto(buf []byte) int {
 }
 
 func (orig *Location) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *Location) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -274,6 +279,7 @@ func (orig *Location) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.MappingIndex = int32(num)
 
 		case 2:
@@ -285,6 +291,7 @@ func (orig *Location) UnmarshalProto(buf []byte) error {
 			if err != nil {
 				return err
 			}
+
 			orig.Address = uint64(num)
 
 		case 3:
@@ -298,7 +305,7 @@ func (orig *Location) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Lines = append(orig.Lines, NewLine())
-			err = orig.Lines[len(orig.Lines)-1].UnmarshalProto(buf[startPos:pos])
+			err = orig.Lines[len(orig.Lines)-1].UnmarshalProtoOpts(buf[startPos:pos], opts)
 			if err != nil {
 				return err
 			}
@@ -329,6 +336,94 @@ func (orig *Location) UnmarshalProto(buf []byte) error {
 					return err
 				}
 				orig.AttributeIndices = append(orig.AttributeIndices, int32(num))
+			default:
+				return fmt.Errorf("proto: wrong wireType = %d for field AttributeIndices", wireType)
+			}
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipLocationProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field MappingIndex", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeVarint {
+				return fmt.Errorf("proto: wrong wireType = %d for field Address", wireType)
+			}
+
+			pos, err = proto.SkipVarint(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Lines", wireType)
+			}
+			var length int
+			length, pos, err = proto.ConsumeLen(buf, pos)
+			if err != nil {
+				return err
+			}
+			startPos := pos - length
+
+			err = SkipLineProto(buf[startPos:pos])
+			if err != nil {
+				return err
+			}
+		case 4:
+			switch wireType {
+			case proto.WireTypeLen:
+				var length int
+				length, pos, err = proto.ConsumeLen(buf, pos)
+				if err != nil {
+					return err
+				}
+				startPos := pos - length
+
+				for startPos < pos {
+					startPos, err = proto.SkipVarint(buf[:pos], startPos)
+					if err != nil {
+						return err
+					}
+				}
+				if startPos != pos {
+					return fmt.Errorf("proto: invalid field len = %d for field AttributeIndices", pos-startPos)
+				}
+			case proto.WireTypeVarint:
+
+				pos, err = proto.SkipVarint(buf, pos)
+				if err != nil {
+					return err
+				}
 			default:
 				return fmt.Errorf("proto: wrong wireType = %d for field AttributeIndices", wireType)
 			}

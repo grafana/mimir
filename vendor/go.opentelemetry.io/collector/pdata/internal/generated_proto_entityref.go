@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
@@ -66,9 +67,10 @@ func CopyEntityRef(dest, src *EntityRef) *EntityRef {
 		dest = NewEntityRef()
 	}
 	dest.SchemaUrl = src.SchemaUrl
-	dest.Type = src.Type
-	dest.IdKeys = append(dest.IdKeys[:0], src.IdKeys...)
 
+	dest.Type = src.Type
+
+	dest.IdKeys = append(dest.IdKeys[:0], src.IdKeys...)
 	dest.DescriptionKeys = append(dest.DescriptionKeys[:0], src.DescriptionKeys...)
 
 	return dest
@@ -147,7 +149,6 @@ func (orig *EntityRef) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	if len(orig.DescriptionKeys) > 0 {
 		dest.WriteObjectField("descriptionKeys")
 		dest.WriteArrayStart()
@@ -158,7 +159,6 @@ func (orig *EntityRef) MarshalJSON(dest *json.Stream) {
 		}
 		dest.WriteArrayEnd()
 	}
-
 	dest.WriteObjectEnd()
 }
 
@@ -190,12 +190,10 @@ func (orig *EntityRef) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.SchemaUrl)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Type)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -251,6 +249,10 @@ func (orig *EntityRef) MarshalProto(buf []byte) int {
 }
 
 func (orig *EntityRef) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *EntityRef) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -312,6 +314,71 @@ func (orig *EntityRef) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.DescriptionKeys = append(orig.DescriptionKeys, string(buf[startPos:pos]))
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipEntityRefProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field SchemaUrl", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Type", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 3:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field IdKeys", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 4:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field DescriptionKeys", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

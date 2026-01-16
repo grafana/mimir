@@ -10,13 +10,14 @@ import (
 	"fmt"
 	"sync"
 
+	"go.opentelemetry.io/collector/pdata"
 	"go.opentelemetry.io/collector/pdata/internal/json"
 	"go.opentelemetry.io/collector/pdata/internal/proto"
 )
 
 type IPAddr struct {
-	Zone string
 	IP   []byte
+	Zone string
 }
 
 var (
@@ -64,6 +65,7 @@ func CopyIPAddr(dest, src *IPAddr) *IPAddr {
 		dest = NewIPAddr()
 	}
 	dest.IP = src.IP
+
 	dest.Zone = src.Zone
 
 	return dest
@@ -154,12 +156,10 @@ func (orig *IPAddr) SizeProto() int {
 	var n int
 	var l int
 	_ = l
-
 	l = len(orig.IP)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
 	}
-
 	l = len(orig.Zone)
 	if l > 0 {
 		n += 1 + proto.Sov(uint64(l)) + l
@@ -191,6 +191,10 @@ func (orig *IPAddr) MarshalProto(buf []byte) int {
 }
 
 func (orig *IPAddr) UnmarshalProto(buf []byte) error {
+	return orig.UnmarshalProtoOpts(buf, &pdata.DefaultUnmarshalOptions)
+}
+
+func (orig *IPAddr) UnmarshalProtoOpts(buf []byte, opts *pdata.UnmarshalOptions) error {
 	var err error
 	var fieldNum int32
 	var wireType proto.WireType
@@ -231,6 +235,51 @@ func (orig *IPAddr) UnmarshalProto(buf []byte) error {
 			}
 			startPos := pos - length
 			orig.Zone = string(buf[startPos:pos])
+		default:
+			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func SkipIPAddrProto(buf []byte) error {
+	var err error
+	var fieldNum int32
+	var wireType proto.WireType
+
+	l := len(buf)
+	pos := 0
+	for pos < l {
+		// If in a group parsing, move to the next tag.
+		fieldNum, wireType, pos, err = proto.ConsumeTag(buf, pos)
+		if err != nil {
+			return err
+		}
+		switch fieldNum {
+
+		case 1:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field IP", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
+		case 2:
+			if wireType != proto.WireTypeLen {
+				return fmt.Errorf("proto: wrong wireType = %d for field Zone", wireType)
+			}
+
+			pos, err = proto.SkipLen(buf, pos)
+			if err != nil {
+				return err
+			}
+
 		default:
 			pos, err = proto.ConsumeUnknown(buf, pos, wireType)
 			if err != nil {

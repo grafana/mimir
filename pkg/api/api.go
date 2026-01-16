@@ -288,6 +288,7 @@ func (a *API) RegisterDistributor(d *distributor.Distributor, pushConfig distrib
 		pushConfig.OTelResourceAttributePromotionConfig,
 		pushConfig.KeepIdentifyingOTelResourceAttributesConfig,
 		pushConfig.RetryConfig, pushConfig.OTLPPushMiddlewares,
+		pushConfig.EnableOTLPLazyDeserializing,
 		d.PushWithMiddlewares, d.PushMetrics, reg, a.logger,
 	), true, false, "POST")
 

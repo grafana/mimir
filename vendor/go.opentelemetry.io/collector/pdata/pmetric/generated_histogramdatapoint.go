@@ -88,25 +88,25 @@ func (ms HistogramDataPoint) SetCount(v uint64) {
 
 // Sum returns the sum associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) Sum() float64 {
-	return ms.orig.Sum
+	return ms.orig.GetSum()
 }
 
 // HasSum returns true if the HistogramDataPoint contains a
 // Sum value otherwise.
 func (ms HistogramDataPoint) HasSum() bool {
-	return ms.orig.HasSum()
+	return ms.orig.Sum_ != nil
 }
 
 // SetSum replaces the sum associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) SetSum(v float64) {
 	ms.state.AssertMutable()
-	ms.orig.SetSum(v)
+	ms.orig.Sum_ = &internal.HistogramDataPoint_Sum{Sum: v}
 }
 
 // RemoveSum removes the sum associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) RemoveSum() {
 	ms.state.AssertMutable()
-	ms.orig.RemoveSum()
+	ms.orig.Sum_ = nil
 }
 
 // BucketCounts returns the BucketCounts associated with this HistogramDataPoint.
@@ -137,48 +137,48 @@ func (ms HistogramDataPoint) SetFlags(v DataPointFlags) {
 
 // Min returns the min associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) Min() float64 {
-	return ms.orig.Min
+	return ms.orig.GetMin()
 }
 
 // HasMin returns true if the HistogramDataPoint contains a
 // Min value otherwise.
 func (ms HistogramDataPoint) HasMin() bool {
-	return ms.orig.HasMin()
+	return ms.orig.Min_ != nil
 }
 
 // SetMin replaces the min associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) SetMin(v float64) {
 	ms.state.AssertMutable()
-	ms.orig.SetMin(v)
+	ms.orig.Min_ = &internal.HistogramDataPoint_Min{Min: v}
 }
 
 // RemoveMin removes the min associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) RemoveMin() {
 	ms.state.AssertMutable()
-	ms.orig.RemoveMin()
+	ms.orig.Min_ = nil
 }
 
 // Max returns the max associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) Max() float64 {
-	return ms.orig.Max
+	return ms.orig.GetMax()
 }
 
 // HasMax returns true if the HistogramDataPoint contains a
 // Max value otherwise.
 func (ms HistogramDataPoint) HasMax() bool {
-	return ms.orig.HasMax()
+	return ms.orig.Max_ != nil
 }
 
 // SetMax replaces the max associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) SetMax(v float64) {
 	ms.state.AssertMutable()
-	ms.orig.SetMax(v)
+	ms.orig.Max_ = &internal.HistogramDataPoint_Max{Max: v}
 }
 
 // RemoveMax removes the max associated with this HistogramDataPoint.
 func (ms HistogramDataPoint) RemoveMax() {
 	ms.state.AssertMutable()
-	ms.orig.RemoveMax()
+	ms.orig.Max_ = nil
 }
 
 // CopyTo copies all properties from the current struct overriding the destination.
