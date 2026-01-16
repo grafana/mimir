@@ -21,6 +21,7 @@ ingester:
   track_ingester_owned_series: true
   active_series_metrics_update_period: 10s
   active_series_metrics_idle_timeout:  1m
+  push_grpc_method_enabled: false
 
   ring:
     num_tokens: 0
