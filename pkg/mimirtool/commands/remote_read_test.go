@@ -420,7 +420,7 @@ func serveChunks(t *testing.T, testCase exportTestCase, startT, endT int64, w ht
 			minTime = min(minTime, sample.Timestamp)
 			maxTime = max(maxTime, sample.Timestamp)
 
-			a.Append(sample.Timestamp, sample.Value)
+			a.Append(0, sample.Timestamp, sample.Value)
 		}
 
 		if sampleCount == 0 {
@@ -890,7 +890,7 @@ func serveMultiQueryChunks(t *testing.T, testCase exportTestCase, queries []*pro
 			for _, sample := range s.Samples {
 				minTime = min(minTime, sample.Timestamp)
 				maxTime = max(maxTime, sample.Timestamp)
-				a.Append(sample.Timestamp, sample.Value)
+				a.Append(0, sample.Timestamp, sample.Value)
 			}
 
 			resp := prompb.ChunkedReadResponse{
