@@ -139,7 +139,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	r := d.ingestersRing
 
 	// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
-	if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
+	if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; lookbackPeriod > 0 {
 		r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
 	}
 
