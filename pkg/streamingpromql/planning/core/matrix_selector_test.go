@@ -609,7 +609,7 @@ func TestMatrixSelector_QueriedTimeRange(t *testing.T) {
 	}
 }
 
-func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
+func TestMatrixSelector_RangeVectorSplittingCacheKey(t *testing.T) {
 	singleMatcher := []*LabelMatcher{
 		{Name: "__name__", Type: labels.MatchEqual, Value: "foo"},
 	}
@@ -688,7 +688,7 @@ func TestMatrixSelector_QuerySplittingCacheKey(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			cacheKey := testCase.node.QuerySplittingCacheKey()
+			cacheKey := testCase.node.RangeVectorSplittingCacheKey()
 			require.Equal(t, testCase.expected, cacheKey)
 		})
 	}

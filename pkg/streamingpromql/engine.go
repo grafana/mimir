@@ -28,8 +28,8 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -47,16 +47,16 @@ var errPerStepStatsNotSupported = errors.New("per-step stats are not supported b
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
-	var intermediateCache *cache.CacheFactory
-	if opts.InstantQuerySplitting.Enabled {
+	var cacheFactory *cache.CacheFactory
+	if opts.RangeVectorSplitting.Enabled {
 		var err error
-		intermediateCache, err = cache.NewCacheFactory(opts.InstantQuerySplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to init query splitting cache, err: %w", err)
+			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
 		}
-		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.InstantQuerySplitting.IntermediateResultsCache.Backend)
+		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.RangeVectorSplitting.IntermediateResultsCache.Backend)
 	}
-	return newEngineWithCache(opts, limitsProvider, metrics, planner, intermediateCache)
+	return newEngineWithCache(opts, limitsProvider, metrics, planner, cacheFactory)
 }
 
 func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
@@ -103,7 +103,7 @@ func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, met
 	}
 
 	if intermediateCache != nil {
-		nodeMaterializers[planning.NODE_TYPE_SPLIT_RANGE_VECTOR] = querysplitting.NewMaterializer(intermediateCache)
+		nodeMaterializers[planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR] = rangevectorsplitting.NewMaterializer(intermediateCache)
 	}
 
 	return &Engine{

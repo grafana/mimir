@@ -558,14 +558,14 @@ type FunctionMetadata struct {
 	OperatorFactory FunctionOperatorFactory
 	ReturnType      parser.ValueType
 
-	SplittableOperatorFactory SplittableOperatorFactory
+	SplitOperatorFactory SplitOperatorFactory
 }
 
 func RegisterFunction(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory) error {
 	return RegisterFunctionWithSplitFactory(function, name, returnType, factory, nil)
 }
 
-func RegisterFunctionWithSplitFactory(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory, splittableFactory SplittableOperatorFactory) error {
+func RegisterFunctionWithSplitFactory(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory, splittableFactory SplitOperatorFactory) error {
 	if _, exists := RegisteredFunctions[function]; exists {
 		return fmt.Errorf("function with ID %d has already been registered", function)
 	}
@@ -579,7 +579,7 @@ func RegisterFunctionWithSplitFactory(function Function, name string, returnType
 		ReturnType:      returnType,
 		OperatorFactory: factory,
 
-		SplittableOperatorFactory: splittableFactory,
+		SplitOperatorFactory: splittableFactory,
 	}
 
 	promQLNamesToFunctions[name] = function

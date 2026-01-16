@@ -60,6 +60,7 @@ func NewCacheFactory(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 	backend := cache.NewVersioned(
 		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
 		resultsCacheVersion,
+		logger,
 	)
 
 	logger.Log("msg", "intermediate results cache initialized", "backend", cfg.Backend)

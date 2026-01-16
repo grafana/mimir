@@ -230,22 +230,31 @@ type OperatorParameters struct {
 	Logger                   log.Logger
 }
 
-// SplittableNode represents a planning node that supports query splitting with intermediate result caching.
+// RangeParams describes the time range parameters for range vector selectors and subqueries.
+// It includes the range duration (e.g., [5m]) and optional time modifiers (offset and @ timestamp).
+type RangeParams struct {
+	IsSet     bool
+	Range     time.Duration
+	Offset    time.Duration
+	Timestamp *time.Time
+}
+
+// SplitNode represents a planning node that supports range vector splitting with intermediate result caching.
 // Nodes implementing this interface can be split into sub-ranges for parallel execution and caching.
-type SplittableNode interface {
+type SplitNode interface {
 	Node
 
 	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
 	// be split, there might be some edge cases where it's not possible or not implemented yet.
 	IsSplittable() bool
 
-	// QuerySplittingCacheKey returns a cache key for this node's intermediate results.
-	QuerySplittingCacheKey() string
+	// RangeVectorSplittingCacheKey returns a cache key for this node's intermediate results.
+	RangeVectorSplittingCacheKey() string
 
 	// GetRange returns the time range duration for this range vector operation.
 	GetRange() time.Duration
 
-	GetTimeRangeParams() types.TimeRangeParams
+	GetRangeParams() RangeParams
 }
 
 // ToEncodedPlan converts this query plan to its encoded form.

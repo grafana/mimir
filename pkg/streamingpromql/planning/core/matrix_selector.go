@@ -29,20 +29,20 @@ func (m *MatrixSelector) IsSplittable() bool {
 	return !(m.Smoothed || m.Anchored)
 }
 
-var _ planning.SplittableNode = &MatrixSelector{}
+var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
 	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed)
 }
 
-// QuerySplittingCacheKey returns the cache key for the matrix selector.
-// The range is not part of the cache key as the query splitting means that matrix selector which only different by
+// RangeVectorSplittingCacheKey returns the cache key for the matrix selector.
+// The range is not part of the cache key as range vector splitting means that matrix selectors which only differ by
 // the range can share cache entries.
 // The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
 // TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
 //  inner node, the range plus the offset and @ modifiers will have to be retained.
 // TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
-func (m *MatrixSelector) QuerySplittingCacheKey() string {
+func (m *MatrixSelector) RangeVectorSplittingCacheKey() string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range m.Matchers {
@@ -122,7 +122,7 @@ func (m *MatrixSelector) ChildrenLabels() []string {
 	return nil
 }
 
-func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams types.TimeRangeParams) (planning.OperatorFactory, error) {
+func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, overrideTimeParams planning.RangeParams) (planning.OperatorFactory, error) {
 	selectorRange := m.Range
 	selectorTs := m.Timestamp
 	selectorOffset := m.Offset.Milliseconds()
@@ -184,8 +184,8 @@ func (m *MatrixSelector) GetRange() time.Duration {
 	return m.Range
 }
 
-func (m *MatrixSelector) GetTimeRangeParams() types.TimeRangeParams {
-	return types.TimeRangeParams{
+func (m *MatrixSelector) GetRangeParams() planning.RangeParams {
+	return planning.RangeParams{
 		IsSet:     true,
 		Range:     m.Range,
 		Offset:    m.Offset,

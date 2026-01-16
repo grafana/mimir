@@ -24,8 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -397,8 +397,8 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 
 	// Create planner to capture plan structure
 	opts := NewTestEngineOpts()
-	opts.InstantQuerySplitting.Enabled = true
-	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+	opts.RangeVectorSplitting.Enabled = true
+	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
 	require.True(t, opts.EnableCommonSubexpressionElimination, "CSE should be enabled")
 
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -411,12 +411,12 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	expectedPlan := `
 		- BinaryExpression: LHS / RHS
 			- LHS: DeduplicateAndMerge
-				- SplittableFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+				- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
 					- FunctionCall: sum_over_time(...)
 						- ref#1 Duplicate
 							- MatrixSelector: {__name__="test_metric"}[5h0m0s]
 			- RHS: DeduplicateAndMerge
-				- SplittableFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+				- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
 					- FunctionCall: count_over_time(...)
 						- ref#1 Duplicate ...
 	`
@@ -651,8 +651,8 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 			testScript := string(b)
 
 			opts := NewTestEngineOpts()
-			opts.InstantQuerySplitting.Enabled = true
-			opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+			opts.RangeVectorSplitting.Enabled = true
+			opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
 
 			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
@@ -685,8 +685,8 @@ func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
-	opts.InstantQuerySplitting.Enabled = true
-	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+	opts.RangeVectorSplitting.Enabled = true
+	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
 
 	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -845,8 +845,8 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
-	opts.InstantQuerySplitting.Enabled = true
-	opts.InstantQuerySplitting.SplitInterval = 2 * time.Hour
+	opts.RangeVectorSplitting.Enabled = true
+	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
 	opts.Limits = &mockOutOfOrderTimeWindowProvider{
 		oooWindow: 3 * time.Hour,
 	}
@@ -858,7 +858,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, pass := range queryPlanner.planOptimizationPasses {
-		if qsPass, ok := pass.(*querysplitting.OptimizationPass); ok {
+		if qsPass, ok := pass.(*rangevectorsplitting.OptimizationPass); ok {
 			qsPass.TestOnlySetTimeNow(func() time.Time { return fixedNow })
 			break
 		}

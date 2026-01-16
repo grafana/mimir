@@ -18,7 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	promts "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -225,7 +225,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
 	subRange := time.Duration(end-start) * time.Millisecond
 
-	overrideTimeParams := types.TimeRangeParams{
+	overrideTimeParams := planning.RangeParams{
 		IsSet: true,
 
 		Range: subRange,
@@ -458,7 +458,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 
 	// TODO: currently at info level while testing, may also modify and remove some stats post tests
 	level.Info(logger).Log(
-		"msg", "query splitting stats",
+		"msg", "range vector splitting stats",
 		"function", m.FuncId.PromQLName(),
 		"inner_cache_key", m.innerCacheKey,
 		"query_start_ms", m.queryTimeRange.StartT,

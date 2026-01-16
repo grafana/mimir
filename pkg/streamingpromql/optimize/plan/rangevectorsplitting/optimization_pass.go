@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querysplitting
+package rangevectorsplitting
 
 import (
 	"context"
@@ -53,24 +53,24 @@ func NewOptimizationPass(splitInterval time.Duration, limits limitsProvider, tim
 		limits:        limits,
 		timeNow:       timeNowFn,
 		splitNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_query_splitting_split_nodes_introduced_total",
-			Help: "Total number of query spltting nodes introduced by the query splitting optimization pass ",
+			Name: "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total",
+			Help: "Total number of range vector splitting nodes introduced by the range vector splitting optimization pass.",
 		}),
 		// TODO: narrow down what nodes count as "inspected"? e.g. some function might never be able to be split - need to be function over range vector, not point in adding. maybe should just include function nodes that can be split
 		functionNodesInspected: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_query_splitting_function_nodes_inspected_total",
-			Help: "Total number of function nodes inspected to decide whether to split",
+			Name: "cortex_mimir_query_engine_range_vector_splitting_function_nodes_inspected_total",
+			Help: "Total number of function nodes inspected by range vector splitting to decide whether to split.",
 		}),
 		functionNodesUnsplit: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_mimir_query_engine_query_splitting_function_nodes_unsplit_total",
-			Help: "Total number of function nodes inspected but not split",
+			Name: "cortex_mimir_query_engine_range_vector_splitting_function_nodes_unsplit_total",
+			Help: "Total number of function nodes inspected by range vector splitting but not split.",
 		}, []string{"reason"}),
 		logger: logger,
 	}
 }
 
 func (o *OptimizationPass) Name() string {
-	return "Query splitting"
+	return "Range vector splitting"
 }
 
 // TestOnlySetTimeNow sets the time function. For tests only.
@@ -84,7 +84,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	}
 
 	var err error
-	plan.Root, err = o.wrapSplittableRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange)
+	plan.Root, err = o.wrapSplitRangeVectorFunctions(ctx, plan.Root, plan.Parameters.TimeRange)
 	if err != nil {
 		return nil, err
 	}
@@ -92,10 +92,10 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	return plan, nil
 }
 
-func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
+func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n planning.Node, timeRange types.QueryTimeRange) (planning.Node, error) {
 	tenantID, err := user.ExtractOrgID(ctx)
 	if err != nil {
-		level.Warn(o.logger).Log("msg", "failed to extract tenant ID for query splitting, skipping optimization", "err", err)
+		level.Warn(o.logger).Log("msg", "failed to extract tenant ID for range vector splitting, skipping optimization", "err", err)
 		return n, nil
 	}
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
@@ -104,14 +104,14 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(ctx context.Contex
 		if err != nil {
 			var notAppliedErr *errNotApplied
 			if errors.As(err, &notAppliedErr) {
-				level.Debug(o.logger).Log("msg", "query splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", notAppliedErr.reason)
+				level.Debug(o.logger).Log("msg", "range vector splitting not applied to function", "function", functionCall.GetFunction().PromQLName(), "reason", notAppliedErr.reason)
 				o.functionNodesUnsplit.WithLabelValues(notAppliedErr.reason).Inc()
 			} else {
 				o.functionNodesUnsplit.WithLabelValues("error").Inc()
 				return nil, err
 			}
 		} else {
-			level.Debug(o.logger).Log("msg", "query splitting applied to function", "function", functionCall.GetFunction().PromQLName())
+			level.Debug(o.logger).Log("msg", "range vector splitting applied to function", "function", functionCall.GetFunction().PromQLName())
 			o.splitNodesIntroduced.Inc()
 			return wrappedNode, nil
 		}
@@ -119,7 +119,7 @@ func (o *OptimizationPass) wrapSplittableRangeVectorFunctions(ctx context.Contex
 
 	for i := range n.ChildCount() {
 		child := n.Child(i)
-		newChild, err := o.wrapSplittableRangeVectorFunctions(ctx, child, timeRange)
+		newChild, err := o.wrapSplitRangeVectorFunctions(ctx, child, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,7 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	if !ok {
 		return nil, &errNotApplied{reason: "function_not_found"}
 	}
-	if f.SplittableOperatorFactory == nil {
+	if f.SplitOperatorFactory == nil {
 		return nil, &errNotApplied{reason: "unsupported_function"}
 	}
 
@@ -173,21 +173,21 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	}
 
 	// TODO: not all splittable functions will have the first child as the range vector operator
-	inner, ok := functionCall.Child(0).(planning.SplittableNode)
+	inner, ok := functionCall.Child(0).(planning.SplitNode)
 	if !ok || !inner.IsSplittable() {
 		return nil, &errNotApplied{reason: "unsupported_inner_node"}
 	}
 
-	if !inner.GetTimeRangeParams().IsSet {
+	if !inner.GetRangeParams().IsSet {
 		// Should always be set if it's a splittable node
 		return nil, errors.New("time range params not specified")
 	}
 
-	if inner.GetTimeRangeParams().Range.Milliseconds() <= o.splitInterval.Milliseconds() {
+	if inner.GetRangeParams().Range.Milliseconds() <= o.splitInterval.Milliseconds() {
 		return nil, &errNotApplied{reason: "too_short_interval"}
 	}
 
-	timeParams := inner.GetTimeRangeParams()
+	timeParams := inner.GetRangeParams()
 	startTs, endTs := calculateInnerTimeRange(timeRange.StartT, timeParams)
 
 	alignedStart := computeBlockAlignedStart(startTs, o.splitInterval)
@@ -216,10 +216,10 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, &errNotApplied{reason: "no_cacheable_blocks_after_ooo_filter"}
 	}
 
-	n := &SplittableFunctionCall{
-		SplittableFunctionCallDetails: &SplittableFunctionCallDetails{
+	n := &SplitFunctionCall{
+		SplitFunctionCallDetails: &SplitFunctionCallDetails{
 			SplitRanges:       splitRanges,
-			InnerNodeCacheKey: inner.QuerySplittingCacheKey(),
+			InnerNodeCacheKey: inner.RangeVectorSplittingCacheKey(),
 		},
 	}
 	if err := n.SetChildren([]planning.Node{functionCall}); err != nil {
@@ -229,7 +229,7 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 	return n, nil
 }
 
-func calculateInnerTimeRange(evalTime int64, timeParams types.TimeRangeParams) (startTs, endTs int64) {
+func calculateInnerTimeRange(evalTime int64, timeParams planning.RangeParams) (startTs, endTs int64) {
 	endTs = evalTime
 	if timeParams.Timestamp != nil {
 		endTs = timeParams.Timestamp.UnixMilli()

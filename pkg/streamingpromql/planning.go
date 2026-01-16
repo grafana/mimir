@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -103,15 +103,15 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
-	// Run query splitting pass before CSE.
-	if opts.InstantQuerySplitting.Enabled {
-		splitInterval := opts.InstantQuerySplitting.SplitInterval
+	// Run range vector splitting pass before CSE.
+	if opts.RangeVectorSplitting.Enabled {
+		splitInterval := opts.RangeVectorSplitting.SplitInterval
 		if splitInterval <= 0 {
 			splitInterval = 2 * time.Hour
 		}
-		planner.RegisterQueryPlanOptimizationPass(querysplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
 		if opts.Logger != nil {
-			opts.Logger.Log("msg", "query splitting optimization pass enabled", "split_interval", splitInterval)
+			opts.Logger.Log("msg", "range vector splitting optimization pass enabled", "split_interval", splitInterval)
 		}
 	}
 

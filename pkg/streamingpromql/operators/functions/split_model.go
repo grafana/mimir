@@ -4,7 +4,7 @@ package functions
 
 import (
 	"github.com/go-kit/log"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -39,7 +39,7 @@ type SplitCombineFunc[T any] func(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)
 
-type SplittableOperatorFactory func(
+type SplitOperatorFactory func(
 	innerNode planning.Node,
 	materializer *planning.Materializer,
 	timeRange types.QueryTimeRange,
@@ -59,7 +59,7 @@ func NewSplitOperatorFactory[T any](
 	codec cache.SplitCodec[T],
 	funcDef FunctionOverRangeVectorDefinition,
 	funcId Function,
-) SplittableOperatorFactory {
+) SplitOperatorFactory {
 	return func(
 		innerNode planning.Node,
 		materializer *planning.Materializer,

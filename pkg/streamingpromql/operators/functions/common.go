@@ -139,7 +139,7 @@ type FunctionOverRangeVectorDefinition struct {
 
 	// SplitOperatorFactory defines how to create a splittable operator for intermediate result caching.
 	// If nil, the function does not support query splitting.
-	SplitOperatorFactory SplittableOperatorFactory
+	SplitOperatorFactory SplitOperatorFactory
 }
 
 type SeriesMetadataFunctionDefinition struct {

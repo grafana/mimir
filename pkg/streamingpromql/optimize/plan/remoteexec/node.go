@@ -267,7 +267,7 @@ func NewRemoteExecutionConsumerMaterializer(executor RemoteExecutor) *RemoteExec
 
 var _ planning.NodeMaterializer = &RemoteExecutionConsumerMaterializer{}
 
-func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ types.TimeRangeParams) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
 	// For the time being, we assume all groups have a single node (the one that corresponds to this consumer).
 	// Once we implement support in query-frontends for evaluating multiple nodes in a single request, this will change.
 

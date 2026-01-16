@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querysplitting
+package rangevectorsplitting
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 )
 
 func TestComputeSplitRanges(t *testing.T) {
@@ -270,14 +270,14 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 	tests := []struct {
 		name          string
 		evalTime      int64
-		timeParams    types.TimeRangeParams
+		timeParams    planning.RangeParams
 		expectedStart int64
 		expectedEnd   int64
 	}{
 		{
 			name:     "basic 5h range at 6h",
 			evalTime: 6 * hourInMs,
-			timeParams: types.TimeRangeParams{
+			timeParams: planning.RangeParams{
 				IsSet: true,
 				Range: 5 * time.Hour,
 			},
@@ -287,7 +287,7 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 		{
 			name:     "5h range with 1h offset at 8h",
 			evalTime: 8 * hourInMs,
-			timeParams: types.TimeRangeParams{
+			timeParams: planning.RangeParams{
 				IsSet:  true,
 				Offset: 1 * time.Hour,
 				Range:  5 * time.Hour,
@@ -298,7 +298,7 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 		{
 			name:     "5h range with @ 7h evaluated at 8h",
 			evalTime: 8 * hourInMs,
-			timeParams: types.TimeRangeParams{
+			timeParams: planning.RangeParams{
 				IsSet:     true,
 				Timestamp: func() *time.Time { t := time.UnixMilli(7 * hourInMs); return &t }(),
 				Range:     5 * time.Hour,
@@ -309,7 +309,7 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 		{
 			name:     "3h range with 31m offset at 4h30m",
 			evalTime: 4*hourInMs + 30*minuteInMs,
-			timeParams: types.TimeRangeParams{
+			timeParams: planning.RangeParams{
 				IsSet:  true,
 				Offset: 31 * time.Minute,
 				Range:  3 * time.Hour,
