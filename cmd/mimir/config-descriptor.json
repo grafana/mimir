@@ -10938,6 +10938,38 @@
                   "fieldFlag": "blocks-storage.bucket-store.index-header.verify-on-load",
                   "fieldType": "boolean",
                   "fieldCategory": "advanced"
+                },
+                {
+                  "kind": "block",
+                  "name": "bucket_reader",
+                  "required": false,
+                  "desc": "",
+                  "blockEntries": [
+                    {
+                      "kind": "field",
+                      "name": "enabled",
+                      "required": false,
+                      "desc": "Enable reading TSDB index-header sections from object storage instead of loading to and reading from local disk.",
+                      "fieldValue": null,
+                      "fieldDefaultValue": true,
+                      "fieldFlag": "bucket-reader.enabled",
+                      "fieldType": "boolean",
+                      "fieldCategory": "experimental"
+                    },
+                    {
+                      "kind": "field",
+                      "name": "index_sections",
+                      "required": false,
+                      "desc": "Index sections to read from object storage instead of local disk. Valid sections: all",
+                      "fieldValue": null,
+                      "fieldDefaultValue": "all",
+                      "fieldFlag": "bucket-reader.index-sections",
+                      "fieldType": "string",
+                      "fieldCategory": "experimental"
+                    }
+                  ],
+                  "fieldValue": null,
+                  "fieldDefaultValue": null
                 }
               ],
               "fieldValue": null,
