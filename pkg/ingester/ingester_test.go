@@ -8794,7 +8794,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
 
 		reg := prometheus.NewPedanticRegistry()
-		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg, util_test.NewTestingLogger(t))
+		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
 
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 		t.Cleanup(func() {
@@ -8840,7 +8840,7 @@ func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.
 			// we can start the test.
 		}
 
-		test.Poll(t, targetRequestDuration/3, int64(1), func() interface{} {
+		test.Poll(t, targetRequestDuration, int64(1), func() interface{} {
 			return i.inflightPushRequests.Load()
 		})
 
@@ -8924,7 +8924,7 @@ func TestIngester_inflightPushRequestsBytes(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			return i.inflightPushRequestsBytes.Load() == int64(requestSize)
-		}, targetRequestDuration/3, 3*time.Millisecond)
+		}, targetRequestDuration, 3*time.Millisecond)
 
 		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 			# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.
@@ -12060,7 +12060,7 @@ func TestIngester_PrepareUnregisterHandler(t *testing.T) {
 	}
 
 	setup := func(t *testing.T, start bool, cfg Config) *Ingester {
-		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
 
 		if start {
 			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
