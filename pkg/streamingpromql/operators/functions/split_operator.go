@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/querysplitting/cache"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	promts "github.com/prometheus/prometheus/model/timestamp"
@@ -136,6 +137,9 @@ func (m *FunctionOverRangeVectorSplit[T]) Prepare(ctx context.Context, params *t
 	defer func() {
 		m.prepareEnd = time.Now()
 	}()
+
+	stats.FromContext(ctx).AddSplitRangeVectors(1)
+
 	var err error
 	m.splits, err = m.createSplits(ctx)
 	if err != nil {

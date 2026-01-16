@@ -200,15 +200,6 @@ func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Quer
 		return nil, err
 	}
 
-	// TODO: clean this up
-	if timeRange.IsInstant {
-		if splitCount := plan.CountSplitNodes(); splitCount > 0 {
-			if queryStats := stats.FromContext(ctx); queryStats != nil {
-				queryStats.AddInstantQuerySplittingCount(splitCount)
-			}
-		}
-	}
-
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, 0)
 	}
