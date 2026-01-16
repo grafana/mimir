@@ -410,15 +410,13 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 
 	expectedPlan := `
 		- BinaryExpression: LHS / RHS
-			- LHS: DeduplicateAndMerge
-				- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
-					- FunctionCall: sum_over_time(...)
-						- ref#1 Duplicate
-							- MatrixSelector: {__name__="test_metric"}[5h0m0s]
-			- RHS: DeduplicateAndMerge
-				- SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
-					- FunctionCall: count_over_time(...)
-						- ref#1 Duplicate ...
+			- LHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+				- FunctionCall: sum_over_time(...)
+					- ref#1 Duplicate
+						- MatrixSelector: {__name__="test_metric"}[5h0m0s]
+			- RHS: SplitFunctionCall: splits=4 [(3600000,7199999], (7199999,14399999]*, (14399999,21599999]*, (21599999,21600000]]
+				- FunctionCall: count_over_time(...)
+					- ref#1 Duplicate ...
 	`
 	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
 

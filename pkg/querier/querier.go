@@ -131,7 +131,7 @@ func (cfg *Config) Validate() error {
 	}
 
 	if err := cfg.EngineConfig.MimirQueryEngine.RangeVectorSplitting.Validate(); err != nil {
-		return fmt.Errorf("invalid instant query splitting config: %w", err)
+		return fmt.Errorf("invalid range vector splitting config: %w", err)
 	}
 
 	return nil
