@@ -107,7 +107,7 @@ func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *pl
 			modified++
 			spanlog.DebugLog(
 				"msg", "applying projection to selector",
-				"selector_matchers", e.Matchers,
+				"selector_matchers", core.LabelMatchersStringer(e.Matchers),
 				"required_labels", required,
 			)
 		case *core.VectorSelector:
@@ -129,7 +129,7 @@ func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *pl
 			modified++
 			spanlog.DebugLog(
 				"msg", "applying projection to selector",
-				"selector_matchers", e.Matchers,
+				"selector_matchers", core.LabelMatchersStringer(e.Matchers),
 				"required_labels", required,
 			)
 		}
