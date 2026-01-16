@@ -20,10 +20,20 @@ type LoggerConfig struct {
 	logger log.Logger
 }
 
-// Logger returns the configured logger. If not yet initialized, returns a nop logger.
+// Logger returns the configured logger. If not yet initialized, initializes with the configured level.
 func (l *LoggerConfig) Logger() log.Logger {
 	if l.logger == nil {
-		return log.NewNopLogger()
+		// Initialize logger lazily if PreAction wasn't called (e.g., when using default log level).
+		lvl := l.Level
+		if lvl == "" {
+			lvl = "info"
+		}
+		logger, err := mimirlog.NewLogger(lvl)
+		if err != nil {
+			// Fall back to nop logger if initialization fails.
+			return log.NewNopLogger()
+		}
+		l.logger = logger
 	}
 	return l.logger
 }
