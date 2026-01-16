@@ -230,7 +230,7 @@ func (m *mockChunkStreamer) GetChunks(seriesIndex uint64) ([]storepb.AggrChunk, 
 	samples := m.series[m.next].values
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 	for _, s := range samples {
-		app.Append(s.t, s.v)
+		app.Append(0, s.t, s.v)
 		if s.t < mint {
 			mint = s.t
 		}
@@ -659,7 +659,7 @@ func createChunk(t *testing.T, time int64, value float64) storepb.AggrChunk {
 	app, err := promChunk.Appender()
 	require.NoError(t, err)
 
-	app.Append(time, value)
+	app.Append(0, time, value)
 
 	return storepb.AggrChunk{
 		MinTime: time,

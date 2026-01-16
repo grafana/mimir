@@ -36,7 +36,7 @@ func createAggrChunk(minTime, maxTime int64, samples ...promql.FPoint) storepb.A
 	}
 
 	for _, s := range samples {
-		appender.Append(s.T, s.F)
+		appender.Append(0, s.T, s.F)
 	}
 
 	return storepb.AggrChunk{
@@ -66,7 +66,7 @@ func createAggrFloatHistogramChunk(minTime, maxTime int64, samples ...promql.HPo
 	}
 
 	for _, s := range samples {
-		_, _, appender, err = appender.AppendFloatHistogram(nil, s.T, s.H, true)
+		_, _, appender, err = appender.AppendFloatHistogram(nil, 0, s.T, s.H, true)
 		if err != nil {
 			panic(err)
 		}
