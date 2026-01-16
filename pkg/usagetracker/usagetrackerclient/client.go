@@ -27,7 +27,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/grafana/mimir/pkg/usagetracker/usagetrackerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -774,13 +773,13 @@ func (b *PartitionBatcher) TrackSeries(userID string, series []uint64) {
 }
 
 func (b *PartitionBatcher) flushWorker() {
-	t := time.NewTimer(util.DurationWithJitter(b.batchDelay, 0.1))
+	t := time.NewTicker(b.batchDelay)
+	defer t.Stop()
 
 	for {
 		select {
 		case <-t.C:
 			b.flushBatch(false)
-			t.Reset(util.DurationWithJitter(b.batchDelay, 0.1))
 		case <-b.stoppingChan:
 			// flush anything outstanding before returning.
 			b.workersPool.Close()
