@@ -77,13 +77,20 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
-	m.ProjectionLabels = MergeLabelNames(m.ProjectionLabels, otherMatrixSelector.ProjectionLabels)
+	m.ProjectionLabels = MergeProjectionLabels(m.ProjectionLabels, otherMatrixSelector.ProjectionLabels)
 
 	return nil
 }
 
-// MergeLabelNames combines two slices of label names, deduplicating and sorting them.
-func MergeLabelNames(lbls1 []string, lbls2 []string) []string {
+// MergeProjectionLabels combines two slices of label names, deduplicating and sorting them.
+func MergeProjectionLabels(lbls1 []string, lbls2 []string) []string {
+	// Even when are using projections and don't need any labels for the query, the
+	// __series_hash__ label is included in the list of labels we need. Therefore, if
+	// either of these are empty then we need the full set of labels.
+	if len(lbls1) == 0 || len(lbls2) == 0 {
+		return nil
+	}
+
 	unique := make(map[string]struct{}, len(lbls1)+len(lbls2))
 	for _, l := range lbls1 {
 		unique[l] = struct{}{}
