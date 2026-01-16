@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/kv"
 	dskit_metrics "github.com/grafana/dskit/metrics"
@@ -105,6 +106,52 @@ func TestIncrementDecrementIdleCompactionConcurrent(t *testing.T) {
 
 	require.Equal(t, int64(0), metrics.forcedCompactionsCount)
 	require.Equal(t, float64(0), testutil.ToFloat64(metrics.forcedCompactionInProgress))
+}
+
+func TestConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		setup         func(*Config)
+		expectedError string
+	}{
+		"default config passes validation": {
+			setup: func(_ *Config) {},
+		},
+		"negative error sample rate fails validation": {
+			setup: func(cfg *Config) {
+				cfg.ErrorSampleRate = -1
+			},
+			expectedError: "error sample rate cannot be a negative number",
+		},
+		"tokenless mode with gRPC push enabled fails validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterRing.NumTokens = 0
+				cfg.PushGrpcMethodEnabled = true
+			},
+			expectedError: "ring tokens can only be disabled when gRPC push is disabled",
+		},
+		"tokenless mode with gRPC push disabled passes validation": {
+			setup: func(cfg *Config) {
+				cfg.IngesterRing.NumTokens = 0
+				cfg.PushGrpcMethodEnabled = false
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{}
+			flagext.DefaultValues(&cfg)
+			tc.setup(&cfg)
+
+			err := cfg.Validate(log.NewNopLogger())
+			if tc.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.ErrorContains(t, err, tc.expectedError)
+			}
+		})
+	}
 }
 
 func TestIngester_StartPushRequest(t *testing.T) {
