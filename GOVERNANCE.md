@@ -102,7 +102,7 @@ Changes in maintainership are formalized by modifying the [`MAINTAINERS.md`][mai
 
 Maintainers are granted commit rights to all projects covered by this governance.
 
-A maintainer or committer may resign by notifying the [team mailing list][team]. A maintainer with no project activity for a year is considered to have resigned. Maintainers that wish to resign are encouraged to propose another team member to take over the project.
+A maintainer or committer may resign by notifying the [team mailing list][team]. A maintainer with no project activity for a year is considered to have resigned. Grafana Labs employees who stop being Grafana Cloud Hosted Metrics engineers or leave Grafana Labs are assumed to have resigned unless they state otherwise. Maintainers that wish to resign are encouraged to propose another team member to take over the project.
 
 A project may have multiple maintainers, as long as the responsibilities are clearly agreed upon between them. This includes coordinating who handles which issues and pull requests.
 
