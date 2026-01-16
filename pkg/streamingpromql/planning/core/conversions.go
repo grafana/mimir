@@ -5,6 +5,8 @@ package core
 import (
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -81,6 +83,28 @@ func matchersEqual(a, b *LabelMatcher) bool {
 	return a.Type == b.Type &&
 		a.Name == b.Name &&
 		a.Value == b.Value
+}
+
+// LabelMatchersStringer generates a human-readable version of multiple LabelMatchers
+// for use in logs or traces.
+type LabelMatchersStringer []*LabelMatcher
+
+func (l LabelMatchersStringer) String() string {
+	var builder strings.Builder
+	builder.WriteByte('{')
+
+	for i, m := range l {
+		builder.WriteString(m.Name)
+		builder.WriteString(m.Type.String())
+		builder.WriteString(strconv.Quote(m.Value))
+
+		if i < len(l)-1 {
+			builder.WriteString(", ")
+		}
+	}
+
+	builder.WriteByte('}')
+	return builder.String()
 }
 
 var itemTypeToAggregationOperation = map[parser.ItemType]AggregationOperation{
