@@ -621,7 +621,7 @@ func TestIngester_IngestStorage_PushToStorageAndReleaseRequest_CircuitBreaker(t 
 
 				// Wait until the ingester is healthy
 				test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-					return healthyInstancesCount(i.ring)
+					return healthyInstancesCount(i.instanceRing)
 				})
 
 				// the first request is successful

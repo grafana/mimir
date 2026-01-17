@@ -5,7 +5,9 @@ package ingester
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,6 +78,17 @@ type RingConfig struct {
 func (cfg *RingConfig) Validate() error {
 	if cfg.TokenGenerationStrategy != tokenGenerationRandom && cfg.TokenGenerationStrategy != tokenGenerationSpreadMinimizing {
 		return fmt.Errorf("unsupported token generation strategy (%q) has been chosen for %s", cfg.TokenGenerationStrategy, flagTokenGenerationStrategy)
+	}
+
+	// Tokenless mode validation.
+	if cfg.NumTokens == 0 {
+		if cfg.TokensFilePath != "" {
+			return fmt.Errorf("tokens file path must be empty when ring tokens are disabled")
+		}
+		if cfg.TokenGenerationStrategy == tokenGenerationSpreadMinimizing {
+			return fmt.Errorf("spread minimizing token generation strategy is not supported when ring tokens are disabled")
+		}
+		return nil
 	}
 
 	if cfg.TokenGenerationStrategy == tokenGenerationSpreadMinimizing {
@@ -189,6 +202,29 @@ func (cfg *RingConfig) ToLifecyclerConfig() ring.LifecyclerConfig {
 	lc.StatusPageConfig.HideTokensUIElements = cfg.HideTokensInStatusPage
 
 	return lc
+}
+
+// ToTokenlessBasicLifecyclerConfig returns a ring.BasicLifecyclerConfig for tokenless mode.
+// This should only be used when ingest storage is enabled and NumTokens is 0.
+func (cfg *RingConfig) ToTokenlessBasicLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
+	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger, cfg.EnableIPv6)
+	if err != nil {
+		return ring.BasicLifecyclerConfig{}, err
+	}
+
+	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
+
+	return ring.BasicLifecyclerConfig{
+		ID:                              cfg.InstanceID,
+		Addr:                            net.JoinHostPort(instanceAddr, strconv.Itoa(instancePort)),
+		Zone:                            cfg.InstanceZone,
+		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
+		HeartbeatTimeout:                cfg.HeartbeatTimeout,
+		TokensObservePeriod:             0, // No tokens to observe in tokenless mode.
+		NumTokens:                       0, // Tokenless mode.
+		KeepInstanceInTheRingOnShutdown: !cfg.UnregisterOnShutdown,
+		StatusPageConfig:                ring.StatusPageConfig{HideTokensUIElements: cfg.HideTokensInStatusPage},
+	}, nil
 }
 
 // customTokenGenerator returns a token generator, which is an implementation of ring.TokenGenerator,
