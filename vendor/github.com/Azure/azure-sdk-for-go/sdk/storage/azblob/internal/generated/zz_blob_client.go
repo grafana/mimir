@@ -1658,13 +1658,13 @@ func (client *BlobClient) getTagsCreateRequest(ctx context.Context, options *Blo
 		req.Raw().Header["x-ms-blob-if-match"] = []string{string(*blobModifiedAccessConditions.IfMatch)}
 	}
 	if blobModifiedAccessConditions != nil && blobModifiedAccessConditions.IfModifiedSince != nil {
-		req.Raw().Header["x-ms-blob-if-modified-since"] = []string{blobModifiedAccessConditions.IfModifiedSince.Format(time.RFC1123)}
+		req.Raw().Header["x-ms-blob-if-modified-since"] = []string{(*blobModifiedAccessConditions.IfModifiedSince).In(gmt).Format(time.RFC1123)}
 	}
 	if blobModifiedAccessConditions != nil && blobModifiedAccessConditions.IfNoneMatch != nil {
 		req.Raw().Header["x-ms-blob-if-none-match"] = []string{string(*blobModifiedAccessConditions.IfNoneMatch)}
 	}
 	if blobModifiedAccessConditions != nil && blobModifiedAccessConditions.IfUnmodifiedSince != nil {
-		req.Raw().Header["x-ms-blob-if-unmodified-since"] = []string{blobModifiedAccessConditions.IfUnmodifiedSince.Format(time.RFC1123)}
+		req.Raw().Header["x-ms-blob-if-unmodified-since"] = []string{(*blobModifiedAccessConditions.IfUnmodifiedSince).In(gmt).Format(time.RFC1123)}
 	}
 	if options != nil && options.RequestID != nil {
 		req.Raw().Header["x-ms-client-request-id"] = []string{*options.RequestID}
@@ -2685,13 +2685,13 @@ func (client *BlobClient) setTagsCreateRequest(ctx context.Context, tags BlobTag
 		req.Raw().Header["x-ms-blob-if-match"] = []string{string(*blobModifiedAccessConditions.IfMatch)}
 	}
 	if blobModifiedAccessConditions != nil && blobModifiedAccessConditions.IfModifiedSince != nil {
-		req.Raw().Header["x-ms-blob-if-modified-since"] = []string{blobModifiedAccessConditions.IfModifiedSince.Format(time.RFC1123)}
+		req.Raw().Header["x-ms-blob-if-modified-since"] = []string{(*blobModifiedAccessConditions.IfModifiedSince).In(gmt).Format(time.RFC1123)}
 	}
 	if blobModifiedAccessConditions != nil && blobModifiedAccessConditions.IfNoneMatch != nil {
 		req.Raw().Header["x-ms-blob-if-none-match"] = []string{string(*blobModifiedAccessConditions.IfNoneMatch)}
 	}
 	if blobModifiedAccessConditions != nil && blobModifiedAccessConditions.IfUnmodifiedSince != nil {
-		req.Raw().Header["x-ms-blob-if-unmodified-since"] = []string{blobModifiedAccessConditions.IfUnmodifiedSince.Format(time.RFC1123)}
+		req.Raw().Header["x-ms-blob-if-unmodified-since"] = []string{(*blobModifiedAccessConditions.IfUnmodifiedSince).In(gmt).Format(time.RFC1123)}
 	}
 	if options != nil && options.RequestID != nil {
 		req.Raw().Header["x-ms-client-request-id"] = []string{*options.RequestID}

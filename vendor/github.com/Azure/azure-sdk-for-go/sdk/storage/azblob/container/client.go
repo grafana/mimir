@@ -266,6 +266,7 @@ func (c *Client) NewListBlobsFlatPager(o *ListBlobsFlatOptions) *runtime.Pager[L
 		listOptions.Marker = o.Marker
 		listOptions.Maxresults = o.MaxResults
 		listOptions.Prefix = o.Prefix
+		listOptions.StartFrom = o.StartFrom
 	}
 	return runtime.NewPager(runtime.PagingHandler[ListBlobsFlatResponse]{
 		More: func(page ListBlobsFlatResponse) bool {
