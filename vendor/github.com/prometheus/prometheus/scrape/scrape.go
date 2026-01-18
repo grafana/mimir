@@ -613,7 +613,9 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		}
 	}
 
-	relabel.ProcessBuilder(lb, rc...)
+	if keep := relabel.ProcessBuilder(lb, rc...); !keep {
+		return labels.EmptyLabels()
+	}
 
 	return lb.Labels()
 }
@@ -1212,12 +1214,12 @@ func newScrapeLoop(opts scrapeLoopOptions) *scrapeLoop {
 		fallbackScrapeProtocol:        opts.sp.config.ScrapeFallbackProtocol.HeaderMediaType(),
 		enableCompression:             opts.sp.config.EnableCompression,
 		mrc:                           opts.sp.config.MetricRelabelConfigs,
+		reportExtraMetrics:            opts.sp.config.ExtraScrapeMetricsEnabled(),
 		validationScheme:              opts.sp.config.MetricNameValidationScheme,
 
 		// scrape.Options.
 		enableSTZeroIngestion:   opts.sp.options.EnableStartTimestampZeroIngestion,
 		enableTypeAndUnitLabels: opts.sp.options.EnableTypeAndUnitLabels,
-		reportExtraMetrics:      opts.sp.options.ExtraMetrics,
 		appendMetadataToWAL:     opts.sp.options.AppendMetadata,
 		passMetadataInContext:   opts.sp.options.PassMetadataInContext,
 		skipOffsetting:          opts.sp.options.skipOffsetting,
@@ -1333,6 +1335,11 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 			return
 		}
 		err = app.Commit()
+		if sl.reportExtraMetrics {
+			totalDuration := time.Since(start)
+			// Record total scrape duration metric.
+			sl.metrics.targetScrapeDuration.Observe(totalDuration.Seconds())
+		}
 		if err != nil {
 			sl.l.Error("Scrape commit failed", "err", err)
 		}
