@@ -95,7 +95,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.9.0
 	go.uber.org/multierr v1.11.0
 	golang.org/x/term v0.39.0
-	google.golang.org/api v0.259.0
+	google.golang.org/api v0.260.0
 	google.golang.org/protobuf v1.36.11
 	sigs.k8s.io/kustomize/kyaml v0.21.0
 )
@@ -280,7 +280,7 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.7 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.9 // indirect
 	github.com/googleapis/gax-go/v2 v2.16.0 // indirect
 	github.com/gosimple/slug v1.1.1 // indirect
 	github.com/grafana/gomemcache v0.0.0-20251127154401-74f93547077b
