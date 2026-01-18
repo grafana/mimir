@@ -181,6 +181,7 @@ func (c *PrometheusConverter) FromMetrics(ctx context.Context, md pmetric.Metric
 	unitNamer := otlptranslator.UnitNamer{}
 	c.everyN = everyNTimes{n: 128}
 	c.seenTargetInfo = make(map[targetInfoKey]struct{})
+	clear(c.sanitizedLabels)
 	resourceMetricsSlice := md.ResourceMetrics()
 
 	for i := range resourceMetricsSlice.Len() {
