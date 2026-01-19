@@ -80,16 +80,17 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	if err != nil {
 		return nil, err
 	}
-	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 
 	infoMetadata, err := f.Info.SeriesMetadata(ctx, matchers)
 	if err != nil {
+		types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 		return nil, err
 	}
 	defer types.SeriesMetadataSlicePool.Put(&infoMetadata, f.MemoryConsumptionTracker)
 
 	infoSigs, err := f.processSamplesFromInfoSeries(ctx, infoMetadata)
 	if err != nil {
+		types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 		return nil, err
 	}
 	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, ivs.Selector.Matchers)
@@ -279,12 +280,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 
 	for i, innerSeries := range innerMetadata {
 		if _, shouldIgnore := ignoreSeries[i]; shouldIgnore {
-			err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerSeries.Labels)
-			if err != nil {
-				return nil, err
-			}
 			result = append(result, innerSeries)
-
 			f.labelSetsOrder[i] = []string{"inner"}
 			continue
 		}
@@ -294,38 +290,27 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata, infoMetadata []types
 		labelSetsMap, exists := f.labelSets[sigLabelsOnly]
 		if !exists {
 			if len(dataLabelMatchersMap) > 0 {
+				types.SeriesMetadataSlicePool.Put(&[]types.SeriesMetadata{innerSeries}, f.MemoryConsumptionTracker)
 				continue
 			}
 
-			err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerSeries.Labels)
-			if err != nil {
-				return nil, err
-			}
 			result = append(result, innerSeries)
-
 			f.labelSetsOrder[i] = []string{"inner"}
 			continue
 		}
 
-		err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(innerSeries.Labels)
-		if err != nil {
-			return nil, err
-		}
 		result = append(result, innerSeries)
-
 		f.labelSetsOrder[i] = []string{"inner"}
 
 		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
 		for _, newLabels := range newLabelSets {
-			err := f.MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(newLabels)
-			if err != nil {
-				return nil, err
-			}
-
-			result = append(result, types.SeriesMetadata{
+			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, types.SeriesMetadata{
 				Labels:   newLabels,
 				DropName: innerSeries.DropName,
 			})
+			if err != nil {
+				return nil, err
+			}
 		}
 		f.labelSetsOrder[i] = append(f.labelSetsOrder[i], labelSetsOrder...)
 	}
@@ -424,10 +409,19 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 				}
 			}
 			f.storedSeriesResults = append(f.storedSeriesResults, storedResults)
-			// cleanup the unused storedSeriesResults key value pairs
+
+			// Clear this so we know what not to free up later.
+			storedSeriesResults[labelSetsHash] = types.InstantVectorSeriesData{}
 		}
 
-		storedSeriesResults = nil
+		for _, storedResults := range storedSeriesResults {
+			if len(storedResults.Floats) > 0 {
+				types.FPointSlicePool.Put(&storedResults.Floats, f.MemoryConsumptionTracker)
+			}
+			if len(storedResults.Histograms) > 0 {
+				types.HPointSlicePool.Put(&storedResults.Histograms, f.MemoryConsumptionTracker)
+			}
+		}
 
 		f.nextInnerSeriesIndex++
 
