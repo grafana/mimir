@@ -650,7 +650,7 @@ func TestOptimizationPass(t *testing.T) {
 							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: rate(...)
-							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
+							- MatrixSelector: {__name__="foo"}[5m0s] smoothed counter aware
 			`,
 			expectedDuplicateNodes:      0,
 			expectedSelectorsEliminated: 0,
