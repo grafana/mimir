@@ -378,9 +378,19 @@ func (l *FlushLog) Log(groupFingerprint uint64, flushTime, expiryThreshold time.
 		// This may happen with raciness or clock-drift across AM nodes.
 		if prevle.FlushLog.Timestamp.After(flushTime) || !closeToExpiry {
 			return nil
-		} else if closeToExpiry {
-			e.FlushLog = prevle.FlushLog // keep previous timestamp
 		}
+
+		// closeToExpiry is true - extend expiry while keeping the original timestamp.
+		// Directly update state since merge() requires a strictly newer timestamp,
+		// but we want to keep the same timestamp and only extend ExpiresAt.
+		e.FlushLog = prevle.FlushLog
+		l.st[groupFingerprint] = e
+		b, err := marshalMeshFlushLog(e)
+		if err != nil {
+			return err
+		}
+		l.broadcast(b)
+		return nil
 	}
 
 	b, err := marshalMeshFlushLog(e)
