@@ -240,7 +240,7 @@ func (v *FPointRingBufferView) CopyPoints() ([]promql.FPoint, error) {
 // ForEach calls f for each point in this buffer view.
 func (v *FPointRingBufferView) ForEach(f func(p promql.FPoint)) {
 	for i := 0; i < v.size; i++ {
-		f(v.buffer.pointAt(v.offset + i))
+		f(v.PointAt(i))
 	}
 }
 
@@ -251,7 +251,7 @@ func (v *FPointRingBufferView) First() promql.FPoint {
 		panic("Can't get first element of empty buffer")
 	}
 
-	return v.buffer.pointAt(v.offset)
+	return v.PointAt(0)
 }
 
 // Last returns the last point in this ring buffer view.
@@ -261,7 +261,7 @@ func (v *FPointRingBufferView) Last() (promql.FPoint, bool) {
 		return promql.FPoint{}, false
 	}
 
-	return v.buffer.pointAt(v.offset + v.size - 1), true
+	return v.PointAt(v.size - 1), true
 }
 
 // Count returns the number of points in this ring buffer view.
