@@ -762,7 +762,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				opts2 := streamingpromql.NewTestEngineOpts()
 				plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
+				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
 				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, enableDelayedNameRemoval, observer)
 				require.NoError(t, err)
 				nodesAfter := countDeduplicateAndMergeNodes(planAfter.Root)
@@ -950,7 +950,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 				require.NoError(t, err)
 
 				if withOptimization {
-					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
+					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
 				}
 
 				engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)

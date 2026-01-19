@@ -20,9 +20,7 @@ import (
 // and each series with the name 'foo' must have a unique set of labels.
 // Thus, when rate() function drops the name label, the output is still guaranteed to be unique.
 // Primary goal of this optimization is to unlock "labels projection" - ability to load only needed labels into memory.
-type EliminateDeduplicateAndMergeOptimizationPass struct {
-	enableDelayedNameRemoval bool
-}
+type EliminateDeduplicateAndMergeOptimizationPass struct{}
 
 type SelectorType int
 
@@ -39,10 +37,8 @@ type dedupNodeInfo struct {
 	keep       bool
 }
 
-func NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval bool) *EliminateDeduplicateAndMergeOptimizationPass {
-	return &EliminateDeduplicateAndMergeOptimizationPass{
-		enableDelayedNameRemoval: enableDelayedNameRemoval,
-	}
+func NewEliminateDeduplicateAndMergeOptimizationPass() *EliminateDeduplicateAndMergeOptimizationPass {
+	return &EliminateDeduplicateAndMergeOptimizationPass{}
 }
 
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
@@ -52,7 +48,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	// nodes is a list of DeduplicateAndMerge nodes in the order of their appearance in the plan.
 	var nodes []dedupNodeInfo
-	e.collect(plan.Root, nil, -1, &nodes)
+	e.collect(plan.Root, nil, -1, &nodes, plan.Parameters.EnableDelayedNameRemoval)
 	newRoot, err := e.eliminate(nodes)
 	if err != nil {
 		return nil, err
@@ -64,7 +60,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context
 }
 
 // collect collects DeduplicateAndMerge nodes from the plan and marks them for removal or keeping.
-func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Node, parent planning.Node, childIndex int, nodes *[]dedupNodeInfo) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Node, parent planning.Node, childIndex int, nodes *[]dedupNodeInfo, enableDelayedNameRemoval bool) {
 	// Binary operations are not supported yet. When we encounter a binary operation, we stop the elimination
 	// and keep all DeduplicateAndMerge nodes. It's done just to keep initial implementation simple.
 	// TODO:
@@ -89,7 +85,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 		// Series with the same name are guaranteed to have the same labels, so we can eliminate all DeduplicateAndMerge nodes.
 		return
 	case SelectorWithoutExactName:
-		if e.enableDelayedNameRemoval {
+		if enableDelayedNameRemoval {
 			// With Delayed Name Removal name is dropped at the very end of query execution.
 			// Keep the DeduplicateAndMerge closest to root to handle final deduplication.
 			if len(*nodes) > 0 {
@@ -113,7 +109,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 		case 1:
 			(*nodes)[0].keep = true
 		default:
-			if e.enableDelayedNameRemoval {
+			if enableDelayedNameRemoval {
 				// Also keep the root DeduplicateAndMerge to handle final deduplication, if delayed name removal is enabled.
 				// Name is dropped at the very end of query execution and label_replace or label_join might mess with it even if selector guarantees unique series.
 				(*nodes)[len(*nodes)-1].keep = true
@@ -126,7 +122,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 	}
 
 	for i := range node.ChildCount() {
-		e.collect(node.Child(i), node, i, nodes)
+		e.collect(node.Child(i), node, i, nodes, enableDelayedNameRemoval)
 	}
 }
 
