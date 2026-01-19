@@ -29,7 +29,7 @@ type labelsTime struct {
 
 type InfoFunction struct {
 	Inner                    types.InstantVectorOperator
-	Info                     types.InstantVectorOperator
+	Info                     *selectors.InstantVectorSelector
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	timeRange          types.QueryTimeRange
@@ -59,7 +59,7 @@ type InfoFunction struct {
 
 func NewInfoFunction(
 	inner types.InstantVectorOperator,
-	info types.InstantVectorOperator,
+	info *selectors.InstantVectorSelector,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
@@ -75,12 +75,8 @@ func NewInfoFunction(
 }
 
 func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	ivs, ok := f.Info.(*selectors.InstantVectorSelector)
-	if !ok {
-		return nil, fmt.Errorf("info function 2nd argument is not an instant vector selector")
-	}
 	// Override float values to reflect original timestamps.
-	ivs.ReturnSampleTimestampsPreserveHistograms = true
+	f.Info.ReturnSampleTimestampsPreserveHistograms = true
 
 	innerMetadata, err := f.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
@@ -97,8 +93,8 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata); err != nil {
 		return nil, err
 	}
-	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, ivs.Selector.Matchers)
-	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, ivs.Selector.Matchers)
+	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
+	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
 }
 
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {

@@ -560,7 +560,7 @@ func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParam
 		return nil, fmt.Errorf("expected an instant vector for 1st argument for info, got %T", args[0])
 	}
 
-	info, ok := args[1].(types.InstantVectorOperator)
+	info, ok := args[1].(*selectors.InstantVectorSelector)
 	if !ok {
 		// Should be caught by the PromQL parser, but we check here for safety.
 		return nil, fmt.Errorf("expected an instant vector for 2nd argument for info, got %T", args[1])
