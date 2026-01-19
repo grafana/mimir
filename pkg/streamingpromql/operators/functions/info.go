@@ -228,6 +228,17 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 				} else if metricLabels.time > origTs {
 					continue
 				}
+				// Replacing an older entry - remove its labels from sigLabelsOnlyTimestamps
+				if sigLabelsOnlyAtTs, ok := f.sigLabelsOnlyTimestamps[sample.T]; ok {
+					if arr, ok := sigLabelsOnlyAtTs[sigLabelsOnly]; ok {
+						for i, l := range arr {
+							if labels.Equal(l, metricLabels.labels) {
+								sigLabelsOnlyAtTs[sigLabelsOnly] = append(arr[:i], arr[i+1:]...)
+								break
+							}
+						}
+					}
+				}
 			}
 			sigsAtTimestamp[sig] = labelsTime{
 				labels: metadata.Labels,
