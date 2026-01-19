@@ -47,9 +47,10 @@ func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtSta
 		return err
 	}
 
-	if !math.IsPowerOfTwo(cap(newSlice)) {
+	if !pool.IsPowerOfTwo(cap(newSlice)) {
 		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 		// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
+		// Note that the capacity if newSlice is guaranteed to be at least 2 due to the implementation in math.NextPowerTwo()
 		return fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
 	}
 
@@ -114,10 +115,10 @@ func (b *FPointRingBuffer) RemoveFirst() {
 	}
 }
 
-// ReplaceTail will replace the last point in the buffer with the given point.
+// ReplaceLast will replace the last point in the buffer with the given point.
 // An error will be returned if the buffer is empty.
 // It is the responsibility of the caller to ensure that replacing the point maintains chronological order of the buffer.
-func (b *FPointRingBuffer) ReplaceTail(point promql.FPoint) error {
+func (b *FPointRingBuffer) ReplaceLast(point promql.FPoint) error {
 	if b.size == 0 {
 		return errors.New("unable to replace point to the tail of the buffer - current buffer is empty")
 	}
@@ -127,10 +128,10 @@ func (b *FPointRingBuffer) ReplaceTail(point promql.FPoint) error {
 	return nil
 }
 
-// ReplaceHead will replace the first point in the buffer with the given point.
+// ReplaceFirst will replace the first point in the buffer with the given point.
 // An error will be returned if the buffer is empty.
 // It is the responsibility of the caller to ensure that replacing the point maintains chronological order of the buffer.
-func (b *FPointRingBuffer) ReplaceHead(point promql.FPoint) error {
+func (b *FPointRingBuffer) ReplaceFirst(point promql.FPoint) error {
 	if b.size == 0 {
 		return errors.New("unable to replace point to the head of the buffer - current buffer is empty")
 	}
@@ -139,10 +140,10 @@ func (b *FPointRingBuffer) ReplaceHead(point promql.FPoint) error {
 	return nil
 }
 
-// InsertHeadPoint will insert the given point into the head of this buffer, expanding if required.
+// AppendAtStart will insert the given point into the head of this buffer, expanding if required.
 // Subsequently calling PointAt(0) will return this point.
 // It is the responsibility of the caller to ensure that inserting this point maintains chronological order of the buffer.
-func (b *FPointRingBuffer) InsertHeadPoint(point promql.FPoint) error {
+func (b *FPointRingBuffer) AppendAtStart(point promql.FPoint) error {
 	if err := b.resizeIfRequired(1, true); err != nil {
 		return err
 	}
@@ -173,7 +174,7 @@ func (b *FPointRingBuffer) Append(p promql.FPoint) error {
 // for each individual point. In this function the underlying buffer will only be grown once based
 // off the given slice length.
 //
-// It is the callers responsibility to ensure that the given points are in chronological order
+// It is the caller's responsibility to ensure that the given points are in chronological order
 // and that the points chronologically follow any existing points in the buffer.
 func (b *FPointRingBuffer) AppendSlice(points []promql.FPoint) error {
 	if len(points) == 0 {
@@ -242,18 +243,18 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 }
 
 // PointAt returns the point at index 'position'.
-// Note that it is the callers responsibility to have checked that the buffer size is gt the given position.
+// Note that it is the caller's responsibility to have checked that the buffer size is gt the given position.
 func (b *FPointRingBuffer) PointAt(position int) promql.FPoint {
 	return b.points[(b.firstIndex+position)&b.pointsIndexMask]
 }
 
 // Last returns the last point in the buffer.
-// Note that it is the callers responsibility to have checked that the buffer size is not empty.
+// Note that it is the caller's responsibility to have checked that the buffer size is not empty.
 func (b *FPointRingBuffer) Last() promql.FPoint {
 	return b.PointAt(b.size - 1)
 }
 
-// Count will return the current number of points in the buffer.
+// Count returns the current number of points in the buffer.
 func (b *FPointRingBuffer) Count() int {
 	return b.size
 }

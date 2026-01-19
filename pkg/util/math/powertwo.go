@@ -16,15 +16,3 @@ func NextPowerTwo(n int) int {
 	u := uint(n - 1)
 	return 1 << bits.Len(u)
 }
-
-// IsPowerOfTwo will return true if the given value is a power of 2.
-// Note that 0 is not a power of 2, but 1 is a valid power of 2.
-//
-// Note - this is not a drop in replacement for pool.IsPowerOfTwo(),
-// as this over function will return true for 0
-func IsPowerOfTwo(n int) bool {
-	if n == 0 {
-		return false
-	}
-	return (n & (n - 1)) == 0
-}

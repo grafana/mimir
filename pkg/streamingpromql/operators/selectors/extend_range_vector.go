@@ -164,7 +164,7 @@ func (m *RevertibleExtendedPointsUtility) ApplyBoundaryMutations(rangeStart, ran
 
 	// Add synthetic or clamp start boundary
 	if m.first.T > rangeStart {
-		if err := m.buff.InsertHeadPoint(promql.FPoint{T: rangeStart, F: m.first.F}); err != nil {
+		if err := m.buff.AppendAtStart(promql.FPoint{T: rangeStart, F: m.first.F}); err != nil {
 			return err
 		}
 		m.undoHeadModifications = removed
@@ -175,7 +175,7 @@ func (m *RevertibleExtendedPointsUtility) ApplyBoundaryMutations(rangeStart, ran
 			pointAfterRangeStart := m.buff.PointAt(1)
 			boundaryValue = interpolate(m.first, pointAfterRangeStart, rangeStart, true, m.mode == smoothedCounter)
 		}
-		if err := m.buff.ReplaceHead(promql.FPoint{T: rangeStart, F: boundaryValue}); err != nil {
+		if err := m.buff.ReplaceFirst(promql.FPoint{T: rangeStart, F: boundaryValue}); err != nil {
 			return err
 		}
 		m.undoHeadModifications = replaced
@@ -194,7 +194,7 @@ func (m *RevertibleExtendedPointsUtility) ApplyBoundaryMutations(rangeStart, ran
 			pointBeforeRangeEnd := m.buff.PointAt(m.buff.Count() - 2)
 			boundaryValue = interpolate(pointBeforeRangeEnd, m.last, rangeEnd, false, m.mode == smoothedCounter)
 		}
-		if err := m.buff.ReplaceTail(promql.FPoint{T: rangeEnd, F: boundaryValue}); err != nil {
+		if err := m.buff.ReplaceLast(promql.FPoint{T: rangeEnd, F: boundaryValue}); err != nil {
 			return err
 		}
 		m.undoTailModifications = replaced
@@ -212,7 +212,7 @@ func (m *RevertibleExtendedPointsUtility) UndoChanges() error {
 	case removed:
 		m.buff.RemoveLast()
 	case replaced:
-		if err := m.buff.ReplaceTail(m.last); err != nil {
+		if err := m.buff.ReplaceLast(m.last); err != nil {
 			return err
 		}
 	}
@@ -223,7 +223,7 @@ func (m *RevertibleExtendedPointsUtility) UndoChanges() error {
 	case removed:
 		m.buff.RemoveFirst()
 	case replaced:
-		if err := m.buff.ReplaceHead(m.first); err != nil {
+		if err := m.buff.ReplaceFirst(m.first); err != nil {
 			return err
 		}
 	}
@@ -235,7 +235,7 @@ func (m *RevertibleExtendedPointsUtility) UndoChanges() error {
 	}
 
 	if m.restoreExcludedFirst {
-		if err := m.buff.InsertHeadPoint(m.excludedFirst); err != nil {
+		if err := m.buff.AppendAtStart(m.excludedFirst); err != nil {
 			return err
 		}
 	}

@@ -593,7 +593,7 @@ func TestFPointRingBuffer_RemoveLast(t *testing.T) {
 	}
 }
 
-func TestFPointRingBuffer_RemoveHead(t *testing.T) {
+func TestFPointRingBuffer_RemoveFirst(t *testing.T) {
 	testCases := map[string]struct {
 		buff     []promql.FPoint
 		expected []promql.FPoint
@@ -621,7 +621,7 @@ func TestFPointRingBuffer_RemoveHead(t *testing.T) {
 	}
 }
 
-func TestFPointRingBuffer_ReplaceTail(t *testing.T) {
+func TestFPointRingBuffer_ReplaceLast(t *testing.T) {
 	testCases := map[string]struct {
 		tail     promql.FPoint
 		err      string
@@ -654,7 +654,7 @@ func TestFPointRingBuffer_ReplaceTail(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
-			err := buff.ReplaceTail(tc.tail)
+			err := buff.ReplaceLast(tc.tail)
 			if len(tc.err) > 0 {
 				require.ErrorContains(t, err, tc.err)
 				return
@@ -665,7 +665,7 @@ func TestFPointRingBuffer_ReplaceTail(t *testing.T) {
 	}
 }
 
-func TestFPointRingBuffer_ReplaceHead(t *testing.T) {
+func TestFPointRingBuffer_ReplaceFirst(t *testing.T) {
 	testCases := map[string]struct {
 		head     promql.FPoint
 		err      string
@@ -697,7 +697,7 @@ func TestFPointRingBuffer_ReplaceHead(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 			require.NoError(t, buff.Use(tc.buff))
-			err := buff.ReplaceHead(tc.head)
+			err := buff.ReplaceFirst(tc.head)
 			if len(tc.err) > 0 {
 				require.ErrorContains(t, err, tc.err)
 				return
@@ -774,7 +774,7 @@ func TestFPointRingBuffer_AppendSlice(t *testing.T) {
 	}
 }
 
-func TestFPointRingBuffer_InsertHeadPoint_FirstPointAlignment(t *testing.T) {
+func TestFPointRingBuffer_AppendAtStart_FirstPointAlignment(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	require.NoError(t, buff.Append(promql.FPoint{T: 10, F: 20}))
 	require.Equal(t, 1, buff.size)
@@ -782,28 +782,28 @@ func TestFPointRingBuffer_InsertHeadPoint_FirstPointAlignment(t *testing.T) {
 	require.Len(t, buff.points, 2)
 
 	// inserting another point will not grow the underlying buffer, so the new point is stored in the upper end of the existing 2 slot buffer
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 9, F: 20}))
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 9, F: 20}))
 	require.Equal(t, 2, buff.size)
 	require.Equal(t, 1, buff.firstIndex)
 	require.Len(t, buff.points, 2)
 	require.Equal(t, promql.FPoint{T: 9, F: 20}, buff.PointAt(0))
 
 	// inserting another point will grow the underlying buffer - since we are growing the buffer we can re-align so that the firstIndex is 0 for the new head
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 8, F: 20}))
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 8, F: 20}))
 	require.Equal(t, 3, buff.size)
 	require.Equal(t, 0, buff.firstIndex)
 	require.Len(t, buff.points, 4)
 	require.Equal(t, promql.FPoint{T: 8, F: 20}, buff.PointAt(0))
 
 	// inserting another point will not grow the underlying buffer, so the new point is stored at the end of the existing buffer
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 7, F: 20}))
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 7, F: 20}))
 	require.Equal(t, 4, buff.size)
 	require.Equal(t, 3, buff.firstIndex)
 	require.Len(t, buff.points, 4)
 	require.Equal(t, promql.FPoint{T: 7, F: 20}, buff.PointAt(0))
 
 	// inserting another point will grow the underlying buffer - since we are growing the buffer we can re-align so that the firstIndex is 0 for the new head
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 6, F: 20}))
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 6, F: 20}))
 	require.Equal(t, 5, buff.size)
 	require.Equal(t, 0, buff.firstIndex)
 	require.Len(t, buff.points, 8)
@@ -813,8 +813,8 @@ func TestFPointRingBuffer_InsertHeadPoint_FirstPointAlignment(t *testing.T) {
 func TestFPointRingBuffer_AppendSlice_Alignment(t *testing.T) {
 	buff := NewFPointRingBuffer(limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, ""))
 	// insert 2 samples - the first point will be at the tail of the ring
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 10, F: 20}))
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 5, F: 20}))
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 10, F: 20}))
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 5, F: 20}))
 
 	require.Equal(t, 2, buff.size)
 	require.Equal(t, 1, buff.firstIndex)
@@ -840,7 +840,7 @@ func TestFPointRingBuffer_AppendSlice_SizeLessThanFirstIndex(t *testing.T) {
 	require.Equal(t, 0, buff.firstIndex)
 
 	buff.RemoveLast()
-	require.NoError(t, buff.InsertHeadPoint(promql.FPoint{T: 5}))
+	require.NoError(t, buff.AppendAtStart(promql.FPoint{T: 5}))
 	require.Equal(t, 4, buff.size)
 	require.Len(t, buff.points, 4)
 	require.Equal(t, 3, buff.firstIndex)
