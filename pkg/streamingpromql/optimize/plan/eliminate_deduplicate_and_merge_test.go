@@ -101,71 +101,71 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 		},
 		"nested functions where selector has no name matcher": {
 			expr: `abs(rate({job="test"}[5m]))`,
-			// DeduplicateAndMerge nodes are kept at the root and around the function call for conservative optimization.
+			// DeduplicateAndMerge nodes eliminated, except the closest to the selector.
+			// Name is dropped immediately, so first DeduplicateAndMerge node deduplicates series and there shouldn't be any duplicates after it.
 			expectedPlanWithoutDelayedNameRemoval: `
+				- FunctionCall: abs(...)
+					- DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {job="test"}[5m0s]
+			`,
+			// DeduplicateAndMerge nodes eliminated, except the root one.
+			// Duplicates might appear after __name__ is dropped, which happens at the very end of query execution, so we deduplicate after it.
+			expectedPlanWithDelayedNameRemoval: `
 				- DeduplicateAndMerge
-					- FunctionCall: abs(...)
-						- DeduplicateAndMerge
+					- DropName
+						- FunctionCall: abs(...)
 							- FunctionCall: rate(...)
 								- MatrixSelector: {job="test"}[5m0s]
 			`,
-			// DeduplicateAndMerge nodes are kept at the root and around the function call for conservative optimization.
-			expectedPlanWithDelayedNameRemoval: `
-				- DeduplicateAndMerge
-					- DropName
-						- FunctionCall: abs(...)
-							- DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {job="test"}[5m0s]
-			`,
-			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithoutDelayedNameRemoval: 1,
+			nodesEliminatedWithDelayedNameRemoval:    1,
 		},
 		"nested functions where selector has regex name matcher": {
 			expr: `abs(rate({__name__=~"(foo|bar)"}[5m]))`,
-			// DeduplicateAndMerge nodes are kept due to regex name matcher which might produce non-unique series.
+			// DeduplicateAndMerge nodes eliminated, except the closest to the selector.
+			// Name is dropped immediately, so first DeduplicateAndMerge node deduplicates series and there shouldn't be any duplicates after it.
 			expectedPlanWithoutDelayedNameRemoval: `
-				- DeduplicateAndMerge
-					- FunctionCall: abs(...)
-						- DeduplicateAndMerge
-							- FunctionCall: rate(...)
-								- MatrixSelector: {__name__=~"(foo|bar)"}[5m0s]
+				- FunctionCall: abs(...)
+					- DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- MatrixSelector: {__name__=~"(foo|bar)"}[5m0s]
 			`,
-			// DeduplicateAndMerge nodes are kept due to regex name matcher which might produce non-unique series.
+			// DeduplicateAndMerge nodes eliminated, except the root one.
+			// Duplicates might appear after __name__ is dropped, which happens at the very end of query execution, so we deduplicate after it.
 			expectedPlanWithDelayedNameRemoval: `
 				- DeduplicateAndMerge
 					- DropName
 						- FunctionCall: abs(...)
-							- DeduplicateAndMerge
-								- FunctionCall: rate(...)
-									- MatrixSelector: {__name__=~"(foo|bar)"}[5m0s]
+							- FunctionCall: rate(...)
+								- MatrixSelector: {__name__=~"(foo|bar)"}[5m0s]
 			`,
-			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithoutDelayedNameRemoval: 1,
+			nodesEliminatedWithDelayedNameRemoval:    1,
 		},
 		"deeply nested functions where selector has no name matcher": {
 			expr: `abs(ceil(rate({job="test"}[5m])))`,
-			// DeduplicateAndMerge nodes are kept for conservative optimization.
+			// DeduplicateAndMerge nodes eliminated, except the closest to the selector.
+			// Name is dropped immediately, so first DeduplicateAndMerge node deduplicates series and there shouldn't be any duplicates after it.
 			expectedPlanWithoutDelayedNameRemoval: `
-				- DeduplicateAndMerge
 					- FunctionCall: abs(...)
 						- FunctionCall: ceil(...)
 							- DeduplicateAndMerge
 								- FunctionCall: rate(...)
 									- MatrixSelector: {job="test"}[5m0s]
-			`,
-			// DeduplicateAndMerge nodes are kept for conservative optimization.
+				`,
+			// DeduplicateAndMerge nodes eliminated, except the root one.
+			// Duplicates might appear after __name__ is dropped, which happens at the very end of query execution, so we deduplicate after it.
 			expectedPlanWithDelayedNameRemoval: `
-				- DeduplicateAndMerge
-					- DropName
-						- FunctionCall: abs(...)
-							- FunctionCall: ceil(...)
-								- DeduplicateAndMerge
+					- DeduplicateAndMerge
+						- DropName
+							- FunctionCall: abs(...)
+								- FunctionCall: ceil(...)
 									- FunctionCall: rate(...)
 										- MatrixSelector: {job="test"}[5m0s]
-			`,
-			nodesEliminatedWithoutDelayedNameRemoval: 1,
-			nodesEliminatedWithDelayedNameRemoval:    1,
+				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 2,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
 		"unary negation with exact name matcher": {
 			// DeduplicateAndMerge is eliminated in both plans, exact name matcher guarantees unique series.
@@ -218,25 +218,25 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 		},
 		"nested unary after function": {
 			expr: `-(rate({job="test"}[5m]))`,
-			// DeduplicateAndMerge nodes are kept for conservative optimization.
+			// DeduplicateAndMerge nodes eliminated, except the closest to the selector.
+			// Name is dropped immediately, so first DeduplicateAndMerge node deduplicates series and there shouldn't be any duplicates after it.
 			expectedPlanWithoutDelayedNameRemoval: `
-				- DeduplicateAndMerge
 					- UnaryExpression: -
 						- DeduplicateAndMerge
 							- FunctionCall: rate(...)
 								- MatrixSelector: {job="test"}[5m0s]
-			`,
-			// DeduplicateAndMerge nodes are kept for conservative optimization.
+				`,
+			// DeduplicateAndMerge nodes eliminated, except the root one.
+			// Duplicates might appear after __name__ drop, which happens at the very end of query execution, so deduplicate after it.
 			expectedPlanWithDelayedNameRemoval: `
-				- DeduplicateAndMerge
-					- DropName
-						- UnaryExpression: -
-							- DeduplicateAndMerge
+					- DeduplicateAndMerge
+						- DropName
+							- UnaryExpression: -
 								- FunctionCall: rate(...)
 									- MatrixSelector: {job="test"}[5m0s]
-			`,
-			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 1,
+			nodesEliminatedWithDelayedNameRemoval:    1,
 		},
 		"label_replace": {
 			// DeduplicateAndMerge is kept around label_replace in both plans.
@@ -313,16 +313,15 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 					- DeduplicateAndMerge
 						- DropName
 							- FunctionCall: label_replace(...)
-								- param 0: DeduplicateAndMerge
-									- FunctionCall: rate(...)
-										- MatrixSelector: {job="test"}[5m0s]
+								- param 0: FunctionCall: rate(...)
+									- MatrixSelector: {job="test"}[5m0s]
 								- param 1: StringLiteral: "dst"
 								- param 2: StringLiteral: "$1"
 								- param 3: StringLiteral: "src"
 								- param 4: StringLiteral: "(.*)"
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithDelayedNameRemoval:    1,
 		},
 		"function call enclosing label_replace, selector with exact name matcher": {
 			// keeps:
@@ -350,20 +349,19 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			// - DeduplicateAndMerge wrapping rate is dropped, because selector has exact name matcher.
 			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
 			expectedPlanWithDelayedNameRemoval: `
-				- DeduplicateAndMerge
-					- DropName
-						- FunctionCall: abs(...)
-							- DeduplicateAndMerge
-								- FunctionCall: label_replace(...)
-									- param 0: FunctionCall: rate(...)
-										- MatrixSelector: {__name__="foo"}[5m0s]
-									- param 1: StringLiteral: "dst"
-									- param 2: StringLiteral: "$1"
-									- param 3: StringLiteral: "src"
-									- param 4: StringLiteral: "(.*)"
+				- DropName
+					- FunctionCall: abs(...)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: FunctionCall: rate(...)
+									- MatrixSelector: {__name__="foo"}[5m0s]
+								- param 1: StringLiteral: "dst"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "src"
+								- param 4: StringLiteral: "(.*)"
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 1,
-			nodesEliminatedWithDelayedNameRemoval:    1,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
 		"function call enclosing label_replace, selector without name matcher": {
 			expr: `abs(label_replace(rate({job="test"}[5m]), "dst", "$1", "src", "(.*)"))`,
@@ -395,16 +393,15 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 							- FunctionCall: abs(...)
 								- DeduplicateAndMerge
 									- FunctionCall: label_replace(...)
-										- param 0: DeduplicateAndMerge
-											- FunctionCall: rate(...)
-												- MatrixSelector: {job="test"}[5m0s]
+										- param 0: FunctionCall: rate(...)
+											- MatrixSelector: {job="test"}[5m0s]
 										- param 1: StringLiteral: "dst"
 										- param 2: StringLiteral: "$1"
 										- param 3: StringLiteral: "src"
 										- param 4: StringLiteral: "(.*)"
 					`,
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval:    0,
+			nodesEliminatedWithDelayedNameRemoval:    1,
 		},
 		"nested function calls enclosing label_replace": {
 			expr: `abs(ceil(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")))`,
@@ -433,19 +430,18 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			expectedPlanWithDelayedNameRemoval: `
 					- DropName
 						- FunctionCall: abs(...)
-							- DeduplicateAndMerge
-								- FunctionCall: ceil(...)
-									- DeduplicateAndMerge
-										- FunctionCall: label_replace(...)
-											- param 0: FunctionCall: rate(...)
-												- MatrixSelector: {__name__="foo"}[5m0s]
-											- param 1: StringLiteral: "dst"
-											- param 2: StringLiteral: "$1"
-											- param 3: StringLiteral: "src"
-											- param 4: StringLiteral: "(.*)"
+							- FunctionCall: ceil(...)
+								- DeduplicateAndMerge
+									- FunctionCall: label_replace(...)
+										- param 0: FunctionCall: rate(...)
+											- MatrixSelector: {__name__="foo"}[5m0s]
+										- param 1: StringLiteral: "dst"
+										- param 2: StringLiteral: "$1"
+										- param 3: StringLiteral: "src"
+										- param 4: StringLiteral: "(.*)"
 			`,
 			nodesEliminatedWithoutDelayedNameRemoval: 2,
-			nodesEliminatedWithDelayedNameRemoval:    2,
+			nodesEliminatedWithDelayedNameRemoval:    3,
 		},
 		"function which does not drop name after label_replace": {
 			expr: `sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)"))`,
@@ -471,7 +467,6 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
 
 			expectedPlanWithDelayedNameRemoval: `
-								- DeduplicateAndMerge
 									- DropName
 										- FunctionCall: sort(...)
 											- DeduplicateAndMerge
@@ -484,7 +479,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 													- param 4: StringLiteral: "(.*)"
 					`,
 			nodesEliminatedWithoutDelayedNameRemoval: 1,
-			nodesEliminatedWithDelayedNameRemoval:    1,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
 		"nested function calls enclosing label_replace, function in between doesn't drop __name__": {
 			expr: `abs(sort(label_replace(rate(foo[5m]), "dst", "$1", "src", "(.*)")))`,
@@ -513,21 +508,20 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			// - DeduplicateAndMerge at the root is dropped, because selector has exact name matcher. label_replace can't reintroduce __name__ label because it's dropped after. Even if it will modify it, DeduplicateAndMerge right after will hanlde this.
 
 			expectedPlanWithDelayedNameRemoval: `
-				- DeduplicateAndMerge
-					- DropName
-						- FunctionCall: abs(...)
-							- FunctionCall: sort(...)
-								- DeduplicateAndMerge
-									- FunctionCall: label_replace(...)
-										- param 0: FunctionCall: rate(...)
-											- MatrixSelector: {__name__="foo"}[5m0s]
-										- param 1: StringLiteral: "dst"
-										- param 2: StringLiteral: "$1"
-										- param 3: StringLiteral: "src"
-										- param 4: StringLiteral: "(.*)"
+				- DropName
+					- FunctionCall: abs(...)
+						- FunctionCall: sort(...)
+							- DeduplicateAndMerge
+								- FunctionCall: label_replace(...)
+									- param 0: FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+									- param 1: StringLiteral: "dst"
+									- param 2: StringLiteral: "$1"
+									- param 3: StringLiteral: "src"
+									- param 4: StringLiteral: "(.*)"
 				`,
 			nodesEliminatedWithoutDelayedNameRemoval: 1,
-			nodesEliminatedWithDelayedNameRemoval:    1,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
 		"nested label_replace": {
 			// keeps:
@@ -565,25 +559,24 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			expectedPlanWithDelayedNameRemoval: `
 			- DropName
 				- FunctionCall: abs(...)
-					- DeduplicateAndMerge
-						- FunctionCall: ceil(...)
-							- DeduplicateAndMerge
-								- FunctionCall: label_replace(...)
-									- param 0: DeduplicateAndMerge
-										- FunctionCall: label_replace(...)
-											- param 0: FunctionCall: rate(...)
-												- MatrixSelector: {__name__="foo"}[5m0s]
-											- param 1: StringLiteral: "dst1"
-											- param 2: StringLiteral: "$1"
-											- param 3: StringLiteral: "src1"
-											- param 4: StringLiteral: "(.*)"
-									- param 1: StringLiteral: "dst2"
-									- param 2: StringLiteral: "$1"
-									- param 3: StringLiteral: "dst1"
-									- param 4: StringLiteral: "(.*)"
+					- FunctionCall: ceil(...)
+						- DeduplicateAndMerge
+							- FunctionCall: label_replace(...)
+								- param 0: DeduplicateAndMerge
+									- FunctionCall: label_replace(...)
+										- param 0: FunctionCall: rate(...)
+											- MatrixSelector: {__name__="foo"}[5m0s]
+										- param 1: StringLiteral: "dst1"
+										- param 2: StringLiteral: "$1"
+										- param 3: StringLiteral: "src1"
+										- param 4: StringLiteral: "(.*)"
+								- param 1: StringLiteral: "dst2"
+								- param 2: StringLiteral: "$1"
+								- param 3: StringLiteral: "dst1"
+								- param 4: StringLiteral: "(.*)"
 			`,
 			nodesEliminatedWithoutDelayedNameRemoval: 2,
-			nodesEliminatedWithDelayedNameRemoval:    2,
+			nodesEliminatedWithDelayedNameRemoval:    3,
 		},
 
 		// Test cases to confirm we're skipping optimization when expression has a binary operation.
@@ -769,7 +762,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 				opts2 := streamingpromql.NewTestEngineOpts()
 				plannerWithOpt, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+				plannerWithOpt.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
 				planAfter, err := plannerWithOpt.NewQueryPlan(ctx, testCase.expr, timeRange, enableDelayedNameRemoval, observer)
 				require.NoError(t, err)
 				nodesAfter := countDeduplicateAndMergeNodes(planAfter.Root)
@@ -957,7 +950,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassCorrectness(t *testing.T) {
 				require.NoError(t, err)
 
 				if withOptimization {
-					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
+					planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval))
 				}
 
 				engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)

@@ -92,9 +92,10 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// This optimization pass is registered before CSE to keep the query plan as a simple tree structure.
 	// After CSE, the query plan may no longer be a tree due to multiple paths culminating in the same Duplicate node,
 	// which would make the elimination logic more complex.
-	if opts.EnableEliminateDeduplicateAndMerge {
-		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass())
-	}
+	// Remove for now as it does not work with per-tenant delayed name removal.
+	// if opts.EnableEliminateDeduplicateAndMerge {
+	// 	planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(false))
+	// }
 
 	if opts.EnableSkippingHistogramDecoding {
 		// This optimization pass must be registered before common subexpression elimination, if that is enabled.

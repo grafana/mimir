@@ -21,6 +21,7 @@ import (
 // Thus, when rate() function drops the name label, the output is still guaranteed to be unique.
 // Primary goal of this optimization is to unlock "labels projection" - ability to load only needed labels into memory.
 type EliminateDeduplicateAndMergeOptimizationPass struct {
+	enableDelayedNameRemoval bool
 }
 
 type SelectorType int
@@ -38,8 +39,10 @@ type dedupNodeInfo struct {
 	keep       bool
 }
 
-func NewEliminateDeduplicateAndMergeOptimizationPass() *EliminateDeduplicateAndMergeOptimizationPass {
-	return &EliminateDeduplicateAndMergeOptimizationPass{}
+func NewEliminateDeduplicateAndMergeOptimizationPass(enableDelayedNameRemoval bool) *EliminateDeduplicateAndMergeOptimizationPass {
+	return &EliminateDeduplicateAndMergeOptimizationPass{
+		enableDelayedNameRemoval: enableDelayedNameRemoval,
+	}
 }
 
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
@@ -86,19 +89,18 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 		// Series with the same name are guaranteed to have the same labels, so we can eliminate all DeduplicateAndMerge nodes.
 		return
 	case SelectorWithoutExactName:
-		// We do not know at this stage if delayed name removal is enabled or not, because
-		// it is controlled per tenant and applied at the query plan level, so it is not set
-		// in the query planner. So we keep more to cater for both scenarios though it is less
-		// efficient.
-		// With Delayed Name Removal name is dropped at the very end of query execution.
-		// Keep the DeduplicateAndMerge closest to root to handle final deduplication.
-		if len(*nodes) > 0 {
-			(*nodes)[0].keep = true
-		}
-		// Without delayed name removal name is dropped immediately, so there should be no duplicates after.
-		// So, keep only the DeduplicateAndMerge closest to the selector.
-		if len(*nodes) >= 1 {
-			(*nodes)[len(*nodes)-1].keep = true
+		if e.enableDelayedNameRemoval {
+			// With Delayed Name Removal name is dropped at the very end of query execution.
+			// Keep the DeduplicateAndMerge closest to root to handle final deduplication.
+			if len(*nodes) > 0 {
+				(*nodes)[0].keep = true
+			}
+		} else {
+			// Without delayed name removal name is dropped immediately, so there should be no duplicates after.
+			// So, keep only the DeduplicateAndMerge closest to the selector.
+			if len(*nodes) >= 1 {
+				(*nodes)[len(*nodes)-1].keep = true
+			}
 		}
 		return
 	}
@@ -111,11 +113,15 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 		case 1:
 			(*nodes)[0].keep = true
 		default:
-			// Also keep DeduplicateAndMerge wrapping closest __name__ dropping operation, in case __name__ is reintroduced by label_replace or label_join and operation's result should be deduplicated.
-			(*nodes)[len(*nodes)-2].keep = true
-			// Also keep the root DeduplicateAndMerge to handle final deduplication, if delayed name removal is enabled.
-			// Name is dropped at the very end of query execution and label_replace or label_join might mess with it even if selector guarantees unique series.
-			(*nodes)[len(*nodes)-1].keep = true
+			if e.enableDelayedNameRemoval {
+				// Also keep the root DeduplicateAndMerge to handle final deduplication, if delayed name removal is enabled.
+				// Name is dropped at the very end of query execution and label_replace or label_join might mess with it even if selector guarantees unique series.
+				(*nodes)[len(*nodes)-1].keep = true
+			} else {
+				// Also keep DeduplicateAndMerge wrapping closest __name__ dropping operation, in case __name__ is reintroduced by label_replace or label_join and operation's result should be deduplicated.
+				(*nodes)[len(*nodes)-2].keep = true
+				(*nodes)[len(*nodes)-1].keep = true
+			}
 		}
 	}
 
