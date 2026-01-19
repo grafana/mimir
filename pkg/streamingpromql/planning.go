@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -520,6 +521,31 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		fnc, ok := findFunction(expr.Func.Name)
 		if !ok {
 			return nil, compat.NewNotSupportedError(fmt.Sprintf("'%s' function", expr.Func.Name))
+		}
+
+		if fnc == functions.FUNCTION_INFO {
+			if len(expr.Args) == 1 {
+				infoExpr, err := parser.ParseExpr("target_info")
+				if err != nil {
+					return nil, err
+				}
+				expr.Args = append(expr.Args, infoExpr)
+			} else if len(expr.Args) == 2 {
+				dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
+				if !ok {
+					return nil, fmt.Errorf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1])
+				}
+				hasMetricNameMatcher := false
+				for _, m := range dataLabelMatchersExpr.LabelMatchers {
+					if m.Name == labels.MetricName {
+						hasMetricNameMatcher = true
+						break
+					}
+				}
+				if !hasMetricNameMatcher {
+					dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "target_info"))
+				}
+			}
 		}
 
 		args := make([]planning.Node, 0, len(expr.Args))
