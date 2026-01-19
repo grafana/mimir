@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -254,26 +255,28 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 		},
 	)
 
-	s, err := p.Get(2, tracker)
+	s1, err := p.Get(2, tracker)
 	require.NoError(t, err)
-	require.Equal(t, 2, cap(s))
+	require.Equal(t, 2, cap(s1))
 	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 
-	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	s2, err := p.AppendToSlice(s1, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
 	require.NoError(t, err)
-	require.Len(t, s, 2)
+	require.Len(t, s2, 2)
+	require.Same(t, unsafe.SliceData(s1), unsafe.SliceData(s2))
 	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 
-	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 3, F: 3.0}, promql.FPoint{T: 4, F: 4.0}, promql.FPoint{T: 5, F: 5.0})
+	s3, err := p.AppendToSlice(s2, tracker, promql.FPoint{T: 3, F: 3.0}, promql.FPoint{T: 4, F: 4.0}, promql.FPoint{T: 5, F: 5.0})
 	require.NoError(t, err)
-	require.Len(t, s, 5)
-	require.Equal(t, 8, cap(s)) // Slice should have increased in size
+	require.Len(t, s3, 5)
+	require.Equal(t, 8, cap(s3))
+	require.NotSame(t, unsafe.SliceData(s2), unsafe.SliceData(s3))
 	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
-	require.Equal(t, []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}, {T: 4, F: 4.0}, {T: 5, F: 5.0}}, s)
+	require.Equal(t, []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}, {T: 4, F: 4.0}, {T: 5, F: 5.0}}, s3)
 
 	require.Equal(t, 0, onPutHookPointCount)
 
-	p.Put(&s, tracker)
+	p.Put(&s3, tracker)
 	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
 	require.Equal(t, 5, onPutHookPointCount)
 }
