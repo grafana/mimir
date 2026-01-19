@@ -566,7 +566,7 @@ func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParam
 		return nil, fmt.Errorf("expected an instant vector for 2nd argument for info, got %T", args[1])
 	}
 
-	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition, opParams.QueryParameters.EnableDelayedNameRemoval), nil
+	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition), nil
 }
 
 // RegisteredFunctions contains information for each registered function.

@@ -32,9 +32,8 @@ type InfoFunction struct {
 	Info                     types.InstantVectorOperator
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	timeRange                types.QueryTimeRange
-	expressionPosition       posrange.PositionRange
-	enableDelayedNameRemoval bool
+	timeRange          types.QueryTimeRange
+	expressionPosition posrange.PositionRange
 
 	// function to generate signature from labels without metric name
 	sigFunctionLabelsOnly func(labels.Labels) string
@@ -61,16 +60,14 @@ func NewInfoFunction(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	timeRange types.QueryTimeRange,
 	expressionPosition posrange.PositionRange,
-	enableDelayedNameRemoval bool,
 ) *InfoFunction {
 	return &InfoFunction{
 		Inner:                    inner,
 		Info:                     info,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 
-		timeRange:                timeRange,
-		expressionPosition:       expressionPosition,
-		enableDelayedNameRemoval: enableDelayedNameRemoval,
+		timeRange:          timeRange,
+		expressionPosition: expressionPosition,
 	}
 }
 
@@ -155,10 +152,8 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			return fmt.Errorf("this should be an info metric, with float samples: %s", metadata.Labels)
 		}
 
-		timestamps := make(map[int64]struct{})
 		for _, sample := range d.Floats {
 			origTs := int64(sample.F * 1000)
-			timestamps[sample.T] = struct{}{}
 
 			// Check for duplicate series for the same timestamp and signature.
 			// If a duplicate is found, only error out if the original timestamp is the same.
@@ -354,11 +349,11 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string]*labels.Matcher) ([]labels.Labels, []string) {
 	innerLabels := innerSeries.Labels.Map()
 
-	lb.Reset(innerSeries.Labels)
-
 	newLabelSets := make([]labels.Labels, 0, len(labelSetsMap))
 	labelSetsOrder := make([]string, 0, len(labelSetsMap))
 	for _, labelSets := range labelSetsMap {
+		// Reset the builder at the start of each iteration to avoid labels bleeding over.
+		lb.Reset(innerSeries.Labels)
 		savedLabels := make(map[string]struct{})
 
 		for _, infoLabels := range labelSets {
@@ -421,7 +416,6 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-		defer types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 
 		labelSetsOrder := f.labelSetsOrder[f.nextInnerSeriesIndex]
 		sigLabelsOnly := f.innerSigLabelsOnly[f.nextInnerSeriesIndex]
@@ -434,6 +428,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		for _, point := range result.Floats {
 			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
+				types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 				return types.InstantVectorSeriesData{}, err
 			}
 			if skip {
@@ -446,6 +441,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		for _, point := range result.Histograms {
 			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
+				types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 				return types.InstantVectorSeriesData{}, err
 			}
 			if skip {
@@ -468,6 +464,9 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 			}
 			f.storedSeriesResults[i] = storedResults
 		}
+
+		// Return the inner series data to the pool now that we've copied all needed data.
+		types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 
 		// Go to the next inner series when we're ready.
 		f.nextInnerSeriesIndex++
