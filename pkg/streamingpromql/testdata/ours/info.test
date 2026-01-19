@@ -24,6 +24,19 @@ eval range from 0m to 2m step 1m info(metric_total{env=~"."}, {__name__=~".+_inf
   metric_total{instance="a", job="1", env="1", data="info", another_data="another info", data2="warning", another_data2="another warning"} 0 1 2
   metric_total{instance="a", job="1", env="2", data="info", another_data="another info", data2="warning", another_data2="another warning"} 0 2 4
 
+# Ensure that info function works even when not at top level.
+eval range from 0m to 2m step 1m 1 + info(metric_total{env=~"."})
+  {instance="a", job="1", env="1", data="info", another_data="another info"} 1 2 3
+  {instance="a", job="1", env="2", data="info", another_data="another info"} 1 3 5
+
+eval range from 0m to 2m step 1m 1 + info(metric_total, {data=~".+"})
+  {instance="a", job="1", env="1", data="info"} 1 2 3
+  {instance="a", job="1", env="2", data="info"} 1 3 5
+
+eval range from 0m to 2m step 1m info(metric_total{env=~"."} + 1)
+  {instance="a", job="1", env="1", data="info", another_data="another info"} 1 2 3
+  {instance="a", job="1", env="2", data="info", another_data="another info"} 1 3 5
+
 clear
 
 load 1m
