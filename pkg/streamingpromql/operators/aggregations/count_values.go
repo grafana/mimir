@@ -263,7 +263,10 @@ func (c *CountValues) AfterPrepare(ctx context.Context) error {
 }
 
 func (c *CountValues) Finalize(ctx context.Context) error {
-	return c.Inner.Finalize(ctx)
+	if err := c.Inner.Finalize(ctx); err != nil {
+		return err
+	}
+	return c.LabelName.Finalize(ctx)
 }
 
 func (c *CountValues) Close() {
