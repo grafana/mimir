@@ -246,13 +246,17 @@ func TestOurTestCases(t *testing.T) {
 
 			testScript := string(b)
 
-			t.Run("Mimir's engine", func(t *testing.T) {
-				if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
-					promqltest.RunTest(t, testScript, mimirEngineWithDelayedNameRemoval)
-					return
-				}
+			mimirEngineToTest := mimirEngine
+			prometheusEngineToTest := prometheusEngine
 
-				promqltest.RunTest(t, testScript, mimirEngine)
+			// switch to the alternate engines if we need delayed name removal
+			if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
+				mimirEngineToTest = mimirEngineWithDelayedNameRemoval
+				prometheusEngineToTest = prometheusEngineWithDelayedNameRemoval
+			}
+
+			t.Run("Mimir's engine", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, mimirEngineToTest)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
@@ -261,12 +265,7 @@ func TestOurTestCases(t *testing.T) {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
 				}
 
-				if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
-					promqltest.RunTest(t, testScript, prometheusEngineWithDelayedNameRemoval)
-					return
-				}
-
-				promqltest.RunTest(t, testScript, prometheusEngine)
+				promqltest.RunTest(t, testScript, prometheusEngineToTest)
 			})
 		})
 	}
@@ -2204,11 +2203,11 @@ type annotationTestCase struct {
 	data                       string
 	expr                       string
 	expectedWarningAnnotations []string
-	// an alternate string for when delayed name removal is enabled.
+	// an alternate set of annotations for when delayed name removal is enabled.
 	// if not set the test will fall back to expectedWarningAnnotations
 	expectedWarningAnnotationsDelayedNameRemovalEnabled []string
 	expectedInfoAnnotations                             []string
-	// an alternate string for when delayed name removal is enabled.
+	// an alternate set of annotations for when delayed name removal is enabled.
 	// if not set the test will fall back to expectedInfoAnnotations
 	expectedInfoAnnotationsDelayedNameRemovalEnabled []string
 	skipComparisonWithPrometheusReason               string
@@ -2237,9 +2236,14 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	const prometheusEngineName = "Prometheus' engine"
 	const mimirEngineName = "Mimir's engine"
 
-	// create 2 sets of engines - one with EnableDelayedNameRemoval=true and the other with EnableDelayedNameRemoval=false
+	// create 2 sets of engines - a Mimir and Prometheus engine each with EnableDelayedNameRemoval=true and other with EnableDelayedNameRemoval=false
 	// there are some histogram annotation test cases which will emit a different warning/info annotation string depending on the delayed name removal setting
-	engines := make(map[bool]map[string]promql.QueryEngine, 2)
+	engineSets := make([]struct {
+		mimirEngine               promql.QueryEngine
+		prometheusEngine          promql.QueryEngine
+		delayedNameRemovalEnabled bool
+	}, 0, 2)
+
 	for _, delayedNameRemovalEnabled := range []bool{true, false} {
 		opts := NewTestEngineOpts()
 		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
@@ -2250,11 +2254,15 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 		require.NoError(t, err)
 		prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
-		// Compare against Prometheus' engine to verify our test cases are valid.
-		engines[delayedNameRemovalEnabled] = map[string]promql.QueryEngine{
-			mimirEngineName:      mimirEngine,
-			prometheusEngineName: prometheusEngine,
-		}
+		engineSets = append(engineSets, struct {
+			mimirEngine               promql.QueryEngine
+			prometheusEngine          promql.QueryEngine
+			delayedNameRemovalEnabled bool
+		}{
+			mimirEngine:               mimirEngine,
+			prometheusEngine:          prometheusEngine,
+			delayedNameRemovalEnabled: delayedNameRemovalEnabled,
+		})
 	}
 
 	for name, testCase := range testCases {
@@ -2278,14 +2286,19 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 			}
 
 			for queryType, generator := range queryTypes {
-				t.Run(queryType, func(t *testing.T) {
-					for _, delayedNameRemovalEnabled := range []bool{true, false} {
+				for _, engineSet := range engineSets {
+					subTestName := fmt.Sprintf("%s - delayed name removal enabled=%t", queryType, engineSet.delayedNameRemovalEnabled)
+					t.Run(subTestName, func(t *testing.T) {
 						results := make([]*promql.Result, 0, 2)
 
-						for engineName, engine := range engines[delayedNameRemovalEnabled] {
-							if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
+						for i, engine := range []promql.QueryEngine{engineSet.mimirEngine, engineSet.prometheusEngine} {
+							if i == 1 && testCase.skipComparisonWithPrometheusReason != "" {
 								t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
 								continue
+							}
+							engineName := mimirEngineName
+							if i == 1 {
+								engineName = prometheusEngineName
 							}
 							t.Run(engineName, func(t *testing.T) {
 								query, err := generator(engine)
@@ -2297,8 +2310,8 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 								results = append(results, res)
 
 								warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-								require.ElementsMatch(t, testCase.getExpectedWarningAnnotations(delayedNameRemovalEnabled), warnings)
-								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(delayedNameRemovalEnabled), infos)
+								require.ElementsMatch(t, testCase.getExpectedWarningAnnotations(engineSet.delayedNameRemovalEnabled), warnings)
+								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(engineSet.delayedNameRemovalEnabled), infos)
 							})
 						}
 
@@ -2308,8 +2321,8 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 							// or vice-versa where no result may be expected etc.
 							testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
 						}
-					}
-				})
+					})
+				}
 			}
 		})
 	}
