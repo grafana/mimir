@@ -204,6 +204,20 @@ func (m *FunctionOverRangeVector) Prepare(ctx context.Context, params *types.Pre
 	return nil
 }
 
+func (m *FunctionOverRangeVector) AfterPrepare(ctx context.Context) error {
+	if err := m.Inner.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	for _, sa := range m.ScalarArgs {
+		if err := sa.AfterPrepare(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (m *FunctionOverRangeVector) Finalize(ctx context.Context) error {
 	err := m.Inner.Finalize(ctx)
 	if err != nil {

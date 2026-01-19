@@ -123,6 +123,10 @@ func (a *AbsentOverTime) Prepare(ctx context.Context, params *types.PrepareParam
 	return a.Inner.Prepare(ctx, params)
 }
 
+func (a *AbsentOverTime) AfterPrepare(ctx context.Context) error {
+	return a.Inner.AfterPrepare(ctx)
+}
+
 func (a *AbsentOverTime) Finalize(ctx context.Context) error {
 	return a.Inner.Finalize(ctx)
 }

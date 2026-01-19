@@ -109,6 +109,10 @@ func (t *TestOperator) Prepare(_ context.Context, _ *types.PrepareParams) error 
 	return nil
 }
 
+func (t *TestOperator) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
 func (t *TestOperator) Finalize(_ context.Context) error {
 	t.Finalized = true
 	return nil

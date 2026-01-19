@@ -25,8 +25,9 @@ type InstantVectorDuplicationBuffer struct {
 	consumers []*instantVectorConsumerState
 	buffer    *SeriesDataRingBuffer[types.InstantVectorSeriesData]
 
-	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare(), so this ensures idempotency.
-	prepared bool
+	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
+	prepareCalled      bool
+	afterPrepareCalled bool
 }
 
 type instantVectorConsumerState struct {
@@ -181,14 +182,21 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 }
 
 func (b *InstantVectorDuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	if b.prepared {
+	if b.prepareCalled {
 		return nil
 	}
-	if err := b.Inner.Prepare(ctx, params); err != nil {
-		return err
+
+	b.prepareCalled = true
+	return b.Inner.Prepare(ctx, params)
+}
+
+func (b *InstantVectorDuplicationBuffer) AfterPrepare(ctx context.Context) error {
+	if b.afterPrepareCalled {
+		return nil
 	}
-	b.prepared = true
-	return nil
+
+	b.afterPrepareCalled = true
+	return b.Inner.AfterPrepare(ctx)
 }
 
 func (b *InstantVectorDuplicationBuffer) Finalize(ctx context.Context, consumerIndex int) error {
@@ -251,6 +259,10 @@ func (d *InstantVectorDuplicationConsumer) ExpressionPosition() posrange.Positio
 
 func (d *InstantVectorDuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Buffer.Prepare(ctx, params)
+}
+
+func (d *InstantVectorDuplicationConsumer) AfterPrepare(ctx context.Context) error {
+	return d.Buffer.AfterPrepare(ctx)
 }
 
 func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {

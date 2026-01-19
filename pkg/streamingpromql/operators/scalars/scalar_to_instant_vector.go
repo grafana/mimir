@@ -70,6 +70,10 @@ func (s *ScalarToInstantVector) Prepare(ctx context.Context, params *types.Prepa
 	return s.Scalar.Prepare(ctx, params)
 }
 
+func (s *ScalarToInstantVector) AfterPrepare(ctx context.Context) error {
+	return s.Scalar.AfterPrepare(ctx)
+}
+
 func (s *ScalarToInstantVector) Finalize(ctx context.Context) error {
 	return s.Scalar.Finalize(ctx)
 }

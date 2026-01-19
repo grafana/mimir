@@ -360,6 +360,10 @@ func (o *failingInstantVectorOperator) Prepare(_ context.Context, _ *types.Prepa
 	return nil
 }
 
+func (o *failingInstantVectorOperator) AfterPrepare(ctx context.Context) error {
+	return nil
+}
+
 func (o *failingInstantVectorOperator) Finalize(_ context.Context) error {
 	return nil
 }
