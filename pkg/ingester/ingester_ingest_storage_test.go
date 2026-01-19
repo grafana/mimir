@@ -3,14 +3,17 @@
 package ingester
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -18,6 +21,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -30,6 +34,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/twmb/franz-go/pkg/kfake"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
 
@@ -41,6 +46,117 @@ import (
 	"github.com/grafana/mimir/pkg/util/testkafka"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
+
+func TestIngester_Startup_PartitionRingActiveBlocksOnInstanceRingActive(t *testing.T) {
+	util_test.VerifyNoLeak(t)
+	var err error
+
+	cfg := defaultIngesterTestConfig(t)
+
+	// To simulate a stuck instance ring join process,
+	// we can use a TokenGenerator which will block on CanJoin.
+	cfg.IngesterRing.TokenGenerationStrategy = tokenGenerationSpreadMinimizing
+	cfg.IngesterRing.InstanceZone = "zone-a"
+	cfg.IngesterRing.SpreadMinimizingZones = []string{"zone-a"}
+	// This configures the spread-minimizing TokenGenerator to block in CanJoin
+	// until lower-index ingesters to join the ring and claim tokens.
+	cfg.IngesterRing.SpreadMinimizingJoinRingInOrder = true
+
+	cfg0 := cfg
+	cfg0.IngesterRing.InstanceID = "ingester-zone-a-0" // spread-minimizing TokenGenerator instanceID=0
+
+	cfg1 := cfg
+	cfg1.IngesterRing.InstanceID = "ingester-zone-a-1" // spread-minimizing TokenGenerator instanceID=1, same zone
+
+	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+
+	ctx := context.Background()
+
+	// Start ingester instance ring & wait
+	ingesterRing, err := ring.New(cfg1.IngesterRing.ToRingConfig(), "ingester", IngesterRingKey, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingesterRing))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingesterRing))
+	})
+
+	// Get ingester instance ring desc
+	var ringDesc *ring.Desc
+	err = ingesterRing.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		ringDesc = ring.GetOrCreateRingDesc(in)
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Create an ingester and manually add to the ring;
+	// needed to emulate an ingester which is delayed in claiming tokens.
+	i0, _, _ := createTestIngesterWithIngestStorage(
+		t, &cfg0, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
+	)
+	t.Cleanup(func() {
+		// Some services are started when the ingester is created with New()
+		// and only closed when defer is triggered by error cases in ingester.starting();
+		// Call ingester.starting(), with a canceled context to guarantee failure and trigger that goroutine cleanup.
+		i0Ctx, i0Cancel := context.WithCancel(context.Background())
+		i0Cancel()
+		require.NoError(t, i0.StartAsync(i0Ctx))
+		err := services.StopAndAwaitTerminated(ctx, i0)
+		// Service failure case error is propagated from error returned by ingester.starting().
+		require.ErrorIs(t, err, context.Canceled)
+	})
+	i0Ro, i0RoTs := i0.lifecycler.GetReadOnlyState()
+	ringDesc.AddIngester(
+		i0.ingesterID,
+		cfg0.IngesterRing.InstanceAddr,
+		cfg0.IngesterRing.InstanceZone,
+		[]uint32{}, // Empty tokens; higher-indexed ingesters will block until lower-indexed ingesters claim tokens
+		i0.lifecycler.GetState(),
+		time.Now(),
+		i0Ro,
+		i0RoTs,
+		nil,
+	)
+	// Ensure updated instance ring state is committed
+	err = ingesterRing.KVClient.CAS(ctx, IngesterRingKey, func(in interface{}) (out interface{}, retry bool, err error) {
+		return ringDesc, true, nil
+	})
+	require.NoError(t, err)
+
+	// Ensure addition of ingester-zone-a-0 is reflected in top-level instance ring state
+	require.NoError(t, ring.WaitInstanceState(ctx, ingesterRing, i0.cfg.IngesterRing.InstanceID, ring.PENDING))
+
+	// Create ingester-zone-a-1, which will block on joining
+	// while it waits for the lower-indexed ingester-zone-a-0 to claim its tokens.
+	// It will proceed after the currently-hardcoded ring.LifeCycler.canJoinTimeout deadline of 5 minutes,
+	// which will not trigger before the end of the test.
+	i1, _, _ := createTestIngesterWithIngestStorage(
+		t, &cfg1, overrides, ingesterRing, nil, util_test.NewTestingLogger(t),
+	)
+	require.NoError(t, i1.StartAsync(ctx))
+	t.Cleanup(func() {
+		err := services.StopAndAwaitTerminated(ctx, i1)
+		require.ErrorContains(t, err, "failed to wait for instance to be active in ring")
+	})
+
+	awaitJoinCtx, awaitJoinCancel := context.WithTimeout(context.Background(), 1*time.Second)
+	t.Cleanup(func() { awaitJoinCancel() })
+	err = i1.AwaitRunning(awaitJoinCtx)
+	assert.ErrorIs(t, err, context.DeadlineExceeded) // i1 will not start as it blocks on i0 claiming tokens
+
+	// Confirm ingester-zone-a-1 pending instance state
+	i1InstanceState, err := ingesterRing.GetInstanceState(i1.cfg.IngesterRing.InstanceID)
+	require.NoError(t, err)
+	assert.Equal(t, ring.PENDING, i1InstanceState)
+
+	// Confirm ingester-zone-a-1 partition lifecycler ring has not been started
+	i1PartitionLifecyclerState := i1.ingestPartitionLifecycler.State()
+	assert.Equal(t, services.New, i1PartitionLifecyclerState)
+
+	// Confirm partition 1 does not exist in partition ring
+	partitionState, _, err := i1.ingestPartitionLifecycler.GetPartitionState(ctx)
+	require.ErrorIs(t, err, ring.ErrPartitionDoesNotExist)
+	require.Equal(t, ring.PartitionUnknown, partitionState)
+}
 
 func TestIngester_Start(t *testing.T) {
 	util_test.VerifyNoLeak(t)
@@ -79,7 +195,7 @@ func TestIngester_Start(t *testing.T) {
 
 		// Create the ingester.
 		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-		ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+		ingester, kafkaCluster, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
 
 		// Mock the Kafka cluster to:
 		// - Count the Fetch requests.
@@ -202,7 +318,7 @@ func TestIngester_Start(t *testing.T) {
 		})
 
 		// We expect the ingester run TSDB Head compaction at higher frequency while catching up.
-		firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.lifecycler.Zones())
+		firstInterval, standardInterval := ingester.compactionServiceInterval(time.Now(), ingester.instanceRing.Zones())
 		assert.Equal(t, headCompactionIntervalWhileStarting, firstInterval)
 		assert.Equal(t, headCompactionIntervalWhileStarting, standardInterval)
 
@@ -225,7 +341,12 @@ func TestIngester_Start(t *testing.T) {
 		assert.Equal(t, services.Running, ingester.lifecycler.State())
 
 		assert.Eventually(t, func() bool {
-			return ingester.lifecycler.GetState() == ring.ACTIVE
+			// Use the ring to check the instance state instead of the lifecycler interface.
+			rs, err := ingester.instanceRing.GetAllHealthy(ring.Write)
+			if err != nil || len(rs.Instances) == 0 {
+				return false
+			}
+			return rs.Instances[0].State == ring.ACTIVE
 		}, time.Second, 10*time.Millisecond)
 
 		assert.Eventually(t, func() bool {
@@ -289,7 +410,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			// Create the ingester.
 			overrides := validation.NewOverrides(limits, nil)
-			ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
+			ingester, kafkaCluster, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
 
 			// Mock the Kafka cluster to fail the Fetch operation until we unblock it later in the test.
 			// If read consistency is "eventual" then these failures shouldn't affect queries, but if it's set
@@ -314,7 +435,7 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 
 			// Wait until the ingester is healthy.
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
-				return ingester.lifecycler.HealthyInstancesCount()
+				return healthyInstancesCount(ingester.instanceRing)
 			})
 
 			// Create a Kafka writer and then write a series.
@@ -366,255 +487,290 @@ func TestIngester_QueryStream_IngestStorageReadConsistency(t *testing.T) {
 }
 
 func TestIngester_PrepareShutdownHandler_IngestStorageSupport(t *testing.T) {
-	ctx := context.Background()
+	// Test with both classic Lifecycler (NumTokens > 0) and tokenless mode (NumTokens == 0).
+	for _, numTokens := range []int{512, 0} {
+		t.Run(fmt.Sprintf("num ingester ring tokens: %d", numTokens), func(t *testing.T) {
+			ctx := context.Background()
+			reg := prometheus.NewPedanticRegistry()
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
-	reg := prometheus.NewPedanticRegistry()
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			cfg := defaultIngesterTestConfig(t)
+			cfg.IngesterRing.NumTokens = numTokens
 
-	// Start ingester.
-	cfg := defaultIngesterTestConfig(t)
-	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, reg)
-	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-	t.Cleanup(func() {
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
-	})
+			// Start ingester.
+			ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
+			require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			})
 
-	// Wait until it's healthy
-	test.Poll(t, 1*time.Second, 1, func() interface{} {
-		return ingester.lifecycler.HealthyInstancesCount()
-	})
+			// Wait until it's healthy.
+			test.Poll(t, 1*time.Second, 1, func() interface{} {
+				return healthyInstancesCount(ingester.instanceRing)
+			})
 
-	t.Run("should not allow to cancel the prepare shutdown, because unsupported by the ingest storage", func(t *testing.T) {
-		res := httptest.NewRecorder()
-		ingester.PrepareShutdownHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-shutdown", nil))
-		require.Equal(t, http.StatusMethodNotAllowed, res.Code)
+			// Verify token count matches expected for this mode.
+			tokenCount, exists := getInstanceTokenCount(t, cfg.IngesterRing.KVStore.Mock, IngesterRingKey, ingester.ingesterID)
+			require.True(t, exists)
+			require.Equal(t, numTokens, tokenCount)
 
-		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-			# HELP cortex_ingester_prepare_shutdown_requested If the ingester has been requested to prepare for shutdown via endpoint or marker file.
-			# TYPE cortex_ingester_prepare_shutdown_requested gauge
-			cortex_ingester_prepare_shutdown_requested 0
-		`), "cortex_ingester_prepare_shutdown_requested"))
-	})
+			t.Run("should not allow to cancel the prepare shutdown, because unsupported by the ingest storage", func(t *testing.T) {
+				res := httptest.NewRecorder()
+				ingester.PrepareShutdownHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-shutdown", nil))
+				require.Equal(t, http.StatusMethodNotAllowed, res.Code)
 
-	t.Run("should remove the ingester from partition owners on a prepared shutdown", func(t *testing.T) {
-		res := httptest.NewRecorder()
-		ingester.PrepareShutdownHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-shutdown", nil))
-		require.Equal(t, 204, res.Code)
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+					# HELP cortex_ingester_prepare_shutdown_requested If the ingester has been requested to prepare for shutdown via endpoint or marker file.
+					# TYPE cortex_ingester_prepare_shutdown_requested gauge
+					cortex_ingester_prepare_shutdown_requested 0
+				`), "cortex_ingester_prepare_shutdown_requested"))
+			})
 
-		require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-			# HELP cortex_ingester_prepare_shutdown_requested If the ingester has been requested to prepare for shutdown via endpoint or marker file.
-			# TYPE cortex_ingester_prepare_shutdown_requested gauge
-			cortex_ingester_prepare_shutdown_requested 1
-		`), "cortex_ingester_prepare_shutdown_requested"))
+			t.Run("should remove the ingester from partition owners on a prepared shutdown", func(t *testing.T) {
+				// Pre-condition: instance should be ACTIVE in the ingesters ring.
+				state, exists := getInstanceStateInRing(t, cfg.IngesterRing.KVStore.Mock, IngesterRingKey, ingester.ingesterID)
+				require.True(t, exists, "instance should exist in ring before prepare shutdown")
+				require.Equal(t, ring.ACTIVE, state, "instance should be ACTIVE before prepare shutdown")
 
-		// Pre-condition: the ingester should be registered as owner in the ring.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PartitionOwnerIDs(0), []string{"ingester-zone-a-0"})
-		}, time.Second, 10*time.Millisecond)
+				res := httptest.NewRecorder()
+				ingester.PrepareShutdownHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-shutdown", nil))
+				require.Equal(t, 204, res.Code)
 
-		// Shutdown ingester.
-		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+				require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
+					# HELP cortex_ingester_prepare_shutdown_requested If the ingester has been requested to prepare for shutdown via endpoint or marker file.
+					# TYPE cortex_ingester_prepare_shutdown_requested gauge
+					cortex_ingester_prepare_shutdown_requested 1
+				`), "cortex_ingester_prepare_shutdown_requested"))
 
-		// We expect the ingester to be removed from partition owners.
-		require.Eventually(t, func() bool {
-			return slices.Equal(watcher.PartitionRing().PartitionOwnerIDs(0), []string{})
-		}, time.Second, 10*time.Millisecond)
-	})
+				// Pre-condition: the ingester should still be ACTIVE and registered as owner in the partition ring.
+				state, exists = getInstanceStateInRing(t, cfg.IngesterRing.KVStore.Mock, IngesterRingKey, ingester.ingesterID)
+				require.True(t, exists, "instance should exist in ring after prepare shutdown POST")
+				require.Equal(t, ring.ACTIVE, state, "instance should still be ACTIVE after prepare shutdown POST")
+				require.Eventually(t, func() bool {
+					return slices.Equal(watcher.PartitionRing().PartitionOwnerIDs(0), []string{"ingester-zone-a-0"})
+				}, time.Second, 10*time.Millisecond)
+
+				// Shutdown ingester.
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+
+				// We expect the ingester to be removed from partition owners.
+				require.Eventually(t, func() bool {
+					return slices.Equal(watcher.PartitionRing().PartitionOwnerIDs(0), []string{})
+				}, time.Second, 10*time.Millisecond)
+
+				// After shutdown: instance should be removed from the ingesters ring.
+				_, exists = getInstanceStateInRing(t, cfg.IngesterRing.KVStore.Mock, IngesterRingKey, ingester.ingesterID)
+				require.False(t, exists, "instance should be removed from ring after shutdown with prepare-shutdown")
+			})
+		})
+	}
 }
 
 func TestIngester_PreparePartitionDownscaleHandler(t *testing.T) {
-	ctx := context.Background()
+	// Test with both classic Lifecycler (NumTokens > 0) and tokenless mode (NumTokens == 0).
+	for _, numTokens := range []int{512, 0} {
+		t.Run(fmt.Sprintf("num ingester ring tokens: %d", numTokens), func(t *testing.T) {
+			ctx := context.Background()
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
-	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-	setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher, *ring.PartitionRingEditor) {
-		// Start ingester.
-		ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
-		require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
-		t.Cleanup(func() {
-			require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+			setup := func(t *testing.T, cfg Config) (*Ingester, *ring.PartitionRingWatcher, *ring.PartitionRingEditor) {
+				cfg.IngesterRing.NumTokens = numTokens
+
+				// Start ingester.
+				ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
+				require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+				t.Cleanup(func() {
+					require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+				})
+
+				editor := ring.NewPartitionRingEditor(PartitionRingKey, cfg.IngesterPartitionRing.KVStore.Mock)
+
+				// Wait until it's healthy
+				test.Poll(t, 5*time.Second, 1, func() interface{} {
+					return healthyInstancesCount(ingester.instanceRing)
+				})
+
+				// Verify token count matches expected for this mode.
+				tokenCount, exists := getInstanceTokenCount(t, cfg.IngesterRing.KVStore.Mock, IngesterRingKey, ingester.ingesterID)
+				require.True(t, exists)
+				require.Equal(t, numTokens, tokenCount)
+
+				return ingester, watcher, editor
+			}
+
+			t.Run("POST request should switch the partition state to INACTIVE", func(t *testing.T) {
+				t.Parallel()
+
+				ingester, watcher, _ := setup(t, defaultIngesterTestConfig(t))
+
+				// Pre-condition: the partition is ACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().ActivePartitionIDs()
+				})
+
+				res := httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusOK, res.Code)
+
+				// We expect the partition to switch to INACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().InactivePartitionIDs()
+				})
+			})
+
+			t.Run("DELETE request after a POST request should switch the partition back to ACTIVE state", func(t *testing.T) {
+				t.Parallel()
+
+				ingester, watcher, _ := setup(t, defaultIngesterTestConfig(t))
+
+				// Pre-condition: the partition is ACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().ActivePartitionIDs()
+				})
+
+				res := httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusOK, res.Code)
+
+				// We expect the partition to switch to INACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().InactivePartitionIDs()
+				})
+
+				res = httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusOK, res.Code)
+
+				// We expect the partition to switch to ACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().ActivePartitionIDs()
+				})
+			})
+
+			t.Run("POST request should be rejected if the partition is in PENDING state", func(t *testing.T) {
+				t.Parallel()
+
+				// To keep the partition in PENDING state we set a minimum number of owners
+				// higher than the actual number of ingesters we're going to run.
+				cfg := defaultIngesterTestConfig(t)
+				cfg.IngesterPartitionRing.MinOwnersCount = 2
+
+				ingester, watcher, _ := setup(t, cfg)
+
+				// Pre-condition: the partition is PENDING.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().PendingPartitionIDs()
+				})
+
+				res := httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusConflict, res.Code)
+
+				// We expect the partition to be in PENDING state.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().PendingPartitionIDs()
+				})
+			})
+
+			t.Run("DELETE is ignored if the partition is in PENDING state", func(t *testing.T) {
+				t.Parallel()
+
+				// To keep the partition in PENDING state we set a minimum number of owners
+				// higher than the actual number of ingesters we're going to run.
+				cfg := defaultIngesterTestConfig(t)
+				cfg.IngesterPartitionRing.MinOwnersCount = 2
+
+				ingester, watcher, _ := setup(t, cfg)
+
+				// Pre-condition: the partition is PENDING.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().PendingPartitionIDs()
+				})
+
+				res := httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusOK, res.Code)
+
+				// We expect the partition to be in PENDING state.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().PendingPartitionIDs()
+				})
+			})
+
+			t.Run("POST request should be rejected if the partition state change is locked", func(t *testing.T) {
+				t.Parallel()
+
+				ingester, watcher, editor := setup(t, defaultIngesterTestConfig(t))
+
+				// Pre-condition: the partition is ACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().ActivePartitionIDs()
+				})
+
+				// Lock the partition state change.
+				require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 0, true))
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					for _, partition := range watcher.PartitionRing().Partitions() {
+						if partition.Id == 0 {
+							return partition.GetStateChangeLocked()
+						}
+					}
+
+					return false
+				})
+
+				res := httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusConflict, res.Code)
+
+				// We expect the partition to be in the ACTIVE state.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().ActivePartitionIDs()
+				})
+			})
+
+			t.Run("DELETE request should be rejected if the partition state change is locked", func(t *testing.T) {
+				t.Parallel()
+
+				ingester, watcher, editor := setup(t, defaultIngesterTestConfig(t))
+
+				// Pre-condition: the partition is ACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().ActivePartitionIDs()
+				})
+
+				res := httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusOK, res.Code)
+
+				// We expect the partition to switch to INACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().InactivePartitionIDs()
+				})
+
+				// Lock the partition state change.
+				require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 0, true))
+				test.Poll(t, 5*time.Second, true, func() interface{} {
+					for _, partition := range watcher.PartitionRing().Partitions() {
+						if partition.Id == 0 {
+							return partition.GetStateChangeLocked()
+						}
+					}
+
+					return false
+				})
+
+				res = httptest.NewRecorder()
+				ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
+				require.Equal(t, http.StatusConflict, res.Code)
+
+				// We expect the partition to be INACTIVE.
+				test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
+					return watcher.PartitionRing().InactivePartitionIDs()
+				})
+			})
 		})
-
-		editor := ring.NewPartitionRingEditor(PartitionRingKey, cfg.IngesterPartitionRing.KVStore.Mock)
-
-		// Wait until it's healthy
-		test.Poll(t, 5*time.Second, 1, func() interface{} {
-			return ingester.lifecycler.HealthyInstancesCount()
-		})
-
-		return ingester, watcher, editor
 	}
-
-	t.Run("POST request should switch the partition state to INACTIVE", func(t *testing.T) {
-		t.Parallel()
-
-		ingester, watcher, _ := setup(t, defaultIngesterTestConfig(t))
-
-		// Pre-condition: the partition is ACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().ActivePartitionIDs()
-		})
-
-		res := httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusOK, res.Code)
-
-		// We expect the partition to switch to INACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().InactivePartitionIDs()
-		})
-	})
-
-	t.Run("DELETE request after a POST request should switch the partition back to ACTIVE state", func(t *testing.T) {
-		t.Parallel()
-
-		ingester, watcher, _ := setup(t, defaultIngesterTestConfig(t))
-
-		// Pre-condition: the partition is ACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().ActivePartitionIDs()
-		})
-
-		res := httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusOK, res.Code)
-
-		// We expect the partition to switch to INACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().InactivePartitionIDs()
-		})
-
-		res = httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusOK, res.Code)
-
-		// We expect the partition to switch to ACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().ActivePartitionIDs()
-		})
-	})
-
-	t.Run("POST request should be rejected if the partition is in PENDING state", func(t *testing.T) {
-		t.Parallel()
-
-		// To keep the partition in PENDING state we set a minimum number of owners
-		// higher than the actual number of ingesters we're going to run.
-		cfg := defaultIngesterTestConfig(t)
-		cfg.IngesterPartitionRing.MinOwnersCount = 2
-
-		ingester, watcher, _ := setup(t, cfg)
-
-		// Pre-condition: the partition is PENDING.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().PendingPartitionIDs()
-		})
-
-		res := httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusConflict, res.Code)
-
-		// We expect the partition to be in PENDING state.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().PendingPartitionIDs()
-		})
-	})
-
-	t.Run("DELETE is ignored if the partition is in PENDING state", func(t *testing.T) {
-		t.Parallel()
-
-		// To keep the partition in PENDING state we set a minimum number of owners
-		// higher than the actual number of ingesters we're going to run.
-		cfg := defaultIngesterTestConfig(t)
-		cfg.IngesterPartitionRing.MinOwnersCount = 2
-
-		ingester, watcher, _ := setup(t, cfg)
-
-		// Pre-condition: the partition is PENDING.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().PendingPartitionIDs()
-		})
-
-		res := httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusOK, res.Code)
-
-		// We expect the partition to be in PENDING state.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().PendingPartitionIDs()
-		})
-	})
-
-	t.Run("POST request should be rejected if the partition state change is locked", func(t *testing.T) {
-		t.Parallel()
-
-		ingester, watcher, editor := setup(t, defaultIngesterTestConfig(t))
-
-		// Pre-condition: the partition is ACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().ActivePartitionIDs()
-		})
-
-		// Lock the partition state change.
-		require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 0, true))
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			for _, partition := range watcher.PartitionRing().Partitions() {
-				if partition.Id == 0 {
-					return partition.GetStateChangeLocked()
-				}
-			}
-
-			return false
-		})
-
-		res := httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusConflict, res.Code)
-
-		// We expect the partition to be in the ACTIVE state.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().ActivePartitionIDs()
-		})
-	})
-
-	t.Run("DELETE request should be rejected if the partition state change is locked", func(t *testing.T) {
-		t.Parallel()
-
-		ingester, watcher, editor := setup(t, defaultIngesterTestConfig(t))
-
-		// Pre-condition: the partition is ACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().ActivePartitionIDs()
-		})
-
-		res := httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodPost, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusOK, res.Code)
-
-		// We expect the partition to switch to INACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().InactivePartitionIDs()
-		})
-
-		// Lock the partition state change.
-		require.NoError(t, editor.SetPartitionStateChangeLock(ctx, 0, true))
-		test.Poll(t, 5*time.Second, true, func() interface{} {
-			for _, partition := range watcher.PartitionRing().Partitions() {
-				if partition.Id == 0 {
-					return partition.GetStateChangeLocked()
-				}
-			}
-
-			return false
-		})
-
-		res = httptest.NewRecorder()
-		ingester.PreparePartitionDownscaleHandler(res, httptest.NewRequest(http.MethodDelete, "/ingester/prepare-partition-downscale", nil))
-		require.Equal(t, http.StatusConflict, res.Code)
-
-		// We expect the partition to be INACTIVE.
-		test.Poll(t, 5*time.Second, []int32{0}, func() interface{} {
-			return watcher.PartitionRing().InactivePartitionIDs()
-		})
-	})
 }
 
 func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) {
@@ -623,7 +779,7 @@ func TestIngester_ShouldNotCreatePartitionIfThereIsShutdownMarker(t *testing.T) 
 	overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
 
 	cfg := defaultIngesterTestConfig(t)
-	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, prometheus.NewPedanticRegistry())
+	ingester, _, watcher := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, prometheus.NewPedanticRegistry(), util_test.NewTestingLogger(t))
 
 	// Create the shutdown marker.
 	require.NoError(t, os.MkdirAll(cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm))
@@ -707,7 +863,7 @@ func TestIngester_compactionServiceInterval(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, util_test.NewTestingLogger(t))
 
 			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = tt.interval
 			ingester.cfg.BlocksStorageConfig.TSDB.HeadCompactionIntervalJitterEnabled = tt.jitterEnabled
@@ -834,7 +990,7 @@ func TestIngester_timeToNextZoneAwareCompaction(t *testing.T) {
 			cfg.IngesterRing.InstanceZone = tt.instanceZone
 			cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = defaultBaseHeadCompactionInterval
 
-			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, nil, util_test.NewTestingLogger(t))
 
 			headCompactionInterval := ingester.timeToNextZoneAwareCompaction(fakeNow, tt.zones)
 			require.Equal(t, tt.expected, headCompactionInterval)
@@ -911,11 +1067,26 @@ func TestIngester_timeUntilCompaction(t *testing.T) {
 }
 
 // Returned ingester is NOT started.
-func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, overrides *validation.Overrides, reg prometheus.Registerer) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
+func createTestIngesterWithIngestStorage(
+	t testing.TB,
+	ingesterCfg *Config,
+	overrides *validation.Overrides,
+	ingestersRing ring.ReadRing,
+	reg prometheus.Registerer,
+	logger log.Logger,
+) (*Ingester, *kfake.Cluster, *ring.PartitionRingWatcher) {
 	var (
 		ctx                   = context.Background()
 		defaultIngesterConfig = defaultIngesterTestConfig(t)
 	)
+
+	if logger == nil {
+		logger = log.NewNopLogger()
+	}
+
+	if ingestersRing == nil {
+		ingestersRing = createAndStartRing(t, ingesterCfg.IngesterRing.ToRingConfig())
+	}
 
 	// Always disable gRPC Push API when testing ingest store.
 	ingesterCfg.PushGrpcMethodEnabled = false
@@ -962,8 +1133,244 @@ func createTestIngesterWithIngestStorage(t testing.TB, ingesterCfg *Config, over
 		require.NoError(t, services.StopAndAwaitTerminated(ctx, prw))
 	})
 
-	ingester, err := New(*ingesterCfg, overrides, nil, prw, nil, nil, reg, util_test.NewTestingLogger(t))
+	ingester, err := New(*ingesterCfg, overrides, ingestersRing, prw, nil, nil, reg, logger)
 	require.NoError(t, err)
 
 	return ingester, kafkaCluster, prw
+}
+
+// BenchmarkIngester_ReplayFromKafka tests the ingester replaying records from Kafka at startup.
+// Each scenario is derived from analysis of 1 partition in some production clusters in Grafana Cloud,
+// using "kafkatool dump analyse". The fixture generator simulates the WriteRequest patterns
+// matching the observed tenant distribution.
+func BenchmarkIngester_ReplayFromKafka(b *testing.B) {
+	const partitionID int32 = 0
+
+	scenarios := map[string]struct {
+		numTenants int
+		cfg        ingest.FixtureConfig
+	}{
+		"1 large tenant": {
+			numTenants: 1,
+			cfg: ingest.FixtureConfig{
+				SmallTenants:           ingest.FixtureTenantClassConfig{TenantPercent: 0, TimeseriesPercent: 0, AvgTimeseriesPerReq: 0},
+				MediumTenants:          ingest.FixtureTenantClassConfig{TenantPercent: 0, TimeseriesPercent: 0, AvgTimeseriesPerReq: 0},
+				LargeTenants:           ingest.FixtureTenantClassConfig{TenantPercent: 100, TimeseriesPercent: 100, AvgTimeseriesPerReq: 350},
+				AvgLabelsPerTimeseries: 19,
+				AvgLabelNameLength:     9,
+				AvgLabelValueLength:    17,
+				AvgMetricNameLength:    40,
+				NumUniqueLabelNames:    2_500,
+				NumUniqueLabelValues:   1_000_000,
+			},
+		},
+		"100 mixed tenants": {
+			numTenants: 100,
+			cfg: ingest.FixtureConfig{
+				SmallTenants:           ingest.FixtureTenantClassConfig{TenantPercent: 52, TimeseriesPercent: 5, AvgTimeseriesPerReq: 6},
+				MediumTenants:          ingest.FixtureTenantClassConfig{TenantPercent: 44, TimeseriesPercent: 67, AvgTimeseriesPerReq: 5},
+				LargeTenants:           ingest.FixtureTenantClassConfig{TenantPercent: 4, TimeseriesPercent: 28, AvgTimeseriesPerReq: 7},
+				AvgLabelsPerTimeseries: 13,
+				AvgLabelNameLength:     10,
+				AvgLabelValueLength:    19,
+				AvgMetricNameLength:    35,
+				NumUniqueLabelNames:    5_000,
+				NumUniqueLabelValues:   1_500_000,
+			},
+		},
+		"350 mixed tenants": {
+			numTenants: 350,
+			cfg: ingest.FixtureConfig{
+				SmallTenants:           ingest.FixtureTenantClassConfig{TenantPercent: 92, TimeseriesPercent: 14, AvgTimeseriesPerReq: 40},
+				MediumTenants:          ingest.FixtureTenantClassConfig{TenantPercent: 7, TimeseriesPercent: 44, AvgTimeseriesPerReq: 100},
+				LargeTenants:           ingest.FixtureTenantClassConfig{TenantPercent: 1, TimeseriesPercent: 42, AvgTimeseriesPerReq: 30},
+				AvgLabelsPerTimeseries: 10,
+				AvgLabelNameLength:     9,
+				AvgLabelValueLength:    21,
+				AvgMetricNameLength:    35,
+				NumUniqueLabelNames:    1_700,
+				NumUniqueLabelValues:   280_000,
+			},
+		},
+	}
+
+	for scenarioName, scenario := range scenarios {
+		b.Run(scenarioName, func(b *testing.B) {
+			ctx := context.Background()
+
+			// Configure the ingester with Kafka settings using the same settings used in Grafana Cloud.
+			cfg := defaultIngesterTestConfig(b)
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 8
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyBatchSize = 150
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = 40
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencySequentialPusherEnabled = false
+
+			// Disable TSDB WAL to reduce variance in test executions.
+			cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes = -1
+
+			// Start consuming from the beginning so the ingester replays all records.
+			cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
+
+			// Create the ingester (not started yet).
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(b, &cfg, overrides, nil, nil, nil)
+			b.Cleanup(func() {
+				require.NoError(b, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			// Create a fixture generator with realistic patterns from production data.
+			fixtureCfg := scenario.cfg
+			fixtureCfg.TotalUniqueTimeseries = b.N
+			fixtureCfg.TotalSamples = b.N * 2 // 2 samples per series in this benchmark.
+			gen, err := ingest.NewFixtureGenerator(fixtureCfg, scenario.numTenants, 0)
+			require.NoError(b, err)
+
+			// Produce all WriteRequests to Kafka before starting the ingester.
+			// We produce all records upfront (before starting the ingester) to ensure that
+			// Kafka production is not a bottleneck during the benchmark. This way we measure
+			// only the ingester's replay performance, not the combined produce+consume throughput.
+			numRecordsProduced, err := gen.ProduceWriteRequests(ctx, cfg.IngestStorageConfig.KafkaConfig.Address, cfg.IngestStorageConfig.KafkaConfig.Topic, partitionID)
+			require.NoError(b, err)
+
+			targetOffset := int64(numRecordsProduced - 1)
+
+			// Start the timer and measure the time to replay all records.
+			// StartAndAwaitRunning waits for the ingester to finish replaying.
+			b.ResetTimer()
+
+			require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
+			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffset(ctx, targetOffset))
+
+			// Stop the timer so cleanup functions don't affect the measurement.
+			b.StopTimer()
+		})
+	}
+}
+
+// BenchmarkIngester_ReplayFromKafka_RealData benchmarks the ingester replaying real production
+// data from dump files. This benchmark ignores b.N and runs once per dump file.
+//
+// Dump files should be placed in the repository root (../../ relative to this test file) with
+// the .dump extension. Generate dump files from a Kafka topic using:
+//
+//		kafkatool dump export \
+//		 --kafka-address=<addr> --kafka-sasl-username=<user> --kafka-sasl-password=<pass> --kafka-client-id=ws_pt=proxy-consume \
+//	  --topic <topic> --partition <partition> --offset <start> --export-max-records=<num> --file <name>.dump
+func BenchmarkIngester_ReplayFromKafka_Dump(b *testing.B) {
+	const partitionID int32 = 0
+
+	ctx := context.Background()
+
+	// List all *.dump files in the repository root.
+	dumpFiles, err := filepath.Glob("../../*.dump")
+	require.NoError(b, err)
+
+	// Skip the benchmark if no dump files found.
+	if len(dumpFiles) == 0 {
+		b.Skip("no *.dump files found in repository root, skipping benchmark")
+	}
+
+	for _, dumpFile := range dumpFiles {
+		dumpFileName := filepath.Base(dumpFile)
+		b.Run(dumpFileName, func(b *testing.B) {
+			b.StopTimer()
+
+			// Configure the ingester with Kafka settings using the same settings used in Grafana Cloud.
+			cfg := defaultIngesterTestConfig(b)
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyMax = 8
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyBatchSize = 150
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyEstimatedBytesPerSample = 200
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyQueueCapacity = 3
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencyTargetFlushesPerShard = 40
+			cfg.IngestStorageConfig.KafkaConfig.IngestionConcurrencySequentialPusherEnabled = false
+
+			// Disable TSDB WAL to reduce variance in benchmark executions.
+			cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes = -1
+
+			// Start consuming from the beginning so the ingester replays all records.
+			cfg.IngestStorageConfig.KafkaConfig.ConsumeFromPositionAtStartup = "start"
+
+			// Create the ingester (not started yet).
+			overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
+			ingester, _, _ := createTestIngesterWithIngestStorage(b, &cfg, overrides, nil, nil, nil)
+			b.Cleanup(func() {
+				require.NoError(b, services.StopAndAwaitTerminated(ctx, ingester))
+			})
+
+			// Create a Kafka writer client.
+			writerCfg := ingest.KafkaConfig{}
+			flagext.DefaultValues(&writerCfg)
+			writerCfg.Topic = cfg.IngestStorageConfig.KafkaConfig.Topic
+			writerCfg.Address = cfg.IngestStorageConfig.KafkaConfig.Address
+			writerCfg.DisableLinger = true
+
+			client, err := ingest.NewKafkaWriterClient(writerCfg, 20, log.NewNopLogger(), nil)
+			require.NoError(b, err)
+			b.Cleanup(func() { client.Close() })
+
+			// Stream records from the dump file directly to Kafka.
+			file, err := os.Open(dumpFile)
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, file.Close()) })
+
+			var numRecords, totalTimeseries int
+			var minRecordTimestamp, maxRecordTimestamp time.Time
+			tenantIDs := make(map[string]struct{})
+
+			scanner := bufio.NewScanner(file)
+			scanner.Buffer(make([]byte, 10_000_000), 10_000_000)
+			for scanner.Scan() {
+				record := &kgo.Record{}
+				err := json.Unmarshal(scanner.Bytes(), record)
+				require.NoError(b, err)
+
+				// Track min/max record timestamps.
+				if minRecordTimestamp.IsZero() || record.Timestamp.Before(minRecordTimestamp) {
+					minRecordTimestamp = record.Timestamp
+				}
+				if maxRecordTimestamp.IsZero() || record.Timestamp.After(maxRecordTimestamp) {
+					maxRecordTimestamp = record.Timestamp
+				}
+
+				// Deserialize the WriteRequest to count timeseries.
+				prealloc := mimirpb.PreallocWriteRequest{}
+				version := ingest.ParseRecordVersion(record)
+				err = ingest.DeserializeRecordContent(record.Value, &prealloc, version)
+				require.NoError(b, err)
+
+				tenantIDs[string(record.Key)] = struct{}{}
+				totalTimeseries += len(prealloc.Timeseries)
+
+				// Produce to Kafka asynchronously (using the original record value).
+				client.Produce(ctx, &kgo.Record{
+					Key:       record.Key,
+					Value:     record.Value,
+					Headers:   record.Headers,
+					Partition: partitionID,
+				}, nil)
+				numRecords++
+			}
+			require.NoError(b, scanner.Err())
+
+			// Wait for all records to be sent.
+			err = client.Flush(ctx)
+			require.NoError(b, err)
+
+			recordTimeSpan := maxRecordTimestamp.Sub(minRecordTimestamp)
+			b.Logf("Wrote %d records with %d timeseries to Kafka from dump file with %d unique tenants (time span: %s)", numRecords, totalTimeseries, len(tenantIDs), recordTimeSpan)
+
+			// Measure the time to start the ingester and replay all records.
+			targetOffset := int64(numRecords - 1)
+
+			b.StartTimer()
+			require.NoError(b, services.StartAndAwaitRunning(ctx, ingester))
+			require.NoError(b, ingester.ingestReader.WaitReadConsistencyUntilOffset(ctx, targetOffset))
+			b.StopTimer()
+
+			b.ReportMetric(float64(numRecords)/b.Elapsed().Seconds(), "records/sec")
+			b.ReportMetric(float64(totalTimeseries)/b.Elapsed().Seconds(), "timeseries/sec")
+		})
+	}
 }

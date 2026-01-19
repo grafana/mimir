@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/scheduler/queue/tree"
@@ -101,7 +100,6 @@ func BenchmarkConcurrentQueueOperations(b *testing.B) {
 								promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 								promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 								promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-								atomic.NewInt64(0),
 								promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 							)
 							require.NoError(b, err)
@@ -372,7 +370,6 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -490,7 +487,6 @@ func TestRequestQueue_RegisterAndUnregisterQuerierWorkerConnections(t *testing.T
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -577,7 +573,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldGetRequestAfterReshardingBe
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -651,7 +646,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ReshardNotifiedCorrectlyForMultip
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -741,7 +735,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnAfterContextCancelled
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -798,7 +791,6 @@ func TestRequestQueue_GetNextRequestForQuerier_ShouldReturnImmediatelyIfQuerierI
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -830,7 +822,6 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		atomic.NewInt64(0),
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -883,13 +874,10 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 
 // This test ensures that even if the queue has no pending requests, we still wait until any inflight requests
 // have been returned before existing
-func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testing.T) {
+func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
 	ctx := context.Background()
 	tenantID := "testTenant"
 	querierID := "querier1"
-
-	// We care about the inflight requests
-	inflight := atomic.NewInt64(0)
 
 	// So we create a queue
 	queue, err := NewRequestQueue(
@@ -899,7 +887,6 @@ func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testin
 		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
 		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
 		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
-		inflight,
 		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
 	)
 	require.NoError(t, err)
@@ -917,8 +904,6 @@ func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testin
 
 	// And make sure it got to the queue
 	require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
-	// Then we record it as inflight
-	require.Equal(t, inflight.Add(1), int64(1))
 
 	// Stop the Queue
 	queue.StopAsync()
@@ -930,9 +915,8 @@ func TestRequestQueue_ShutdownWithInflightRequests_ShouldDrainRequests(t *testin
 	require.NotNil(t, r)
 	require.Equal(t, r, req)
 
-	// Ensure the request has been removed from the queue and remove it from inflight tracking
+	// Ensure the request has been removed from the queue
 	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
-	require.Equal(t, inflight.Sub(1), int64(0))
 
 	// And finally make sure it stops within the timeout
 	require.NoError(t, queue.AwaitTerminated(ctx))

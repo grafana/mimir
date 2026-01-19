@@ -1901,6 +1901,17 @@
             },
             {
               "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "distributor.reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4662,6 +4673,17 @@
             },
             {
               "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.push-reactive-limiter.max-limit-factor-decay",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
               "name": "recent_window_min_duration",
               "required": false,
               "desc": "Minimum duration of the window that is used to collect recent response time samples",
@@ -4810,6 +4832,17 @@
               "fieldValue": null,
               "fieldDefaultValue": 5,
               "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_limit_factor_decay",
+              "required": false,
+              "desc": "Logarithmic decay applied to the maxLimitFactor based on current inflight requests",
+              "fieldValue": null,
+              "fieldDefaultValue": 1,
+              "fieldFlag": "ingester.read-reactive-limiter.max-limit-factor-decay",
               "fieldType": "float",
               "fieldCategory": "experimental"
             },
@@ -5287,6 +5320,28 @@
           "fieldDefaultValue": false,
           "fieldFlag": "ingester.ignore-ooo-exemplars",
           "fieldType": "boolean",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_head_compaction_owned_series_threshold",
+          "required": false,
+          "desc": "When the number of owned series for a tenant exceeds this threshold, trigger early head compaction. 0 to disable.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "ingester.early-head-compaction-owned-series-threshold",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
+        },
+        {
+          "kind": "field",
+          "name": "early_head_compaction_min_estimated_series_reduction_percentage",
+          "required": false,
+          "desc": "Minimum estimated series reduction percentage (0-100) required to trigger per-tenant early compaction.",
+          "fieldValue": null,
+          "fieldDefaultValue": 15,
+          "fieldFlag": "ingester.early-head-compaction-min-estimated-series-reduction-percentage",
+          "fieldType": "int",
           "fieldCategory": "experimental"
         },
         {
@@ -8062,17 +8117,6 @@
                   "fieldFlag": "query-frontend.results-cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "dns_ignore_startup_failures",
-                  "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "query-frontend.results-cache.memcached.dns-ignore-startup-failures",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -8643,6 +8687,17 @@
               "fieldDefaultValue": 500,
               "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample",
               "fieldType": "int"
+            },
+            {
+              "kind": "field",
+              "name": "ingestion_concurrency_sequential_pusher_enabled",
+              "required": false,
+              "desc": "When enabled, tenants with few timeseries use a simpler sequential pusher instead of parallel shards.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -10070,17 +10125,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -10326,17 +10370,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -10606,17 +10639,6 @@
                       "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.tls-min-version",
                       "fieldType": "string",
                       "fieldCategory": "advanced"
-                    },
-                    {
-                      "kind": "field",
-                      "name": "dns_ignore_startup_failures",
-                      "required": false,
-                      "desc": "Allow client creation even if initial DNS resolution fails.",
-                      "fieldValue": null,
-                      "fieldDefaultValue": true,
-                      "fieldFlag": "blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures",
-                      "fieldType": "boolean",
-                      "fieldCategory": "experimental"
                     }
                   ],
                   "fieldValue": null,
@@ -15873,17 +15895,6 @@
                   "fieldFlag": "ruler-storage.cache.memcached.tls-min-version",
                   "fieldType": "string",
                   "fieldCategory": "advanced"
-                },
-                {
-                  "kind": "field",
-                  "name": "dns_ignore_startup_failures",
-                  "required": false,
-                  "desc": "Allow client creation even if initial DNS resolution fails.",
-                  "fieldValue": null,
-                  "fieldDefaultValue": true,
-                  "fieldFlag": "ruler-storage.cache.memcached.dns-ignore-startup-failures",
-                  "fieldType": "boolean",
-                  "fieldCategory": "experimental"
                 }
               ],
               "fieldValue": null,
@@ -20840,6 +20851,49 @@
               "fieldDefaultValue": "",
               "fieldFlag": "common.client-cluster-validation.label",
               "fieldType": "string",
+              "fieldCategory": "experimental"
+            }
+          ],
+          "fieldValue": null,
+          "fieldDefaultValue": null
+        },
+        {
+          "kind": "block",
+          "name": "instrument_ref_leaks",
+          "required": false,
+          "desc": "",
+          "blockEntries": [
+            {
+              "kind": "field",
+              "name": "percentage",
+              "required": false,
+              "desc": "Percentage [0-100] of request or message buffers to instrument for reference leaks. Set to 0 to disable.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "common.instrument-reference-leaks.percentage",
+              "fieldType": "float",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "before_reuse_period",
+              "required": false,
+              "desc": "Period after a buffer instrumented for referenced leaks is nominally freed until the buffer is uninstrumented and effectively freed to be reused. After this period, any lingering references to the buffer may potentially be dereferenced again with no detection.",
+              "fieldValue": null,
+              "fieldDefaultValue": 120000000000,
+              "fieldFlag": "common.instrument-reference-leaks.before-reuse-period",
+              "fieldType": "duration",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "max_inflight_instrumented_bytes",
+              "required": false,
+              "desc": "Maximum sum of length of buffers instrumented at any given time, in bytes. When surpassed, incoming buffers will not be instrumented, regardless of the configured percentage. Zero means no limit.",
+              "fieldValue": null,
+              "fieldDefaultValue": 0,
+              "fieldFlag": "common.instrument-reference-leaks.max-inflight-instrumented-bytes",
+              "fieldType": "int",
               "fieldCategory": "experimental"
             }
           ],

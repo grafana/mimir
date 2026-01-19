@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
@@ -674,23 +675,6 @@ func IsCriticalError(err error) (bool, CriticalError) {
 	return ok, criticalErr
 }
 
-// IsPostingsOffsetTableSizeError returns true if the error indicates the postings offset
-// table size of the result block would exceed 4GB. This uses string matching because
-// Prometheus TSDB does not expose this as a structured error type.
-//
-// The error originates from vendor/github.com/prometheus/prometheus/tsdb/index/index.go (writeLengthAndHash).
-func IsPostingsOffsetTableSizeError(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	errStr := err.Error()
-	hasLengthError := strings.Contains(errStr, "length size exceeds 4 bytes")
-	hasPostingsTable := strings.Contains(errStr, "postings offset table")
-
-	return hasLengthError && hasPostingsTable
-}
-
 // repairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
 func repairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blocksMarkedForDeletion prometheus.Counter, ie issue347Error) error {
 	level.Info(logger).Log("msg", "Repairing block broken by https://github.com/prometheus/tsdb/issues/347", "id", ie.id, "err", ie)
@@ -1066,7 +1050,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// Handle postings offset table size errors by marking all input blocks as no-compact.
 					// This error indicates the blocks have extremely high label cardinality and cannot be
 					// compacted together without exceeding the 4GB offset table size limit.
-					if IsPostingsOffsetTableSizeError(err) && c.skipUnhealthyBlocks {
+					if errors.Is(err, index.ErrPostingsOffsetTableTooLarge) && c.skipUnhealthyBlocks {
 						blockIDs := g.IDs()
 						level.Warn(c.logger).Log(
 							"msg", "compaction failed due to postings offset table size limit; marking input blocks as no-compact",

@@ -451,11 +451,11 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 			req: createQueryRequest(`sum by (idx) (rate(my_series{idx="0"}[11s])) + quantile by (idx) (2, my_series{idx="0"})`, types.NewInstantQueryTimeRange(startT.Add(30*time.Second))),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
-					7,
+					6,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings("idx", "0"))},
 				),
 				newInstantVectorSeriesDataMessage(
-					7,
+					6,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 30_000, Value: math.Inf(1)},
@@ -508,6 +508,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 				),
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+				),
 				newInstantVectorSeriesDataMessage(
 					0,
 					querierpb.InstantVectorSeriesData{
@@ -519,26 +523,22 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				),
 				newInstantVectorSeriesDataMessage(
-					0,
-					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
-							{TimestampMs: 0, Value: 1},
-							{TimestampMs: 10_000, Value: 3},
-							{TimestampMs: 20_000, Value: 5},
-						},
-					},
-				),
-				newSeriesMetadataMessage(
-					1,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
-				),
-				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 0, Value: 2},
 							{TimestampMs: 10_000, Value: 5},
 							{TimestampMs: 20_000, Value: 8},
+						},
+					},
+				),
+				newInstantVectorSeriesDataMessage(
+					0,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 1},
+							{TimestampMs: 10_000, Value: 3},
+							{TimestampMs: 20_000, Value: 5},
 						},
 					},
 				),
@@ -571,8 +571,31 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
 				),
+				newSeriesMetadataMessage(
+					1,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
+				),
 				newInstantVectorSeriesDataMessage(
 					0,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 3},
+							{TimestampMs: 10_000, Value: 7},
+							{TimestampMs: 20_000, Value: 11},
+						},
+					},
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 4},
+							{TimestampMs: 10_000, Value: 9},
+							{TimestampMs: 20_000, Value: 14},
+						},
+					},
+				),
+				newInstantVectorSeriesDataMessage(
+					1,
 					querierpb.InstantVectorSeriesData{
 						Floats: []mimirpb.Sample{
 							{TimestampMs: 0, Value: 3},
@@ -595,29 +618,6 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							{TimestampMs: 0, Value: 5},
 							{TimestampMs: 10_000, Value: 11},
 							{TimestampMs: 20_000, Value: 17},
-						},
-					},
-				),
-				newSeriesMetadataMessage(
-					1,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "0"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "1"))},
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_three_item_series", "idx", "2"))},
-				),
-				newInstantVectorSeriesDataMessage(
-					1,
-					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
-							{TimestampMs: 0, Value: 3},
-							{TimestampMs: 10_000, Value: 7},
-							{TimestampMs: 20_000, Value: 11},
-						},
-					},
-					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
-							{TimestampMs: 0, Value: 4},
-							{TimestampMs: 10_000, Value: 9},
-							{TimestampMs: 20_000, Value: 14},
 						},
 					},
 				),
@@ -650,14 +650,18 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				`max_over_time(my_series[11s:10s]) + min_over_time(my_other_series[11s:10s])`,
 				types.NewRangeQueryTimeRange(startT, startT.Add(20*time.Second), 10*time.Second),
 				1,
-				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS", "LHS: FunctionCall: max_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newSeriesMetadataMessage(
 					1,
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
+				),
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
 				),
 				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
 					NodeIndex:   1,
@@ -692,42 +696,6 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					},
 				}),
 				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
-					NodeIndex:   1,
-					SeriesIndex: 1,
-					StepT:       0,
-					RangeStart:  -11_000,
-					RangeEnd:    0,
-					Floats: []mimirpb.Sample{
-						{TimestampMs: 0, Value: 1},
-					},
-				}),
-				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
-					NodeIndex:   1,
-					SeriesIndex: 1,
-					StepT:       10_000,
-					RangeStart:  -1_000,
-					RangeEnd:    10_000,
-					Floats: []mimirpb.Sample{
-						{TimestampMs: 0, Value: 1},
-						{TimestampMs: 10_000, Value: 3},
-					},
-				}),
-				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
-					NodeIndex:   1,
-					SeriesIndex: 1,
-					StepT:       20_000,
-					RangeStart:  9_000,
-					RangeEnd:    20_000,
-					Floats: []mimirpb.Sample{
-						{TimestampMs: 10_000, Value: 3},
-						{TimestampMs: 20_000, Value: 5},
-					},
-				}),
-				newSeriesMetadataMessage(
-					3,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
-				),
-				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
 					NodeIndex:   3,
 					SeriesIndex: 0,
 					StepT:       0,
@@ -757,6 +725,38 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					Floats: []mimirpb.Sample{
 						{TimestampMs: 10_000, Value: 5},
 						{TimestampMs: 20_000, Value: 8},
+					},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       0,
+					RangeStart:  -11_000,
+					RangeEnd:    0,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 1},
+					},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       10_000,
+					RangeStart:  -1_000,
+					RangeEnd:    10_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 0, Value: 1},
+						{TimestampMs: 10_000, Value: 3},
+					},
+				}),
+				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
+					NodeIndex:   1,
+					SeriesIndex: 1,
+					StepT:       20_000,
+					RangeStart:  9_000,
+					RangeEnd:    20_000,
+					Floats: []mimirpb.Sample{
+						{TimestampMs: 10_000, Value: 3},
+						{TimestampMs: 20_000, Value: 5},
 					},
 				}),
 				newEvaluationCompletedMessage(stats.Stats{
@@ -811,7 +811,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 				1,
 				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", "LHS: NumberLiteral: 12"},
 				[]string{"BinaryExpression: LHS + RHS", "LHS: DeduplicateAndMerge", "BinaryExpression: LHS + RHS", `RHS: VectorSelector: {__name__="my_series"}`},
-				[]string{"BinaryExpression: LHS + RHS", "RHS: DeduplicateAndMerge", "FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
+				[]string{"BinaryExpression: LHS + RHS", "RHS: FunctionCall: min_over_time(...)", "Subquery: [11s:10s]"},
 			),
 			expectedResponseMessages: []*frontendv2pb.QueryResultStreamRequest{
 				newScalarMessage(0,
@@ -824,6 +824,10 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "0"))},
 					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_series", "idx", "1"))},
 				),
+				newSeriesMetadataMessage(
+					3,
+					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
+				),
 				newInstantVectorSeriesDataMessage(
 					1,
 					querierpb.InstantVectorSeriesData{
@@ -833,20 +837,6 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 							{TimestampMs: 20_000, Value: 2},
 						},
 					},
-				),
-				newInstantVectorSeriesDataMessage(
-					1,
-					querierpb.InstantVectorSeriesData{
-						Floats: []mimirpb.Sample{
-							{TimestampMs: 0, Value: 1},
-							{TimestampMs: 10_000, Value: 3},
-							{TimestampMs: 20_000, Value: 5},
-						},
-					},
-				),
-				newSeriesMetadataMessage(
-					3,
-					querierpb.SeriesMetadata{Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(model.MetricNameLabel, "my_other_series", "idx", "0"))},
 				),
 				newRangeVectorStepDataMessage(querierpb.EvaluateQueryResponseRangeVectorStepData{
 					NodeIndex:   3,
@@ -880,6 +870,16 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 						{TimestampMs: 20_000, Value: 8},
 					},
 				}),
+				newInstantVectorSeriesDataMessage(
+					1,
+					querierpb.InstantVectorSeriesData{
+						Floats: []mimirpb.Sample{
+							{TimestampMs: 0, Value: 1},
+							{TimestampMs: 10_000, Value: 3},
+							{TimestampMs: 20_000, Value: 5},
+						},
+					},
+				),
 				newEvaluationCompletedMessage(stats.Stats{
 					SamplesProcessed:   9,
 					QueueTime:          3 * time.Second,

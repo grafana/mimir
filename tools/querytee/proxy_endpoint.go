@@ -354,7 +354,7 @@ func (p *ProxyEndpoint) waitBackendResponseForDownstream(resCh chan *backendResp
 	for res := range resCh {
 		// If the response came from the preferred backend, return it immediately.
 		// If there is no preferred backend configured, return the response if it was successful.
-		if res.backend.Preferred() || (p.preferredBackend == nil && res.succeeded()) {
+		if (res.backend != nil && res.backend.Preferred()) || (p.preferredBackend == nil && res.succeeded()) {
 			return res
 		}
 

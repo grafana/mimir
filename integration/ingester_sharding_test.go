@@ -29,14 +29,30 @@ func TestIngesterSharding(t *testing.T) {
 	tests := map[string]struct {
 		tenantShardSize             int
 		expectedIngestersWithSeries int
+		useIngestStorage            bool
+		numTokens                   int
 	}{
-		"zero shard size should spread series across all ingesters": {
+		"zero shard size should spread series across all ingesters (classic architecture)": {
 			tenantShardSize:             0,
 			expectedIngestersWithSeries: 3,
+			numTokens:                   512,
 		},
-		"non-zero shard size should spread series across the configured shard size number of ingesters": {
+		"non-zero shard size should spread series across the configured shard size number of ingesters (classic architecture)": {
 			tenantShardSize:             2,
 			expectedIngestersWithSeries: 2,
+			numTokens:                   512,
+		},
+		"zero shard size should spread series across all ingesters (ingest storage architecture)": {
+			tenantShardSize:             0,
+			expectedIngestersWithSeries: 3,
+			useIngestStorage:            true,
+			numTokens:                   512,
+		},
+		"zero shard size should spread series across all ingesters (ingest storage architecture, tokenless ingesters)": {
+			tenantShardSize:             0,
+			expectedIngestersWithSeries: 3,
+			useIngestStorage:            true,
+			numTokens:                   0,
 		},
 	}
 
@@ -57,11 +73,21 @@ func TestIngesterSharding(t *testing.T) {
 			// query would be sent to all ingesters and our test wouldn't really be testing anything.
 			flags["-blocks-storage.tsdb.retention-period"] = fmt.Sprintf("%ds", ingesterTSDBRetention)
 			flags["-ingester.ring.heartbeat-period"] = "1s"
+			flags["-ingester.ring.num-tokens"] = strconv.Itoa(testData.numTokens)
+
+			if testData.useIngestStorage {
+				flags = mergeFlags(flags, IngestStorageFlags())
+			}
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+			if testData.useIngestStorage {
+				kafka := e2edb.NewKafka()
+				require.NoError(t, s.StartAndWaitReady(kafka))
+			}
 
 			// Start Mimir components.
 			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags)

@@ -202,9 +202,12 @@ func prepareStoreWithTestBlocks(t testing.TB, bkt objstore.Bucket, cfg *prepareS
 	// Have our options in the beginning so tests can override logger and index cache if they need to
 	storeOpts := []BucketStoreOption{WithLogger(s.logger), WithIndexCache(s.cache)}
 
+	const userID = "tenant"
+
 	store, err := NewBucketStore(
-		"tenant",
+		userID,
 		objstore.WithNoopInstr(bkt),
+		newTestBucketIndexMetadataReader(t, bkt, userID),
 		metaFetcher,
 		cfg.tempDir,
 		cfg.bucketStoreConfig,

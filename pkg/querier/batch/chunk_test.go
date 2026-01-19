@@ -283,7 +283,7 @@ func TestChunkIterator_SeekBeforeCurrentBatch(t *testing.T) {
 	app, err := ch.Appender()
 	require.NoError(t, err)
 	for _, ts := range chunkTimestamps {
-		app.Append(ts, float64(ts))
+		app.Append(0, ts, float64(ts))
 	}
 
 	genericChunk := NewGenericChunk(chunkTimestamps[0], chunkTimestamps[len(chunkTimestamps)-1], func(reuse chunk.Iterator) chunk.Iterator {
