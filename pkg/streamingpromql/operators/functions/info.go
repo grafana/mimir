@@ -354,6 +354,9 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			if len(dataLabelMatchersMap) > 0 {
 				continue
 			}
+			if hasBothIdentifyingLabels(innerSeries) == false {
+				continue
+			}
 			f.labelSetsOrder[i] = map[string]int{"inner": 0}
 			extraLabelSetsCount++
 			continue
@@ -403,6 +406,15 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	}
 
 	return result, nil
+}
+
+func hasBothIdentifyingLabels(series types.SeriesMetadata) bool {
+	for _, lbl := range identifyingLabels {
+		if series.Labels.Get(lbl) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // combineLabels combines inner series labels with info series label sets.

@@ -128,3 +128,34 @@ load 1m
   target_info{instance="a", job="1", data="warning"} _ 1 _
 
 eval_fail range from 0m to 2m step 1m info(metric_total)
+
+clear
+
+load 1m
+	data_metric{} 1 2 3
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+
+clear
+
+load 1m
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+
+clear
+
+load 1m
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+	data_metric{job="1"} 7 8 9
+	data_metric{instance="a", job="1"} 10 20 30
+
+eval range from 0 to 2m step 1m info(data_metric, {__name__="info_metric"})
+	data_metric{} 1 2 3
+	data_metric{instance="a"} 4 5 6
+	data_metric{job="1"} 7 8 9
+	data_metric{instance="a", job="1"} 10 20 30
