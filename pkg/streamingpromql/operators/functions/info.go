@@ -5,10 +5,10 @@ package functions
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
