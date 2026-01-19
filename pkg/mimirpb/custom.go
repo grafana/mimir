@@ -39,13 +39,15 @@ func (cfg CustomCodecConfig) RegisterGlobally(reg prometheus.Registerer) {
 
 func init() {
 	config := CustomCodecConfig{}
+	var reg prometheus.Registerer
 	if testing.Testing() {
 		// Instrument all buffers when testing.
 		config.Percentage = 100
 		config.BeforeReusePeriod = 0
 		config.MaxInflightInstrumentedBytes = 0
+		reg = prometheus.NewRegistry()
 	}
-	config.RegisterGlobally(prometheus.DefaultRegisterer)
+	config.RegisterGlobally(reg)
 }
 
 // codecV2 customizes gRPC marshalling and unmarshalling.
