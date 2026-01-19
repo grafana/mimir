@@ -592,7 +592,7 @@ func (t *testRangeVectorOperator) Prepare(_ context.Context, _ *types.PreparePar
 	return nil
 }
 
-func (t *testRangeVectorOperator) PrepareCompleted(_ context.Context) error {
+func (t *testRangeVectorOperator) AfterPrepare(_ context.Context) error {
 	return nil
 }
 
@@ -632,7 +632,7 @@ type failingRangeVectorOperator struct {
 	seriesRead int
 }
 
-func (o *failingRangeVectorOperator) PrepareCompleted(ctx context.Context) error {
+func (o *failingRangeVectorOperator) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 

@@ -25,9 +25,9 @@ type InstantVectorDuplicationBuffer struct {
 	consumers []*instantVectorConsumerState
 	buffer    *SeriesDataRingBuffer[types.InstantVectorSeriesData]
 
-	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare() and PrepareCompleted(), so this ensures idempotency.
-	prepared         bool
-	prepareCompleted bool
+	// Multiple InstantVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
+	prepareCalled      bool
+	afterPrepareCalled bool
 }
 
 type instantVectorConsumerState struct {
@@ -182,21 +182,21 @@ func (b *InstantVectorDuplicationBuffer) CloseConsumer(consumerIndex int) {
 }
 
 func (b *InstantVectorDuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	if b.prepared {
+	if b.prepareCalled {
 		return nil
 	}
 
-	b.prepared = true
+	b.prepareCalled = true
 	return b.Inner.Prepare(ctx, params)
 }
 
-func (b *InstantVectorDuplicationBuffer) PrepareCompleted(ctx context.Context) error {
-	if b.prepareCompleted {
+func (b *InstantVectorDuplicationBuffer) AfterPrepare(ctx context.Context) error {
+	if b.afterPrepareCalled {
 		return nil
 	}
 
-	b.prepareCompleted = true
-	return b.Inner.PrepareCompleted(ctx)
+	b.afterPrepareCalled = true
+	return b.Inner.AfterPrepare(ctx)
 }
 
 func (b *InstantVectorDuplicationBuffer) Finalize(ctx context.Context, consumerIndex int) error {
@@ -261,8 +261,8 @@ func (d *InstantVectorDuplicationConsumer) Prepare(ctx context.Context, params *
 	return d.Buffer.Prepare(ctx, params)
 }
 
-func (d *InstantVectorDuplicationConsumer) PrepareCompleted(ctx context.Context) error {
-	return d.Buffer.PrepareCompleted(ctx)
+func (d *InstantVectorDuplicationConsumer) AfterPrepare(ctx context.Context) error {
+	return d.Buffer.AfterPrepare(ctx)
 }
 
 func (d *InstantVectorDuplicationConsumer) Finalize(ctx context.Context) error {

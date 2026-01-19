@@ -211,7 +211,7 @@ func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.Prepa
 	return v.Selector.Prepare(ctx, params)
 }
 
-func (v *InstantVectorSelector) PrepareCompleted(ctx context.Context) error {
+func (v *InstantVectorSelector) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 

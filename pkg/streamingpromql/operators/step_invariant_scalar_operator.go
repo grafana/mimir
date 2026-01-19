@@ -39,8 +39,8 @@ func (s *StepInvariantScalarOperator) Prepare(ctx context.Context, params *types
 	return s.inner.Prepare(ctx, params)
 }
 
-func (s *StepInvariantScalarOperator) PrepareCompleted(ctx context.Context) error {
-	return s.inner.PrepareCompleted(ctx)
+func (s *StepInvariantScalarOperator) AfterPrepare(ctx context.Context) error {
+	return s.inner.AfterPrepare(ctx)
 }
 
 func (s *StepInvariantScalarOperator) Finalize(ctx context.Context) error {

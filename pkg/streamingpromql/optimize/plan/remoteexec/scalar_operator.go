@@ -36,7 +36,7 @@ func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PreparePar
 	return err
 }
 
-func (s *ScalarRemoteExec) PrepareCompleted(ctx context.Context) error {
+func (s *ScalarRemoteExec) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 

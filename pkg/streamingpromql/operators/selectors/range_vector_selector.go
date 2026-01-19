@@ -274,7 +274,7 @@ func (m *RangeVectorSelector) Prepare(ctx context.Context, params *types.Prepare
 	return m.Selector.Prepare(ctx, params)
 }
 
-func (m *RangeVectorSelector) PrepareCompleted(ctx context.Context) error {
+func (m *RangeVectorSelector) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 

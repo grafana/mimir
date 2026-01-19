@@ -41,7 +41,7 @@ func (s *StringLiteral) Prepare(_ context.Context, _ *types.PrepareParams) error
 	return nil
 }
 
-func (s *StringLiteral) PrepareCompleted(_ context.Context) error {
+func (s *StringLiteral) AfterPrepare(_ context.Context) error {
 	return nil
 }
 

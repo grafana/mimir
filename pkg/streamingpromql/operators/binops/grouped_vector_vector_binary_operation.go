@@ -777,12 +777,12 @@ func (g *GroupedVectorVectorBinaryOperation) Prepare(ctx context.Context, params
 	return g.Right.Prepare(ctx, params)
 }
 
-func (g *GroupedVectorVectorBinaryOperation) PrepareCompleted(ctx context.Context) error {
-	if err := g.Left.PrepareCompleted(ctx); err != nil {
+func (g *GroupedVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := g.Left.AfterPrepare(ctx); err != nil {
 		return err
 	}
 
-	return g.Right.PrepareCompleted(ctx)
+	return g.Right.AfterPrepare(ctx)
 }
 
 func (g *GroupedVectorVectorBinaryOperation) Finalize(ctx context.Context) error {

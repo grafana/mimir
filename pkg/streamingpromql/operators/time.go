@@ -58,7 +58,7 @@ func (s *Time) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 
-func (s *Time) PrepareCompleted(_ context.Context) error {
+func (s *Time) AfterPrepare(_ context.Context) error {
 	return nil
 }
 

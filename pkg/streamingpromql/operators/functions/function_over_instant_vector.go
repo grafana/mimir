@@ -120,12 +120,12 @@ func (m *FunctionOverInstantVector) Prepare(ctx context.Context, params *types.P
 	return nil
 }
 
-func (m *FunctionOverInstantVector) PrepareCompleted(ctx context.Context) error {
-	if err := m.Inner.PrepareCompleted(ctx); err != nil {
+func (m *FunctionOverInstantVector) AfterPrepare(ctx context.Context) error {
+	if err := m.Inner.AfterPrepare(ctx); err != nil {
 		return err
 	}
 	for _, sa := range m.ScalarArgs {
-		if err := sa.PrepareCompleted(ctx); err != nil {
+		if err := sa.AfterPrepare(ctx); err != nil {
 			return err
 		}
 	}

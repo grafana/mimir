@@ -305,9 +305,9 @@ func (a *Aggregation) Prepare(ctx context.Context, params *types.PrepareParams) 
 	return a.Inner.Prepare(ctx, params)
 }
 
-func (a *Aggregation) PrepareCompleted(ctx context.Context) error {
-	// The wrapping operator (if any) is responsible for calling PrepareCompleted() on whatever provides a.ParamData, so we don't need to do it here.
-	return a.Inner.PrepareCompleted(ctx)
+func (a *Aggregation) AfterPrepare(ctx context.Context) error {
+	// The wrapping operator (if any) is responsible for calling AfterPrepare() on whatever provides a.ParamData, so we don't need to do it here.
+	return a.Inner.AfterPrepare(ctx)
 }
 
 func (a *Aggregation) Finalize(ctx context.Context) error {

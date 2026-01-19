@@ -76,9 +76,9 @@ func (c *Concat) Prepare(ctx context.Context, params *types.PrepareParams) error
 	return nil
 }
 
-func (c *Concat) PrepareCompleted(ctx context.Context) error {
+func (c *Concat) AfterPrepare(ctx context.Context) error {
 	for _, o := range c.Inner {
-		if err := o.PrepareCompleted(ctx); err != nil {
+		if err := o.AfterPrepare(ctx); err != nil {
 			return err
 		}
 	}

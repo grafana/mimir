@@ -255,11 +255,11 @@ func (c *CountValues) Prepare(ctx context.Context, params *types.PrepareParams) 
 	return c.LabelName.Prepare(ctx, params)
 }
 
-func (c *CountValues) PrepareCompleted(ctx context.Context) error {
-	if err := c.Inner.PrepareCompleted(ctx); err != nil {
+func (c *CountValues) AfterPrepare(ctx context.Context) error {
+	if err := c.Inner.AfterPrepare(ctx); err != nil {
 		return err
 	}
-	return c.LabelName.PrepareCompleted(ctx)
+	return c.LabelName.AfterPrepare(ctx)
 }
 
 func (c *CountValues) Finalize(ctx context.Context) error {

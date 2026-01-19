@@ -136,7 +136,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	}
 
 	for _, req := range e.nodeRequests {
-		if err := req.operator.PrepareCompleted(ctx); err != nil {
+		if err := req.operator.AfterPrepare(ctx); err != nil {
 			return err
 		}
 	}

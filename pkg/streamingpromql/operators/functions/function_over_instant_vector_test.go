@@ -141,7 +141,7 @@ func (t *testScalarOperator) Prepare(_ context.Context, _ *types.PrepareParams) 
 	return nil
 }
 
-func (t *testScalarOperator) PrepareCompleted(_ context.Context) error {
+func (t *testScalarOperator) AfterPrepare(_ context.Context) error {
 	return nil
 }
 

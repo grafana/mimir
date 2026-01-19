@@ -36,7 +36,7 @@ func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.Pre
 	return err
 }
 
-func (r *InstantVectorRemoteExec) PrepareCompleted(ctx context.Context) error {
+func (r *InstantVectorRemoteExec) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 

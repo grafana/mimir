@@ -37,7 +37,7 @@ func (r *RangeVectorRemoteExec) Prepare(ctx context.Context, params *types.Prepa
 	return err
 }
 
-func (r *RangeVectorRemoteExec) PrepareCompleted(ctx context.Context) error {
+func (r *RangeVectorRemoteExec) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 

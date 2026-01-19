@@ -377,12 +377,12 @@ func (o *OrBinaryOperation) Prepare(ctx context.Context, params *types.PreparePa
 	return o.Right.Prepare(ctx, params)
 }
 
-func (o *OrBinaryOperation) PrepareCompleted(ctx context.Context) error {
-	if err := o.Left.PrepareCompleted(ctx); err != nil {
+func (o *OrBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := o.Left.AfterPrepare(ctx); err != nil {
 		return err
 	}
 
-	return o.Right.PrepareCompleted(ctx)
+	return o.Right.AfterPrepare(ctx)
 }
 
 func (o *OrBinaryOperation) Finalize(ctx context.Context) error {
