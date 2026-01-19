@@ -10,8 +10,8 @@ non_existent_label_value_in_index;{__name__="non_existent_metric"};{};0;11.00;0.
 simple_single_metric_name;{__name__="memory_usage_bytes"};{};300;11.00;3.00;4500.00;0.00;4514.00
 simple_single_metric_name;{__name__="disk_io_operations"};{};200;11.00;2.00;3000.00;0.00;3013.00
 simple_multiple_index_matchers;{__name__="http_requests_total",method="PUT"};{};71;22.00;11.50;1065.00;0.00;1098.50
-http_put_instance_negative_empty_regex;{__name__="http_requests_total",method="PUT"};{instance!~".*"};71;22.00;11.50;1065.00;710.00;1808.50
-http_put_instance_regex;{__name__="http_requests_total",method="PUT"};{instance=~".*"};71;22.00;11.50;1065.00;710.00;1808.50
+http_put_instance_negative_empty_regex;{__name__="http_requests_total",method="PUT"};{instance!~".*"};71;22.00;11.50;1065.00;71.00;1169.50
+http_put_instance_regex;{__name__="http_requests_total",method="PUT"};{instance=~".*"};71;22.00;11.50;1065.00;71.00;1169.50
 http_put_instance_negative;{__name__="http_requests_total",method="PUT"};{instance!="localhost:9100"};68;22.00;11.50;1065.00;71.00;1169.50
 http_put_instance_exact_regex;{__name__="http_requests_total",method="PUT"};{instance=~"localhost:9100"};2;22.00;11.50;1065.00;78.10;1176.60
 http_put_instance_regex_prefix;{__name__="http_requests_total",method="PUT"};{instance=~"localhost:910."};4;22.00;11.50;1065.00;71.00;1169.50

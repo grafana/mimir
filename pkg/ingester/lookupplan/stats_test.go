@@ -135,10 +135,6 @@ func (p *mockIndexReader) LabelNames(_ context.Context, matchers ...*labels.Matc
 	return labelNames, nil
 }
 
-func (p *mockIndexReader) LabelValueFor(context.Context, storage.SeriesRef, string) (string, error) {
-	panic("mockIndexReader doesn't implement LabelValueFor()")
-}
-
 func (p *mockIndexReader) LabelValuesFor(index.Postings, string) storage.LabelValues {
 	panic("mockIndexReader doesn't implement LabelValuesFor()")
 }

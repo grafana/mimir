@@ -1194,6 +1194,10 @@ INFO[0000] block uploaded successfully              block=01G8CB7GTTC5ZXY23WTXHS
 INFO[0001] finished uploading blocks                already_exists=1 failed=0 succeeded=2
 ```
 
+{{< admonition type="note" >}}
+Backfilled data visibility depends on the sample timestamps in the uploaded blocks. Sometimes data can appear more than 12 hours after upload.
+{{< /admonition >}}
+
 ## License
 
 This software is licensed as AGPLv3. For more information, see [LICENSE](https://github.com/grafana/mimir/blob/main/LICENSE).

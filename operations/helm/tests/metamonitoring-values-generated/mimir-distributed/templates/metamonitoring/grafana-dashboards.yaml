@@ -398,7 +398,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -446,7 +446,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -506,7 +506,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -554,7 +554,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -617,7 +617,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 12,
@@ -3942,7 +3942,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -3990,7 +3990,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -4050,7 +4050,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -4098,7 +4098,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -4149,7 +4149,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -4455,7 +4455,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -5267,7 +5267,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 6,
@@ -8381,7 +8381,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -8429,7 +8429,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -8610,7 +8610,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -8658,7 +8658,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -8839,7 +8839,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -8887,7 +8887,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -9220,7 +9220,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9268,7 +9268,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9376,7 +9376,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9424,7 +9424,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9475,7 +9475,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9535,7 +9535,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9583,7 +9583,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9691,7 +9691,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9739,7 +9739,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9847,7 +9847,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9895,7 +9895,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -9946,7 +9946,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -12108,7 +12108,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -12158,7 +12158,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -12317,7 +12317,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -12367,7 +12367,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -13197,6 +13197,110 @@ data:
                 "panels": [
                    {
                       "datasource": "$datasource",
+                      "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by query-frontends. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
+                      "id": 20,
+                      "options": {
+                         "calculate": true,
+                         "calculation": {
+                            "xBuckets": {
+                               "mode": "count",
+                               "value": 60
+                            },
+                            "yBuckets": {
+                               "mode": "count",
+                               "value": 40
+                            }
+                         },
+                         "cellGap": 0,
+                         "cellValues": {
+                            "unit": "reqps"
+                         },
+                         "legend": {
+                            "show": false
+                         },
+                         "tooltip": {
+                            "yHistogram": true
+                         },
+                         "yAxis": {
+                            "min": 0,
+                            "unit": "bytes"
+                         }
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "Estimated memory consumption",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Estimated per-query memory consumption",
+                      "type": "heatmap"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Fallback to Prometheus' query engine\nThe rate of queries that fell back to Prometheus' query engine in query-frontends. Only applicable if the Mimir query engine (MQE) is enabled.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "reqps"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 21,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 6,
+                      "targets": [
+                         {
+                            "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval])) or vector(0)",
+                            "format": "time_series",
+                            "legendFormat": "Queries",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Fallback to Prometheus' query engine",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "Query-frontend - query engine",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
                       "fieldConfig": {
                          "defaults": {
                             "custom": {
@@ -13220,7 +13324,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 22,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13299,7 +13403,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 23,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13378,7 +13482,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 24,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -13501,7 +13605,7 @@ data:
                             }
                          ]
                       },
-                      "id": 23,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13588,7 +13692,7 @@ data:
                             }
                          ]
                       },
-                      "id": 24,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13655,7 +13759,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13765,7 +13869,7 @@ data:
                             }
                          ]
                       },
-                      "id": 26,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13820,7 +13924,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13887,7 +13991,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -13965,7 +14069,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 31,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14062,7 +14166,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 30,
+                      "id": 32,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14177,7 +14281,7 @@ data:
                             }
                          ]
                       },
-                      "id": 31,
+                      "id": 33,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14239,7 +14343,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 32,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14271,7 +14375,7 @@ data:
                    {
                       "datasource": "$datasource",
                       "description": "### Estimated per-query memory consumption\nThe esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.\n\n",
-                      "id": 33,
+                      "id": 35,
                       "options": {
                          "calculate": true,
                          "calculation": {
@@ -14302,7 +14406,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))",
+                            "expr": "sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}[$__rate_interval]))",
                             "format": "time_series",
                             "legendFormat": "Estimated memory consumption",
                             "legendLink": null
@@ -14337,7 +14441,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 34,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14351,7 +14455,7 @@ data:
                       "span": 4,
                       "targets": [
                          {
-                            "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)",
+                            "expr": "sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}[$__rate_interval])) or vector(0)",
                             "format": "time_series",
                             "legendFormat": "Queries",
                             "legendLink": null
@@ -14397,7 +14501,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14488,7 +14592,7 @@ data:
                             }
                          ]
                       },
-                      "id": 36,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14542,7 +14646,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 39,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -14652,7 +14756,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14706,7 +14810,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14754,7 +14858,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14814,7 +14918,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14868,7 +14972,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14924,7 +15028,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 43,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14991,7 +15095,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -14999,7 +15103,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -15070,7 +15174,7 @@ data:
                             }
                          ]
                       },
-                      "id": 45,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15155,7 +15259,7 @@ data:
                             }
                          ]
                       },
-                      "id": 46,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15221,7 +15325,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15229,7 +15333,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -15269,7 +15373,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 50,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15367,7 +15471,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 51,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -15477,7 +15581,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 50,
+                      "id": 52,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15526,7 +15630,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 51,
+                      "id": 53,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15575,7 +15679,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 52,
+                      "id": 54,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -15859,7 +15963,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -15907,7 +16011,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16088,7 +16192,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16136,7 +16240,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16317,7 +16421,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16365,7 +16469,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16546,7 +16650,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16594,7 +16698,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16775,7 +16879,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -16823,7 +16927,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -17004,7 +17108,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -17052,7 +17156,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -17385,7 +17489,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -17433,7 +17537,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -19737,7 +19841,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -19785,7 +19889,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -19836,7 +19940,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -26191,7 +26295,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -26239,7 +26343,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -26420,7 +26524,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -26468,7 +26572,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -26649,7 +26753,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -26697,7 +26801,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -26878,7 +26982,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -26926,7 +27030,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -37370,7 +37474,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 2,
@@ -37418,7 +37522,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 2,
@@ -37466,7 +37570,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 2,
@@ -37514,7 +37618,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 2,
@@ -37562,7 +37666,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 2,
@@ -37611,7 +37715,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 2,
@@ -41777,7 +41881,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 12,
@@ -41989,7 +42093,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 12,
@@ -42108,7 +42212,7 @@ data:
                       "steppedLine": false,
                       "targets": [
                          {
-                            "expr": "topk($limit, \n  histogram_quantile(\n    0.99,\n    sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))\n  )\n)\n",
+                            "expr": "topk($limit,\n  histogram_quantile(\n    0.99,\n    sum by(user) (rate(cortex_query_frontend_queries_expression_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}[$__rate_interval]))\n  )\n)\n",
                             "format": "table",
                             "instant": true,
                             "legendFormat": "",
@@ -42349,7 +42453,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 12,
@@ -43131,6 +43235,158 @@ data:
                 "showTitle": true,
                 "title": "By estimated compaction jobs from bucket-index",
                 "titleSize": "h6"
+             },
+             {
+                "collapse": true,
+                "height": "250px",
+                "panels": [
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "fieldConfig": {
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Time"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "Time"
+                                  },
+                                  {
+                                     "id": "custom.hidden",
+                                     "value": true
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "Value"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "per-instance disk usage"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "bytes"
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "user"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "displayName",
+                                     "value": "user"
+                                  },
+                                  {
+                                     "id": "decimals",
+                                     "value": 2
+                                  },
+                                  {
+                                     "id": "unit",
+                                     "value": "string"
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "fill": 1,
+                      "id": 15,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "sort": {
+                         "col": 2,
+                         "desc": true
+                      },
+                      "spaceLength": 10,
+                      "span": 12,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "topk($limit,\n  max by (user) (sum by (user, pod) (cortex_bucket_store_blocks_loaded_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}))\n)\n",
+                            "format": "table",
+                            "instant": true,
+                            "legendFormat": "",
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": [ ],
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Top $limit users by per-store-gateway disk utilization",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "transform": "table",
+                      "type": "table",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "By store-gateway disk utilization",
+                "titleSize": "h6"
              }
           ],
           "schemaVersion": 14,
@@ -43356,7 +43612,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -43404,7 +43660,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -43585,7 +43841,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -43633,7 +43889,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -43814,7 +44070,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -43862,7 +44118,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 3,
@@ -44195,7 +44451,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -44243,7 +44499,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -45184,7 +45440,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -45232,7 +45488,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -45283,7 +45539,7 @@ data:
                          },
                          "tooltip": {
                             "mode": "multi",
-                            "sort": "none"
+                            "sort": "desc"
                          }
                       },
                       "span": 4,
@@ -45718,7 +45974,7 @@ data:
                       "dashLength": 10,
                       "dashes": false,
                       "datasource": "$datasource",
-                      "description": "### Exemplars in ingesters\nNumber of TSDB exemplars currently in ingesters' storage.\nWith classic storage we the sum of exemplars from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum exemplars of each ingest partition.\n\n",
+                      "description": "### Owned series\nThe number of owned series across all ingesters.\nOwned series are the subset of in-memory series that currently map to the ingester in the ring.\nWith classic storage the sum of series from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum series of each ingest partition.\n\n",
                       "fill": 1,
                       "format": "short",
                       "id": 5,
@@ -45742,6 +45998,158 @@ data:
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
                       "span": 2,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    sum without (user) (cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}) unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        sum without (user) (cortex_ingester_owned_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}),\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": "70,80",
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Owned series",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "singlestat",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Active series\nThe number of active series across all ingesters.\nActive series are series that have received a sample within the active series window (configured via -ingester.active-series-metrics-idle-timeout).\nWith classic storage the sum of series from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum series of each ingest partition.\n\n",
+                      "fill": 1,
+                      "format": "short",
+                      "id": 6,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 2,
+                      "stack": false,
+                      "steppedLine": false,
+                      "targets": [
+                         {
+                            "expr": "( # Classic storage\n  sum by (cluster, namespace, ) (\n    sum without (user) (cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}) unless on (job)\n    cortex_partition_ring_partitions{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n  )\n  / on (cluster, namespace) group_left()\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor.*|cortex|mimir))\"})\n)\nor\n( # Ingest storage\n  sum by (cluster, namespace, ) (\n    max by (ingester_id, cluster, namespace, ) (\n      label_replace(\n        sum without (user) (cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}),\n        \"ingester_id\", \"$1\", \"pod\", \".*-([0-9]+)$\"\n      )\n    )\n  )\n)\n",
+                            "format": "time_series",
+                            "instant": true,
+                            "refId": "A"
+                         }
+                      ],
+                      "thresholds": "70,80",
+                      "timeFrom": null,
+                      "timeShift": null,
+                      "title": "Active series",
+                      "tooltip": {
+                         "shared": false,
+                         "sort": 0,
+                         "value_type": "individual"
+                      },
+                      "type": "singlestat",
+                      "xaxis": {
+                         "buckets": null,
+                         "mode": "time",
+                         "name": null,
+                         "show": true,
+                         "values": [ ]
+                      },
+                      "yaxes": [
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": 0,
+                            "show": true
+                         },
+                         {
+                            "format": "short",
+                            "label": null,
+                            "logBase": 1,
+                            "max": null,
+                            "min": null,
+                            "show": false
+                         }
+                      ]
+                   },
+                   {
+                      "aliasColors": { },
+                      "bars": false,
+                      "dashLength": 10,
+                      "dashes": false,
+                      "datasource": "$datasource",
+                      "description": "### Exemplars in ingesters\nNumber of TSDB exemplars currently in ingesters' storage.\nWith classic storage we the sum of exemplars from all ingesters is divided by the replication factor.\nWith ingest storage we take the maximum exemplars of each ingest partition.\n\n",
+                      "fill": 1,
+                      "format": "short",
+                      "id": 7,
+                      "legend": {
+                         "avg": false,
+                         "current": false,
+                         "max": false,
+                         "min": false,
+                         "show": true,
+                         "total": false,
+                         "values": false
+                      },
+                      "lines": true,
+                      "linewidth": 1,
+                      "links": [ ],
+                      "nullPointMode": "null as zero",
+                      "percentage": false,
+                      "pointradius": 5,
+                      "points": false,
+                      "renderer": "flot",
+                      "seriesOverrides": [ ],
+                      "spaceLength": 10,
+                      "span": 1,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -45796,7 +46204,7 @@ data:
                       "datasource": "$datasource",
                       "fill": 1,
                       "format": "short",
-                      "id": 6,
+                      "id": 8,
                       "legend": {
                          "avg": false,
                          "current": false,
@@ -45816,7 +46224,7 @@ data:
                       "renderer": "flot",
                       "seriesOverrides": [ ],
                       "spaceLength": 10,
-                      "span": 2,
+                      "span": 1,
                       "stack": false,
                       "steppedLine": false,
                       "targets": [
@@ -46052,7 +46460,7 @@ data:
                             }
                          ]
                       },
-                      "id": 7,
+                      "id": 9,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46106,7 +46514,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 8,
+                      "id": 10,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -46185,7 +46593,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 9,
+                      "id": 11,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46271,7 +46679,7 @@ data:
                             }
                          ]
                       },
-                      "id": 10,
+                      "id": 12,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46326,7 +46734,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 11,
+                      "id": 13,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46556,7 +46964,7 @@ data:
                             }
                          ]
                       },
-                      "id": 12,
+                      "id": 14,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46610,7 +47018,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 13,
+                      "id": 15,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -46689,7 +47097,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 14,
+                      "id": 16,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46805,7 +47213,7 @@ data:
                             }
                          ]
                       },
-                      "id": 15,
+                      "id": 17,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46867,7 +47275,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 16,
+                      "id": 18,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46924,7 +47332,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 17,
+                      "id": 19,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -46991,7 +47399,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 18,
+                      "id": 20,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47092,7 +47500,7 @@ data:
                             }
                          ]
                       },
-                      "id": 19,
+                      "id": 21,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47153,7 +47561,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 20,
+                      "id": 22,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47220,7 +47628,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 21,
+                      "id": 23,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47287,7 +47695,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 22,
+                      "id": 24,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47338,7 +47746,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 23,
+                      "id": 25,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47448,7 +47856,7 @@ data:
                             }
                          ]
                       },
-                      "id": 24,
+                      "id": 26,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47503,7 +47911,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 25,
+                      "id": 27,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47631,7 +48039,7 @@ data:
                             }
                          ]
                       },
-                      "id": 26,
+                      "id": 28,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47692,7 +48100,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 27,
+                      "id": 29,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47741,7 +48149,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 28,
+                      "id": 30,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -47790,7 +48198,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 29,
+                      "id": 31,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48001,7 +48409,7 @@ data:
                             }
                          ]
                       },
-                      "id": 30,
+                      "id": 32,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48055,7 +48463,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 31,
+                      "id": 33,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -48315,7 +48723,7 @@ data:
                             }
                          ]
                       },
-                      "id": 32,
+                      "id": 34,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48369,7 +48777,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 33,
+                      "id": 35,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -48629,7 +49037,7 @@ data:
                             }
                          ]
                       },
-                      "id": 34,
+                      "id": 36,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48683,7 +49091,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 37,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -48824,7 +49232,7 @@ data:
                             }
                          ]
                       },
-                      "id": 36,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -48879,7 +49287,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 39,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -49020,7 +49428,7 @@ data:
                             }
                          ]
                       },
-                      "id": 38,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49075,7 +49483,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "nullPointMode": "null as zero",
                       "options": {
@@ -49216,7 +49624,7 @@ data:
                             }
                          ]
                       },
-                      "id": 40,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49302,7 +49710,7 @@ data:
                             }
                          ]
                       },
-                      "id": 41,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49358,7 +49766,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49438,7 +49846,7 @@ data:
                             }
                          ]
                       },
-                      "id": 43,
+                      "id": 45,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49505,7 +49913,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 44,
+                      "id": 46,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49554,7 +49962,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 45,
+                      "id": 47,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49603,7 +50011,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 46,
+                      "id": 48,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49652,7 +50060,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 47,
+                      "id": 49,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49712,7 +50120,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 48,
+                      "id": 50,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -49760,7 +50168,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 49,
+                      "id": 51,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -51250,6 +51658,287 @@ data:
                 "repeatRowId": null,
                 "showTitle": true,
                 "title": "Resources",
+                "titleSize": "h6"
+             },
+             {
+                "collapse": false,
+                "height": "250px",
+                "panels": [
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Configuration changes\nShows the number of ZPDB configuration changes. This includes the number of updated (included added), deleted and invalid configurations.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "count"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "updated"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#31a354",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "deleted"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#3182bd",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "invalid"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#de2d26",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 15,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by (result)(rollout_operator_zpdb_configurations_observed_total{result!~\".*ignored\", cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{result}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Configuration changes",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Request rate\nShows the number of ZPDB eviction requests per second, grouped by response status. Note that this includes both voluntary eviction requests via the pod-eviction webhook, and requests to delete a pod as part of the rolling update controller. HTTP 429 indicates that the request has been denied to enforce the pdb. Other HTTP 4xx and 5xx indicate and internal error within the eviction controller.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "req/s"
+                         },
+                         "overrides": [
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "200"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#31a354",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "429"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#3182bd",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "400"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#fdae6b",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "403"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#e6550d",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            },
+                            {
+                               "matcher": {
+                                  "id": "byName",
+                                  "options": "500"
+                               },
+                               "properties": [
+                                  {
+                                     "id": "color",
+                                     "value": {
+                                        "fixedColor": "#de2d26",
+                                        "mode": "fixed"
+                                     }
+                                  }
+                               ]
+                            }
+                         ]
+                      },
+                      "id": 16,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by(job, status) (rate(rollout_operator_zpdb_eviction_requests_total{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"}[$__rate_interval]))",
+                            "format": "time_series",
+                            "legendFormat": "{{status}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Request rate by status",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Request rate\nShows the number of in-flight ZPDB eviction requests. Note that this includes both voluntary eviction requests via the pod-eviction webhook, and requests to delete a pod as part of the rolling update controller.\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "count"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 17,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": false
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 4,
+                      "targets": [
+                         {
+                            "expr": "sum by(job) (rollout_operator_zpdb_inflight_eviction_requests{cluster=~\"$cluster\", job=~\"($namespace)/(rollout-operator)\"})",
+                            "format": "time_series",
+                            "legendFormat": "{{job}}",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "In-flight requests",
+                      "type": "timeseries"
+                   }
+                ],
+                "repeat": null,
+                "repeatIteration": null,
+                "repeatRowId": null,
+                "showTitle": true,
+                "title": "ZPDB",
                 "titleSize": "h6"
              }
           ],

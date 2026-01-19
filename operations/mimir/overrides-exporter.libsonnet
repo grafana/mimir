@@ -20,6 +20,20 @@
       'user_24M',
       'user_32M',
     ],
+
+    // Configure the limits/ configuration options expored by the overrides-exporter.
+    overrides_exporter_exported_limits: [
+      'ingestion_rate',
+      'ingestion_burst_size',
+      'max_global_series_per_user',
+      'max_global_series_per_metric',
+      'max_global_exemplars_per_user',
+      'max_fetched_chunks_per_query',
+      'max_fetched_series_per_query',
+      'max_fetched_chunk_bytes_per_query',
+      'ruler_max_rules_per_rule_group',
+      'ruler_max_rule_groups_per_tenant',
+    ],
   },
 
   local containerPort = $.core.v1.containerPort,
@@ -28,12 +42,14 @@
   overrides_exporter_args::
     $._config.commonConfig +
     $._config.limitsConfig +
+    $._config.queryConfig +
     $._config.overridesExporterRingConfig +
     $.mimirRuntimeConfigFile +
     {
       target: 'overrides-exporter',
 
       'server.http-listen-port': $._config.server_http_port,
+      'overrides-exporter.enabled-metrics': std.join(',', std.sort($._config.overrides_exporter_exported_limits)),
     },
 
   overrides_exporter_container_env_map:: {},

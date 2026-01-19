@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/common/model"
@@ -277,6 +278,7 @@ func TestExport(t *testing.T) {
 						readTimeout:   30 * time.Second,
 						readSizeLimit: DefaultChunkedReadLimit,
 						blockDuration: time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond,
+						logger:        log.NewNopLogger(),
 					}
 
 					require.NoError(t, c.export(nil), "expected export to complete without error")
@@ -420,7 +422,7 @@ func serveChunks(t *testing.T, testCase exportTestCase, startT, endT int64, w ht
 			minTime = min(minTime, sample.Timestamp)
 			maxTime = max(maxTime, sample.Timestamp)
 
-			a.Append(sample.Timestamp, sample.Value)
+			a.Append(0, sample.Timestamp, sample.Value)
 		}
 
 		if sampleCount == 0 {
@@ -555,6 +557,7 @@ func TestRemoteReadCommand_prepare(t *testing.T) {
 				to:             tt.to,
 				readTimeout:    30 * time.Second,
 				useChunks:      true,
+				logger:         log.NewNopLogger(),
 			}
 
 			_, _, _, err := cmd.parseArgsAndPrepareClient()
@@ -694,6 +697,7 @@ func TestParseArgsAndPrepareClient(t *testing.T) {
 				from:           alignedToBlockStart.Format(time.RFC3339Nano),
 				to:             alignedToBlockStart.Add(time.Hour).Format(time.RFC3339Nano),
 				readTimeout:    30 * time.Second,
+				logger:         log.NewNopLogger(),
 			}
 
 			// Test parseArgsAndPrepareClient
@@ -890,7 +894,7 @@ func serveMultiQueryChunks(t *testing.T, testCase exportTestCase, queries []*pro
 			for _, sample := range s.Samples {
 				minTime = min(minTime, sample.Timestamp)
 				maxTime = max(maxTime, sample.Timestamp)
-				a.Append(sample.Timestamp, sample.Value)
+				a.Append(0, sample.Timestamp, sample.Value)
 			}
 
 			resp := prompb.ChunkedReadResponse{

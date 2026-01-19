@@ -52,64 +52,45 @@ func (n *NarrowSelectorsOptimizationPass) Apply(ctx context.Context, plan *plann
 	// If this query plan doesn't contain any selectors for us to apply hints for, if the
 	// query has been rewritten to be sharded or spun off, don't attempt to generate any
 	// query hints since there are no selectors that we understand and can add matchers to.
-	res := optimize.Inspect(plan.Root)
+	res := optimize.InspectSelectors(plan.Root)
 	if !res.HasSelectors || res.IsRewrittenByMiddleware {
 		return plan, nil
 	}
 
 	n.attempts.Inc()
-	addedHint, err := n.applyToNode(ctx, plan.Root)
-	if err != nil {
-		return nil, err
-	}
+	addedHint := false
+
+	_ = optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, _ []planning.Node) error {
+		if e, ok := node.(*core.BinaryExpression); ok {
+			// Only find hints for this binary expression if it is an operation that is compatible
+			// with adding extra selectors to the right side of the expression. For example, "logical
+			// or" includes series from the right side only when they _don't_ have matching label sets
+			// on the left side.
+			if _, disallowed := disallowedOperations[e.Op]; !disallowed {
+				// If this is a binary expression, try to find appropriate labels to use as hints
+				// based on joins or aggregations being performed by child nodes. We start with an
+				// empty "created" set of labels that we _cannot_ use as hints. This is populated
+				// and checked when generating hints.
+				if include := n.includeFromNode(ctx, e, nil); len(include) > 0 {
+					if e.Hints == nil {
+						e.Hints = &core.BinaryExpressionHints{}
+					}
+
+					e.Hints.Include = include
+					sl := spanlogger.FromContext(ctx, n.logger)
+					sl.DebugLog("msg", "setting query hint on binary expression", "labels", include)
+					addedHint = true
+				}
+			}
+		}
+		return nil
+	}))
 
 	if addedHint {
 		n.modified.Inc()
 	}
 
 	return plan, nil
-}
-
-// applyToNode attempts to recursively add hints to a binary expression node based on
-// fields being joined on or aggregated by. Returns true if any node had a hint added
-// to it.
-func (n *NarrowSelectorsOptimizationPass) applyToNode(ctx context.Context, node planning.Node) (bool, error) {
-	addedHint := false
-
-	if e, ok := node.(*core.BinaryExpression); ok {
-		// Only find hints for this binary expression if it is an operation that is compatible
-		// with adding extra selectors to the right side of the expression. For example, "logical
-		// or" includes series from the right side only when they _don't_ have matching label sets
-		// on the left side.
-		if _, disallowed := disallowedOperations[e.Op]; !disallowed {
-			// If this is a binary expression, try to find appropriate labels to use as hints
-			// based on joins or aggregations being performed by child nodes. We start with an
-			// empty "created" set of labels that we _cannot_ use as hints. This is populated
-			// and checked when generating hints.
-			if include := n.includeFromNode(ctx, e, nil); len(include) > 0 {
-				if e.Hints == nil {
-					e.Hints = &core.BinaryExpressionHints{}
-				}
-
-				e.Hints.Include = include
-				sl := spanlogger.FromContext(ctx, n.logger)
-				sl.DebugLog("msg", "setting query hint on binary expression", "labels", include)
-				addedHint = true
-			}
-		}
-	}
-
-	// Set hints for any child binary expressions of the current node.
-	for child := range planning.ChildrenIter(node) {
-		childHint, err := n.applyToNode(ctx, child)
-		if err != nil {
-			return false, err
-		}
-
-		addedHint = addedHint || childHint
-	}
-
-	return addedHint, nil
 }
 
 func (n *NarrowSelectorsOptimizationPass) includeFromNode(ctx context.Context, node planning.Node, created map[string]struct{}) []string {
@@ -119,10 +100,7 @@ func (n *NarrowSelectorsOptimizationPass) includeFromNode(ctx context.Context, n
 		// (via label_replace or label_join) from hints if they are created by the left or
 		// right side of the current binary expression. Labels created by a function call in
 		// a parent expression shouldn't affect hints applied to this expression.
-		created = make(map[string]struct{})
-		createdLabels(e.RHS, created)
-		createdLabels(e.LHS, created)
-
+		created = createdLabels(e)
 		if e.VectorMatching != nil && e.VectorMatching.On && len(e.VectorMatching.MatchingLabels) > 0 {
 			if filtered := filterLabels(e.VectorMatching.MatchingLabels, created); len(filtered) > 0 {
 				return filtered
@@ -172,19 +150,23 @@ func filterLabels(lbls []string, created map[string]struct{}) []string {
 	return out
 }
 
-// createdLabels recursively adds any label names created by a call to label_replace or label_join
-// to the set of created labels passed to this method.
-func createdLabels(node planning.Node, created map[string]struct{}) {
-	if f, ok := node.(*core.FunctionCall); ok {
-		if (f.Function == functions.FUNCTION_LABEL_REPLACE || f.Function == functions.FUNCTION_LABEL_JOIN) && len(f.Args) > 1 {
-			// The second parameter for both label_replace and label_join is the destination label.
-			if lbl, ok := f.Args[1].(*core.StringLiteral); ok {
-				created[lbl.Value] = struct{}{}
+// createdLabels returns a set of label names created by a call to label_replace or label_join
+// by any children of the given node.
+func createdLabels(node planning.Node) map[string]struct{} {
+	created := make(map[string]struct{})
+
+	_ = optimize.Walk(node, optimize.VisitorFunc(func(n planning.Node, path []planning.Node) error {
+		if f, ok := n.(*core.FunctionCall); ok {
+			if (f.Function == functions.FUNCTION_LABEL_REPLACE || f.Function == functions.FUNCTION_LABEL_JOIN) && len(f.Args) > 1 {
+				// The second parameter for both label_replace and label_join is the destination label.
+				if lbl, ok := f.Args[1].(*core.StringLiteral); ok {
+					created[lbl.Value] = struct{}{}
+				}
 			}
 		}
-	}
 
-	for child := range planning.ChildrenIter(node) {
-		createdLabels(child, created)
-	}
+		return nil
+	}))
+
+	return created
 }

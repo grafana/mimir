@@ -2,6 +2,13 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
 
 {
   _config+: {
+    // Enable multi-zone deployment for all write-path components (ingest storage architecture).
+    multi_zone_write_path_enabled: false,
+
+    // Enable multi-zone deployment for all read-path components (ingest storage architecture).
+    multi_zone_read_path_enabled: false,
+    multi_zone_read_path_multi_az_enabled: false,
+
     // Ordered list of availability zones where multi-zone components should be deployed to.
     // Mimir zone-a deployments are scheduled to the first AZ in the list, zone-b deployment to the second AZ,
     // and zone-c deployments to the third AZ. Maximum 3 AZs are supported.
@@ -23,7 +30,15 @@ local jsonpath = import 'github.com/jsonnet-libs/xtd/jsonpath.libsonnet';
       '-memberlist.join',
       // Alertmanager is not deployed per-zone.
       '-ruler.alertmanager-url',
-    ],
+    ] + (
+      if $._config.multi_zone_memcached_routing_enabled then [] else [
+        '-blocks-storage.bucket-store.chunks-cache.memcached.addresses',
+        '-blocks-storage.bucket-store.index-cache.memcached.addresses',
+        '-blocks-storage.bucket-store.metadata-cache.memcached.addresses',
+        '-query-frontend.results-cache.memcached.addresses',
+        '-ruler-storage.cache.memcached.addresses',
+      ]
+    ),
 
     // Environment variables to exclude from multi-zone config validation.
     multi_zone_config_validation_excluded_env_vars: [

@@ -180,12 +180,7 @@ func HasDuplicateSeries(metadata []SeriesMetadata) bool {
 	case 0, 1:
 		return false
 	case 2:
-		if metadata[0].Labels.Hash() == metadata[1].Labels.Hash() {
-			return true
-		}
-
-		return false
-
+		return metadata[0].Labels.Hash() == metadata[1].Labels.Hash()
 	default:
 		seen := make(map[uint64]struct{}, len(metadata))
 

@@ -5,17 +5,9 @@
     local availabilityZones = ['us-east-2a', 'us-east-2b'],
     multi_zone_availability_zones: availabilityZones,
 
-    // Enable multi-AZ for write path components.
-    multi_zone_ingester_multi_az_enabled: true,
-    multi_zone_store_gateway_multi_az_enabled: true,
-
-    // Enable multi-zone for read path components.
-    multi_zone_memcached_enabled: true,
-    multi_zone_querier_enabled: true,
-    multi_zone_query_frontend_enabled: true,
-    multi_zone_query_scheduler_enabled: true,
-    multi_zone_ruler_enabled: true,
-    multi_zone_ruler_remote_evaluation_enabled: true,
+    // Enable multi-zone and multi-AZ for read path components.
+    multi_zone_read_path_enabled: true,
+    multi_zone_read_path_multi_az_enabled: true,
 
     // Enable memberlist bridge for zone-aware routing.
     multi_zone_memberlist_bridge_enabled: true,

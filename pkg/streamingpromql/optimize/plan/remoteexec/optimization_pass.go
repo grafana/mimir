@@ -28,7 +28,7 @@ func (o *OptimizationPass) Name() string {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	inspectResult := optimize.Inspect(plan.Root)
+	inspectResult := optimize.InspectSelectors(plan.Root)
 	if !inspectResult.HasSelectors || inspectResult.IsRewrittenByMiddleware {
 		return plan, nil
 	}

@@ -1,4 +1,4 @@
-// Copyright 2021 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -165,17 +165,19 @@ func (h *Head) appender() *headAppender {
 	minValidTime := h.appendableMinValidTime()
 	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
 	return &headAppender{
-		head:                  h,
-		minValidTime:          minValidTime,
-		mint:                  math.MaxInt64,
-		maxt:                  math.MinInt64,
-		headMaxt:              h.MaxTime(),
-		oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
-		seriesRefs:            h.getRefSeriesBuffer(),
-		series:                h.getSeriesBuffer(),
-		typesInBatch:          h.getTypeMap(),
-		appendID:              appendID,
-		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+		headAppenderBase: headAppenderBase{
+			head:                  h,
+			minValidTime:          minValidTime,
+			mint:                  math.MaxInt64,
+			maxt:                  math.MinInt64,
+			headMaxt:              h.MaxTime(),
+			oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
+			seriesRefs:            h.getRefSeriesBuffer(),
+			series:                h.getSeriesBuffer(),
+			typesInBatch:          h.getTypeMap(),
+			appendID:              appendID,
+			cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+		},
 	}
 }
 
@@ -382,7 +384,7 @@ func (b *appendBatch) close(h *Head) {
 	b.exemplars = nil
 }
 
-type headAppender struct {
+type headAppenderBase struct {
 	head          *Head
 	minValidTime  int64 // No samples below this timestamp are allowed.
 	mint, maxt    int64
@@ -397,7 +399,10 @@ type headAppender struct {
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
-	hints                           *storage.AppendOptions
+}
+type headAppender struct {
+	headAppenderBase
+	hints *storage.AppendOptions
 }
 
 func (a *headAppender) SetOptions(opts *storage.AppendOptions) {
@@ -525,7 +530,7 @@ func (a *headAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *headAppender) getOrCreate(lset labels.Labels) (s *memSeries, created bool, err error) {
+func (a *headAppenderBase) getOrCreate(lset labels.Labels) (s *memSeries, created bool, err error) {
 	// Ensure no empty labels have gotten through.
 	lset = lset.WithoutEmpty()
 	if lset.IsEmpty() {
@@ -550,7 +555,7 @@ func (a *headAppender) getOrCreate(lset labels.Labels) (s *memSeries, created bo
 
 // getCurrentBatch returns the current batch if it fits the provided sampleType
 // for the provided series. Otherwise, it adds a new batch and returns it.
-func (a *headAppender) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef) *appendBatch {
+func (a *headAppenderBase) getCurrentBatch(st sampleType, s chunks.HeadSeriesRef) *appendBatch {
 	h := a.head
 
 	newBatch := func() *appendBatch {
@@ -1047,7 +1052,7 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 var _ storage.GetRef = &headAppender{}
 
-func (a *headAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+func (a *headAppenderBase) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	s := a.head.series.getByHash(hash, lset)
 	if s == nil {
 		return 0, labels.EmptyLabels()
@@ -1057,7 +1062,7 @@ func (a *headAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRe
 }
 
 // log writes all headAppender's data to the WAL.
-func (a *headAppender) log() error {
+func (a *headAppenderBase) log() error {
 	if a.head.wal == nil {
 		return nil
 	}
@@ -1189,7 +1194,7 @@ type appenderCommitContext struct {
 }
 
 // commitExemplars adds all exemplars from the provided batch to the head's exemplar storage.
-func (a *headAppender) commitExemplars(b *appendBatch) {
+func (a *headAppenderBase) commitExemplars(b *appendBatch) {
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
 	for _, e := range b.exemplars {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
@@ -1209,7 +1214,7 @@ func (a *headAppender) commitExemplars(b *appendBatch) {
 	}
 }
 
-func (acc *appenderCommitContext) collectOOORecords(a *headAppender) {
+func (acc *appenderCommitContext) collectOOORecords(a *headAppenderBase) {
 	if a.head.wbl == nil {
 		// WBL is not enabled. So no need to collect.
 		acc.wblSamples = nil
@@ -1314,7 +1319,7 @@ func handleAppendableError(err error, appended, oooRejected, oobRejected, tooOld
 // operations on the series after appending the samples.
 //
 // There are also specific functions to commit histograms and float histograms.
-func (a *headAppender) commitFloats(b *appendBatch, acc *appenderCommitContext) {
+func (a *headAppenderBase) commitFloats(b *appendBatch, acc *appenderCommitContext) {
 	var ok, chunkCreated bool
 	var series *memSeries
 
@@ -1477,7 +1482,7 @@ func (a *headAppender) commitFloats(b *appendBatch, acc *appenderCommitContext) 
 }
 
 // For details on the commitHistograms function, see the commitFloats docs.
-func (a *headAppender) commitHistograms(b *appendBatch, acc *appenderCommitContext) {
+func (a *headAppenderBase) commitHistograms(b *appendBatch, acc *appenderCommitContext) {
 	var ok, chunkCreated bool
 	var series *memSeries
 
@@ -1586,7 +1591,7 @@ func (a *headAppender) commitHistograms(b *appendBatch, acc *appenderCommitConte
 }
 
 // For details on the commitFloatHistograms function, see the commitFloats docs.
-func (a *headAppender) commitFloatHistograms(b *appendBatch, acc *appenderCommitContext) {
+func (a *headAppenderBase) commitFloatHistograms(b *appendBatch, acc *appenderCommitContext) {
 	var ok, chunkCreated bool
 	var series *memSeries
 
@@ -1708,7 +1713,7 @@ func commitMetadata(b *appendBatch) {
 	}
 }
 
-func (a *headAppender) unmarkCreatedSeriesAsPendingCommit() {
+func (a *headAppenderBase) unmarkCreatedSeriesAsPendingCommit() {
 	for _, s := range a.series {
 		s.Lock()
 		s.pendingCommit = false
@@ -1718,7 +1723,7 @@ func (a *headAppender) unmarkCreatedSeriesAsPendingCommit() {
 
 // Commit writes to the WAL and adds the data to the Head.
 // TODO(codesome): Refactor this method to reduce indentation and make it more readable.
-func (a *headAppender) Commit() (err error) {
+func (a *headAppenderBase) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
 	}
@@ -1849,7 +1854,8 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, o chunkOpts) (sa
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-	s.app.Append(t, v)
+	// TODO(krajorama): pass ST.
+	s.app.Append(0, t, v)
 
 	c.maxTime = t
 
@@ -1891,7 +1897,8 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 		prevApp = nil
 	}
 
-	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, t, h, false) // false=request a new chunk if needed
+	// TODO(krajorama): pass ST.
+	newChunk, recoded, s.app, _ = s.app.AppendHistogram(prevApp, 0, t, h, false) // false=request a new chunk if needed
 
 	s.lastHistogramValue = h
 	s.lastFloatHistogramValue = nil
@@ -1948,7 +1955,8 @@ func (s *memSeries) appendFloatHistogram(t int64, fh *histogram.FloatHistogram, 
 		prevApp = nil
 	}
 
-	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, t, fh, false) // False means request a new chunk if needed.
+	// TODO(krajorama): pass ST.
+	newChunk, recoded, s.app, _ = s.app.AppendFloatHistogram(prevApp, 0, t, fh, false) // False means request a new chunk if needed.
 
 	s.lastHistogramValue = nil
 	s.lastFloatHistogramValue = fh
@@ -2276,7 +2284,7 @@ func handleChunkWriteError(err error) {
 }
 
 // Rollback removes the samples and exemplars from headAppender and writes any series to WAL.
-func (a *headAppender) Rollback() (err error) {
+func (a *headAppenderBase) Rollback() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
 	}

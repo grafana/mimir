@@ -12,8 +12,8 @@ job=~"";0;0
 job!~"";0;0
 job=~".+";123;123
 job!~".+";123;123
-job=~".*";123;1230
-job!~".*";123;1230
+job=~".*";123;123
+job!~".*";123;123
 job=~"(prometheus|grafana|non-existent-1|non-existent-2|non-existent-3)";0;0
 job=~"(prometheus|grafana|non-existent-1|non-existent-2|non-existent-3)";1;5.5
 job=~"(prometheus|grafana|non-existent-1|non-existent-2|non-existent-3)";2;11

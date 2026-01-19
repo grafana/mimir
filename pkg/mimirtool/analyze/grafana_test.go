@@ -5,6 +5,7 @@ package analyze
 import (
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirtool/minisdk"
@@ -26,7 +27,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo": {}}, metrics)
@@ -45,7 +46,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo_bar_query_result_total": {}}, metrics)
@@ -64,7 +65,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"foo_bar_label_values_total": {}}, metrics)
@@ -83,7 +84,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -101,7 +102,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
@@ -123,7 +124,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"metric": {}}, metrics)
@@ -142,7 +143,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -162,7 +163,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Empty(t, metrics)
 	})
@@ -180,7 +181,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"varnish_main_threads_failed": {}}, metrics)
@@ -199,7 +200,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"tomcat_session_processingtime_total": {}}, metrics)
@@ -218,7 +219,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"request_duration_second": {}}, metrics)
@@ -237,7 +238,7 @@ func TestMetricsFromTemplating(t *testing.T) {
 			},
 		}
 
-		errs := metricsFromTemplating(in, metrics)
+		errs := metricsFromTemplating(in, metrics, log.NewNopLogger())
 		require.Empty(t, errs)
 		require.Len(t, metrics, 1)
 		require.Equal(t, map[string]struct{}{"myapp_metric_foo": {}}, metrics)

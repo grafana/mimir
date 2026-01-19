@@ -1146,22 +1146,15 @@ groups:
           labels:
             severity: critical
             time_period: since-start
-        - alert: MimirCompactorSkippedUnhealthyBlocks
+        - alert: MimirCompactorSkippedBlocks
           annotations:
-            message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has found and ignored unhealthy blocks.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedunhealthyblocks
+            message: 'Mimir Compactor in {{ $labels.cluster }}/{{ $labels.namespace }} has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).'
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedblocks
           expr: |
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[5m]) > 0
-          for: 1m
-          labels:
-            severity: warning
-        - alert: MimirCompactorSkippedUnhealthyBlocks
-          annotations:
-            message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has found and ignored unhealthy blocks.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedunhealthyblocks
-          expr: |
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[5m]) > 1
-          for: 30m
+            sum by (cluster, namespace, reason) (
+              increase(cortex_compactor_blocks_marked_for_no_compaction_total[24h]) > 0
+            )
+          for: 5m
           labels:
             severity: critical
         - alert: MimirCompactorBuildingSparseIndexFailed

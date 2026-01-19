@@ -34,14 +34,14 @@ var (
 
 // limitsProvider provides access to user limits.
 type limitsProvider interface {
-	MaxActiveSeriesPerUser(userID string) int
+	MaxActiveOrGlobalSeriesPerUser(userID string) int
 }
 
 type Config struct {
 	IgnoreRejectedSeries bool `yaml:"ignore_rejected_series" category:"experimental"`
 	IgnoreErrors         bool `yaml:"ignore_errors" category:"experimental"`
 
-	GRPCClientConfig grpcclient.Config `yaml:"grpc"`
+	GRPCClientConfig ClientConfig `yaml:"grpc"`
 
 	PreferAvailabilityZone string        `yaml:"prefer_availability_zone"`
 	RequestsHedgingDelay   time.Duration `yaml:"requests_hedging_delay" category:"advanced"`
@@ -62,6 +62,16 @@ type Config struct {
 
 	// Allow to inject custom client factory in tests.
 	ClientFactory client.PoolFactory `yaml:"-"`
+}
+
+type ClientConfig struct {
+	grpcclient.Config      `yaml:",inline"`
+	HealthCheckGracePeriod time.Duration `yaml:"health_check_grace_period" category:"experimental"`
+}
+
+func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Config.RegisterFlagsWithPrefix(prefix, f)
+	f.DurationVar(&cfg.HealthCheckGracePeriod, prefix+".health-check-grace-period", 0, "The grace period for health checks. If a usage-tracker connection consistently fails health checks for this period, any open connections are closed. The usage-tracker will attempt to reconnect to that usage-tracker if a subsequent request is made to that usage-tracker. Set to 0 to immediately remove usage-tracker connections on the first health check failure.")
 }
 
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
@@ -471,7 +481,7 @@ func (c *UsageTrackerClient) selectRandomPartition() (int32, ring.ReplicationSet
 func (c *UsageTrackerClient) CanTrackAsync(userID string) bool {
 	// Check if user's limit is below the minimum threshold for async tracking.
 	if c.cfg.MinSeriesLimitForAsyncTracking > 0 {
-		userLimit := c.limits.MaxActiveSeriesPerUser(userID)
+		userLimit := c.limits.MaxActiveOrGlobalSeriesPerUser(userID)
 		if userLimit > 0 && userLimit < c.cfg.MinSeriesLimitForAsyncTracking {
 			// User's limit is too low, must track synchronously.
 			return false

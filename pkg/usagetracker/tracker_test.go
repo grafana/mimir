@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -60,6 +61,25 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.Len(t, resp.RejectedSeriesHashes, 1)
 	})
 
+	t.Run("no series hashes", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
+			"tenant": {
+				MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+				MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+			},
+		})
+
+		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
+			UserID:       "tenant",
+			Partition:    0,
+			SeriesHashes: []uint64{},
+		})
+		require.NoError(t, err)
+		require.Empty(t, resp.RejectedSeriesHashes)
+	})
+
 	t.Run("should not use partitions that are not in running state", func(t *testing.T) {
 		t.Parallel()
 
@@ -82,16 +102,14 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		require.ErrorContains(t, err, "partition handler 0 is not running (state: Terminated)")
 	})
 
-	t.Run("applies global series limit when configured", func(t *testing.T) {
+	t.Run("applies global series limit when active series limit is not configured", func(t *testing.T) {
 		t.Parallel()
 
 		tracker := newReadyTestUsageTracker(t, map[string]*validation.Limits{
 			"tenant": {
-				MaxActiveSeriesPerUser: testPartitionsCount,     // one series per partition.
+				MaxActiveSeriesPerUser: 0,                       // unset
 				MaxGlobalSeriesPerUser: testPartitionsCount * 2, // two series per partition
 			},
-		}, func(cfg *Config) {
-			cfg.UseGlobalSeriesLimits = true
 		})
 
 		resp, err := tracker.TrackSeries(t.Context(), &usagetrackerpb.TrackSeriesRequest{
@@ -101,6 +119,79 @@ func TestUsageTracker_Tracking(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Len(t, resp.RejectedSeriesHashes, 2)
+	})
+}
+
+func TestUsageTracker_BatchTracking(t *testing.T) {
+	limits := map[string]*validation.Limits{
+		"tenant1": {
+			MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+			MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+		},
+		"tenant2": {
+			MaxActiveSeriesPerUser: testPartitionsCount, // one series per partition.
+			MaxGlobalSeriesPerUser: testPartitionsCount * 100,
+		},
+	}
+
+	t.Run("batch tracking empty", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{},
+		})
+
+		require.NoError(t, err)
+		require.Empty(t, resp.Rejections)
+	})
+
+	t.Run("batch tracking happy-case series", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{
+					{UserID: "tenant1", SeriesHashes: []uint64{0, 1}},
+					{UserID: "tenant2", SeriesHashes: []uint64{2, 3}},
+				}},
+			},
+		})
+
+		require.NoError(t, err)
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
+				{UserID: "tenant2", RejectedSeriesHashes: []uint64{3}},
+			}},
+		})
+	})
+
+	t.Run("batch tracking redundant user", func(t *testing.T) {
+		t.Parallel()
+
+		tracker := newReadyTestUsageTracker(t, limits)
+
+		resp, err := tracker.TrackSeriesBatch(t.Context(), &usagetrackerpb.TrackSeriesBatchRequest{
+			Partitions: []*usagetrackerpb.TrackSeriesBatchPartition{
+				{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchUser{
+					{UserID: "tenant1", SeriesHashes: []uint64{0}},
+					{UserID: "tenant1", SeriesHashes: []uint64{1}},
+					{UserID: "tenant1", SeriesHashes: []uint64{2}},
+					{UserID: "tenant1", SeriesHashes: []uint64{3}},
+				}},
+			},
+		})
+
+		require.NoError(t, err)
+		require.EqualValues(t, resp.Rejections, []*usagetrackerpb.TrackSeriesBatchRejection{
+			{Partition: 0, Users: []*usagetrackerpb.TrackSeriesBatchRejectionUser{
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{1}},
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{2}},
+				{UserID: "tenant1", RejectedSeriesHashes: []uint64{3}},
+			}},
+		})
 	})
 }
 
@@ -615,7 +706,9 @@ func getPartitionRing(t require.TestingT, kvStore kv.Client) *ring.PartitionRing
 	val, err := kvStore.Get(context.Background(), PartitionRingKey)
 	require.NoError(t, err)
 	desc := ring.GetOrCreatePartitionRingDesc(val)
-	return ring.NewPartitionRing(*desc)
+	partitionRing, err := ring.NewPartitionRing(*desc)
+	require.NoError(t, err)
+	return partitionRing
 }
 
 func requireAllTrackersReady(t *testing.T, trackers map[string]*UsageTracker) {
@@ -640,8 +733,8 @@ func stopAllTrackers(t *testing.T, trackers map[string]*UsageTracker) {
 	}
 }
 
-func waitUntilAllTrackersSeeAllInstancesInTheirZones(t *testing.T, trackers map[string]*UsageTracker) {
-	require.EventuallyWithT(t, func(t *assert.CollectT) {
+func waitUntilAllTrackersSeeAllInstancesInTheirZones(tb testing.TB, trackers map[string]*UsageTracker) {
+	require.EventuallyWithT(tb, func(t *assert.CollectT) {
 		trackersPerZone := map[string]int{}
 		for _, ut := range trackers {
 			trackersPerZone[ut.cfg.InstanceRing.InstanceZone]++
@@ -662,16 +755,16 @@ func reconcileAllTrackersPartitionCountTimes(t require.TestingT, trackers map[st
 	}
 }
 
-func prepareKVStoreAndKafkaMocks(t *testing.T) (*consul.Client, *consul.Client, *kfake.Cluster) {
+func prepareKVStoreAndKafkaMocks(tb testing.TB) (*consul.Client, *consul.Client, *kfake.Cluster) {
 	consulConfig := consul.Config{
 		MaxCasRetries: 100,
 		CasRetryDelay: 50 * time.Millisecond,
 	}
 	ikv, instanceKVCloser := consul.NewInMemoryClientWithConfig(ring.GetCodec(), consulConfig, log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, instanceKVCloser.Close()) })
+	tb.Cleanup(func() { assert.NoError(tb, instanceKVCloser.Close()) })
 	pkv, partitionKVCloser := consul.NewInMemoryClientWithConfig(ring.GetPartitionRingCodec(), consulConfig, log.NewNopLogger(), nil)
-	t.Cleanup(func() { assert.NoError(t, partitionKVCloser.Close()) })
-	cluster := fakeKafkaCluster(t)
+	tb.Cleanup(func() { assert.NoError(tb, partitionKVCloser.Close()) })
+	cluster := fakeKafkaCluster(tb)
 	return ikv, pkv, cluster
 }
 
@@ -680,64 +773,76 @@ func newReadyTestUsageTracker(t *testing.T, limits map[string]*validation.Limits
 		cfg.MaxPartitionsToCreatePerReconcile = testPartitionsCount // create all partitions in one reconcile.
 	})
 	ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
-	tracker := newTestUsageTrackerWithTenantLimits(t, 0, "zone-a", ikv, pkv, cluster, validation.NewMockTenantLimits(limits), options...)
+	tracker := newTestUsageTrackerWithDeps(t, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{tenantLimits: validation.NewMockTenantLimits(limits)}, options...)
 	waitUntilAllTrackersSeeAllInstancesInTheirZones(t, map[string]*UsageTracker{"a0": tracker})
 	require.NoError(t, tracker.reconcilePartitions(t.Context()))
 
 	require.EventuallyWithT(t, func(t *assert.CollectT) {
-		require.Len(t, getPartitionRing(t, pkv).ActivePartitionIDs(), testPartitionsCount)
+		require.Equal(t, testPartitionsCount, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
 	}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
 
 	return tracker
 }
 
 func newTestUsageTracker(t *testing.T, index int, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster, options ...func(cfg *Config)) *UsageTracker {
-	return newTestUsageTrackerWithTenantLimits(t, index, zone, ikv, pkv, cluster, nil, options...)
+	return newTestUsageTrackerWithDeps(t, index, zone, ikv, pkv, cluster, newUsageTrackerDeps{}, options...)
 }
 
-func newTestUsageTrackerWithTenantLimits(t *testing.T, index int, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster, tenantLimits validation.TenantLimits, options ...func(cfg *Config)) *UsageTracker {
+type newUsageTrackerDeps struct {
+	registry     *prometheus.Registry
+	logger       log.Logger
+	tenantLimits validation.TenantLimits
+}
+
+func newTestUsageTrackerWithDeps(tb testing.TB, index int, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster, deps newUsageTrackerDeps, options ...func(cfg *Config)) *UsageTracker {
 	instanceID := fmt.Sprintf("usage-tracker-%s-%d", zone, index)
-	cfg := newTestUsageTrackerConfig(t, instanceID, zone, ikv, pkv, cluster)
+	cfg := newTestUsageTrackerConfig(tb, instanceID, zone, ikv, pkv, cluster)
 	for _, option := range options {
 		option(&cfg)
 	}
-	reg := prometheus.NewPedanticRegistry()
-	logger := utiltest.NewTestingLogger(t)
+	logger := deps.logger
+	if logger == nil {
+		logger = utiltest.NewTestingLogger(tb)
+	}
+	reg := deps.registry
+	if reg == nil {
+		reg = prometheus.NewPedanticRegistry()
+	}
+	overrides := validation.NewOverrides(validation.Limits{}, deps.tenantLimits)
+
 	instanceRing, err := NewInstanceRingClient(cfg.InstanceRing, logger, reg)
-	require.NoError(t, err)
-	startServiceAndStopOnCleanup(t, instanceRing)
+	require.NoError(tb, err)
+	startServiceAndStopOnCleanup(tb, instanceRing)
 
 	partitionRingWatcher := NewPartitionRingWatcher(pkv, logger, reg)
 	partitionRing := ring.NewMultiPartitionInstanceRing(partitionRingWatcher, instanceRing, cfg.InstanceRing.HeartbeatTimeout)
-	startServiceAndStopOnCleanup(t, partitionRingWatcher)
-
-	overrides := validation.NewOverrides(validation.Limits{}, tenantLimits)
+	startServiceAndStopOnCleanup(tb, partitionRingWatcher)
 
 	ut, err := NewUsageTracker(cfg, instanceRing, partitionRing, overrides, logger, reg)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 
-	startServiceAndStopOnCleanup(t, ut)
+	startServiceAndStopOnCleanup(tb, ut)
 	return ut
 }
 
-func startServiceAndStopOnCleanup(t *testing.T, svc services.Service) {
-	t.Helper()
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), svc))
-	t.Cleanup(func() { stopService(t, svc) })
+func startServiceAndStopOnCleanup(tb testing.TB, svc services.Service) {
+	tb.Helper()
+	require.NoError(tb, services.StartAndAwaitRunning(context.Background(), svc))
+	tb.Cleanup(func() { stopService(tb, svc) })
 }
 
-func stopService(t *testing.T, svc services.Service) {
+func stopService(tb testing.TB, svc services.Service) {
 	err := services.StopAndAwaitTerminated(context.Background(), svc)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		t.Errorf("Unexpected error stopping service %T: %s", svc, err)
+		tb.Errorf("Unexpected error stopping service %T: %s", svc, err)
 	}
 }
 
-func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster) Config {
+func newTestUsageTrackerConfig(tb testing.TB, instanceID, zone string, ikv, pkv kv.Client, cluster *kfake.Cluster) Config {
 	var cfg Config
 	fs := flag.NewFlagSet("usage-tracker", flag.PanicOnError)
 	cfg.RegisterFlags(fs, log.NewNopLogger())
-	require.NoError(t, fs.Parse(nil))
+	require.NoError(tb, fs.Parse(nil))
 	cfg.Enabled = true
 
 	cfg.Partitions = testPartitionsCount
@@ -765,17 +870,17 @@ func newTestUsageTrackerConfig(t *testing.T, instanceID, zone string, ikv, pkv k
 
 	cfg.PartitionReconcileInterval = time.Hour // we do reconciliation manually
 
-	cfg.SnapshotsStorage.Filesystem.Directory = t.TempDir()
+	cfg.SnapshotsStorage.Filesystem.Directory = tb.TempDir()
 
-	require.NoError(t, cfg.ValidateForUsageTracker())
+	require.NoError(tb, cfg.ValidateForUsageTracker())
 	return cfg
 }
 
-func fakeKafkaCluster(t *testing.T, topicsToSeed ...string) *kfake.Cluster {
-	t.Helper()
+func fakeKafkaCluster(tb testing.TB, topicsToSeed ...string) *kfake.Cluster {
+	tb.Helper()
 	cluster, err := kfake.NewCluster(kfake.NumBrokers(1), kfake.SeedTopics(testPartitionsCount, topicsToSeed...))
-	require.NoError(t, err)
-	t.Cleanup(cluster.Close)
+	require.NoError(tb, err)
+	tb.Cleanup(cluster.Close)
 	return cluster
 }
 
@@ -981,4 +1086,86 @@ func TestUsageTracker_CleanupSnapshots(t *testing.T) {
 		}))
 		require.Len(t, remaining, 1)
 	})
+}
+
+// TestMetricsGatheringIsNotConcurrent makes sure that metrics collection from usage-tracker is not made concurrently.
+// Sometimes we run all 64 partitions on a single instance, serving thousands of tenants.
+// When that happens, the default behaviour of the prometheus.Registry.Gather() is to launch a goroutine for each one of the collectors registered.
+// Since each partition is a collector, it launches 64 quite-heavy goroutines, overwhelming the scheduler and increasing the tail latency.
+func TestMetricsGatheringIsNotConcurrent(t *testing.T) {
+	counter := 0
+	trackerStoreCollectTestHook = func() {
+		// If metrics gathering is concurrent, race detector should complain here.
+		counter++
+		require.Equal(t, 1, counter)
+		counter--
+	}
+	t.Cleanup(func() { trackerStoreCollectTestHook = func() {} })
+
+	const partitions = 64
+	reg := prometheus.NewRegistry()
+	logger := log.NewNopLogger()
+
+	ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(t)
+	tracker := newTestUsageTrackerWithDeps(t, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{registry: reg, logger: logger}, func(cfg *Config) {
+		cfg.Partitions = partitions
+		cfg.MaxPartitionsToCreatePerReconcile = partitions
+		cfg.EventsStorageWriter.AutoCreateTopicDefaultPartitions = partitions
+		cfg.SnapshotsMetadataWriter.AutoCreateTopicDefaultPartitions = partitions
+	})
+	waitUntilAllTrackersSeeAllInstancesInTheirZones(t, map[string]*UsageTracker{"a0": tracker})
+	require.NoError(t, tracker.reconcilePartitions(t.Context()))
+
+	require.EventuallyWithT(t, func(t *assert.CollectT) {
+		require.Equal(t, partitions, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
+	}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
+
+	_, err := reg.Gather()
+	require.NoError(t, err)
+}
+
+func BenchmarkMetricsGathering(b *testing.B) {
+	const partitions = 64
+
+	for _, tenants := range []int{1, 10, 100, 1000, 10000} {
+		b.Run(fmt.Sprintf("tenants=%d", tenants), func(b *testing.B) {
+			reg := prometheus.NewRegistry()
+			logger := log.NewNopLogger()
+
+			ikv, pkv, cluster := prepareKVStoreAndKafkaMocks(b)
+			tracker := newTestUsageTrackerWithDeps(b, 0, "zone-a", ikv, pkv, cluster, newUsageTrackerDeps{registry: reg, logger: logger}, func(cfg *Config) {
+				cfg.Partitions = partitions
+				cfg.MaxPartitionsToCreatePerReconcile = partitions
+				cfg.EventsStorageWriter.AutoCreateTopicDefaultPartitions = partitions
+				cfg.SnapshotsMetadataWriter.AutoCreateTopicDefaultPartitions = partitions
+			})
+			waitUntilAllTrackersSeeAllInstancesInTheirZones(b, map[string]*UsageTracker{"a0": tracker})
+			require.NoError(b, tracker.reconcilePartitions(b.Context()))
+
+			require.EventuallyWithT(b, func(t *assert.CollectT) {
+				require.Equal(t, partitions, tracker.partitionRing.PartitionRing().ActivePartitionsCount())
+			}, 5*time.Second, 100*time.Millisecond, "All partitions should be active now.")
+
+			for tenant := 0; tenant < tenants; tenant++ {
+				userID := strconv.Itoa(tenant)
+				for partition := int32(0); partition < partitions; partition++ {
+					resp, err := tracker.TrackSeries(b.Context(), &usagetrackerpb.TrackSeriesRequest{
+						UserID:       userID,
+						Partition:    partition,
+						SeriesHashes: []uint64{0, 1},
+					})
+					require.NoError(b, err)
+					require.Empty(b, resp.RejectedSeriesHashes)
+				}
+			}
+
+			b.Run("gather", func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					metrics, err := reg.Gather()
+					require.NoError(b, err)
+					require.NotEmpty(b, metrics)
+				}
+			})
+		})
+	}
 }

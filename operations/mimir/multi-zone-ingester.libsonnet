@@ -1,6 +1,6 @@
 {
   _config+:: {
-    multi_zone_ingester_enabled: false,
+    multi_zone_ingester_enabled: $._config.multi_zone_read_path_enabled,
     multi_zone_ingester_migration_enabled: false,
     multi_zone_ingester_replication_write_path_enabled: true,
     multi_zone_ingester_replication_read_path_enabled: true,
@@ -18,7 +18,7 @@
     multi_zone_ingester_zpdb_partition_group: 1,
 
     // Controls whether the multi (virtual) zone ingester should also be deployed multi-AZ.
-    multi_zone_ingester_multi_az_enabled: false,
+    multi_zone_ingester_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
   },
 
   local container = $.core.v1.container,
@@ -86,7 +86,6 @@
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'ingester' }) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': 'ingester' }) +
     statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
     statefulSet.mixin.spec.withReplicas(std.ceil($._config.multi_zone_ingester_replicas / 3)) +
     (if !std.isObject($._config.node_selector) then {} else statefulSet.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     if $._config.ingester_allow_multiple_replicas_on_same_node then {} else {

@@ -46,6 +46,9 @@ type MimirClient interface {
 
 	// Metadata performs a metadata query.
 	Metadata(ctx context.Context, metricName string) (v1.Metadata, error)
+
+	// Protocol indicates the protocol used to write series data.
+	Protocol() string
 }
 
 type ClientConfig struct {
@@ -88,6 +91,7 @@ func (cfg *ClientConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 type Client struct {
+	protocol    string
 	writeClient clientWriter
 	readClient  v1.API
 	cfg         ClientConfig
@@ -186,6 +190,7 @@ func NewClient(cfg ClientConfig, logger log.Logger, reg prometheus.Registerer) (
 	}
 
 	return &Client{
+		protocol:    cfg.WriteProtocol,
 		writeClient: writeClient,
 		readClient:  v1.NewAPI(readClient),
 		cfg:         cfg,
@@ -281,6 +286,11 @@ func (c *Client) WriteSeries(ctx context.Context, series []prompb.TimeSeries, me
 	}
 
 	return lastStatusCode, nil
+}
+
+// Protocol implements MimirClient.
+func (c *Client) Protocol() string {
+	return c.protocol
 }
 
 // RequestOption defines a functional-style request option.

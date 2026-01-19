@@ -64,13 +64,15 @@
 
   local deployment = $.apps.v1.deployment,
 
+  ruler_termination_grace_period_seconds:: 600,
+
   newRulerDeployment(name, container, nodeAffinityMatchers=[])::
     deployment.new(name, 2, [container]) +
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     (if !std.isObject($._config.node_selector) then {} else deployment.mixin.spec.template.spec.withNodeSelectorMixin($._config.node_selector)) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge('50%') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(0) +
-    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
+    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.ruler_termination_grace_period_seconds) +
     $.newMimirSpreadTopology(name, $._config.ruler_querier_topology_spread_max_skew) +
     $.mimirVolumeMounts,
 

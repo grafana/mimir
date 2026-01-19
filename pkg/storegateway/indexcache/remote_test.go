@@ -935,6 +935,10 @@ func (c *mockedRemoteCacheClient) GetMulti(_ context.Context, keys []string, _ .
 	return hits
 }
 
+func (c *mockedRemoteCacheClient) GetMultiWithError(ctx context.Context, keys []string, opts ...cache.Option) (map[string][]byte, error) {
+	return c.GetMulti(ctx, keys, opts...), c.mockedGetMultiErr
+}
+
 func (c *mockedRemoteCacheClient) SetAsync(key string, value []byte, _ time.Duration) {
 	c.cache[key] = value
 }

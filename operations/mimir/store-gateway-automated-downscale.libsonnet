@@ -51,6 +51,7 @@
       $.removeReplicasFromSpec +
       statefulSet.mixin.metadata.withAnnotationsMixin({
         'grafana.com/rollout-downscale-leader': 'store-gateway-zone-a',
+        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
       }),
   ),
 
@@ -61,6 +62,7 @@
       $.removeReplicasFromSpec +
       statefulSet.mixin.metadata.withAnnotationsMixin({
         'grafana.com/rollout-downscale-leader': 'store-gateway-zone-b',
+        'grafana.com/rollout-upscale-only-when-leader-ready': 'true',
       }),
   ),
 

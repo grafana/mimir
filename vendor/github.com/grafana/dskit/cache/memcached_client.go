@@ -116,10 +116,6 @@ type MemcachedClientConfig struct {
 
 	// TLS to use to connect to the Memcached server.
 	TLS dstls.ClientConfig `yaml:",inline"`
-
-	// DNSIgnoreStartupFailures allows the client to start even if initial DNS resolution fails.
-	// When true, DNS failures are logged but client creation succeeds.
-	DNSIgnoreStartupFailures bool `yaml:"dns_ignore_startup_failures" category:"experimental"`
 }
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -135,7 +131,6 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
-	f.BoolVar(&c.DNSIgnoreStartupFailures, prefix+"dns-ignore-startup-failures", true, "Allow client creation even if initial DNS resolution fails.")
 }
 
 func (c *MemcachedClientConfig) Validate() error {
@@ -231,7 +226,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	go mcClient.resolveAddrsLoop()
 
 	// Do initial DNS resolution
-	if err := mcClient.resolveAddrs(); err != nil && !config.DNSIgnoreStartupFailures {
+	if err = mcClient.resolveAddrs(); err != nil {
 		mcClient.Stop()
 		return nil, err
 	}
@@ -416,28 +411,27 @@ func toMemcacheOptions(opts ...Option) []memcache.Option {
 }
 
 func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...Option) map[string][]byte {
-	if len(keys) == 0 {
-		return nil
-	}
-
-	c.metrics.requests.Add(float64(len(keys)))
-	options := toMemcacheOptions(opts...)
-	batches, err := c.getMultiBatched(ctx, keys, options...)
+	hits, err := c.GetMultiWithError(ctx, keys, opts...)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil
 		}
 		level.Warn(c.logger).Log("msg", "failed to fetch items from memcached", "numKeys", len(keys), "firstKey", keys[0], "err", err)
+	}
+	return hits
+}
 
-		// In case we have both results and an error, it means some batch requests
-		// failed and other succeeded. In this case we prefer to log it and move on,
-		// given returning some results from the cache is better than returning
-		// nothing.
-		if len(batches) == 0 {
-			return nil
-		}
+func (c *MemcachedClient) GetMultiWithError(ctx context.Context, keys []string, opts ...Option) (map[string][]byte, error) {
+	if len(keys) == 0 {
+		return nil, nil
 	}
 
+	c.metrics.requests.Add(float64(len(keys)))
+	options := toMemcacheOptions(opts...)
+	batches, err := c.getMultiBatched(ctx, keys, options...)
+
+	// Build hits map from successful batches even if there was an error,
+	// since some batch requests may have succeeded.
 	hits := map[string][]byte{}
 	for _, items := range batches {
 		for key, item := range items {
@@ -446,7 +440,7 @@ func (c *MemcachedClient) GetMulti(ctx context.Context, keys []string, opts ...O
 	}
 
 	c.metrics.hits.Add(float64(len(hits)))
-	return hits
+	return hits, err
 }
 
 func (c *MemcachedClient) Delete(ctx context.Context, key string) error {

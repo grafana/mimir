@@ -8,6 +8,7 @@ package rules
 import (
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -218,7 +219,7 @@ func TestAggregateBy(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
-			c, m, err := tc.rn.AggregateBy("cluster", tc.applyTo)
+			c, m, err := tc.rn.AggregateBy("cluster", tc.applyTo, log.NewNopLogger())
 
 			require.Equal(t, tc.expect, err)
 			assert.Equal(t, tc.count, c)
@@ -298,7 +299,7 @@ func TestLintExpressions(t *testing.T) {
 			}
 
 			backend := MimirBackend
-			c, m, err := r.LintExpressions(backend)
+			c, m, err := r.LintExpressions(backend, log.NewNopLogger())
 			rexpr := r.Groups[0].Rules[0].Expr
 
 			require.Equal(t, tc.count, c)
@@ -368,7 +369,7 @@ func TestCheckRecordingRules(t *testing.T) {
 				},
 			}
 
-			n := r.CheckRecordingRules(tc.strict)
+			n := r.CheckRecordingRules(tc.strict, log.NewNopLogger())
 			require.Equal(t, tc.count, n, "failed rule: %s", tc.ruleName)
 		})
 	}

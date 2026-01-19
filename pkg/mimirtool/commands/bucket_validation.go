@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
@@ -92,8 +91,11 @@ func (c *retryingBucketClient) Delete(ctx context.Context, name string) error {
 }
 
 // Register is used to register the command to a parent command.
-func (b *BucketValidationCommand) Register(app *kingpin.Application, _ EnvVarNames) {
-	bvCmd := app.Command("bucket-validation", "Validate that object store bucket works correctly.").Action(b.validate)
+func (b *BucketValidationCommand) Register(app *kingpin.Application, _ EnvVarNames, logConfig *LoggerConfig) {
+	bvCmd := app.Command("bucket-validation", "Validate that object store bucket works correctly.").Action(func(_ *kingpin.ParseContext) error {
+		b.logger = logConfig.Logger()
+		return b.validate()
+	})
 
 	bvCmd.Flag("object-count", "Number of objects to create & delete").Default("2000").IntVar(&b.objectCount)
 	bvCmd.Flag("report-every", "Every X operations a progress report gets printed").Default("100").IntVar(&b.reportEvery)
@@ -104,8 +106,7 @@ func (b *BucketValidationCommand) Register(app *kingpin.Application, _ EnvVarNam
 	bvCmd.Flag("bucket-config-help", "Help text explaining how to use the -bucket-config parameter").BoolVar(&b.bucketConfigHelp)
 }
 
-func (b *BucketValidationCommand) validate(_ *kingpin.ParseContext) error {
-	b.logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+func (b *BucketValidationCommand) validate() error {
 	if b.bucketConfigHelp {
 		b.printBucketConfigHelp()
 		return nil

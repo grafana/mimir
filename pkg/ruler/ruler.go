@@ -107,7 +107,7 @@ type Config struct {
 	// This is used for template expansion in alerts; must be a valid URL.
 	ExternalURL flagext.URLValue `yaml:"external_url"`
 	// GRPC Client configuration.
-	ClientTLSConfig grpcclient.Config `yaml:"ruler_client" doc:"description=Configures the gRPC client used to communicate between ruler instances."`
+	ClientTLSConfig ClientConfig `yaml:"ruler_client" doc:"description=Configures the gRPC client used to communicate between ruler instances."`
 	// How frequently to evaluate rules by default.
 	EvaluationInterval time.Duration `yaml:"evaluation_interval" category:"advanced"`
 	// How frequently to poll for updated rules.
@@ -159,6 +159,11 @@ type Config struct {
 	IndependentRuleEvaluationConcurrencyMinDurationPercentage float64 `yaml:"independent_rule_evaluation_concurrency_min_duration_percentage" category:"experimental"`
 
 	RuleEvaluationWriteEnabled bool `yaml:"rule_evaluation_write_enabled" category:"experimental"`
+}
+
+type ClientConfig struct {
+	grpcclient.Config      `yaml:",inline"`
+	HealthCheckGracePeriod time.Duration `yaml:"health_check_grace_period" category:"experimental"`
 }
 
 // Validate config and returns error on failure
@@ -226,6 +231,11 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.DurationVar(&cfg.InboundSyncQueuePollInterval, "ruler.inbound-sync-queue-poll-interval", defaultRulerSyncPollFrequency, `Interval between applying queued incoming rule sync requests.`)
 
 	cfg.RingCheckPeriod = 5 * time.Second
+}
+
+func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
+	cfg.Config.RegisterFlagsWithPrefix(prefix, f)
+	f.DurationVar(&cfg.HealthCheckGracePeriod, prefix+".health-check-grace-period", 0, "The grace period for health checks. If a ruler connection consistently fails health checks for this period, any open connections are closed. The ruler will attempt to reconnect to that ruler if a subsequent request is made to that ruler. Set to 0 to immediately remove ruler connections on the first health check failure.")
 }
 
 type rulerMetrics struct {

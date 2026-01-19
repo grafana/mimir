@@ -19,13 +19,64 @@ type poolCloser interface {
 	put(*os.File) error
 }
 
+type BufReader interface {
+	// Reset moves the cursor to the beginning of the data segment owned by the reader,
+	// at the base offset configured at reader initialization.
+	Reset() error
+
+	// ResetAt moves the cursor to the given offset in the data segment owned by the reader,
+	// relative to the base offset configured at reader initialization.
+	// Attempting to ResetAt to the end of the data segment is valid.
+	// Attempting to ResetAt _beyond_ the end of the data segment will return an error.
+	ResetAt(off int) error
+
+	// Skip advances the cursor by the given number of bytes in the data segment.
+	// Attempting to skip to the end of the data segment is valid.
+	// Attempting to skip _beyond_ the end of the data segment will return an error.
+	Skip(l int) error
+
+	// Peek returns at most the given number of bytes from the data segment, without consuming them.
+	// The byte slice returned becomes invalid at the next read.
+	// It is valid to Peek beyond the end of the data segment;
+	// in this case implementations MUST return the available bytes up to the end and a nil error.
+	Peek(n int) ([]byte, error)
+
+	// Read returns the given number of bytes from the data segment, consuming them.
+	// It is NOT valid to read beyond the end of the data segment;
+	// in this case implementations MUST return a nil byte slice and an ErrInvalidSize error,
+	// and the remaining bytes MUST be consumed.
+	Read(n int) ([]byte, error)
+
+	// ReadInto reads len(b) bytes from the data segment into b, consuming them.
+	// It is NOT valid to read beyond the end of the data segment;
+	// in this case implementations MUST return a nil byte slice and an ErrInvalidSize error,
+	// and the remaining bytes MUST be consumed.
+	ReadInto(b []byte) error
+
+	// Size returns the length of the underlying buffer in bytes.
+	Size() int
+
+	// Len returns the remaining number of bytes in the data segment owned by the reader,
+	// from the current offset to the length configured at reader initialization.
+	Len() int
+
+	// Offset returns the cursor offset in the data segment owned by the reader,
+	// relative to the base offset configured at reader initialization.
+	Offset() int
+
+	// Buffered returns the number of bytes that can be read from the reader which are already in memory.
+	Buffered() int
+
+	Close() error
+}
+
 type fileReader struct {
 	file   *os.File
 	closer poolCloser
 	buf    *bufio.Reader
 	base   int
 	length int
-	pos    int
+	off    int
 }
 
 var bufferPool = sync.Pool{
@@ -45,7 +96,7 @@ func newFileReader(file *os.File, base, length int, closer poolCloser) (*fileRea
 		length: length,
 	}
 
-	err := f.reset()
+	err := f.Reset()
 	if err != nil {
 		return nil, err
 	}
@@ -53,17 +104,11 @@ func newFileReader(file *os.File, base, length int, closer poolCloser) (*fileRea
 	return f, nil
 }
 
-// reset moves the cursor position to the beginning of the file segment including the
-// base set when the fileReader was created.
-func (f *fileReader) reset() error {
-	return f.resetAt(0)
+func (f *fileReader) Reset() error {
+	return f.ResetAt(0)
 }
 
-// resetAt moves the cursor position to the given offset in the file segment including
-// the base set when the fileReader was created. Attempting to resetAt to the end of the
-// file segment is valid. Attempting to resetAt _beyond_ the end of the file segment will
-// return an error.
-func (f *fileReader) resetAt(off int) error {
+func (f *fileReader) ResetAt(off int) error {
 	if off > f.length {
 		return ErrInvalidSize
 	}
@@ -74,34 +119,27 @@ func (f *fileReader) resetAt(off int) error {
 	}
 
 	f.buf.Reset(f.file)
-	f.pos = off
+	f.off = off
 
 	return nil
 }
 
-// skip advances the cursor position by the given number of bytes in the file segment.
-// Attempting to skip to the end of the file segment is valid. Attempting to skip _beyond_
-// the end of the file segment will return an error.
-func (f *fileReader) skip(l int) error {
-	if l > f.len() {
+func (f *fileReader) Skip(l int) error {
+	if l > f.Len() {
 		return ErrInvalidSize
 	}
 
 	n, err := f.buf.Discard(l)
 	if n > 0 {
-		f.pos += n
+		f.off += n
 	}
 
 	return err
 }
 
-// peek returns at most the given number of bytes from the file segment
-// without consuming them. The bytes returned become invalid at the next
-// read. It is valid to peek beyond the end of the file segment. In this
-// case the available bytes are returned with a nil error.
-func (f *fileReader) peek(n int) ([]byte, error) {
+func (f *fileReader) Peek(n int) ([]byte, error) {
 	b, err := f.buf.Peek(n)
-	// bufio.Reader still returns what it read when it hits EOF and callers
+	// bufio.Reader still returns what it Read when it hits EOF and callers
 	// expect to be able to peek past the end of a file.
 	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
@@ -114,13 +152,10 @@ func (f *fileReader) peek(n int) ([]byte, error) {
 	return nil, nil
 }
 
-// read returns the given number of bytes from the file segment, consuming them. It is
-// NOT valid to read beyond the end of the file segment. In this case, a nil byte slice
-// and ErrInvalidSize error will be returned, and the remaining bytes are consumed.
-func (f *fileReader) read(n int) ([]byte, error) {
+func (f *fileReader) Read(n int) ([]byte, error) {
 	b := make([]byte, n)
 
-	err := f.readInto(b)
+	err := f.ReadInto(b)
 	if err != nil {
 		return nil, err
 	}
@@ -128,13 +163,10 @@ func (f *fileReader) read(n int) ([]byte, error) {
 	return b, nil
 }
 
-// readInto reads len(b) bytes from the file segment into b, consuming them. It is
-// NOT valid to readInto beyond the end of the file segment. In this case, an ErrInvalidSize
-// error will be returned and the remaining bytes are consumed.
-func (f *fileReader) readInto(b []byte) error {
+func (f *fileReader) ReadInto(b []byte) error {
 	r, err := io.ReadFull(f.buf, b)
 	if r > 0 {
-		f.pos += r
+		f.off += r
 	}
 
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -146,28 +178,24 @@ func (f *fileReader) readInto(b []byte) error {
 	return nil
 }
 
-// size returns the length of the underlying buffer in bytes.
-func (f *fileReader) size() int {
+func (f *fileReader) Offset() int {
+	return f.off
+}
+
+func (f *fileReader) Len() int {
+	return f.length - f.off
+}
+
+func (f *fileReader) Size() int {
 	return f.buf.Size()
 }
 
-// len returns the remaining number of bytes in the file segment owned by this reader.
-func (f *fileReader) len() int {
-	return f.length - f.pos
-}
-
-// position returns the current position of this fileReader in f, relative to base.
-func (f *fileReader) position() int {
-	return f.pos
-}
-
-// buffered returns the number of bytes that can be read from the fileReader which are already in memory.
-func (f *fileReader) buffered() int {
+func (f *fileReader) Buffered() int {
 	return f.buf.Buffered()
 }
 
-// close cleans up the underlying resources used by this fileReader.
-func (f *fileReader) close() error {
+// Close cleans up the underlying resources used by this fileReader.
+func (f *fileReader) Close() error {
 	// Note that we don't do anything to clean up the buffer before returning it to the pool here:
 	// we reset the buffer when we retrieve it from the pool instead.
 	bufferPool.Put(f.buf)

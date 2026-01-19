@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -24,6 +24,9 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 )
+
+// ImplementationName is the name of the labels implementation.
+const ImplementationName = "slicelabels"
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.

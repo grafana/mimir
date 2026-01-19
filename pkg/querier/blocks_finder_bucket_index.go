@@ -55,12 +55,12 @@ func NewBucketIndexBlocksFinder(cfg BucketIndexBlocksFinderConfig, bkt objstore.
 }
 
 // GetBlocks implements BlocksFinder.
-func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, error) {
+func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, minT, maxT int64) (bucketindex.Blocks, *bucketindex.Metadata, error) {
 	if f.State() != services.Running {
-		return nil, errBucketIndexBlocksFinderNotRunning
+		return nil, nil, errBucketIndexBlocksFinderNotRunning
 	}
 	if maxT < minT {
-		return nil, errInvalidBlocksRange
+		return nil, nil, errInvalidBlocksRange
 	}
 
 	// Get the bucket index for this user.
@@ -68,15 +68,15 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 	if errors.Is(err, bucketindex.ErrIndexNotFound) {
 		// This is a legit edge case, happening when a new tenant has not shipped blocks to the storage yet
 		// so the bucket index hasn't been created yet.
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Ensure the bucket index is not too old.
 	if time.Since(idx.GetUpdatedAt()) > f.cfg.MaxStalePeriod {
-		return nil, newBucketIndexTooOldError(idx.GetUpdatedAt(), f.cfg.MaxStalePeriod)
+		return nil, nil, newBucketIndexTooOldError(idx.GetUpdatedAt(), f.cfg.MaxStalePeriod)
 	}
 
 	matchingBlocks := map[ulid.ULID]*bucketindex.Block{}
@@ -104,7 +104,7 @@ func (f *BucketIndexBlocksFinder) GetBlocks(ctx context.Context, userID string, 
 		blocks = append(blocks, b)
 	}
 
-	return blocks, nil
+	return blocks, idx.Metadata(), nil
 }
 
 func newBucketIndexTooOldError(updatedAt time.Time, maxStalePeriod time.Duration) error {

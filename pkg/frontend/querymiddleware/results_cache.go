@@ -121,6 +121,7 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 	return cache.NewVersioned(
 		cache.NewSpanlessTracingCache(client, logger, tenant.NewMultiResolver()),
 		resultsCacheVersion,
+		logger,
 	), nil
 }
 

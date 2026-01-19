@@ -540,7 +540,6 @@ type indexReader interface {
 	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
 	Series(ref storage.SeriesRef, builder *labels.ScratchBuilder, chks *[]chunks.Meta) error
 	LabelNames(ctx context.Context, matchers ...*labels.Matcher) ([]string, error)
-	LabelValueFor(ctx context.Context, id storage.SeriesRef, label string) (string, error)
 	LabelNamesFor(ctx context.Context, p index.Postings) ([]string, error)
 	Close() error
 }
@@ -712,7 +711,9 @@ func clampChunk(input *chunks.Meta, minT, maxT int64) (*chunks.Meta, error) {
 		if t, v := iter.At(); t >= minT && t < maxT {
 			chunkMinT = min(chunkMinT, t)
 			chunkMaxT = max(chunkMaxT, t)
-			app.Append(t, v)
+			// TODO(krajorama): test the ST is correctly passed when chunk
+			// format with ST is available.
+			app.Append(iter.AtST(), t, v)
 		}
 	}
 

@@ -12,8 +12,8 @@ import (
 	"io"
 	"net/url"
 
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
@@ -77,9 +77,7 @@ func (c *MimirClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	rg := rwrulefmt.RuleGroup{}
 	err = yaml.Unmarshal(body, &rg)
 	if err != nil {
-		log.WithFields(log.Fields{
-			"body": string(body),
-		}).Debugln("failed to unmarshal rule group from response")
+		level.Debug(c.logger).Log("msg", "failed to unmarshal rule group from response", "body", string(body))
 
 		return nil, errors.Wrap(err, "unable to unmarshal response")
 	}

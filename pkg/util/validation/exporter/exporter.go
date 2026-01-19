@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,18 +27,25 @@ import (
 )
 
 var (
-	defaultEnabledMetricNames = []string{
-		ingestionRate,
-		ingestionBurstSize,
-		maxGlobalSeriesPerUser,
-		maxGlobalSeriesPerMetric,
-		maxGlobalExemplarsPerUser,
-		maxChunksPerQuery,
-		maxFetchedSeriesPerQuery,
-		maxFetchedChunkBytesPerQuery,
-		rulerMaxRulesPerRuleGroup,
-		rulerMaxRuleGroupsPerTenant,
-	}
+	defaultEnabledMetricNames = func() []string {
+		names := []string{
+			ingestionRate,
+			ingestionBurstSize,
+			maxGlobalSeriesPerUser,
+			maxGlobalSeriesPerMetric,
+			maxGlobalExemplarsPerUser,
+			maxChunksPerQuery,
+			maxFetchedSeriesPerQuery,
+			maxFetchedChunkBytesPerQuery,
+			rulerMaxRulesPerRuleGroup,
+			rulerMaxRuleGroupsPerTenant,
+		}
+
+		// Ensure they're sorted so that the default CLI flag value matches the
+		// explicit setting we have in jsonnet.
+		slices.Sort(names)
+		return names
+	}()
 )
 
 const (

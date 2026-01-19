@@ -42,12 +42,13 @@ func (p *rulerClientsPool) GetClientForInstance(inst ring.InstanceDesc) (RulerCl
 	return c.(RulerClient), nil
 }
 
-func newRulerClientPool(clientCfg grpcclient.Config, logger log.Logger, reg prometheus.Registerer) ClientsPool {
+func newRulerClientPool(clientCfg ClientConfig, logger log.Logger, reg prometheus.Registerer) ClientsPool {
 	// We prefer sane defaults instead of exposing further config options.
 	poolCfg := client.PoolConfig{
-		CheckInterval:      10 * time.Second,
-		HealthCheckEnabled: true,
-		HealthCheckTimeout: 10 * time.Second,
+		CheckInterval:          10 * time.Second,
+		HealthCheckEnabled:     true,
+		HealthCheckTimeout:     10 * time.Second,
+		HealthCheckGracePeriod: clientCfg.HealthCheckGracePeriod,
 	}
 
 	clientsCount := promauto.With(reg).NewGauge(prometheus.GaugeOpts{
@@ -56,7 +57,7 @@ func newRulerClientPool(clientCfg grpcclient.Config, logger log.Logger, reg prom
 	})
 
 	return &rulerClientsPool{
-		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg, reg, logger), clientsCount, logger),
+		client.NewPool("ruler", poolCfg, nil, newRulerClientFactory(clientCfg.Config, reg, logger), clientsCount, logger),
 	}
 }
 

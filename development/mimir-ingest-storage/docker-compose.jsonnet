@@ -247,7 +247,7 @@ std.manifestYamlDoc({
         '29092:29092',
       ],
       healthcheck: {
-        test: 'nc -z localhost 9092 || exit -1',
+        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
         start_period: '1s',
         interval: '1s',
         timeout: '1s',
@@ -267,7 +267,7 @@ std.manifestYamlDoc({
         '29093:29093',
       ],
       healthcheck: {
-        test: 'nc -z localhost 9092 || exit -1',
+        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
         start_period: '1s',
         interval: '1s',
         timeout: '1s',
@@ -287,7 +287,7 @@ std.manifestYamlDoc({
         '29094:29094',
       ],
       healthcheck: {
-        test: 'nc -z localhost 9092 || exit -1',
+        test: 'kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1',
         start_period: '1s',
         interval: '1s',
         timeout: '1s',

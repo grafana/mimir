@@ -1160,22 +1160,15 @@ groups:
           labels:
             severity: critical
             time_period: since-start
-        - alert: MimirCompactorSkippedUnhealthyBlocks
+        - alert: MimirCompactorSkippedBlocks
           annotations:
-            message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has found and ignored unhealthy blocks.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedunhealthyblocks
+            message: 'Mimir Compactor in {{ $labels.cluster }}/{{ $labels.namespace }} has marked {{ $value }} blocks for no-compaction (reason: {{ $labels.reason }}).'
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedblocks
           expr: |
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[5m]) > 0
-          for: 1m
-          labels:
-            severity: warning
-        - alert: MimirCompactorSkippedUnhealthyBlocks
-          annotations:
-            message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has found and ignored unhealthy blocks.
-            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactorskippedunhealthyblocks
-          expr: |
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total[5m]) > 1
-          for: 30m
+            sum by (cluster, namespace, reason) (
+              increase(cortex_compactor_blocks_marked_for_no_compaction_total[24h]) > 0
+            )
+          for: 5m
           labels:
             severity: critical
         - alert: MimirCompactorBuildingSparseIndexFailed
@@ -1530,6 +1523,33 @@ groups:
           for: 15m
           labels:
             severity: critical
+    - name: rollout_operator_alerts
+      rules:
+        - alert: MimirIncorrectWebhookConfigurationFailurePolicy
+          annotations:
+            message: |
+                A validating or mutating rollout-operator webhook has an Ignore policy set. This should be set to Fail.
+            runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirincorrectwebhookconfigurationfailurepolicy
+          expr: count by(type, webhook) (kube_validating_webhook_failure_policy{policy="Ignore", webhook=~"^(pod-eviction|zpdb-validation).+"} > 0)
+          for: 5m
+          labels:
+            severity: warning
+        - alert: MimirBadZoneAwarePodDisruptionBudgetConfiguration
+          annotations:
+            message: An invalid zone aware pod disruption budget configuration has been observed.
+            runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirbadzoneawarepoddisruptionbudgetconfiguration
+          expr: sum by (job)(rate(rollout_operator_zpdb_configurations_observed_total{result="invalid"}[5m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+        - alert: MimirHighNumberInflightZpdbRequests
+          annotations:
+            message: A sustained number of inflight ZPDB eviction requests has been observed.
+            runbook_url: https://github.com/grafana/rollout-operator/tree/main/docs/runbooks.md#mimirhighnumberinflightzpdbrequests
+          expr: avg_over_time(rollout_operator_zpdb_inflight_eviction_requests[5m]) > 10
+          for: 5m
+          labels:
+            severity: warning
     - name: mimir_continuous_test
       rules:
         - alert: MimirContinuousTestNotRunningOnWrites

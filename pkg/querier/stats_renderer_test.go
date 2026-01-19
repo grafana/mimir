@@ -109,6 +109,7 @@ func TestStatsRenderer(t *testing.T) {
 		false,
 		false,
 		nil,
+		nil,
 	)
 	promRouter := route.New().WithPrefix("/api/v1")
 

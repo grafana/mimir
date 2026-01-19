@@ -61,11 +61,10 @@ The following features are currently experimental:
 - Alertmanager
   - Enable a set of experimental API endpoints to help support the migration of the Grafana Alertmanager to the Mimir Alertmanager.
     - `-alertmanager.grafana-alertmanager-compatibility-enabled`
+  - Health check grace period for connections to other replicas (`-alertmanager.alertmanager-client.health-check-grace-period`)
 - Compactor
   - Limit blocks processed in each compaction cycle. Blocks uploaded prior to the maximum lookback aren't processed.
     - `-compactor.max-lookback`
-  - Enable the compactor to upload sparse index headers to object storage during compaction cycles.
-    - `-compactor.upload-sparse-index-headers`
 - Ruler
   - Allow defining limits on the maximum number of rules allowed in a rule group by namespace and the maximum number of rule groups by namespace. If set, this supersedes the `-ruler.max-rules-per-rule-group` and `-ruler.max-rule-groups-per-tenant` limits.
   - `-ruler.max-rules-per-rule-group-by-namespace`
@@ -83,6 +82,7 @@ The following features are currently experimental:
   - `-ruler.min-rule-evaluation-interval`
   - Configure metric and label name validation scheme
     - `-validation.name-validation-scheme`
+  - Health check grace period for connections to other replicas (`-ruler.client.health-check-grace-period`)
 - Distributor
   - Influx ingestion
     - `/api/v1/push/influx/write` endpoint
@@ -112,6 +112,7 @@ The following features are currently experimental:
     - `-distributor.otel-translation-strategy`
   - Configure how to handle label values over the length limit
     - `-validation.label-value-length-over-limit-strategy`
+  - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
 - Ingester
   - Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)
   - Snapshotting of in-memory TSDB data on disk when shutting down (`-blocks-storage.tsdb.memory-snapshot-on-shutdown`)
@@ -120,6 +121,9 @@ The following features are currently experimental:
   - Early TSDB Head compaction to reduce in-memory series:
     - `-blocks-storage.tsdb.early-head-compaction-min-in-memory-series`
     - `-blocks-storage.tsdb.early-head-compaction-min-estimated-series-reduction-percentage`
+  - Per-tenant early TSDB Head compaction based on owned series count:
+    - `-ingester.early-head-compaction-owned-series-threshold`
+    - `-ingester.early-head-compaction-min-estimated-series-reduction-percentage`
   - Timely head compaction (`-blocks-storage.tsdb.timely-head-compaction-enabled`)
   - Count owned series and use them to enforce series limits:
     - `-ingester.track-ingester-owned-series`
@@ -196,7 +200,9 @@ The following features are currently experimental:
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)
   - Ignore deletion marks while querying delay (`-blocks-storage.bucket-store.ignore-deletion-marks-while-querying-delay`)
   - Querier ring (all flags beginning with `-querier.ring`)
-  - Query-frontend health check grace period (`querier.frontend-health-check-grace-period`)
+  - Query-frontend health check grace period (`-querier.frontend-client.health-check-grace-period`)
+  - Store-gateway health check grace period (`-querier.store-gateway-client.health-check-grace-period`)
+  - Ingester health check grace period (`-distributor.ingester-health-check-grace-period`)
 - Query-frontend
 
   - Lower TTL for cache entries overlapping the out-of-order samples ingestion window (re-using `-ingester.out-of-order-window` from ingesters)
@@ -220,6 +226,7 @@ The following features are currently experimental:
 - Store-gateway
   - Eagerly loading some blocks on startup even when lazy loading is enabled `-blocks-storage.bucket-store.index-header.eager-loading-startup-enabled`
   - Allow more than the default of 3 store-gateways to own recent blocks `-store-gateway.dynamic-replication`
+  - Per-zone shard size, useful for computing automatic shard sizes based on the number of zone `-store-gateway.tenant-shard-size-per-zone`
 - Metric separation by an additionally configured group label
   - `-validation.separate-metrics-group-label`
   - `-max-separate-metrics-groups-per-user`
@@ -252,6 +259,13 @@ The following features are currently experimental:
     - Assuming that a gRPC client configuration can be reached via `-<grpc-client-config-path>`, cluster validation label is configured via: `-<grpc-client-config-path>.cluster-validation.label`.
     - The cluster validation label of all gRPC clients can be configured via `-common.client-cluster-validation.label`.
     - Requests with invalid cluster validation labels are tracked via the `cortex_client_invalid_cluster_validation_label_requests_total` metric.
+- Common
+  - Instrument a fraction of pooled objects for references that outlive their lifetime.
+    - Only implemented for objects embedding `mimirpb.BufferHolder`.
+    - Flags:
+      - `-common.instrument-reference-leaks.percentage`
+      - `-common.instrument-reference-leaks.before-reuse-period`
+      - `-common.instrument-reference-leaks.max-inflight-instrumented-bytes`
 - Preferred available zones for querying ingesters and store-gateways
   - `-querier.prefer-availability-zones`
 - Memberlist zone-aware routing
