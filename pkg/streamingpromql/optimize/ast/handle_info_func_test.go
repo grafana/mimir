@@ -6,10 +6,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
 func TestHandleInfoFunc(t *testing.T) {
