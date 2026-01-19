@@ -98,7 +98,7 @@ func TestStepRange(t *testing.T) {
 				Range:                    tc.rangeDuration,
 				Anchored:                 tc.anchored,
 				Smoothed:                 tc.smoothed,
-				OuterFunc:                "rate",
+				CounterAware:             true,
 				MemoryConsumptionTracker: mc,
 			}
 
@@ -140,12 +140,12 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 	timeZero := time.Unix(0, 0)
 
 	tests := map[string]struct {
-		data      string
-		ts        time.Time
-		expected  []promql.FPoint
-		smoothed  bool
-		anchored  bool
-		outerFunc string
+		data         string
+		ts           time.Time
+		expected     []promql.FPoint
+		smoothed     bool
+		anchored     bool
+		counterAware bool
 	}{
 		// no points are within the range boundary
 		"anchored - no points": {
@@ -185,98 +185,81 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 		"smoothed - no points": {
 			data: `load 1m
 					metric _ _ _`,
-			ts:        timeZero.Add(1 * time.Minute),
-			expected:  []promql.FPoint{},
-			smoothed:  true,
-			outerFunc: "rate",
+			ts:           timeZero.Add(1 * time.Minute),
+			expected:     []promql.FPoint{},
+			smoothed:     true,
+			counterAware: true,
 		},
 		// no synthetic points as they are already on the boundary
 		"smoothed - no synthetic points": {
 			data: `load 1m
 					metric 5 1 10 2 30`,
-			ts:        timeZero.Add(3 * time.Minute),
-			expected:  []promql.FPoint{{T: 60 * 1000, F: 1}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 2}},
-			smoothed:  true,
-			outerFunc: "rate",
+			ts:           timeZero.Add(3 * time.Minute),
+			expected:     []promql.FPoint{{T: 60 * 1000, F: 1}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 2}},
+			smoothed:     true,
+			counterAware: true,
 		},
 		// smoothed has an extended end range. The synthetic points are taken from within the range and the extended end of the range
 		"smoothed - synthetic head and tail - first.T > rangeStart, last.T > rangeEnd": {
 			data: `load 1m
 					metric 5 _ 10 _ 30`,
-			ts:        timeZero.Add(3 * time.Minute),
-			expected:  []promql.FPoint{{T: 60 * 1000, F: 10}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 20}},
-			smoothed:  true,
-			outerFunc: "rate",
+			ts:           timeZero.Add(3 * time.Minute),
+			expected:     []promql.FPoint{{T: 60 * 1000, F: 10}, {T: 60 * 1000 * 2, F: 10}, {T: 60 * 3 * 1000, F: 20}},
+			smoothed:     true,
+			counterAware: true,
 		},
 		// the synthetic points are taken from the extended range
-		"smoothed - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - rate function": {
+		"smoothed - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - counter aware": {
 			data: `load 1m
 					metric 1 2 3 4`,
-			ts:        timeZero.Add(2 * time.Second * 61),
-			expected:  []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
-			smoothed:  true,
-			outerFunc: "rate",
+			ts:           timeZero.Add(2 * time.Second * 61),
+			expected:     []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
+			smoothed:     true,
+			counterAware: true,
 		},
-		"smoothed - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - increase function": {
+		"smoothed - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - not counter aware": {
 			data: `load 1m
 					metric 1 2 3 4`,
-			ts:        timeZero.Add(2 * time.Second * 61),
-			expected:  []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
-			smoothed:  true,
-			outerFunc: "increase",
-		},
-		"smoothed - synthetic head and tail not required for non rate/increase function": {
-			data: `load 1m
-					metric 1 2 3 4`,
-			ts:        timeZero.Add(2 * time.Second * 61),
-			expected:  []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
-			smoothed:  true,
-			outerFunc: "delta",
+			ts:           timeZero.Add(2 * time.Second * 61),
+			expected:     []promql.FPoint{{T: 2000, F: 1.0333333333333334}, {T: 60000, F: 2}, {T: 120000, F: 3}, {T: 122000, F: 3.033333333333333}},
+			smoothed:     true,
+			counterAware: false,
 		},
 		// the synthetic points are taken from within the original range
 		"smoothed - synthetic head and tail first.T > rangeStart, last.T < rangeEnd": {
 			data: `load 1m
 					metric _ 3 _ _ _`,
-			ts:        timeZero.Add(time.Minute * 2),
-			expected:  []promql.FPoint{{T: 0, F: 3}, {T: 60000, F: 3}, {T: 120000, F: 3}},
-			smoothed:  true,
-			outerFunc: "rate",
+			ts:           timeZero.Add(time.Minute * 2),
+			expected:     []promql.FPoint{{T: 0, F: 3}, {T: 60000, F: 3}, {T: 120000, F: 3}},
+			smoothed:     true,
+			counterAware: true,
 		},
 		// the synthetic points are taken from the extended start range
 		"smoothed - synthetic head and tail first.T < rangeStart, last.T < rangeEnd": {
 			data: `load 1m
 					metric 1 2 3 4 _ _`,
-			ts:        timeZero.Add(time.Second * 64 * 4),
-			expected:  []promql.FPoint{{T: 136000, F: 3.2666666666666666}, {T: 180000, F: 4}, {T: 256000, F: 4}},
-			smoothed:  true,
-			outerFunc: "rate",
+			ts:           timeZero.Add(time.Second * 64 * 4),
+			expected:     []promql.FPoint{{T: 136000, F: 3.2666666666666666}, {T: 180000, F: 4}, {T: 256000, F: 4}},
+			smoothed:     true,
+			counterAware: true,
 		},
 		// the synthetic points are taken from the extended range and both the boundary spans have a counter reset
-		"smoothed with counter resets - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - rate function": {
+		"smoothed with counter resets - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - counter aware": {
 			data: `load 1m
 					metric 10 5 6 1`,
-			ts:        timeZero.Add(2 * time.Second * 61),
-			expected:  []promql.FPoint{{T: 2000, F: 0.16666666666666666}, {T: 60000, F: 5}, {T: 120000, F: 6}, {T: 122000, F: 6.033333333333333}},
-			smoothed:  true,
-			outerFunc: "rate",
-		},
-		// the synthetic points are taken from the extended range and both the boundary spans have a counter reset
-		"smoothed with counter resets - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - increase function": {
-			data: `load 1m
-					metric 10 5 6 1`,
-			ts:        timeZero.Add(2 * time.Second * 61),
-			expected:  []promql.FPoint{{T: 2000, F: 0.16666666666666666}, {T: 60000, F: 5}, {T: 120000, F: 6}, {T: 122000, F: 6.033333333333333}},
-			smoothed:  true,
-			outerFunc: "increase",
+			ts:           timeZero.Add(2 * time.Second * 61),
+			expected:     []promql.FPoint{{T: 2000, F: 0.16666666666666666}, {T: 60000, F: 5}, {T: 120000, F: 6}, {T: 122000, F: 6.033333333333333}},
+			smoothed:     true,
+			counterAware: true,
 		},
 		// as above, but since this is not a rate/increase function the synthetic points are not counter adjusted
-		"smoothed with counter resets - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - delta function": {
+		"smoothed with counter resets - synthetic head and tail first.T < rangeStart, last.T > rangeEnd - not counter aware": {
 			data: `load 1m
 					metric 10 5 6 1`,
-			ts:        timeZero.Add(2 * time.Second * 61),
-			expected:  []promql.FPoint{{T: 2000, F: 9.833333333333334}, {T: 60000, F: 5}, {T: 120000, F: 6}, {T: 122000, F: 5.833333333333333}},
-			smoothed:  true,
-			outerFunc: "delta",
+			ts:           timeZero.Add(2 * time.Second * 61),
+			expected:     []promql.FPoint{{T: 2000, F: 9.833333333333334}, {T: 60000, F: 5}, {T: 120000, F: 6}, {T: 122000, F: 5.833333333333333}},
+			smoothed:     true,
+			counterAware: false,
 		},
 	}
 
@@ -297,7 +280,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 				Range:                    2 * time.Minute,
 				Anchored:                 tc.anchored,
 				Smoothed:                 tc.smoothed,
-				OuterFunc:                tc.outerFunc,
+				CounterAware:             tc.counterAware,
 				MemoryConsumptionTracker: mc,
 			}
 

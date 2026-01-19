@@ -51,10 +51,7 @@ func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limite
 		rangeVectorSelector.extendedPointsUtility = NewRevertibleExtendedPointsUtility(rangeVectorSelector.floats, anchored)
 	} else if selector.Smoothed {
 		mode := smoothed
-		if selector.OuterFunc == "rate" || selector.OuterFunc == "increase" {
-			// We only need to calculate the counter-aware interpolated smoothed points if the outer function is rate or increase.
-			// The delta function does not require the counter adjusted points.
-			// See Prometheus function.go - funcDelta(), funcRate(), funcIncrease() - only rate and increase set isCounter=true
+		if selector.CounterAware {
 			mode = smoothedCounter
 		}
 		rangeVectorSelector.extendedPointsUtility = NewRevertibleExtendedPointsUtility(rangeVectorSelector.floats, mode)

@@ -67,7 +67,7 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
 		m.Smoothed == otherMatrixSelector.Smoothed &&
-		m.OuterFunc == otherMatrixSelector.OuterFunc
+		m.CounterAware == otherMatrixSelector.CounterAware
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {
@@ -98,7 +98,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
-		OuterFunc:                m.OuterFunc,
+		CounterAware:             m.CounterAware,
 	}
 
 	if m.Anchored || m.Smoothed {

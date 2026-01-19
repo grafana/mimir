@@ -510,7 +510,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					Range:              time.Minute,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 					Smoothed:           true,
-					OuterFunc:          "rate",
+					CounterAware:       true,
 				},
 			},
 			b: &MatrixSelector{
@@ -521,35 +521,10 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					Range:              time.Minute,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 					Smoothed:           true,
-					OuterFunc:          "rate",
+					CounterAware:       true,
 				},
 			},
 			expectEquivalent: true,
-		},
-		"different function wrapping smoothed": {
-			a: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
-						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
-					},
-					Range:              time.Minute,
-					ExpressionPosition: PositionRange{Start: 1, End: 2},
-					Smoothed:           true,
-					OuterFunc:          "rate",
-				},
-			},
-			b: &MatrixSelector{
-				MatrixSelectorDetails: &MatrixSelectorDetails{
-					Matchers: []*LabelMatcher{
-						{Name: "__name__", Type: labels.MatchNotEqual, Value: "foo"},
-					},
-					Range:              time.Minute,
-					ExpressionPosition: PositionRange{Start: 1, End: 2},
-					Smoothed:           true,
-					OuterFunc:          "delta",
-				},
-			},
-			expectEquivalent: false,
 		},
 		"one function wrapping smoothed": {
 			a: &MatrixSelector{
@@ -560,7 +535,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 					Range:              time.Minute,
 					ExpressionPosition: PositionRange{Start: 1, End: 2},
 					Smoothed:           true,
-					OuterFunc:          "rate",
+					CounterAware:       true,
 				},
 			},
 			b: &MatrixSelector{
