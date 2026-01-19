@@ -1102,11 +1102,11 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 				t.Skip("name_label_dropping tests require delayed name removal to be enabled, but optimization pass requires it to be disabled")
 			}
 			if strings.Contains(testFile, "delayed_name_removal_enabled") {
-				t.Skip("delayed_name_removal_enabled tests require delayed name removal to be enabled, but optimization pass requires it to be disabled")
+				t.Skip("delayed_name_removal_enabled tests require delayed name removal to be enabled, but this test exercises the optimization pass with delayed name removal disabled")
 			}
 			// Note that we get the equivalent test coverage from ours/native_histograms_delayed_name_removal_disabled.test
 			if strings.Contains(testFile, "upstream/native_histograms.test") {
-				t.Skip("upstream/native_histograms.test tests require delayed name removal to be enabled, but optimization pass requires it to be disabled")
+				t.Skip("upstream/native_histograms.test tests require delayed name removal to be enabled, but this test exercises the optimization pass with delayed name removal disabled")
 			}
 
 			f, err := testdataFS.Open(testFile)

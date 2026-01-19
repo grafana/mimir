@@ -2206,15 +2206,15 @@ type annotationTestCase struct {
 	data                       string
 	expr                       string
 	expectedWarningAnnotations []string
+	expectedInfoAnnotations    []string
+
 	// an alternate set of annotations for when delayed name removal is enabled.
-	// if not set the test will fall back to expectedWarningAnnotations
+	// if not set the test will fall back to expectedWarningAnnotations / expectedInfoAnnotations
 	expectedWarningAnnotationsDelayedNameRemovalEnabled []string
-	expectedInfoAnnotations                             []string
-	// an alternate set of annotations for when delayed name removal is enabled.
-	// if not set the test will fall back to expectedInfoAnnotations
-	expectedInfoAnnotationsDelayedNameRemovalEnabled []string
-	skipComparisonWithPrometheusReason               string
-	instantEvaluationTimestamp                       *time.Time
+	expectedInfoAnnotationsDelayedNameRemovalEnabled    []string
+
+	skipComparisonWithPrometheusReason string
+	instantEvaluationTimestamp         *time.Time
 }
 
 func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool) []string {
@@ -2294,13 +2294,13 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					t.Run(subTestName, func(t *testing.T) {
 						results := make([]*promql.Result, 0, 2)
 
-						for i, engine := range []promql.QueryEngine{engineSet.mimirEngine, engineSet.prometheusEngine} {
-							if i == 1 && testCase.skipComparisonWithPrometheusReason != "" {
+						for _, engine := range []promql.QueryEngine{engineSet.mimirEngine, engineSet.prometheusEngine} {
+							if engine == engineSet.prometheusEngine && testCase.skipComparisonWithPrometheusReason != "" {
 								t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
 								continue
 							}
 							engineName := mimirEngineName
-							if i == 1 {
+							if engine == engineSet.prometheusEngine {
 								engineName = prometheusEngineName
 							}
 							t.Run(engineName, func(t *testing.T) {
