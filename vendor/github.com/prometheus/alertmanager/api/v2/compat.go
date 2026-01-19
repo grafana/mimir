@@ -160,7 +160,7 @@ func AlertToOpenAPIAlert(alert *types.Alert, status types.AlertStatus, receivers
 
 // OpenAPIAlertsToAlerts converts open_api_models.PostableAlerts to []*types.Alert.
 func OpenAPIAlertsToAlerts(apiAlerts open_api_models.PostableAlerts) []*types.Alert {
-	alerts := []*types.Alert{}
+	alerts := make([]*types.Alert, 0, len(apiAlerts))
 	for _, apiAlert := range apiAlerts {
 		alert := types.Alert{
 			Alert: prometheus_model.Alert{
@@ -179,7 +179,7 @@ func OpenAPIAlertsToAlerts(apiAlerts open_api_models.PostableAlerts) []*types.Al
 
 // ModelLabelSetToAPILabelSet converts prometheus_model.LabelSet to open_api_models.LabelSet.
 func ModelLabelSetToAPILabelSet(modelLabelSet prometheus_model.LabelSet) open_api_models.LabelSet {
-	apiLabelSet := open_api_models.LabelSet{}
+	apiLabelSet := make(open_api_models.LabelSet, len(modelLabelSet))
 	for key, value := range modelLabelSet {
 		apiLabelSet[string(key)] = string(value)
 	}
@@ -189,7 +189,7 @@ func ModelLabelSetToAPILabelSet(modelLabelSet prometheus_model.LabelSet) open_ap
 
 // APILabelSetToModelLabelSet converts open_api_models.LabelSet to prometheus_model.LabelSet.
 func APILabelSetToModelLabelSet(apiLabelSet open_api_models.LabelSet) prometheus_model.LabelSet {
-	modelLabelSet := prometheus_model.LabelSet{}
+	modelLabelSet := make(prometheus_model.LabelSet, len(apiLabelSet))
 	for key, value := range apiLabelSet {
 		modelLabelSet[prometheus_model.LabelName(key)] = prometheus_model.LabelValue(value)
 	}

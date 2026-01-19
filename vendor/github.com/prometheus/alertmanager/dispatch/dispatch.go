@@ -482,8 +482,10 @@ func (ag *aggrGroup) String() string {
 }
 
 func (ag *aggrGroup) run(nf notifyFunc) {
+	// aggrGroup ctx can be canceled if the dispatcher ctx is canceled (on reboots / cfg change)
+	// in this case we need to stop the timer but keep the state
+	defer ag.timer.Stop(false)
 	defer close(ag.done)
-	defer ag.timer.Stop()
 
 	for {
 		select {
@@ -527,6 +529,9 @@ func (ag *aggrGroup) stop() {
 	// and the run() loop.
 	ag.cancel()
 	<-ag.done
+
+	// stop the timer once `run` has exited to make sure timer state cleanup is safe
+	ag.timer.Stop(true)
 }
 
 // insert inserts the alert into the aggregation group.
