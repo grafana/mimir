@@ -1,5 +1,9 @@
 ## Upcoming Release
 
+## 0.9.5
+
+- Added `MaxLimitFactorDecay` to `AdaptiveLimiter`, allowing the limit's headroom to vary relative to inflights.
+
 ## 0.9.4
 
 ### Improvements

@@ -162,6 +162,8 @@ func checkDuration(expr parser.Expr) error {
 		switch n.Op {
 		case parser.STEP:
 			return nil
+		case parser.RANGE:
+			return nil
 		case parser.MIN:
 			return nil
 		case parser.MAX:

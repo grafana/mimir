@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -41,9 +42,13 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
-// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
-const GrpcContextMetadataTenantID = "__org_id__"
+const (
+	// GrpcContextMetadataTenantID is a key for GRPC Metadata used to pass tenant ID to store-gateway process.
+	// (This is now separate from DeprecatedTenantIDExternalLabel to signify different use case.)
+	GrpcContextMetadataTenantID = "__org_id__"
+	// GrpcContextMetadataBucketIndexUpdatedAt is a key for GPRC Metadata used to pass bucket index metadata to store-gateway.
+	GrpcContextMetadataBucketIndexUpdatedAt = "__bktidx_updated_at__"
+)
 
 // BucketStores is a multi-tenant wrapper of Thanos BucketStore.
 type BucketStores struct {
@@ -337,10 +342,10 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 // Series implements the storegatewaypb.StoreGatewayServer interface, making a series request to the underlying user bucket store.
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
-	spanLog, spanCtx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.Series")
+	spanLog, ctx := spanlogger.New(srv.Context(), u.logger, tracer, "BucketStores.Series")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return fmt.Errorf("no userID")
 	}
@@ -352,16 +357,16 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 
 	return store.Series(req, spanSeriesServer{
 		StoreGateway_SeriesServer: srv,
-		ctx:                       spanCtx,
+		ctx:                       ctx,
 	})
 }
 
 // LabelNames implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelNames")
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelNames")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return nil, fmt.Errorf("no userID")
 	}
@@ -376,10 +381,10 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 
 // LabelValues implements the storegatewaypb.StoreGatewayServer interface.
 func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelValues")
+	spanLog, ctx := spanlogger.New(ctx, u.logger, tracer, "BucketStores.LabelValues")
 	defer spanLog.Finish()
 
-	userID := getUserIDFromGRPCContext(spanCtx)
+	userID := getUserIDFromGRPCContext(ctx)
 	if userID == "" {
 		return nil, fmt.Errorf("no userID")
 	}
@@ -509,6 +514,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 
 	userBkt := bucket.NewUserBucketClient(userID, u.bucket, u.limits)
 	fetcherReg := prometheus.NewRegistry()
+	fetcherMetrics := NewBucketIndexBlockMetadataFetcherMetrics(fetcherReg, u.bucketStoreMetrics)
 
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
 	filters := []block.MetadataFilter{
@@ -521,14 +527,8 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}
-	fetcher := NewBucketIndexMetadataFetcher(
-		userID,
-		u.bucket,
-		u.limits,
-		u.logger,
-		fetcherReg,
-		filters,
-	)
+	loader := NewBucketIndexLoader(userID, u.bucket, u.limits, u.logger)
+	fetcher := NewBucketIndexBlockMetadataFetcher(userID, loader, u.logger, fetcherMetrics, filters)
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
 		WithIndexCache(u.indexCache),
@@ -539,6 +539,7 @@ func (u *BucketStores) getOrCreateStore(ctx context.Context, userID string) (*Bu
 	bs, err := NewBucketStore(
 		userID,
 		userBkt,
+		newBucketIndexMetadataReaderFromLoader(loader),
 		fetcher,
 		u.syncDirForUser(userID),
 		u.cfg.BucketStore,
@@ -644,6 +645,18 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 	}
 
 	return values[0]
+}
+
+func getBucketIndexUpdatedAtFromGRPCContext(ctx context.Context) (int64, error) {
+	values := metadata.ValueFromIncomingContext(ctx, GrpcContextMetadataBucketIndexUpdatedAt)
+	if len(values) != 1 {
+		return 0, fmt.Errorf("no bucket index updated at")
+	}
+	value, err := strconv.ParseInt(values[0], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parse bucket index updated at value %q: %w", values[0], err)
+	}
+	return value, nil
 }
 
 type spanSeriesServer struct {

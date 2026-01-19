@@ -4,7 +4,10 @@ package plan
 
 import (
 	"context"
+	"slices"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -13,21 +16,12 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
-// EliminateDeduplicateAndMergeOptimizationPass removes redundant DeduplicateAndMerge nodes from the plan.
-// DeduplicateAndMerge by default are wrapped around operations which manipulate labels (name-dropping functions, some binary operations, etc) and therefore could produce duplicate series.
-// These nodes are unnecessary if it can be proven that each input series produces a unique output series.
-// For example, the expression `rate(foo[5m])` produces only unique series because each input series has the same metric name `foo`,
-// and each series with the name 'foo' must have a unique set of labels.
-// Thus, when rate() function drops the name label, the output is still guaranteed to be unique.
-// Primary goal of this optimization is to unlock "labels projection" - ability to load only needed labels into memory.
-type EliminateDeduplicateAndMergeOptimizationPass struct{}
-
-type SelectorType int
+type selectorType int
 
 const (
-	NotSelector SelectorType = iota
-	SelectorWithoutExactName
-	SelectorWithExactName
+	notSelector selectorType = iota
+	selectorWithoutExactName
+	selectorWithExactName
 )
 
 type dedupNodeInfo struct {
@@ -37,18 +31,47 @@ type dedupNodeInfo struct {
 	keep       bool
 }
 
-func NewEliminateDeduplicateAndMergeOptimizationPass() *EliminateDeduplicateAndMergeOptimizationPass {
-	return &EliminateDeduplicateAndMergeOptimizationPass{}
+// EliminateDeduplicateAndMergeOptimizationPass removes redundant DeduplicateAndMerge nodes from the plan.
+// DeduplicateAndMerge by default are wrapped around operations which manipulate labels (name-dropping functions, some binary operations, etc) and therefore could produce duplicate series.
+// These nodes are unnecessary if it can be proven that each input series produces a unique output series.
+// For example, the expression `rate(foo[5m])` produces only unique series because each input series has the same metric name `foo`,
+// and each series with the name 'foo' must have a unique set of labels.
+// Thus, when rate() function drops the name label, the output is still guaranteed to be unique.
+// Primary goal of this optimization is to unlock "labels projection" - ability to load only needed labels into memory.
+type EliminateDeduplicateAndMergeOptimizationPass struct {
+	attempts prometheus.Counter
+	modified prometheus.Counter
+}
+
+func NewEliminateDeduplicateAndMergeOptimizationPass(reg prometheus.Registerer) *EliminateDeduplicateAndMergeOptimizationPass {
+	return &EliminateDeduplicateAndMergeOptimizationPass{
+		attempts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_eliminate_dedupe_attempted_total",
+			Help: "Total number of queries that the optimization pass has attempted to eliminate DeduplicateAndMerge nodes for.",
+		}),
+		modified: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_eliminate_dedupe_modified_total",
+			Help: "Total number of queries where the optimization pass has been able to eliminate DeduplicateAndMerge nodes for.",
+		}),
+	}
 }
 
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 	return "Eliminate DeduplicateAndMerge"
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	e.attempts.Inc()
+
 	// nodes is a list of DeduplicateAndMerge nodes in the order of their appearance in the plan.
 	var nodes []dedupNodeInfo
 	e.collect(plan.Root, nil, -1, &nodes, plan.Parameters.EnableDelayedNameRemoval)
+
+	// If there are any DeduplicateAndMerge nodes we are not keeping, increment the modified counter.
+	if slices.ContainsFunc(nodes, func(n dedupNodeInfo) bool { return !n.keep }) {
+		e.modified.Inc()
+	}
+
 	newRoot, err := e.eliminate(nodes)
 	if err != nil {
 		return nil, err
@@ -61,14 +84,19 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(ctx context.Context
 
 // collect collects DeduplicateAndMerge nodes from the plan and marks them for removal or keeping.
 func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Node, parent planning.Node, childIndex int, nodes *[]dedupNodeInfo, enableDelayedNameRemoval bool) {
-	// Binary operations are not supported yet. When we encounter a binary operation, we stop the elimination
-	// and keep all DeduplicateAndMerge nodes. It's done just to keep initial implementation simple.
-	// TODO:
-	// 1. Remove DeduplicateAndMerge nodes provided they don't contain binary operations - rate(foo[5m]) / rate(bar[5m])
-	// 2. Handle all binary operations by inspecting whether each side produces series with a __name__ label that could cause duplicates.
+	// If this is a binary expression, we need to retain the top-level (delayed name removal)
+	// or closest (non-delayed name removal) deduplicate and merge node. However, we can potentially
+	// remove deduplicate and merge nodes on either side of the binary expression.
 	if _, isBinaryOp := node.(*core.BinaryExpression); isBinaryOp {
-		*nodes = nil
-		return
+		if enableDelayedNameRemoval {
+			if len(*nodes) > 0 {
+				(*nodes)[0].keep = true
+			}
+		} else {
+			if len(*nodes) >= 1 {
+				(*nodes)[len(*nodes)-1].keep = true
+			}
+		}
 	}
 
 	if dedupNode, isDedup := node.(*core.DeduplicateAndMerge); isDedup {
@@ -79,12 +107,12 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Nod
 		})
 	}
 
-	selectorType := getSelectorType(node)
-	switch selectorType {
-	case SelectorWithExactName:
+	selector := getSelectorType(node)
+	switch selector {
+	case selectorWithExactName:
 		// Series with the same name are guaranteed to have the same labels, so we can eliminate all DeduplicateAndMerge nodes.
 		return
-	case SelectorWithoutExactName:
+	case selectorWithoutExactName:
 		if enableDelayedNameRemoval {
 			// With Delayed Name Removal name is dropped at the very end of query execution.
 			// Keep the DeduplicateAndMerge closest to root to handle final deduplication.
@@ -145,7 +173,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) eliminate(dedupNodes []de
 }
 
 // getSelectorType determines if node is a selector and whether it has an exact name matcher.
-func getSelectorType(node planning.Node) SelectorType {
+func getSelectorType(node planning.Node) selectorType {
 	var matchers []*core.LabelMatcher
 
 	if vs, isVectorSelector := node.(*core.VectorSelector); isVectorSelector {
@@ -153,16 +181,16 @@ func getSelectorType(node planning.Node) SelectorType {
 	} else if ms, isMatrixSelector := node.(*core.MatrixSelector); isMatrixSelector {
 		matchers = ms.Matchers
 	} else {
-		return NotSelector
+		return notSelector
 	}
 
 	for _, matcher := range matchers {
 		if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual {
-			return SelectorWithExactName
+			return selectorWithExactName
 		}
 	}
 
-	return SelectorWithoutExactName
+	return selectorWithoutExactName
 }
 
 func isLabelReplaceOrJoinFunction(node planning.Node) bool {

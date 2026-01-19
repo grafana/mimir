@@ -6,8 +6,11 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"syscall"
+	"testing"
 
 	gogoproto "github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
@@ -16,9 +19,35 @@ import (
 	"google.golang.org/protobuf/protoadapt"
 )
 
+type CustomCodecConfig struct {
+	InstrumentRefLeaksConfig
+}
+
+var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
+
+func (cfg CustomCodecConfig) codec(reg prometheus.Registerer) *codecV2 {
+	return &codecV2{refLeaksTracker: cfg.tracker(reg)}
+}
+
+var globalCodec encoding.CodecV2
+
+func (cfg CustomCodecConfig) RegisterGlobally(reg prometheus.Registerer) {
+	cfg.maybeStartFreeingInstrumentedBuffers()
+	globalCodec = cfg.codec(reg)
+	encoding.RegisterCodecV2(globalCodec)
+}
+
 func init() {
-	c := encoding.GetCodecV2(proto.Name)
-	encoding.RegisterCodecV2(&codecV2{codec: c})
+	config := CustomCodecConfig{}
+	var reg prometheus.Registerer
+	if testing.Testing() {
+		// Instrument all buffers when testing.
+		config.Percentage = 100
+		config.BeforeReusePeriod = 0
+		config.MaxInflightInstrumentedBytes = 0
+		reg = prometheus.NewRegistry()
+	}
+	config.RegisterGlobally(reg)
 }
 
 // codecV2 customizes gRPC marshalling and unmarshalling.
@@ -26,7 +55,7 @@ func init() {
 // We customize unmarshalling in order to use an optimized path when possible,
 // and to retain the unmarshalling buffer when necessary.
 type codecV2 struct {
-	codec encoding.CodecV2
+	refLeaksTracker
 }
 
 var _ encoding.CodecV2 = &codecV2{}
@@ -113,11 +142,37 @@ func unmarshalSlicePoolSizes() []int {
 	return sizes
 }
 
+// Unmarshal unmarshals an object using the global codec. Prefer this over
+// calling the Unmarshal method directly, as it will take advantage of leak
+// detection.
+func Unmarshal(data []byte, v gogoproto.Unmarshaler) error {
+	return globalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
+}
+
+var pageSize = syscall.Getpagesize()
+
 // Unmarshal customizes gRPC unmarshalling.
 // If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
 func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
-	buf := data.MaterializeToBuffer(unmarshalSlicePool)
+	holder, isBufferHolder := v.(MessageWithBufferRef)
+
+	var buf mem.Buffer
+	if isBufferHolder {
+		buf = c.maybeInstrumentRefLeaks(data)
+	}
+
+	if buf == nil {
+		if len(data) == 1 {
+			// BufferSlice.MaterializeToBuffer already has this behavior when
+			// len(data) == 1, but we reproduce it here for explicitness and for
+			// ensuring forward-compatibility.
+			data[0].Ref()
+			buf = data[0]
+		} else {
+			buf = data.MaterializeToBuffer(unmarshalSlicePool)
+		}
+	}
 	// Decrement buf's reference count. Note though that if v implements MessageWithBufferRef,
 	// we increase buf's reference count first so it doesn't go to zero.
 	defer buf.Free()
@@ -133,7 +188,7 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 		}
 	}
 
-	if holder, ok := v.(MessageWithBufferRef); ok {
+	if isBufferHolder {
 		buf.Ref()
 		holder.SetBuffer(buf)
 	}
@@ -142,7 +197,7 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 }
 
 func (c *codecV2) Name() string {
-	return c.codec.Name()
+	return baseCodecV2Name
 }
 
 // MessageWithBufferRef is an unmarshalling buffer retaining protobuf message.
@@ -158,6 +213,10 @@ type BufferHolder struct {
 	buffer mem.Buffer
 }
 
+func (m *BufferHolder) Buffer() mem.Buffer {
+	return m.buffer
+}
+
 func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
 	m.buffer = buf
 }
@@ -165,7 +224,6 @@ func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
 func (m *BufferHolder) FreeBuffer() {
 	if m.buffer != nil {
 		m.buffer.Free()
-		m.buffer = nil
 	}
 }
 
@@ -533,4 +591,31 @@ type orderAwareMetricMetadata struct {
 	MetricMetadata
 	// order is the 0-based index of this metadata object in a wider metadata array.
 	order int
+}
+
+func (m *WriteRequest) FreeBuffer() {
+	m.BufferHolder.FreeBuffer()
+	for p := range m.sourceBufferHolders {
+		p.FreeBuffer()
+	}
+}
+
+// AddSourceBufferHolder adds a source BufferHolder to the WriteRequest,
+// retaining a strong reference to the source buffer. See
+// [WriteRequest.SourceBufferHolders].
+func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
+	buf := bufh.Buffer()
+	if buf == nil {
+		return
+	}
+	if _, ok := m.sourceBufferHolders[bufh]; ok {
+		return
+	}
+
+	buf.Ref()
+
+	if m.sourceBufferHolders == nil {
+		m.sourceBufferHolders = map[*BufferHolder]struct{}{}
+	}
+	m.sourceBufferHolders[bufh] = struct{}{}
 }

@@ -329,6 +329,29 @@ func queueConsume(
 	return lastTenantIdx, err
 }
 
+func (q *RequestQueue) EmptyQueue(t *testing.T) {
+	lastTenantIndex := FirstTenant()
+	querierID := "emptying-consumer"
+
+	querierWorkerConn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, q.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
+	defer q.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+
+	consumer := func(request QueryRequest) error {
+		return nil
+	}
+
+	for {
+		if q.queueBroker.isEmpty() {
+			return
+		}
+
+		idx, err := queueConsume(q, querierWorkerConn, lastTenantIndex, consumer)
+		require.NoError(t, err)
+		lastTenantIndex = idx
+	}
+}
+
 // TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker tests a scenario which previously caused a panic.
 // When a querier-worker submits a dequeue request while there are no queue items sharded to that querier,
 // The waiting dequeue request is held in an internal queue until a reshard or enqueue operation occurs.
@@ -371,6 +394,9 @@ func TestDispatchToWaitingDequeueRequestForUnregisteredQuerierWorker(t *testing.
 		// or else StopAndAwaitTerminated will never complete.
 		queue.SubmitUnregisterQuerierWorkerConn(querier2Conn)
 		queue.SubmitUnregisterQuerierWorkerConn(querier3Conn)
+
+		queue.EmptyQueue(t)
+
 		assert.NoError(t, services.StopAndAwaitTerminated(ctx, queue))
 	})
 
@@ -844,4 +870,54 @@ func TestRequestQueue_tryDispatchRequestToQuerier_ShouldReEnqueueAfterFailedSend
 	require.True(t, queue.trySendNextRequestForQuerier(call))
 	// assert request was re-enqueued for tenant after failed send
 	require.False(t, qb.tree.GetNode(multiAlgorithmTreeQueuePath).IsEmpty())
+}
+
+// This test ensures that even if the queue has no pending requests, we still wait until any inflight requests
+// have been returned before existing
+func TestRequestQueue_ShutdownWithPendingRequests_ShouldDrainRequests(t *testing.T) {
+	ctx := context.Background()
+	tenantID := "testTenant"
+	querierID := "querier1"
+
+	// So we create a queue
+	queue, err := NewRequestQueue(
+		log.NewNopLogger(),
+		1,
+		0,
+		promauto.With(nil).NewGaugeVec(prometheus.GaugeOpts{}, []string{"user"}),
+		promauto.With(nil).NewCounterVec(prometheus.CounterOpts{}, []string{"user"}),
+		promauto.With(nil).NewHistogram(prometheus.HistogramOpts{}),
+		promauto.With(nil).NewSummaryVec(prometheus.SummaryOpts{}, []string{"query_component"}),
+	)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, queue))
+
+	// With a worker
+	conn := NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, queue.AwaitRegisterQuerierWorkerConn(conn))
+
+	// And push a request to the queue
+	req := makeSchedulerRequest(tenantID, []string{})
+	require.NotNil(t, req)
+	err = queue.SubmitRequestToEnqueue(tenantID, req, 1, func() {})
+	require.NoError(t, err)
+
+	// And make sure it got to the queue
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 1)
+
+	// Stop the Queue
+	queue.StopAsync()
+
+	// Consume the existing request from the queue and ensure it matches the one we queued
+	dequeueReq := NewQuerierWorkerDequeueRequest(conn, FirstTenant())
+	r, _, err := queue.AwaitRequestForQuerier(dequeueReq)
+	require.NoError(t, err)
+	require.NotNil(t, r)
+	require.Equal(t, r, req)
+
+	// Ensure the request has been removed from the queue
+	require.Equal(t, queue.queueBroker.tree.ItemCount(), 0)
+
+	// And finally make sure it stops within the timeout
+	require.NoError(t, queue.AwaitTerminated(ctx))
 }

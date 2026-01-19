@@ -203,6 +203,12 @@ func (a *iteratorAdapter) AtT() int64 {
 	return a.curr.Timestamps[a.curr.Index]
 }
 
+// AtST is currently not implemented.
+// TODO(krajorama): implement ST (start timestamp).
+func (a *iteratorAdapter) AtST() int64 {
+	return 0
+}
+
 // Err implements chunkenc.Iterator.
 func (a *iteratorAdapter) Err() error {
 	if err := a.underlying.Err(); err != nil {

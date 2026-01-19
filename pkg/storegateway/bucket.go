@@ -49,6 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -88,6 +89,7 @@ type BucketStore struct {
 	logger          log.Logger
 	metrics         *BucketStoreMetrics
 	bkt             objstore.InstrumentedBucketReader
+	bucketIndexMeta BucketIndexMetadataReader
 	fetcher         block.MetadataFetcher
 	dir             string
 	indexCache      indexcache.IndexCache
@@ -203,6 +205,7 @@ func WithLazyLoadingGate(lazyLoadingGate gate.Gate) BucketStoreOption {
 func NewBucketStore(
 	userID string,
 	bkt objstore.InstrumentedBucketReader,
+	bucketIndexMeta BucketIndexMetadataReader,
 	fetcher block.MetadataFetcher,
 	dir string,
 	bucketStoreConfig tsdb.BucketStoreConfig,
@@ -217,6 +220,7 @@ func NewBucketStore(
 	s := &BucketStore{
 		logger:                      log.NewNopLogger(),
 		bkt:                         bkt,
+		bucketIndexMeta:             bucketIndexMeta,
 		fetcher:                     fetcher,
 		dir:                         dir,
 		indexCache:                  noopCache{},
@@ -301,10 +305,10 @@ func (s *BucketStore) Stats() BucketStoreStats {
 // SyncBlocks synchronizes the stores state with the Bucket bucket.
 // It will reuse disk space as persistent cache based on s.dir param.
 func (s *BucketStore) SyncBlocks(ctx context.Context) error {
-	return s.syncBlocks(ctx, false)
+	return s.syncBlocks(ctx)
 }
 
-func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
+func (s *BucketStore) syncBlocks(ctx context.Context) error {
 	metas, _, metaFetchErr := s.fetcher.Fetch(ctx)
 	// For partial view allow adding new blocks at least.
 	if metaFetchErr != nil && metas == nil {
@@ -318,7 +322,7 @@ func (s *BucketStore) syncBlocks(ctx context.Context, initialSync bool) error {
 		wg.Add(1)
 		go func() {
 			for meta := range blockc {
-				if err := s.addBlock(ctx, meta, initialSync); err != nil {
+				if err := s.addBlock(ctx, meta); err != nil {
 					continue
 				}
 			}
@@ -370,7 +374,7 @@ func (s *BucketStore) InitialSync(ctx context.Context) error {
 	// so we need to read the pre-shutdown snapshot before the sync.
 	previouslyLoadedBlocks := s.tryRestoreLoadedBlocksSet()
 
-	if err := s.syncBlocks(ctx, true); err != nil {
+	if err := s.syncBlocks(ctx); err != nil {
 		return errors.Wrap(err, "sync block")
 	}
 	if s.indexHeaderCfg.LazyLoadingEnabled {
@@ -438,7 +442,7 @@ func (s *BucketStore) cleanUpUnownedBlocks() error {
 	return nil
 }
 
-func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSync bool) (err error) {
+func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error) {
 	dir := filepath.Join(s.dir, meta.ULID.String())
 	start := time.Now()
 
@@ -452,13 +456,6 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta, initialSyn
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
 			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID)
-
-			// Record block discovery latency as time from block creation (ULID timestamp) to now.
-			// Don't track the metric on initial sync; otherwise, it is skewed by the old blocks on restart.
-			if !initialSync {
-				blockCreationTime := time.UnixMilli(int64(meta.ULID.Time()))
-				s.metrics.blockDiscoveryLatency.Observe(time.Since(blockCreationTime).Seconds())
-			}
 		}
 	}()
 	s.metrics.blockLoads.Inc()
@@ -606,6 +603,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 
 	logSeriesRequestToSpan(spanLogger, req.MinTime, req.MaxTime, matchers, reqBlockMatchers, shardSelector, req.StreamingChunksBatchSize)
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	blocks, indexReaders, chunkReaders := s.openBlocksForReading(ctx, req.SkipChunks, req.MinTime, req.MaxTime, reqBlockMatchers, stats)
 	// We must keep the readers open until all their data has been sent.
@@ -1212,6 +1211,25 @@ func (s *BucketStore) recordSeriesHashCacheStats(stats *queryStats) {
 	s.metrics.seriesHashCacheHits.Add(float64(stats.seriesHashCacheHits))
 }
 
+func (s *BucketStore) recordBucketIndexDiscoveryDiff(ctx context.Context) {
+	reqUpdatedAt, err := getBucketIndexUpdatedAtFromGRPCContext(ctx)
+	if err != nil {
+		// This is not a problem by itself.
+		level.Warn(spanlogger.FromContext(ctx, s.logger)).Log("msg", "can't get bucket index versions (updated_at) from request", "err", err)
+		return
+	}
+
+	meta := s.bucketIndexMeta.Metadata()
+	diff := meta.UpdatedAt - reqUpdatedAt
+
+	logger := log.With(spanlogger.FromContext(ctx, s.logger), "ours", meta.UpdatedAt, "requested", reqUpdatedAt, "diff", diff)
+	if diff < 0 {
+		level.Warn(logger).Log("msg", "bucket index version (updated_at) is older than requested")
+	} else {
+		level.Debug(logger).Log("msg", "bucket index versions (updated_at)")
+	}
+}
+
 func (s *BucketStore) openBlocksForReading(ctx context.Context, skipChunks bool, minT, maxT int64, blockMatchers []*labels.Matcher, stats *safeQueryStats) ([]*bucketBlock, map[ulid.ULID]*bucketIndexReader, map[ulid.ULID]chunkReader) {
 	spanCtx, span := tracer.Start(ctx, "bucket_store_open_blocks_for_reading")
 	defer span.End()
@@ -1276,6 +1294,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	g, gctx := errgroup.WithContext(ctx)
 
@@ -1469,6 +1489,8 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
 		}
 	}
+
+	defer s.recordBucketIndexDiscoveryDiff(ctx)
 
 	var setsMtx sync.Mutex
 	var sets [][]string
@@ -2118,4 +2140,8 @@ func maybeNilShard(shard *sharding.ShardSelector) sharding.ShardSelector {
 		return sharding.ShardSelector{}
 	}
 	return *shard
+}
+
+type BucketIndexMetadataReader interface {
+	Metadata() *bucketindex.Metadata
 }

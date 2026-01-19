@@ -18,9 +18,13 @@ ingest_storage:
     fetch_concurrency_max: 15
 
 ingester:
+  push_grpc_method_enabled: false
   track_ingester_owned_series: true
   active_series_metrics_update_period: 10s
   active_series_metrics_idle_timeout:  1m
+
+  ring:
+    num_tokens: 0
 
   partition_ring:
     min_partition_owners_count:       1

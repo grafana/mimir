@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -66,7 +67,7 @@ func TestLoadAlertmanagerConfigAndTemplateFile(t *testing.T) {
 	originalCfg, originalTemplates, err := cmd.readAlertManagerConfig()
 	require.NoError(t, err)
 	// write the data to a temp directory and reads it again
-	err = cmd.outputAlertManagerConfigTemplates(originalCfg, originalTemplates)
+	err = cmd.outputAlertManagerConfigTemplates(originalCfg, originalTemplates, log.NewNopLogger())
 	require.NoError(t, err)
 	// loads the new files that has been written out from memory, load the new files and compare
 	cmdLoad := AlertmanagerCommand{

@@ -9,35 +9,46 @@ import (
 	"fmt"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/sirupsen/logrus"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+
+	mimirlog "github.com/grafana/mimir/pkg/mimirtool/log"
 )
 
 type LoggerConfig struct {
-	Level string
+	Level  string
+	logger log.Logger
+}
+
+// Logger returns the configured logger. If not yet initialized, initializes with the configured level.
+func (l *LoggerConfig) Logger() log.Logger {
+	if l.logger == nil {
+		// Initialize logger lazily if PreAction wasn't called (e.g., when using default log level).
+		lvl := l.Level
+		if lvl == "" {
+			lvl = "info"
+		}
+		logger, err := mimirlog.NewLogger(lvl)
+		if err != nil {
+			// Fall back to nop logger if initialization fails.
+			return log.NewNopLogger()
+		}
+		l.logger = logger
+	}
+	return l.logger
 }
 
 func (l *LoggerConfig) registerLogLevel(_ *kingpin.ParseContext) error {
-	var logLevel logrus.Level
-	switch l.Level {
-	case "debug":
-		logLevel = logrus.DebugLevel
-	case "info":
-		logLevel = logrus.InfoLevel
-	case "warn":
-		logLevel = logrus.WarnLevel
-	case "error":
-		logLevel = logrus.ErrorLevel
-	case "fatal":
-		logLevel = logrus.FatalLevel
-	default:
-		return fmt.Errorf("log level %s is not valid", l.Level)
+	logger, err := mimirlog.NewLogger(l.Level)
+	if err != nil {
+		return fmt.Errorf("log level %s is not valid: %w", l.Level, err)
 	}
-	logrus.SetLevel(logLevel)
-	logrus.Infof("log level set to %s", l.Level)
+	l.logger = logger
+	level.Info(l.logger).Log("msg", fmt.Sprintf("log level set to %s", l.Level))
 	return nil
 }
 
-// Register configures log related flags
+// Register configures log related flags.
 func (l *LoggerConfig) Register(app *kingpin.Application, _ EnvVarNames) {
 	app.Flag("log.level", "set level of the logger").Default("info").PreAction(l.registerLogLevel).StringVar(&l.Level)
 }

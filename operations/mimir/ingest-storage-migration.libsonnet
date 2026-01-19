@@ -53,6 +53,7 @@
     // may not be enabled globally yet.
     $.ingest_storage_args +
     $.ingest_storage_kafka_consumer_args +
+    $.ingest_storage_kafka_ingestion_args +
     $.ingest_storage_ingester_args +
     $.ingest_storage_ingester_ring_client_args + {
       // Run partition ingesters on a dedicated hash ring, so that they don't clash with classic ingesters.

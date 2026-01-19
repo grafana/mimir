@@ -44,7 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
-	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -52,7 +52,10 @@ import (
 )
 
 var (
-	spanExporter = tracetest.NewInMemoryExporter()
+	// We use an in-memory span exporter since we test that things are instrumented
+	// correctly in unit tests, but it only retains a fixed number of spans to avoid
+	// using an excessive amount of memory.
+	spanExporter = mqetest.NewFixedInMemoryExporter(1024)
 )
 
 func init() {
@@ -176,7 +179,7 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	prometheus := q.Exec(context.Background())
 	defer q.Close()
 
-	testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
+	mqetest.RequireEqualResults(t, expr, prometheus, mimir, false)
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
@@ -1340,7 +1343,7 @@ func TestSubqueries(t *testing.T) {
 				require.NoError(t, err)
 
 				res := qry.Exec(context.Background())
-				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
+				mqetest.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
 				qry.Close()
 			}
 
@@ -2279,7 +2282,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 					if len(results) == 2 {
 						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
 						// or vice-versa where no result may be expected etc.
-						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+						mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
 					}
 				})
 			}
@@ -3305,7 +3308,7 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 			mimirQuery, err := mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 			require.NoError(t, err)
 			mimirResults := mimirQuery.Exec(context.Background())
-			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
+			mqetest.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 
 			prometheusQuery.Close()
 			mimirQuery.Close()
@@ -3319,9 +3322,9 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
 
 	expressions := []string{}
 
@@ -3350,8 +3353,8 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(false)
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
-	labelCombinations := testutils.Combinations(labelsToUse, 2)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
+	labelCombinations := mqetest.Combinations(labelsToUse, 2)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 3)...)
 
 	expressions := []string{}
 
@@ -3406,10 +3409,10 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 3)...)
 
 	expressions := []string{}
 
@@ -3437,7 +3440,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 	expressions := []string{}
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 
 	// We tried to have this test with 2 labels, but it was failing due to the inconsistent ordering of prometheus processing matchers that result in multiples series, e.g series{label=~"(c|e)"}.
 	// Prometheus might process series c first or e first which will trigger different validation errors for second and third parameter of double_exponential_smoothing.
@@ -3448,7 +3451,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 	}
 
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
@@ -3473,9 +3476,9 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f", etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
 
 	expressions := []string{}
 
@@ -4261,7 +4264,7 @@ func TestEagerLoadSelectors(t *testing.T) {
 			require.NoError(t, eagerLoadingResult.Err)
 			defer q.Close()
 
-			testutils.RequireEqualResults(t, expr, baselineResult, eagerLoadingResult, false)
+			mqetest.RequireEqualResults(t, expr, baselineResult, eagerLoadingResult, false)
 			require.True(t, synchronisingStorage.sawExpectedSelectCalls)
 		})
 	}
@@ -4369,7 +4372,7 @@ func TestInstantQueryDurationExpression(t *testing.T) {
 	require.NoError(t, mimirResult.Err)
 	t.Cleanup(mimirQuery.Close)
 
-	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
+	mqetest.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
 }
 
 func TestEngine_RegisterNodeMaterializer(t *testing.T) {
