@@ -23,59 +23,59 @@ func TestRevertibleExtendedPointsUtilityUndoModifications(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		mods     RevertibleExtendedPointsUtility
+		mods     RevertibleExtendedPointsState
 		expected []promql.FPoint
 	}{
 		"no modifications": {
-			mods:     RevertibleExtendedPointsUtility{},
+			mods:     RevertibleExtendedPointsState{},
 			expected: original,
 		},
 		"no modifications - no undo": {
-			mods:     RevertibleExtendedPointsUtility{undoTailModifications: none},
+			mods:     RevertibleExtendedPointsState{undoTailModifications: none},
 			expected: original,
 		},
 		"removed tail": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoTailModifications: removed,
 			},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}},
 		},
 		"replaced tail": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoTailModifications: replaced,
 				last:                  promql.FPoint{T: 50, F: 70},
 			},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 50, F: 70}},
 		},
 		"removed head": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoHeadModifications: removed,
 			},
 			expected: []promql.FPoint{{T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}},
 		},
 		"replaced head": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoHeadModifications: replaced,
 				first:                 promql.FPoint{T: 5, F: 70},
 			},
 			expected: []promql.FPoint{{T: 5, F: 70}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}},
 		},
 		"restore excluded head": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				restoreExcludedFirst: true,
 				excludedFirst:        promql.FPoint{T: 5, F: 70},
 			},
 			expected: []promql.FPoint{{T: 5, F: 70}, {T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}},
 		},
 		"restore excluded tail": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				restoreExcludedLast: true,
 				excludedLast:        promql.FPoint{T: 100, F: 7000},
 			},
 			expected: []promql.FPoint{{T: 10, F: 20}, {T: 20, F: 30}, {T: 30, F: 40}, {T: 40, F: 60}, {T: 100, F: 7000}},
 		},
 		"combined": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				restoreExcludedFirst:  true,
 				excludedFirst:         promql.FPoint{T: 5, F: 70},
 				restoreExcludedLast:   true,
@@ -119,47 +119,47 @@ func TestRevertibleExtendedPointsUtilityReset(t *testing.T) {
 	}
 
 	testCases := map[string]struct {
-		mods RevertibleExtendedPointsUtility
+		mods RevertibleExtendedPointsState
 	}{
 		"no modifications": {
-			mods: RevertibleExtendedPointsUtility{},
+			mods: RevertibleExtendedPointsState{},
 		},
 		"removed tail": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoTailModifications: removed,
 			},
 		},
 		"replaced tail": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoTailModifications: replaced,
 				last:                  promql.FPoint{T: 50, F: 70},
 			},
 		},
 		"removed head": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoHeadModifications: removed,
 			},
 		},
 		"replaced head": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				undoHeadModifications: replaced,
 				first:                 promql.FPoint{T: 5, F: 70},
 			},
 		},
 		"restore excluded head": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				restoreExcludedFirst: true,
 				excludedFirst:        promql.FPoint{T: 5, F: 70},
 			},
 		},
 		"restore excluded tail": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				restoreExcludedLast: true,
 				excludedLast:        promql.FPoint{T: 100, F: 7000},
 			},
 		},
 		"combined": {
-			mods: RevertibleExtendedPointsUtility{
+			mods: RevertibleExtendedPointsState{
 				restoreExcludedFirst:  true,
 				excludedFirst:         promql.FPoint{T: 5, F: 70},
 				restoreExcludedLast:   true,

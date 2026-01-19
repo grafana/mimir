@@ -26,7 +26,7 @@ const (
 	smoothedCounter
 )
 
-// RevertibleExtendedPointsUtility calculates anchored and smoothed boundary points.
+// RevertibleExtendedPointsState calculates anchored and smoothed boundary points.
 //
 // The underlying buffer is mutated to align points to a given time range boundary.
 //
@@ -41,7 +41,7 @@ const (
 //	* smoothed - an interpolated value is allocated to the start and end boundary points
 //	* smoothedCounter - an interpolated value which compensates for a counter reset is allocated to the start and end boundary points
 
-type RevertibleExtendedPointsUtility struct {
+type RevertibleExtendedPointsState struct {
 	// The buffer where points will be mutated.
 	buff *types.FPointRingBuffer
 
@@ -69,8 +69,8 @@ type RevertibleExtendedPointsUtility struct {
 	undoHeadModifications undoAction
 }
 
-func NewRevertibleExtendedPointsUtility(buff *types.FPointRingBuffer, mode ExtendedPointsMode) *RevertibleExtendedPointsUtility {
-	return &RevertibleExtendedPointsUtility{
+func NewRevertibleExtendedPointsUtility(buff *types.FPointRingBuffer, mode ExtendedPointsMode) *RevertibleExtendedPointsState {
+	return &RevertibleExtendedPointsState{
 		buff: buff,
 		mode: mode,
 	}
@@ -112,7 +112,7 @@ func NewRevertibleExtendedPointsUtility(buff *types.FPointRingBuffer, mode Exten
 // greater than the current rangeStart.
 //
 // This implementation is based on extendFloats() from promql/engine.go.
-func (m *RevertibleExtendedPointsUtility) ApplyBoundaryMutations(rangeStart, rangeEnd, extendedRangeEnd int64) error {
+func (m *RevertibleExtendedPointsState) ApplyBoundaryMutations(rangeStart, rangeEnd, extendedRangeEnd int64) error {
 
 	if m.buff.Count() == 0 {
 		return nil
@@ -204,7 +204,7 @@ func (m *RevertibleExtendedPointsUtility) ApplyBoundaryMutations(rangeStart, ran
 }
 
 // UndoChanges will restore the buffer to its original points.
-func (m *RevertibleExtendedPointsUtility) UndoChanges() error {
+func (m *RevertibleExtendedPointsState) UndoChanges() error {
 
 	switch m.undoTailModifications {
 	case none:
@@ -246,7 +246,7 @@ func (m *RevertibleExtendedPointsUtility) UndoChanges() error {
 	return nil
 }
 
-func (m *RevertibleExtendedPointsUtility) Reset() {
+func (m *RevertibleExtendedPointsState) Reset() {
 	m.undoHeadModifications = none
 	m.undoTailModifications = none
 	m.restoreExcludedLast = false

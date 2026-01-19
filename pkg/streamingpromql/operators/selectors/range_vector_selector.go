@@ -32,7 +32,7 @@ type RangeVectorSelector struct {
 
 	// Maintain metadata about modifications made to the floats buffer to support the smoothed/anchored extended range implementation.
 	// A single instance is allocated (if required) and re-used between all steps and all series.
-	extendedPointsUtility *RevertibleExtendedPointsUtility
+	extendedPointsUtility *RevertibleExtendedPointsState
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
