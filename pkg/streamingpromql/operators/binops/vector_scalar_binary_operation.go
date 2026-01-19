@@ -259,6 +259,14 @@ func (v *VectorScalarBinaryOperation) Prepare(ctx context.Context, params *types
 	return v.Vector.Prepare(ctx, params)
 }
 
+func (v *VectorScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := v.Scalar.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	return v.Vector.AfterPrepare(ctx)
+}
+
 func (v *VectorScalarBinaryOperation) Finalize(ctx context.Context) error {
 	if err := v.Scalar.Finalize(ctx); err != nil {
 		return err

@@ -136,6 +136,10 @@ func (s *Subquery) Prepare(ctx context.Context, params *types.PrepareParams) err
 	return s.Inner.Prepare(ctx, params)
 }
 
+func (s *Subquery) AfterPrepare(ctx context.Context) error {
+	return s.Inner.AfterPrepare(ctx)
+}
+
 func (s *Subquery) Finalize(ctx context.Context) error {
 	return s.Inner.Finalize(ctx)
 }

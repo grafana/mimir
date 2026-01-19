@@ -33,8 +33,11 @@ func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.Pre
 		return err
 	}
 
-	params.PostPrepareCallbacks = append(params.PostPrepareCallbacks, r.resp.Start)
 	return nil
+}
+
+func (r *InstantVectorRemoteExec) AfterPrepare(ctx context.Context) error {
+	return r.resp.Start(ctx)
 }
 
 func (r *InstantVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {

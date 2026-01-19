@@ -59,6 +59,10 @@ func (n *DropName) Prepare(ctx context.Context, params *types.PrepareParams) err
 	return n.Inner.Prepare(ctx, params)
 }
 
+func (n *DropName) AfterPrepare(ctx context.Context) error {
+	return n.Inner.AfterPrepare(ctx)
+}
+
 func (n *DropName) Finalize(ctx context.Context) error {
 	return n.Inner.Finalize(ctx)
 }

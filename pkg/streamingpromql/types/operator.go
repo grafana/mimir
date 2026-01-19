@@ -11,11 +11,9 @@ import (
 )
 
 type PrepareParams struct {
-	// PostPrepareCallbacks are called after Prepare has been called on all operators for this evaluation request.
-	PostPrepareCallbacks []PostPrepareCallback
+	// This struct used to contain values, but they are now passed by other means.
+	// We kept it here to avoid making a big disruptive change.
 }
-
-type PostPrepareCallback func(ctx context.Context) error
 
 // Operator represents all operators.
 type Operator interface {
@@ -34,6 +32,17 @@ type Operator interface {
 	// any nested operators.
 	// Prepare must only be called once.
 	Prepare(ctx context.Context, params *PrepareParams) error
+
+	// AfterPrepare is called after Prepare has returned successfully for all operators in an evaluation.
+	//
+	// It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or Finalize.
+	// AfterPrepare must not call SeriesMetadata, NextSeries, NextStepSamples or Finalize on another operator, and is expected to call AfterPrepare on
+	// any nested operators.
+	// AfterPrepare must only be called once.
+	//
+	// Favour putting logic in Prepare over AfterPrepare where possible, AfterPrepare should generally only be used for logic that relies on
+	// Prepare having already been called on all operators (eg. operators that collect requests from other operators).
+	AfterPrepare(ctx context.Context) error
 
 	// Finalize performs any outstanding work required before the query result is considered complete.
 	// For example, any outstanding annotations should be emitted and query stats should be updated.

@@ -162,6 +162,10 @@ func (s *Sort) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return s.inner.Prepare(ctx, params)
 }
 
+func (s *Sort) AfterPrepare(ctx context.Context) error {
+	return s.inner.AfterPrepare(ctx)
+}
+
 func (s *Sort) Finalize(ctx context.Context) error {
 	return s.inner.Finalize(ctx)
 }

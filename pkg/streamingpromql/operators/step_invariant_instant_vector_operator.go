@@ -39,6 +39,10 @@ func (s *StepInvariantInstantVectorOperator) Prepare(ctx context.Context, params
 	return s.inner.Prepare(ctx, params)
 }
 
+func (s *StepInvariantInstantVectorOperator) AfterPrepare(ctx context.Context) error {
+	return s.inner.AfterPrepare(ctx)
+}
+
 func (s *StepInvariantInstantVectorOperator) Finalize(ctx context.Context) error {
 	return s.inner.Finalize(ctx)
 }

@@ -149,6 +149,10 @@ func (s *SortByLabel) Prepare(ctx context.Context, params *types.PrepareParams) 
 	return s.inner.Prepare(ctx, params)
 }
 
+func (s *SortByLabel) AfterPrepare(ctx context.Context) error {
+	return s.inner.AfterPrepare(ctx)
+}
+
 func (s *SortByLabel) Finalize(ctx context.Context) error {
 	return s.inner.Finalize(ctx)
 }

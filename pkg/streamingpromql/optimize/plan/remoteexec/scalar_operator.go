@@ -33,8 +33,11 @@ func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PreparePar
 		return err
 	}
 
-	params.PostPrepareCallbacks = append(params.PostPrepareCallbacks, s.resp.Start)
 	return nil
+}
+
+func (s *ScalarRemoteExec) AfterPrepare(ctx context.Context) error {
+	return s.resp.Start(ctx)
 }
 
 func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, error) {
