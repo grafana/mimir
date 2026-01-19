@@ -21,9 +21,9 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
-func Handler(planner *streamingpromql.QueryPlanner) http.Handler {
+func Handler(planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, status, err := handleAnalysis(w, r, planner)
+		body, status, err := handleAnalysis(w, r, planner, limitsProvider)
 
 		if err != nil {
 			body = []byte(err.Error())
@@ -36,10 +36,15 @@ func Handler(planner *streamingpromql.QueryPlanner) http.Handler {
 	})
 }
 
-func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpromql.QueryPlanner) ([]byte, int, error) {
+func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpromql.QueryPlanner, limitsProvider streamingpromql.QueryLimitsProvider) ([]byte, int, error) {
 	if planner == nil {
 		// Handle the case where query planning is disabled.
 		return nil, http.StatusNotFound, errors.New("query planning is disabled, analysis is not available")
+	}
+
+	enableDelayedNameRemoval, err := limitsProvider.GetEnableDelayedNameRemoval(context.Background())
+	if err != nil {
+		return nil, http.StatusBadRequest, fmt.Errorf("could not get enable delayed name removal setting: %w", err)
 	}
 
 	if err := r.ParseForm(); err != nil {
@@ -98,7 +103,7 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpr
 	querymiddleware.DecodeOptions(r, &options)
 	ctx = querymiddleware.ContextWithRequestHintsAndOptions(ctx, nil, options) // FIXME: populate hints as well (need cardinality estimation middleware for this)
 
-	result, err := Analyze(ctx, planner, qs, timeRange, false) // FIXME: populate enableDelayedNameRemoval properly
+	result, err := Analyze(ctx, planner, qs, timeRange, enableDelayedNameRemoval)
 	if err != nil {
 		var perr parser.ParseErrors
 		if errors.As(err, &perr) {
