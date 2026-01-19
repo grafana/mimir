@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/mem"
 )
@@ -38,7 +39,7 @@ func (c InstrumentRefLeaksConfig) Validate() error {
 	return nil
 }
 
-func (c InstrumentRefLeaksConfig) tracker() refLeaksTracker {
+func (c InstrumentRefLeaksConfig) tracker(reg prometheus.Registerer) refLeaksTracker {
 	if c.Percentage <= 0 {
 		return refLeaksTracker{}
 	}
@@ -51,16 +52,14 @@ func (c InstrumentRefLeaksConfig) tracker() refLeaksTracker {
 		t.maxInflightInstrumentedBytes = math.MaxUint64
 	}
 
-	t.inflightInstrumentedBytesMetric = prometheus.NewGauge(prometheus.GaugeOpts{
+	t.inflightInstrumentedBytesMetric = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
 		Name: "mimir_reference_leaks_inflight_instrumented_bytes",
 		Help: "Total bytes of buffers instrumented for reference leak detection.",
 	})
-	t.instrumentedBuffersTotalMetric = prometheus.NewCounter(prometheus.CounterOpts{
+	t.instrumentedBuffersTotalMetric = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "mimir_reference_leaks_instrumented_buffers_total",
 		Help: "Total number of buffers instrumented for reference leak detection.",
 	})
-	prometheus.MustRegister(t.inflightInstrumentedBytesMetric)
-	prometheus.MustRegister(t.instrumentedBuffersTotalMetric)
 
 	return t
 }

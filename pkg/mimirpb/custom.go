@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	gogoproto "github.com/gogo/protobuf/proto"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
@@ -24,15 +25,15 @@ type CustomCodecConfig struct {
 
 var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
 
-func (cfg CustomCodecConfig) codec() *codecV2 {
-	return &codecV2{refLeaksTracker: cfg.tracker()}
+func (cfg CustomCodecConfig) codec(reg prometheus.Registerer) *codecV2 {
+	return &codecV2{refLeaksTracker: cfg.tracker(reg)}
 }
 
 var globalCodec encoding.CodecV2
 
-func (cfg CustomCodecConfig) RegisterGlobally() {
+func (cfg CustomCodecConfig) RegisterGlobally(reg prometheus.Registerer) {
 	cfg.maybeStartFreeingInstrumentedBuffers()
-	globalCodec = cfg.codec()
+	globalCodec = cfg.codec(reg)
 	encoding.RegisterCodecV2(globalCodec)
 }
 
@@ -44,7 +45,7 @@ func init() {
 		config.BeforeReusePeriod = 0
 		config.MaxInflightInstrumentedBytes = 0
 	}
-	config.RegisterGlobally()
+	config.RegisterGlobally(prometheus.DefaultRegisterer)
 }
 
 // codecV2 customizes gRPC marshalling and unmarshalling.
