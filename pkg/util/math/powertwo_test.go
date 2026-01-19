@@ -3,10 +3,11 @@
 package math
 
 import (
-	"github.com/grafana/mimir/pkg/util/pool"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 func TestPowerTwo(t *testing.T) {

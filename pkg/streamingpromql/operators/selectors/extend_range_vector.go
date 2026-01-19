@@ -12,7 +12,7 @@ import (
 )
 
 type undoAction int
-type ExtendedPointsMode int
+type extendedPointsMode int
 
 const (
 	none undoAction = iota
@@ -21,7 +21,7 @@ const (
 )
 
 const (
-	anchored ExtendedPointsMode = iota
+	anchored extendedPointsMode = iota
 	smoothed
 	smoothedCounter
 )
@@ -46,7 +46,7 @@ type RevertibleExtendedPointsState struct {
 	buff *types.FPointRingBuffer
 
 	// The operation mode for how points will be calculated at the boundaries
-	mode ExtendedPointsMode
+	mode extendedPointsMode
 
 	// The original first point in the set of points considered for the extension. This may not be the first point in the overall buffer.
 	first promql.FPoint
@@ -69,7 +69,7 @@ type RevertibleExtendedPointsState struct {
 	undoHeadModifications undoAction
 }
 
-func NewRevertibleExtendedPointsUtility(buff *types.FPointRingBuffer, mode ExtendedPointsMode) *RevertibleExtendedPointsState {
+func NewRevertibleExtendedPointsUtility(buff *types.FPointRingBuffer, mode extendedPointsMode) *RevertibleExtendedPointsState {
 	return &RevertibleExtendedPointsState{
 		buff: buff,
 		mode: mode,
@@ -84,10 +84,10 @@ func NewRevertibleExtendedPointsUtility(buff *types.FPointRingBuffer, mode Exten
 //
 // Anchored mode:
 //   - Boundary values are taken directly from existing points.
-//   - The rangeStart value is set to the value of the last point with T <= rangeStart.
+//   - The point at T=rangeStart is set to the value of the last point with T <= rangeStart within the lookback window.
 //     If none exists, the value of the first point with T > rangeStart is used.
-//   - The rangeEnd value follows the same pattern: preference is given to the first
-//     point with T >= rangeEnd; if none exists, the value of the last point with
+//   - The point at T=rangeEnd follows the same pattern: preference is given to the first
+//     point with T >= rangeEnd within the lookahead window; if none exists, the value of the last point with
 //     T < rangeEnd is used.
 //
 // Smoothed mode:
