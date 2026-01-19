@@ -45,6 +45,10 @@ func (u *UnaryNegationOfScalar) Prepare(ctx context.Context, params *types.Prepa
 	return u.Inner.Prepare(ctx, params)
 }
 
+func (u *UnaryNegationOfScalar) PrepareCompleted(ctx context.Context) error {
+	return u.Inner.PrepareCompleted(ctx)
+}
+
 func (u *UnaryNegationOfScalar) Finalize(ctx context.Context) error {
 	return u.Inner.Finalize(ctx)
 }

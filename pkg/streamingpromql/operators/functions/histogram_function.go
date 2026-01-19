@@ -494,6 +494,14 @@ func (h *HistogramFunction) Prepare(ctx context.Context, params *types.PreparePa
 	return h.inner.Prepare(ctx, params)
 }
 
+func (h *HistogramFunction) PrepareCompleted(ctx context.Context) error {
+	if err := h.f.PrepareCompleted(ctx); err != nil {
+		return err
+	}
+
+	return h.inner.PrepareCompleted(ctx)
+}
+
 func (h *HistogramFunction) Finalize(ctx context.Context) error {
 	if err := h.f.Finalize(ctx); err != nil {
 		return err
@@ -534,6 +542,7 @@ type histogramFunction interface {
 	ComputeClassicHistogramResult(pointIndex int, seriesIndex int, buckets promql.Buckets) float64
 	ComputeNativeHistogramResult(pointIndex int, seriesIndex int, h *histogram.FloatHistogram) (float64, annotations.Annotations)
 	Prepare(ctx context.Context, params *types.PrepareParams) error
+	PrepareCompleted(ctx context.Context) error
 	Finalize(ctx context.Context) error
 	Close()
 }
@@ -589,6 +598,10 @@ func (q *histogramQuantile) ComputeNativeHistogramResult(pointIndex int, seriesI
 
 func (q *histogramQuantile) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return q.phArg.Prepare(ctx, params)
+}
+
+func (q *histogramQuantile) PrepareCompleted(ctx context.Context) error {
+	return q.phArg.PrepareCompleted(ctx)
 }
 
 func (q *histogramQuantile) Finalize(ctx context.Context) error {
@@ -647,6 +660,14 @@ func (f *histogramFraction) Prepare(ctx context.Context, params *types.PreparePa
 		return err
 	}
 	return f.upperArg.Prepare(ctx, params)
+}
+
+func (f *histogramFraction) PrepareCompleted(ctx context.Context) error {
+	err := f.lowerArg.PrepareCompleted(ctx)
+	if err != nil {
+		return err
+	}
+	return f.upperArg.PrepareCompleted(ctx)
 }
 
 func (f *histogramFraction) Finalize(ctx context.Context) error {

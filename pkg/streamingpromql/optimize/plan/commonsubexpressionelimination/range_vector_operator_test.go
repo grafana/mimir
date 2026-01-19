@@ -592,6 +592,10 @@ func (t *testRangeVectorOperator) Prepare(_ context.Context, _ *types.PreparePar
 	return nil
 }
 
+func (t *testRangeVectorOperator) PrepareCompleted(_ context.Context) error {
+	return nil
+}
+
 func (t *testRangeVectorOperator) Finalize(_ context.Context) error {
 	t.finalized = true
 	return nil
@@ -626,6 +630,10 @@ type failingRangeVectorOperator struct {
 	histogramsView *types.HPointRingBufferView
 
 	seriesRead int
+}
+
+func (o *failingRangeVectorOperator) PrepareCompleted(ctx context.Context) error {
+	return nil
 }
 
 func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {

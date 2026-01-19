@@ -179,6 +179,13 @@ func (o *Operator) Prepare(ctx context.Context, params *types.PrepareParams) err
 	return o.Param.Prepare(ctx, params)
 }
 
+func (o *Operator) PrepareCompleted(ctx context.Context) error {
+	if err := o.Inner.PrepareCompleted(ctx); err != nil {
+		return err
+	}
+	return o.Param.PrepareCompleted(ctx)
+}
+
 func (o *Operator) Finalize(ctx context.Context) error {
 	if err := o.Inner.Finalize(ctx); err != nil {
 		return err

@@ -306,6 +306,14 @@ func (a *AndUnlessBinaryOperation) Prepare(ctx context.Context, params *types.Pr
 	return a.Right.Prepare(ctx, params)
 }
 
+func (a *AndUnlessBinaryOperation) PrepareCompleted(ctx context.Context) error {
+	if err := a.Left.PrepareCompleted(ctx); err != nil {
+		return err
+	}
+
+	return a.Right.PrepareCompleted(ctx)
+}
+
 func (a *AndUnlessBinaryOperation) Finalize(ctx context.Context) error {
 	if err := a.Left.Finalize(ctx); err != nil {
 		return err

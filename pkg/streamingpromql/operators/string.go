@@ -41,6 +41,10 @@ func (s *StringLiteral) Prepare(_ context.Context, _ *types.PrepareParams) error
 	return nil
 }
 
+func (s *StringLiteral) PrepareCompleted(_ context.Context) error {
+	return nil
+}
+
 func (s *StringLiteral) Finalize(_ context.Context) error {
 	// Nothing to do.
 	return nil

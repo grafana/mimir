@@ -93,6 +93,14 @@ func (q *QuantileAggregation) Prepare(ctx context.Context, params *types.Prepare
 	return q.Param.Prepare(ctx, params)
 }
 
+func (q *QuantileAggregation) PrepareCompleted(ctx context.Context) error {
+	if err := q.Aggregation.PrepareCompleted(ctx); err != nil {
+		return err
+	}
+
+	return q.Param.PrepareCompleted(ctx)
+}
+
 func (q *QuantileAggregation) Finalize(ctx context.Context) error {
 	if err := q.Aggregation.Finalize(ctx); err != nil {
 		return err

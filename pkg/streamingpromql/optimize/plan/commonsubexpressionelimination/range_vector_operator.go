@@ -27,8 +27,9 @@ type RangeVectorDuplicationBuffer struct {
 	consumers               []*rangeVectorConsumerState
 	buffer                  *SeriesDataRingBuffer[bufferedRangeVectorStepData]
 
-	// Multiple RangeVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare(), so this ensures idempotency.
-	prepared bool
+	// Multiple RangeVectorDuplicationConsumers will call RangeVectorDuplicationBuffer.Prepare() and PrepareCompleted(), so this ensures idempotency.
+	prepared         bool
+	prepareCompleted bool
 }
 
 type rangeVectorConsumerState struct {
@@ -246,11 +247,18 @@ func (b *RangeVectorDuplicationBuffer) Prepare(ctx context.Context, params *type
 	if b.prepared {
 		return nil
 	}
-	if err := b.Inner.Prepare(ctx, params); err != nil {
-		return err
-	}
+
 	b.prepared = true
-	return nil
+	return b.Inner.Prepare(ctx, params)
+}
+
+func (b *RangeVectorDuplicationBuffer) PrepareCompleted(ctx context.Context) error {
+	if b.prepareCompleted {
+		return nil
+	}
+
+	b.prepareCompleted = true
+	return b.Inner.PrepareCompleted(ctx)
 }
 
 func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumerIndex int) error {
@@ -351,6 +359,10 @@ func (d *RangeVectorDuplicationConsumer) ExpressionPosition() posrange.PositionR
 
 func (d *RangeVectorDuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Buffer.Prepare(ctx, params)
+}
+
+func (d *RangeVectorDuplicationConsumer) PrepareCompleted(ctx context.Context) error {
+	return d.Buffer.PrepareCompleted(ctx)
 }
 
 func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {

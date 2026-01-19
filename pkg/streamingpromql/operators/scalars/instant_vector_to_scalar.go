@@ -111,6 +111,10 @@ func (i *InstantVectorToScalar) Prepare(ctx context.Context, params *types.Prepa
 	return i.Inner.Prepare(ctx, params)
 }
 
+func (i *InstantVectorToScalar) PrepareCompleted(ctx context.Context) error {
+	return i.Inner.PrepareCompleted(ctx)
+}
+
 func (i *InstantVectorToScalar) Finalize(ctx context.Context) error {
 	return i.Inner.Finalize(ctx)
 }

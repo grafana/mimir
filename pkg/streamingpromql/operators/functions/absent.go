@@ -118,6 +118,10 @@ func (a *Absent) Prepare(ctx context.Context, params *types.PrepareParams) error
 	return a.Inner.Prepare(ctx, params)
 }
 
+func (a *Absent) PrepareCompleted(ctx context.Context) error {
+	return a.Inner.PrepareCompleted(ctx)
+}
+
 func (a *Absent) Finalize(ctx context.Context) error {
 	return a.Inner.Finalize(ctx)
 }
