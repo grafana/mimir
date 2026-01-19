@@ -5,6 +5,7 @@ package functions
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -81,7 +82,8 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	}
 	defer types.SeriesMetadataSlicePool.Put(&innerMetadata, f.MemoryConsumptionTracker)
 
-	infoMetadata, err := f.Info.SeriesMetadata(ctx, matchers)
+	infoMatchers := f.generateInfoMatchers(innerMetadata)
+	infoMetadata, err := f.Info.SeriesMetadata(ctx, infoMatchers)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +94,62 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	}
 	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
 	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
+}
+
+// generateInfoMatchers creates matchers based on job and instance labels from inner series
+// to avoid selecting all info series unnecessarily.
+func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata) types.Matchers {
+	if len(innerMetadata) == 0 {
+		return nil
+	}
+
+	identifyingLabelValues := make(map[string]map[string]struct{})
+	for _, labelName := range identifyingLabels {
+		identifyingLabelValues[labelName] = make(map[string]struct{})
+	}
+
+	for _, metadata := range innerMetadata {
+		for _, labelName := range identifyingLabels {
+			if value := metadata.Labels.Get(labelName); value != "" {
+				identifyingLabelValues[labelName][value] = struct{}{}
+			}
+		}
+	}
+
+	var matchers types.Matchers
+
+	createMatcher := func(labelName string, values map[string]struct{}) {
+		switch len(values) {
+		case 0:
+			return
+		case 1:
+			for value := range values {
+				matchers = append(matchers, types.Matcher{
+					Type:  labels.MatchEqual,
+					Name:  labelName,
+					Value: value,
+				})
+				break
+			}
+		default:
+			valueSlice := make([]string, 0, len(values))
+			for value := range values {
+				valueSlice = append(valueSlice, regexp.QuoteMeta(value))
+			}
+			regexPattern := "^(" + strings.Join(valueSlice, "|") + ")$"
+			matchers = append(matchers, types.Matcher{
+				Type:  labels.MatchRegexp,
+				Name:  labelName,
+				Value: regexPattern,
+			})
+		}
+	}
+
+	for _, labelName := range identifyingLabels {
+		createMatcher(labelName, identifyingLabelValues[labelName])
+	}
+
+	return matchers
 }
 
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
