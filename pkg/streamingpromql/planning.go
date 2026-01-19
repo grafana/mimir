@@ -605,6 +605,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			if ok {
 				vectorSelector.ReturnSampleTimestamps = true
 			}
+		case functions.FUNCTION_INFO:
+			vectorSelector, ok := args[1].(*core.VectorSelector)
+			if ok {
+				// Override float values to reflect original timestamps.
+				vectorSelector.ReturnSampleTimestampsPreserveHistograms = true
+			}
 		}
 
 		if functionNeedsDeduplication(fnc) {

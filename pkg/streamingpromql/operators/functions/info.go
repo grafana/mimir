@@ -75,9 +75,6 @@ func NewInfoFunction(
 }
 
 func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	// Override float values to reflect original timestamps.
-	f.Info.ReturnSampleTimestampsPreserveHistograms = true
-
 	innerMetadata, err := f.Inner.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err

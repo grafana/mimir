@@ -35,12 +35,13 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
-		Selector:                 selector,
-		Stats:                    stats,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		ReturnSampleTimestamps:   returnSampleTimestamps,
+		Selector:                                 selector,
+		Stats:                                    stats,
+		MemoryConsumptionTracker:                 memoryConsumptionTracker,
+		ReturnSampleTimestamps:                   returnSampleTimestamps,
+		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
 	}
 }
 
