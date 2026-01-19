@@ -59,6 +59,19 @@ type ProtobufFrontend interface {
 //
 // It receives the nodes to evaluate, prepares the request for the frontend to send to queriers, and buffers
 // any received messages so they may be read by the corresponding remote execution operators in any order.
+//
+// Note that there are two kinds of indices here:
+//   - The stream indices reflect the order in which the Create...Execution methods are called (ie. the index into nodeIndexToStreamState).
+//   - The node indices are a way to identify which node in the query plan was requested in the serialized (Protobuf) form of the
+//     query plan.
+//
+// For example, if the expression was sum(foo) + max(bar), and the group evaluates both the sum(foo) and the max(bar) nodes:
+//
+//   - When CreateInstantVectorExecution for sum(foo) is called, this would create a stream with index 0
+//   - When CreateInstantVectorExecution for max(bar) is called, this would create a stream with index 1
+//   - When sendRequest is called, the sum and max nodes and their children are serialized as Protobuf and ToEncodedPlan
+//     returns the indices of the sum and max nodes in that encoded form. These are the values used by the querier to identify
+//     which node the results are for when sending results back to the query-frontend.
 type RemoteExecutionGroupEvaluator struct {
 	frontend                 ProtobufFrontend
 	cfg                      Config
