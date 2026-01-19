@@ -200,6 +200,17 @@ func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, previousSubSte
 	previousSubStep.RangeStart = rangeStart
 	previousSubStep.RangeEnd = rangeEnd
 
+	// Copy query-level modifiers from parent step.
+	previousSubStep.Anchored = s.Anchored
+	previousSubStep.Smoothed = s.Smoothed
+
+	// SmoothedBasis* fields are specific to the parent step's range boundaries and cannot be reused for substeps.
+	// Explicitly clear them to ensure consistent behavior regardless of whether previousSubStep is reused.
+	previousSubStep.SmoothedBasisForHeadPoint = promql.FPoint{}
+	previousSubStep.SmoothedBasisForTailPoint = promql.FPoint{}
+	previousSubStep.SmoothedBasisForHeadPointSet = false
+	previousSubStep.SmoothedBasisForTailPointSet = false
+
 	previousSubStep.Floats = s.Floats.SubView(rangeStart, rangeEnd, previousSubStep.Floats)
 	previousSubStep.Histograms = s.Histograms.SubView(rangeStart, rangeEnd, previousSubStep.Histograms)
 
