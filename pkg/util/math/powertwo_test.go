@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/pool"
 )
 
 func TestPowerTwo(t *testing.T) {
@@ -21,7 +19,5 @@ func TestPowerTwo(t *testing.T) {
 	}
 	for value, expected := range testCases {
 		require.Equal(t, expected, NextPowerTwo(value))
-		//lint:ignore faillint
-		require.True(t, pool.IsPowerOfTwo(expected))
 	}
 }
