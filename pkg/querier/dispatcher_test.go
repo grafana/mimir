@@ -1517,7 +1517,7 @@ func TestDispatcher_RingErrorTranslation(t *testing.T) {
 	opts.Pedantic = true
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	startT := timestamp.Time(0)
@@ -1552,7 +1552,7 @@ func TestDispatcher_RingErrorTranslation(t *testing.T) {
 
 			errorStorage := &errorReturningStorage{err: testCase.storageError}
 
-			plan, err := planner.NewQueryPlan(context.Background(), `my_series`, types.NewInstantQueryTimeRange(startT), streamingpromql.NoopPlanningObserver{})
+			plan, err := planner.NewQueryPlan(context.Background(), `my_series`, types.NewInstantQueryTimeRange(startT), false, streamingpromql.NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			encodedPlan, nodeIndices, err := plan.ToEncodedPlan(false, true, plan.Root)

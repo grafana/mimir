@@ -1922,7 +1922,7 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			actualLimit, actualErr := provider.GetMaxEstimatedMemoryConsumptionPerQuery(testCase.ctx)
-			actualEnableDelayedNameRemoval, actualErr := provider.GetEnableDelayedNameRemoval(testCase.ctx)
+			actualEnableDelayedNameRemoval, _ := provider.GetEnableDelayedNameRemoval(testCase.ctx)
 
 			if testCase.expectedError == nil {
 				require.NoError(t, actualErr)

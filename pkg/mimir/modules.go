@@ -1005,7 +1005,8 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.Handler(t.QuerierQueryPlanner)
+		limitsProvider := querier.NewTenantQueryLimitsProvider(t.Overrides, mqeOpts)
+		analysisHandler := analysis.Handler(t.QuerierQueryPlanner, limitsProvider)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
@@ -1044,7 +1045,8 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.Handler(t.QueryFrontendQueryPlanner)
+	limitsProvider := querier.NewTenantQueryLimitsProvider(t.Overrides, mqeOpts)
+	analysisHandler := analysis.Handler(t.QueryFrontendQueryPlanner, limitsProvider)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil
