@@ -21,6 +21,7 @@ func TestPowerTwo(t *testing.T) {
 	}
 	for value, expected := range testCases {
 		require.Equal(t, expected, NextPowerTwo(value))
+		//lint:ignore faillint
 		require.True(t, pool.IsPowerOfTwo(expected))
 	}
 }
