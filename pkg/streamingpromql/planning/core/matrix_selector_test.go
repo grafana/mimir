@@ -108,7 +108,7 @@ func TestMatrixSelector_Describe(t *testing.T) {
 			},
 			expected: `{__name__="foo"}[1m0s] anchored`,
 		},
-		"one matcher, smoothed enabled": {
+		"one matcher, smoothed enabled - not counter aware": {
 			node: &MatrixSelector{
 				MatrixSelectorDetails: &MatrixSelectorDetails{
 					Matchers: singleMatcher,
@@ -117,6 +117,38 @@ func TestMatrixSelector_Describe(t *testing.T) {
 				},
 			},
 			expected: `{__name__="foo"}[1m0s] smoothed`,
+		},
+		"one matcher, smoothed enabled - counter aware": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:     singleMatcher,
+					Range:        time.Minute,
+					Smoothed:     true,
+					CounterAware: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s] smoothed counter aware`,
+		},
+		"one matcher, anchored enabled - counter aware has no effect": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:     singleMatcher,
+					Range:        time.Minute,
+					Anchored:     true,
+					CounterAware: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s] anchored`,
+		},
+		"one matcher - counter aware has no effect": {
+			node: &MatrixSelector{
+				MatrixSelectorDetails: &MatrixSelectorDetails{
+					Matchers:     singleMatcher,
+					Range:        time.Minute,
+					CounterAware: true,
+				},
+			},
+			expected: `{__name__="foo"}[1m0s]`,
 		},
 	}
 
