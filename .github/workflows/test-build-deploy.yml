@@ -359,7 +359,7 @@ jobs:
         test_group_total: [6]
     steps:
       - name: Upgrade golang
-        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
           go-version: ${{ needs.goversion.outputs.version }}
           cache: false # We manage caching ourselves below to maintain consistency with the other jobs that don't use setup-go.
