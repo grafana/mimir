@@ -76,6 +76,8 @@ const (
 	OutOfOrderChunksNoCompactReason = "block-index-out-of-order-chunk"
 	// CriticalNoCompactReason is a reason of to no compact block that has some critical issue (e.g. corrupted index).
 	CriticalNoCompactReason = "critical"
+	// PostingsOffsetTableTooLargeNoCompactReason is used when the postings offset table would exceed 4GB (uint32 max) during compaction due to extremely high label cardinality.
+	PostingsOffsetTableTooLargeNoCompactReason = "postings-offset-table-too-large"
 )
 
 // NoCompactMark marker stores reason of block being excluded from compaction if needed.
