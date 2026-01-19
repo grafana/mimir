@@ -69,7 +69,7 @@ type RevertibleExtendedPointsState struct {
 	undoHeadModifications undoAction
 }
 
-func NewRevertibleExtendedPointsUtility(buff *types.FPointRingBuffer, mode extendedPointsMode) *RevertibleExtendedPointsState {
+func NewRevertibleExtendedPointsState(buff *types.FPointRingBuffer, mode extendedPointsMode) *RevertibleExtendedPointsState {
 	return &RevertibleExtendedPointsState{
 		buff: buff,
 		mode: mode,

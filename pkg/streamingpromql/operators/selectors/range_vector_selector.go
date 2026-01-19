@@ -32,7 +32,7 @@ type RangeVectorSelector struct {
 
 	// Maintain metadata about modifications made to the floats buffer to support the smoothed/anchored extended range implementation.
 	// A single instance is allocated (if required) and re-used between all steps and all series.
-	extendedPointsUtility *RevertibleExtendedPointsState
+	extendedPointsState *RevertibleExtendedPointsState
 }
 
 var _ types.RangeVectorOperator = &RangeVectorSelector{}
@@ -48,13 +48,13 @@ func NewRangeVectorSelector(selector *Selector, memoryConsumptionTracker *limite
 	}
 
 	if selector.Anchored {
-		rangeVectorSelector.extendedPointsUtility = NewRevertibleExtendedPointsUtility(rangeVectorSelector.floats, anchored)
+		rangeVectorSelector.extendedPointsState = NewRevertibleExtendedPointsState(rangeVectorSelector.floats, anchored)
 	} else if selector.Smoothed {
 		mode := smoothed
 		if selector.CounterAware {
 			mode = smoothedCounter
 		}
-		rangeVectorSelector.extendedPointsUtility = NewRevertibleExtendedPointsUtility(rangeVectorSelector.floats, mode)
+		rangeVectorSelector.extendedPointsState = NewRevertibleExtendedPointsState(rangeVectorSelector.floats, mode)
 	}
 
 	return &rangeVectorSelector
@@ -79,9 +79,9 @@ func (m *RangeVectorSelector) NextSeries(ctx context.Context) error {
 	m.nextStepT = m.Selector.TimeRange.StartT
 	m.floats.Reset()
 	m.histograms.Reset()
-	if m.extendedPointsUtility != nil {
+	if m.extendedPointsState != nil {
 		// Any changes recorded will no longer be valid as the floats buffer has been reset
-		m.extendedPointsUtility.Reset()
+		m.extendedPointsState.Reset()
 	}
 	return nil
 }
@@ -122,7 +122,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		// The `ApplyBoundaryMutations` may have modified the points in the floats buffer - removing points and adding synthetic boundary points.
 		// These changes must be reverted so the next step iteration does not use these values.
 		// Note this must be done prior to calling the next fillBuffer
-		if err := m.extendedPointsUtility.UndoChanges(); err != nil {
+		if err := m.extendedPointsState.UndoChanges(); err != nil {
 			return nil, err
 		}
 	}
@@ -167,7 +167,7 @@ func (m *RangeVectorSelector) NextStepSamples(ctx context.Context) (*types.Range
 		// Mutate the floats buffer to align and extend points to the original time boundaries.
 		// The result is either an empty buffer or one containing only points within the
 		// original time range, with points present at both boundaries.
-		err = m.extendedPointsUtility.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd)
+		err = m.extendedPointsState.ApplyBoundaryMutations(originalRangeStart, originalRangeEnd, rangeEnd)
 		if err != nil {
 			return nil, err
 		}
@@ -235,7 +235,7 @@ func (m *RangeVectorSelector) fillBuffer(floats *types.FPointRingBuffer, histogr
 			if value.IsStaleNaN(hPoint.H.Sum) {
 				// Range vectors ignore stale markers
 				// https://github.com/prometheus/prometheus/issues/3746#issuecomment-361572859
-				// We have to removed the last point since we didn't actually use it, and NextPoint already allocated it.
+				// We have to remove the last point since we didn't actually use it, and NextPoint already allocated it.
 				histograms.RemoveLastPoint()
 				continue
 			}

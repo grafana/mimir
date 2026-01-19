@@ -50,7 +50,7 @@ func (b *FPointRingBuffer) resizeIfRequired(additionalPoints int, appendingAtSta
 	if !pool.IsPowerOfTwo(cap(newSlice)) {
 		// We rely on the capacity being a power of two for the pointsIndexMask optimisation below.
 		// If we can guarantee that newSlice has a capacity that is a power of two in the future, then we can drop this check.
-		// Note that the capacity if newSlice is guaranteed to be at least 2 due to the implementation in math.NextPowerTwo()
+		// Note that the capacity of newSlice is guaranteed to be at least 2 due to the implementation in math.NextPowerTwo()
 		return fmt.Errorf("pool returned slice of capacity %v (requested %v), but wanted a power of two", cap(newSlice), newSize)
 	}
 

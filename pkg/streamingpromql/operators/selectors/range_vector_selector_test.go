@@ -307,8 +307,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			require.Len(t, points, len(tc.expected))
 
 			for i, expected := range tc.expected {
-				require.Equalf(t, expected.T, points[i].T, "Point[%d] expected T %d but got %d", i, expected.T, points[i].T)
-				require.Equalf(t, expected.F, points[i].F, "Point[%d] expected F %v but got %v", i, expected.F, points[i].F)
+				require.Equalf(t, expected, points[i], "Point[%d]", i)
 			}
 		})
 	}
