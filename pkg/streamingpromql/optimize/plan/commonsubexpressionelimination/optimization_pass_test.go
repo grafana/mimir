@@ -15,10 +15,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -957,4 +959,32 @@ func BenchmarkOptimizationPass(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestShouldSkipChild(t *testing.T) {
+	pass := commonsubexpressionelimination.NewOptimizationPass(true, nil, nil)
+
+	// Test info function - should skip only 2nd children
+	infoFunctionCall := &core.FunctionCall{
+		FunctionCallDetails: &core.FunctionCallDetails{
+			Function: functions.FUNCTION_INFO,
+		},
+	}
+
+	require.False(t, pass.ShouldSkipChild(infoFunctionCall, 0), "1st argument to info function should not be skipped")
+	require.True(t, pass.ShouldSkipChild(infoFunctionCall, 1), "2nd argument to info function should be skipped")
+
+	// Test other function - should not skip any children
+	otherFunctionCall := &core.FunctionCall{
+		FunctionCallDetails: &core.FunctionCallDetails{
+			Function: functions.FUNCTION_RATE,
+		},
+	}
+
+	require.False(t, pass.ShouldSkipChild(otherFunctionCall, 0), "1st argument to other function should not be skipped")
+	require.False(t, pass.ShouldSkipChild(otherFunctionCall, 1), "2nd argument to other function should not be skipped")
+
+	// Test non-function node - should not skip any children
+	nonFunctionNode := &core.VectorSelector{}
+	require.False(t, pass.ShouldSkipChild(nonFunctionNode, 0), "non-function node children should not be skipped")
 }
