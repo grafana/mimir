@@ -494,7 +494,7 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	// Unblock scheduler loop, to find next request.
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
 	// The scheduler may have already exited, in which case this gRPC request will return an EOF
-	if err != nil && err == io.EOF {
+	if err != nil && errors.Is(err, io.EOF) {
 		return
 	}
 
