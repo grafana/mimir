@@ -1608,8 +1608,12 @@ func (i *Ingester) pushSamplesToAppender(
 	defer idx.Close()
 
 	for _, ts := range timeseries {
-		// The labels must be sorted (in our case, it's guaranteed a write request
-		// has sorted labels once hit the ingester).
+		// The labels must be sorted.
+		for i := 1; i < len(ts.Labels); i++ {
+			if ts.Labels[i].Name <= ts.Labels[i-1].Name {
+				return fmt.Errorf("labels not sorted: %s", mimirpb.FromLabelAdaptersToString(ts.Labels))
+			}
+		}
 
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
