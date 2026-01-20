@@ -491,17 +491,13 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	drainScheduler(t, scheduler)
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
-	// Unblock scheduler loop, to find next request.
+	// Send a message to unblock the scheduler loop if it's still running, if it's already exited we'll get an io.EOF error
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
-	// The scheduler may have already exited, in which case this gRPC request will return an EOF
-	if err != nil && errors.Is(err, io.EOF) {
-		return
+	if err != nil {
+		require.ErrorIs(t, io.EOF, err)
 	}
 
-	// Else we ensure it was sent successfully
-	require.NoError(t, err)
-
-	// This should now return with error, since scheduler is going down.
+	// This should return with error, since scheduler has terminated.
 	_, err = querierLoop.Recv()
 	require.Error(t, err)
 }
