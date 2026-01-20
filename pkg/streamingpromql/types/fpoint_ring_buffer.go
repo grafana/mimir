@@ -211,6 +211,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *FPoi
 		size++
 	}
 
+	existing.offset = 0
 	existing.size = size
 	return existing
 }
@@ -221,6 +222,7 @@ func (b *FPointRingBuffer) ViewAll(existing *FPointRingBufferView) *FPointRingBu
 	if existing == nil {
 		existing = &FPointRingBufferView{buffer: b}
 	}
+	existing.offset = 0
 	existing.size = b.size
 	return existing
 }
@@ -238,6 +240,7 @@ func (b *FPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *FPo
 		nextPositionToCheck--
 	}
 
+	existing.offset = 0
 	existing.size = nextPositionToCheck + 1
 	return existing
 }
@@ -302,6 +305,7 @@ func (b *FPointRingBuffer) Close() {
 
 type FPointRingBufferView struct {
 	buffer *FPointRingBuffer
+	offset int // Offset from buffer's firstIndex where this view starts
 	size   int
 }
 
@@ -319,16 +323,17 @@ func (v *FPointRingBufferView) UnsafePoints() (head []promql.FPoint, tail []prom
 		return nil, nil
 	}
 
-	endOfHeadSegment := v.buffer.firstIndex + v.size
+	startIndex := (v.buffer.firstIndex + v.offset) & v.buffer.pointsIndexMask
+	endOfHeadSegment := startIndex + v.size
 
 	if endOfHeadSegment > len(v.buffer.points) {
 		// Need to wrap around.
 		endOfTailSegment := endOfHeadSegment - len(v.buffer.points)
 		endOfHeadSegment = len(v.buffer.points)
-		return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
+		return v.buffer.points[startIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
 	}
 
-	return v.buffer.points[v.buffer.firstIndex:endOfHeadSegment], nil
+	return v.buffer.points[startIndex:endOfHeadSegment], nil
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -356,7 +361,7 @@ func (v *FPointRingBufferView) CopyPoints() ([]promql.FPoint, error) {
 // ForEach calls f for each point in this buffer view.
 func (v *FPointRingBufferView) ForEach(f func(p promql.FPoint)) {
 	for i := 0; i < v.size; i++ {
-		f(v.buffer.PointAt(i))
+		f(v.PointAt(i))
 	}
 }
 
@@ -367,7 +372,7 @@ func (v *FPointRingBufferView) First() promql.FPoint {
 		panic("Can't get first element of empty buffer")
 	}
 
-	return v.buffer.points[v.buffer.firstIndex]
+	return v.PointAt(0)
 }
 
 // Last returns the last point in this ring buffer view.
@@ -377,7 +382,7 @@ func (v *FPointRingBufferView) Last() (promql.FPoint, bool) {
 		return promql.FPoint{}, false
 	}
 
-	return v.buffer.PointAt(v.size - 1), true
+	return v.PointAt(v.size - 1), true
 }
 
 // Count returns the number of points in this ring buffer view.
@@ -397,7 +402,7 @@ func (v *FPointRingBufferView) PointAt(i int) promql.FPoint {
 		panic(fmt.Sprintf("PointAt(): out of range, requested index %v but have length %v", i, v.size))
 	}
 
-	return v.buffer.PointAt(i)
+	return v.buffer.PointAt(v.offset + i)
 }
 
 // Clone returns a clone of this view and its underlying ring buffer.
@@ -423,6 +428,54 @@ func (v *FPointRingBufferView) Clone() (*FPointRingBufferView, *FPointRingBuffer
 	}
 
 	return view, buffer, nil
+}
+
+// SubView returns a view with only points in range (minT, maxT].
+// If previousSubView is provided, it will be reused to create the new subview. previousSubView must be a previous
+// subview for the same parent view and the next subview is assumed to cover a later range (we only start searching from
+// after the samples of the previous subview).
+func (v *FPointRingBufferView) SubView(minT int64, maxT int64, previousSubView *FPointRingBufferView) *FPointRingBufferView {
+	if v.size == 0 {
+		if previousSubView == nil {
+			return &FPointRingBufferView{}
+		}
+		previousSubView.offset = v.offset
+		previousSubView.size = 0
+		return previousSubView
+	}
+
+	var startIdx int
+	if previousSubView == nil {
+		startIdx = v.offset
+		previousSubView = &FPointRingBufferView{buffer: v.buffer}
+	} else {
+		startIdx = previousSubView.offset + previousSubView.size
+	}
+
+	endIdx := v.offset + v.size
+	if startIdx >= endIdx {
+		previousSubView.offset = endIdx
+		previousSubView.size = 0
+		return previousSubView
+	}
+
+	// Find start idx for subview
+	currentIdx := startIdx
+	// PointAt expects relative index for parent view so we adjust by subtracting the parent offset
+	for currentIdx < endIdx && v.PointAt(currentIdx-v.offset).T <= minT {
+		currentIdx++
+	}
+	previousSubView.offset = currentIdx
+
+	// Find size for subview
+	size := 0
+	for currentIdx < endIdx && v.PointAt(currentIdx-v.offset).T <= maxT {
+		size++
+		currentIdx++
+	}
+
+	previousSubView.size = size
+	return previousSubView
 }
 
 // These hooks exist so we can override them during unit tests.
