@@ -101,6 +101,37 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expectedModified: 0,
 			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
 		},
+		// The label_join and label_replace functions are operating on an aggregation that can make
+		// use of projections so we discover the aggregation label and stop traversing the path to
+		// the root before we look at the DeduplicateAndMerge node.
+		"label_join function with aggregation": {
+			expr: `label_join(avg by (job) (foo), "dst", "-", "src1", "src2")`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: label_join(...)
+						- param 0: AggregateExpression: avg by (job)
+							- VectorSelector: {__name__="foo"}, include ("job")
+						- param 1: StringLiteral: "dst"
+						- param 2: StringLiteral: "-"
+						- param 3: StringLiteral: "src1"
+						- param 4: StringLiteral: "src2"
+			`,
+			expectedModified: 1,
+		},
+		"label_replace function with aggregation": {
+			expr: `label_replace(avg by (job) (foo), "dst", "$1", "src", ".+/(.+)")`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: label_replace(...)
+						- param 0: AggregateExpression: avg by (job)
+							- VectorSelector: {__name__="foo"}, include ("job")
+						- param 1: StringLiteral: "dst"
+						- param 2: StringLiteral: "$1"
+						- param 3: StringLiteral: "src"
+						- param 4: StringLiteral: ".+/(.+)"
+			`,
+			expectedModified: 1,
+		},
 		"aggregation without label": {
 			expr: `avg without (pod) (foo)`,
 			expectedPlan: `

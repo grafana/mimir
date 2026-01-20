@@ -223,12 +223,9 @@ func examineFunction(f *core.FunctionCall) (map[string]struct{}, SkipReason) {
 		// not support the info function at all so this code path isn't exercised.
 		return nil, SkipReasonNotSupported
 	case functions.FUNCTION_LABEL_JOIN:
-		args := functionLabelArgs(f.Args[1])
-		rest := functionLabelArgs(f.Args[3:]...)
-		maps.Copy(args, rest)
-		return args, SkipReasonOk
+		return functionLabelArgs(f.Args[3:]...), SkipReasonOk
 	case functions.FUNCTION_LABEL_REPLACE:
-		return functionLabelArgs(f.Args[1], f.Args[3]), SkipReasonOk
+		return functionLabelArgs(f.Args[3]), SkipReasonOk
 	case functions.FUNCTION_SORT_BY_LABEL:
 		return functionLabelArgs(f.Args[1:]...), SkipReasonOk
 	case functions.FUNCTION_SORT_BY_LABEL_DESC:
