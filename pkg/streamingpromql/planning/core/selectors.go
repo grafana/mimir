@@ -58,7 +58,10 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 		builder.WriteString(", skip histogram buckets")
 	}
 
-	if len(projectionLabels) > 0 {
+	// If we are excluding by no labels, don't display the projection section
+	// since excluding by no labels is equivalent to not using projections.
+	if len(projectionLabels) > 0 || projectionInclude {
+
 		if projectionInclude {
 			builder.WriteString(`, include (`)
 		} else {

@@ -77,20 +77,48 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
-	m.ProjectionLabels = MergeProjectionLabels(m.ProjectionLabels, otherMatrixSelector.ProjectionLabels)
+	m.ProjectionInclude, m.ProjectionLabels = MergeProjectionLabels(
+		m.ProjectionInclude,
+		m.ProjectionLabels,
+		otherMatrixSelector.ProjectionInclude,
+		otherMatrixSelector.ProjectionLabels,
+	)
 
 	return nil
 }
 
-// MergeProjectionLabels combines two slices of label names, deduplicating and sorting them.
-func MergeProjectionLabels(lbls1 []string, lbls2 []string) []string {
-	// Even when are using projections and don't need any labels for the query, the
-	// __series_hash__ label is included in the list of labels we need. Therefore, if
-	// either of these are empty then we need the full set of labels.
-	if len(lbls1) == 0 || len(lbls2) == 0 {
-		return nil
+func MergeProjectionLabels(include1 bool, lbls1 []string, include2 bool, lbls2 []string) (bool, []string) {
+	// If the projection include/exclude differs between the two selectors, we can't
+	// combine them so return "exclude" with an empty set of labels (equivalent to
+	// projections not being used at all).
+	if include1 != include2 {
+		return false, []string{}
 	}
 
+	var (
+		retInclude bool
+		retLabels  []string
+		unique     map[string]struct{}
+	)
+
+	if include1 {
+		retInclude = true
+		unique = unionLabels(lbls1, lbls2)
+	} else {
+		retInclude = false
+		unique = intersectLabels(lbls1, lbls2)
+	}
+
+	retLabels = make([]string, 0, len(unique))
+	for l := range unique {
+		retLabels = append(retLabels, l)
+	}
+
+	slices.Sort(retLabels)
+	return retInclude, retLabels
+}
+
+func unionLabels(lbls1 []string, lbls2 []string) map[string]struct{} {
 	unique := make(map[string]struct{}, len(lbls1)+len(lbls2))
 	for _, l := range lbls1 {
 		unique[l] = struct{}{}
@@ -100,13 +128,27 @@ func MergeProjectionLabels(lbls1 []string, lbls2 []string) []string {
 		unique[l] = struct{}{}
 	}
 
-	ret := make([]string, 0, len(unique))
-	for l := range unique {
-		ret = append(ret, l)
+	return unique
+}
+
+func intersectLabels(lbls1 []string, lbls2 []string) map[string]struct{} {
+	if len(lbls1) == 0 || len(lbls2) == 0 {
+		return map[string]struct{}{}
 	}
 
-	slices.Sort(ret)
-	return ret
+	lbls1Set := make(map[string]struct{}, len(lbls1))
+	for _, l := range lbls1 {
+		lbls1Set[l] = struct{}{}
+	}
+
+	unique := make(map[string]struct{})
+	for _, l := range lbls2 {
+		if _, ok := lbls1Set[l]; ok {
+			unique[l] = struct{}{}
+		}
+	}
+
+	return unique
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
@@ -128,6 +170,7 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
 		CounterAware:             m.CounterAware,
+		ProjectionInclude:        m.ProjectionInclude,
 		ProjectionLabels:         m.ProjectionLabels,
 	}
 

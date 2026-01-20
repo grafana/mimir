@@ -81,7 +81,12 @@ func (v *VectorSelector) MergeHints(other planning.Node) error {
 	}
 
 	v.SkipHistogramBuckets = v.SkipHistogramBuckets && otherVectorSelector.SkipHistogramBuckets
-	v.ProjectionLabels = MergeProjectionLabels(v.ProjectionLabels, otherVectorSelector.ProjectionLabels)
+	v.ProjectionInclude, v.ProjectionLabels = MergeProjectionLabels(
+		v.ProjectionInclude,
+		v.ProjectionLabels,
+		otherVectorSelector.ProjectionInclude,
+		otherVectorSelector.ProjectionLabels,
+	)
 
 	return nil
 }
@@ -103,6 +108,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		ExpressionPosition:       v.GetExpressionPosition().ToPrometheusType(),
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Smoothed:                 v.Smoothed,
+		ProjectionInclude:        v.ProjectionInclude,
 		ProjectionLabels:         v.ProjectionLabels,
 	}
 

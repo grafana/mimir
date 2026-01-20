@@ -447,37 +447,74 @@ func TestVectorSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 }
 
 func TestVectorSelector_MergeHints_ProjectionLabels(t *testing.T) {
-	runTest := func(t *testing.T, lblsFirst, lblsSecond []string, expectLbls []string) {
+	// NOTE: Test cases for this test should be kept in sync with TestMatrixSelector_MergeHints_ProjectionLabels
+
+	runTest := func(t *testing.T, includeFirst bool, lblsFirst []string, includeSecond bool, lblsSecond []string, expectInclude bool, expectLbls []string) {
 		first := &VectorSelector{
 			VectorSelectorDetails: &VectorSelectorDetails{
-				ProjectionLabels: lblsFirst,
+				ProjectionInclude: includeFirst,
+				ProjectionLabels:  lblsFirst,
 			},
 		}
 		second := &VectorSelector{
 			VectorSelectorDetails: &VectorSelectorDetails{
-				ProjectionLabels: lblsSecond,
+				ProjectionInclude: includeSecond,
+				ProjectionLabels:  lblsSecond,
 			},
 		}
 
 		err := first.MergeHints(second)
 		require.NoError(t, err)
+		require.Equal(t, expectInclude, first.ProjectionInclude)
 		require.Equal(t, expectLbls, first.ProjectionLabels)
 	}
 
-	t.Run("neither has projection labels set", func(t *testing.T) {
-		runTest(t, nil, nil, nil)
+	t.Run("differing include/exclude", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			false,
+			[]string{"pod"},
+			false,
+			[]string{},
+		)
 	})
 
-	t.Run("first has projection labels set, other does not", func(t *testing.T) {
-		runTest(t, []string{"__series_hash__", "job", "zone"}, nil, nil)
+	t.Run("both exclude empty labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
 	})
 
-	t.Run("first has no projection labels, other does", func(t *testing.T) {
-		runTest(t, nil, []string{"__series_hash__", "instance", "pod"}, nil)
+	t.Run("both include some labels", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			true,
+			[]string{"pod"},
+			true,
+			[]string{"job", "pod"},
+		)
 	})
 
-	t.Run("both have projection labels set", func(t *testing.T) {
-		runTest(t, []string{"__series_hash__", "job", "cluster"}, []string{"__series_hash__", "job", "region"}, []string{"__series_hash__", "cluster", "job", "region"})
+	t.Run("one excludes some labels one excludes no labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{"job"},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
 	})
 }
 

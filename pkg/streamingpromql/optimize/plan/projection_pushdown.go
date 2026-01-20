@@ -97,12 +97,9 @@ func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *pl
 				return nil
 			}
 
-			// Unique identifier for each series is always necessary if we are using projections
-			// so that we can deduplicate them in the absence of their full label set.
-			m[ProjectionSeriesHash] = struct{}{}
-
 			required := flattenLabels(m)
 			e.ProjectionLabels = required
+			e.ProjectionInclude = true
 
 			modified++
 			spanlog.DebugLog(
@@ -119,12 +116,9 @@ func (p *ProjectionPushdownOptimizationPass) Apply(ctx context.Context, plan *pl
 				return nil
 			}
 
-			// Unique identifier for each series is always necessary if we are using projections
-			// so that we can deduplicate them in the absence of their full label set.
-			m[ProjectionSeriesHash] = struct{}{}
-
 			required := flattenLabels(m)
 			e.ProjectionLabels = required
+			e.ProjectionInclude = true
 
 			modified++
 			spanlog.DebugLog(
@@ -160,6 +154,7 @@ func examinePath(path []planning.Node) (map[string]struct{}, SkipReason) {
 	requiredLabels := make(map[string]struct{})
 	hasAggregation := false
 
+search:
 	for i := len(path) - 1; i >= 0; i-- {
 		switch e := path[i].(type) {
 		case *core.AggregateExpression:
@@ -170,6 +165,12 @@ func examinePath(path []planning.Node) (map[string]struct{}, SkipReason) {
 
 			maps.Copy(requiredLabels, m)
 			hasAggregation = true
+
+			// We stop examining the path to the root as soon as we find the first
+			// aggregation: if this aggregation requires specific labels those are
+			// the labels we need to fetch since any expressions that occur after
+			// this aggregation could not use any others and still work.
+			break search
 		case *core.BinaryExpression:
 			return nil, SkipReasonBinaryOperation
 		case *core.DeduplicateAndMerge:
