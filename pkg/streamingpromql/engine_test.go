@@ -4826,6 +4826,166 @@ func TestExtendedRangeSelectorsIrregular(t *testing.T) {
 	}
 }
 
+func TestStepInvariantMetrics(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+	load 1m
+    	metric 0 1 2 3 4 5
+		nodata _ _ _ _ _ _
+		histogram {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x6
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	tc := []struct {
+		query    string
+		start    time.Time
+		end      time.Time
+		interval time.Duration
+
+		expectedNodes      int
+		expectedStepsSaved int
+	}{
+		{
+			query:              "metric @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:         "metric @ 20",
+			start:         time.Unix(0, 0).Add(time.Second * 50),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 0, // step invariant operation has been removed
+		},
+		{
+			query:              "nodata @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "metric @ 20 + metric @ 30",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1, // the left and right are all wrapped into a single step invariant
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "metric @ 20 * metric + metric @ 30",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      2,
+			expectedStepsSaved: 10,
+		},
+		{
+			query:              "abs(metric @ 20 * metric + metric @ 30)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      2,
+			expectedStepsSaved: 10,
+		},
+		{
+			query:              "scalar(metric @ 20)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "histogram @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "(metric @ 20 or metric) or (histogram @ 20 or histogram) or (vector(scalar(metric @ 30)) or metric)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      3,
+			expectedStepsSaved: 15,
+		},
+		{
+			query:              "timestamp(metric @ 20)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			// the step invariant is relative to a sub-query. The sub-query step count is used
+			query:              "avg_over_time((vector(1))[10m:1m])",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 9,
+		},
+		{
+			// the step invariant is relative to a sub-query. The sub-query step count is used
+			query:              "avg_over_time((rate(http_requests_total[5m]) + metric @ 10)[10m:1m])",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 9,
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.query, func(t *testing.T) {
+
+			registry := prometheus.NewRegistry()
+
+			opts := NewTestEngineOpts()
+			opts.CommonOpts.Reg = registry
+
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, tc.start, tc.end, tc.interval)
+			require.NoError(t, err)
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(fmt.Sprintf(`
+							# HELP cortex_mimir_query_engine_step_invariant_nodes_total Total number of step invariant nodes.
+							# TYPE cortex_mimir_query_engine_step_invariant_nodes_total counter
+							cortex_mimir_query_engine_step_invariant_nodes_total %d
+						`, tc.expectedNodes)), "cortex_mimir_query_engine_step_invariant_nodes_total"))
+
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(fmt.Sprintf(`
+							# HELP cortex_mimir_query_engine_step_invariant_steps_saved_total Total number of steps which were saved from being evaluated due to step invariant handling.
+							# TYPE cortex_mimir_query_engine_step_invariant_steps_saved_total counter
+							cortex_mimir_query_engine_step_invariant_steps_saved_total %d
+						`, tc.expectedStepsSaved)), "cortex_mimir_query_engine_step_invariant_steps_saved_total"))
+
+			// Extra assertions to ensure we do not introduce bad test data
+			if tc.expectedNodes == 0 {
+				// If there are no step invariant nodes, then we do not expect to have any steps saved
+				require.Equal(t, 0, tc.expectedStepsSaved)
+			} else {
+				// If there are step invariant nodes, then we expect to have saved steps
+				require.Greater(t, tc.expectedStepsSaved, 0)
+			}
+		})
+	}
+}
+
 type dummyMaterializer struct{}
 
 func (d dummyMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
