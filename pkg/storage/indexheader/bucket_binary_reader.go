@@ -39,10 +39,10 @@ type BucketBinaryReader struct {
 	symbols             *streamindex.Symbols
 	postingsOffsetTable streamindex.PostingOffsetTable
 
-	// Cache of the label name symbol lookups,
-	// as there are not many and they are half of all lookups.
-	// For index v1 the symbol reference is the index header symbol reference, not the prometheus TSDB index symbol reference.
+	// In-memory table label name symbol lookups;
+	// total size is minimal and label names account for ~half of all symbol lookups.
 	nameSymbols map[uint32]string
+
 	// Direct cache of values. This is much faster than an LRU cache and still provides
 	// a reasonable cache hit ratio.
 	valueSymbolsMu sync.Mutex
