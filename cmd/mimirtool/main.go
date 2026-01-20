@@ -59,7 +59,7 @@ func main() {
 	remoteReadCommand.Register(app, envVars, &logConfig)
 	ruleCommand.Register(app, envVars, &logConfig, prometheus.DefaultRegisterer)
 	runtimeConfigCommand.Register(app)
-	validateCommand.Register(app, envVars)
+	validateCommand.Register(app, envVars, &logConfig)
 
 	app.Command("version", "Get the version of the mimirtool CLI").Action(func(*kingpin.ParseContext) error {
 		fmt.Fprintln(os.Stdout, mimirversion.Print("Mimirtool"))
