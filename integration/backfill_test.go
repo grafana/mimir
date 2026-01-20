@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 
@@ -126,10 +127,11 @@ overrides:
 	{
 		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problems.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1, block2)
-		require.Contains(t, output, fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
-		require.Contains(t, output, "msg=\"block already exists on the server\"")
-		require.Contains(t, output, fmt.Sprintf("block=%s", block2))
-		require.Contains(t, output, "msg=\"block uploaded successfully\"")
+		// Verify block1 path and "already exists" message appear on the same line (in either order)
+		block1Path := regexp.QuoteMeta(path.Join(e2e.ContainerSharedDir, block1.String()))
+		require.Regexp(t, fmt.Sprintf(`path=%s[^\n]*msg="block already exists on the server"|msg="block already exists on the server"[^\n]*path=%s`, block1Path, block1Path), output)
+		// Verify block2 and "uploaded successfully" message appear on the same line (in either order)
+		require.Regexp(t, fmt.Sprintf(`block=%s[^\n]*msg="block uploaded successfully"|msg="block uploaded successfully"[^\n]*block=%s`, block2, block2), output)
 
 		// If blocks exist, it's not an error.
 		require.NoError(t, err)
