@@ -449,7 +449,7 @@ overrides_exporter:
   # Comma-separated list of metrics to include in the exporter. Metric names
   # must match yaml tags from the limits section of the configuration.
   # CLI flag: -overrides-exporter.enabled-metrics
-  [enabled_metrics: <string> | default = "ingestion_rate,ingestion_burst_size,max_global_series_per_user,max_global_series_per_metric,max_global_exemplars_per_user,max_fetched_chunks_per_query,max_fetched_series_per_query,max_fetched_chunk_bytes_per_query,ruler_max_rules_per_rule_group,ruler_max_rule_groups_per_tenant"]
+  [enabled_metrics: <string> | default = "ingestion_burst_size,ingestion_rate,max_fetched_chunk_bytes_per_query,max_fetched_chunks_per_query,max_fetched_series_per_query,max_global_exemplars_per_user,max_global_series_per_metric,max_global_series_per_user,ruler_max_rule_groups_per_tenant,ruler_max_rules_per_rule_group"]
 
 # The common block holds configurations that configure multiple components at a
 # time.
@@ -518,6 +518,25 @@ client_cluster_validation:
   # (experimental) Primary cluster validation label.
   # CLI flag: -common.client-cluster-validation.label
   [label: <string> | default = ""]
+
+instrument_ref_leaks:
+  # (experimental) Percentage [0-100] of request or message buffers to
+  # instrument for reference leaks. Set to 0 to disable.
+  # CLI flag: -common.instrument-reference-leaks.percentage
+  [percentage: <float> | default = 0]
+
+  # (experimental) Period after a buffer instrumented for referenced leaks is
+  # nominally freed until the buffer is uninstrumented and effectively freed to
+  # be reused. After this period, any lingering references to the buffer may
+  # potentially be dereferenced again with no detection.
+  # CLI flag: -common.instrument-reference-leaks.before-reuse-period
+  [before_reuse_period: <duration> | default = 2m]
+
+  # (experimental) Maximum sum of length of buffers instrumented at any given
+  # time, in bytes. When surpassed, incoming buffers will not be instrumented,
+  # regardless of the configured percentage. Zero means no limit.
+  # CLI flag: -common.instrument-reference-leaks.max-inflight-instrumented-bytes
+  [max_inflight_instrumented_bytes: <int> | default = 0]
 ```
 
 ### server
@@ -1066,6 +1085,11 @@ reactive_limiter:
   # CLI flag: -distributor.reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -distributor.reactive-limiter.recent-window-min-duration
@@ -1510,6 +1534,11 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1572,6 +1601,11 @@ read_reactive_limiter:
   # requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
+
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -4157,6 +4191,16 @@ The `limits` block configures default and per-tenant limits imposed by component
 # CLI flag: -ingester.ignore-ooo-exemplars
 [ignore_ooo_exemplars: <boolean> | default = false]
 
+# (experimental) When the number of owned series for a tenant exceeds this
+# threshold, trigger early head compaction. 0 to disable.
+# CLI flag: -ingester.early-head-compaction-owned-series-threshold
+[early_head_compaction_owned_series_threshold: <int> | default = 0]
+
+# (experimental) Minimum estimated series reduction percentage (0-100) required
+# to trigger per-tenant early compaction.
+# CLI flag: -ingester.early-head-compaction-min-estimated-series-reduction-percentage
+[early_head_compaction_min_estimated_series_reduction_percentage: <int> | default = 15]
+
 # (experimental) Enable ingestion of native histogram samples. If false, native
 # histogram samples are ignored without an error. To query native histograms
 # with query-sharding enabled make sure to set
@@ -5156,6 +5200,11 @@ kafka:
   # 0.
   # CLI flag: -ingest-storage.kafka.ingestion-concurrency-estimated-bytes-per-sample
   [ingestion_concurrency_estimated_bytes_per_sample: <int> | default = 500]
+
+  # (experimental) When enabled, tenants with few timeseries use a simpler
+  # sequential pusher instead of parallel shards.
+  # CLI flag: -ingest-storage.kafka.ingestion-concurrency-sequential-pusher-enabled
+  [ingestion_concurrency_sequential_pusher_enabled: <boolean> | default = true]
 
 migration:
   # When both this option and ingest storage are enabled, distributors write to
@@ -6248,10 +6297,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
-
-# (experimental) Allow client creation even if initial DNS resolution fails.
-# CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
-[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### s3_storage_backend

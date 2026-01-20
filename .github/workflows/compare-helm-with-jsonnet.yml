@@ -51,7 +51,7 @@ jobs:
     - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
       with:
         persist-credentials: false
-    - uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
+    - uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
       with:
         go-version: ${{ needs.goversion.outputs.version }}
     - uses: helm/kind-action@92086f6be054225fa813e0a4b13787fc9088faab # v1.13.0

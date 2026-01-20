@@ -293,7 +293,10 @@ func (q *RequestQueue) running(ctx context.Context) error {
 }
 
 func (q *RequestQueue) dispatcherLoop() {
-	stopping := false
+	// The only way for this loop to exit is for a valid stop state to have been reached, or for it to have crashed.
+	defer close(q.stopCompleted)
+
+	isStopping := false
 
 	for {
 		needToDispatchQueries := false
@@ -301,7 +304,8 @@ func (q *RequestQueue) dispatcherLoop() {
 		select {
 		case <-q.stopRequested:
 			// Nothing much to do here - fall through to the stop logic below to see if we can stop immediately.
-			stopping = true
+			isStopping = true
+
 		case querierWorkerOp := <-q.querierWorkerOperations:
 			// Need to attempt to dispatch queries only if querier-worker operation results in a resharding
 			needToDispatchQueries = q.processQuerierWorkerOperation(querierWorkerOp)
@@ -336,31 +340,46 @@ func (q *RequestQueue) dispatcherLoop() {
 			}
 		}
 
-		// if we have received a signal to stop, we continue to dispatch queries until
-		// the queue is empty or until we have no more connected querier workers.
-		if stopping && (q.queueBroker.isEmpty() || q.connectedQuerierWorkers.Load() == 0) {
-			// tell any waiting querier connections that nothing is coming
-			currentElement := q.waitingDequeueRequestsToDispatch.Front()
+		if isStopping {
+			// We need to check both the inflight requests at the scheduler level, and the items remaining in the local queue
+			// to ensure that we do not terminate the querier and frontend connections before everything has been cleanly processed.
+			// If we exit while there are inflight requests, the queriers will receive a context cancellation and return an error to the frontend/user
+			// And if there are pending items in the queue that are not yet inflight, we still need to dispatch them to the queriers.
+			if q.queueBroker.itemCount() == 0 {
+				// If the queue is stopping and theres no connected query workers,
+				// we exit immediately because there is no way for (any) remaining queries to be processed
+				if q.connectedQuerierWorkers.Load() == 0 {
+					level.Info(q.log).Log("msg", "queue stop completed: query queue is empty and all workers have been disconnected")
+					return
+				}
 
-			for currentElement != nil {
-				waitingDequeueReq := currentElement.Value.(*QuerierWorkerDequeueRequest)
-				waitingDequeueReq.sendError(ErrStopped)
-				nextElement := currentElement.Next()
-				q.waitingDequeueRequestsToDispatchCount.Dec()
-				q.waitingDequeueRequestsToDispatch.Remove(currentElement)
-				currentElement = nextElement
+				// If the queue is stopping and theres no requests in the queue we cancel any remaining dequeue requests,
+				// which stops the query workers and exit the service
+				level.Info(q.log).Log("msg", "queue stop requested and all pending requests have been processed, disconnecting queriers")
+
+				currentElement := q.waitingDequeueRequestsToDispatch.Front()
+
+				for currentElement != nil {
+					waitingDequeueReq := currentElement.Value.(*QuerierWorkerDequeueRequest)
+					waitingDequeueReq.sendError(ErrStopped)
+
+					level.Debug(q.log).Log("msg", "cancelled dequeue request", "querier_id", waitingDequeueReq.QuerierID, "worker_id", waitingDequeueReq.WorkerID)
+
+					nextElement := currentElement.Next()
+					q.waitingDequeueRequestsToDispatchCount.Dec()
+					q.waitingDequeueRequestsToDispatch.Remove(currentElement)
+					currentElement = nextElement
+				}
+
+				// We are done.
+				level.Info(q.log).Log("msg", "queue stop completed: all query dequeue requests closed")
+				return
 			}
 
-			if !q.queueBroker.isEmpty() {
-				// All queriers have disconnected, but we still have requests in the queue.
-				// Without any consumers we have nothing to do but stop the RequestQueue.
-				// This should never happen, but if this does happen, we want to know about it.
-				level.Warn(q.log).Log("msg", "shutting down dispatcher loop: have no connected querier workers, but request queue is not empty, so these requests will be abandoned")
-			}
-
-			// We are done.
-			close(q.stopCompleted)
-			return
+			level.Debug(q.log).Log(
+				"msg", "queue is stopping but query queue is not empty, waiting for query workers to complete remaining requests",
+				"queued_requests", q.queueBroker.itemCount(),
+			)
 		}
 	}
 }
@@ -485,6 +504,8 @@ func (q *RequestQueue) AwaitRequestForQuerier(dequeueReq *QuerierWorkerDequeueRe
 			return reqForQuerier.queryRequest, reqForQuerier.lastTenantIndex, reqForQuerier.err
 		case <-dequeueReq.ctx.Done():
 			return nil, dequeueReq.lastTenantIndex, dequeueReq.ctx.Err()
+		case <-q.stopCompleted:
+			return nil, dequeueReq.lastTenantIndex, ErrStopped
 		}
 	case <-dequeueReq.ctx.Done():
 		return nil, dequeueReq.lastTenantIndex, dequeueReq.ctx.Err()
@@ -499,8 +520,8 @@ func (q *RequestQueue) stop(_ error) error {
 	// Reads from stopRequested tell dispatcherLoop to enter a stopping state where it tries to clear the queue.
 	// The loop needs to keep executing other select branches while stopping in order to clear the queue.
 	q.stopRequested <- struct{}{}
-	<-q.stopCompleted
 
+	<-q.stopCompleted
 	return nil
 }
 
@@ -609,6 +630,10 @@ func (q *RequestQueue) processUnregisterQuerierWorkerConn(conn *QuerierWorkerCon
 
 func (q *RequestQueue) processForgetDisconnectedQueriers() (resharded bool) {
 	return q.queueBroker.forgetDisconnectedQueriers(time.Now())
+}
+
+func (q *RequestQueue) IsEmpty() bool {
+	return q.queueBroker.isEmpty()
 }
 
 // TenantIndex is opaque type that allows to resume iteration over tenants

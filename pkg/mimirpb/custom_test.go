@@ -11,9 +11,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/encoding"
-	"google.golang.org/grpc/encoding/proto"
-	"google.golang.org/grpc/mem"
 
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -195,7 +192,7 @@ func TestIsFloatHistogram(t *testing.T) {
 }
 
 func TestCodecV2_Unmarshal(t *testing.T) {
-	c := codecV2{codec: fakeCodecV2{}}
+	c := codecV2{}
 
 	var origReq WriteRequest
 	data, err := c.Marshal(&origReq)
@@ -206,16 +203,8 @@ func TestCodecV2_Unmarshal(t *testing.T) {
 
 	require.True(t, origReq.Equal(req))
 
-	require.NotNil(t, req.buffer)
+	require.NotNil(t, req.Buffer())
 	req.FreeBuffer()
-}
-
-type fakeCodecV2 struct {
-	encoding.CodecV2
-}
-
-func (c fakeCodecV2) Marshal(v any) (mem.BufferSlice, error) {
-	return encoding.GetCodecV2(proto.Name).Marshal(v)
 }
 
 func TestHistogram_BucketsCount(t *testing.T) {

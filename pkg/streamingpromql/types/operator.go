@@ -33,6 +33,17 @@ type Operator interface {
 	// Prepare must only be called once.
 	Prepare(ctx context.Context, params *PrepareParams) error
 
+	// AfterPrepare is called after Prepare has returned successfully for all operators in an evaluation.
+	//
+	// It must be called before calling SeriesMetadata, NextSeries, NextStepSamples or Finalize.
+	// AfterPrepare must not call SeriesMetadata, NextSeries, NextStepSamples or Finalize on another operator, and is expected to call AfterPrepare on
+	// any nested operators.
+	// AfterPrepare must only be called once.
+	//
+	// Favour putting logic in Prepare over AfterPrepare where possible, AfterPrepare should generally only be used for logic that relies on
+	// Prepare having already been called on all operators (eg. operators that collect requests from other operators).
+	AfterPrepare(ctx context.Context) error
+
 	// Finalize performs any outstanding work required before the query result is considered complete.
 	// For example, any outstanding annotations should be emitted and query stats should be updated.
 	// It must be safe to call Finalize even if Prepare, SeriesMetadata, NextSeries, NextStepSamples or Finalize have not been called.

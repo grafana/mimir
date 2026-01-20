@@ -944,14 +944,14 @@ func getIndexedChunk(idx, samplesCount int, encoding chunkenc.Encoding) []byte {
 
 		switch encoding {
 		case chunkenc.EncXOR:
-			ap.Append(int64(j), float64(j))
+			ap.Append(0, int64(j), float64(j))
 		case chunkenc.EncHistogram:
-			_, _, _, err := ap.AppendHistogram(nil, int64(j), test.GenerateTestHistogram(j), true)
+			_, _, _, err := ap.AppendHistogram(nil, 0, int64(j), test.GenerateTestHistogram(j), true)
 			if err != nil {
 				panic(err)
 			}
 		case chunkenc.EncFloatHistogram:
-			_, _, _, err := ap.AppendFloatHistogram(nil, int64(j), test.GenerateTestFloatHistogram(j), true)
+			_, _, _, err := ap.AppendFloatHistogram(nil, 0, int64(j), test.GenerateTestFloatHistogram(j), true)
 			if err != nil {
 				panic(err)
 			}

@@ -247,6 +247,11 @@ func (e errorTranslateSampleIterator) AtT() int64 {
 	return e.i.AtT()
 }
 
+// TODO(krajorama): test when chunk format with ST becomes available.
+func (e errorTranslateSampleIterator) AtST() int64 {
+	return e.i.AtST()
+}
+
 func (e errorTranslateSampleIterator) Err() error {
 	return e.fn(e.i.Err())
 }

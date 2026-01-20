@@ -36,6 +36,10 @@ func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.Pre
 	return err
 }
 
+func (r *InstantVectorRemoteExec) AfterPrepare(ctx context.Context) error {
+	return nil
+}
+
 func (r *InstantVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {
 	return r.resp.GetSeriesMetadata(ctx)
 }

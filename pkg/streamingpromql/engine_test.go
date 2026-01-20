@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"io"
 	"io/fs"
 	"os"
@@ -44,8 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
-	operatormetrics2 "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
-	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -53,7 +53,10 @@ import (
 )
 
 var (
-	spanExporter = tracetest.NewInMemoryExporter()
+	// We use an in-memory span exporter since we test that things are instrumented
+	// correctly in unit tests, but it only retains a fixed number of spans to avoid
+	// using an excessive amount of memory.
+	spanExporter = mqetest.NewFixedInMemoryExporter(1024)
 )
 
 func init() {
@@ -177,7 +180,7 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 	prometheus := q.Exec(context.Background())
 	defer q.Close()
 
-	testutils.RequireEqualResults(t, expr, prometheus, mimir, false)
+	mqetest.RequireEqualResults(t, expr, prometheus, mimir, false)
 }
 
 // This test runs the test cases defined upstream in https://github.com/prometheus/prometheus/tree/main/promql/testdata and copied to testdata/upstream.
@@ -247,13 +250,17 @@ func TestOurTestCases(t *testing.T) {
 
 			testScript := string(b)
 
-			t.Run("Mimir's engine", func(t *testing.T) {
-				if strings.Contains(testFile, "name_label_dropping") {
-					promqltest.RunTest(t, testScript, mimirEngineWithDelayedNameRemoval)
-					return
-				}
+			mimirEngineToTest := mimirEngine
+			prometheusEngineToTest := prometheusEngine
 
-				promqltest.RunTest(t, testScript, mimirEngine)
+			// switch to the alternate engines if we need delayed name removal
+			if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
+				mimirEngineToTest = mimirEngineWithDelayedNameRemoval
+				prometheusEngineToTest = prometheusEngineWithDelayedNameRemoval
+			}
+
+			t.Run("Mimir's engine", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, mimirEngineToTest)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
@@ -262,12 +269,7 @@ func TestOurTestCases(t *testing.T) {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
 				}
 
-				if strings.Contains(testFile, "name_label_dropping") {
-					promqltest.RunTest(t, testScript, prometheusEngineWithDelayedNameRemoval)
-					return
-				}
-
-				promqltest.RunTest(t, testScript, prometheusEngine)
+				promqltest.RunTest(t, testScript, prometheusEngineToTest)
 			})
 		})
 	}
@@ -1339,7 +1341,7 @@ func TestSubqueries(t *testing.T) {
 				require.NoError(t, err)
 
 				res := qry.Exec(context.Background())
-				testutils.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
+				mqetest.RequireEqualResults(t, testCase.Query, &testCase.Result, res, false)
 				qry.Close()
 			}
 
@@ -2202,12 +2204,32 @@ func (t *timeoutTestingQueryTracker) Close() error {
 }
 
 type annotationTestCase struct {
-	data                               string
-	expr                               string
-	expectedWarningAnnotations         []string
-	expectedInfoAnnotations            []string
+	data                       string
+	expr                       string
+	expectedWarningAnnotations []string
+	expectedInfoAnnotations    []string
+
+	// an alternate set of annotations for when delayed name removal is enabled.
+	// if not set the test will fall back to expectedWarningAnnotations / expectedInfoAnnotations
+	expectedWarningAnnotationsDelayedNameRemovalEnabled []string
+	expectedInfoAnnotationsDelayedNameRemovalEnabled    []string
+
 	skipComparisonWithPrometheusReason string
 	instantEvaluationTimestamp         *time.Time
+}
+
+func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedInfoAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedInfoAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedInfoAnnotations
+}
+
+func (a annotationTestCase) getExpectedWarningAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedWarningAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedWarningAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedWarningAnnotations
 }
 
 func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
@@ -2215,19 +2237,36 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	step := time.Minute
 	endT := startT.Add(2 * step)
 
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
 	const prometheusEngineName = "Prometheus' engine"
-	engines := map[string]promql.QueryEngine{
-		"Mimir's engine": mimirEngine,
+	const mimirEngineName = "Mimir's engine"
 
-		// Compare against Prometheus' engine to verify our test cases are valid.
-		prometheusEngineName: prometheusEngine,
+	// create 2 sets of engines - a Mimir and Prometheus engine each with EnableDelayedNameRemoval=true and other with EnableDelayedNameRemoval=false
+	// there are some histogram annotation test cases which will emit a different warning/info annotation string depending on the delayed name removal setting
+	engineSets := make([]struct {
+		mimirEngine               promql.QueryEngine
+		prometheusEngine          promql.QueryEngine
+		delayedNameRemovalEnabled bool
+	}, 0, 2)
+
+	for _, delayedNameRemovalEnabled := range []bool{true, false} {
+		opts := NewTestEngineOpts()
+		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
+
+		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+		engineSets = append(engineSets, struct {
+			mimirEngine               promql.QueryEngine
+			prometheusEngine          promql.QueryEngine
+			delayedNameRemovalEnabled bool
+		}{
+			mimirEngine:               mimirEngine,
+			prometheusEngine:          prometheusEngine,
+			delayedNameRemovalEnabled: delayedNameRemovalEnabled,
+		})
 	}
 
 	for name, testCase := range testCases {
@@ -2251,36 +2290,43 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 			}
 
 			for queryType, generator := range queryTypes {
-				t.Run(queryType, func(t *testing.T) {
-					results := make([]*promql.Result, 0, 2)
+				for _, engineSet := range engineSets {
+					subTestName := fmt.Sprintf("%s - delayed name removal enabled=%t", queryType, engineSet.delayedNameRemovalEnabled)
+					t.Run(subTestName, func(t *testing.T) {
+						results := make([]*promql.Result, 0, 2)
 
-					for engineName, engine := range engines {
-						if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
-							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
-							continue
+						for _, engine := range []promql.QueryEngine{engineSet.mimirEngine, engineSet.prometheusEngine} {
+							if engine == engineSet.prometheusEngine && testCase.skipComparisonWithPrometheusReason != "" {
+								t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
+								continue
+							}
+							engineName := mimirEngineName
+							if engine == engineSet.prometheusEngine {
+								engineName = prometheusEngineName
+							}
+							t.Run(engineName, func(t *testing.T) {
+								query, err := generator(engine)
+								require.NoError(t, err)
+								t.Cleanup(query.Close)
+
+								res := query.Exec(context.Background())
+								require.NoError(t, res.Err)
+								results = append(results, res)
+
+								warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+								require.ElementsMatch(t, testCase.getExpectedWarningAnnotations(engineSet.delayedNameRemovalEnabled), warnings)
+								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(engineSet.delayedNameRemovalEnabled), infos)
+							})
 						}
-						t.Run(engineName, func(t *testing.T) {
-							query, err := generator(engine)
-							require.NoError(t, err)
-							t.Cleanup(query.Close)
 
-							res := query.Exec(context.Background())
-							require.NoError(t, res.Err)
-							results = append(results, res)
-
-							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
-							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
-						})
-					}
-
-					// If both results are available, compare them (sometimes we skip prometheus)
-					if len(results) == 2 {
-						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
-						// or vice-versa where no result may be expected etc.
-						testutils.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
-					}
-				})
+						// If both results are available, compare them (sometimes we skip prometheus)
+						if len(results) == 2 {
+							// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
+							// or vice-versa where no result may be expected etc.
+							mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+						}
+					})
+				}
 			}
 		})
 	}
@@ -3142,6 +3188,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="c"})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" for metric name "series" (1:25)`},
 		},
 		"invalid quantile warning": {
 			data:                       mixedClassicHistograms,
@@ -3152,17 +3199,23 @@ func TestHistogramAnnotations(t *testing.T) {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="a"})`,
 			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)`},
 		},
 		"forced monotonicity info": {
 			data:                    mixedClassicHistograms,
 			expr:                    `histogram_quantile(0.5, series{host="d"})`,
 			expectedInfoAnnotations: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabled: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
 			expr: `histogram_quantile(9, series{host="a"})`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of classic and native histograms (1:23)`,
+				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
+			},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{
+				`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:23)`,
 				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
 			},
 		},
@@ -3177,6 +3230,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
 		},
 		"extra entry in series without le label": {
 			data: `
@@ -3185,6 +3239,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
 		},
 	}
 
@@ -3304,7 +3359,7 @@ func runMixedMetricsTests(t *testing.T, expressions []string, pointsPerSeries in
 			mimirQuery, err := mimirEngine.NewRangeQuery(context.Background(), storage, nil, expr, start, end, tr.interval)
 			require.NoError(t, err)
 			mimirResults := mimirQuery.Exec(context.Background())
-			testutils.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
+			mqetest.RequireEqualResults(t, expr, prometheusResults, mimirResults, skipAnnotationComparison)
 
 			prometheusQuery.Close()
 			mimirQuery.Close()
@@ -3318,9 +3373,9 @@ func TestCompareVariousMixedMetricsFunctions(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
 
 	expressions := []string{}
 
@@ -3349,8 +3404,8 @@ func TestCompareVariousMixedMetricsBinaryOperations(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(false)
 
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e" etc)
-	labelCombinations := testutils.Combinations(labelsToUse, 2)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
+	labelCombinations := mqetest.Combinations(labelsToUse, 2)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 3)...)
 
 	expressions := []string{}
 
@@ -3405,10 +3460,10 @@ func TestCompareVariousMixedMetricsAggregations(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 and 3 labels. (e.g., "a,b", "e,f", "c,d,e", "a,b,c,d", "c,d,e,f" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 3)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 3)...)
 
 	expressions := []string{}
 
@@ -3436,7 +3491,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 	expressions := []string{}
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 
 	// We tried to have this test with 2 labels, but it was failing due to the inconsistent ordering of prometheus processing matchers that result in multiples series, e.g series{label=~"(c|e)"}.
 	// Prometheus might process series c first or e first which will trigger different validation errors for second and third parameter of double_exponential_smoothing.
@@ -3447,7 +3502,7 @@ func TestCompareVariousMixedMetricsVectorSelectors(t *testing.T) {
 	}
 
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f" etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
 
 	for _, labels := range labelCombinations {
 		labelRegex := strings.Join(labels, "|")
@@ -3472,9 +3527,9 @@ func TestCompareVariousMixedMetricsComparisonOps(t *testing.T) {
 	labelsToUse, pointsPerSeries, seriesData := getMixedMetricsForTests(true)
 
 	// Test each label individually to catch edge cases in with single series
-	labelCombinations := testutils.Combinations(labelsToUse, 1)
+	labelCombinations := mqetest.Combinations(labelsToUse, 1)
 	// Generate combinations of 2 labels. (e.g., "a,b", "e,f", etc)
-	labelCombinations = append(labelCombinations, testutils.Combinations(labelsToUse, 2)...)
+	labelCombinations = append(labelCombinations, mqetest.Combinations(labelsToUse, 2)...)
 
 	expressions := []string{}
 
@@ -4260,7 +4315,7 @@ func TestEagerLoadSelectors(t *testing.T) {
 			require.NoError(t, eagerLoadingResult.Err)
 			defer q.Close()
 
-			testutils.RequireEqualResults(t, expr, baselineResult, eagerLoadingResult, false)
+			mqetest.RequireEqualResults(t, expr, baselineResult, eagerLoadingResult, false)
 			require.True(t, synchronisingStorage.sawExpectedSelectCalls)
 		})
 	}
@@ -4368,7 +4423,7 @@ func TestInstantQueryDurationExpression(t *testing.T) {
 	require.NoError(t, mimirResult.Err)
 	t.Cleanup(mimirQuery.Close)
 
-	testutils.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
+	mqetest.RequireEqualResults(t, expr, prometheusResult, mimirResult, false)
 }
 
 func TestEngine_RegisterNodeMaterializer(t *testing.T) {
@@ -4892,7 +4947,7 @@ func TestStepInvariantMetricsTracker(t *testing.T) {
 	for _, tc := range tc {
 		t.Run(tc.query, func(t *testing.T) {
 
-			tracker := operatormetrics2.NewMetricsTracker(prometheus.NewRegistry())
+			tracker := planningmetrics.NewMetricsTracker(prometheus.NewRegistry())
 
 			opts := NewTestEngineOpts()
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())

@@ -30,7 +30,7 @@ func init() {
 }
 
 type Symbols struct {
-	factory *streamencoding.DecbufFactory
+	factory streamencoding.DecbufFactory
 
 	version     int
 	tableOffset int
@@ -42,7 +42,7 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbolsFromSparseHeader reads from sparse index header and returns a Symbols object for symbol lookups.
-func NewSymbolsFromSparseHeader(factory *streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
+func NewSymbolsFromSparseHeader(factory streamencoding.DecbufFactory, symbols *indexheaderpb.Symbols, version int, offset int) (s *Symbols, err error) {
 	s = &Symbols{
 		factory:     factory,
 		version:     version,
@@ -77,7 +77,7 @@ func (s *Symbols) NewSparseSymbol() (sparse *indexheaderpb.Symbols) {
 }
 
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
+func NewSymbols(factory streamencoding.DecbufFactory, version, offset int, doChecksum bool) (s *Symbols, err error) {
 	var d streamencoding.Decbuf
 	if doChecksum {
 		d = factory.NewDecbufAtChecked(offset, castagnoliTable)
@@ -100,7 +100,7 @@ func NewSymbols(factory *streamencoding.DecbufFactory, version, offset int, doCh
 	s.offsets = make([]int, 0, 1+cnt/symbolFactor)
 	for d.Err() == nil && s.seen < cnt {
 		if s.seen%symbolFactor == 0 {
-			s.offsets = append(s.offsets, d.Position())
+			s.offsets = append(s.offsets, d.Offset())
 		}
 		d.SkipUvarintBytes() // The symbol.
 		s.seen++
@@ -215,7 +215,7 @@ func (s *Symbols) reverseLookup(sym string, d streamencoding.Decbuf) (uint32, er
 	var lastPosition int
 	var lastSymbol string
 	for d.Err() == nil && res <= s.seen {
-		lastPosition = d.Position()
+		lastPosition = d.Offset()
 		lastSymbol = yoloString(d.UnsafeUvarintBytes())
 		if lastSymbol >= sym {
 			break

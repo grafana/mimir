@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
@@ -91,7 +92,9 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), s))
 	t.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), s)
+		if s.State() != services.Terminated { // Check if we're not already terminated to allow tests to stop it themselves
+			_ = services.StopAndAwaitTerminated(context.Background(), s)
+		}
 	})
 
 	l, err := net.Listen("tcp", "localhost:0")
@@ -114,6 +117,63 @@ func setupScheduler(t *testing.T, reg prometheus.Registerer) (*Scheduler, schedu
 	})
 
 	return s, schedulerpb.NewSchedulerForFrontendClient(c), schedulerpb.NewSchedulerForQuerierClient(c)
+}
+
+// This function drains the schedulers inflight, and drains the requestQueue's tree.
+// It is only intended for use where you don't actually care about the requests and just need them emptied, and you
+// don't care about consistency or waiting for a proper cancellation return.
+func drainScheduler(t *testing.T, s *Scheduler) {
+	s.inflightRequestsMu.Lock()
+	defer s.inflightRequestsMu.Unlock()
+
+	for key := range s.schedulerInflightRequests {
+		req := s.schedulerInflightRequests[key]
+		if req != nil {
+			req.CancelFunc(cancellation.NewError(errors.New("draining")))
+		}
+
+		delete(s.schedulerInflightRequests, key)
+		s.schedulerInflightRequestCount.Store(int64(len(s.schedulerInflightRequests)))
+	}
+
+	lastTenantIndex := queue.FirstTenant()
+	querierID := "emptying-consumer"
+
+	querierWorkerConn := queue.NewUnregisteredQuerierWorkerConn(context.Background(), querierID)
+	require.NoError(t, s.requestQueue.AwaitRegisterQuerierWorkerConn(querierWorkerConn))
+	defer s.requestQueue.SubmitUnregisterQuerierWorkerConn(querierWorkerConn)
+
+	consumer := func(request queue.QueryRequest) error {
+		return nil
+	}
+
+	for {
+		if s.requestQueue.IsEmpty() {
+			return
+		}
+
+		idx, err := queueConsume(s.requestQueue, querierWorkerConn, lastTenantIndex, consumer)
+		require.NoError(t, err)
+		lastTenantIndex = idx
+	}
+}
+
+type consumeRequest func(request queue.QueryRequest) error
+
+func queueConsume(
+	q *queue.RequestQueue, querierWorkerConn *queue.QuerierWorkerConn, lastTenantIdx queue.TenantIndex, consumeFunc consumeRequest,
+) (queue.TenantIndex, error) {
+	dequeueReq := queue.NewQuerierWorkerDequeueRequest(querierWorkerConn, lastTenantIdx)
+	request, idx, err := q.AwaitRequestForQuerier(dequeueReq)
+	if err != nil {
+		return lastTenantIdx, err
+	}
+	lastTenantIdx = idx
+
+	if consumeFunc != nil {
+		err = consumeFunc(request)
+	}
+	return lastTenantIdx, err
 }
 
 func TestSchedulerBasicEnqueue_HTTPPayload(t *testing.T) {
@@ -315,6 +375,10 @@ func TestCancelRequestInProgress_QuerierFinishesBeforeObservingCancellation(t *t
 func TestCancelRequestInProgress_QuerierObservesCancellation(t *testing.T) {
 	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
 
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
@@ -366,6 +430,12 @@ func TestTracingContext(t *testing.T) {
 
 	scheduler.inflightRequestsMu.Lock()
 	defer scheduler.inflightRequestsMu.Unlock()
+
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
 	require.Equal(t, 1, len(scheduler.schedulerInflightRequests))
 
 	for _, r := range scheduler.schedulerInflightRequests {
@@ -418,6 +488,7 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	_, err = querierLoop.Recv()
 	require.NoError(t, err)
 
+	drainScheduler(t, scheduler)
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
 	// Unblock scheduler loop, to find next request.
@@ -429,8 +500,71 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestSchedulerShutdown_PendingRequests(t *testing.T) {
+	scheduler, frontendClient, querierClient := setupScheduler(t, nil)
+
+	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 1,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.ENQUEUE,
+		QueryID: 2,
+		UserID:  "test",
+		Payload: &schedulerpb.FrontendToScheduler_HttpRequest{HttpRequest: &httpgrpc.HTTPRequest{Method: "GET", Url: "/hello"}},
+	})
+
+	// Scheduler now has 2 queries. Let's connect querier and fetch it.
+	querierLoop, err := querierClient.QuerierLoop(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, querierLoop.Send(&schedulerpb.QuerierToScheduler{QuerierID: "querier-1"}))
+
+	// Dequeue first query.
+	req, err := querierLoop.Recv()
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), req.QueryID)
+
+	// Stop the scheduler which shouldn't exit immediately
+	scheduler.StopAsync()
+
+	// Unblock scheduler loop, to find next request.
+	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
+	require.NoError(t, err)
+
+	// This should return the second query
+	req, err = querierLoop.Recv()
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), req.QueryID)
+
+	// The queue is empty and there's no inflight requests
+	require.Equal(t, true, scheduler.requestQueue.IsEmpty())
+
+	// This should error because the queue is stopped (we can't check the error exactly because its wrapped by grpc)
+	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
+	require.NoError(t, err)
+	_, err = querierLoop.Recv()
+	require.Error(t, err)
+
+	// Ensure the scheduler correctly terminates after the queue is empty and all inflight requests have been returned
+	require.NoError(t, scheduler.AwaitTerminated(context.Background()))
+}
+
+// Really silly short test to catch potential flakiness in the shutdown routines (such as deadlocks in channel select).
+func TestSchedulerShutdown_Empty(t *testing.T) {
+	scheduler, _, _ := setupScheduler(t, nil)
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+}
+
 func TestSchedulerMaxOutstandingRequests(t *testing.T) {
-	_, frontendClient, _ := setupScheduler(t, nil)
+	scheduler, frontendClient, _ := setupScheduler(t, nil)
+
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
 
 	for i := 0; i < testMaxOutstandingPerTenant; i++ {
 		// coming from different frontends
@@ -574,6 +708,11 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 	scheduler, frontendClient, _ := setupScheduler(t, reg)
 
+	t.Cleanup(func() {
+		drainScheduler(t, scheduler)
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
+
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{
 		Type:    schedulerpb.ENQUEUE,
@@ -606,7 +745,11 @@ func TestSchedulerQueueMetrics(t *testing.T) {
 
 func TestSchedulerQuerierMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	_, frontendClient, querierClient := setupScheduler(t, reg)
+	scheduler, frontendClient, querierClient := setupScheduler(t, reg)
+
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
+	})
 
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 	frontendToScheduler(t, frontendLoop, &schedulerpb.FrontendToScheduler{

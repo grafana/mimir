@@ -2,6 +2,55 @@ local utils = import 'mixin-utils/utils.libsonnet';
 local filename = 'mimir-queries.json';
 
 (import 'dashboard-utils.libsonnet') {
+  local queryMemoryConsumptionPanel(display_name, job_name) =
+    $.heatmapPanel('Estimated per-query memory consumption') +
+    $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher, %s}[$__rate_interval]))' % $.jobMatcher(job_name), 'Estimated memory consumption') +
+    {
+      options+: {
+        legend+: {
+          show: false,
+        },
+        tooltip+: {
+          yHistogram: true,
+        },
+        cellValues+: {
+          unit: 'reqps',
+        },
+        yAxis+: {
+          min: 0,
+          unit: 'bytes',
+        },
+        cellGap: 0,
+        calculation+: {
+          xBuckets: {
+            mode: 'count',
+            value: 60,
+          },
+          yBuckets: {
+            mode: 'count',
+            value: 40,
+          },
+        },
+      },
+    } +
+    $.panelDescription(
+      'Estimated per-query memory consumption',
+      |||
+        The esimated memory consumption of all queries evaluated by %ss. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
+      ||| % display_name
+    ),
+
+  local mqeFallbackPanel(display_name, job_name) =
+    $.timeseriesPanel("Fallback to Prometheus' query engine") +
+    $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher, %s}[$__rate_interval])) or vector(0)' % $.jobMatcher(job_name), 'Queries') +
+    { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
+    $.panelDescription(
+      "Fallback to Prometheus' query engine",
+      |||
+        The rate of queries that fell back to Prometheus' query engine in %ss. Only applicable if the Mimir query engine (MQE) is enabled.
+      ||| % display_name
+    ),
+
   [filename]:
     assert std.md5(filename) == 'b3abe8d5c040395cc36615cb4334c92d' : 'UID of the dashboard has changed, please update references to dashboard.';
     ($.dashboard('Queries') + { uid: std.md5(filename) })
@@ -268,6 +317,11 @@ local filename = 'mimir-queries.json';
       )
     )
     .addRow(
+      $.row('Query-frontend - query engine')
+      .addPanel(queryMemoryConsumptionPanel('query-frontend', $._config.job_names.query_frontend))
+      .addPanel(mqeFallbackPanel('query-frontend', $._config.job_names.query_frontend))
+    )
+    .addRow(
       $.row('Ingester')
       .addPanel(
         $.timeseriesPanel('Series per query') +
@@ -388,55 +442,8 @@ local filename = 'mimir-queries.json';
           |||
         ),
       )
-      .addPanel(
-        $.heatmapPanel('Estimated per-query memory consumption') +
-        $.queryPanel('sum(rate(cortex_mimir_query_engine_estimated_query_peak_memory_consumption{$read_path_matcher}[$__rate_interval]))', 'Estimated memory consumption') +
-        {
-          options+: {
-            legend+: {
-              show: false,
-            },
-            tooltip+: {
-              yHistogram: true,
-            },
-            cellValues+: {
-              unit: 'reqps',
-            },
-            yAxis+: {
-              min: 0,
-              unit: 'bytes',
-            },
-            cellGap: 0,
-            calculation+: {
-              xBuckets: {
-                mode: 'count',
-                value: 60,
-              },
-              yBuckets: {
-                mode: 'count',
-                value: 40,
-              },
-            },
-          },
-        } +
-        $.panelDescription(
-          'Estimated per-query memory consumption',
-          |||
-            The esimated memory consumption of all queries evaluated by queriers. Only applicable if the Mimir query engine (MQE) is enabled and the query was evaluated with MQE.
-          |||
-        ),
-      )
-      .addPanel(
-        $.timeseriesPanel("Fallback to Prometheus' query engine") +
-        $.queryPanel('sum(rate(cortex_mimir_query_engine_unsupported_queries_total{$read_path_matcher}[$__rate_interval])) or vector(0)', 'Queries') +
-        { fieldConfig+: { defaults+: { unit: 'reqps' } } } +
-        $.panelDescription(
-          "Fallback to Prometheus' query engine",
-          |||
-            The rate of queries that fell back to Prometheus' query engine in queriers. Only applicable if the Mimir query engine (MQE) is enabled.
-          |||
-        ),
-      )
+      .addPanel(queryMemoryConsumptionPanel('querier', $._config.job_names.querier))
+      .addPanel(mqeFallbackPanel('querier', $._config.job_names.querier))
     )
     .addRow(
       $.row('')

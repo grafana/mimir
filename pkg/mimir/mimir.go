@@ -353,6 +353,9 @@ func (c *Config) Validate(log log.Logger) error {
 	if err := c.OverridesExporter.Validate(); err != nil {
 		return errors.Wrap(err, "invalid overrides-exporter config")
 	}
+	if err := c.Common.InstrumentRefLeaks.Validate(); err != nil {
+		return errors.Wrap(err, "invalid instrument-ref-leaks config")
+	}
 
 	// validate the default limits
 	if err := c.ValidateLimits(&c.LimitsConfig); err != nil {
@@ -713,11 +716,16 @@ func UnmarshalCommonYAML(value *yaml.Node, inheriters ...CommonConfigInheriter) 
 		for name, loc := range inheritance.ClientClusterValidation {
 			specificClusterValidationLocations[name] = loc
 		}
+		specificInstrumentRefLeaksLocations := specificLocationsUnmarshaler{}
+		for name, loc := range inheritance.InstrumentRefLeaksConfig {
+			specificInstrumentRefLeaksLocations[name] = loc
+		}
 
 		common := configWithCustomCommonUnmarshaler{
 			Common: &commonConfigUnmarshaler{
 				Storage:                 &specificStorageLocations,
 				ClientClusterValidation: &specificClusterValidationLocations,
+				InstrumentRefLeaks:      &specificInstrumentRefLeaksLocations,
 			},
 		}
 
@@ -787,17 +795,20 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
+	InstrumentRefLeaks      mimirpb.InstrumentRefLeaksConfig    `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
-	Storage                 map[string]*bucket.StorageBackendConfig
-	ClientClusterValidation map[string]*clusterutil.ClusterValidationConfig
+	Storage                  map[string]*bucket.StorageBackendConfig
+	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
+	InstrumentRefLeaksConfig map[string]*mimirpb.InstrumentRefLeaksConfig
 }
 
 // RegisterFlags registers flag.
 func (c *CommonConfig) RegisterFlags(f *flag.FlagSet) {
 	c.Storage.RegisterFlagsWithPrefix("common.storage.", f)
 	c.ClientClusterValidation.RegisterFlagsWithPrefix("common.client-cluster-validation.", f)
+	c.InstrumentRefLeaks.RegisterFlagsWithPrefix("common.instrument-reference-leaks.", f)
 }
 
 // configWithCustomCommonUnmarshaler unmarshals config with custom unmarshaler for the `common` field.
@@ -814,6 +825,7 @@ type configWithCustomCommonUnmarshaler struct {
 type commonConfigUnmarshaler struct {
 	Storage                 *specificLocationsUnmarshaler `yaml:"storage"`
 	ClientClusterValidation *specificLocationsUnmarshaler `yaml:"client_cluster_validation"`
+	InstrumentRefLeaks      *specificLocationsUnmarshaler `yaml:"instrument_ref_leaks"`
 }
 
 // specificLocationsUnmarshaler will unmarshal yaml into specific locations.
@@ -908,6 +920,14 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 	}
 
 	setUpGoRuntimeMetrics(cfg, reg)
+
+	mimirpb.CustomCodecConfig{
+		InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{
+			Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
+			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
+			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
+		},
+	}.RegisterGlobally(reg)
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")

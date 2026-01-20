@@ -47,7 +47,7 @@ func NewGenericOffsetReader[O any](fetchLastProducedOffset func(context.Context)
 	}
 
 	// Run the poll interval once at startup so we can cache the offset.
-	p.Service = services.NewTimerService(pollInterval, p.onPollInterval, p.onPollInterval, p.stopping)
+	p.Service = services.NewTimerService(pollInterval, p.onPollInterval, p.onPollInterval, p.stopping).WithName("partition-offset-reader")
 
 	return p
 }

@@ -104,13 +104,19 @@ The duration in `NativeHistogramMinResetDuration`/`nativeResetDuration` prohibit
 
 Use Prometheus version 3.00 or later.
 
-1. To enable scraping native histograms from the application, you need to enable the native histograms feature via a feature flag on the command line:
+1. To enable scraping native histograms from the application, set `scrape_native_histograms` to `true` in your scrape jobs. For example:
 
-   ```bash
-   prometheus --enable-feature=native-histograms
+   ```yaml
+   scrape_configs:
+     - job_name: myapp
+       scrape_native_histograms: true
    ```
 
-   This flag makes Prometheus detect and scrape [native histograms with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets) over the `PrometheusProto` scrape protocol and ignore the classic histogram version of metrics that have native histograms defined as well. Classic histograms without native histogram definitions are not affected.
+   {{< admonition type="note" >}}
+   In Prometheus versions 3.8 and earlier, you need to enable the native histograms feature via the command-line flag `--enable-feature=native-histograms`. Starting with Prometheus 3.9, this feature flag is a no-op and the `scrape_native_histograms` config option must be used instead.
+   {{< /admonition >}}
+
+   This setting makes Prometheus detect and scrape [native histograms with exponential buckets](https://grafana.com/docs/mimir/<MIMIR_VERSION>/send/native-histograms/_exponential_buckets) over the `PrometheusProto` scrape protocol and ignore the classic histogram version of metrics that have native histograms defined as well. Classic histograms without native histogram definitions are not affected.
 
    {{< admonition type="note" >}}
    <!-- Issue: https://github.com/prometheus/prometheus/issues/11265 -->

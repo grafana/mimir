@@ -44,12 +44,13 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		shuffleShardSize  int
-		multiMatchers     [][]*labels.Matcher
-		maxSeriesPerQuery int
-		expectedResult    []mimirpb.TimeSeries
-		expectedIngesters int
-		expectedErr       error
+		shuffleShardSize        int
+		shuffleShardingDisabled bool
+		multiMatchers           [][]*labels.Matcher
+		maxSeriesPerQuery       int
+		expectedResult          []mimirpb.TimeSeries
+		expectedIngesters       int
+		expectedErr             error
 	}{
 		"should return an empty response if no series match": {
 			multiMatchers: [][]*labels.Matcher{
@@ -88,6 +89,18 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 			shuffleShardSize:  3,
 			expectedIngesters: 3,
 		},
+		"should query all ingesters when shuffle sharding is disabled": {
+			multiMatchers: [][]*labels.Matcher{
+				{mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "series_1")},
+			},
+			expectedResult: []mimirpb.TimeSeries{
+				{Labels: fixtures[0].Labels, Exemplars: fixtures[0].Exemplars},
+				{Labels: fixtures[1].Labels, Exemplars: fixtures[1].Exemplars},
+			},
+			shuffleShardSize:        3,
+			shuffleShardingDisabled: true,
+			expectedIngesters:       numIngesters,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -107,6 +120,12 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 					// Enable exemplars ingestion.
 					testConfig.limits.MaxGlobalExemplarsPerUser = 1000
+
+					testConfig.configure = func(config *Config) {
+						if testData.shuffleShardingDisabled {
+							config.ShuffleShardingLookbackPeriod = 0
+						}
+					}
 
 					if ingestStorageEnabled {
 						testConfig.ingestStorageEnabled = true

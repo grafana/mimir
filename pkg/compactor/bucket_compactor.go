@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
@@ -841,6 +842,7 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion prometheus.Counter, reg p
 	}
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.OutOfOrderChunksNoCompactReason).Add(0)
 	bcm.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason).Add(0)
+	bcm.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason).Add(0)
 
 	return bcm
 }
@@ -1038,6 +1040,48 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 							c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
 						)
 						if err == nil {
+							mtx.Lock()
+							finishedAllJobs = false
+							mtx.Unlock()
+							continue
+						}
+					}
+
+					// Handle postings offset table size errors by marking all input blocks as no-compact.
+					// This error indicates the blocks have extremely high label cardinality and cannot be
+					// compacted together without exceeding the 4GB offset table size limit.
+					if errors.Is(err, index.ErrPostingsOffsetTableTooLarge) && c.skipUnhealthyBlocks {
+						blockIDs := g.IDs()
+						level.Warn(c.logger).Log(
+							"msg", "compaction failed due to postings offset table size limit; marking input blocks as no-compact",
+							"groupKey", g.Key(),
+							"block_count", len(blockIDs),
+							"blocks", fmt.Sprintf("%v", blockIDs),
+							"err", err,
+						)
+
+						allMarked := true
+						for _, blockID := range blockIDs {
+							markErr := block.MarkForNoCompact(
+								ctx,
+								c.logger,
+								c.bkt,
+								blockID,
+								block.PostingsOffsetTableTooLargeNoCompactReason,
+								"PostingsOffsetTableTooLarge: marking input block as no compact to unblock compaction",
+								c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason),
+							)
+							if markErr != nil {
+								level.Error(c.logger).Log(
+									"msg", "failed to mark block as no-compact after postings offset table size error",
+									"block", blockID,
+									"err", markErr,
+								)
+								allMarked = false
+							}
+						}
+
+						if allMarked {
 							mtx.Lock()
 							finishedAllJobs = false
 							mtx.Unlock()
