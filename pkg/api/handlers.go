@@ -40,15 +40,17 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func newIndexPageContent() *IndexPageContent {
-	return &IndexPageContent{}
+func newIndexPageContent(pathPrefix string) *IndexPageContent {
+	return &IndexPageContent{
+		PathPrefix: pathPrefix,
+	}
 }
 
 // IndexPageContent is a map of sections to path -> description.
 type IndexPageContent struct {
-	mu sync.Mutex
-
-	elements []IndexPageLinkGroup
+	mu         sync.Mutex
+	PathPrefix string
+	elements   []IndexPageLinkGroup
 }
 
 type IndexPageLinkGroup struct {
@@ -76,6 +78,12 @@ const (
 func (pc *IndexPageContent) AddLinks(weight int, groupDesc string, links []IndexPageLink) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
+
+	for i := range links {
+		if strings.HasPrefix(links[i].Path, "/") {
+			links[i].Path = pc.PathPrefix + links[i].Path
+		}
+	}
 
 	// Append the links to the group if already existing.
 	for i, group := range pc.elements {

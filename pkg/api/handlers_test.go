@@ -17,7 +17,7 @@ import (
 )
 
 func TestIndexPageContent(t *testing.T) {
-	c := newIndexPageContent()
+	c := newIndexPageContent("")
 	c.AddLinks(defaultWeight, "Some group", []IndexPageLink{
 		{Desc: "Some link", Path: "store-gateway/ring"},
 		{Dangerous: true, Desc: "Boom!", Path: "store-gateway/boom"},
@@ -39,6 +39,18 @@ func TestIndexPageContent(t *testing.T) {
 	require.True(t, strings.Contains(resp.Body.String(), "store-gateway/ring"))
 	require.True(t, strings.Contains(resp.Body.String(), "store-gateway/boom"))
 	require.False(t, strings.Contains(resp.Body.String(), "compactor/ring"))
+}
+
+func TestPathPrefix(t *testing.T) {
+	c := newIndexPageContent("/mimir")
+	c.AddLinks(defaultWeight, "Some group", []IndexPageLink{
+		{Desc: "Some link", Path: "/config"},
+		{Desc: "Some link", Path: "runtime_config"},
+	})
+
+	require.Equal(t, "/mimir/config", c.elements[0].Links[0].Path)
+	require.Equal(t, "runtime_config", c.elements[0].Links[1].Path)
+
 }
 
 type diffConfigMock struct {

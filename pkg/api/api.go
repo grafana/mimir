@@ -113,7 +113,7 @@ func New(cfg Config, federationCfg tenantfederation.Config, serverCfg server.Con
 		server:         s,
 		logger:         logger,
 		sourceIPs:      sourceIPs,
-		indexPage:      newIndexPageContent(),
+		indexPage:      newIndexPageContent(serverCfg.PathPrefix),
 	}
 
 	// If no authentication middleware is present in the config, use the default authentication middleware.
