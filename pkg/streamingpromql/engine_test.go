@@ -4827,7 +4827,7 @@ func TestExtendedRangeSelectorsIrregular(t *testing.T) {
 	}
 }
 
-func TestStepInvariantMetricsTracker(t *testing.T) {
+func TestStepInvariantMetrics(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, `
 	load 1m
     	metric 0 1 2 3 4 5
@@ -4947,13 +4947,13 @@ func TestStepInvariantMetricsTracker(t *testing.T) {
 	for _, tc := range tc {
 		t.Run(tc.query, func(t *testing.T) {
 
-			tracker := planningmetrics.NewMetricsTracker(prometheus.NewRegistry())
+			registry := prometheus.NewRegistry()
 
 			opts := NewTestEngineOpts()
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			planner.planningMetricsTracker = planningmetrics.NewMetricsTracker(registry)
 			require.NoError(t, err)
 
-			planner.RegisterOperatorMetrics(tracker)
 			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)
 
@@ -4962,8 +4962,17 @@ func TestStepInvariantMetricsTracker(t *testing.T) {
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 
-			require.Equal(t, float64(tc.expectedNodes), testutil.ToFloat64(tracker.StepInvariantTracker.NodesCounter()))
-			require.Equal(t, float64(tc.expectedStepsSaved), testutil.ToFloat64(tracker.StepInvariantTracker.StepsCounter()))
+			metrics, err := registry.Gather()
+			require.NoError(t, err)
+			for _, m := range metrics {
+				if m.GetName() == "cortex_mimir_query_engine_step_invariant_nodes_total" {
+					require.Equal(t, float64(tc.expectedNodes), m.GetMetric()[0].Counter.GetValue())
+				} else if m.GetName() == "cortex_mimir_query_engine_step_invariant_steps_saved_total" {
+					require.Equal(t, float64(tc.expectedStepsSaved), m.GetMetric()[0].Counter.GetValue())
+				} else {
+					require.Fail(t, "unexpected metric name", m.GetName())
+				}
+			}
 
 			// Extra assertions to ensure we do not introduce bad test data
 			if tc.expectedNodes == 0 {

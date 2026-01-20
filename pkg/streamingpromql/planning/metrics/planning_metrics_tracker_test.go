@@ -12,7 +12,6 @@ import (
 
 func TestNewStepInvariantExpressionMetricsTrackerNodes(t *testing.T) {
 	tracker := NewMetricsTracker(prometheus.NewRegistry())
-	require.Same(t, tracker.StepInvariantTracker.nodes, tracker.StepInvariantTracker.NodesCounter())
 
 	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.nodes))
 	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.steps))
@@ -28,7 +27,6 @@ func TestNewStepInvariantExpressionMetricsTrackerNodes(t *testing.T) {
 
 func TestNewStepInvariantExpressionMetricsTrackerNodesNotEnoughSteps(t *testing.T) {
 	tracker := NewMetricsTracker(prometheus.NewRegistry())
-	require.Same(t, tracker.StepInvariantTracker.nodes, tracker.StepInvariantTracker.NodesCounter())
 
 	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.nodes))
 	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.steps))

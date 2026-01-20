@@ -148,12 +148,6 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 	}, nil
 }
 
-// RegisterOperatorMetrics replaces the planningMetricsTracker with the given tracker.
-// This is only needed for unit tests
-func (p *QueryPlanner) RegisterOperatorMetrics(tracker *planningmetrics.MetricsTracker) {
-	p.planningMetricsTracker = tracker
-}
-
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
 //
 // This method is not thread-safe and must not be called concurrently with any other method on this type.
