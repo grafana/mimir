@@ -44,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
-	planningmetrics "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -4950,9 +4949,10 @@ func TestStepInvariantMetrics(t *testing.T) {
 			registry := prometheus.NewRegistry()
 
 			opts := NewTestEngineOpts()
+			opts.CommonOpts.Reg = registry
+
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			planner.planningMetricsTracker = planningmetrics.NewMetricsTracker(registry)
 
 			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)
