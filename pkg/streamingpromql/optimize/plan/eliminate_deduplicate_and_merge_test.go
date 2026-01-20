@@ -1099,7 +1099,7 @@ func runTestCasesWithDelayedNameRemovalDisabled(t *testing.T, globPattern string
 	for _, testFile := range testFiles {
 		t.Run(testFile, func(t *testing.T) {
 			if strings.Contains(testFile, "name_label_dropping") {
-				t.Skip("name_label_dropping tests require delayed name removal to be enabled, but optimization pass requires it to be disabled")
+				t.Skip("name_label_dropping tests require delayed name removal to be enabled, but this test exercises the optimization pass with delayed name removal disabled")
 			}
 			if strings.Contains(testFile, "delayed_name_removal_enabled") {
 				t.Skip("delayed_name_removal_enabled tests require delayed name removal to be enabled, but this test exercises the optimization pass with delayed name removal disabled")
