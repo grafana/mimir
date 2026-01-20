@@ -494,7 +494,7 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	// Send a message to unblock the scheduler loop if it's still running, if it's already exited we'll get an io.EOF error
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
 	if err != nil {
-		require.ErrorIs(t, io.EOF, err)
+		require.ErrorIs(t, err, io.EOF)
 	}
 
 	// This should return with error, since scheduler has terminated.
