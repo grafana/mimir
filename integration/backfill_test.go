@@ -119,18 +119,15 @@ overrides:
 
 		// Upload block using mimirtool, should work since upload is enabled for user.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
-		block1Line := findLineContaining(t, output, fmt.Sprintf("block=%s", block1))
-		require.Contains(t, block1Line, "msg=\"block uploaded successfully\"")
+		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block1))
 		require.NoError(t, err)
 	}
 
 	{
 		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problems.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1, block2)
-		block1Line := findLineContaining(t, output, fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
-		require.Contains(t, block1Line, "msg=\"block already exists on the server\"")
-		block2Line := findLineContaining(t, output, fmt.Sprintf("block=%s", block2))
-		require.Contains(t, block2Line, "msg=\"block uploaded successfully\"")
+		requireLineContaining(t, output, "msg=\"block already exists on the server\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
+		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block2))
 
 		// If blocks exist, it's not an error.
 		require.NoError(t, err)
@@ -166,8 +163,7 @@ overrides:
 		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
 
 		output, err := runMimirtoolBackfill(tmpDir, compactor, b)
-		blockLine := findLineContaining(t, output, fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, b.String())))
-		require.Contains(t, blockLine, "msg=\"failed uploading block\"")
+		requireLineContaining(t, output, "msg=\"failed uploading block\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, b.String())))
 		require.Error(t, err)
 	}
 
@@ -412,15 +408,17 @@ func TestRateLimitedReader(t *testing.T) {
 	require.InDelta(t, elapsed.Seconds(), (dataLen-dataRate)/dataRate, 1)
 }
 
-// findLineContaining finds the first line in the output that contains the given substring.
-// It fails the test if no line contains the substring.
-func findLineContaining(t *testing.T, output, substr string) string {
+// requireLineContaining requires that some line in the output contains all the given substrings.
+func requireLineContaining(t *testing.T, output string, substrs ...string) {
 	lines := strings.Split(output, "\n")
+linesLoop:
 	for _, line := range lines {
-		if strings.Contains(line, substr) {
-			return line
+		for _, substr := range substrs {
+			if !strings.Contains(line, substr) {
+				continue linesLoop
+			}
 		}
+		return
 	}
-	require.FailNow(t, "line not found", "no line in output contains: %s", substr)
-	return ""
+	require.FailNow(t, "line not found", "no line in output contains all of: %q", substrs)
 }
