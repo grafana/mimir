@@ -194,7 +194,7 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 	}
 
 	// Clone the step data, so that the inner operator can mutate the ring buffer on the next NextStepSamples call.
-	clonedData, err := cloneStepData(stepData, b.MemoryConsumptionTracker)
+	clonedData, err := cloneStepData(stepData)
 	if err != nil {
 		return nil, err
 	}
@@ -293,18 +293,14 @@ type bufferedRangeVectorStepData struct {
 	histogramBuffer *types.HPointRingBuffer
 }
 
-func cloneStepData(stepData *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (bufferedRangeVectorStepData, error) {
+func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStepData, error) {
 	buffered := bufferedRangeVectorStepData{
 		stepData: &types.RangeVectorStepData{
-			StepT:                        stepData.StepT,
-			RangeStart:                   stepData.RangeStart,
-			RangeEnd:                     stepData.RangeEnd,
-			Smoothed:                     stepData.Smoothed,
-			Anchored:                     stepData.Anchored,
-			SmoothedBasisForTailPointSet: stepData.SmoothedBasisForTailPointSet,
-			SmoothedBasisForHeadPointSet: stepData.SmoothedBasisForHeadPointSet,
-			SmoothedBasisForTailPoint:    stepData.SmoothedBasisForTailPoint,
-			SmoothedBasisForHeadPoint:    stepData.SmoothedBasisForHeadPoint,
+			StepT:      stepData.StepT,
+			RangeStart: stepData.RangeStart,
+			RangeEnd:   stepData.RangeEnd,
+			Smoothed:   stepData.Smoothed,
+			Anchored:   stepData.Anchored,
 		},
 	}
 

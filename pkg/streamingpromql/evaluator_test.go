@@ -84,7 +84,7 @@ func TestEvaluator(t *testing.T) {
 		Range:                    rangeVectorNode.Range,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
 	}
-	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker, stats, false, false)
+	rangeVectorOperator := selectors.NewRangeVectorSelector(rangeVectorSelector, memoryConsumptionTracker, stats)
 
 	nodeRequests := []NodeEvaluationRequest{
 		{

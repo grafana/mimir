@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/functions.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package streamingpromql
 
@@ -541,6 +544,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				if !supported {
 					return nil, ErrSmoothedIncompatibleFunction{functionName: expr.Func.Name}
 				}
+				// We only need to calculate the counter-aware interpolated smoothed points if the outer function is rate or increase.
+				// The delta function does not require the counter adjusted points.
+				// See Prometheus function.go - funcDelta(), funcRate(), funcIncrease() - only rate and increase set isCounter=true
+				matrixSelector.CounterAware = expr.Func.Name == "rate" || expr.Func.Name == "increase"
 			}
 
 			args = append(args, node)

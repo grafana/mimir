@@ -159,6 +159,7 @@ message MatrixSelectorDetails {
   bool skipHistogramBuckets = 6;
   bool smoothed = 7;
   bool anchored = 8;
+  bool counterAware = 9;
 }
 
 message SubqueryDetails {

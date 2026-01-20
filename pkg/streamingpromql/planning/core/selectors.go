@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 )
 
-func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets, anchored, smooothed bool) string {
+func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Duration, rng *time.Duration, skipHistogramBuckets, anchored, smooothed, counterAware bool) string {
 	builder := &strings.Builder{}
 	builder.WriteRune('{')
 	for i, m := range matchers {
@@ -49,6 +49,9 @@ func describeSelector(matchers []*LabelMatcher, ts *time.Time, offset time.Durat
 	}
 	if smooothed {
 		builder.WriteString(" smoothed")
+		if counterAware {
+			builder.WriteString(" counter aware")
+		}
 	}
 
 	if skipHistogramBuckets {
