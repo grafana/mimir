@@ -118,7 +118,8 @@ overrides:
 
 		// Upload block using mimirtool, should work since upload is enabled for user.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
-		require.Contains(t, output, fmt.Sprintf("block=%s msg=\"block uploaded successfully\"", block1))
+		require.Contains(t, output, fmt.Sprintf("block=%s", block1))
+		require.Contains(t, output, "msg=\"block uploaded successfully\"")
 		require.NoError(t, err)
 	}
 
