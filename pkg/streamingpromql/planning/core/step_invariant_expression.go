@@ -98,11 +98,6 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 		return nil, err
 	}
 
-	// There is no advantage to wrapping an instant query in a step invariant
-	if timeRange.StepCount <= 1 {
-		return planning.NewSingleUseOperatorFactory(op), nil
-	}
-
 	switch op := op.(type) {
 	case types.InstantVectorOperator:
 		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantInstantVectorOperator(op, timeRange, params.MemoryConsumptionTracker, params.OperatorMetricsTracker.StepInvariantTracker)), nil

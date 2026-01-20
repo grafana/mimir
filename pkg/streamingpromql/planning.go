@@ -248,7 +248,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
 
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
-		root, err := p.nodeFromExpr(expr)
+		root, err := p.nodeFromExpr(expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -401,7 +401,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	return plan, nil
 }
 
-func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
+func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
@@ -438,7 +438,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.AggregateExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +446,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		var param planning.Node
 
 		if expr.Param != nil {
-			param, err = p.nodeFromExpr(expr.Param)
+			param, err = p.nodeFromExpr(expr.Param, timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -469,12 +469,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := p.nodeFromExpr(expr.LHS)
+		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := p.nodeFromExpr(expr.RHS)
+		rhs, err := p.nodeFromExpr(expr.RHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -533,7 +533,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		args := make([]planning.Node, 0, len(expr.Args))
 
 		for _, arg := range expr.Args {
-			node, err := p.nodeFromExpr(arg)
+			node, err := p.nodeFromExpr(arg, timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -572,7 +572,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			// Note that the DeduplicateAndMerge still wraps the function call as the timestamp function returns true under functionNeedsDeduplication().
 			// This can be removed once https://github.com/prometheus/prometheus/pull/17313 is vendored into mimir
 			stepInvariantExpression, ok := args[0].(*core.StepInvariantExpression)
-			if ok {
+			if ok && timeRange.StepCount > 1 {
 				vectorSelector, ok := stepInvariantExpression.Inner.(*core.VectorSelector)
 				if ok {
 					vectorSelector.ReturnSampleTimestamps = true
@@ -602,7 +602,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return f, nil
 
 	case *parser.SubqueryExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -625,7 +625,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.UnaryExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -675,12 +675,17 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.ParenExpr:
-		return p.nodeFromExpr(expr.Expr)
+		return p.nodeFromExpr(expr.Expr, timeRange)
 
 	case *parser.StepInvariantExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
+		}
+
+		// There is no advantage to wrapping an instant query in a step invariant
+		if timeRange.StepCount <= 1 {
+			return inner, nil
 		}
 
 		return &core.StepInvariantExpression{
