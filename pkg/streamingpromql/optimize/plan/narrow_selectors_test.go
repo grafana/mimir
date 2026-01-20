@@ -204,12 +204,11 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression with no selectors": {
 			expr: `vector(1) + vector(0)`,
 			expectedPlan: `
-				- StepInvariantExpression
-					- BinaryExpression: LHS + RHS
-						- LHS: FunctionCall: vector(...)
-							- NumberLiteral: 1
-						- RHS: FunctionCall: vector(...)
-							- NumberLiteral: 0
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: vector(...)
+						- NumberLiteral: 1
+					- RHS: FunctionCall: vector(...)
+						- NumberLiteral: 0
 			`,
 			expectedAttempts: 0,
 			expectedModified: 0,
@@ -217,12 +216,11 @@ func TestNarrowSelectorsOptimizationPass(t *testing.T) {
 		"binary expression on with no selectors": {
 			expr: `vector(1) + on (region) vector(0)`,
 			expectedPlan: `
-				- StepInvariantExpression
-					- BinaryExpression: LHS + on (region) RHS
-						- LHS: FunctionCall: vector(...)
-							- NumberLiteral: 1
-						- RHS: FunctionCall: vector(...)
-							- NumberLiteral: 0
+				- BinaryExpression: LHS + on (region) RHS
+					- LHS: FunctionCall: vector(...)
+						- NumberLiteral: 1
+					- RHS: FunctionCall: vector(...)
+						- NumberLiteral: 0
 			`,
 			expectedAttempts: 0,
 			expectedModified: 0,

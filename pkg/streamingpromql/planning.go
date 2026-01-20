@@ -247,7 +247,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
 
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
-		root, err := p.nodeFromExpr(expr, timeRange, p.planningMetricsTracker)
+		root, err := p.nodeFromExpr(expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -400,7 +400,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	return plan, nil
 }
 
-func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange, metricsTracker *planningmetrics.MetricsTracker) (planning.Node, error) {
+func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
@@ -437,7 +437,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}, nil
 
 	case *parser.AggregateExpr:
-		inner, err := p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -445,7 +445,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		var param planning.Node
 
 		if expr.Param != nil {
-			param, err = p.nodeFromExpr(expr.Param, inner.ChildrenTimeRange(timeRange), metricsTracker)
+			param, err = p.nodeFromExpr(expr.Param, timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -468,12 +468,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := p.nodeFromExpr(expr.LHS, timeRange, metricsTracker)
+		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := p.nodeFromExpr(expr.RHS, timeRange, metricsTracker)
+		rhs, err := p.nodeFromExpr(expr.RHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -532,7 +532,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		args := make([]planning.Node, 0, len(expr.Args))
 
 		for _, arg := range expr.Args {
-			node, err := p.nodeFromExpr(arg, timeRange, metricsTracker)
+			node, err := p.nodeFromExpr(arg, timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -629,7 +629,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 
 		childTimeRange := subquery.ChildrenTimeRange(timeRange)
 
-		inner, err := p.nodeFromExpr(expr.Expr, childTimeRange, metricsTracker)
+		inner, err := p.nodeFromExpr(expr.Expr, childTimeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -638,7 +638,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		return subquery, nil
 
 	case *parser.UnaryExpr:
-		inner, err := p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -688,10 +688,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}, nil
 
 	case *parser.ParenExpr:
-		return p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
+		return p.nodeFromExpr(expr.Expr, timeRange)
 
 	case *parser.StepInvariantExpr:
-		inner, err := p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -701,7 +701,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			return inner, nil
 		}
 
-		metricsTracker.StepInvariantTracker.OnStepInvariantExpressionAdded(timeRange.StepCount)
+		p.planningMetricsTracker.StepInvariantTracker.OnStepInvariantExpressionAdded(timeRange.StepCount)
 
 		return &core.StepInvariantExpression{
 			Inner:                          inner,
