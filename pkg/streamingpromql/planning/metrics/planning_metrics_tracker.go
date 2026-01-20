@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package planningmetrics
+
+import (
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+// MetricsTracker holds metrics trackers used by the query planner.
+type MetricsTracker struct {
+	StepInvariantTracker *StepInvariantExpressionMetricsTracker
+}
+
+func NewMetricsTracker(reg prometheus.Registerer) *MetricsTracker {
+	return &MetricsTracker{
+		StepInvariantTracker: newStepInvariantExpressionMetricsTracker(reg),
+	}
+}
+
+type StepInvariantExpressionMetricsTracker struct {
+	// total number of step invariant expression nodes created in planning
+	nodes prometheus.Counter
+
+	// total number of steps which have been saved - the number of steps which did not need to be re-evaluated
+	steps prometheus.Counter
+}
+
+// OnStepInvariantExpressionAdded is called when a step invariant expression planning node is added to a plan.
+// It increments the nodes counter by 1, and the steps saved counter is incremented by the given stepCount-1.
+// If the stepCount is less than or equal to 1 then this function is a no-op.
+func (t *StepInvariantExpressionMetricsTracker) OnStepInvariantExpressionAdded(stepCount int) {
+	if stepCount <= 1 {
+		return
+	}
+	t.nodes.Inc()
+	t.steps.Add(float64(stepCount - 1))
+}
+
+// NodesCounter returns the counter tracking step invariant expression nodes.
+// This is provided for unit tests and allowing the underlying counter to remain unexported.
+func (t *StepInvariantExpressionMetricsTracker) NodesCounter() prometheus.Counter {
+	return t.nodes
+}
+
+// StepsCounter returns the counter tracking step invariant step savings.
+// This is provided for unit tests and allowing the underlying counter to remain unexported.
+func (t *StepInvariantExpressionMetricsTracker) StepsCounter() prometheus.Counter {
+	return t.steps
+}
+
+func newStepInvariantExpressionMetricsTracker(reg prometheus.Registerer) *StepInvariantExpressionMetricsTracker {
+	return &StepInvariantExpressionMetricsTracker{
+		nodes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_step_invariant_nodes_total",
+			Help: "Total number of step invariant nodes.",
+		}),
+		steps: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_step_invariant_steps_saved_total",
+			Help: "Total number of steps which were saved from being queried / loaded due to step invariant handling.",
+		}),
+	}
+}

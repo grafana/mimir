@@ -9,7 +9,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
-	operatormetrics "github.com/grafana/mimir/pkg/streamingpromql/operators/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -18,15 +17,13 @@ type StepInvariantInstantVectorOperator struct {
 	inner                    types.InstantVectorOperator
 	originalTimeRange        types.QueryTimeRange
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	metricsTracker           *operatormetrics.StepInvariantExpressionMetricsTracker
 }
 
-func NewStepInvariantInstantVectorOperator(op types.InstantVectorOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, metricsTracker *operatormetrics.StepInvariantExpressionMetricsTracker) *StepInvariantInstantVectorOperator {
+func NewStepInvariantInstantVectorOperator(op types.InstantVectorOperator, originalTimeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) *StepInvariantInstantVectorOperator {
 	return &StepInvariantInstantVectorOperator{
 		inner:                    op,
 		originalTimeRange:        originalTimeRange,
 		memoryConsumptionTracker: memoryConsumptionTracker,
-		metricsTracker:           metricsTracker,
 	}
 }
 
@@ -39,7 +36,6 @@ func (s *StepInvariantInstantVectorOperator) Close() {
 }
 
 func (s *StepInvariantInstantVectorOperator) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	s.metricsTracker.OnStepInvariantNodeObserved()
 	return s.inner.Prepare(ctx, params)
 }
 
@@ -74,8 +70,6 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 			return types.InstantVectorSeriesData{}, err
 		}
 
-		s.metricsTracker.OnStepInvariantStepsSaved(operatormetrics.FPoint, s.originalTimeRange.StepCount)
-
 		// Fill the expected steps with the same point.
 		for ts := s.originalTimeRange.StartT; ts <= s.originalTimeRange.EndT; ts += s.originalTimeRange.IntervalMilliseconds {
 			floats = append(floats, promql.FPoint{
@@ -94,8 +88,6 @@ func (s *StepInvariantInstantVectorOperator) NextSeries(ctx context.Context) (ty
 		if err != nil {
 			return types.InstantVectorSeriesData{}, err
 		}
-
-		s.metricsTracker.OnStepInvariantStepsSaved(operatormetrics.HPoint, s.originalTimeRange.StepCount)
 
 		histograms = append(histograms, promql.HPoint{T: data.Histograms[0].T, H: data.Histograms[0].H})
 		// Note that we create a copy of the histogram for each step as we can not re-use the same *FloatHistogram in the slice from the pool.

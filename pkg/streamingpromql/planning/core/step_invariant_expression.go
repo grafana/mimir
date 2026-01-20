@@ -100,9 +100,9 @@ func MaterializeStepInvariantExpression(s *StepInvariantExpression, materializer
 
 	switch op := op.(type) {
 	case types.InstantVectorOperator:
-		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantInstantVectorOperator(op, timeRange, params.MemoryConsumptionTracker, params.OperatorMetricsTracker.StepInvariantTracker)), nil
+		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantInstantVectorOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
 	case types.ScalarOperator:
-		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker, params.OperatorMetricsTracker.StepInvariantTracker)), nil
+		return planning.NewSingleUseOperatorFactory(operators.NewStepInvariantScalarOperator(op, timeRange, params.MemoryConsumptionTracker)), nil
 	case types.RangeVectorOperator:
 		// Notes on range vector handling:
 		//

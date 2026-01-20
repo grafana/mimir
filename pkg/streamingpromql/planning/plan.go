@@ -19,7 +19,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	operatormetrics "github.com/grafana/mimir/pkg/streamingpromql/operators/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
@@ -220,7 +219,6 @@ func (t QueriedTimeRange) Union(other QueriedTimeRange) QueriedTimeRange {
 type OperatorParameters struct {
 	Queryable                storage.Queryable
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	OperatorMetricsTracker   *operatormetrics.MetricsTracker
 	Annotations              *annotations.Annotations
 	QueryStats               *types.QueryStats
 	LookbackDelta            time.Duration

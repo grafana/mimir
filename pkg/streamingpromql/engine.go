@@ -273,7 +273,6 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 	operatorParams := &planning.OperatorParameters{
 		Queryable:                queryable,
 		MemoryConsumptionTracker: memoryConsumptionTracker,
-		OperatorMetricsTracker:   e.planner.operatorMetricsTracker,
 		Annotations:              annotations.New(),
 		QueryStats:               types.NewQueryStats(),
 		LookbackDelta:            lookbackDelta,

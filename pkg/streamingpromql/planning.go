@@ -22,13 +22,13 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	operatormetrics "github.com/grafana/mimir/pkg/streamingpromql/operators/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -62,10 +62,9 @@ type QueryPlanner struct {
 	planOptimizationPasses   []optimize.QueryPlanOptimizationPass
 	planStageLatency         *prometheus.HistogramVec
 	generatedPlans           *prometheus.CounterVec
-	operatorMetricsTracker   *operatormetrics.MetricsTracker
 	versionProvider          QueryPlanVersionProvider
-
-	logger log.Logger
+	planningMetricsTracker   *planningmetrics.MetricsTracker
+	logger                   log.Logger
 
 	// Replaced during testing to ensure timing produces consistent results.
 	TimeSince func(time.Time) time.Duration
@@ -141,7 +140,7 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 			Name: "cortex_mimir_query_engine_plans_generated_total",
 			Help: "Total number of query plans generated.",
 		}, []string{"version"}),
-		operatorMetricsTracker: operatormetrics.NewOperatorMetricsTracker(opts.CommonOpts.Reg),
+		planningMetricsTracker: planningmetrics.NewMetricsTracker(opts.CommonOpts.Reg),
 		versionProvider:        versionProvider,
 
 		logger:    opts.Logger,
@@ -149,10 +148,10 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 	}, nil
 }
 
-// RegisterOperatorMetrics replaces the operatorMetricsTracker with the given tracker.
+// RegisterOperatorMetrics replaces the planningMetricsTracker with the given tracker.
 // This is only needed for unit tests
-func (p *QueryPlanner) RegisterOperatorMetrics(tracker *operatormetrics.MetricsTracker) {
-	p.operatorMetricsTracker = tracker
+func (p *QueryPlanner) RegisterOperatorMetrics(tracker *planningmetrics.MetricsTracker) {
+	p.planningMetricsTracker = tracker
 }
 
 // RegisterASTOptimizationPass registers an AST optimization pass used with this engine.
@@ -248,7 +247,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
 
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
-		root, err := p.nodeFromExpr(expr, timeRange)
+		root, err := p.nodeFromExpr(expr, timeRange, p.planningMetricsTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -401,7 +400,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	return plan, nil
 }
 
-func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
+func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange, metricsTracker *planningmetrics.MetricsTracker) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
@@ -438,7 +437,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}, nil
 
 	case *parser.AggregateExpr:
-		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -446,7 +445,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		var param planning.Node
 
 		if expr.Param != nil {
-			param, err = p.nodeFromExpr(expr.Param, timeRange)
+			param, err = p.nodeFromExpr(expr.Param, inner.ChildrenTimeRange(timeRange), metricsTracker)
 			if err != nil {
 				return nil, err
 			}
@@ -469,12 +468,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)
+		lhs, err := p.nodeFromExpr(expr.LHS, timeRange, metricsTracker)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := p.nodeFromExpr(expr.RHS, timeRange)
+		rhs, err := p.nodeFromExpr(expr.RHS, timeRange, metricsTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -533,7 +532,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		args := make([]planning.Node, 0, len(expr.Args))
 
 		for _, arg := range expr.Args {
-			node, err := p.nodeFromExpr(arg, timeRange)
+			node, err := p.nodeFromExpr(arg, timeRange, metricsTracker)
 			if err != nil {
 				return nil, err
 			}
@@ -572,11 +571,15 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			// Note that the DeduplicateAndMerge still wraps the function call as the timestamp function returns true under functionNeedsDeduplication().
 			// This can be removed once https://github.com/prometheus/prometheus/pull/17313 is vendored into mimir
 			stepInvariantExpression, ok := args[0].(*core.StepInvariantExpression)
-			if ok && timeRange.StepCount > 1 {
+			if ok {
 				vectorSelector, ok := stepInvariantExpression.Inner.(*core.VectorSelector)
 				if ok {
 					vectorSelector.ReturnSampleTimestamps = true
 					f.Args[0] = stepInvariantExpression.Inner
+
+					// Note - we do not update the step invariant metrics tracker as this will already have been updated when the
+					// argument expression was created.
+
 					return &core.StepInvariantExpression{
 						Inner: &core.DeduplicateAndMerge{
 							Inner:                      f,
@@ -602,10 +605,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		return f, nil
 
 	case *parser.SubqueryExpr:
-		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
-		if err != nil {
-			return nil, err
-		}
 
 		step := expr.Step
 
@@ -613,8 +612,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			step = time.Duration(p.noStepSubqueryIntervalFn(expr.Range.Milliseconds())) * time.Millisecond
 		}
 
-		return &core.Subquery{
-			Inner: inner,
+		// Construct the Subquery in 2 phases.
+		// The first step initializes the SubqueryDetails, which allows us to determine the children time range.
+		// The second step then creates the inner expression, passing in this child time range.
+		// This is needed by the step invariant expression handler which will require this child time range to
+		// accurately calculate the number of steps saved.
+		subquery := &core.Subquery{
 			SubqueryDetails: &core.SubqueryDetails{
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
@@ -622,10 +625,20 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				Step:               step,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+
+		childTimeRange := subquery.ChildrenTimeRange(timeRange)
+
+		inner, err := p.nodeFromExpr(expr.Expr, childTimeRange, metricsTracker)
+		if err != nil {
+			return nil, err
+		}
+
+		subquery.Inner = inner
+		return subquery, nil
 
 	case *parser.UnaryExpr:
-		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -675,18 +688,20 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}, nil
 
 	case *parser.ParenExpr:
-		return p.nodeFromExpr(expr.Expr, timeRange)
+		return p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
 
 	case *parser.StepInvariantExpr:
-		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange, metricsTracker)
 		if err != nil {
 			return nil, err
 		}
 
-		// There is no advantage to wrapping an instant query in a step invariant
+		// There is no advantage to wrapping an instant query in a step invariant.
 		if timeRange.StepCount <= 1 {
 			return inner, nil
 		}
+
+		metricsTracker.StepInvariantTracker.OnStepInvariantExpressionAdded(timeRange.StepCount)
 
 		return &core.StepInvariantExpression{
 			Inner:                          inner,

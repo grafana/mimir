@@ -43,8 +43,8 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
 	"github.com/grafana/mimir/pkg/streamingpromql/compat"
-	operatormetrics "github.com/grafana/mimir/pkg/streamingpromql/operators/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	operatormetrics2 "github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/globalerror"
@@ -4787,19 +4787,16 @@ func TestStepInvariantMetricsTracker(t *testing.T) {
 		end      time.Time
 		interval time.Duration
 
-		expectedNodes  int
-		expectedPoints map[operatormetrics.StepInvariantPointType]int
+		expectedNodes      int
+		expectedStepsSaved int
 	}{
 		{
-			query:         "metric @ 20",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 1,
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 5, // 6 steps
-				operatormetrics.HPoint: 0,
-			},
+			query:              "metric @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
 		},
 		{
 			query:         "metric @ 20",
@@ -4807,94 +4804,95 @@ func TestStepInvariantMetricsTracker(t *testing.T) {
 			end:           time.Unix(0, 0).Add(time.Second * 50),
 			interval:      time.Second * 10,
 			expectedNodes: 0, // step invariant operation has been removed
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 0,
-				operatormetrics.HPoint: 0,
-			},
 		},
 		{
-			query:         "nodata @ 20",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 1,
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 0,
-				operatormetrics.HPoint: 0,
-			},
+			query:              "nodata @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
 		},
 		{
-			query:         "metric @ 20 + metric @ 30",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 1, // the left and right are all wrapped into a single step invariant
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 5,
-				operatormetrics.HPoint: 0,
-			},
+			query:              "metric @ 20 + metric @ 30",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1, // the left and right are all wrapped into a single step invariant
+			expectedStepsSaved: 5,
 		},
 		{
-			query:         "metric @ 20 * metric + metric @ 30",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 2,
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 10,
-				operatormetrics.HPoint: 0,
-			},
+			query:              "metric @ 20 * metric + metric @ 30",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      2,
+			expectedStepsSaved: 10,
 		},
 		{
-			query:         "abs(metric @ 20 * metric + metric @ 30)",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 2,
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 10,
-				operatormetrics.HPoint: 0,
-			},
+			query:              "abs(metric @ 20 * metric + metric @ 30)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      2,
+			expectedStepsSaved: 10,
 		},
 		{
-			query:         "scalar(metric @ 20)",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 1,
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 5,
-				operatormetrics.HPoint: 0,
-			},
+			query:              "scalar(metric @ 20)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
 		},
 		{
-			query:         "histogram @ 20",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 1,
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 0,
-				operatormetrics.HPoint: 5,
-			},
+			query:              "histogram @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
 		},
 		{
-			query:         "(metric @ 20 or metric) or (histogram @ 20 or histogram) or (vector(scalar(metric @ 30)) or metric)",
-			start:         time.Unix(0, 0),
-			end:           time.Unix(0, 0).Add(time.Second * 50),
-			interval:      time.Second * 10,
-			expectedNodes: 3,
-			expectedPoints: map[operatormetrics.StepInvariantPointType]int{
-				operatormetrics.FPoint: 10,
-				operatormetrics.HPoint: 5,
-			},
+			query:              "(metric @ 20 or metric) or (histogram @ 20 or histogram) or (vector(scalar(metric @ 30)) or metric)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      3,
+			expectedStepsSaved: 15,
+		},
+		{
+			query:              "timestamp(metric @ 20)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			// the step invariant is relative to a sub-query. The sub-query step count is used
+			query:              "avg_over_time((vector(1))[10m:1m])",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 9,
+		},
+		{
+			// the step invariant is relative to a sub-query. The sub-query step count is used
+			query:              "avg_over_time((rate(http_requests_total[5m]) + metric @ 10)[10m:1m])",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 9,
 		},
 	}
 
 	for _, tc := range tc {
 		t.Run(tc.query, func(t *testing.T) {
 
-			tracker := operatormetrics.NewOperatorMetricsTracker(prometheus.NewRegistry())
+			tracker := operatormetrics2.NewMetricsTracker(prometheus.NewRegistry())
 
 			opts := NewTestEngineOpts()
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -4908,10 +4906,17 @@ func TestStepInvariantMetricsTracker(t *testing.T) {
 			require.NoError(t, err)
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
-			require.Equal(t, float64(tc.expectedNodes), testutil.ToFloat64(tracker.StepInvariantTracker.NodeCounter()))
 
-			for pointType, expectedCount := range tc.expectedPoints {
-				require.Equal(t, float64(expectedCount), testutil.ToFloat64(tracker.StepInvariantTracker.Counter(pointType)))
+			require.Equal(t, float64(tc.expectedNodes), testutil.ToFloat64(tracker.StepInvariantTracker.NodesCounter()))
+			require.Equal(t, float64(tc.expectedStepsSaved), testutil.ToFloat64(tracker.StepInvariantTracker.StepsCounter()))
+
+			// Extra assertions to ensure we do not introduce bad test data
+			if tc.expectedNodes == 0 {
+				// If there are no step invariant nodes, then we do not expect to have any steps saved
+				require.Equal(t, 0, tc.expectedStepsSaved)
+			} else {
+				// If there are step invariant nodes, then we expect to have saved steps
+				require.Greater(t, tc.expectedStepsSaved, 0)
 			}
 		})
 	}
