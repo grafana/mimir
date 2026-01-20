@@ -1077,9 +1077,13 @@ groups:
           expr: |
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
-            and
-            (cortex_compactor_last_successful_run_timestamp_seconds > 0)
+            (
+              (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
+              and
+              (cortex_compactor_last_successful_run_timestamp_seconds > 0)
+              and ignoring(mode)
+              (cortex_compactor_info{mode="standalone"} == 1)
+            )
           for: 1h
           labels:
             reason: in-last-24h
@@ -1091,17 +1095,85 @@ groups:
           expr: |
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            cortex_compactor_last_successful_run_timestamp_seconds == 0
+            (
+              (cortex_compactor_last_successful_run_timestamp_seconds == 0)
+              and ignoring(mode)
+              (cortex_compactor_info{mode="standalone"} == 1)
+            )
           for: 24h
           labels:
             reason: since-startup
             severity: critical
         - alert: MimirCompactorNotRunningCompaction
           annotations:
+            message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not contacted the scheduler in the last 15 minutes.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
+          expr: |
+            (
+              (time() - cortex_compactor_scheduler_last_contact_timestamp_seconds > 900)
+              and
+              (cortex_compactor_scheduler_last_contact_timestamp_seconds > 0)
+              and ignoring(mode)
+              (cortex_compactor_info{mode="scheduler"} == 1)
+            )
+          for: 5m
+          labels:
+            reason: scheduler-no-contact
+            severity: critical
+        - alert: MimirCompactorNotRunningCompaction
+          annotations:
+            message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not contacted the scheduler since startup.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
+          expr: |
+            (
+              (cortex_compactor_scheduler_last_contact_timestamp_seconds == 0)
+              and ignoring(mode)
+              (cortex_compactor_info{mode="scheduler"} == 1)
+            )
+          for: 15m
+          labels:
+            reason: scheduler-no-contact-since-startup
+            severity: critical
+        - alert: MimirCompactorNotRunningCompaction
+          annotations:
+            message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not completed any group compactions in the last 24 hours.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
+          expr: |
+            (
+              (time() - cortex_compactor_last_successful_group_compaction_timestamp_seconds > 60 * 60 * 24)
+              and
+              (cortex_compactor_last_successful_group_compaction_timestamp_seconds > 0)
+              and ignoring(mode)
+              (cortex_compactor_info{mode="scheduler"} == 1)
+            )
+          for: 1h
+          labels:
+            reason: no-group-compactions-24h
+            severity: critical
+        - alert: MimirCompactorNotRunningCompaction
+          annotations:
+            message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not completed any group compactions since startup.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
+          expr: |
+            (
+              (cortex_compactor_last_successful_group_compaction_timestamp_seconds == 0)
+              and ignoring(mode)
+              (cortex_compactor_info{mode="scheduler"} == 1)
+            )
+          for: 24h
+          labels:
+            reason: no-group-compactions-since-startup
+            severity: critical
+        - alert: MimirCompactorNotRunningCompaction
+          annotations:
             message: GEM Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} failed to run 2 consecutive compactions.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
-            increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
+            (
+              increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
+              and ignoring(mode)
+              (cortex_compactor_info{mode="standalone"} == 1)
+            )
           labels:
             reason: consecutive-failures
             severity: critical
