@@ -99,7 +99,8 @@ const (
 	usageStatsUpdateInterval = usagestats.DefaultReportSendInterval / 10
 
 	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
-	IngesterRingKey = "ring"
+	IngesterRingKey  = "ring"
+	IngesterRingName = "ingester"
 
 	// PartitionRingKey is the key under which we store the partitions ring used by the "ingest storage".
 	PartitionRingKey  = "ingester-partitions"
@@ -255,6 +256,11 @@ func (cfg *Config) Validate(log.Logger) error {
 		return fmt.Errorf("error sample rate cannot be a negative number")
 	}
 
+	// Tokenless mode requires gRPC push to be disabled.
+	if cfg.IngesterRing.NumTokens == 0 && cfg.PushGrpcMethodEnabled {
+		return fmt.Errorf("ring tokens can only be disabled when gRPC push is disabled")
+	}
+
 	return cfg.IngesterRing.Validate()
 }
 
@@ -289,7 +295,8 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	lifecycler            *ring.Lifecycler
+	instanceRing          ring.ReadRing
+	lifecycler            ingesterLifecycler
 	limits                *validation.Overrides
 	limiter               *Limiter
 	subservicesWatcher    *services.FailureWatcher
@@ -308,8 +315,8 @@ type Ingester struct {
 
 	bucket objstore.Bucket
 
-	// Value used by shipper as external label.
-	shipperIngesterID string
+	// Ingester ID, used by shipper as external label.
+	ingesterID string
 
 	// Metrics shared across all per-tenant shippers.
 	shipperMetrics *shipperMetrics
@@ -364,7 +371,7 @@ type Ingester struct {
 	reactiveLimiter *ingesterReactiveLimiter
 }
 
-func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+func newIngester(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	if cfg.BlocksStorageConfig.Bucket.Backend == bucket.Filesystem {
 		level.Warn(logger).Log("msg", "-blocks-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
@@ -384,6 +391,8 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		cfg:    cfg,
 		limits: limits,
 		logger: logger,
+
+		instanceRing: ingestersRing,
 
 		tsdbs:               make(map[string]*userTSDB),
 		usersMetadata:       make(map[string]*userMetricsMetadata),
@@ -427,7 +436,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, partitionRingWatcher *ring.PartitionRingWatcher, activeGroupsCleanupService *util.ActiveGroupsCleanupService, costAttributionMgr *costattribution.Manager, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	i, err := newIngester(cfg, limits, registerer, logger)
+	i, err := newIngester(cfg, limits, ingestersRing, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -460,10 +469,49 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		}, i.maxTsdbHeadTimestamp)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
-	if err != nil {
-		return nil, err
+	// Create a Prometheus registerer where metrics are prefixed by "cortex_".
+	cortexPrefixedRegisterer := prometheus.WrapRegistererWithPrefix("cortex_", registerer)
+
+	// Create the lifecycler. In tokenless mode, we use a BasicLifecycler
+	// configured to not register tokens. Otherwise, use classic Lifecycler.
+	var ingesterID string
+	if cfg.IngesterRing.NumTokens == 0 {
+		// Tokenless mode requires ingest storage to be enabled.
+		// This check is here instead of Config.Validate() because Config.IngestStorageConfig is injected after validation.
+		if !cfg.IngestStorageConfig.Enabled {
+			return nil, fmt.Errorf("ring tokens can only be disabled when ingest storage is enabled")
+		}
+
+		// Create KV store for the ring.
+		ringKV, err := kv.NewClient(cfg.IngesterRing.KVStore, ring.GetCodec(), kv.RegistererWithKVName(cortexPrefixedRegisterer, IngesterRingName+"-lifecycler"), logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating KV store for ingester ring in tokenless mode")
+		}
+
+		// Create BasicLifecycler config.
+		lifecyclerCfg, err := cfg.IngesterRing.ToTokenlessBasicLifecyclerConfig(logger)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating basic lifecycler config for ingester ring in tokenless mode")
+		}
+
+		// Create tokenless lifecycler.
+		lifecycler, err := newTokenlessLifecycler(lifecyclerCfg, IngesterRingName, IngesterRingKey, ringKV, cfg.IngesterRing.MinReadyDuration, cfg.IngesterRing.FinalSleep, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, i.Flush, logger, cortexPrefixedRegisterer)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating lifecycler for ingester ring in tokenless mode")
+		}
+
+		i.lifecycler = lifecycler
+		ingesterID = lifecycler.GetInstanceID()
+	} else {
+		// Classic Lifecycler for token-based mode.
+		lifecycler, err := ring.NewLifecycler(cfg.IngesterRing.ToLifecyclerConfig(), i, IngesterRingName, IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, cortexPrefixedRegisterer)
+		if err != nil {
+			return nil, err
+		}
+		i.lifecycler = lifecycler
+		ingesterID = lifecycler.ID
 	}
+
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
 
@@ -474,7 +522,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			prometheus.WrapRegistererWithPrefix("cortex_ingester_", registerer))
 	}
 
-	i.shipperIngesterID = i.lifecycler.ID
+	i.ingesterID = ingesterID
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
 	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
@@ -520,12 +568,13 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 			partitionRingKV,
 			logger,
 			prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+		i.ingestPartitionLifecycler.BasicService = i.ingestPartitionLifecycler.WithName("partition-instance-lifecycler")
 
 		limiterStrategy = newPartitionRingLimiterStrategy(partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 		ownedSeriesStrategy = newOwnedSeriesPartitionRingStrategy(i.ingestPartitionID, partitionRingWatcher, i.limits.IngestionPartitionsTenantShardSize)
 	} else {
 		limiterStrategy = newIngesterRingLimiterStrategy(ingestersRing, cfg.IngesterRing.ReplicationFactor, cfg.IngesterRing.ZoneAwarenessEnabled, cfg.IngesterRing.InstanceZone, i.limits.IngestionTenantShardSize)
-		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(i.lifecycler.ID, ingestersRing, i.limits.IngestionTenantShardSize)
+		ownedSeriesStrategy = newOwnedSeriesIngesterRingStrategy(ingesterID, ingestersRing, i.limits.IngestionTenantShardSize)
 	}
 
 	i.limiter = NewLimiter(limits, limiterStrategy)
@@ -538,18 +587,18 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 	}
 
 	// Init compaction service, responsible to periodically run TSDB head compactions.
-	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil)
+	i.compactionService = services.NewBasicService(nil, i.compactionServiceRunning, nil).WithName("ingester-compaction")
 	i.subservicesWatcher.WatchService(i.compactionService)
 
 	// Init metrics updater service, responsible to periodically update ingester metrics and stats.
-	i.metricsUpdaterService = services.NewBasicService(nil, i.metricsUpdaterServiceRunning, nil)
+	i.metricsUpdaterService = services.NewBasicService(nil, i.metricsUpdaterServiceRunning, nil).WithName("ingester-metrics-updater")
 	i.subservicesWatcher.WatchService(i.metricsUpdaterService)
 
 	// Init metadata purger service, responsible to periodically delete metrics metadata past their retention period.
 	i.metadataPurgerService = services.NewTimerService(metadataPurgePeriod, nil, func(context.Context) error {
 		i.purgeUserMetricsMetadata()
 		return nil
-	}, nil)
+	}, nil).WithName("ingester-metadata-purger")
 	i.subservicesWatcher.WatchService(i.metadataPurgerService)
 
 	// Init head statistics generation service if enabled
@@ -558,7 +607,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		i.subservicesWatcher.WatchService(i.statisticsService)
 	}
 
-	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping)
+	i.BasicService = services.NewBasicService(i.starting, i.ingesterRunning, i.stopping).WithName("ingester")
 	return i, nil
 }
 
@@ -583,13 +632,13 @@ func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
 // ingester is not ingesting anything, its only purpose is to react on Flush
 // method and flush all openened TSDBs when called.
 func NewForFlusher(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	i, err := newIngester(cfg, limits, registerer, logger)
+	i, err := newIngester(cfg, limits, nil, registerer, logger)
 	if err != nil {
 		return nil, err
 	}
 	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
 
-	i.shipperIngesterID = "flusher"
+	i.ingesterID = "flusher"
 	i.limiter = NewLimiter(limits, flusherLimiterStrategy{})
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
@@ -613,9 +662,29 @@ func (i *Ingester) startingForFlusher(ctx context.Context) error {
 func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
 		if err != nil {
-			// if starting() fails for any reason (e.g., context canceled),
-			// the lifecycler must be stopped.
-			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+			// If starting() fails for any reason (e.g., context canceled), services must be stopped.
+
+			// Subservices watcher was started in New();
+			// Failure to close it can block subservices from shutting down
+			// and leave hanging goroutines after exit.
+			i.subservicesWatcher.Close()
+
+			// Stop any services that may have been started in this method, in reverse order.
+			if i.subservicesAfterIngesterRingLifecycler != nil {
+				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesAfterIngesterRingLifecycler)
+			}
+			if i.lifecycler != nil {
+				_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+			}
+			if i.ingestReader != nil {
+				_ = services.StopAndAwaitTerminated(context.Background(), i.ingestReader)
+			}
+			if i.subservicesForPartitionReplay != nil {
+				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesForPartitionReplay)
+			}
+			if i.ownedSeriesService != nil {
+				_ = services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
+			}
 		}
 	}()
 
@@ -675,6 +744,9 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if err := i.lifecycler.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
+	if err = ring.WaitInstanceState(ctx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
+		return errors.Wrap(err, "failed to wait for instance to be active in ring")
+	}
 
 	// Finally we start all services that should run after the ingester ring lifecycler.
 	var servs []services.Service
@@ -726,7 +798,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		i.circuitBreaker.push.activate()
 	}
 
-	return nil
+	return err
 }
 
 func (i *Ingester) stoppingForFlusher(_ error) error {
@@ -3143,7 +3215,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// interval. Then, the next compactions will happen at a regular interval. This logic
 	// helps to have different ingesters running the compaction at a different time,
 	// effectively spreading the compactions over the configured interval.
-	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones())
+	firstInterval, standardInterval := i.compactionServiceInterval(time.Now(), i.instanceRing.Zones())
 
 	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
 	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
@@ -3176,7 +3248,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 
 			// If the ingester state is no longer "Starting", we switch to a different interval.
 			// We only compare the standard interval because the first interval may be random due to jittering.
-			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.lifecycler.Zones()); standardInterval != newStandardInterval {
+			if newFirstInterval, newStandardInterval := i.compactionServiceInterval(time.Now(), i.instanceRing.Zones()); standardInterval != newStandardInterval {
 				// Stop the previous ticker before creating a new one.
 				stopTicker()
 

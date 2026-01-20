@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
@@ -21,10 +22,12 @@ import (
 type DashboardAnalyzeCommand struct {
 	DashFilesList []string
 	outputFile    string
+
+	logger log.Logger
 }
 
 func (cmd *DashboardAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	output, err := AnalyzeDashboards(cmd.DashFilesList)
+	output, err := AnalyzeDashboards(cmd.DashFilesList, cmd.logger)
 	if err != nil {
 		return err
 	}
@@ -37,7 +40,7 @@ func (cmd *DashboardAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeDashboards analyze the given list of dashboard files and return the list metrics used in them.
-func AnalyzeDashboards(dashFilesList []string) (*analyze.MetricsInGrafana, error) {
+func AnalyzeDashboards(dashFilesList []string, logger log.Logger) (*analyze.MetricsInGrafana, error) {
 	output := &analyze.MetricsInGrafana{}
 	output.OverallMetrics = make(map[string]struct{})
 
@@ -51,7 +54,7 @@ func AnalyzeDashboards(dashFilesList []string) (*analyze.MetricsInGrafana, error
 			fmt.Fprintf(os.Stderr, "%s for %s\n", err, file)
 			continue
 		}
-		analyze.ParseMetricsInBoard(output, board)
+		analyze.ParseMetricsInBoard(output, board, logger)
 	}
 
 	var metricsUsed model.LabelValues

@@ -7,6 +7,7 @@
   _config+:: {
     ingest_storage_enabled: true,
     ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: true,
+    ingest_storage_ingester_ring_tokens_enabled: false,
 
     ingest_storage_ingester_autoscaling_enabled: true,
     ingest_storage_ingester_autoscaling_min_replicas_per_zone: 2,

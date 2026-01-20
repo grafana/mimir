@@ -17,16 +17,18 @@
 * [CHANGE] Ingester: Renamed `cortex_ingest_storage_writer_buffered_produce_bytes` metric to `cortex_ingest_storage_writer_buffered_produce_bytes_distribution` (Prometheus summary), and added `cortex_ingest_storage_writer_buffered_produce_bytes` metric that exports the buffer size as a Prometheus Gauge. #13414
 * [CHANGE] Querier and query-frontend: Removed support for per-step stats when MQE is enabled. #13582
 * [CHANGE] Compactor: Require that uploaded TSDB blocks use v2 of the index file format. #13815
+* [CHANGE] Store-gateway: Remove support for generating index-headers from TSDB blocks that use v1 of the index file format. #13824
 * [CHANGE] Query-frontend: Removed support for calculating 'cache-adjusted samples processed' query statistic. The `-query-frontend.cache-samples-processed-stats` CLI flag has been deprecated and will be removed in a future release. Setting it has now no effect. #13582
 * [CHANGE] Querier: Renamed experimental flag `-querier.prefer-availability-zone` to `-querier.prefer-availability-zones` and changed it to accept a comma-separated list of availability zones. All zones in the list are given equal priority when querying ingesters and store-gateways. #13756 #13758
 * [CHANGE] Ingester: Stabilize experimental flag `-ingest-storage.write-logs-fsync-before-kafka-commit-concurrency` to fsync write logs before the offset is committed to Kafka. Remove `-ingest-storage.write-logs-fsync-before-kafka-commit-enabled` since this is always enabled now. #13591
 * [CHANGE] Ingester: Remove metric `cortex_ingester_owned_target_info_series`; if needed this is better done as a custom active series tracker. #13831
 * [CHANGE] Store-gateway: Warn when loading index headers based on TSDB blocks that use v1 of the index file format. #13834
 * [CHANGE] Cache: Remove the experimental setting `-<prefix>.memcached.dns-ignore-startup-failures` that allowed failure to discover Memcached servers to be a soft error and always consider failure to discover Memcached servers a hard error. #14038
+* [CHANGE] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14052
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058 #13685 #13800
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058 #13685 #13800 #14027
 * [FEATURE] MQE: Add support for experimental extended range selector modifiers `smoothed` and `anchored`. You can enable these modifiers with `-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored` #13398
 * [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [FEATURE] Continuous test: Add `prometheus2` option `-tests.write-protocol` flag to select Prometheus Remote-Write 2.0 as a protocol. #13659 #13982
@@ -34,6 +36,7 @@
 * [FEATURE] Store-gateway: Add experimental per-zone shard size `-store-gateway.tenant-shard-size-per-zone`. When set, the total shard size is computed as this value multiplied by the number of zones. This option takes precedence over `-store-gateway.tenant-shard-size`. #13835
 * [FEATURE] Distributor, Ingester: Add experimental reactive limiter setting `-distributor.reactive-limiter.max-limit-factor-decay`. #14007
 * [FEATURE] Ingester: Added experimental per-tenant early head compaction. New per-tenant limits `-ingester.early-head-compaction-owned-series-threshold` and `-ingester.early-head-compaction-min-estimated-series-reduction-percentage` trigger compaction based on owned series count. #13980
+* [FEATURE] Ingester: Added experimental support to run ingesters with no tokens in the ring when ingest storage is enabled. You can set `-ingester.ring.num-tokens=0` to enable this feature. #14024
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
@@ -99,9 +102,11 @@
 * [ENHANCEMENT] Store-gateway: Add `cortex_bucket_store_blocks_loaded_size_bytes` metric to track per-tenant disk utilization. #13891
 * [ENHANCEMENT] Compactor: If compaction fails because the result block would have a postings offsets table larger than the 4GB limit, mark input blocks for no-compaction to avoid blocking future compactor runs. #13876
 * [ENHANCEMENT] Query-frontend: add support for `range()` duration expression. #13931
-* [ENHANCEMENT] Add experimental flag `common.instrument-reference-leaks-percentage` to leaked references to gRPC buffers. #13609
+* [ENHANCEMENT] Add experimental flag `common.instrument-reference-leaks-percentage` to leaked references to gRPC buffers. #13609 #14083
 * [ENHANCEMENT] Ingester: Reduce likelihood of ingestion being paused while idle TSDB compaction is in progress. #13978
 * [ENHANCEMENT] Ingester: Extend `cortex_ingester_tsdb_forced_compactions_in_progress` metric to report a value of 1 when there's an idle or forced TSDB head compaction in progress. #13979
+* [ENHANCEMENT] MQE: Include metric name in `histogram_quantile` warning/info annotations when delayed name removal is enabled. #13905
+* [ENHANCEMENT] MQE: Add metrics to track step-invariant expression usage and data point reuse savings: `cortex_mimir_query_engine_step_invariant_nodes_total` and `cortex_mimir_query_engine_step_invariant_steps_saved_total`. #13911
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
@@ -139,6 +144,8 @@
 * [BUGFIX] Query-frontend: Fix `step()` duration expression returning 1000x larger value. #13920
 * [BUGFIX] Store-gateway: Fix parent-child relationship in LabelNames and LabelValues trace spans. #13932
 * [BUGFIX] MQE: Map remote execution storage errors correctly. #13944
+* [BUGFIX] Ingester: Fix race condition where new partition could reach Active partition ring state for a before its ingester instances reached Active ring state. #14025
+* [BUGFIX] Ingester: Query all ingesters when shuffle sharding is disabled. #14041
 
 ### Mixin
 
@@ -691,6 +698,7 @@
 
 ### Mimirtool
 
+* [CHANGE] Changed logging library from logrus to go-kit/log. Log output format has changed to logfmt. The `fatal` log level is no longer supported; use `error` instead. #14059
 * [FEATURE] Add `--enable-experimental-functions` flag to commands that parse PromQL to allow parsing experimental functions such as `sort_by_label()`.
 * [ENHANCEMENT] Add `--block-size` CLI flag to `remote-read export` that allows setting the output block size. #12025
 * [BUGFIX] Fix issue where `remote-read` doesn't behave like other mimirtool commands for authentication. #11402

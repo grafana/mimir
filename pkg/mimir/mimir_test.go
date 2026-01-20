@@ -85,6 +85,7 @@ func TestMimir(t *testing.T) {
 				KVStore: kv.Config{
 					Store: "inmemory",
 				},
+				NumTokens:              512,
 				ReplicationFactor:      3,
 				InstanceInterfaceNames: []string{"en0", "eth0", "wlan0", "lo0", "lo"},
 				HeartbeatPeriod:        5 * time.Second,

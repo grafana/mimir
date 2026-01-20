@@ -12,6 +12,7 @@ import (
 	"sort"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
@@ -22,10 +23,12 @@ import (
 type RulerAnalyzeCommand struct {
 	ClientConfig client.Config
 	outputFile   string
+
+	logger log.Logger
 }
 
 func (cmd *RulerAnalyzeCommand) run(_ *kingpin.ParseContext) error {
-	output, err := AnalyzeRuler(cmd.ClientConfig)
+	output, err := AnalyzeRuler(cmd.ClientConfig, cmd.logger)
 	if err != nil {
 		return err
 	}
@@ -39,11 +42,11 @@ func (cmd *RulerAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeRuler analyze Mimir's ruler and return the list metrics used in them.
-func AnalyzeRuler(c client.Config) (*analyze.MetricsInRuler, error) {
+func AnalyzeRuler(c client.Config, logger log.Logger) (*analyze.MetricsInRuler, error) {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	cli, err := client.New(c)
+	cli, err := client.New(c, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +59,7 @@ func AnalyzeRuler(c client.Config) (*analyze.MetricsInRuler, error) {
 
 	for ns := range rules {
 		for _, rg := range rules[ns] {
-			err := analyze.ParseMetricsInRuleGroup(output, rg, ns)
+			err := analyze.ParseMetricsInRuleGroup(output, rg, ns, logger)
 			if err != nil {
 				return nil, errors.Wrap(err, "metrics parse error")
 

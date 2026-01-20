@@ -58,6 +58,10 @@ func (s *Time) Prepare(_ context.Context, _ *types.PrepareParams) error {
 	return nil
 }
 
+func (s *Time) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
 func (s *Time) Finalize(_ context.Context) error {
 	// Nothing to do.
 	return nil

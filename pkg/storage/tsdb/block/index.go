@@ -711,7 +711,9 @@ func clampChunk(input *chunks.Meta, minT, maxT int64) (*chunks.Meta, error) {
 		if t, v := iter.At(); t >= minT && t < maxT {
 			chunkMinT = min(chunkMinT, t)
 			chunkMaxT = max(chunkMaxT, t)
-			app.Append(t, v)
+			// TODO(krajorama): test the ST is correctly passed when chunk
+			// format with ST is available.
+			app.Append(iter.AtST(), t, v)
 		}
 	}
 

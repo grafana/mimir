@@ -41,7 +41,7 @@ func NewPartitionOffsetWatcher() *PartitionOffsetWatcher {
 		watchGroups:        map[int64]*partitionOffsetWatchGroup{},
 	}
 
-	w.Service = services.NewIdleService(nil, w.stopping)
+	w.Service = services.NewIdleService(nil, w.stopping).WithName("partition-offset-watcher")
 
 	return w
 }

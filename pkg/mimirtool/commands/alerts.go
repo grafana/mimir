@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
@@ -28,7 +30,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/term"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
@@ -68,8 +69,10 @@ type AlertCommand struct {
 }
 
 // Register rule related commands and flags with the kingpin application
-func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	alertCmd := app.Command("alertmanager", "View and edit Alertmanager configurations that are stored in Grafana Mimir.").PreAction(a.setup)
+func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
+	alertCmd := app.Command("alertmanager", "View and edit Alertmanager configurations that are stored in Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error {
+		return a.setup(k, logConfig.Logger())
+	})
 	alertCmd.Flag("user", fmt.Sprintf("Basic auth API user to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
 	alertCmd.Flag("key", "Basic auth API key to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&a.ClientConfig.Key)
 	alertCmd.Flag("tls-ca-path", "TLS CA certificate to verify Grafana Mimir API as part of mTLS; alternatively, set "+envVars.TLSCAPath+".").Default("").Envar(envVars.TLSCAPath).StringVar(&a.ClientConfig.TLS.CAPath)
@@ -80,7 +83,9 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 	alertCmd.Flag("utf8-strict-mode", "Enable UTF-8 strict mode. Allows UTF-8 characters in the matchers for routes and inhibition rules, in silences, and in the labels for alerts.").Default("false").BoolVar(&a.UTF8StrictMode)
 
 	// Get Alertmanager Configs Command
-	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(a.getConfig)
+	getAlertsCmd := alertCmd.Command("get", "Get the Alertmanager configuration that is currently in the Grafana Mimir Alertmanager.").Action(func(_ *kingpin.ParseContext) error {
+		return a.getConfig(logConfig.Logger())
+	})
 	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
 	getAlertsCmd.Flag("force-color", "force colored output").BoolVar(&a.ForceColor)
 	getAlertsCmd.Flag("output-dir", "The directory where the config and templates will be written to and disables printing to console.").ExistingDirVar(&a.OutputDir)
@@ -98,7 +103,9 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 		cmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&a.ClientConfig.ExtraHeaders)
 	}
 
-	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(a.migrateConfig)
+	migrateCmd := alertCmd.Command("migrate-utf8", "Migrate the Alertmanager tenant configuration for UTF-8.").Action(func(_ *kingpin.ParseContext) error {
+		return a.migrateConfig(logConfig.Logger())
+	})
 	migrateCmd.Arg("config", "Alertmanager configuration file to load").Required().StringVar(&a.AlertmanagerConfigFile)
 	migrateCmd.Arg("template-files", "The template files to load").ExistingFilesVar(&a.TemplateFiles)
 	migrateCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
@@ -121,7 +128,7 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application, envVars EnvVarN
 		StringVar(&trCmd.TenantID)
 }
 
-func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext, logger log.Logger) error {
 	// The default mode for mimirtool is to first use the new parser for UTF-8 matchers,
 	// and if it fails, fallback to the classic parser. If this happens, it also logs a
 	// warning to stdout. It is possible to disable to fallback, and use just the UTF-8
@@ -138,7 +145,7 @@ func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
 	}
 	compat.InitFromFlags(l, flags)
 
-	cli, err := client.New(a.ClientConfig)
+	cli, err := client.New(a.ClientConfig, logger)
 	if err != nil {
 		return err
 	}
@@ -147,11 +154,11 @@ func (a *AlertmanagerCommand) setup(_ *kingpin.ParseContext) error {
 	return nil
 }
 
-func (a *AlertmanagerCommand) getConfig(_ *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) getConfig(logger log.Logger) error {
 	cfg, templates, err := a.cli.GetAlertmanagerConfig(context.Background())
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
-			log.Infof("no Alertmanager config currently exists for this user")
+			level.Info(logger).Log("msg", "no Alertmanager config currently exists for this user")
 			return nil
 		}
 		return err
@@ -161,10 +168,10 @@ func (a *AlertmanagerCommand) getConfig(_ *kingpin.ParseContext) error {
 		p := printer.New(a.DisableColor, a.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 		return p.PrintAlertmanagerConfig(cfg, templates)
 	}
-	return a.outputAlertManagerConfigTemplates(cfg, templates)
+	return a.outputAlertManagerConfigTemplates(cfg, templates, logger)
 }
 
-func (a *AlertmanagerCommand) outputAlertManagerConfigTemplates(config string, templates map[string]string) error {
+func (a *AlertmanagerCommand) outputAlertManagerConfigTemplates(config string, templates map[string]string, logger log.Logger) error {
 	var baseDir string
 	var fileOutputLocation string
 	baseDir, err := filepath.Abs(a.OutputDir)
@@ -172,7 +179,7 @@ func (a *AlertmanagerCommand) outputAlertManagerConfigTemplates(config string, t
 		return err
 	}
 	fileOutputLocation = filepath.Join(baseDir, "config.yaml")
-	log.Debugf("writing the config file to %s", fileOutputLocation)
+	level.Debug(logger).Log("msg", "writing config file", "path", fileOutputLocation)
 	err = os.WriteFile(fileOutputLocation, []byte(config), os.FileMode(0o600))
 	if err != nil {
 		return err
@@ -180,7 +187,7 @@ func (a *AlertmanagerCommand) outputAlertManagerConfigTemplates(config string, t
 
 	for fn, template := range templates {
 		fileOutputLocation = filepath.Join(baseDir, fn)
-		log.Debugf("writing the template file to %s", fileOutputLocation)
+		level.Debug(logger).Log("msg", "writing template file", "path", fileOutputLocation)
 		err = os.WriteFile(fileOutputLocation, []byte(template), os.FileMode(0o600))
 		if err != nil {
 			return err
@@ -248,7 +255,7 @@ func (a *AlertmanagerCommand) deleteConfig(_ *kingpin.ParseContext) error {
 	return nil
 }
 
-func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
+func (a *AlertmanagerCommand) migrateConfig(logger log.Logger) error {
 	cfg, templates, err := a.readAlertManagerConfig()
 	if err != nil {
 		return err
@@ -261,11 +268,13 @@ func (a *AlertmanagerCommand) migrateConfig(_ *kingpin.ParseContext) error {
 		p := printer.New(a.DisableColor, a.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 		return p.PrintAlertmanagerConfig(cfg, templates)
 	}
-	return a.outputAlertManagerConfigTemplates(cfg, templates)
+	return a.outputAlertManagerConfigTemplates(cfg, templates, logger)
 }
 
-func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
-	alertCmd := app.Command("alerts", "View active alerts in alertmanager.").PreAction(func(k *kingpin.ParseContext) error { return a.setup(k, reg) })
+func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig, reg prometheus.Registerer) {
+	alertCmd := app.Command("alerts", "View active alerts in alertmanager.").PreAction(func(k *kingpin.ParseContext) error {
+		return a.setup(k, logConfig.Logger(), reg)
+	})
 	alertCmd.Flag("address", "Address of the Grafana Mimir cluster, alternatively set "+envVars.Address+".").Envar(envVars.Address).Required().StringVar(&a.ClientConfig.Address)
 	alertCmd.Flag("id", "Mimir tenant id, alternatively set "+envVars.TenantID+". Used for X-Scope-OrgID HTTP header. Also used for basic auth if --user is not provided..").Envar(envVars.TenantID).Required().StringVar(&a.ClientConfig.ID)
 	alertCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir, alternatively set %s. If empty, %s will be used instead. ", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&a.ClientConfig.User)
@@ -274,14 +283,16 @@ func (a *AlertCommand) Register(app *kingpin.Application, envVars EnvVarNames, r
 	a.ClientConfig.ExtraHeaders = map[string]string{}
 	alertCmd.Flag("extra-headers", "Extra headers to add to the requests in header=value format, alternatively set newline separated "+envVars.ExtraHeaders+".").Envar(envVars.ExtraHeaders).StringMapVar(&a.ClientConfig.ExtraHeaders)
 
-	verifyAlertsCmd := alertCmd.Command("verify", "Verifies whether or not alerts in an Alertmanager cluster are deduplicated; useful for verifying correct configuration when transferring from Prometheus to Grafana Mimir alert evaluation.").Action(a.verifyConfig)
+	verifyAlertsCmd := alertCmd.Command("verify", "Verifies whether or not alerts in an Alertmanager cluster are deduplicated; useful for verifying correct configuration when transferring from Prometheus to Grafana Mimir alert evaluation.").Action(func(_ *kingpin.ParseContext) error {
+		return a.verifyConfig(logConfig.Logger())
+	})
 	verifyAlertsCmd.Flag("ignore-alerts", "A comma separated list of Alert names to ignore in deduplication checks.").StringVar(&a.IgnoreString)
 	verifyAlertsCmd.Flag("source-label", "Label to look for when deciding if two alerts are duplicates of each other from separate sources.").Default("prometheus").StringVar(&a.SourceLabel)
 	verifyAlertsCmd.Flag("grace-period", "Grace period, don't consider alert groups with the incorrect amount of alert replicas erroneous unless the alerts have existed for more than this amount of time, in minutes.").Default("2").IntVar(&a.GracePeriod)
 	verifyAlertsCmd.Flag("frequency", "Setting this value will turn mimirtool into a long-running process, running the alerts verify check every # of minutes specified").IntVar(&a.CheckFrequency)
 }
 
-func (a *AlertCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) error {
+func (a *AlertCommand) setup(_ *kingpin.ParseContext, logger log.Logger, reg prometheus.Registerer) error {
 	a.nonDuplicateAlerts = promauto.With(reg).NewGauge(
 		prometheus.GaugeOpts{
 			Name: "mimirtool_alerts_single_source",
@@ -289,7 +300,7 @@ func (a *AlertCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer)
 		},
 	)
 
-	cli, err := client.New(a.ClientConfig)
+	cli, err := client.New(a.ClientConfig, logger)
 	if err != nil {
 		return err
 	}
@@ -312,7 +323,7 @@ type metric struct {
 	Metric map[string]string `json:"metric"`
 }
 
-func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
+func (a *AlertCommand) verifyConfig(logger log.Logger) error {
 	var empty interface{}
 	if a.IgnoreString != "" {
 		a.IgnoreAlerts = make(map[string]interface{})
@@ -320,7 +331,7 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 
 		for _, name := range chunks {
 			a.IgnoreAlerts[name] = empty
-			log.Info("Ignoring alerts with name: ", name)
+			level.Info(logger).Log("msg", "Ignoring alerts with name", "name", name)
 		}
 	}
 	lhs := fmt.Sprintf("ALERTS{source!=\"%s\", alertstate=\"firing\"} offset %dm unless ignoring(source) ALERTS{source=\"%s\", alertstate=\"firing\"}",
@@ -334,7 +345,7 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 
 	query := fmt.Sprintf("%s or %s", lhs, rhs)
 	if a.CheckFrequency <= 0 {
-		_, err := a.runVerifyQuery(context.Background(), query)
+		_, err := a.runVerifyQuery(context.Background(), query, logger)
 		return err
 	}
 
@@ -355,7 +366,10 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		}
-		log.Fatal(server.ListenAndServe())
+		if err := server.ListenAndServe(); err != nil {
+			level.Error(logger).Log("msg", "metrics listener failed", "err", err)
+			os.Exit(1)
+		}
 	}()
 
 	ctx := context.Background()
@@ -373,7 +387,7 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 	go func() {
 		ticker := time.NewTicker(time.Duration(a.CheckFrequency) * time.Minute)
 		for {
-			n, lastErr = a.runVerifyQuery(ctx, query)
+			n, lastErr = a.runVerifyQuery(ctx, query, logger)
 			a.nonDuplicateAlerts.Set(float64(n))
 			select {
 			case <-c:
@@ -389,7 +403,7 @@ func (a *AlertCommand) verifyConfig(_ *kingpin.ParseContext) error {
 	return lastErr
 }
 
-func (a *AlertCommand) runVerifyQuery(ctx context.Context, query string) (int, error) {
+func (a *AlertCommand) runVerifyQuery(ctx context.Context, query string, logger log.Logger) (int, error) {
 	res, err := a.cli.Query(ctx, query)
 
 	if err != nil {
@@ -410,12 +424,9 @@ func (a *AlertCommand) runVerifyQuery(ctx context.Context, query string) (int, e
 
 	for _, m := range data.Data.Result {
 		if _, ok := a.IgnoreAlerts[m.Metric["alertname"]]; !ok {
-			log.WithFields(log.Fields{
-				"alertname": m.Metric["alertname"],
-				"state":     m.Metric,
-			}).Infof("alert found that was not in both sources")
+			level.Info(logger).Log("msg", "alert found that was not in both sources", "alertname", m.Metric["alertname"], "state", fmt.Sprintf("%v", m.Metric))
 		}
 	}
-	log.WithFields(log.Fields{"count": len(data.Data.Result)}).Infof("found mismatching alerts")
+	level.Info(logger).Log("msg", "found mismatching alerts", "count", len(data.Data.Result))
 	return len(data.Data.Result), nil
 }

@@ -39,6 +39,18 @@ func (m *Matcher) SingleMatchCost() float64 {
 			return estimatedMapContainsCost
 		}
 
+		// If we have a short-circuit optimization to just check for literals in a particular order,
+		// or the pattern matches everything, use that
+		if _, ok := m.re.stringMatcher.(trueMatcher); ok {
+			chars := 0
+
+			for _, s := range m.re.contains {
+				chars += len(s)
+			}
+
+			return max(float64(chars), 1) // 1 to ensure the cost is not 0 for matchers that match everything
+		}
+
 		// If we have a prefix optimization, use that
 		if m.re.prefix != "" {
 			return estimatedStringHasPrefixCost

@@ -612,6 +612,14 @@ func (b *OneToOneVectorVectorBinaryOperation) Prepare(ctx context.Context, param
 	return b.Right.Prepare(ctx, params)
 }
 
+func (b *OneToOneVectorVectorBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := b.Left.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	return b.Right.AfterPrepare(ctx)
+}
+
 func (b *OneToOneVectorVectorBinaryOperation) Finalize(ctx context.Context) error {
 	if err := b.Left.Finalize(ctx); err != nil {
 		return err

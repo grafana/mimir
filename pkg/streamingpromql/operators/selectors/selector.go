@@ -40,6 +40,11 @@ type Selector struct {
 	Anchored bool
 	Smoothed bool
 
+	// When the Smoothed range modifier is used this flag can be set to request that interpolated boundary values compensate for counter resets.
+	// For instance this is used for rate and increase functions wrapping a smoothed selector.
+	// This flag has no effect unless Smoothed is set to true.
+	CounterAware bool
+
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	querier   storage.Querier

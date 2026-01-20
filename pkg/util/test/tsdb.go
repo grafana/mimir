@@ -19,13 +19,14 @@ type Series struct {
 // a sample can only be a float, histogram, or float histogram.
 // This is not enforced in a constructor for convenience in test code.
 type Sample struct {
-	TS        int64
+	STS, TS   int64 // Start Timestamp and Timestamp
 	Val       float64
 	Hist      *histogram.Histogram
 	FloatHist *histogram.FloatHistogram
 }
 
 func (s Sample) T() int64                      { return s.TS }
+func (s Sample) ST() int64                     { return s.STS }
 func (s Sample) F() float64                    { return s.Val }
 func (s Sample) H() *histogram.Histogram       { return s.Hist }
 func (s Sample) FH() *histogram.FloatHistogram { return s.FloatHist }
@@ -42,7 +43,7 @@ func (s Sample) Type() chunkenc.ValueType {
 }
 
 func (s Sample) Copy() chunks.Sample {
-	c := Sample{TS: s.TS, Val: s.Val}
+	c := Sample{STS: s.STS, TS: s.TS, Val: s.Val}
 	if s.Hist != nil {
 		c.Hist = s.Hist.Copy()
 	}
