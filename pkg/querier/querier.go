@@ -186,6 +186,7 @@ func New(
 	logger log.Logger,
 	tracker *activitytracker.ActivityTracker,
 	planner *streamingpromql.QueryPlanner,
+	limitsProvider streamingpromql.QueryLimitsProvider,
 ) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
@@ -227,7 +228,6 @@ func New(
 	case PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
-		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
 		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
 		if err != nil {

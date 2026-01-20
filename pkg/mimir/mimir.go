@@ -859,6 +859,7 @@ type Mimir struct {
 	IngesterPartitionInstanceRing    *ring.PartitionInstanceRing
 	TenantLimits                     validation.TenantLimits
 	Overrides                        *validation.Overrides
+	QueryLimitsProvider              streamingpromql.QueryLimitsProvider
 	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
 	Distributor                      *distributor.Distributor
 	Ingester                         *ingester.Ingester
