@@ -6,6 +6,7 @@
 package types
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -182,6 +183,10 @@ type RangeVectorStepData struct {
 // substep for the same parent step, and the next step is assumed to cover a later range (we only start searching from
 // after the samples of the previous subviews).
 func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, previousSubStep *RangeVectorStepData) (*RangeVectorStepData, error) {
+	if s.Anchored || s.Smoothed {
+		return nil, errors.New("substep not supported for range vectors with anchored or smoothed modifiers")
+	}
+
 	if rangeStart < s.RangeStart {
 		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
 	}

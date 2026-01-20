@@ -406,22 +406,12 @@ func TestRangeVectorStepData_SubStep(t *testing.T) {
 }
 
 func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
-	memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-	floats := NewFPointRingBuffer(memoryTracker)
-	histograms := NewHPointRingBuffer(memoryTracker)
-
-	step := &RangeVectorStepData{
-		StepT:      150,
-		RangeStart: 100,
-		RangeEnd:   200,
-		Floats:     floats.ViewUntilSearchingBackwards(200, nil),
-		Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
-	}
-
 	testCases := []struct {
 		name        string
 		rangeStart  int64
 		rangeEnd    int64
+		smoothed    bool
+		anchored    bool
 		expectedErr string
 	}{
 		{
@@ -454,10 +444,38 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 			rangeEnd:    250,
 			expectedErr: "substep start (50) is before parent step's start (100)",
 		},
+		{
+			name:        "smoothed not supported",
+			rangeStart:  120,
+			rangeEnd:    150,
+			smoothed:    true,
+			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
+		},
+		{
+			name:        "anchored not supported",
+			rangeStart:  120,
+			rangeEnd:    150,
+			anchored:    true,
+			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			floats := NewFPointRingBuffer(memoryTracker)
+			histograms := NewHPointRingBuffer(memoryTracker)
+
+			step := &RangeVectorStepData{
+				StepT:      150,
+				RangeStart: 100,
+				RangeEnd:   200,
+				Smoothed:   tc.smoothed,
+				Anchored:   tc.anchored,
+				Floats:     floats.ViewUntilSearchingBackwards(200, nil),
+				Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
+			}
+
 			_, err := step.SubStep(tc.rangeStart, tc.rangeEnd, nil)
 			require.EqualError(t, err, tc.expectedErr)
 		})
