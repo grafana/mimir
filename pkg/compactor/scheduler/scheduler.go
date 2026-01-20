@@ -289,7 +289,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return true
 	})
 	if err != nil {
-		level.Error(s.logger).Log("msg", "failed leasing plan job: %w", err)
+		level.Error(s.logger).Log("msg", "failed leasing plan job", "err", err)
 		return nil, err
 	}
 	if ok {
@@ -310,7 +310,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 		return true
 	})
 	if err != nil {
-		level.Error(s.logger).Log("msg", "failed leasing compaction job: %w", err)
+		level.Error(s.logger).Log("msg", "failed leasing compaction job", "err", err)
 		return nil, err
 	}
 	if ok {
@@ -325,7 +325,7 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	removed, _, err := s.planTracker.Remove(req.Key.Id, req.Key.Epoch)
 	if err != nil {
-		level.Error(s.logger).Log("msg", "failed removing plan job: %w", err)
+		level.Error(s.logger).Log("msg", "failed removing plan job", "err", err)
 		return nil, err
 	}
 	if removed {
@@ -348,7 +348,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 			return previous.isSplit != new.isSplit || !slices.EqualFunc(previous.blocks, new.blocks, slices.Equal)
 		})
 		if err != nil {
-			level.Error(s.logger).Log("msg", "failed offering result of plan job: %w", err)
+			level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 			return nil, err
 		}
 		return &compactorschedulerpb.PlannedJobsResponse{}, nil

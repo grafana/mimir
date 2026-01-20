@@ -276,7 +276,7 @@ func (r *Rotator) RemoveTenant(tenant string) {
 func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
 	_, err := r.planTracker.ExpireLeases(leaseDuration)
 	if err != nil {
-		level.Info(r.logger).Log("msg", "background lease expiration failed for planning job tracker", "err", err)
+		level.Warn(r.logger).Log("msg", "background lease expiration failed for planning job tracker", "err", err)
 	}
 
 	r.mtx.RLock()
@@ -284,7 +284,7 @@ func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
 	for tenant, tenantState := range r.tenantStateMap {
 		transition, err := tenantState.tracker.ExpireLeases(leaseDuration)
 		if err != nil {
-			level.Info(r.logger).Log("msg", "background lease expiration failed for tenant compaction job tracker", "tenant", tenant, "err", err)
+			level.Warn(r.logger).Log("msg", "background lease expiration failed for tenant compaction job tracker", "tenant", tenant, "err", err)
 		} else if transition {
 			addRotationFor = append(addRotationFor, tenant)
 		}

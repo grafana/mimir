@@ -99,17 +99,24 @@ func (s *Spawner) plan() {
 	for tenant, lastSubmitted := range s.planMap {
 		if now.Sub(lastSubmitted) > s.planningInterval {
 			jobs = append(jobs, NewJob(tenant, struct{}{}, now, s.clock))
-			s.planMap[tenant] = now
 		}
 	}
 
 	// TODO: Can track how many were actually accepted with metrics
-	s.planTracker.Offer(
+	_, _, err := s.planTracker.Offer(
 		jobs,
 		func(_ struct{}, _ struct{}) bool {
 			return false
 		},
 	)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed submitting plan jobs", "err", err)
+		return
+	}
+
+	for _, job := range jobs {
+		s.planMap[job.id] = now
+	}
 }
 
 func (s *Spawner) discoverTenants(ctx context.Context) error {
@@ -148,9 +155,13 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 	for tenant := range s.planMap {
 		if _, ok := seen[tenant]; !ok {
 			level.Info(s.logger).Log("msg", "removing empty tenant from compactor scheduler", "tenant", tenant)
-			s.planTracker.RemoveForcefully(tenant)
+			_, _, err := s.planTracker.RemoveForcefully(tenant)
+			if err != nil {
+				level.Warn(s.logger).Log("msg", "failed removing empty tenant from plan tracker", "tenant", tenant, "err", err)
+				continue
+			}
 			s.rotator.RemoveTenant(tenant)
-			err := s.db.Update(func(tx *bbolt.Tx) error {
+			err = s.db.Update(func(tx *bbolt.Tx) error {
 				// TODO extract prefixing
 				return tx.DeleteBucket([]byte("u" + tenant))
 			})

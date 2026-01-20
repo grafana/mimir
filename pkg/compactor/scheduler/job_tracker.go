@@ -11,8 +11,9 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
-	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"go.etcd.io/bbolt"
+
+	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
 const InfiniteLeases = 0
@@ -186,8 +187,7 @@ func (jt *JobTracker[V]) Lease(canAccept func(string, V) bool) (id string, value
 	j := e.Value.(*Job[V])
 
 	// Copy the value, don't want to leave a modification if the write fails
-	var jv Job[V]
-	jv = *j
+	jv := *j
 	jj := &jv
 
 	jj.MarkLeased()
@@ -359,23 +359,6 @@ func (jt *JobTracker[V]) ExpireLeases(leaseDuration time.Duration) (bool, error)
 	return wasEmpty && len(reviveJobs) > 0, nil
 }
 
-// endLease removes a job from the active list and returns true if the job was returned to the queue or false otherwise
-func (jt *JobTracker[V]) endLease(e *list.Element, j *Job[V]) bool {
-	jt.active.Remove(e)
-	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.active.Len()))
-
-	// Can the job be returned to the queue?
-	if jt.maxLeases == InfiniteLeases || j.numLeases < jt.maxLeases {
-		j.ClearLease()
-		jt.allJobs[j.id] = jt.pending.PushFront(j)
-		jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
-		return true
-	}
-
-	delete(jt.allJobs, j.id)
-	return false
-}
-
 func (jt *JobTracker[V]) RenewLease(id string, epoch int64) bool {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
@@ -412,8 +395,7 @@ func (jt *JobTracker[V]) CancelLease(id string, epoch int64) (canceled bool, bec
 	revive := jt.maxLeases == InfiniteLeases || j.numLeases < jt.maxLeases
 	if revive {
 		// Copy the value, don't want to leave a modification if the write fails
-		var jv Job[V]
-		jv = *j
+		jv := *j
 		jj := &jv
 		jj.ClearLease()
 		err = jt.writeJobToDB(jj)
