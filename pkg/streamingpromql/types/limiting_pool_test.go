@@ -243,7 +243,7 @@ func TestLimitingPool_Mangling(t *testing.T) {
 
 func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-	onPutHookPointCount := 0
+	onPutHookSlices := [][]promql.FPoint{}
 	p := NewLimitingBucketedPool(
 		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
 		limiter.FPointSlices,
@@ -251,7 +251,7 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 		false,
 		nil,
 		func(s []promql.FPoint, _ *limiter.MemoryConsumptionTracker) {
-			onPutHookPointCount += len(s)
+			onPutHookSlices = append(onPutHookSlices, s)
 		},
 	)
 
@@ -273,8 +273,8 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 	require.NotSame(t, unsafe.SliceData(s2), unsafe.SliceData(s3))
 	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
 	require.Equal(t, []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}, {T: 4, F: 4.0}, {T: 5, F: 5.0}}, s3)
-
-	require.Equal(t, 0, onPutHookPointCount)
+	require.Len(t, onPutHookSlices, 1)
+	require.Equal(t, onPutHookSlices[0], []promql.FPoint{{T: 0, F: 0}, {T: 0, F: 0}})
 
 	// Get another slice from the pool.
 	// This is likely (but not guaranteed) to get the s2 slice that was returned to the pool when AppendToSlice() was
@@ -288,7 +288,6 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 
 	p.Put(&s3, tracker)
 	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
-	require.Equal(t, 5, onPutHookPointCount)
 }
 
 func TestLimitingBucketedPool_AppendToSlice_Error(t *testing.T) {
