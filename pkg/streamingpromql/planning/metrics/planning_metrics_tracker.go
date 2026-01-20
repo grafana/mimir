@@ -28,8 +28,11 @@ type StepInvariantExpressionMetricsTracker struct {
 
 // OnStepInvariantExpressionAdded is called when a step invariant expression planning node is added to a plan.
 // It increments the nodes counter by 1, and the steps saved counter is incremented by the given stepCount-1.
-// It is the caller's responsibility to ensure that the step count is > 1.
+// If stepCount <= 1, no metrics are recorded.
 func (t *StepInvariantExpressionMetricsTracker) OnStepInvariantExpressionAdded(stepCount int) {
+	if stepCount <= 1 {
+		return
+	}
 	t.nodes.Inc()
 	t.steps.Add(float64(stepCount - 1))
 }
