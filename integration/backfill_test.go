@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -118,15 +119,15 @@ overrides:
 
 		// Upload block using mimirtool, should work since upload is enabled for user.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1)
-		require.Contains(t, output, fmt.Sprintf("block=%s msg=\"block uploaded successfully\"", block1))
+		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block1))
 		require.NoError(t, err)
 	}
 
 	{
 		// Upload block1 and block2. Block 1 already exists, but block2 should be uploaded without problems.
 		output, err := runMimirtoolBackfill(tmpDir, compactor, block1, block2)
-		require.Contains(t, output, fmt.Sprintf("path=%s msg=\"block already exists on the server\"", path.Join(e2e.ContainerSharedDir, block1.String())))
-		require.Contains(t, output, fmt.Sprintf("block=%s msg=\"block uploaded successfully\"", block2))
+		requireLineContaining(t, output, "msg=\"block already exists on the server\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, block1.String())))
+		requireLineContaining(t, output, "msg=\"block uploaded successfully\"", fmt.Sprintf("block=%s", block2))
 
 		// If blocks exist, it's not an error.
 		require.NoError(t, err)
@@ -162,7 +163,7 @@ overrides:
 		require.NoError(t, os.Remove(filepath.Join(tmpDir, b.String(), block.MetaFilename)))
 
 		output, err := runMimirtoolBackfill(tmpDir, compactor, b)
-		require.Regexp(t, fmt.Sprintf("path=%s[^\n]+msg=\"failed uploading block\"", path.Join(e2e.ContainerSharedDir, b.String())), output)
+		requireLineContaining(t, output, "msg=\"failed uploading block\"", fmt.Sprintf("path=%s", path.Join(e2e.ContainerSharedDir, b.String())))
 		require.Error(t, err)
 	}
 
@@ -405,4 +406,19 @@ func TestRateLimitedReader(t *testing.T) {
 	require.Equal(t, int64(len(data)), n)
 	// rate limiter starts "full", hence "dataLen - dataRate".
 	require.InDelta(t, elapsed.Seconds(), (dataLen-dataRate)/dataRate, 1)
+}
+
+// requireLineContaining requires that some line in the output contains all the given substrings.
+func requireLineContaining(t *testing.T, output string, substrs ...string) {
+	lines := strings.Split(output, "\n")
+linesLoop:
+	for _, line := range lines {
+		for _, substr := range substrs {
+			if !strings.Contains(line, substr) {
+				continue linesLoop
+			}
+		}
+		return
+	}
+	require.FailNow(t, "line not found", "no line in output contains all of: %q", substrs)
 }
