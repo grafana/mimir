@@ -30,11 +30,14 @@ type ValidateAlertFilesCommand struct {
 }
 
 // Register registers the validate command and its subcommands with the kingpin application.
-func (cmd *ValidateCommand) Register(app *kingpin.Application, _ EnvVarNames) {
+func (cmd *ValidateCommand) Register(app *kingpin.Application, _ EnvVarNames, logConfig *LoggerConfig) {
 	validateCmd := app.Command("validate", "Validate Prometheus files.")
 
 	alertsCmd := &ValidateAlertFilesCommand{}
-	validateAlertsCmd := validateCmd.Command("alerts-file", "Load alert rule files and run validations on them.").Action(alertsCmd.run)
+	validateAlertsCmd := validateCmd.Command("alerts-file", "Load alert rule files and run validations on them.").Action(alertsCmd.run).PreAction(func(_ *kingpin.ParseContext) error {
+		alertsCmd.logger = logConfig.Logger()
+		return nil
+	})
 	validateAlertsCmd.Arg("files", "Alert rule files to validate").Required().ExistingFilesVar(&alertsCmd.Files)
 	validateAlertsCmd.Flag("verbose", "Print verbose output").Default("false").BoolVar(&alertsCmd.Verbose)
 	validateAlertsCmd.Flag("set-exit-code", "Set exit code 1 on failures").Default("false").BoolVar(&alertsCmd.SetExitCode)
