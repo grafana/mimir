@@ -4951,8 +4951,8 @@ func TestStepInvariantMetrics(t *testing.T) {
 
 			opts := NewTestEngineOpts()
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-			planner.planningMetricsTracker = planningmetrics.NewMetricsTracker(registry)
 			require.NoError(t, err)
+			planner.planningMetricsTracker = planningmetrics.NewMetricsTracker(registry)
 
 			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)
