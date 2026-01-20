@@ -18,7 +18,9 @@ import (
 )
 
 // ValidateCommand is the parent command for validation operations.
-type ValidateCommand struct{}
+type ValidateCommand struct {
+	logger log.Logger
+}
 
 // ValidateAlertFilesCommand validates alert rule files.
 type ValidateAlertFilesCommand struct {
@@ -31,14 +33,13 @@ type ValidateAlertFilesCommand struct {
 
 // Register registers the validate command and its subcommands with the kingpin application.
 func (cmd *ValidateCommand) Register(app *kingpin.Application, _ EnvVarNames, logConfig *LoggerConfig) {
-	var logger log.Logger
 	app.PreAction(func(_ *kingpin.ParseContext) error {
-		logger = logConfig.Logger()
+		cmd.logger = logConfig.Logger()
 		return nil
 	})
 	validateCmd := app.Command("validate", "Validate Prometheus files.")
 
-	alertsCmd := &ValidateAlertFilesCommand{logger: logger}
+	alertsCmd := &ValidateAlertFilesCommand{logger: cmd.logger}
 	validateAlertsCmd := validateCmd.Command("alerts-file", "Load alert rule files and run validations on them.").Action(alertsCmd.run)
 	validateAlertsCmd.Arg("files", "Alert rule files to validate").Required().ExistingFilesVar(&alertsCmd.Files)
 	validateAlertsCmd.Flag("verbose", "Print verbose output").Default("false").BoolVar(&alertsCmd.Verbose)
