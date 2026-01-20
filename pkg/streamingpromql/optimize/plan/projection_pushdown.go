@@ -223,12 +223,11 @@ func examineFunction(f *core.FunctionCall) (map[string]struct{}, SkipReason) {
 		// not support the info function at all so this code path isn't exercised.
 		return nil, SkipReasonNotSupported
 	case functions.FUNCTION_LABEL_JOIN:
-		args := functionLabelArgs(f.Args[1])
-		rest := functionLabelArgs(f.Args[3:]...)
-		maps.Copy(args, rest)
-		return args, SkipReasonOk
+		// label_join(v, dst_label, separator, src_labels...) - only src_labels need to be fetched
+		return functionLabelArgs(f.Args[3:]...), SkipReasonOk
 	case functions.FUNCTION_LABEL_REPLACE:
-		return functionLabelArgs(f.Args[1], f.Args[3]), SkipReasonOk
+		// label_replace(v, dst_label, replacement, src_label, regex) - only src_label needs to be fetched
+		return functionLabelArgs(f.Args[3]), SkipReasonOk
 	case functions.FUNCTION_SORT_BY_LABEL:
 		return functionLabelArgs(f.Args[1:]...), SkipReasonOk
 	case functions.FUNCTION_SORT_BY_LABEL_DESC:
