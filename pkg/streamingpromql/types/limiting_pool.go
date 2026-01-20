@@ -282,10 +282,6 @@ func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryC
 	// mutated (e.g. places that use slices of FloatHistogram instances reuse those instances if they're in the slice).
 	// Therefore the old slice needs to be cleared.
 	clear(s)
-	// Set the size of the old slice before returning to pool. When you put a slice back into the pool, onPutHooks are
-	// run which can reduce memory used for elements in the slice. In this case the elements are reused in new slice, so
-	// memory shouldn't be decreased for the elements.
-	s = s[:0]
 	p.Put(&s, tracker)
 
 	return append(newSlice, items...), nil
