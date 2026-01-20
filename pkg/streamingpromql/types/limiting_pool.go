@@ -282,6 +282,7 @@ func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryC
 	// mutated (e.g. places that use slices of FloatHistogram instances reuse those instances if they're in the slice).
 	// Therefore the old slice needs to be cleared.
 	clear(s)
+	s = s[:0]
 	p.Put(&s, tracker)
 
 	return append(newSlice, items...), nil
