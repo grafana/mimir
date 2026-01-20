@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -24,6 +25,8 @@ type ValidateAlertFilesCommand struct {
 	Files       []string
 	Verbose     bool
 	SetExitCode bool
+
+	logger log.Logger
 }
 
 // Register registers the validate command and its subcommands with the kingpin application.
@@ -46,7 +49,7 @@ type alertCheckResult struct {
 type alertCheckFunc func([]rulefmt.Rule) []alertCheckResult
 
 func (cmd *ValidateAlertFilesCommand) run(_ *kingpin.ParseContext) error {
-	namespaces, err := rules.ParseFiles(rules.MimirBackend, cmd.Files, model.UTF8Validation)
+	namespaces, err := rules.ParseFiles(rules.MimirBackend, cmd.Files, model.UTF8Validation, cmd.logger)
 	if err != nil {
 		return fmt.Errorf("failed to parse rule files: %w", err)
 	}
