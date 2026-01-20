@@ -196,8 +196,8 @@ func (r *BucketBinaryReader) loadSparseHeader(
 		level.Debug(logger).Log("msg", "writing sparse index-header to disk")
 
 		sparseHeaders := &indexheaderpb.Sparse{
-			Symbols:             r.symbols.NewSparseSymbol(),
-			PostingsOffsetTable: r.postingsOffsetTable.NewSparsePostingOffsetTable(),
+			Symbols:             r.symbols.ToSparseSymbols(),
+			PostingsOffsetTable: r.postingsOffsetTable.ToSparsePostingOffsetTable(),
 		}
 		err := writeSparseHeadersToFile(sparseHeadersPath, sparseHeaders)
 		if err != nil {

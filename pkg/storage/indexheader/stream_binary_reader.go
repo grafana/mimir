@@ -220,7 +220,10 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 		// Try to load the downloaded sparse header
 		err = r.loadFromSparseIndexHeader(logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
 		if err == nil {
-			tryWriteSparseHeadersToFile(logger, sparseHeadersPath, r)
+			sparseHeaders := &indexheaderpb.Sparse{}
+			sparseHeaders.Symbols = r.symbols.ToSparseSymbols()
+			sparseHeaders.PostingsOffsetTable = r.postingsOffsetTable.ToSparsePostingOffsetTable()
+			tryWriteSparseHeadersToFile(logger, sparseHeadersPath, sparseHeaders)
 			return nil
 		}
 		level.Warn(logger).Log("msg", "failed to load sparse index-header from bucket; reconstructing", "err", err)
@@ -233,7 +236,11 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 		return fmt.Errorf("cannot load sparse index-header from full index-header: %w", err)
 	}
 	level.Info(logger).Log("msg", "generated sparse index-header from full index-header")
-	tryWriteSparseHeadersToFile(logger, sparseHeadersPath, r)
+
+	sparseHeaders := &indexheaderpb.Sparse{}
+	sparseHeaders.Symbols = r.symbols.ToSparseSymbols()
+	sparseHeaders.PostingsOffsetTable = r.postingsOffsetTable.ToSparsePostingOffsetTable()
+	tryWriteSparseHeadersToFile(logger, sparseHeadersPath, sparseHeaders)
 
 	return nil
 }
@@ -336,12 +343,8 @@ func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, 
 	return nil
 }
 
-// writeSparseHeadersToFile uses protocol buffer to write StreamBinaryReader to disk at sparseHeadersPath.
-func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryReader) (retErr error) {
-	sparseHeaders := &indexheaderpb.Sparse{}
-	sparseHeaders.Symbols = reader.symbols.ToSparseSymbols()
-	sparseHeaders.PostingsOffsetTable = reader.postingsOffsetTable.ToSparsePostingOffsetTable()
-
+// writeSparseHeadersToFile uses protocol buffer to write sparseHeaders to disk at sparseHeadersPath.
+func writeSparseHeadersToFile(sparseHeadersPath string, sparseHeaders *indexheaderpb.Sparse) (retErr error) {
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
 		return fmt.Errorf("failed to encode sparse index-header: %w", err)
@@ -367,11 +370,11 @@ func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryRead
 
 // tryWriteSparseHeadersToFile attempts to write the sparse header to disk.
 // If it fails, it will log a warning.
-func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, reader *StreamBinaryReader) {
+func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sparseHeaders *indexheaderpb.Sparse) (retErr error) {
 	start := time.Now()
 	level.Debug(logger).Log("msg", "writing sparse index-header to disk")
 
-	err := writeSparseHeadersToFile(sparseHeadersPath, reader)
+	err := writeSparseHeadersToFile(sparseHeadersPath, sparseHeaders)
 
 	if err != nil {
 		logger = log.With(level.Warn(logger), "msg", "error writing sparse header to disk; will continue loading block", "err", err)
@@ -379,6 +382,7 @@ func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, re
 		logger = log.With(level.Info(logger), "msg", "wrote sparse header to disk")
 	}
 	logger.Log("elapsed", time.Since(start))
+	return retErr
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
