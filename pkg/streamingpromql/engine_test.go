@@ -4962,17 +4962,17 @@ func TestStepInvariantMetrics(t *testing.T) {
 			res := qry.Exec(context.Background())
 			require.NoError(t, res.Err)
 
-			metrics, err := registry.Gather()
-			require.NoError(t, err)
-			for _, m := range metrics {
-				if m.GetName() == "cortex_mimir_query_engine_step_invariant_nodes_total" {
-					require.Equal(t, float64(tc.expectedNodes), m.GetMetric()[0].Counter.GetValue())
-				} else if m.GetName() == "cortex_mimir_query_engine_step_invariant_steps_saved_total" {
-					require.Equal(t, float64(tc.expectedStepsSaved), m.GetMetric()[0].Counter.GetValue())
-				} else {
-					require.Fail(t, "unexpected metric name", m.GetName())
-				}
-			}
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(fmt.Sprintf(`
+							# HELP cortex_mimir_query_engine_step_invariant_nodes_total Total number of step invariant nodes.
+							# TYPE cortex_mimir_query_engine_step_invariant_nodes_total counter
+							cortex_mimir_query_engine_step_invariant_nodes_total %d
+						`, tc.expectedNodes)), "cortex_mimir_query_engine_step_invariant_nodes_total"))
+
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(fmt.Sprintf(`
+							# HELP cortex_mimir_query_engine_step_invariant_steps_saved_total Total number of steps which were saved from being evaluated due to step invariant handling.
+							# TYPE cortex_mimir_query_engine_step_invariant_steps_saved_total counter
+							cortex_mimir_query_engine_step_invariant_steps_saved_total %d
+						`, tc.expectedStepsSaved)), "cortex_mimir_query_engine_step_invariant_steps_saved_total"))
 
 			// Extra assertions to ensure we do not introduce bad test data
 			if tc.expectedNodes == 0 {
