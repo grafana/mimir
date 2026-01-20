@@ -147,6 +147,7 @@
 * [BUGFIX] MQE: Map remote execution storage errors correctly. #13944
 * [BUGFIX] Ingester: Fix race condition where new partition could reach Active partition ring state for a before its ingester instances reached Active ring state. #14025
 * [BUGFIX] Ingester: Query all ingesters when shuffle sharding is disabled. #14041
+* [BUGFIX] Query-frontend: Fix issue where per-query memory consumption limit is not enforced. #14086
 
 ### Mixin
 
