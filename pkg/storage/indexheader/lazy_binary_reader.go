@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
@@ -125,6 +126,7 @@ type unloadRequest struct {
 // It does not try to parse the sparse index header.
 func NewLazyBinaryReader(
 	ctx context.Context,
+	cfg Config,
 	readerFactory func() (Reader, error),
 	logger log.Logger,
 	bkt objstore.InstrumentedBucketReader,
@@ -148,20 +150,20 @@ func NewLazyBinaryReader(
 
 	logger = log.With(logger, "id", id)
 
-	tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
+	g := errgroup.Group{}
+	if !cfg.BucketReader.Enabled {
+		g.Go(func() error {
+			return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
+		})
+	}
 
-	//g := errgroup.Group{}
-	//g.Go(func() error {
-	//	return ensureIndexHeaderOnDisk(ctx, logger, bkt, id, indexHeaderPath)
-	//})
-	//
-	//g.Go(func() error {
-	//	tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
-	//	return nil
-	//})
-	//if err := g.Wait(); err != nil {
-	//	return nil, err
-	//}
+	g.Go(func() error {
+		tryDownloadSparseHeader(ctx, logger, bkt, id, sparseHeaderPath)
+		return nil
+	})
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
 
 	reader := &LazyBinaryReader{
 		logger:          logger,
