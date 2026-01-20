@@ -34,32 +34,60 @@ func TestOptimizationPass(t *testing.T) {
 			expr:            `max(foo)`,
 			expectUnchanged: true,
 		},
-		"two aggregations of same selector": {
+		"two aggregations of same selector in same binary expression": {
 			expr: `(max(foo) / min(foo)) + count(bar)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: BinaryExpression: LHS / RHS
-						- LHS: MultiAggregationConsumer: max
+						- LHS: MultiAggregationInstance: max
 							- ref#1 MultiAggregationGroup
 								- VectorSelector: {__name__="foo"}
-						- RHS: MultiAggregationConsumer: min
+						- RHS: MultiAggregationInstance: min
 							- ref#1 MultiAggregationGroup ...
 					- RHS: AggregateExpression: count
 						- VectorSelector: {__name__="bar"}
 						`,
+		},
+		"two aggregations of same selector, in different binary expression where duplicated selector appears first": {
+			expr: `max(foo) / (min(foo) + count(bar))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: MultiAggregationInstance: max
+						- ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: MultiAggregationInstance: min
+							- ref#1 MultiAggregationGroup ...
+						- RHS: AggregateExpression: count
+							- VectorSelector: {__name__="bar"}
+			`,
+		},
+		"two aggregations of same selector, in different binary expression where duplicated selector appears second": {
+			expr: `max(foo) / (count(bar) + min(foo))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: MultiAggregationInstance: max
+						- ref#1 MultiAggregationGroup
+							- VectorSelector: {__name__="foo"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: AggregateExpression: count
+							- VectorSelector: {__name__="bar"}
+						- RHS: MultiAggregationInstance: min
+							- ref#1 MultiAggregationGroup ...
+			`,
 		},
 		"multiple aggregations of same selector": {
 			expr: `(max by (env) (foo) + avg by (region) (foo)) / (count by (cluster) (foo) + count(bar))`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
 					- LHS: BinaryExpression: LHS + RHS
-						- LHS: MultiAggregationConsumer: max by (env)
+						- LHS: MultiAggregationInstance: max by (env)
 							- ref#1 MultiAggregationGroup
 								- VectorSelector: {__name__="foo"}
-						- RHS: MultiAggregationConsumer: avg by (region)
+						- RHS: MultiAggregationInstance: avg by (region)
 							- ref#1 MultiAggregationGroup ...
 					- RHS: BinaryExpression: LHS + RHS
-						- LHS: MultiAggregationConsumer: count by (cluster)
+						- LHS: MultiAggregationInstance: count by (cluster)
 							- ref#1 MultiAggregationGroup ...
 						- RHS: AggregateExpression: count
 							- VectorSelector: {__name__="bar"}
@@ -70,12 +98,12 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: BinaryExpression: LHS / RHS
-						- LHS: MultiAggregationConsumer: max
+						- LHS: MultiAggregationInstance: max
 							- ref#1 MultiAggregationGroup
 								- DeduplicateAndMerge
 									- FunctionCall: rate(...)
 										- MatrixSelector: {__name__="foo"}[5m0s]
-						- RHS: MultiAggregationConsumer: min
+						- RHS: MultiAggregationInstance: min
 							- ref#1 MultiAggregationGroup ...
 					- RHS: AggregateExpression: count
 						- VectorSelector: {__name__="bar"}
@@ -86,16 +114,16 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: BinaryExpression: LHS / RHS
-						- LHS: MultiAggregationConsumer: max
+						- LHS: MultiAggregationInstance: max
 							- ref#2 MultiAggregationGroup
 								- VectorSelector: {__name__="foo"}
-						- RHS: MultiAggregationConsumer: min
+						- RHS: MultiAggregationInstance: min
 							- ref#1 MultiAggregationGroup
 								- VectorSelector: {__name__="bar"}
 					- RHS: BinaryExpression: LHS * RHS
-						- LHS: MultiAggregationConsumer: avg
+						- LHS: MultiAggregationInstance: avg
 							- ref#1 MultiAggregationGroup ...
-						- RHS: MultiAggregationConsumer: sum
+						- RHS: MultiAggregationInstance: sum
 							- ref#2 MultiAggregationGroup ...
 			`,
 		},
@@ -111,16 +139,69 @@ func TestOptimizationPass(t *testing.T) {
 			expr:            `foo + sum(foo)`,
 			expectUnchanged: true,
 		},
+		"selector aggregated twice, but one is unsupported operation, and unsupported operation appears first": {
+			expr:            `quantile(0.99, foo) + sum(foo)`,
+			expectUnchanged: true,
+		},
+		"selector aggregated twice, but one is unsupported operation, and unsupported operation appears last": {
+			expr:            `sum(foo) + quantile(0.99, foo)`,
+			expectUnchanged: true,
+		},
+		"first selector of a binary expression is not aggregated, but other side of binary operation contains an aggregation over a duplicate selector": {
+			expr: `(foo + sum(bar)) / count(bar)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: VectorSelector: {__name__="foo"}
+						- RHS: MultiAggregationInstance: sum
+							- ref#1 MultiAggregationGroup
+								- VectorSelector: {__name__="bar"}
+					- RHS: MultiAggregationInstance: count
+						- ref#1 MultiAggregationGroup ...
+			`,
+		},
+		"first selector of a binary expression is not supported, but other side of binary operation contains an aggregation over a duplicate selector": {
+			expr: `(limitk(0.9, foo) + sum(bar)) / count(bar)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: AggregateExpression: limitk
+							- expression: VectorSelector: {__name__="foo"}
+							- parameter: NumberLiteral: 0.9
+						- RHS: MultiAggregationInstance: sum
+							- ref#1 MultiAggregationGroup
+								- VectorSelector: {__name__="bar"}
+					- RHS: MultiAggregationInstance: count
+						- ref#1 MultiAggregationGroup ...
+			`,
+		},
+		"first selector of a binary expression contains an expression previously determined to be ineligible, but other side of binary operation contains an aggregation over a duplicate selector": {
+			expr: `(foo + sum(bar)) / (sum(foo) * count(bar))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- RHS: MultiAggregationInstance: sum
+							- ref#2 MultiAggregationGroup
+								- VectorSelector: {__name__="bar"}
+					- RHS: BinaryExpression: LHS * RHS
+						- LHS: AggregateExpression: sum
+							- ref#1 Duplicate ...
+						- RHS: MultiAggregationInstance: count
+							- ref#2 MultiAggregationGroup ...
+			`,
+		},
 
 		// Test all of the supported aggregation operations are handled correctly.
 		"same selector with sum and count aggregation": {
 			expr: `sum(foo) + count(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
-					- LHS: MultiAggregationConsumer: sum
+					- LHS: MultiAggregationInstance: sum
 						- ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
-					- RHS: MultiAggregationConsumer: count
+					- RHS: MultiAggregationInstance: count
 						- ref#1 MultiAggregationGroup ...
 			`,
 		},
@@ -128,10 +209,10 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `min(foo) + max(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
-					- LHS: MultiAggregationConsumer: min
+					- LHS: MultiAggregationInstance: min
 						- ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
-					- RHS: MultiAggregationConsumer: max
+					- RHS: MultiAggregationInstance: max
 						- ref#1 MultiAggregationGroup ...
 			`,
 		},
@@ -139,10 +220,10 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `avg(foo) + group(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
-					- LHS: MultiAggregationConsumer: avg
+					- LHS: MultiAggregationInstance: avg
 						- ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
-					- RHS: MultiAggregationConsumer: group
+					- RHS: MultiAggregationInstance: group
 						- ref#1 MultiAggregationGroup ...
 			`,
 		},
@@ -150,10 +231,10 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `stddev(foo) + stdvar(foo)`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
-					- LHS: MultiAggregationConsumer: stddev
+					- LHS: MultiAggregationInstance: stddev
 						- ref#1 MultiAggregationGroup
 							- VectorSelector: {__name__="foo"}
-					- RHS: MultiAggregationConsumer: stdvar
+					- RHS: MultiAggregationInstance: stdvar
 						- ref#1 MultiAggregationGroup ...
 			`,
 		},
