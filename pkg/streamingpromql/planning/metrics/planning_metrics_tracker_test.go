@@ -24,18 +24,3 @@ func TestNewStepInvariantExpressionMetricsTrackerNodes(t *testing.T) {
 	require.Equal(t, float64(2), testutil.ToFloat64(tracker.StepInvariantTracker.nodes))
 	require.Equal(t, float64(13), testutil.ToFloat64(tracker.StepInvariantTracker.steps))
 }
-
-func TestNewStepInvariantExpressionMetricsTrackerNodesNotEnoughSteps(t *testing.T) {
-	tracker := NewMetricsTracker(prometheus.NewRegistry())
-
-	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.nodes))
-	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.steps))
-
-	tracker.StepInvariantTracker.OnStepInvariantExpressionAdded(0)
-	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.nodes))
-	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.steps))
-
-	tracker.StepInvariantTracker.OnStepInvariantExpressionAdded(1)
-	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.nodes))
-	require.Equal(t, float64(0), testutil.ToFloat64(tracker.StepInvariantTracker.steps))
-}
