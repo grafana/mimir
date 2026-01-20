@@ -370,7 +370,7 @@ func writeSparseHeadersToFile(sparseHeadersPath string, sparseHeaders *indexhead
 
 // tryWriteSparseHeadersToFile attempts to write the sparse header to disk.
 // If it fails, it will log a warning.
-func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sparseHeaders *indexheaderpb.Sparse) (retErr error) {
+func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sparseHeaders *indexheaderpb.Sparse) {
 	start := time.Now()
 	level.Debug(logger).Log("msg", "writing sparse index-header to disk")
 
@@ -382,7 +382,6 @@ func tryWriteSparseHeadersToFile(logger log.Logger, sparseHeadersPath string, sp
 		logger = log.With(level.Info(logger), "msg", "wrote sparse header to disk")
 	}
 	logger.Log("elapsed", time.Since(start))
-	return retErr
 }
 
 // newBinaryTOCFromFile return parsed TOC from given Decbuf. The Decbuf is expected to be
