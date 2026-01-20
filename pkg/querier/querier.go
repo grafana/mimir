@@ -130,6 +130,10 @@ func (cfg *Config) Validate() error {
 		return errStreamingStoreGatewayBufferSize
 	}
 
+	if err := cfg.EngineConfig.MimirQueryEngine.RangeVectorSplitting.Validate(); err != nil {
+		return fmt.Errorf("invalid instant query splitting config: %w", err)
+	}
+
 	return nil
 }
 
@@ -199,7 +203,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 		return lazyquery.NewLazyQuerier(querier), nil
 	})
 
-	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg)
+	opts, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, tracker, logger, reg, limits)
 
 	// Experimental functions are always enabled globally for all engines. Access to them
 	// is controlled by an experimental functions middleware that reads per-tenant settings.

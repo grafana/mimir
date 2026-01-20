@@ -52,6 +52,8 @@ message Stats {
   repeated StepStat samples_processed_per_step = 13 [(gogoproto.nullable) = false];
   // The number of remote execution requests that were made while evaluating a query.
   uint32 remote_execution_request_count = 14;
+  // The number of range vectors that were split in the query.
+  uint32 split_range_vectors = 15;
 }
 
 // StepStat represents a sample count at a specific timestamp

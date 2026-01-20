@@ -6,6 +6,7 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -174,6 +175,48 @@ type RangeVectorStepData struct {
 	SmoothedBasisForTailPoint    promql.FPoint
 	SmoothedBasisForHeadPointSet bool
 	SmoothedBasisForTailPointSet bool
+}
+
+type SubStepHints struct {
+	FloatHint     int
+	HistogramHint int
+}
+
+// SubStep returns a new RangeVectorStepData with the same StepT but filtered samples for the specified time range.
+// This creates filtered views of the sample buffers without copying data.
+// The hints parameter is used to optimize consecutive SubStep calls - pass an empty SubStepHints{} for the first call, then reuse the returned hints.
+func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, hints SubStepHints) (*RangeVectorStepData, SubStepHints, error) {
+	// Validate that the substep range is within the parent step's range
+	if rangeStart < s.RangeStart {
+		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
+	}
+	if rangeEnd > s.RangeEnd {
+		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
+	}
+	if rangeStart >= rangeEnd {
+		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
+	}
+
+	newStep := &RangeVectorStepData{
+		StepT:      s.StepT,
+		RangeStart: rangeStart,
+		RangeEnd:   rangeEnd,
+	}
+
+	// Filter floats to only include points in the range (rangeStart, rangeEnd]
+	// s.Floats is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
+	floatSubview, floatEndIdx := s.Floats.SubView(rangeStart, rangeEnd, hints.FloatHint)
+	newStep.Floats = &floatSubview
+
+	// Filter histograms to only include points in the range (rangeStart, rangeEnd]
+	// s.Histograms is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
+	histogramSubview, histogramEndIdx := s.Histograms.SubView(rangeStart, rangeEnd, hints.HistogramHint)
+	newStep.Histograms = &histogramSubview
+
+	return newStep, SubStepHints{
+		FloatHint:     floatEndIdx,
+		HistogramHint: histogramEndIdx,
+	}, nil
 }
 
 type ScalarData struct {

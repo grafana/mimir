@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV4
+var MaximumSupportedQueryPlanVersion = QueryPlanV5
 
 // IMPORTANT:
 // Do not change the value or meaning of these constants once they have been merged.
@@ -51,6 +51,9 @@ const QueryPlanV3 = QueryPlanVersion(3)
 
 // QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
 const QueryPlanV4 = QueryPlanVersion(4)
+
+// QueryPlanV5 introduces support for query splitting with intermediate result caching.
+const QueryPlanV5 = QueryPlanVersion(5)
 
 type QueryPlan struct {
 	Root       Node
@@ -225,6 +228,33 @@ type OperatorParameters struct {
 	EagerLoadSelectors       bool
 	QueryParameters          *QueryParameters
 	Logger                   log.Logger
+}
+
+// RangeParams describes the time range parameters for range vector selectors and subqueries.
+// It includes the range duration (e.g., [5m]) and optional time modifiers (offset and @ timestamp).
+type RangeParams struct {
+	IsSet     bool
+	Range     time.Duration
+	Offset    time.Duration
+	Timestamp *time.Time
+}
+
+// SplitNode represents a planning node that supports range vector splitting with intermediate result caching.
+// Nodes implementing this interface can be split into sub-ranges for parallel execution and caching.
+type SplitNode interface {
+	Node
+
+	// IsSplittable returns true if the node can actually be split. While a node satisfying this interface can usually
+	// be split, there might be some edge cases where it's not possible or not implemented yet.
+	IsSplittable() bool
+
+	// RangeVectorSplittingCacheKey returns a cache key for this node's intermediate results.
+	RangeVectorSplittingCacheKey() string
+
+	// GetRange returns the time range duration for this range vector operation.
+	GetRange() time.Duration
+
+	GetRangeParams() RangeParams
 }
 
 // ToEncodedPlan converts this query plan to its encoded form.

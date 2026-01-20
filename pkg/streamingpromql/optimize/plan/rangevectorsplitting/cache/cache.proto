@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package thanos;
+
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
+import "gogoproto/gogo.proto";
+
+option go_package = "cache";
+option (gogoproto.goproto_getters_all) = false;
+option (gogoproto.goproto_sizecache_all) = false;
+// Do not generate XXX fields to reduce memory footprint.
+option (gogoproto.goproto_unkeyed_all) = false;
+option (gogoproto.goproto_unrecognized_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.sizer_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+enum AnnotationType {
+  WARNING = 0;
+  INFO = 1;
+}
+
+// Annotation represents a cached PromQL annotation (warning or info).
+// We must store the type separately from the message because:
+// - Type is encoded via Go error wrapping (errors.Is), not string parsing
+// - String format ("PromQL info:") is an implementation detail that could change
+// - We need to reconstruct proper error chains with sentinel errors when replaying
+// - AsStrings() uses errors.Is() to separate warnings/infos into different lists
+message Annotation {
+  AnnotationType type = 1;
+  string message = 2;
+}
+
+message CachedSeries {
+  // cacheKey contains the non-hashed cache key, to detect hash collision.
+  string cacheKey = 1;
+  int64 start = 2;
+  int64 end = 3;
+  repeated cortexpb.Metric series = 4 [(gogoproto.nullable) = false];
+  bytes results = 5;
+  repeated Annotation annotations = 6 [(gogoproto.nullable) = false];
+}

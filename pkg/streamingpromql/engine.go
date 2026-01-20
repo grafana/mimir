@@ -12,6 +12,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/go-kit/log/level"
+
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
@@ -26,6 +28,8 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -43,6 +47,19 @@ var errPerStepStatsNotSupported = errors.New("per-step stats are not supported b
 const defaultLookbackDelta = 5 * time.Minute // This should be the same value as github.com/prometheus/prometheus/promql.defaultLookbackDelta.
 
 func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner) (*Engine, error) {
+	var cacheFactory *cache.CacheFactory
+	if opts.RangeVectorSplitting.Enabled {
+		var err error
+		cacheFactory, err = cache.NewCacheFactory(opts.RangeVectorSplitting.IntermediateResultsCache, opts.Logger, opts.CommonOpts.Reg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to init range vector splitting cache, err: %w", err)
+		}
+		level.Info(opts.Logger).Log("msg", "intermediate results cache enabled", "backend", opts.RangeVectorSplitting.IntermediateResultsCache.Backend)
+	}
+	return newEngineWithCache(opts, limitsProvider, metrics, planner, cacheFactory)
+}
+
+func newEngineWithCache(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *stats.QueryMetrics, planner *QueryPlanner, intermediateCache *cache.CacheFactory) (*Engine, error) {
 	if !opts.CommonOpts.EnableAtModifier {
 		return nil, errors.New("disabling @ modifier not supported by Mimir query engine")
 	}
@@ -70,7 +87,7 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 
 	nodeMaterializers := map[planning.NodeType]planning.NodeMaterializer{
 		planning.NODE_TYPE_VECTOR_SELECTOR:       planning.NodeMaterializerFunc[*core.VectorSelector](core.MaterializeVectorSelector),
-		planning.NODE_TYPE_MATRIX_SELECTOR:       planning.NodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
+		planning.NODE_TYPE_MATRIX_SELECTOR:       planning.RangeAwareNodeMaterializerFunc[*core.MatrixSelector](core.MaterializeMatrixSelector),
 		planning.NODE_TYPE_AGGREGATE_EXPRESSION:  planning.NodeMaterializerFunc[*core.AggregateExpression](core.MaterializeAggregateExpression),
 		planning.NODE_TYPE_BINARY_EXPRESSION:     planning.NodeMaterializerFunc[*core.BinaryExpression](core.MaterializeBinaryExpression),
 		planning.NODE_TYPE_FUNCTION_CALL:         planning.NodeMaterializerFunc[*core.FunctionCall](core.MaterializeFunctionCall),
@@ -81,8 +98,12 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 
-		planning.NODE_TYPE_DUPLICATE:                 planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
+		planning.NODE_TYPE_DUPLICATE:                 planning.RangeAwareNodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
 		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION: planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
+	}
+
+	if intermediateCache != nil {
+		nodeMaterializers[planning.NODE_TYPE_SPLIT_FUNCTION_OVER_RANGE_VECTOR] = rangevectorsplitting.NewMaterializer(intermediateCache)
 	}
 
 	return &Engine{

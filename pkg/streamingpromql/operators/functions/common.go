@@ -136,6 +136,10 @@ type FunctionOverRangeVectorDefinition struct {
 	// first argument, not the position of the inner expression.
 	// FIXME: we might need something more flexible in the future (eg. to accommodate other argument positions), but this is good enough for now.
 	UseFirstArgumentPositionForAnnotations bool
+
+	// SplitOperatorFactory defines how to create a splittable operator for intermediate result caching.
+	// If nil, the function does not support query splitting.
+	SplitOperatorFactory SplitOperatorFactory
 }
 
 type SeriesMetadataFunctionDefinition struct {
