@@ -630,38 +630,144 @@ func TestMatrixSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 	})
 }
 
+func TestMergeProjectionLabels(t *testing.T) {
+	testCases := map[string]struct {
+		firstInclude    bool
+		firstLabels     []string
+		secondInclude   bool
+		secondLabels    []string
+		expectedInclude bool
+		expectedLabels  []string
+	}{
+		"different includes": {
+			firstInclude:    true,
+			firstLabels:     []string{"job"},
+			secondInclude:   false,
+			secondLabels:    []string{"pod"},
+			expectedInclude: false,
+			expectedLabels:  []string{},
+		},
+		"include some labels and include no labels": {
+			firstInclude:    true,
+			firstLabels:     nil,
+			secondInclude:   true,
+			secondLabels:    []string{"zone"},
+			expectedInclude: true,
+			expectedLabels:  []string{"zone"},
+		},
+		"include some labels and include some labels": {
+			firstInclude:    true,
+			firstLabels:     []string{"zone"},
+			secondInclude:   true,
+			secondLabels:    []string{"region"},
+			expectedInclude: true,
+			expectedLabels:  []string{"region", "zone"},
+		},
+		"exclude some labels and exclude no labels": {
+			firstInclude:    false,
+			firstLabels:     []string{"instance"},
+			secondInclude:   false,
+			secondLabels:    nil,
+			expectedInclude: false,
+			expectedLabels:  []string{},
+		},
+		"exclude some labels and exclude some labels no overlap": {
+			firstInclude:    false,
+			firstLabels:     []string{"instance"},
+			secondInclude:   false,
+			secondLabels:    []string{"pod"},
+			expectedInclude: false,
+			expectedLabels:  []string{},
+		},
+		"exclude some labels and exclude some labels with overlap": {
+			firstInclude:    false,
+			firstLabels:     []string{"instance", "host", "zone"},
+			secondInclude:   false,
+			secondLabels:    []string{"host", "pod", "region"},
+			expectedInclude: false,
+			expectedLabels:  []string{"host"},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+
+			include, lbls := MergeProjectionLabels(tc.firstInclude, tc.firstLabels, tc.secondInclude, tc.secondLabels)
+			require.Equal(t, tc.expectedInclude, include)
+			require.Equal(t, tc.expectedLabels, lbls)
+		})
+	}
+}
+
 func TestMatrixSelector_MergeHints_ProjectionLabels(t *testing.T) {
-	runTest := func(t *testing.T, lblsFirst, lblsSecond []string, expectLbls []string) {
+	// NOTE: Test cases for this test should be kept in sync with TestVectorSelector_MergeHints_ProjectionLabels
+
+	runTest := func(t *testing.T, includeFirst bool, lblsFirst []string, includeSecond bool, lblsSecond []string, expectInclude bool, expectLbls []string) {
 		first := &MatrixSelector{
 			MatrixSelectorDetails: &MatrixSelectorDetails{
-				ProjectionLabels: lblsFirst,
+				ProjectionInclude: includeFirst,
+				ProjectionLabels:  lblsFirst,
 			},
 		}
 		second := &MatrixSelector{
 			MatrixSelectorDetails: &MatrixSelectorDetails{
-				ProjectionLabels: lblsSecond,
+				ProjectionInclude: includeSecond,
+				ProjectionLabels:  lblsSecond,
 			},
 		}
 
 		err := first.MergeHints(second)
 		require.NoError(t, err)
+		require.Equal(t, expectInclude, first.ProjectionInclude)
 		require.Equal(t, expectLbls, first.ProjectionLabels)
 	}
 
-	t.Run("neither has projection labels set", func(t *testing.T) {
-		runTest(t, nil, nil, nil)
+	t.Run("differing include/exclude", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			false,
+			[]string{"pod"},
+			false,
+			[]string{},
+		)
 	})
 
-	t.Run("first has projection labels set, other does not", func(t *testing.T) {
-		runTest(t, []string{"__series_hash__", "job", "zone"}, nil, nil)
+	t.Run("both exclude empty labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
 	})
 
-	t.Run("first has no projection labels, other does", func(t *testing.T) {
-		runTest(t, nil, []string{"__series_hash__", "instance", "pod"}, nil)
+	t.Run("both include some labels", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			true,
+			[]string{"pod"},
+			true,
+			[]string{"job", "pod"},
+		)
 	})
 
-	t.Run("both have projection labels set", func(t *testing.T) {
-		runTest(t, []string{"__series_hash__", "job", "cluster"}, []string{"__series_hash__", "job", "region"}, []string{"__series_hash__", "cluster", "job", "region"})
+	t.Run("one excludes some labels one excludes no labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{"job"},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
 	})
 }
 

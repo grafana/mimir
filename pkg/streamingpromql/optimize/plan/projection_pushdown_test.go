@@ -41,9 +41,18 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: AggregateExpression: avg by (zone)
-						- VectorSelector: {__name__="foo"}
+						- VectorSelector: {__name__="foo"}, include ("zone")
 					- RHS: AggregateExpression: avg by (zone)
-						- VectorSelector: {__name__="bar"}
+						- VectorSelector: {__name__="bar"}, include ("zone")
+			`,
+			expectedModified: 2,
+		},
+		"binary expression on with no aggregations": {
+			expr: `foo + on (zone) bar`,
+			expectedPlan: `
+				- BinaryExpression: LHS + on (zone) RHS
+					- LHS: VectorSelector: {__name__="foo"}
+					- RHS: VectorSelector: {__name__="bar"}
 			`,
 			expectedModified: 0,
 			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonBinaryOperation: 2},
@@ -111,11 +120,20 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expectedModified: 0,
 			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonNotSupported: 1},
 		},
+		"aggregations without and with labels": {
+			expr: `sum without (instance) (avg by (job) (foo))`,
+			expectedPlan: `
+				- AggregateExpression: sum without (instance)
+					- AggregateExpression: avg by (job)
+						- VectorSelector: {__name__="foo"}, include ("job")
+			`,
+			expectedModified: 1,
+		},
 		"aggregation with count_values": {
 			expr: `count_values("pod", foo)`,
 			expectedPlan: `
 				- AggregateExpression: count_values
-					- expression: VectorSelector: {__name__="foo"}, include ("__series_hash__", "pod")
+					- expression: VectorSelector: {__name__="foo"}, include ("pod")
 					- parameter: StringLiteral: "pod"
 			`,
 			expectedModified: 1,
@@ -124,31 +142,53 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expr: `count_values by (job) ("pod", foo)`,
 			expectedPlan: `
 				- AggregateExpression: count_values by (job)
-					- expression: VectorSelector: {__name__="foo"}, include ("__series_hash__", "job", "pod")
+					- expression: VectorSelector: {__name__="foo"}, include ("job", "pod")
 					- parameter: StringLiteral: "pod"
 			`,
 			expectedModified: 1,
 		},
 
-		"aggregation with sort_by_label": {
+		"sort_by_label with aggregation": {
 			expr: `sort_by_label(avg by (job) (bar), "zone", "environment")`,
 			expectedPlan: `
 				- FunctionCall: sort_by_label(...)
 					- param 0: AggregateExpression: avg by (job)
-						- VectorSelector: {__name__="bar"}, include ("__series_hash__", "environment", "job", "zone")
+						- VectorSelector: {__name__="bar"}, include ("job")
 					- param 1: StringLiteral: "zone"
 					- param 2: StringLiteral: "environment"
 			`,
 			expectedModified: 1,
 		},
-		"aggregation with sort_by_label_desc": {
+		"sort_by_label_desc with aggregation": {
 			expr: `sort_by_label_desc(avg by (job) (bar), "cluster", "region")`,
 			expectedPlan: `
 				- FunctionCall: sort_by_label_desc(...)
 					- param 0: AggregateExpression: avg by (job)
-						- VectorSelector: {__name__="bar"}, include ("__series_hash__", "cluster", "job", "region")
+						- VectorSelector: {__name__="bar"}, include ("job")
 					- param 1: StringLiteral: "cluster"
 					- param 2: StringLiteral: "region"
+			`,
+			expectedModified: 1,
+		},
+		"aggregation with sort_by_label": {
+			expr: `avg by (job) (sort_by_label(bar, "zone", "environment"))`,
+			expectedPlan: `
+				- AggregateExpression: avg by (job)
+					- FunctionCall: sort_by_label(...)
+						- param 0: VectorSelector: {__name__="bar"}, include ("environment", "job", "zone")
+						- param 1: StringLiteral: "zone"
+						- param 2: StringLiteral: "environment"
+			`,
+			expectedModified: 1,
+		},
+		"aggregation with sort_by_label_desc": {
+			expr: `avg by (job) (sort_by_label_desc(bar, "cluster", "region"))`,
+			expectedPlan: `
+				- AggregateExpression: avg by (job)
+					- FunctionCall: sort_by_label_desc(...)
+						- param 0: VectorSelector: {__name__="bar"}, include ("cluster", "job", "region")
+						- param 1: StringLiteral: "cluster"
+						- param 2: StringLiteral: "region"
 			`,
 			expectedModified: 1,
 		},
@@ -156,7 +196,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expr: `avg(foo)`,
 			expectedPlan: `
 				- AggregateExpression: avg
-					- VectorSelector: {__name__="foo"}, include ("__series_hash__")
+					- VectorSelector: {__name__="foo"}, include ()
 			`,
 			expectedModified: 1,
 		},
@@ -164,7 +204,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expr: `avg by (job) (foo)`,
 			expectedPlan: `
 				- AggregateExpression: avg by (job)
-					- VectorSelector: {__name__="foo"}, include ("__series_hash__", "job")
+					- VectorSelector: {__name__="foo"}, include ("job")
 			`,
 			expectedModified: 1,
 		},
