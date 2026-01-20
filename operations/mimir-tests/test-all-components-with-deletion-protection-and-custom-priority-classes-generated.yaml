@@ -1184,6 +1184,7 @@ spec:
           name: ingester-data
         - mountPath: /etc/mimir
           name: overrides
+      priorityClassName: high-nonpreempting
       securityContext:
         runAsUser: 0
       terminationGracePeriodSeconds: 1200
