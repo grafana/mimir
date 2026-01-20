@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -17,11 +19,116 @@ func NewOptimizationPass() *OptimizationPass {
 }
 
 func (o *OptimizationPass) Name() string {
-	return "Multi-aggregation"
+	return "Use multi-aggregation where possible"
+}
+
+type aggregateOverDuplicate struct {
+	aggregate                *core.AggregateExpression
+	aggregateParent          planning.Node
+	indexOfAggregateInParent int
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV5 {
+		return plan, nil
+	}
+
+	ineligibleDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate]struct{})
+	candidateDuplicateNodes := make(map[*commonsubexpressionelimination.Duplicate][]aggregateOverDuplicate)
+
+	err := optimize.Walk(plan.Root, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+		// If we've reached a Duplicate node, check that its parent on this path is a supported aggregation.
+		// If it's not, then we can't apply this optimisation to this Duplicate node.
+		duplicate, isDuplicate := node.(*commonsubexpressionelimination.Duplicate)
+		if isDuplicate {
+			_, isIneligible := ineligibleDuplicateNodes[duplicate]
+			if isIneligible {
+				// We already know this Duplicate node is ineligible, so there's nothing more to do.
+				return nil
+			}
+
+			parent := path[len(path)-1]
+			aggregate, isAggregate := parent.(*core.AggregateExpression)
+			if !isAggregate {
+				ineligibleDuplicateNodes[duplicate] = struct{}{}
+				delete(candidateDuplicateNodes, duplicate)
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+				ineligibleDuplicateNodes[duplicate] = struct{}{}
+				delete(candidateDuplicateNodes, duplicate)
+			}
+			// If the Duplicate node's parent is a supported aggregation, then we would have added it to candidateDuplicateNodes
+			// below when we reached the aggregate's parent, so there's nothing to do here in that case.
+
+			return nil
+		}
+
+		// Not a duplicate node: let's check if this node has any supported aggregate expressions over Duplicate nodes.
+		for idx := range node.ChildCount() {
+			child := node.Child(idx)
+
+			aggregate, isAggregate := child.(*core.AggregateExpression)
+			if !isAggregate {
+				continue
+			} else if supported, err := IsSupportedAggregationOperation(aggregate.Op); err != nil || !supported {
+				continue
+			}
+
+			duplicate, isDuplicate := aggregate.Inner.(*commonsubexpressionelimination.Duplicate)
+			if !isDuplicate {
+				continue
+			}
+
+			if _, isIneligible := ineligibleDuplicateNodes[duplicate]; isIneligible {
+				continue
+			}
+
+			candidateDuplicateNodes[duplicate] = append(candidateDuplicateNodes[duplicate], aggregateOverDuplicate{
+				aggregate:                aggregate,
+				aggregateParent:          node,
+				indexOfAggregateInParent: idx,
+			})
+		}
+
+		return nil
+	}))
+
+	if err != nil {
+		return nil, err
+	}
+
+	for duplicate, aggregates := range candidateDuplicateNodes {
+		if aggregates == nil {
+			continue
+		}
+
+		if err := o.replaceWithMultiAggregation(duplicate, aggregates); err != nil {
+			return nil, err
+		}
+	}
+
 	return plan, nil
+}
+
+func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpressionelimination.Duplicate, aggregateOverDuplicates []aggregateOverDuplicate) error {
+	group := &MultiAggregationGroup{
+		MultiAggregationGroupDetails: &MultiAggregationGroupDetails{},
+		Inner:                        duplicate.Inner,
+	}
+
+	for _, aggregateOverDuplicate := range aggregateOverDuplicates {
+		consumer := &MultiAggregationInstance{
+			MultiAggregationInstanceDetails: &MultiAggregationInstanceDetails{
+				Aggregation: aggregateOverDuplicate.aggregate.AggregateExpressionDetails,
+			},
+			Group: group,
+		}
+
+		if err := aggregateOverDuplicate.aggregateParent.ReplaceChild(aggregateOverDuplicate.indexOfAggregateInParent, consumer); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func IsSupportedAggregationOperation(o core.AggregationOperation) (bool, error) {
