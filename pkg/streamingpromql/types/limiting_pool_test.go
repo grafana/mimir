@@ -276,14 +276,13 @@ func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
 
 	require.Equal(t, 0, onPutHookPointCount)
 
-	// Get another slice from the pool. This should get the s2 slice that was returned to the pool when AppendToSlice()
-	// was called but s2's capacity was exceeded.
+	// Get another slice from the pool.
+	// This is likely (but not guaranteed) to get the s2 slice that was returned to the pool when AppendToSlice() was
+	// called but s2's capacity was exceeded.
 	s4, err := p.Get(2, tracker)
 	require.NoError(t, err)
 	require.Equal(t, 2, cap(s4))
-	// Returning the s2 slice is likely, but not guaranteed by sync.Pool.
-	// If the require.Same() check below ends up being flaky, it can be removed.
-	require.Same(t, unsafe.SliceData(s2), unsafe.SliceData(s4))
+	// Check the first element is empty (i.e. old data has been cleared).
 	require.Equal(t, []promql.FPoint{{T: 0, F: 0}}, s4[:1])
 	p.Put(&s4, tracker)
 
