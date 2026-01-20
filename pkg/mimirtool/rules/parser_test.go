@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 
@@ -124,7 +125,7 @@ func TestParseFiles(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseFiles(tt.backend, tt.files, model.UTF8Validation)
+			got, err := ParseFiles(tt.backend, tt.files, model.UTF8Validation, log.NewNopLogger())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseFiles() error = %v, wantErr %v", err, tt.wantErr)
 				return

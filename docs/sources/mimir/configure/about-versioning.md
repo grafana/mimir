@@ -194,7 +194,6 @@ The following features are currently experimental:
     - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
 - Querier
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
-  - Allow streaming of `/active_series` responses to the frontend (`-querier.response-streaming-enabled`)
   - [Mimir query engine](https://grafana.com/docs/mimir/<MIMIR_VERSION>/references/architecture/mimir-query-engine) (`-querier.query-engine` and `-querier.enable-query-engine-fallback`, and all flags beginning with `-querier.mimir-query-engine`)
   - Maximum estimated memory consumption per query limit (`-querier.max-estimated-memory-consumption-per-query`)
   - Enable the experimental Prometheus feature for delayed name removal (`-querier.enable-delayed-name-removal`)

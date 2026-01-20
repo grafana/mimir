@@ -136,12 +136,10 @@ func TestHandler(t *testing.T) {
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"},
-					  {"type": "StepInvariantExpression", "children": [0], "childrenLabels": [""]}
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
 					],
 					"originalExpression": "up @ start()",
-					"rootNode": 1,
-					"version": 1
+					"version": 0
 				  }
 				},
 				{
@@ -150,12 +148,10 @@ func TestHandler(t *testing.T) {
 				  "outputPlan": {
 					"timeRange": {"startT": 1640995200000, "endT": 1640995200000, "intervalMilliseconds": 1, "isInstant": true},
 					"nodes": [
-					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"},
-					  {"type": "StepInvariantExpression", "children": [0], "childrenLabels": [""]}
+					  {"type": "VectorSelector", "description": "{__name__=\"up\"} @ 1640995200000 (2022-01-01T00:00:00Z)"}
 					],
 					"originalExpression": "up @ start()",
-					"rootNode": 1,
-					"version": 1
+					"version": 0
 				  }
 				}
 			  ],

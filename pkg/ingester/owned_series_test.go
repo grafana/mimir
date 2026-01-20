@@ -827,7 +827,7 @@ func (c *ownedSeriesWithPartitionsRingTestContext) createIngesterAndPartitionRin
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c.partitionsRing))
 	}
 
-	ing, _, prw := createTestIngesterWithIngestStorage(t, &c.cfg, c.overrides, nil, util_test.NewTestingLogger(t))
+	ing, _, prw := createTestIngesterWithIngestStorage(t, &c.cfg, c.overrides, nil, nil, util_test.NewTestingLogger(t))
 	c.ing = ing
 	c.partitionsRing = prw
 

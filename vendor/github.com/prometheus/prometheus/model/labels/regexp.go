@@ -1,4 +1,4 @@
-// Copyright 2020 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -109,14 +109,29 @@ func newFastRegexMatcherWithoutCache(v string) (*FastRegexMatcher, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// Remove any capture operations before trying to optimize the remaining operations.
+		clearCapture(parsed)
+
 		if parsed.Op == syntax.OpConcat {
 			m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 		}
 		if matches, caseSensitive := findSetMatches(parsed); caseSensitive {
 			m.setMatches = matches
 		}
-		m.stringMatcher = stringMatcherFromRegexp(parsed)
+
+		// Check if we have a pattern like .*-.*-.*.
+		// If so, then we can rely on the containsInOrder check in compileMatchStringFunction,
+		// so no further inspection of the string is required.
+		// We can't do this in stringMatcherFromRegexpInternal as we only want to apply this
+		// if the top-level pattern satisfies this requirement.
+		if isSimpleConcatenationPattern(parsed) {
+			m.stringMatcher = trueMatcher{}
+		} else {
+			m.stringMatcher = stringMatcherFromRegexp(parsed)
+		}
 		m.parsedRe = parsed
+
 		m.matchString = m.compileMatchStringFunction()
 	}
 
@@ -612,6 +627,48 @@ func stringMatcherFromRegexpInternal(re *syntax.Regexp) StringMatcher {
 		}
 	}
 	return nil
+}
+
+// isSimpleConcatenationPattern returns true if re contains only literals or wildcard matchers,
+// and starts and ends with a wildcard matcher (eg. .*-.*-.*).
+func isSimpleConcatenationPattern(re *syntax.Regexp) bool {
+	if re.Op != syntax.OpConcat {
+		return false
+	}
+
+	if len(re.Sub) < 2 {
+		return false
+	}
+
+	first := re.Sub[0]
+	last := re.Sub[len(re.Sub)-1]
+	if !isMatchAny(first) || !isMatchAny(last) {
+		return false
+	}
+
+	numLiterals := 0
+	for _, re := range re.Sub[1 : len(re.Sub)-1] {
+		if !isMatchAny(re) {
+			if !isCaseSensitiveLiteral(re) {
+				return false
+			}
+			numLiterals++
+		}
+	}
+
+	// The single case .*-.* is already handled in stringMatcherFromRegexp,
+	// by directly modifying re.Sub to remove subexpressions matching empty strings for concatenations.
+	// Removing such subexpressions can greatly decrease cost estimation,
+	// so we shouldn't skip doing so for an optimization.
+	return numLiterals > 1
+}
+
+func isMatchAny(re *syntax.Regexp) bool {
+	return re.Op == syntax.OpStar && re.Sub[0].Op == syntax.OpAnyChar
+}
+
+func isCaseSensitiveLiteral(re *syntax.Regexp) bool {
+	return re.Op == syntax.OpLiteral && isCaseSensitive(re)
 }
 
 // containsStringMatcher matches a string if it contains any of the substrings.

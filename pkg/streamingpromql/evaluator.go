@@ -136,29 +136,40 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 	}
 
 	for _, req := range e.nodeRequests {
+		if err := req.operator.AfterPrepare(ctx); err != nil {
+			return err
+		}
+	}
+
+	remainingOperatorEvaluators := make([]operatorEvaluator, 0, len(e.nodeRequests))
+
+	for _, req := range e.nodeRequests {
 		switch op := req.operator.(type) {
 		case types.InstantVectorOperator:
-			if err := e.evaluateInstantVectorOperator(ctx, op, req.Node, observer); err != nil {
-				return err
-			}
-
+			remainingOperatorEvaluators = append(remainingOperatorEvaluators, &instantVectorEvaluator{node: req.Node, operator: op})
 		case types.RangeVectorOperator:
-			if err := e.evaluateRangeVectorOperator(ctx, op, req.Node, observer); err != nil {
-				return err
-			}
-
+			remainingOperatorEvaluators = append(remainingOperatorEvaluators, &rangeVectorEvaluator{node: req.Node, operator: op})
 		case types.ScalarOperator:
-			if err := e.evaluateScalarOperator(ctx, op, req.Node, observer); err != nil {
-				return err
-			}
-
+			remainingOperatorEvaluators = append(remainingOperatorEvaluators, &scalarEvaluator{node: req.Node, operator: op})
 		case types.StringOperator:
-			if err := e.evaluateStringOperator(ctx, op, req.Node, observer); err != nil {
-				return err
-			}
-
+			remainingOperatorEvaluators = append(remainingOperatorEvaluators, &stringEvaluator{node: req.Node, operator: op})
 		default:
 			return fmt.Errorf("operator type %T produces unknown result type", op)
+		}
+	}
+
+	for len(remainingOperatorEvaluators) > 0 {
+		for i := 0; i < len(remainingOperatorEvaluators); i++ {
+			evaluator := remainingOperatorEvaluators[i]
+			haveMoreWork, err := evaluator.performWork(ctx, e, observer)
+			if err != nil {
+				return err
+			}
+
+			if !haveMoreWork {
+				remainingOperatorEvaluators = append(remainingOperatorEvaluators[:i], remainingOperatorEvaluators[i+1:]...)
+				i--
+			}
 		}
 	}
 
@@ -191,95 +202,146 @@ func (e *Evaluator) closeOperators() {
 	}
 }
 
-func (e *Evaluator) evaluateInstantVectorOperator(ctx context.Context, op types.InstantVectorOperator, node planning.Node, observer EvaluationObserver) error {
-	series, err := op.SeriesMetadata(ctx, nil)
-	if err != nil {
-		return err
-	}
+type operatorEvaluator interface {
+	// performWork performs the next piece of work for this operator.
+	//
+	// performWork returns true if there is more work remaining for this operator, or false otherwise.
+	performWork(ctx context.Context, evaluator *Evaluator, observer EvaluationObserver) (bool, error)
+}
 
-	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
+type instantVectorEvaluator struct {
+	node            planning.Node
+	operator        types.InstantVectorOperator
+	seriesCount     int
+	nextSeriesIndex int
+}
 
-	if err := observer.SeriesMetadataEvaluated(ctx, e, node, series); err != nil {
-		return err
-	}
+func (e *instantVectorEvaluator) performWork(ctx context.Context, evaluator *Evaluator, observer EvaluationObserver) (bool, error) {
+	if e.seriesCount == 0 {
+		// First call: get series metadata.
+		// If the operator returns no series, performWork won't be called a second time.
 
-	for seriesIdx := range seriesCount {
-		d, err := op.NextSeries(ctx)
+		series, err := e.operator.SeriesMetadata(ctx, nil)
 		if err != nil {
-			if errors.Is(err, types.EOS) {
-				return fmt.Errorf("expected %v series, but only received %v", seriesCount, seriesIdx)
-			}
-
-			return err
+			return false, err
 		}
 
-		if err := observer.InstantVectorSeriesDataEvaluated(ctx, e, node, seriesIdx, seriesCount, d); err != nil {
-			return err
+		e.seriesCount = len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
+
+		if err := observer.SeriesMetadataEvaluated(ctx, evaluator, e.node, series); err != nil {
+			return false, err
 		}
+
+		return e.seriesCount > 0, nil
 	}
 
-	return nil
+	thisSeriesIndex := e.nextSeriesIndex
+
+	d, err := e.operator.NextSeries(ctx)
+	if err != nil {
+		if errors.Is(err, types.EOS) {
+			return false, fmt.Errorf("expected %v series, but only received %v", e.seriesCount, thisSeriesIndex)
+		}
+
+		return false, err
+	}
+
+	if err := observer.InstantVectorSeriesDataEvaluated(ctx, evaluator, e.node, thisSeriesIndex, e.seriesCount, d); err != nil {
+		return false, err
+	}
+
+	e.nextSeriesIndex++
+	haveMoreSeries := e.nextSeriesIndex < e.seriesCount
+
+	return haveMoreSeries, nil
 }
 
-func (e *Evaluator) evaluateRangeVectorOperator(ctx context.Context, op types.RangeVectorOperator, node planning.Node, observer EvaluationObserver) error {
-	series, err := op.SeriesMetadata(ctx, nil)
-	if err != nil {
-		return err
-	}
+type rangeVectorEvaluator struct {
+	node            planning.Node
+	operator        types.RangeVectorOperator
+	seriesCount     int
+	nextSeriesIndex int
+}
 
-	seriesCount := len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
+func (e *rangeVectorEvaluator) performWork(ctx context.Context, evaluator *Evaluator, observer EvaluationObserver) (bool, error) {
+	if e.seriesCount == 0 {
+		// First call: get series metadata.
+		// If the operator returns no series, performWork won't be called a second time.
 
-	if err := observer.SeriesMetadataEvaluated(ctx, e, node, series); err != nil {
-		return err
-	}
-
-	for seriesIdx := range seriesCount {
-		err := op.NextSeries(ctx)
+		series, err := e.operator.SeriesMetadata(ctx, nil)
 		if err != nil {
-			if errors.Is(err, types.EOS) {
-				return fmt.Errorf("expected %v series, but only received %v", seriesCount, seriesIdx)
-			}
-
-			return err
+			return false, err
 		}
 
-		stepIdx := 0
-		for {
-			step, err := op.NextStepSamples(ctx)
+		e.seriesCount = len(series) // Take the length now, as the observer takes ownership of the slice when SeriesMetadataEvaluated is called.
 
-			// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
-			if err == types.EOS {
-				break
-			}
-
-			if err != nil {
-				return err
-			}
-
-			if err := observer.RangeVectorStepSamplesEvaluated(ctx, e, node, seriesIdx, stepIdx, step); err != nil {
-				return err
-			}
-
-			stepIdx++
+		if err := observer.SeriesMetadataEvaluated(ctx, evaluator, e.node, series); err != nil {
+			return false, err
 		}
+
+		return e.seriesCount > 0, nil
 	}
 
-	return nil
-}
+	thisSeriesIndex := e.nextSeriesIndex
 
-func (e *Evaluator) evaluateScalarOperator(ctx context.Context, op types.ScalarOperator, node planning.Node, observer EvaluationObserver) error {
-	d, err := op.GetValues(ctx)
+	err := e.operator.NextSeries(ctx)
 	if err != nil {
-		return err
+		if errors.Is(err, types.EOS) {
+			return false, fmt.Errorf("expected %v series, but only received %v", e.seriesCount, thisSeriesIndex)
+		}
+
+		return false, err
 	}
 
-	return observer.ScalarEvaluated(ctx, e, node, d)
+	stepIdx := 0
+	for {
+		step, err := e.operator.NextStepSamples(ctx)
+
+		// nolint:errorlint // errors.Is introduces a performance overhead, and NextStepSamples is guaranteed to return exactly EOS, never a wrapped error.
+		if err == types.EOS {
+			break
+		}
+
+		if err != nil {
+			return false, err
+		}
+
+		if err := observer.RangeVectorStepSamplesEvaluated(ctx, evaluator, e.node, thisSeriesIndex, stepIdx, step); err != nil {
+			return false, err
+		}
+
+		stepIdx++
+	}
+
+	e.nextSeriesIndex++
+	haveMoreSeries := e.nextSeriesIndex < e.seriesCount
+
+	return haveMoreSeries, nil
 }
 
-func (e *Evaluator) evaluateStringOperator(ctx context.Context, op types.StringOperator, node planning.Node, observer EvaluationObserver) error {
-	v := op.GetValue()
+type scalarEvaluator struct {
+	node     planning.Node
+	operator types.ScalarOperator
+}
 
-	return observer.StringEvaluated(ctx, e, node, v)
+func (e *scalarEvaluator) performWork(ctx context.Context, evaluator *Evaluator, observer EvaluationObserver) (bool, error) {
+	d, err := e.operator.GetValues(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	return false, observer.ScalarEvaluated(ctx, evaluator, e.node, d)
+}
+
+type stringEvaluator struct {
+	node     planning.Node
+	operator types.StringOperator
+}
+
+func (e *stringEvaluator) performWork(ctx context.Context, evaluator *Evaluator, observer EvaluationObserver) (bool, error) {
+	v := e.operator.GetValue()
+
+	return false, observer.StringEvaluated(ctx, evaluator, e.node, v)
 }
 
 func (e *Evaluator) Cancel() {

@@ -927,7 +927,7 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
 			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
 		},
-	}.RegisterGlobally()
+	}.RegisterGlobally(reg)
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")

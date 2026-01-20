@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
@@ -19,11 +20,13 @@ import (
 type RuleFileAnalyzeCommand struct {
 	RuleFilesList []string
 	outputFile    string
+
+	logger log.Logger
 }
 
 func (cmd *RuleFileAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 	// TODO: Get scheme from CLI flag.
-	output, err := AnalyzeRuleFiles(cmd.RuleFilesList, model.LegacyValidation)
+	output, err := AnalyzeRuleFiles(cmd.RuleFilesList, model.LegacyValidation, cmd.logger)
 	if err != nil {
 		return err
 	}
@@ -37,18 +40,18 @@ func (cmd *RuleFileAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 }
 
 // AnalyzeRuleFiles analyze rules files and return the list metrics used in them.
-func AnalyzeRuleFiles(ruleFiles []string, scheme model.ValidationScheme) (*analyze.MetricsInRuler, error) {
+func AnalyzeRuleFiles(ruleFiles []string, scheme model.ValidationScheme, logger log.Logger) (*analyze.MetricsInRuler, error) {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	nss, err := rules.ParseFiles(rules.MimirBackend, ruleFiles, scheme)
+	nss, err := rules.ParseFiles(rules.MimirBackend, ruleFiles, scheme, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "analyze operation unsuccessful, unable to parse rules files")
 	}
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
-			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace)
+			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace, logger)
 			if err != nil {
 				return nil, err
 			}

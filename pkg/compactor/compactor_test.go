@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -2367,6 +2368,82 @@ func TestMultitenantCompactor_CriticalIssue(t *testing.T) {
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 1
 		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 0
+	`),
+		"cortex_compactor_blocks_marked_for_no_compaction_total",
+	))
+}
+
+func TestMultitenantCompactor_PostingsOffsetTableTooLarge(t *testing.T) {
+	specs := []*block.SeriesSpec{
+		{
+			Labels: labels.FromStrings("__name__", "test_metric"),
+			Chunks: []chunks.Meta{
+				must(chunks.ChunkFromSamples([]chunks.Sample{
+					testutil.Sample{TS: 0, Val: 0},
+					testutil.Sample{TS: 2*time.Hour.Milliseconds() - 1, Val: 1},
+				})),
+			},
+		},
+	}
+
+	const user = "user"
+	storageDir := t.TempDir()
+
+	meta1, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
+	require.NoError(t, err)
+	meta2, err := block.GenerateBlockFromSpec(filepath.Join(storageDir, user), specs)
+	require.NoError(t, err)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	cfg := prepareConfig(t)
+	c, tsdbCompactor, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
+
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*block.Meta{meta1, meta2}, nil)
+
+	// Mock the compaction to return the postings offset table too large error
+	tsdbCompactor.On("Compact", mock.Anything, mock.Anything, mock.Anything).
+		Return([]ulid.ULID(nil), fmt.Errorf("write postings: %w", index.ErrPostingsOffsetTableTooLarge))
+
+	// Start the compactor
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Wait until a compaction run has been completed
+	test.Poll(t, 10*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	// Stop the compactor
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// Verify that compactor marked both input blocks for no-compaction
+	r := regexp.MustCompile("level=info component=compactor user=user msg=\"block has been marked for no compaction\" block=([0-9A-Z]+)")
+	matches := r.FindAllStringSubmatch(logs.String(), -1)
+	require.Len(t, matches, 2, "expected two blocks to be marked for no-compaction") // One log per block
+
+	for _, match := range matches {
+		require.Len(t, match, 2) // Full match + capture group
+		blockID := match[1]
+		require.True(t, blockID == meta1.ULID.String() || blockID == meta2.ULID.String(),
+			"marked block %s should be either meta1 or meta2", blockID)
+	}
+
+	for _, meta := range []*block.Meta{meta1, meta2} {
+		m := &block.NoCompactMark{}
+		require.NoError(t, block.ReadMarker(context.Background(), log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, meta.ULID.String()), m))
+		require.Equal(t, meta.ULID.String(), m.ID.String())
+		require.NotZero(t, m.NoCompactTime)
+		require.Equal(t, block.NoCompactReason(block.PostingsOffsetTableTooLargeNoCompactReason), m.Reason)
+	}
+
+	// Verify metrics
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
+		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="critical"} 0
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="postings-offset-table-too-large"} 2
 	`),
 		"cortex_compactor_blocks_marked_for_no_compaction_total",
 	))

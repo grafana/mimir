@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -22,7 +24,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
-	log "github.com/sirupsen/logrus"
 	"golang.org/x/term"
 	yamlv3 "gopkg.in/yaml.v3"
 
@@ -70,6 +71,8 @@ type RuleCommand struct {
 	ClientConfig client.Config
 
 	cli ruleCommandClient
+
+	logger log.Logger
 
 	// Backend type (cortex | loki)
 	Backend string
@@ -121,8 +124,11 @@ type RuleCommand struct {
 }
 
 // Register rule related commands and flags with the kingpin application
-func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, reg prometheus.Registerer) {
-	rulesCmd := app.Command("rules", "View and edit rules stored in Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error { return r.setup(k, reg) })
+func (r *RuleCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig, reg prometheus.Registerer) {
+	rulesCmd := app.Command("rules", "View and edit rules stored in Grafana Mimir.").PreAction(func(k *kingpin.ParseContext) error {
+		r.logger = logConfig.Logger()
+		return r.setup(k, reg)
+	})
 	rulesCmd.Flag("user", fmt.Sprintf("Basic auth username to use when contacting Grafana Mimir; alternatively, set %s. If empty, %s is used instead.", envVars.APIUser, envVars.TenantID)).Default("").Envar(envVars.APIUser).StringVar(&r.ClientConfig.User)
 	rulesCmd.Flag("key", "Basic auth password to use when contacting Grafana Mimir; alternatively, set "+envVars.APIKey+".").Default("").Envar(envVars.APIKey).StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with (deprecated)").Default(rules.MimirBackend).EnumVar(&r.Backend, backends...)
@@ -306,7 +312,7 @@ func (r *RuleCommand) setup(_ *kingpin.ParseContext, reg prometheus.Registerer) 
 		Help: "The timestamp of the last successful rule load.",
 	})
 
-	cli, err := client.New(r.ClientConfig)
+	cli, err := client.New(r.ClientConfig, r.logger)
 	if err != nil {
 		return err
 	}
@@ -361,17 +367,11 @@ func (r *RuleCommand) setupArgs() error {
 				}
 
 				if strings.HasSuffix(info.Name(), ".yml") || strings.HasSuffix(info.Name(), ".yaml") {
-					log.WithFields(log.Fields{
-						"file": info.Name(),
-						"path": path,
-					}).Debugf("adding file in rule-path")
+					level.Debug(r.logger).Log("msg", "adding file in rule-path", "file", info.Name(), "path", path)
 					r.RuleFilesList = append(r.RuleFilesList, path)
 					return nil
 				}
-				log.WithFields(log.Fields{
-					"file": info.Name(),
-					"path": path,
-				}).Debugf("ignorings file in rule-path")
+				level.Debug(r.logger).Log("msg", "ignoring file in rule-path", "file", info.Name(), "path", path)
 				return nil
 			})
 			if err != nil {
@@ -386,8 +386,8 @@ func (r *RuleCommand) setupArgs() error {
 func (r *RuleCommand) listRules(_ *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
-		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
-
+		level.Error(r.logger).Log("msg", "Unable to read rules from Grafana Mimir", "err", err)
+		os.Exit(1)
 	}
 
 	p := printer.New(r.DisableColor, r.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
@@ -398,18 +398,19 @@ func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 	ruleNS, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
-			log.Infof("no rule groups currently exist for this user")
+			level.Info(r.logger).Log("msg", "no rule groups currently exist for this user")
 			return nil
 		}
-		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
+		level.Error(r.logger).Log("msg", "Unable to read rules from Grafana Mimir", "err", err)
+		os.Exit(1)
 	}
 
 	p := printer.New(r.DisableColor, r.ForceColor, term.IsTerminal(int(os.Stdout.Fd())))
 
 	if r.OutputDir != "" {
-		log.Infof("Output dir detected writing rules to directory: %s", r.OutputDir)
+		level.Info(r.logger).Log("msg", "output dir detected, writing rules to directory", "dir", r.OutputDir)
 		for namespace, rule := range ruleNS {
-			if err = saveNamespaceRuleGroup(namespace, rule, r.OutputDir); err != nil {
+			if err = saveNamespaceRuleGroup(namespace, rule, r.OutputDir, r.logger); err != nil {
 				return err
 			}
 		}
@@ -421,7 +422,7 @@ func (r *RuleCommand) printRules(_ *kingpin.ParseContext) error {
 	return p.PrintRuleGroups(ruleNS)
 }
 
-func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir string) error {
+func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir string, logger log.Logger) error {
 	baseDir, err := filepath.Abs(dir)
 	if err != nil {
 		return err
@@ -430,7 +431,7 @@ func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir stri
 	if disallowedNamespaceChars.Match([]byte(ns)) {
 		oldNs := ns
 		ns = strings.TrimSpace(disallowedNamespaceChars.ReplaceAllString(ns, "_"))
-		log.Warnf("We found disallowed characters in the namespace name '%s', replacing them with underscores '%s'", oldNs, ns)
+		level.Warn(logger).Log("msg", "found disallowed characters in namespace name, replacing with underscores", "original", oldNs, "replaced", ns)
 	}
 
 	file := filepath.Join(baseDir, fmt.Sprintf("%s.yaml", ns))
@@ -439,7 +440,7 @@ func saveNamespaceRuleGroup(ns string, ruleGroup []rwrulefmt.RuleGroup, dir stri
 		Filepath:  file,
 		Groups:    ruleGroup,
 	}}
-	log.Infof("Saving namespace group rules to file %s", file)
+	level.Info(logger).Log("msg", "saving namespace group rules to file", "file", file)
 	if err := save(rule, true); err != nil {
 		return err
 	}
@@ -450,15 +451,16 @@ func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 	group, err := r.cli.GetRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil {
 		if errors.Is(err, client.ErrResourceNotFound) {
-			log.Infof("this rule group does not currently exist")
+			level.Info(r.logger).Log("msg", "this rule group does not currently exist")
 			return nil
 		}
-		log.Fatalf("Unable to read rules from Grafana Mimir, %v", err)
+		level.Error(r.logger).Log("msg", "Unable to read rules from Grafana Mimir", "err", err)
+		os.Exit(1)
 	}
 
 	if r.OutputDir != "" {
-		log.Infof("Output dir detected, writing group '%s' of namespace '%s' to directory: %s", r.RuleGroup, r.Namespace, r.OutputDir)
-		err := saveNamespaceRuleGroup(r.Namespace, []rwrulefmt.RuleGroup{*group}, r.OutputDir)
+		level.Info(r.logger).Log("msg", "output dir detected, writing group to directory", "group", r.RuleGroup, "namespace", r.Namespace, "dir", r.OutputDir)
+		err := saveNamespaceRuleGroup(r.Namespace, []rwrulefmt.RuleGroup{*group}, r.OutputDir, r.logger)
 
 		return err
 	}
@@ -470,14 +472,15 @@ func (r *RuleCommand) getRuleGroup(_ *kingpin.ParseContext) error {
 func (r *RuleCommand) deleteRuleGroup(_ *kingpin.ParseContext) error {
 	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
-		log.Fatalf("Unable to delete rule group from Grafana Mimir, %v", err)
+		level.Error(r.logger).Log("msg", "Unable to delete rule group from Grafana Mimir", "err", err)
+		os.Exit(1)
 	}
 	return nil
 }
 
 func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
@@ -493,25 +496,15 @@ func (r *RuleCommand) loadRules(_ *kingpin.ParseContext) error {
 			if curGroup != nil {
 				err = rules.CompareGroups(*curGroup, group)
 				if err == nil {
-					log.WithFields(log.Fields{
-						"group":     group.Name,
-						"namespace": ns.Namespace,
-					}).Infof("group already exists")
+					level.Info(r.logger).Log("msg", "group already exists", "group", group.Name, "namespace", ns.Namespace)
 					continue
 				}
-				log.WithFields(log.Fields{
-					"group":      group.Name,
-					"namespace":  ns.Namespace,
-					"difference": err,
-				}).Infof("updating group")
+				level.Info(r.logger).Log("msg", "updating group", "group", group.Name, "namespace", ns.Namespace, "difference", err)
 			}
 
 			err = r.cli.CreateRuleGroup(context.Background(), ns.Namespace, group)
 			if err != nil {
-				log.WithError(err).WithFields(log.Fields{
-					"group":     group.Name,
-					"namespace": ns.Namespace,
-				}).Errorf("unable to load rule group")
+				level.Error(r.logger).Log("msg", "unable to load rule group", "group", group.Name, "namespace", ns.Namespace, "err", err)
 				return fmt.Errorf("load operation unsuccessful")
 			}
 		}
@@ -547,7 +540,7 @@ func (r *RuleCommand) diffRules(_ *kingpin.ParseContext) error {
 	}
 
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
 	}
@@ -616,7 +609,7 @@ func (r *RuleCommand) syncRules(_ *kingpin.ParseContext) error {
 	}
 
 	// TODO: Get scheme from CLI flag.
-	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
 	}
@@ -688,10 +681,7 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 	err := concurrency.ForEachJob(ctx, len(ops), concurrencyLimit, func(ctx context.Context, idx int) error {
 		op := ops[idx]
 
-		log.WithFields(log.Fields{
-			"group":     op.RuleGroup.Name,
-			"namespace": op.Namespace,
-		}).Infof("synching %s group", op.State.String())
+		level.Info(r.logger).Log("msg", "syncing group", "state", op.State.String(), "group", op.RuleGroup.Name, "namespace", op.Namespace)
 
 		switch op.State {
 		case rules.Created:
@@ -725,7 +715,7 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 	}
 
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -738,7 +728,7 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo)
+		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo, r.logger)
 		if err != nil {
 			return err
 		}
@@ -752,7 +742,7 @@ func (r *RuleCommand) prepare(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	log.Infof("SUCCESS: %d rules found, %d modified expressions", count, mod)
+	level.Info(r.logger).Log("msg", "SUCCESS", "rules_found", count, "modified_expressions", mod)
 
 	return nil
 }
@@ -764,14 +754,14 @@ func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
 	}
 
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
 
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.LintExpressions(r.Backend)
+		c, m, err := ruleNamespace.LintExpressions(r.Backend, r.logger)
 		if err != nil {
 			return err
 		}
@@ -787,7 +777,7 @@ func (r *RuleCommand) lint(_ *kingpin.ParseContext) error {
 		}
 	}
 
-	log.Infof("SUCCESS: %d rules found, %d linted expressions", count, mod)
+	level.Info(r.logger).Log("msg", "SUCCESS", "rules_found", count, "linted_expressions", mod)
 
 	return nil
 }
@@ -799,37 +789,29 @@ func (r *RuleCommand) checkRules(_ *kingpin.ParseContext) error {
 	}
 
 	// TODO: Get scheme from CLI flag.
-	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList, model.LegacyValidation, r.logger)
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
 	}
 
-	lvl := log.WarnLevel
-	if r.Strict {
-		lvl = log.ErrorLevel
-	}
-
 	for _, ruleNamespace := range namespaces {
-		n := ruleNamespace.CheckRecordingRules(r.Strict)
+		n := ruleNamespace.CheckRecordingRules(r.Strict, r.logger)
 		if n != 0 {
 			return fmt.Errorf("%d erroneous recording rule names", n)
 		}
 		duplicateRules := checkDuplicates(ruleNamespace.Groups)
 		if len(duplicateRules) != 0 {
-			log.WithFields(log.Fields{
-				"namespace":       ruleNamespace.Namespace,
-				"error":           "rules should emit unique series, to avoid producing inconsistencies while recording expressions",
-				"duplicate_rules": len(duplicateRules),
-			}).Logf(lvl, "duplicate rules found")
+			if r.Strict {
+				level.Error(r.logger).Log("msg", "duplicate rules found", "namespace", ruleNamespace.Namespace, "error", "rules should emit unique series, to avoid producing inconsistencies while recording expressions", "duplicate_rules", len(duplicateRules))
+			} else {
+				level.Warn(r.logger).Log("msg", "duplicate rules found", "namespace", ruleNamespace.Namespace, "error", "rules should emit unique series, to avoid producing inconsistencies while recording expressions", "duplicate_rules", len(duplicateRules))
+			}
 			for _, n := range duplicateRules {
-				fields := log.Fields{
-					"namespace": ruleNamespace.Namespace,
-					"metric":    n.metric,
+				if r.Strict {
+					level.Error(r.logger).Log("msg", "duplicate rule", "namespace", ruleNamespace.Namespace, "metric", n.metric, "labels", fmt.Sprintf("%v", n.label))
+				} else {
+					level.Warn(r.logger).Log("msg", "duplicate rule", "namespace", ruleNamespace.Namespace, "metric", n.metric, "labels", fmt.Sprintf("%v", n.label))
 				}
-				for i, l := range n.label {
-					fields["label["+i+"]"] = l
-				}
-				log.WithFields(fields).Logf(lvl, "duplicate rule")
 			}
 			if r.Strict {
 				return fmt.Errorf("%d duplicate rules found in namespace %q", len(duplicateRules), ruleNamespace.Namespace)
@@ -903,7 +885,8 @@ func save(nss map[string]rules.RuleNamespace, i bool) error {
 func (r *RuleCommand) deleteNamespace(_ *kingpin.ParseContext) error {
 	err := r.cli.DeleteNamespace(context.Background(), r.Namespace)
 	if err != nil && !errors.Is(err, client.ErrResourceNotFound) {
-		log.Fatalf("Unable to delete namespace from Grafana Mimir, %v", err)
+		level.Error(r.logger).Log("msg", "Unable to delete namespace from Grafana Mimir", "err", err)
+		os.Exit(1)
 	}
 	return nil
 }

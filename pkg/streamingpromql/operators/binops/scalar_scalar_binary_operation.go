@@ -122,6 +122,14 @@ func (s *ScalarScalarBinaryOperation) Prepare(ctx context.Context, params *types
 	return s.Right.Prepare(ctx, params)
 }
 
+func (s *ScalarScalarBinaryOperation) AfterPrepare(ctx context.Context) error {
+	if err := s.Left.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	return s.Right.AfterPrepare(ctx)
+}
+
 func (s *ScalarScalarBinaryOperation) Finalize(ctx context.Context) error {
 	if err := s.Left.Finalize(ctx); err != nil {
 		return err
