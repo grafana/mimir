@@ -304,11 +304,7 @@ func TestRangeVectorSelectorSyntheticPoints(t *testing.T) {
 			points := append([]promql.FPoint{}, head...)
 			points = append(points, tail...)
 
-			require.Len(t, points, len(tc.expected))
-
-			for i, expected := range tc.expected {
-				require.Equalf(t, expected, points[i], "Point[%d]", i)
-			}
+			require.Equal(t, tc.expected, points)
 		})
 	}
 }
