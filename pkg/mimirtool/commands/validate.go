@@ -26,7 +26,7 @@ type ValidateAlertFilesCommand struct {
 	Verbose     bool
 	SetExitCode bool
 
-	l log.Logger
+	logger log.Logger
 }
 
 // Register registers the validate command and its subcommands with the kingpin application.
@@ -38,7 +38,7 @@ func (cmd *ValidateCommand) Register(app *kingpin.Application, _ EnvVarNames, lo
 	})
 	validateCmd := app.Command("validate", "Validate Prometheus files.")
 
-	alertsCmd := &ValidateAlertFilesCommand{l: logger}
+	alertsCmd := &ValidateAlertFilesCommand{logger: logger}
 	validateAlertsCmd := validateCmd.Command("alerts-file", "Load alert rule files and run validations on them.").Action(alertsCmd.run)
 	validateAlertsCmd.Arg("files", "Alert rule files to validate").Required().ExistingFilesVar(&alertsCmd.Files)
 	validateAlertsCmd.Flag("verbose", "Print verbose output").Default("false").BoolVar(&alertsCmd.Verbose)
@@ -54,7 +54,7 @@ type alertCheckResult struct {
 type alertCheckFunc func([]rulefmt.Rule) []alertCheckResult
 
 func (cmd *ValidateAlertFilesCommand) run(_ *kingpin.ParseContext) error {
-	namespaces, err := rules.ParseFiles(rules.MimirBackend, cmd.Files, model.UTF8Validation, cmd.l)
+	namespaces, err := rules.ParseFiles(rules.MimirBackend, cmd.Files, model.UTF8Validation, cmd.logger)
 	if err != nil {
 		return fmt.Errorf("failed to parse rule files: %w", err)
 	}
