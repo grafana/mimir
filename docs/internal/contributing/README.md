@@ -33,6 +33,10 @@ You're using an IDE you may find useful the following settings for the Grafana M
 
 - [VSCode](vscode-goimports-settings.json)
 
+## Go style
+
+- Use `any` instead of `interface{}`
+
 ## Building Grafana Mimir
 
 To build:
