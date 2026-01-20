@@ -3590,12 +3590,6 @@ grpc_client_config:
 # query-scheduler.
 # The CLI flags prefix for this block configuration is: querier.scheduler-client
 [query_scheduler_grpc_client_config: <grpc_client>]
-
-# (experimental) Enables streaming of responses from querier to query-frontend
-# for response types that support it (currently only `active_series` responses
-# do).
-# CLI flag: -querier.response-streaming-enabled
-[response_streaming_enabled: <boolean> | default = true]
 ```
 
 ### etcd
