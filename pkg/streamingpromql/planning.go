@@ -445,7 +445,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		var param planning.Node
 
 		if expr.Param != nil {
-			param, err = p.nodeFromExpr(expr.Param, inner.ChildrenTimeRange(timeRange), metricsTracker)
+			param, err = p.nodeFromExpr(expr.Param, timeRange, metricsTracker)
 			if err != nil {
 				return nil, err
 			}
