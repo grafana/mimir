@@ -149,6 +149,7 @@
 * [BUGFIX] Ingester: Query all ingesters when shuffle sharding is disabled. #14041
 * [BUGFIX] Query-frontend: Fix issue where per-query memory consumption limit is not enforced. #14086
 * [BUGFIX] Ingester: Fix race condition during shutdown where TSDBs could be closed while appends are still in progress. #14094
+* [BUGFIX] Ingester: Fix `BufferHolder` double-free bug and `AddSourceBufferHolder` buffer deduplication bug that could cause WAL corruption with concatenated labels when using ingest storage batching. #14108
 
 ### Mixin
 
