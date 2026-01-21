@@ -63,7 +63,7 @@ require (
 	github.com/google/go-github/v81 v81.0.0
 	github.com/google/uuid v1.6.0
 	github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
-	github.com/grafana/alerting v0.0.0-20251002141545-d513d62d3210
+	github.com/grafana/alerting v0.0.0-20260121173002-d20f4d0b4d2c
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/hashicorp/vault/api v1.22.0
@@ -115,7 +115,7 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.1 // indirect
-	github.com/at-wat/mqtt-go v0.19.4 // indirect
+	github.com/at-wat/mqtt-go v0.19.6 // indirect
 	github.com/aws/aws-sdk-go v1.55.7 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.0.4 // indirect
@@ -272,7 +272,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.22.1 // indirect
 	github.com/go-openapi/jsonreference v0.21.3 // indirect
 	github.com/go-openapi/loads v0.23.2 // indirect
-	github.com/go-openapi/runtime v0.27.1 // indirect
+	github.com/go-openapi/runtime v0.28.0 // indirect
 	github.com/go-openapi/spec v0.22.1 // indirect
 	github.com/go-openapi/validate v0.25.1 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
@@ -305,7 +305,6 @@ require (
 	github.com/klauspost/compress v1.18.3
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
-	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -37,17 +38,34 @@ func (n *Notifier) Notify(ctx context.Context, as ...*types.Alert) (bool, error)
 		return true, nil
 	}
 
+	// clone because it can be modified by the image provider
+	clones := make([]*types.Alert, 0, len(as))
+	for _, a := range as {
+		clone := &types.Alert{
+			Alert: model.Alert{
+				Labels:       maps.Clone(a.Labels),
+				Annotations:  maps.Clone(a.Annotations),
+				StartsAt:     a.StartsAt,
+				EndsAt:       a.EndsAt,
+				GeneratorURL: a.GeneratorURL,
+			},
+			UpdatedAt: a.UpdatedAt,
+			Timeout:   a.Timeout,
+		}
+		clones = append(clones, clone)
+	}
+
 	_ = images.WithStoredImages(ctx, l, n.images,
 		func(index int, image images.Image) error {
 			// If there is an image for this alert and the image has been uploaded
 			// to a public URL then include it as an annotation
 			if image.URL != "" {
-				as[index].Annotations["image"] = model.LabelValue(image.URL)
+				clones[index].Annotations["image"] = model.LabelValue(image.URL)
 			}
 			return nil
-		}, as...)
+		}, clones...)
 
-	body, err := json.Marshal(as)
+	body, err := json.Marshal(clones)
 	if err != nil {
 		return false, err
 	}

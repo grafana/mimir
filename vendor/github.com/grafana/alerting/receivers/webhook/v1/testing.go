@@ -8,7 +8,7 @@ import (
 
 // FullValidConfigForTesting is a string representation of a JSON object that contains all fields supported by the notifier Config. It can be used without secrets.
 var FullValidConfigForTesting = fmt.Sprintf(`{
-	"url": "http://localhost",
+	"url": %q,
 	"httpMethod": "PUT",
 	"maxAlerts": "2",
 	"authorization_scheme": "basic",
@@ -28,7 +28,7 @@ var FullValidConfigForTesting = fmt.Sprintf(`{
 		"header": "X-Grafana-Alerting-Signature",
 		"timestampHeader": "X-Grafana-Alerting-Timestamp"
 	}
-}`, http.TestCertPem, http.TestKeyPem, http.TestCACert)
+}`, NoopURL, http.TestCertPem, http.TestKeyPem, http.TestCACert)
 
 // FullValidSecretsForTesting is a string representation of JSON object that contains all fields that can be overridden from secrets
 var FullValidSecretsForTesting = fmt.Sprintf(`{

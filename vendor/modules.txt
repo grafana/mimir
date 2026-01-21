@@ -162,7 +162,7 @@ github.com/alecthomas/units
 # github.com/armon/go-metrics v0.4.1
 ## explicit; go 1.12
 github.com/armon/go-metrics
-# github.com/at-wat/mqtt-go v0.19.4
+# github.com/at-wat/mqtt-go v0.19.6
 ## explicit; go 1.18
 github.com/at-wat/mqtt-go
 # github.com/aws/aws-sdk-go v1.55.7
@@ -525,8 +525,8 @@ github.com/go-openapi/jsonreference/internal
 # github.com/go-openapi/loads v0.23.2
 ## explicit; go 1.24.0
 github.com/go-openapi/loads
-# github.com/go-openapi/runtime v0.27.1
-## explicit; go 1.19
+# github.com/go-openapi/runtime v0.28.0
+## explicit; go 1.20
 github.com/go-openapi/runtime
 github.com/go-openapi/runtime/flagext
 github.com/go-openapi/runtime/logger
@@ -717,7 +717,7 @@ github.com/gosimple/slug
 # github.com/grafana-tools/sdk v0.0.0-20220919052116-6562121319fc
 ## explicit; go 1.13
 github.com/grafana-tools/sdk
-# github.com/grafana/alerting v0.0.0-20251002141545-d513d62d3210
+# github.com/grafana/alerting v0.0.0-20260121173002-d20f4d0b4d2c
 ## explicit; go 1.24.0
 github.com/grafana/alerting/cluster
 github.com/grafana/alerting/definition
@@ -795,6 +795,7 @@ github.com/grafana/alerting/receivers/wecom/v1
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
+github.com/grafana/alerting/utils
 # github.com/grafana/dskit v0.0.0-20260115221100-0ee97c59102f
 ## explicit; go 1.24.0
 github.com/grafana/dskit/backoff
@@ -1025,8 +1026,6 @@ github.com/kylelemons/godebug/pretty
 # github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0
 ## explicit; go 1.16
 github.com/lufia/plan9stats
-# github.com/mailru/easyjson v0.9.0
-## explicit; go 1.20
 # github.com/mattn/go-colorable v0.1.14
 ## explicit; go 1.18
 github.com/mattn/go-colorable

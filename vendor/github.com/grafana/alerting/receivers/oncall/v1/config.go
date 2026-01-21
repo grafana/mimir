@@ -83,84 +83,83 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, err
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:        "URL",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "url",
-				Required:     true,
-			},
-			{
-				Label:   "HTTP Method",
-				Element: schema.ElementTypeSelect,
-				SelectOptions: []schema.SelectOption{
-					{
-						Value: "POST",
-						Label: "POST",
-					},
-					{
-						Value: "PUT",
-						Label: "PUT",
-					},
-				},
-				PropertyName: "httpMethod",
-			},
-			{
-				Label:        "HTTP Basic Authentication - Username",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "username",
-			},
-			{
-				Label:        "HTTP Basic Authentication - Password",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypePassword,
-				PropertyName: "password",
-				Secure:       true,
-			},
-			{ // New in 9.1
-				Label:        "Authorization Header - Scheme",
-				Description:  "Optionally provide a scheme for the Authorization Request Header. Default is Bearer.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "authorization_scheme",
-				Placeholder:  "Bearer",
-			},
-			{ // New in 9.1
-				Label:        "Authorization Header - Credentials",
-				Description:  "Credentials for the Authorization Request header. Only one of HTTP Basic Authentication or Authorization Request Header can be set.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "authorization_credentials",
-				Secure:       true,
-			},
-			{ // New in 8.0. TODO: How to enforce only numbers?
-				Label:        "Max Alerts",
-				Description:  "Max alerts to include in a notification. Remaining alerts in the same batch will be ignored above this number. 0 means no limit.",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				PropertyName: "maxAlerts",
-			},
-			{ // New in 9.3.
-				Label:        "Title",
-				Description:  "Templated title of the message.",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				PropertyName: "title",
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-			},
-			{ // New in 9.3.
-				Label:        "Message",
-				Description:  "Custom message. You can use template variables.",
-				Element:      schema.ElementTypeTextArea,
-				PropertyName: "message",
-				Placeholder:  templates.DefaultMessageEmbed,
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:        "URL",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "url",
+			Required:     true,
+			Protected:    true,
 		},
-	}
+		{
+			Label:   "HTTP Method",
+			Element: schema.ElementTypeSelect,
+			SelectOptions: []schema.SelectOption{
+				{
+					Value: "POST",
+					Label: "POST",
+				},
+				{
+					Value: "PUT",
+					Label: "PUT",
+				},
+			},
+			PropertyName: "httpMethod",
+		},
+		{
+			Label:        "HTTP Basic Authentication - Username",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "username",
+		},
+		{
+			Label:        "HTTP Basic Authentication - Password",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypePassword,
+			PropertyName: "password",
+			Secure:       true,
+		},
+		{ // New in 9.1
+			Label:        "Authorization Header - Scheme",
+			Description:  "Optionally provide a scheme for the Authorization Request Header. Default is Bearer.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "authorization_scheme",
+			Placeholder:  "Bearer",
+		},
+		{ // New in 9.1
+			Label:        "Authorization Header - Credentials",
+			Description:  "Credentials for the Authorization Request header. Only one of HTTP Basic Authentication or Authorization Request Header can be set.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "authorization_credentials",
+			Secure:       true,
+		},
+		{ // New in 8.0. TODO: How to enforce only numbers?
+			Label:        "Max Alerts",
+			Description:  "Max alerts to include in a notification. Remaining alerts in the same batch will be ignored above this number. 0 means no limit.",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			PropertyName: "maxAlerts",
+		},
+		{ // New in 9.3.
+			Label:        "Title",
+			Description:  "Templated title of the message.",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			PropertyName: "title",
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+		},
+		{ // New in 9.3.
+			Label:        "Message",
+			Description:  "Custom message. You can use template variables.",
+			Element:      schema.ElementTypeTextArea,
+			PropertyName: "message",
+			Placeholder:  templates.DefaultMessageEmbed,
+		},
+	},
 }

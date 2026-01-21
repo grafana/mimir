@@ -76,6 +76,7 @@ func interfaceSlice(slice interface{}) ([]interface{}, error) {
 	}
 	s := reflect.ValueOf(slice)
 	kind := s.Kind()
+	//nolint:exhaustive // Only checking for slice/array types, default handles all others
 	switch kind {
 	case reflect.Slice, reflect.Array:
 		l := s.Len()
