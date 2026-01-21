@@ -8266,6 +8266,56 @@ func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 	require.Nil(t, db)
 }
 
+func TestIngester_closeAllTSDB_waitsForInFlightAppends(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+
+	// Create ingester
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	// Push some data to create a TSDB.
+	pushSingleSampleWithMetadata(t, i)
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+
+	// Simulate an in-flight append by acquiring the append lock.
+	state, err := db.acquireAppendLock(0)
+	require.NoError(t, err)
+	require.Equal(t, active, state)
+
+	// Call closeAllTSDB in a goroutine - it should block waiting for in-flight appends.
+	closeAllDone := make(chan struct{})
+	go func() {
+		i.closeAllTSDB()
+		close(closeAllDone)
+	}()
+
+	// Wait for closeAllTSDB to set the closing state.
+	test.Poll(t, 1*time.Second, closing, func() any {
+		db.stateMtx.RLock()
+		defer db.stateMtx.RUnlock()
+		return db.state
+	})
+
+	// Verify closeAllTSDB is still blocked waiting for in-flight appends.
+	select {
+	case <-closeAllDone:
+		t.Fatal("closeAllTSDB should be blocked waiting for in-flight appends")
+	default:
+	}
+
+	// Release the in-flight append lock.
+	db.releaseAppendLock(state)
+
+	// Wait for closeAllTSDB to complete.
+	<-closeAllDone
+
+	// Verify the TSDB was closed.
+	require.Nil(t, i.getTSDB(userID))
+}
+
 func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	chunkRange := 2 * time.Hour
 	chunkRangeMilliSec := chunkRange.Milliseconds()
