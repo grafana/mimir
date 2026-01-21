@@ -95,3 +95,32 @@ After completing the prerequisites and choosing your ingest storage strategy, up
 ```bash
 helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE>
 ```
+
+### Fixing a broken upgrade
+
+If you failed to install the rollout-operator CustomResourceDefinitions (CRDs) and did not disable the rollout-operator then your deployment will be in a bad state.
+
+If you intend to use the rollout-operator, install the CRDs as described above.
+
+If you intend to disable the rollout-operator use the following sequence;
+
+1. Disable the rollout-operator in your values file
+
+```yaml
+rollout-operator:
+  enabled: false
+```
+
+2. Delete the rollout-operator validating and mutating webhook configurations
+
+```bash
+kubectl delete validatingwebhookconfiguration no-downscale-<NAMESPACE>
+kubectl delete validatingwebhookconfiguration pod-eviction-<NAMESPACE>
+kubectl delete mutatingwebhookconfigurations prepare-downscale-<NAMESPACE>
+```
+
+3. Re-apply the updated configuration
+
+```bash
+helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE> --reset-values
+```
