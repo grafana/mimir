@@ -66,14 +66,14 @@ var (
 // is used to strip down the config to the minimum, and avoid confusion
 // to the user.
 type RingConfig struct {
-	KVStore                    kv.Config     `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."`
-	HeartbeatPeriod            time.Duration `yaml:"heartbeat_period" category:"advanced"`
-	HeartbeatTimeout           time.Duration `yaml:"heartbeat_timeout" category:"advanced"`
-	AutoForgetEnabled          bool          `yaml:"auto_forget_enabled" category:"deprecated"`
-	AutoForgetUnhealthyPeriods int           `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
-	ReplicationFactor          int           `yaml:"replication_factor" category:"advanced"`
-	TokensFilePath             string        `yaml:"tokens_file_path"`
-	NumTokens                  int           `yaml:"num_tokens" category:"advanced"`
+	KVStore                    kv.Config              `yaml:"kvstore" doc:"description=The key-value store used to share the hash ring across multiple instances. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode."`
+	HeartbeatPeriod            time.Duration          `yaml:"heartbeat_period" category:"advanced"`
+	HeartbeatTimeout           time.Duration          `yaml:"heartbeat_timeout" category:"advanced"`
+	AutoForgetEnabled          bool                   `yaml:"auto_forget_enabled" category:"deprecated"`
+	AutoForgetUnhealthyPeriods int                    `yaml:"auto_forget_unhealthy_periods" category:"advanced"`
+	ReplicationFactor          int                    `yaml:"replication_factor" category:"advanced"`
+	TokensFilePath             string                 `yaml:"tokens_file_path"`
+	NumTokens                  int                    `yaml:"num_tokens" category:"advanced"`
 	ZoneAwarenessEnabled       bool                   `yaml:"zone_awareness_enabled"`
 	ExcludedZones              flagext.StringSliceCSV `yaml:"excluded_zones" category:"advanced"`
 
