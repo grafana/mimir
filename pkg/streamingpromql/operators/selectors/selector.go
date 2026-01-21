@@ -45,6 +45,12 @@ type Selector struct {
 	// This flag has no effect unless Smoothed is set to true.
 	CounterAware bool
 
+	// Pass the set of labels required for the query to the Querier to avoid transferring labels that aren't needed
+	// back and forth between the querier and storage layer (ingesters, store-gateways). The storage layer may also
+	// apply further optimizations based on this information.
+	ProjectionInclude bool
+	ProjectionLabels  []string
+
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
 	querier   storage.Querier
@@ -135,6 +141,10 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		End:   endTimestamp,
 		Step:  s.TimeRange.IntervalMilliseconds,
 		Range: s.Range.Milliseconds(),
+
+		// Mimir Queriers don't use projection hints for anything at time of writing.
+		ProjectionInclude: s.ProjectionInclude,
+		ProjectionLabels:  s.ProjectionLabels,
 
 		// Mimir doesn't use Grouping or By, so there's no need to include them here.
 		//

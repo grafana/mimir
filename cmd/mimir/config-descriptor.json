@@ -2572,6 +2572,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-reduce-matchers",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_projection_pushdown",
+              "required": false,
+              "desc": "Enable projection pushdown to only fetch labels required for the query from storage.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,

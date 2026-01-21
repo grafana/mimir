@@ -106,6 +106,11 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	if opts.EnableProjectionPushdown {
+		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
 	}

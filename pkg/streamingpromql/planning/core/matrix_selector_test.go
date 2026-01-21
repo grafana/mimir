@@ -595,7 +595,7 @@ func TestMatrixSelector_Equivalence(t *testing.T) {
 	}
 }
 
-func TestMatrixSelector_MergeHints(t *testing.T) {
+func TestMatrixSelector_MergeHints_SkipHistogramBuckets(t *testing.T) {
 	runTest := func(t *testing.T, skipFirst, skipSecond bool, expectSkip bool) {
 		first := &MatrixSelector{
 			MatrixSelectorDetails: &MatrixSelectorDetails{
@@ -627,6 +627,78 @@ func TestMatrixSelector_MergeHints(t *testing.T) {
 
 	t.Run("both have skip histogram buckets enabled", func(t *testing.T) {
 		runTest(t, true, true, true)
+	})
+}
+
+func TestMatrixSelector_MergeHints_ProjectionLabels(t *testing.T) {
+	// NOTE: Test cases for this test should be kept in sync with TestVectorSelector_MergeHints_ProjectionLabels
+
+	runTest := func(t *testing.T, includeFirst bool, lblsFirst []string, includeSecond bool, lblsSecond []string, expectInclude bool, expectLbls []string) {
+		first := &MatrixSelector{
+			MatrixSelectorDetails: &MatrixSelectorDetails{
+				ProjectionInclude: includeFirst,
+				ProjectionLabels:  lblsFirst,
+			},
+		}
+		second := &MatrixSelector{
+			MatrixSelectorDetails: &MatrixSelectorDetails{
+				ProjectionInclude: includeSecond,
+				ProjectionLabels:  lblsSecond,
+			},
+		}
+
+		err := first.MergeHints(second)
+		require.NoError(t, err)
+		require.Equal(t, expectInclude, first.ProjectionInclude)
+		require.Equal(t, expectLbls, first.ProjectionLabels)
+	}
+
+	t.Run("differing include/exclude", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			false,
+			[]string{"pod"},
+			false,
+			[]string{},
+		)
+	})
+
+	t.Run("both exclude empty labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
+	})
+
+	t.Run("both include some labels", func(t *testing.T) {
+		runTest(
+			t,
+			true,
+			[]string{"job"},
+			true,
+			[]string{"pod"},
+			true,
+			[]string{"job", "pod"},
+		)
+	})
+
+	t.Run("one excludes some labels one excludes no labels", func(t *testing.T) {
+		runTest(
+			t,
+			false,
+			[]string{"job"},
+			false,
+			[]string{},
+			false,
+			[]string{},
+		)
 	})
 }
 
