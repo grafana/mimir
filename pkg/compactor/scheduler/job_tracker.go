@@ -11,9 +11,6 @@ import (
 	"time"
 
 	"github.com/benbjohnson/clock"
-	"go.etcd.io/bbolt"
-
-	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 )
 
 const InfiniteLeases = 0
@@ -58,47 +55,10 @@ func (j *Job[V]) ClearLease() {
 	j.lastRenewalTime = time.Time{}
 }
 
-func serializeCompactionJob(j *Job[*CompactionJob]) ([]byte, error) {
-	stored := &compactorschedulerpb.StoredCompactionJob{
-		Info: &compactorschedulerpb.StoredJobInfo{
-			CreationTime:      j.creationTime.Unix(),
-			LeaseCreationTime: j.leaseCreationTime.Unix(),
-			NumLeases:         int32(j.numLeases),
-			Epoch:             j.epoch,
-		},
-		Job: &compactorschedulerpb.CompactionJob{
-			BlockIds: j.value.blocks,
-			Split:    j.value.isSplit,
-		},
-	}
-	return stored.Marshal()
-}
-
-func deserializeCompactionJob(b []byte) (*Job[*CompactionJob], error) {
-	var stored compactorschedulerpb.StoredCompactionJob
-	err := stored.Unmarshal(b)
-	if err != nil {
-		return nil, err
-	}
-	return &Job[*CompactionJob]{
-		value: &CompactionJob{
-			blocks:  stored.Job.BlockIds,
-			isSplit: stored.Job.Split,
-		},
-		creationTime:      time.Unix(stored.Info.CreationTime, 0),
-		leaseCreationTime: time.Unix(stored.Info.LeaseCreationTime, 0),
-		numLeases:         int(stored.Info.NumLeases),
-		epoch:             stored.Info.Epoch,
-	}, nil
-}
-
 // JobTracker tracks pending and active planning and compaction jobs for tenants.
 // TODO: Some kind of feedback mechanism so the Spawner can know if a submitted plan job failed or completed
 type JobTracker[V any] struct {
-	db           *bbolt.DB
-	name         []byte
-	serializer   func(*Job[V]) ([]byte, error)
-	deserializer func([]byte) (*Job[V], error)
+	persister JobPersister[V]
 
 	clock     clock.Clock
 	maxLeases int
@@ -111,38 +71,25 @@ type JobTracker[V any] struct {
 	allJobs map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
 }
 
-func NewJobTracker[V any](db *bbolt.DB, name []byte, serializer func(*Job[V]) ([]byte, error), deserializer func([]byte) (*Job[V], error), maxLeases int, jobType string, metrics *schedulerMetrics) *JobTracker[V] {
+func NewJobTracker[V any](jobPersister JobPersister[V], maxLeases int, jobType string, metrics *schedulerMetrics) *JobTracker[V] {
 	jt := &JobTracker[V]{
-		db:           db,
-		name:         name,
-		serializer:   serializer,
-		deserializer: deserializer,
-		clock:        clock.New(),
-		maxLeases:    maxLeases,
-		jobType:      jobType,
-		metrics:      metrics,
-		mtx:          &sync.Mutex{},
-		pending:      list.New(),
-		active:       list.New(),
-		allJobs:      make(map[string]*list.Element),
+		persister: jobPersister,
+		clock:     clock.New(),
+		maxLeases: maxLeases,
+		jobType:   jobType,
+		metrics:   metrics,
+		mtx:       &sync.Mutex{},
+		pending:   list.New(),
+		active:    list.New(),
+		allJobs:   make(map[string]*list.Element),
 	}
 	return jt
 }
 
-func (jt *JobTracker[V]) recover(bucket *bbolt.Bucket) error {
-	// Recover state from database
-	leased := make([]*Job[V], 0, 10)
-	c := bucket.Cursor()
-	for k, v := c.First(); k != nil; k, v = c.Next() {
-		job, err := jt.deserializer(v)
-		if err != nil {
-			return err
-		}
-
-		job.id = string(k)
-		job.lastRenewalTime = job.leaseCreationTime
+func (jt *JobTracker[V]) recoverFrom(jobs []*Job[V]) {
+	leased := make([]*Job[V], 0, len(jobs))
+	for _, job := range jobs {
 		job.clock = jt.clock
-
 		// TODO: When completed jobs are temporarily remembered there needs to be a third case here
 		if job.IsLeased() {
 			// Updates from heartbeats are not persisted, but the initial lease time still are so this still requires sorting
@@ -162,7 +109,6 @@ func (jt *JobTracker[V]) recover(bucket *bbolt.Bucket) error {
 
 	jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
 	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.active.Len()))
-	return nil
 }
 
 // Lease iterates the job queue for an acceptable job according to the provided canAccept function
@@ -191,7 +137,7 @@ func (jt *JobTracker[V]) Lease(canAccept func(string, V) bool) (id string, value
 	jj := &jv
 
 	jj.MarkLeased()
-	if err := jt.writeJobToDB(jj); err != nil {
+	if err := jt.persister.WriteJob(jj); err != nil {
 		return "", *new(V), 0, false, err
 	}
 
@@ -202,32 +148,6 @@ func (jt *JobTracker[V]) Lease(canAccept func(string, V) bool) (id string, value
 	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.active.Len()))
 
 	return jj.id, jj.value, jj.epoch, jt.isPendingEmpty(), nil
-}
-
-func (jt *JobTracker[V]) writeJobToDB(j *Job[V]) error {
-	jobBytes, err := jt.serializer(j)
-	if err != nil {
-		return fmt.Errorf("failed serializing a job: %w", err)
-	}
-	return jt.db.Update(func(t *bbolt.Tx) error {
-		b := t.Bucket(jt.name)
-		if b == nil {
-			// This should never happen
-			return fmt.Errorf("bucket does not exist for %s", jt.name)
-		}
-		return b.Put([]byte(j.id), jobBytes)
-	})
-}
-
-func (jt *JobTracker[V]) deleteJobFromDB(j *Job[V]) error {
-	return jt.db.Update(func(t *bbolt.Tx) error {
-		b := t.Bucket(jt.name)
-		if b == nil {
-			// This should never happen
-			return fmt.Errorf("bucket does not exist for %s", jt.name)
-		}
-		return b.Delete([]byte(j.id))
-	})
 }
 
 // Does not acquire any lock. It is required that any callers hold an appropriate lock.
@@ -258,7 +178,7 @@ func (jt *JobTracker[V]) remove(id string, epoch int64, checkEpoch bool) (remove
 		return false, false, nil
 	}
 
-	if err := jt.deleteJobFromDB(j); err != nil {
+	if err := jt.persister.DeleteJob(j); err != nil {
 		return false, false, fmt.Errorf("failed deleting job: %w", err)
 	}
 
@@ -312,34 +232,7 @@ func (jt *JobTracker[V]) ExpireLeases(leaseDuration time.Duration) (bool, error)
 		return false, nil
 	}
 
-	// Serialize outside of the database write transaction to minimize time spent within it
-	var err error
-	jobBytes := make([][]byte, len(reviveJobs))
-	for i, j := range reviveJobs {
-		jobBytes[i], err = jt.serializer(j)
-		if err != nil {
-			return false, fmt.Errorf("failed serializing a job: %w", err)
-		}
-	}
-
-	err = jt.db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(jt.name)
-		if b == nil {
-			// This should never happen
-			return fmt.Errorf("bucket does not exist for %s", jt.name)
-		}
-		for _, j := range deleteJobs {
-			if err := b.Delete([]byte(j.id)); err != nil {
-				return err
-			}
-		}
-		for i, j := range reviveJobs {
-			if err := b.Put([]byte(j.id), jobBytes[i]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	err := jt.persister.WriteAndDeleteJobs(reviveJobs, deleteJobs)
 	if err != nil {
 		return false, fmt.Errorf("failed writing offered jobs: %w", err)
 	}
@@ -398,7 +291,8 @@ func (jt *JobTracker[V]) CancelLease(id string, epoch int64) (canceled bool, bec
 		jv := *j
 		jj := &jv
 		jj.ClearLease()
-		err = jt.writeJobToDB(jj)
+
+		err = jt.persister.WriteJob(jj)
 		if err != nil {
 			return false, false, err
 		}
@@ -406,7 +300,7 @@ func (jt *JobTracker[V]) CancelLease(id string, epoch int64) (canceled bool, bec
 		jt.allJobs[jj.id] = jt.pending.PushFront(jj)
 		jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
 	} else {
-		err := jt.deleteJobFromDB(j)
+		err := jt.persister.DeleteJob(j)
 		if err != nil {
 			return false, false, err
 		}
@@ -447,29 +341,7 @@ func (jt *JobTracker[V]) Offer(jobs []*Job[V], shouldReplace func(prev, new V) b
 	}
 
 	acceptedJobs := jobs[:accepted]
-
-	// Serialize outside of the database write transaction to minimize time spent within it
-	jobBytes := make([][]byte, accepted)
-	for i, j := range acceptedJobs {
-		jobBytes[i], err = jt.serializer(j)
-		if err != nil {
-			return 0, false, fmt.Errorf("failed serializing a job: %w", err)
-		}
-	}
-
-	err = jt.db.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket(jt.name)
-		if b == nil {
-			// This should never happen
-			return fmt.Errorf("bucket does not exist for %s", jt.name)
-		}
-		for i, j := range acceptedJobs {
-			if err := b.Put([]byte(j.id), jobBytes[i]); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	err = jt.persister.WriteAndDeleteJobs(acceptedJobs, nil)
 	if err != nil {
 		return 0, false, fmt.Errorf("failed writing offered jobs: %w", err)
 	}

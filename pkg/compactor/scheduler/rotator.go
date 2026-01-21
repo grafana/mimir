@@ -10,7 +10,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
-	"go.etcd.io/bbolt"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
@@ -29,7 +28,6 @@ const outsideRotation int = -1
 type Rotator struct {
 	services.Service
 
-	db                   *bbolt.DB
 	planTracker          *JobTracker[struct{}]
 	leaseDuration        time.Duration
 	leaseCheckInterval   time.Duration
@@ -47,26 +45,17 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(db *bbolt.DB, planTracker *JobTracker[struct{}], recoveredTenantStateMap map[string]*TenantRotationState,
-	leaseDuration time.Duration, leaseCheckInterval time.Duration, metrics *schedulerMetrics, logger log.Logger) *Rotator {
+func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, metrics *schedulerMetrics, logger log.Logger) *Rotator {
 	r := &Rotator{
-		db:                   db,
 		planTracker:          planTracker,
 		leaseDuration:        leaseDuration,
 		leaseCheckInterval:   leaseCheckInterval,
 		metrics:              metrics,
 		rotationIndexCounter: atomic.NewInt32(0),
 		mtx:                  &sync.RWMutex{},
-		tenantStateMap:       recoveredTenantStateMap,
+		tenantStateMap:       make(map[string]*TenantRotationState),
 		rotation:             make([]string, 0, 10), // initial size doesn't really matter
 		logger:               logger,
-	}
-
-	// Place recovered tenants that have pending work in the rotation
-	for tenant, rotationState := range recoveredTenantStateMap {
-		if !rotationState.tracker.isPendingEmpty() {
-			r.addToRotation(tenant, rotationState)
-		}
 	}
 
 	r.Service = services.NewTimerService(leaseCheckInterval, nil, r.iter, nil)
@@ -76,6 +65,23 @@ func NewRotator(db *bbolt.DB, planTracker *JobTracker[struct{}], recoveredTenant
 func (r *Rotator) iter(_ context.Context) error {
 	r.LeaseMaintenance(r.leaseDuration)
 	return nil
+}
+
+func (r *Rotator) RecoverFrom(m map[string]*JobTracker[*CompactionJob]) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	// Place recovered tenants that have pending work in the rotation
+	for tenant, tracker := range m {
+		rotationState := &TenantRotationState{
+			tracker:       tracker,
+			rotationIndex: outsideRotation,
+		}
+		r.tenantStateMap[tenant] = rotationState
+		if !tracker.isPendingEmpty() {
+			r.addToRotation(tenant, rotationState)
+		}
+	}
 }
 
 func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *CompactionJob) bool) (*compactorschedulerpb.LeaseJobResponse, bool, error) {
