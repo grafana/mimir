@@ -626,7 +626,9 @@ func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
 func bufferKey(buf mem.Buffer) uintptr {
 	data := buf.ReadOnlyData()
 	if len(data) == 0 {
-		return 0
+		// For empty buffers, use the interface's data pointer as the key.
+		// This uniquely identifies the underlying buffer object.
+		return (*[2]uintptr)(unsafe.Pointer(&buf))[1]
 	}
 	return uintptr(unsafe.Pointer(&data[0]))
 }
