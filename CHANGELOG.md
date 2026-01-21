@@ -239,6 +239,10 @@
   * `multi_zone_read_path_multi_az_enabled`
 * [ENHANCEMENT] Overrides-exporter: Add `overrides_exporter_exported_limits` config option to specify the limits exposed by the exporter. The default list of limits has not been changed compared to the previous version. #13912
 * [ENHANCEMENT] Ingester: Add `ingester_priority_class` config option to customise the ingester priority class. By default no explicit priority class is configured, and the Kubernetes default class is used. #14093
+* [ENHANCEMENT] Store-gateway: Add config options to enable store-gateway multi-AZ deployments on a per-zone basis. #14111
+  * `multi_zone_store_gateway_zone_a_multi_az_enabled`
+  * `multi_zone_store_gateway_zone_b_multi_az_enabled`
+  * `multi_zone_store_gateway_zone_c_multi_az_enabled`
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
