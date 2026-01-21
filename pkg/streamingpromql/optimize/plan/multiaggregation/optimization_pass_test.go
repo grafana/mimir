@@ -231,6 +231,29 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodesExaminedCount:   2,
 			expectedDuplicateNodesReplacedCount:   1,
 		},
+		"selector is aggregated three times, and two of those are the same": {
+			expr: `sum(foo) + sum(foo) + count(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate
+							- MultiAggregationInstance: sum
+								- ref#2 MultiAggregationGroup
+									- VectorSelector: {__name__="foo"}
+						- RHS: ref#1 Duplicate ...
+					- RHS: MultiAggregationInstance: count
+						- ref#2 MultiAggregationGroup ...
+			`,
+
+			expectedAggregationNodesReplacedCount: 2, // Only 2 because one of them was deduplicated by CSE already.
+			expectedDuplicateNodesExaminedCount:   2,
+			expectedDuplicateNodesReplacedCount:   1,
+		},
+		"selector is aggregated three times, and they're all the same aggregation": {
+			expr:                                `sum(foo) + sum(foo) + sum(foo)`,
+			expectUnchanged:                     true,
+			expectedDuplicateNodesExaminedCount: 1,
+		},
 
 		// Test all of the supported aggregation operations are handled correctly.
 		"same selector with sum and count aggregation": {
