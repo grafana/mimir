@@ -892,6 +892,7 @@
   "store-gateway.sharding-ring.replication-factor": 3,
   "store-gateway.sharding-ring.tokens-file-path": "",
   "store-gateway.sharding-ring.num-tokens": 512,
+  "store-gateway.sharding-ring.excluded-zones": "",
   "store-gateway.sharding-ring.wait-stability-min-duration": 0,
   "store-gateway.sharding-ring.wait-stability-max-duration": 300000000000,
   "store-gateway.sharding-ring.instance-id": "<hostname>",
