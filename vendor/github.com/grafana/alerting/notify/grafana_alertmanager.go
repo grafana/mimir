@@ -312,6 +312,20 @@ func NewGrafanaAlertmanager(opts GrafanaAlertmanagerOpts) (*GrafanaAlertmanager,
 		am.wg.Done()
 	}()
 
+	// Ensure cleanup of maintenance goroutines if initialization fails after this point.
+	// If initSuccess remains false when the function returns, we close stopc to signal
+	// the maintenance goroutines to stop and wait for them to finish.
+	var initSuccess bool
+	defer func() {
+		if !initSuccess {
+			close(am.stopc)
+			am.wg.Wait()
+			if am.alerts != nil {
+				am.alerts.Close()
+			}
+		}
+	}()
+
 	// Initialize the flush log only if using sync'ed timer
 	if am.opts.DispatchTimer == DispatchTimerSync {
 		am.flushLog, err = flushlog.New(flushlog.Options{
@@ -355,6 +369,7 @@ func NewGrafanaAlertmanager(opts GrafanaAlertmanagerOpts) (*GrafanaAlertmanager,
 		return nil, err
 	}
 
+	initSuccess = true
 	return am, nil
 }
 
