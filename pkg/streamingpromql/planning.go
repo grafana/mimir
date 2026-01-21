@@ -466,7 +466,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 
 	case *parser.BinaryExpr:
 		if expr.VectorMatching != nil && (expr.VectorMatching.FillValues.RHS != nil || expr.VectorMatching.FillValues.LHS != nil) {
-			return nil, compat.NewNotSupportedError("fill modifier")
+			return nil, compat.NewNotSupportedError("'fill' modifier")
 		}
 
 		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)
