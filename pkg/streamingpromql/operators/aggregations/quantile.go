@@ -66,17 +66,18 @@ func NewQuantileAggregation(
 }
 
 func (q *QuantileAggregation) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	var err error
-	q.Aggregation.ParamData, err = q.Param.GetValues(ctx)
+	paramData, err := q.Param.GetValues(ctx)
 	if err != nil {
 		return nil, err
 	}
 	// Validate the parameter now so we only have to do it once for each group
-	for _, p := range q.Aggregation.ParamData.Samples {
+	for _, p := range paramData.Samples {
 		if math.IsNaN(p.F) || p.F < 0 || p.F > 1 {
 			q.Annotations.Add(annotations.NewInvalidQuantileWarning(p.F, q.Param.ExpressionPosition()))
 		}
 	}
+
+	q.Aggregation.SetParamData(paramData)
 
 	return q.Aggregation.SeriesMetadata(ctx, matchers)
 }
@@ -110,10 +111,6 @@ func (q *QuantileAggregation) Finalize(ctx context.Context) error {
 }
 
 func (q *QuantileAggregation) Close() {
-	if q.Aggregation.ParamData.Samples != nil {
-		types.FPointSlicePool.Put(&q.Aggregation.ParamData.Samples, q.MemoryConsumptionTracker)
-	}
-
 	if q.Param != nil {
 		q.Param.Close()
 	}
