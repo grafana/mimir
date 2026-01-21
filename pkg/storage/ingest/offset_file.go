@@ -12,6 +12,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
+	"github.com/grafana/mimir/pkg/util/atomicfs"
 )
 
 // offsetFile handles reading and writing offsets to a file on disk.
@@ -80,18 +82,20 @@ func (f *offsetFile) Write(offset int64) error {
 		return fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
 
-	// Write to a temporary file first, then rename for atomicity
-	tmpFile := f.filePath + ".tmp"
-	data := []byte(fmt.Sprintf("%d\n", offset))
-
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write to temporary offset file %s: %w", tmpFile, err)
+	// Use atomicfs for atomic write with fsync guarantees.
+	file, err := atomicfs.Create(f.filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create offset file: %w", err)
 	}
 
-	if err := os.Rename(tmpFile, f.filePath); err != nil {
-		// Clean up the temporary file if rename fails
-		_ = os.Remove(tmpFile)
-		return fmt.Errorf("failed to rename temporary offset file %s to %s: %w", tmpFile, f.filePath, err)
+	data := []byte(fmt.Sprintf("%d\n", offset))
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close() // Close will cleanup temp file on error
+		return fmt.Errorf("failed to write offset: %w", err)
+	}
+
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to close offset file: %w", err)
 	}
 
 	level.Debug(f.logger).Log("msg", "wrote offset to file", "file", f.filePath, "offset", offset)
