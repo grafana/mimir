@@ -196,8 +196,8 @@
   // Store-gateways get split in "virtual" zones, that could eventually be mapped to different AZs.
   // If multi-AZ deployment is enabled, then we apply the zone-specific memberlist config, otherwise the zone-a one.
   store_gateway_zone_a_args+:: $.memberlist_zone_a_args,
-  store_gateway_zone_b_args+:: if $._config.multi_zone_store_gateway_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
-  store_gateway_zone_c_args+:: if $._config.multi_zone_store_gateway_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,
+  store_gateway_zone_b_args+:: if $._config.multi_zone_store_gateway_zone_b_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
+  store_gateway_zone_c_args+:: if $._config.multi_zone_store_gateway_zone_c_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,
 
   // Other components only deployed to zone-a.
   compactor_args+:: $.memberlist_zone_a_args,
