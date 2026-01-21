@@ -121,7 +121,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 			return nil, errors.New("cannot enable multi-aggregation without common subexpression elimination")
 		}
 
-		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass())
+		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
 	}
 
 	if opts.EnableNarrowBinarySelectors {
