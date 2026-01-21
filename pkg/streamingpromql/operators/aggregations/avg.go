@@ -32,9 +32,11 @@ type AvgAggregationGroup struct {
 	// We use float64 instead of uint64 so that we can reuse the float pool and don't have to retype on each division.
 	groupSeriesCounts            []float64
 	histogramCounterResetTracker *histogramCounterResetTracker
+
+	temporaryHistogram *histogram.FloatHistogram // Used to avoid unnecessary allocations when mutating the provided data is not allowed
 }
 
-func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
+func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
 		return nil
@@ -54,7 +56,7 @@ func (g *AvgAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation, mutatingDataAllowed)
 	if err != nil {
 		return err
 	}
@@ -154,7 +156,7 @@ func (g *AvgAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
+func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, mutatingDataAllowed bool) error {
 	var err error
 	if len(data.Histograms) > 0 && g.histograms == nil {
 		// First series with histogram values for this group, populate it.
@@ -179,12 +181,17 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		}
 
 		if g.histograms[outputIdx] == nil {
-			// First sample for this output point, retain the histogram as-is.
-			g.histograms[outputIdx] = p.H
-			g.histogramPointCount++
+			// First sample for this output point, retain the histogram as-is if we can.
+			if mutatingDataAllowed {
+				g.histograms[outputIdx] = p.H
 
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
-			data.Histograms[inputIdx].H = nil
+				// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
+				data.Histograms[inputIdx].H = nil
+			} else {
+				g.histograms[outputIdx] = p.H.Copy()
+			}
+
+			g.histogramPointCount++
 			g.histogramCounterResetTracker.init(outputIdx, p.H.CounterResetHint)
 
 			continue
@@ -194,7 +201,15 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			emitAnnotation(newAggregationCounterResetCollisionWarning)
 		}
 
-		_, _, nhcbBoundsReconciled, err := p.H.Sub(g.histograms[outputIdx])
+		if mutatingDataAllowed {
+			g.temporaryHistogram = p.H
+		} else if g.temporaryHistogram == nil {
+			g.temporaryHistogram = p.H.Copy()
+		} else {
+			p.H.CopyTo(g.temporaryHistogram)
+		}
+
+		_, _, nhcbBoundsReconciled, err := g.temporaryHistogram.Sub(g.histograms[outputIdx])
 		if err != nil {
 			// Unable to subtract histograms (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
@@ -211,8 +226,8 @@ func (g *AvgAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 			emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 		}
 
-		p.H.Div(g.groupSeriesCounts[outputIdx])
-		_, _, nhcbBoundsReconciled, err = g.histograms[outputIdx].Add(p.H)
+		g.temporaryHistogram.Div(g.groupSeriesCounts[outputIdx])
+		_, _, nhcbBoundsReconciled, err = g.histograms[outputIdx].Add(g.temporaryHistogram)
 		if err != nil {
 			// Unable to add histograms together (likely due to invalid combination of histograms). Make sure we don't emit a sample at this timestamp.
 			g.histograms[outputIdx] = invalidCombinationOfHistograms
