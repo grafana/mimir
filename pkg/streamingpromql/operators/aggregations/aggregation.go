@@ -138,6 +138,8 @@ func (a *Aggregation) accumulateUntilNextGroupComplete(ctx context.Context) erro
 		if err := a.aggregator.AccumulateNextInnerSeries(data); err != nil {
 			return err
 		}
+
+		types.PutInstantVectorSeriesData(data, a.aggregator.MemoryConsumptionTracker)
 	}
 
 	return nil

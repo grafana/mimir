@@ -26,7 +26,6 @@ type SumAggregationGroup struct {
 }
 
 func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
-	defer types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
 		return nil
