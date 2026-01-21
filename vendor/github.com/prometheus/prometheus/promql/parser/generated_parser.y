@@ -384,6 +384,7 @@ fill_modifiers: group_modifiers /* empty */
                 /* fill_right() fill_left() */
                 | group_modifiers FILL_RIGHT fill_value FILL_LEFT fill_value
                         {
+                        $$ = $1
                         fill_right := $3.(*NumberLiteral).Val
                         fill_left := $5.(*NumberLiteral).Val
                         $$.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill_left

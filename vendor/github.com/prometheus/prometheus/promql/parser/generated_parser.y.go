@@ -1370,6 +1370,7 @@ yydefault:
 	case 59:
 		yyDollar = yyS[yypt-5 : yypt+1]
 		{
+			yyVAL.node = yyDollar[1].node
 			fill_right := yyDollar[3].node.(*NumberLiteral).Val
 			fill_left := yyDollar[5].node.(*NumberLiteral).Val
 			yyVAL.node.(*BinaryExpr).VectorMatching.FillValues.LHS = &fill_left
