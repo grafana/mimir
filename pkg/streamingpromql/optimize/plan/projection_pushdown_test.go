@@ -164,7 +164,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expr: `count_values("pod", foo)`,
 			expectedPlan: `
 				- AggregateExpression: count_values
-					- expression: VectorSelector: {__name__="foo"}, include ("pod")
+					- expression: VectorSelector: {__name__="foo"}, include ()
 					- parameter: StringLiteral: "pod"
 			`,
 			expectedModified: 1,
@@ -173,7 +173,7 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expr: `count_values by (job) ("pod", foo)`,
 			expectedPlan: `
 				- AggregateExpression: count_values by (job)
-					- expression: VectorSelector: {__name__="foo"}, include ("job", "pod")
+					- expression: VectorSelector: {__name__="foo"}, include ("job")
 					- parameter: StringLiteral: "pod"
 			`,
 			expectedModified: 1,

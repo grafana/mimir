@@ -196,12 +196,6 @@ func examineAggregate(a *core.AggregateExpression) (map[string]struct{}, SkipRea
 		requiredLabels[l] = struct{}{}
 	}
 
-	if a.Op == core.AGGREGATION_COUNT_VALUES {
-		if l, ok := a.Param.(*core.StringLiteral); ok {
-			requiredLabels[l.Value] = struct{}{}
-		}
-	}
-
 	return requiredLabels, SkipReasonOk
 }
 
