@@ -6,16 +6,36 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
-type OptimizationPass struct{}
+type OptimizationPass struct {
+	aggregationNodesReplaced prometheus.Counter
+	duplicateNodesExamined   prometheus.Counter
+	duplicateNodesReplaced   prometheus.Counter
+}
 
-func NewOptimizationPass() *OptimizationPass {
-	return &OptimizationPass{}
+func NewOptimizationPass(reg prometheus.Registerer) *OptimizationPass {
+	return &OptimizationPass{
+		aggregationNodesReplaced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_multiaggregation_aggregation_nodes_replaced_total",
+			Help: "Number of aggregation nodes replaced by multi-aggregation consumer nodes by the multi-aggregation optimization pass.",
+		}),
+		duplicateNodesExamined: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_multiaggregation_duplicate_nodes_examined_total",
+			Help: "Number of duplicate nodes examined by the multi-aggregation optimization pass.",
+		}),
+		duplicateNodesReplaced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_mimir_query_engine_multiaggregation_duplicate_nodes_replaced_total",
+			Help: "Number of duplicate nodes replaced by multi-aggregation group nodes by the multi-aggregation optimization pass.",
+		}),
+	}
 }
 
 func (o *OptimizationPass) Name() string {
@@ -96,6 +116,8 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return nil, err
 	}
 
+	aggregateNodesReplaced := 0
+
 	for duplicate, aggregates := range candidateDuplicateNodes {
 		if aggregates == nil {
 			continue
@@ -104,7 +126,13 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		if err := o.replaceWithMultiAggregation(duplicate, aggregates); err != nil {
 			return nil, err
 		}
+
+		aggregateNodesReplaced += len(aggregates)
 	}
+
+	o.aggregationNodesReplaced.Add(float64(aggregateNodesReplaced))
+	o.duplicateNodesExamined.Add(float64(len(candidateDuplicateNodes) + len(ineligibleDuplicateNodes)))
+	o.duplicateNodesReplaced.Add(float64(len(candidateDuplicateNodes)))
 
 	return plan, nil
 }
