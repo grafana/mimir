@@ -1,0 +1,71 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# The goal of these tests is not to ensure that opportunities to apply multi-aggregation are correctly identified
+# (this is tested in the tests for the optimization pass), but to ensure that expressions containing
+# multi-aggregations are correctly evaluated.
+
+load 1m
+  float_metric{idx="1", group="a", subgroup="1"} 1+1x10
+  float_metric{idx="2", group="b", subgroup="1"} 2+2x10
+  float_metric{idx="3", group="c", subgroup="1"} 3+3x10
+  float_metric{idx="4", group="a", subgroup="2"} 4+4x10
+  float_metric{idx="5", group="b", subgroup="2"} 5+5x10
+  histogram_metric{idx="1", group="a", subgroup="1"} {{count:1}}+{{count:1}}x10
+  histogram_metric{idx="2", group="b", subgroup="1"} {{count:2}}+{{count:2}}x10
+  histogram_metric{idx="3", group="c", subgroup="1"} {{count:3}}+{{count:3}}x10
+  histogram_metric{idx="4", group="a", subgroup="2"} {{count:4}}+{{count:4}}x10
+  histogram_metric{idx="5", group="b", subgroup="2"} {{count:5}}+{{count:5}}x10
+
+eval instant at 0 sum(float_metric) + count(float_metric)
+  {} 20
+
+eval range from 0 to 10m step 1m sum(float_metric) + count(float_metric)
+  {} 20+15x10
+
+eval instant at 0 sum(histogram_metric) + avg(histogram_metric)
+  {} {{count:18}}
+
+eval range from 0 to 10m step 1m sum(histogram_metric) + avg(histogram_metric)
+  {} {{count:18}}+{{count:18}}x10
+
+# Same as above, but in the other order, to ensure there are no issues with FloatHistogram instance reuse in either aggregation implementaion.
+eval instant at 0 avg(histogram_metric) + sum(histogram_metric)
+  {} {{count:18}}
+
+eval range from 0 to 10m step 1m avg(histogram_metric) + sum(histogram_metric)
+  {} {{count:18}}+{{count:18}}x10
+
+# Same thing, but with a matrix selector.
+eval instant at 4m sum(rate(float_metric[3m])) + count(rate(float_metric[3m]))
+  {} 5.25
+
+eval range from 0 to 10m step 1m sum(rate(float_metric[3m])) + count(rate(float_metric[3m]))
+  {} _ 5.125 5.25+0x8
+
+eval instant at 4m sum(rate(histogram_metric[3m])) + avg(rate(histogram_metric[3m]))
+  {} {{count:0.3}}
+
+eval range from 0 to 10m step 1m sum(rate(histogram_metric[3m])) + avg(rate(histogram_metric[3m]))
+  {} _ {{count:0.15}} {{count:0.3}}+{{count:0}}x8
+
+# Test that grouping by labels behaves as expected with different aggregation operations.
+eval instant at 0 sum by (group) (float_metric) + count by (group) (float_metric)
+  {group="a"} 7
+  {group="b"} 9
+  {group="c"} 4
+
+eval instant at 0 sum by (group) (histogram_metric) + avg by (group) (histogram_metric)
+  {group="a"} {{count:7.5}}
+  {group="b"} {{count:10.5}}
+  {group="c"} {{count:6}}
+
+# Same thing, but with the same aggregation operation and different grouping labels.
+eval instant at 0 label_replace(sum by (group) (float_metric), "subgroup", "1", "group", ".*") + sum by (group, subgroup) (float_metric)
+  {group="a", subgroup="1"} 6
+  {group="b", subgroup="1"} 9
+  {group="c", subgroup="1"} 6
+
+eval instant at 0 label_replace(sum by (group) (histogram_metric), "subgroup", "1", "group", ".*") + sum by (group, subgroup) (histogram_metric)
+  {group="a", subgroup="1"} {{count:6}}
+  {group="b", subgroup="1"} {{count:9}}
+  {group="c", subgroup="1"} {{count:6}}
