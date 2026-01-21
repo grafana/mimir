@@ -40,7 +40,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	// At this point we don't know the length of the section (length is -1).
 	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset), -1)
 	if err != nil {
-		return Decbuf{E: fmt.Errorf("get range at offset %d: %w", offset, err)}
+		return Decbuf{E: fmt.Errorf("get range from %s at offset %d: %w", bf.objectPath, offset, err)}
 	}
 
 	closeReader := true
@@ -54,10 +54,13 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	lengthBytes := make([]byte, 4)
 	n, err := io.ReadFull(rc, lengthBytes)
 	if err != nil {
-		return Decbuf{E: fmt.Errorf("read section length at offset %d: %w", offset, err)}
+		return Decbuf{E: fmt.Errorf("read section length from %s at offset %d: %w", bf.objectPath, offset, err)}
 	}
 	if n != 4 {
-		return Decbuf{E: fmt.Errorf("insufficient bytes read for size at offset %d (got %d, wanted %d): %w", offset, n, 4, ErrInvalidSize)}
+		return Decbuf{E: fmt.Errorf(
+			"insufficient bytes read from %s for section length at offset %d (got %d, wanted %d): %w",
+			bf.objectPath, offset, n, 4, ErrInvalidSize,
+		)}
 	}
 
 	contentLength := int(binary.BigEndian.Uint32(lengthBytes))
@@ -101,7 +104,38 @@ func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 // spanning the entire length of the file. It does not make any assumptions about the contents of the
 // file, nor does it perform any form of integrity check.
 func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
-	return Decbuf{E: fmt.Errorf("NewRawDecbuf is not supported: %w", errors.ErrUnsupported)}
+	const offset = int64(0)
+
+	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, -1)
+	if err != nil {
+		return Decbuf{E: fmt.Errorf("get range from %s at offset %d: %w", bf.objectPath, offset, err)}
+	}
+
+	closeReader := true
+	defer func() {
+		if closeReader {
+			rc.Close()
+		}
+	}()
+
+	attrs, err := bf.bkt.Attributes(bf.ctx, bf.objectPath)
+	if err != nil {
+		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
+	}
+
+	r := newStreamReader(rc, 0, int(attrs.Size))
+	r.seekReader = func(off int) error {
+		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, attrs.Size)
+		if err != nil {
+			return err
+		}
+		r.rc.Close()
+		r.rc = rc
+		return nil
+	}
+
+	closeReader = false
+	return Decbuf{r: r}
 }
 
 // Close cleans up resources associated with this BucketDecbufFactory.
