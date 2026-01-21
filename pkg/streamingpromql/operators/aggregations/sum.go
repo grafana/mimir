@@ -25,7 +25,7 @@ type SumAggregationGroup struct {
 	histogramCounterResetTracker *histogramCounterResetTracker
 }
 
-func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
+func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
 	if len(data.Floats) == 0 && len(data.Histograms) == 0 {
 		// Nothing to do
 		return nil
@@ -35,7 +35,7 @@ func (g *SumAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesDat
 	if err != nil {
 		return err
 	}
-	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation)
+	err = g.accumulateHistograms(data, timeRange, memoryConsumptionTracker, emitAnnotation, mutatingDataAllowed)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (g *SumAggregationGroup) accumulateFloats(data types.InstantVectorSeriesDat
 	return nil
 }
 
-func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc) error {
+func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, mutatingDataAllowed bool) error {
 	var err error
 
 	if len(data.Histograms) > 0 && g.histogramSums == nil {
@@ -101,14 +101,18 @@ func (g *SumAggregationGroup) accumulateHistograms(data types.InstantVectorSerie
 		}
 
 		if g.histogramSums[outputIdx] == nil {
-			// First sample for this output point, retain the histogram as-is.
-			g.histogramSums[outputIdx] = p.H
+			// First sample for this output point, retain the histogram as-is if we can.
+			if mutatingDataAllowed {
+				g.histogramSums[outputIdx] = p.H
+
+				// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
+				data.Histograms[inputIdx].H = nil
+			} else {
+				g.histogramSums[outputIdx] = p.H.Copy()
+			}
+
 			g.histogramPointCount++
-
 			g.histogramCounterResetTracker.init(outputIdx, p.H.CounterResetHint)
-
-			// Ensure the FloatHistogram instance is not reused when the HPoint slice data.Histograms is reused.
-			data.Histograms[inputIdx].H = nil
 
 			continue
 		}

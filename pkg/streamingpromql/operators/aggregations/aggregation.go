@@ -135,11 +135,9 @@ func (a *Aggregation) accumulateUntilNextGroupComplete(ctx context.Context) erro
 			return err
 		}
 
-		if err := a.aggregator.AccumulateNextInnerSeries(data); err != nil {
+		if err := a.aggregator.AccumulateNextInnerSeries(data, true); err != nil {
 			return err
 		}
-
-		types.PutInstantVectorSeriesData(data, a.aggregator.MemoryConsumptionTracker)
 	}
 
 	return nil
@@ -362,12 +360,20 @@ var groupToSingleSeriesLabelsFunc = func(_ labels.Labels) labels.Labels { return
 
 // AccumulateNextInnerSeries accumulates the provided series into its corresponding group.
 //
-// It is the caller's responsibility to return the provided data slices to a pool.
-func (a *Aggregator) AccumulateNextInnerSeries(data types.InstantVectorSeriesData) error {
+// If takeOwnershipOfData is true, the provided data will be returned to a pool when this function returns,
+// and points within the data slices may be mutated. (For example, FloatHistogram instances may be mutated in-place.)
+//
+// If takeOwnershipOfData is false, the provided data will not be returned to a pool when this function returns,
+// and points within the data slices will not be mutated.
+func (a *Aggregator) AccumulateNextInnerSeries(data types.InstantVectorSeriesData, takeOwnershipOfData bool) error {
 	thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 	a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-	if err := thisSeriesGroup.aggregation.AccumulateSeries(data, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount); err != nil {
+	if err := thisSeriesGroup.aggregation.AccumulateSeries(data, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount, takeOwnershipOfData); err != nil {
 		return err
+	}
+
+	if takeOwnershipOfData {
+		types.PutInstantVectorSeriesData(data, a.MemoryConsumptionTracker)
 	}
 
 	thisSeriesGroup.remainingSeriesCount--
