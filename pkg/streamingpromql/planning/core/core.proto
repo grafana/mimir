@@ -93,9 +93,7 @@ message VectorMatching {
   repeated string matchingLabels = 2;
   bool on = 3;
   repeated string include = 4;
-  VectorMatchFillValues fillValues = 5 [
-    (gogoproto.nullable) = false
-  ];
+  VectorMatchFillValues fillValues = 5 [(gogoproto.nullable) = false];
 }
 
 message FunctionCallDetails {
