@@ -61,6 +61,9 @@ func PrometheusVectorMatchFillValuesToPb(in parser.VectorMatchFillValues) Vector
 }
 
 func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
+	if v == nil {
+		return nil
+	}
 	return &parser.VectorMatching{
 		Card:           v.Card,
 		MatchingLabels: v.MatchingLabels,
@@ -71,6 +74,9 @@ func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
 }
 
 func VectorMatchingFrom(v *parser.VectorMatching) *VectorMatching {
+	if v == nil {
+		return nil
+	}
 	return &VectorMatching{
 		Card:           v.Card,
 		MatchingLabels: v.MatchingLabels,
