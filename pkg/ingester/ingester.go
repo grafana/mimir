@@ -2899,6 +2899,18 @@ func (i *Ingester) createBlockChunkQuerier(userID string, b tsdb.BlockReader, mi
 func (i *Ingester) closeAllTSDB() {
 	i.tsdbsMtx.Lock()
 
+	// First, mark all TSDBs as closing to prevent new appends from starting.
+	// We try to transition from any active state to closing.
+	for _, userDB := range i.tsdbs {
+		userDB.setClosingState()
+	}
+
+	// Now wait for all in-flight appends to complete before closing.
+	// This prevents closing TSDBs while appenders are still writing to them.
+	for _, userDB := range i.tsdbs {
+		userDB.inFlightAppends.Wait()
+	}
+
 	wg := &sync.WaitGroup{}
 	wg.Add(len(i.tsdbs))
 
