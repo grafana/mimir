@@ -161,19 +161,21 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			expectedModified: 1,
 		},
 		"aggregation with count_values": {
+			// count_values creates a new label from sample values - it doesn't read an existing label from storage.
 			expr: `count_values("pod", foo)`,
 			expectedPlan: `
 				- AggregateExpression: count_values
-					- expression: VectorSelector: {__name__="foo"}, include ("pod")
+					- expression: VectorSelector: {__name__="foo"}, include ()
 					- parameter: StringLiteral: "pod"
 			`,
 			expectedModified: 1,
 		},
 		"aggregation with count_values by": {
+			// count_values creates a new label from sample values - only the grouping labels need to be fetched.
 			expr: `count_values by (job) ("pod", foo)`,
 			expectedPlan: `
 				- AggregateExpression: count_values by (job)
-					- expression: VectorSelector: {__name__="foo"}, include ("job", "pod")
+					- expression: VectorSelector: {__name__="foo"}, include ("job")
 					- parameter: StringLiteral: "pod"
 			`,
 			expectedModified: 1,

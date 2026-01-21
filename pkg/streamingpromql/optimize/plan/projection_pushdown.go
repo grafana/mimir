@@ -196,11 +196,9 @@ func examineAggregate(a *core.AggregateExpression) (map[string]struct{}, SkipRea
 		requiredLabels[l] = struct{}{}
 	}
 
-	if a.Op == core.AGGREGATION_COUNT_VALUES {
-		if l, ok := a.Param.(*core.StringLiteral); ok {
-			requiredLabels[l.Value] = struct{}{}
-		}
-	}
+	// Note: count_values has a string parameter that specifies the NAME of a new label
+	// to be created from sample values - it's not an existing label to fetch from storage.
+	// The grouping labels (if any) are already added above and are the only labels needed.
 
 	return requiredLabels, SkipReasonOk
 }
