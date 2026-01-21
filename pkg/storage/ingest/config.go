@@ -94,8 +94,9 @@ type KafkaConfig struct {
 	SASLUsername string         `yaml:"sasl_username"`
 	SASLPassword flagext.Secret `yaml:"sasl_password"`
 
-	ConsumerGroup                     string        `yaml:"consumer_group"`
-	ConsumerGroupOffsetCommitInterval time.Duration `yaml:"consumer_group_offset_commit_interval"`
+	ConsumerGroup                         string        `yaml:"consumer_group"`
+	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
+	ConsumerGroupOffsetCommitFileEnforced bool          `yaml:"consumer_group_offset_commit_file_enforced"`
 
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	LastProducedOffsetRetryTimeout time.Duration `yaml:"last_produced_offset_retry_timeout"`
@@ -173,6 +174,7 @@ func (cfg *KafkaConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) 
 
 	f.StringVar(&cfg.ConsumerGroup, prefix+"consumer-group", "", "The consumer group used by the consumer to track the last consumed offset. The consumer group must be different for each ingester. If the configured consumer group contains the '<partition>' placeholder, it is replaced with the actual partition ID owned by the ingester. When empty (recommended), Mimir uses the ingester instance ID to guarantee uniqueness.")
 	f.DurationVar(&cfg.ConsumerGroupOffsetCommitInterval, prefix+"consumer-group-offset-commit-interval", time.Second, "How frequently a consumer should commit the consumed offset to Kafka. The last committed offset is used at startup to continue the consumption from where it was left.")
+	f.BoolVar(&cfg.ConsumerGroupOffsetCommitFileEnforced, prefix+"consumer-group-offset-commit-file-enforced", false, "When true, the file-based offset stored in the TSDB directory is enforced at startup, taking precedence over Kafka consumer group offset. When false, offsets are still written to the file (in the TSDB directory) but the Kafka consumer group offset is used at startup.")
 
 	f.DurationVar(&cfg.LastProducedOffsetPollInterval, prefix+"last-produced-offset-poll-interval", time.Second, "How frequently to poll the last produced offset, used to enforce strong read consistency.")
 	f.DurationVar(&cfg.LastProducedOffsetRetryTimeout, prefix+"last-produced-offset-retry-timeout", 10*time.Second, "How long to retry a failed request to get the last produced offset.")

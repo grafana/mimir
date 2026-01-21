@@ -550,7 +550,11 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.
 		profilingIngester := NewIngesterProfilingWrapper(i)
 
-		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
+		// The offset file is always stored in the TSDB directory alongside the ingester's data.
+		// The filename includes the partition ID to make it clear which partition this offset belongs to.
+		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, fmt.Sprintf("kafka-partition-%d-offset", i.ingestPartitionID))
+
+		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {
 			return nil, errors.Wrap(err, "creating ingest storage reader")
 		}
