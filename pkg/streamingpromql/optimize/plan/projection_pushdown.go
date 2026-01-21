@@ -152,9 +152,7 @@ func flattenLabels(m map[string]struct{}) []string {
 // is returned to indicate if the expressions are eligible for projection and why.
 func examinePath(path []planning.Node) (map[string]struct{}, SkipReason) {
 	requiredLabels := make(map[string]struct{})
-	hasAggregation := false
 
-search:
 	for i := len(path) - 1; i >= 0; i-- {
 		switch e := path[i].(type) {
 		case *core.AggregateExpression:
@@ -164,13 +162,11 @@ search:
 			}
 
 			maps.Copy(requiredLabels, m)
-			hasAggregation = true
-
 			// We stop examining the path to the root as soon as we find the first
 			// aggregation: if this aggregation requires specific labels those are
 			// the labels we need to fetch since any expressions that occur after
 			// this aggregation could not use any others and still work.
-			break search
+			return requiredLabels, SkipReasonOk
 		case *core.BinaryExpression:
 			return nil, SkipReasonBinaryOperation
 		case *core.DeduplicateAndMerge:
@@ -185,13 +181,9 @@ search:
 		}
 	}
 
-	// No required labels is valid only if we're doing an aggregation. Otherwise, we need to
-	// retain them for deduplication and merging.
-	if !hasAggregation && len(requiredLabels) == 0 {
-		return nil, SkipReasonNoAggregations
-	}
-
-	return requiredLabels, SkipReasonOk
+	// If we've made it this far, there's no aggregations applied to the selector
+	// so we can't use projections for this leg of the query.
+	return nil, SkipReasonNoAggregations
 }
 
 func examineAggregate(a *core.AggregateExpression) (map[string]struct{}, SkipReason) {

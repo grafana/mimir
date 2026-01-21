@@ -77,7 +77,7 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
-	m.ProjectionInclude, m.ProjectionLabels = MergeProjectionLabels(
+	m.ProjectionInclude, m.ProjectionLabels = mergeProjectionLabels(
 		m.ProjectionInclude,
 		m.ProjectionLabels,
 		otherMatrixSelector.ProjectionInclude,
@@ -85,70 +85,6 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	)
 
 	return nil
-}
-
-func MergeProjectionLabels(include1 bool, lbls1 []string, include2 bool, lbls2 []string) (bool, []string) {
-	// If the projection include/exclude differs between the two selectors, we can't
-	// combine them so return "exclude" with an empty set of labels (equivalent to
-	// projections not being used at all).
-	if include1 != include2 {
-		return false, []string{}
-	}
-
-	var (
-		retInclude bool
-		retLabels  []string
-		unique     map[string]struct{}
-	)
-
-	if include1 {
-		retInclude = true
-		unique = unionLabels(lbls1, lbls2)
-	} else {
-		retInclude = false
-		unique = intersectLabels(lbls1, lbls2)
-	}
-
-	retLabels = make([]string, 0, len(unique))
-	for l := range unique {
-		retLabels = append(retLabels, l)
-	}
-
-	slices.Sort(retLabels)
-	return retInclude, retLabels
-}
-
-func unionLabels(lbls1 []string, lbls2 []string) map[string]struct{} {
-	unique := make(map[string]struct{}, len(lbls1)+len(lbls2))
-	for _, l := range lbls1 {
-		unique[l] = struct{}{}
-	}
-
-	for _, l := range lbls2 {
-		unique[l] = struct{}{}
-	}
-
-	return unique
-}
-
-func intersectLabels(lbls1 []string, lbls2 []string) map[string]struct{} {
-	if len(lbls1) == 0 || len(lbls2) == 0 {
-		return map[string]struct{}{}
-	}
-
-	lbls1Set := make(map[string]struct{}, len(lbls1))
-	for _, l := range lbls1 {
-		lbls1Set[l] = struct{}{}
-	}
-
-	unique := make(map[string]struct{})
-	for _, l := range lbls2 {
-		if _, ok := lbls1Set[l]; ok {
-			unique[l] = struct{}{}
-		}
-	}
-
-	return unique
 }
 
 func (m *MatrixSelector) ChildrenLabels() []string {
