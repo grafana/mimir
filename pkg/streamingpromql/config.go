@@ -75,5 +75,6 @@ func NewTestEngineOpts() EngineOpts {
 		EnableEliminateDeduplicateAndMerge:                                            true,
 		EnableReduceMatchers:                                                          true,
 		EnableProjectionPushdown:                                                      true,
+		EnableMultiAggregation:                                                        true,
 	}
 }
