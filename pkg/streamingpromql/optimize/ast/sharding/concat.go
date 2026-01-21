@@ -76,6 +76,16 @@ func (c *Concat) Prepare(ctx context.Context, params *types.PrepareParams) error
 	return nil
 }
 
+func (c *Concat) AfterPrepare(ctx context.Context) error {
+	for _, o := range c.Inner {
+		if err := o.AfterPrepare(ctx); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (c *Concat) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	var err error
 	c.seriesCounts, err = types.IntSlicePool.Get(len(c.Inner), c.MemoryConsumptionTracker)

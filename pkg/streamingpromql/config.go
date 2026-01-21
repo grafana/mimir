@@ -36,6 +36,7 @@ type EngineOpts struct {
 	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
 	EnableEliminateDeduplicateAndMerge                                            bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
 	EnableReduceMatchers                                                          bool `yaml:"enable_reduce_matchers" category:"experimental"`
+	EnableProjectionPushdown                                                      bool `yaml:"enable_projection_pushdown" category:"experimental"`
 }
 
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
@@ -46,6 +47,7 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", false, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
+	f.BoolVar(&o.EnableProjectionPushdown, "querier.mimir-query-engine.enable-projection-pushdown", false, "Enable projection pushdown to only fetch labels required for the query from storage.")
 }
 
 func NewTestEngineOpts() EngineOpts {
@@ -69,5 +71,7 @@ func NewTestEngineOpts() EngineOpts {
 		EnableSkippingHistogramDecoding:                                               true,
 		EnableNarrowBinarySelectors:                                                   true,
 		EnableEliminateDeduplicateAndMerge:                                            true,
+		EnableReduceMatchers:                                                          true,
+		EnableProjectionPushdown:                                                      true,
 	}
 }

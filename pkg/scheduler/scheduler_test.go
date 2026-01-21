@@ -21,6 +21,7 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/cancellation"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/httpgrpc"
 	"github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
@@ -53,7 +54,8 @@ import (
 const testMaxOutstandingPerTenant = 5
 
 var (
-	spanExporter = tracetest.NewInMemoryExporter()
+	spanExporter              = tracetest.NewInMemoryExporter()
+	drainingCancellationError = cancellation.NewError(errors.New("draining"))
 )
 
 func init() {
@@ -129,7 +131,7 @@ func drainScheduler(t *testing.T, s *Scheduler) {
 	for key := range s.schedulerInflightRequests {
 		req := s.schedulerInflightRequests[key]
 		if req != nil {
-			req.CancelFunc(cancellation.NewError(errors.New("draining")))
+			req.CancelFunc(drainingCancellationError)
 		}
 
 		delete(s.schedulerInflightRequests, key)
@@ -491,13 +493,17 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	drainScheduler(t, scheduler)
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
-	// Unblock scheduler loop, to find next request.
+	// Send a message to unblock the scheduler loop if it's still running, if it's already exited we'll get an io.EOF error
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
-	require.NoError(t, err)
+	if err != nil {
+		require.ErrorIs(t, err, io.EOF)
+	}
 
-	// This should now return with error, since scheduler is going down.
+	// This should return with error, since scheduler has cancelled any outstanding dequeue requests.
 	_, err = querierLoop.Recv()
-	require.Error(t, err)
+	status, valid := grpcutil.ErrorToStatus(err)
+	require.True(t, valid)
+	require.Equal(t, status.Message(), drainingCancellationError.Error())
 }
 
 func TestSchedulerShutdown_PendingRequests(t *testing.T) {

@@ -19,6 +19,7 @@ Before a piece of work is finished:
 - Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
 - Include a [CHANGELOG](#changelog) message if users of Grafana Mimir need to hear about what you did.
 - If you have made any changes to flags or config, run `make reference-help doc` and commit the changed files to update the config file documentation.
+- Follow the [pull request template](.github/PULL_REQUEST_TEMPLATE.md) when creating PRs.
 
 ## Grafana Mimir Helm chart
 

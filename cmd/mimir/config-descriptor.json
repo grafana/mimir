@@ -2561,6 +2561,17 @@
               "fieldFlag": "querier.mimir-query-engine.enable-reduce-matchers",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_projection_pushdown",
+              "required": false,
+              "desc": "Enable projection pushdown to only fetch labels required for the query from storage.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             }
           ],
           "fieldValue": null,
@@ -7444,17 +7455,6 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
-        },
-        {
-          "kind": "field",
-          "name": "response_streaming_enabled",
-          "required": false,
-          "desc": "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "querier.response-streaming-enabled",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
         }
       ],
       "fieldValue": null,

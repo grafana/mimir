@@ -36,6 +36,10 @@ func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PreparePar
 	return err
 }
 
+func (s *ScalarRemoteExec) AfterPrepare(ctx context.Context) error {
+	return nil
+}
+
 func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, error) {
 	v, err := s.resp.GetValues(ctx)
 	if err != nil {

@@ -247,7 +247,7 @@ func TestQuerier(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
@@ -358,7 +358,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 	require.NoError(t, err)
 
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
@@ -466,7 +466,7 @@ func TestBatchMergeChunks(t *testing.T) {
 
 	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 	require.NoError(t, err)
 
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
@@ -597,7 +597,7 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
 			overrides := validation.NewOverrides(limits, nil)
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, nil)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, nil, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
@@ -677,7 +677,7 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
@@ -755,7 +755,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			// Create the PromQL engine to execute the query.
@@ -883,7 +883,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
@@ -913,7 +913,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -953,7 +953,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -985,7 +985,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1086,7 +1086,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1204,7 +1204,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1304,7 +1304,7 @@ func TestQuerier_ValidateQuery_MaxLabelNamesLimit(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(start), util.TimeToMillis(end))
@@ -1397,7 +1397,7 @@ func TestQuerier_ValidateQuery_MaxLabelValuesLimit(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(start), util.TimeToMillis(end))
@@ -1572,7 +1572,7 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
 			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
@@ -1810,6 +1810,10 @@ func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func unlimitedQueryLimitsProvider() streamingpromql.QueryLimitsProvider {
+	return streamingpromql.NewStaticQueryLimitsProvider(0)
 }
 
 func mustParseTime(input string) time.Time {

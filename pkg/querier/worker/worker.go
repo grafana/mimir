@@ -37,7 +37,6 @@ type Config struct {
 	QuerierID                      string                    `yaml:"id" category:"advanced"`
 	QueryFrontendGRPCClientConfig  QueryFrontendClientConfig `yaml:"grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-frontend."`
 	QuerySchedulerGRPCClientConfig grpcclient.Config         `yaml:"query_scheduler_grpc_client_config" doc:"description=Configures the gRPC client used to communicate between the querier and the query-scheduler."`
-	ResponseStreamingEnabled       bool                      `yaml:"response_streaming_enabled" category:"experimental"`
 
 	// This configuration is injected internally.
 	MaxConcurrentRequests   int                       `yaml:"-"` // Must be same as passed to PromQL Engine.
@@ -48,7 +47,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.SchedulerAddress, "querier.scheduler-address", "", fmt.Sprintf("Address of the query-scheduler component, in host:port format. The host should resolve to all query-scheduler instances. This option should be set only when query-scheduler component is in use and -%s is set to '%s'.", schedulerdiscovery.ModeFlagName, schedulerdiscovery.ModeDNS))
 	f.DurationVar(&cfg.DNSLookupPeriod, "querier.dns-lookup-period", 10*time.Second, "How often to query DNS for query-frontend or query-scheduler address.")
 	f.StringVar(&cfg.QuerierID, "querier.id", "", "Querier ID, sent to the query-frontend to identify requests from the same querier. Defaults to hostname.")
-	f.BoolVar(&cfg.ResponseStreamingEnabled, "querier.response-streaming-enabled", true, "Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do).")
 
 	cfg.QueryFrontendGRPCClientConfig.CustomCompressors = []string{s2.Name}
 	cfg.QueryFrontendGRPCClientConfig.RegisterFlagsWithPrefix("querier.frontend-client", f)
