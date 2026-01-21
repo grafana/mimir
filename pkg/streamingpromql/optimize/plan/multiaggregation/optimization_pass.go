@@ -76,13 +76,9 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
 				delete(candidateDuplicateNodes, duplicate)
 			}
-			// If the Duplicate node's parent is a supported aggregation, then we would have added it to candidateDuplicateNodes
-			// below when we reached the aggregate's parent, so there's nothing to do here in that case.
-
-			return nil
 		}
 
-		// Not a duplicate node: let's check if this node has any supported aggregate expressions over Duplicate nodes.
+		// Check if any of this node's children are supported aggregate expressions over Duplicate nodes.
 		for idx := range node.ChildCount() {
 			child := node.Child(idx)
 
