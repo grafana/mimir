@@ -26,7 +26,7 @@ func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 	}
 }
 
-func PbToToPrometheusVectorMatchFillValues(pb VectorMatchFillValues) parser.VectorMatchFillValues {
+func (f *VectorMatchFillValues) ToPrometheusType() parser.VectorMatchFillValues {
 	// Why are we doing this?
 	// The prometheus VectorMatchFillValues uses *float64 fields.
 	// In the current mimir protobufs configuration, we are not able to do an optional double (which would map to a *float64)
@@ -37,16 +37,16 @@ func PbToToPrometheusVectorMatchFillValues(pb VectorMatchFillValues) parser.Vect
 
 	out := parser.VectorMatchFillValues{}
 
-	if pb.RhsSet {
-		out.RHS = &pb.Rhs
+	if f.RhsSet {
+		out.RHS = &f.Rhs
 	}
-	if pb.LhsSet {
-		out.LHS = &pb.Lhs
+	if f.LhsSet {
+		out.LHS = &f.Lhs
 	}
 	return out
 }
 
-func PrometheusVectorMatchFillValuesToPb(in parser.VectorMatchFillValues) VectorMatchFillValues {
+func VectorMatchFillValuesFrom(in parser.VectorMatchFillValues) VectorMatchFillValues {
 	out := VectorMatchFillValues{}
 
 	if in.RHS != nil {
@@ -69,7 +69,7 @@ func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
 		MatchingLabels: v.MatchingLabels,
 		On:             v.On,
 		Include:        v.Include,
-		FillValues:     PbToToPrometheusVectorMatchFillValues(v.FillValues),
+		FillValues:     v.FillValues.ToPrometheusType(),
 	}
 }
 
@@ -82,7 +82,7 @@ func VectorMatchingFrom(v *parser.VectorMatching) *VectorMatching {
 		MatchingLabels: v.MatchingLabels,
 		On:             v.On,
 		Include:        v.Include,
-		FillValues:     PrometheusVectorMatchFillValuesToPb(v.FillValues),
+		FillValues:     VectorMatchFillValuesFrom(v.FillValues),
 	}
 }
 
