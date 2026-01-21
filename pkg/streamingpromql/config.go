@@ -71,5 +71,6 @@ func NewTestEngineOpts() EngineOpts {
 		EnableSkippingHistogramDecoding:                                               true,
 		EnableNarrowBinarySelectors:                                                   true,
 		EnableEliminateDeduplicateAndMerge:                                            true,
+		EnableMultiAggregation:                                                        true,
 	}
 }

@@ -198,3 +198,45 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 func (a *MultiAggregationInstance) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanV5
 }
+
+func MaterializeMultiAggregationGroup(node *MultiAggregationGroup, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	inner, err := materializer.ConvertNodeToInstantVectorOperator(node.Inner, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	evaluator := NewMultiAggregatorGroupEvaluator(inner, params.MemoryConsumptionTracker)
+
+	return &MultiAggregationInstanceFactory{group: evaluator}, nil
+}
+
+type MultiAggregationInstanceFactory struct {
+	group *MultiAggregatorGroupEvaluator
+}
+
+func (m *MultiAggregationInstanceFactory) Produce() (types.Operator, error) {
+	return m.group.AddInstance(), nil
+}
+
+func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	operator, err := materializer.ConvertNodeToInstantVectorOperator(node.Group, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	instance, ok := operator.(*MultiAggregatorInstanceOperator)
+	if !ok {
+		return nil, fmt.Errorf("expected MultiAggregatorInstanceOperator, got %T", operator)
+	}
+
+	op, ok := node.Aggregation.Op.ToItemType()
+	if !ok {
+		return nil, fmt.Errorf("unknown aggregation operation %s", node.Aggregation.Op.String())
+	}
+
+	if err := instance.Configure(op, node.Aggregation.Grouping, node.Aggregation.Without, params.MemoryConsumptionTracker, params.Annotations, timeRange, node.Aggregation.ExpressionPosition.ToPrometheusType()); err != nil {
+		return nil, err
+	}
+
+	return planning.NewSingleUseOperatorFactory(instance), nil
+}
