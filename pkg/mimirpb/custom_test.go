@@ -317,3 +317,34 @@ func TestAddSourceBufferHolder_AfterFreeBuffer(t *testing.T) {
 	// The sourceBufferHolders map should remain nil (not initialized)
 	assert.Nil(t, destReq.sourceBufferHolders)
 }
+
+func TestWriteRequest_FreeBuffer_SourceBufferHolders_Idempotent(t *testing.T) {
+	// Create a buffer via unmarshalling
+	c := codecV2{}
+	var origReq WriteRequest
+	data, err := c.Marshal(&origReq)
+	require.NoError(t, err)
+
+	var sourceReq WriteRequest
+	require.NoError(t, c.Unmarshal(data, &sourceReq))
+	require.NotNil(t, sourceReq.Buffer())
+
+	// Create a destination WriteRequest and add the source buffer holder
+	var destReq WriteRequest
+	destReq.AddSourceBufferHolder(&sourceReq.BufferHolder)
+	require.Len(t, destReq.sourceBufferHolders, 1)
+
+	// First FreeBuffer should work
+	destReq.FreeBuffer()
+
+	// sourceBufferHolders should be cleared to ensure idempotency
+	assert.Nil(t, destReq.sourceBufferHolders)
+
+	// Second FreeBuffer should be a no-op (sourceBufferHolders is now nil), not panic or double-free
+	assert.NotPanics(t, func() {
+		destReq.FreeBuffer()
+	})
+
+	// Clean up the source buffer (separate ref count)
+	sourceReq.FreeBuffer()
+}

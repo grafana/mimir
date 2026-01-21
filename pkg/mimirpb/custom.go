@@ -600,6 +600,7 @@ func (m *WriteRequest) FreeBuffer() {
 	for _, h := range m.sourceBufferHolders {
 		h.FreeBuffer()
 	}
+	m.sourceBufferHolders = nil
 }
 
 // AddSourceBufferHolder adds a source BufferHolder to the WriteRequest,
