@@ -9,6 +9,7 @@ import "github.com/grafana/mimir/pkg/streamingpromql/operators/functions/functio
 import "gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
 
 option (gogoproto.equal_all) = false;
 option (gogoproto.marshaler_all) = true;
@@ -93,8 +94,7 @@ message VectorMatching {
   bool on = 3;
   repeated string include = 4;
   VectorMatchFillValues fillValues = 5 [
-    (gogoproto.nullable) = false,
-    (gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser.VectorMatchFillValues"
+    (gogoproto.nullable) = false
   ];
 }
 
@@ -201,4 +201,6 @@ message DropNameDetails {}
 message VectorMatchFillValues {
   double rhs = 1;
   double lhs = 2;
+  bool rhsSet = 3;
+  bool lhsSet = 4;
 }

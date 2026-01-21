@@ -26,12 +26,58 @@ func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 	}
 }
 
+func PbToToPrometheusVectorMatchFillValues(pb VectorMatchFillValues) parser.VectorMatchFillValues {
+	// Why are we doing this?
+	// The prometheus VectorMatchFillValues uses *float64 fields.
+	// In the current mimir protobufs configuration, we are not able to do an optional double (which would map to a *float64)
+	// ie message VectorMatchFillValues {
+	//  	optional double rhs = 1;
+	//  	optional double lhs = 2;
+	//}
+
+	out := parser.VectorMatchFillValues{}
+
+	if pb.RhsSet {
+		out.RHS = &pb.Rhs
+	}
+	if pb.LhsSet {
+		out.LHS = &pb.Lhs
+	}
+	return out
+}
+
+func PrometheusVectorMatchFillValuesToPb(in parser.VectorMatchFillValues) VectorMatchFillValues {
+	out := VectorMatchFillValues{}
+
+	if in.RHS != nil {
+		out.Rhs = *in.RHS
+		out.RhsSet = true
+	}
+	if in.LHS != nil {
+		out.Lhs = *in.LHS
+		out.LhsSet = true
+	}
+	return out
+}
+
 func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
-	return (*parser.VectorMatching)(v)
+	return &parser.VectorMatching{
+		Card:           v.Card,
+		MatchingLabels: v.MatchingLabels,
+		On:             v.On,
+		Include:        v.Include,
+		FillValues:     PbToToPrometheusVectorMatchFillValues(v.FillValues),
+	}
 }
 
 func VectorMatchingFrom(v *parser.VectorMatching) *VectorMatching {
-	return (*VectorMatching)(v)
+	return &VectorMatching{
+		Card:           v.Card,
+		MatchingLabels: v.MatchingLabels,
+		On:             v.On,
+		Include:        v.Include,
+		FillValues:     PrometheusVectorMatchFillValuesToPb(v.FillValues),
+	}
 }
 
 func PositionRangeFrom(pos posrange.PositionRange) PositionRange {
