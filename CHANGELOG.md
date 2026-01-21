@@ -150,6 +150,7 @@
 * [BUGFIX] Query-frontend: Fix issue where per-query memory consumption limit is not enforced. #14086
 * [BUGFIX] Ingester: Fix race condition during shutdown where TSDBs could be closed while appends are still in progress. #14094
 * [BUGFIX] Store-gateway: Fix blocks being incorrectly dropped during shutdown when the store-gateway is terminated while fetching an updated bucket index. #14113
+* [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108
 
 ### Mixin
 
