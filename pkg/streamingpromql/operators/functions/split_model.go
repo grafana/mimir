@@ -33,8 +33,12 @@ type SplitGenerateFunc[T any] func(
 ) (T, error)
 
 // SplitCombineFunc combines intermediate results from multiple time range splits.
+// Histograms within the input pieces must not be modified in place. These histograms can share references with
+// histogram protos that are waiting to be cached.
 type SplitCombineFunc[T any] func(
 	pieces []T,
+	rangeStart int64,
+	rangeEnd int64,
 	emitAnnotation types.EmitAnnotationFunc,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (f float64, hasFloat bool, h *histogram.FloatHistogram, err error)

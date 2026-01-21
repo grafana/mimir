@@ -359,7 +359,12 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 		pieces = append(pieces, results...)
 	}
 
-	f, hasFloat, h, err := m.combineFunc(pieces, m.emitAnnotation, m.MemoryConsumptionTracker)
+	// Pass the full range boundaries from all pre-computed split ranges.
+	// This ensures correct extrapolation even if some splits have no data.
+	rangeStart := m.splitRanges[0].Start
+	rangeEnd := m.splitRanges[len(m.splitRanges)-1].End
+
+	f, hasFloat, h, err := m.combineFunc(pieces, rangeStart, rangeEnd, m.emitAnnotation, m.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}

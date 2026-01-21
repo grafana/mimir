@@ -15,7 +15,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// TODO: investigate Kahan summation more, are we using the compensation correctly?
 var SplitSumOverTime = &RangeVectorSplittingMetadata{
 	OperatorFactory:       NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, SumOverTime, FUNCTION_SUM_OVER_TIME),
 	RangeVectorChildIndex: 0,
@@ -27,47 +26,87 @@ func sumOverTimeGenerate(
 	emitAnnotation types.EmitAnnotationFunc,
 	_ *limiter.MemoryConsumptionTracker,
 ) (SumOverTimeIntermediate, error) {
-	// Query time range isn't used for sum over time
-	f, hasFloat, h, err := sumOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
+	fHead, fTail := step.Floats.UnsafePoints()
+	hHead, hTail := step.Histograms.UnsafePoints()
+
+	haveFloats := len(fHead) > 0 || len(fTail) > 0
+	haveHistograms := len(hHead) > 0 || len(hTail) > 0
+
+	if !haveFloats && !haveHistograms {
+		return SumOverTimeIntermediate{}, nil
+	}
+
+	if haveFloats && haveHistograms {
+		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
+		return SumOverTimeIntermediate{}, nil
+	}
+
+	if haveFloats {
+		sum, c := 0.0, 0.0
+		for _, p := range fHead {
+			sum, c = floats.KahanSumInc(p.F, sum, c)
+		}
+		for _, p := range fTail {
+			sum, c = floats.KahanSumInc(p.F, sum, c)
+		}
+
+		return SumOverTimeIntermediate{
+			SumF: sum,
+			// Store compensation separately - compensation could be a lot smaller than sum so adding it to sum now
+			// could lose precision. Instead, when combining all the splits we will add both sum and compensation using
+			// Kahan summation. As floating-point arithmetic is lossy and we don't perform the exact same operations in
+			// split and non-split sum_over_time() results may not always be exactly identical.
+			SumC:     c,
+			HasFloat: true,
+		}, nil
+	}
+
+	h, err := sumHistograms(hHead, hTail, emitAnnotation)
 	if err != nil {
 		return SumOverTimeIntermediate{}, err
 	}
 
-	result := SumOverTimeIntermediate{
-		SumF:     f,
-		HasFloat: hasFloat,
-	}
-
 	if h != nil {
 		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
-		result.SumH = &histProto
+		return SumOverTimeIntermediate{
+			SumH: &histProto,
+		}, nil
 	}
 
-	return result, nil
+	return SumOverTimeIntermediate{}, nil
 }
 
+// TODO: handle counter reset collision warning
 func sumOverTimeCombine(
 	pieces []SumOverTimeIntermediate,
+	_ int64,
+	_ int64,
 	emitAnnotation types.EmitAnnotationFunc,
 	_ *limiter.MemoryConsumptionTracker,
 ) (float64, bool, *histogram.FloatHistogram, error) {
 	haveFloats := false
 	sumF, c := 0.0, 0.0
 	var sumH *histogram.FloatHistogram
+	nhcbBoundsReconciledSeen := false
 
 	for _, p := range pieces {
 		if p.HasFloat {
 			haveFloats = true
 			sumF, c = floats.KahanSumInc(p.SumF, sumF, c)
+			sumF, c = floats.KahanSumInc(p.SumC, sumF, c)
 		}
 		if p.SumH != nil {
-			h := mimirpb.FromHistogramProtoToFloatHistogram(p.SumH)
+			h := mimirpb.FromFloatHistogramProtoToFloatHistogram(p.SumH)
+
 			if sumH == nil {
-				sumH = h
+				// First histogram we're seeing, copy it to create the accumulator.
+				sumH = h.Copy()
 			} else {
-				if _, _, _, err := sumH.Add(h); err != nil {
+				if _, _, nhcbBoundsReconciled, err := sumH.Add(h); err != nil {
 					err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 					return 0, false, nil, err
+				} else if nhcbBoundsReconciled {
+					nhcbBoundsReconciledSeen = true
 				}
 			}
 		}
@@ -76,6 +115,10 @@ func sumOverTimeCombine(
 	if haveFloats && sumH != nil {
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return 0, false, nil, nil
+	}
+
+	if nhcbBoundsReconciledSeen {
+		emitAnnotation(newAggregationMismatchedCustomBucketsHistogramInfo)
 	}
 
 	return sumF + c, haveFloats, sumH, nil
@@ -142,7 +185,7 @@ func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData
 	return SingleSampleIntermediate{F: count, HasFloat: hasValue}, nil
 }
 
-func countOverTimeCombine(pieces []SingleSampleIntermediate, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func countOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	totalCount := 0.0
 	hasValue := false
 
@@ -191,7 +234,7 @@ func minOverTimeGenerate(
 	return result, nil
 }
 
-func minOverTimeCombine(pieces []SingleSampleIntermediate, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	hasFloat := false
 	hasHistogram := false
 	minF := math.NaN()
@@ -246,7 +289,7 @@ func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, 
 	return result, nil
 }
 
-func maxOverTimeCombine(pieces []SingleSampleIntermediate, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	hasFloat := false
 	hasHistogram := false
 	maxF := math.NaN()
@@ -270,4 +313,3 @@ func maxOverTimeCombine(pieces []SingleSampleIntermediate, emitAnnotation types.
 
 	return maxF, hasFloat, nil, nil
 }
-

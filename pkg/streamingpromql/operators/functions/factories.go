@@ -743,7 +743,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_TIMESTAMP, "timestamp", parser.ValueTypeVector, TimestampFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_TS_OF_FIRST_OVER_TIME, "ts_of_first_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_first_over_time", TsOfFirstOverTime)))
 	must(RegisterFunction(FUNCTION_TS_OF_LAST_OVER_TIME, "ts_of_last_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_last_over_time", TsOfLastOverTime)))
-	must(RegisterFunctionWithSplitFactory(FUNCTION_TS_OF_MAX_OVER_TIME, "ts_of_max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_max_over_time", TsOfMaxOverTime), SplitMaxOverTime))
+	must(RegisterFunction(FUNCTION_TS_OF_MAX_OVER_TIME, "ts_of_max_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_max_over_time", TsOfMaxOverTime)))
 	must(RegisterFunction(FUNCTION_TS_OF_MIN_OVER_TIME, "ts_of_min_over_time", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("ts_of_min_over_time", TsOfMinOverTime)))
 	must(RegisterFunction(FUNCTION_VECTOR, "vector", parser.ValueTypeVector, scalarToInstantVectorOperatorFactory))
 	must(RegisterFunction(FUNCTION_YEAR, "year", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("year", Year)))

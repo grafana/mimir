@@ -142,6 +142,8 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, rangeStart,
 func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 	return func(
 		pieces []RateIntermediate,
+		rangeStart int64,
+		rangeEnd int64,
 		emitAnnotation types.EmitAnnotationFunc,
 		_ *limiter.MemoryConsumptionTracker,
 	) (float64, bool, *histogram.FloatHistogram, error) {
@@ -167,12 +169,12 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 		}
 
 		if hasHistogram {
-			h, err := rateCombineHistogram(pieces, isRate, emitAnnotation)
+			h, err := rateCombineHistogram(pieces, rangeStart, rangeEnd, isRate, emitAnnotation)
 			return 0, false, h, err
 		}
 
 		if hasFloat {
-			f, hasFloat, err := rateCombineFloat(pieces, isRate)
+			f, hasFloat, err := rateCombineFloat(pieces, rangeStart, rangeEnd, isRate)
 			return f, hasFloat, nil, err
 		}
 
@@ -180,7 +182,7 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 	}
 }
 
-func rateCombineFloat(splits []RateIntermediate, isRate bool) (float64, bool, error) {
+func rateCombineFloat(splits []RateIntermediate, rangeStart int64, rangeEnd int64, isRate bool) (float64, bool, error) {
 	startIdx := -1
 
 	for i, split := range splits {
@@ -236,11 +238,10 @@ func rateCombineFloat(splits []RateIntermediate, isRate bool) (float64, bool, er
 		return 0, false, nil
 	}
 
-	rangeStart := splits[0].SplitRangeStart
-	rangeEnd := splits[len(splits)-1].SplitRangeEnd
 	rangeSeconds := float64(rangeEnd-rangeStart) / 1000
+
 	result := calculateFloatRate(
-		true, // isCounter
+		true,
 		isRate,
 		rangeStart,
 		rangeEnd,
@@ -255,7 +256,7 @@ func rateCombineFloat(splits []RateIntermediate, isRate bool) (float64, bool, er
 	return result, true, nil
 }
 
-func rateCombineHistogram(splits []RateIntermediate, isRate bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
+func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd int64, isRate bool, emitAnnotation types.EmitAnnotationFunc) (*histogram.FloatHistogram, error) {
 	startIdx := -1
 
 	for i, split := range splits {
@@ -271,19 +272,24 @@ func rateCombineHistogram(splits []RateIntermediate, isRate bool, emitAnnotation
 
 	firstPiece := splits[startIdx]
 
+	fpHistCountBeforeReset := firstPiece.FirstHistogramCountBeforeReset
+	totalCount := int(firstPiece.SampleCount)
+
+	var totalDelta *histogram.FloatHistogram
+	firstDelta := mimirpb.FromFloatHistogramProtoToFloatHistogram(firstPiece.DeltaHistogram)
+	if firstDelta != nil {
+		totalDelta = firstDelta.Copy()
+	}
+
 	firstPoint := promql.HPoint{
 		T: firstPiece.FirstHistogramTimestamp,
-		H: mimirpb.FromHistogramProtoToFloatHistogram(firstPiece.FirstHistogram),
+		H: mimirpb.FromFloatHistogramProtoToFloatHistogram(firstPiece.FirstHistogram),
 	}
 
 	lastPoint := promql.HPoint{
 		T: firstPiece.LastHistogramTimestamp,
-		H: mimirpb.FromHistogramProtoToFloatHistogram(firstPiece.LastHistogram),
+		H: mimirpb.FromFloatHistogramProtoToFloatHistogram(firstPiece.LastHistogram),
 	}
-
-	fpHistCountBeforeReset := firstPiece.FirstHistogramCountBeforeReset
-	totalDelta := mimirpb.FromHistogramProtoToFloatHistogram(firstPiece.DeltaHistogram)
-	totalCount := int(firstPiece.SampleCount)
 
 	for i := startIdx + 1; i < len(splits); i++ {
 		split := splits[i]
@@ -291,18 +297,24 @@ func rateCombineHistogram(splits []RateIntermediate, isRate bool, emitAnnotation
 			continue
 		}
 
-		newFirstHist := mimirpb.FromHistogramProtoToFloatHistogram(split.FirstHistogram)
-
+		// Calculate and add delta between previous and current split
+		newFirstHist := mimirpb.FromFloatHistogramProtoToFloatHistogram(split.FirstHistogram)
 		if newFirstHist.DetectReset(lastPoint.H) {
-			_, _, nhcbBoundsReconciled, err := totalDelta.Add(newFirstHist)
-			if err != nil {
-				return nil, err
-			}
-			if nhcbBoundsReconciled {
-				emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+			if totalDelta == nil {
+				// First histogram we're seeing, copy it to create the accumulator
+				totalDelta = newFirstHist.Copy()
+			} else {
+				_, _, nhcbBoundsReconciled, err := totalDelta.Add(newFirstHist)
+				if err != nil {
+					return nil, err
+				}
+				if nhcbBoundsReconciled {
+					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+				}
 			}
 		} else {
-			_, _, nhcbBoundsReconciled, err := newFirstHist.Sub(lastPoint.H)
+			interSplitDelta := newFirstHist.Copy()
+			_, _, nhcbBoundsReconciled, err := interSplitDelta.Sub(lastPoint.H)
 			if err != nil {
 				return nil, err
 			}
@@ -310,28 +322,39 @@ func rateCombineHistogram(splits []RateIntermediate, isRate bool, emitAnnotation
 				emitAnnotation(newSubMismatchedCustomBucketsHistogramInfo)
 			}
 
-			_, _, nhcbBoundsReconciled, err = totalDelta.Add(newFirstHist)
-			if err != nil {
-				return nil, err
-			}
-			if nhcbBoundsReconciled {
-				emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+			if totalDelta == nil {
+				totalDelta = interSplitDelta
+			} else {
+				_, _, nhcbBoundsReconciled, err = totalDelta.Add(interSplitDelta)
+				if err != nil {
+					return nil, err
+				}
+				if nhcbBoundsReconciled {
+					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+				}
 			}
 		}
 
-		deltaHist := mimirpb.FromHistogramProtoToFloatHistogram(split.DeltaHistogram)
-		_, _, nhcbBoundsReconciled, err := totalDelta.Add(deltaHist)
-		if err != nil {
-			return nil, err
-		}
-		if nhcbBoundsReconciled {
-			emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+		// Calculate and add delta within current split
+		intraSplitDelta := mimirpb.FromFloatHistogramProtoToFloatHistogram(split.DeltaHistogram)
+		if intraSplitDelta != nil {
+			if totalDelta == nil {
+				totalDelta = intraSplitDelta.Copy()
+			} else {
+				_, _, nhcbBoundsReconciled, err := totalDelta.Add(intraSplitDelta)
+				if err != nil {
+					return nil, err
+				}
+				if nhcbBoundsReconciled {
+					emitAnnotation(newAddMismatchedCustomBucketsHistogramInfo)
+				}
+			}
 		}
 		totalCount += int(split.SampleCount)
 
 		lastPoint = promql.HPoint{
 			T: split.LastHistogramTimestamp,
-			H: mimirpb.FromHistogramProtoToFloatHistogram(split.LastHistogram),
+			H: mimirpb.FromFloatHistogramProtoToFloatHistogram(split.LastHistogram),
 		}
 	}
 
@@ -339,8 +362,6 @@ func rateCombineHistogram(splits []RateIntermediate, isRate bool, emitAnnotation
 		return nil, nil
 	}
 
-	rangeStart := splits[0].SplitRangeStart
-	rangeEnd := splits[len(splits)-1].SplitRangeEnd
 	rangeSeconds := float64(rangeEnd-rangeStart) / 1000
 	result := calculateHistogramRate(
 		true,
