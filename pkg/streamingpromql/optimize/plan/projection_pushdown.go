@@ -22,8 +22,6 @@ import (
 type SkipReason int
 
 const (
-	ProjectionSeriesHash = "__series_hash__"
-
 	SkipReasonOk              = SkipReason(0)
 	SkipReasonNoAggregations  = SkipReason(1)
 	SkipReasonBinaryOperation = SkipReason(2)
