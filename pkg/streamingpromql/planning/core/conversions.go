@@ -38,10 +38,12 @@ func (f *VectorMatchFillValues) ToPrometheusType() parser.VectorMatchFillValues 
 	out := parser.VectorMatchFillValues{}
 
 	if f.RhsSet {
-		out.RHS = &f.Rhs
+		rhs := f.Rhs
+		out.RHS = &rhs
 	}
 	if f.LhsSet {
-		out.LHS = &f.Lhs
+		lhs := f.Lhs
+		out.LHS = &lhs
 	}
 	return out
 }
