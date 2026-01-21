@@ -92,6 +92,10 @@ message VectorMatching {
   repeated string matchingLabels = 2;
   bool on = 3;
   repeated string include = 4;
+  VectorMatchFillValues fillValues = 5 [
+    (gogoproto.nullable) = false,
+    (gogoproto.casttype) = "github.com/prometheus/prometheus/promql/parser.VectorMatchFillValues"
+  ];
 }
 
 message FunctionCallDetails {
@@ -193,3 +197,8 @@ message DeduplicateAndMergeDetails {
 }
 
 message DropNameDetails {}
+
+message VectorMatchFillValues {
+  double rhs = 1;
+  double lhs = 2;
+}
