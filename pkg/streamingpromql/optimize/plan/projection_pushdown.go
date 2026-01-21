@@ -213,25 +213,27 @@ func examineFunction(f *core.FunctionCall) (map[string]struct{}, SkipReason) {
 		// not support the info function at all so this code path isn't exercised.
 		return nil, SkipReasonNotSupported
 	case functions.FUNCTION_LABEL_JOIN:
-		return functionLabelArgs(f.Args[3:]...), SkipReasonOk
+		return functionLabelArgs(f.Function, f.Args[3:]...), SkipReasonOk
 	case functions.FUNCTION_LABEL_REPLACE:
-		return functionLabelArgs(f.Args[3]), SkipReasonOk
+		return functionLabelArgs(f.Function, f.Args[3]), SkipReasonOk
 	case functions.FUNCTION_SORT_BY_LABEL:
-		return functionLabelArgs(f.Args[1:]...), SkipReasonOk
+		return functionLabelArgs(f.Function, f.Args[1:]...), SkipReasonOk
 	case functions.FUNCTION_SORT_BY_LABEL_DESC:
-		return functionLabelArgs(f.Args[1:]...), SkipReasonOk
+		return functionLabelArgs(f.Function, f.Args[1:]...), SkipReasonOk
 	default:
 		// Not a function that requires any particular label.
 		return nil, SkipReasonOk
 	}
 }
 
-func functionLabelArgs(args ...planning.Node) map[string]struct{} {
+func functionLabelArgs(fn functions.Function, args ...planning.Node) map[string]struct{} {
 	required := make(map[string]struct{})
 
 	for _, arg := range args {
 		if a, ok := arg.(*core.StringLiteral); ok {
 			required[a.Value] = struct{}{}
+		} else {
+			panic(fmt.Sprintf("expected StringLiteral function argument for %s, got %+v", fn, arg))
 		}
 	}
 
