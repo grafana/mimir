@@ -152,6 +152,9 @@ push-multiarch-%/$(UPTODATE):
 push-multiarch-mimir: ## Push mimir docker image.
 push-multiarch-mimir: push-multiarch-cmd/mimir/.uptodate
 
+push-multiarch-write-tee: ## Push write-tee docker image.
+push-multiarch-write-tee: push-multiarch-cmd/write-tee/.uptodate
+
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 .PHONY: fetch-build-image
 fetch-build-image: ## Fetch latest the docker build image if it isn't already present. It can be used instead of building the image locally.
