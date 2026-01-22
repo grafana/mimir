@@ -236,3 +236,111 @@ func TestHistogram_BucketsCount(t *testing.T) {
 		})
 	}
 }
+
+func TestBufferHolder_FreeBuffer_Idempotent(t *testing.T) {
+	// Create a buffer via unmarshalling
+	c := codecV2{}
+	var origReq WriteRequest
+	data, err := c.Marshal(&origReq)
+	require.NoError(t, err)
+
+	var req WriteRequest
+	require.NoError(t, c.Unmarshal(data, &req))
+	require.NotNil(t, req.Buffer())
+
+	// First FreeBuffer should work
+	req.FreeBuffer()
+
+	// Second FreeBuffer should be a no-op (buffer is now nil), not panic
+	assert.NotPanics(t, func() {
+		req.FreeBuffer()
+	})
+
+	// Buffer should be nil after FreeBuffer
+	assert.Nil(t, req.Buffer())
+}
+
+func TestAddSourceBufferHolder_DeduplicationByBuffer(t *testing.T) {
+	// Create a buffer via unmarshalling
+	c := codecV2{}
+	var origReq WriteRequest
+	data, err := c.Marshal(&origReq)
+	require.NoError(t, err)
+
+	var sourceReq WriteRequest
+	require.NoError(t, c.Unmarshal(data, &sourceReq))
+	require.NotNil(t, sourceReq.Buffer())
+
+	buf := sourceReq.Buffer()
+
+	// Create a destination WriteRequest
+	var destReq WriteRequest
+
+	// Add the source buffer holder
+	destReq.AddSourceBufferHolder(&sourceReq.BufferHolder)
+
+	// Create a second BufferHolder pointing to the same buffer
+	secondHolder := BufferHolder{buffer: buf}
+
+	// Adding the same buffer via a different BufferHolder should not add a duplicate ref
+	destReq.AddSourceBufferHolder(&secondHolder)
+
+	// There should only be one entry in the map (keyed by buffer, not by BufferHolder pointer)
+	assert.Len(t, destReq.sourceBufferHolders, 1)
+
+	// Clean up
+	destReq.FreeBuffer()
+	sourceReq.FreeBuffer()
+}
+
+func TestWriteRequest_FreeBuffer_WithSourceHolders_Idempotent(t *testing.T) {
+	// Create a buffer via unmarshalling
+	var c codecV2
+	var origReq WriteRequest
+	data, err := c.Marshal(&origReq)
+	require.NoError(t, err)
+	var sourceReq WriteRequest
+	require.NoError(t, c.Unmarshal(data, &sourceReq))
+	t.Cleanup(sourceReq.FreeBuffer)
+	require.NotNil(t, sourceReq.Buffer())
+
+	// Create a destination WriteRequest and add source buffer holder.
+	var destReq WriteRequest
+	destReq.AddSourceBufferHolder(&sourceReq.BufferHolder)
+	require.Len(t, destReq.sourceBufferHolders, 1)
+
+	// First FreeBuffer should work.
+	destReq.FreeBuffer()
+
+	// Second FreeBuffer should be a no-op.
+	assert.NotPanics(t, func() {
+		destReq.FreeBuffer()
+	})
+	// sourceBufferHolders should be nil after FreeBuffer.
+	assert.Nil(t, destReq.sourceBufferHolders)
+}
+
+func TestAddSourceBufferHolder_AfterFreeBuffer(t *testing.T) {
+	// Create a buffer via unmarshalling
+	c := codecV2{}
+	var origReq WriteRequest
+	data, err := c.Marshal(&origReq)
+	require.NoError(t, err)
+
+	var sourceReq WriteRequest
+	require.NoError(t, c.Unmarshal(data, &sourceReq))
+	require.NotNil(t, sourceReq.Buffer())
+
+	// Free the source buffer first
+	sourceReq.FreeBuffer()
+	assert.Nil(t, sourceReq.Buffer())
+
+	// Create a destination WriteRequest
+	var destReq WriteRequest
+
+	// Adding a BufferHolder with nil buffer should be a no-op
+	destReq.AddSourceBufferHolder(&sourceReq.BufferHolder)
+
+	// The sourceBufferHolders map should remain nil (not initialized)
+	assert.Nil(t, destReq.sourceBufferHolders)
+}

@@ -1941,6 +1941,11 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
   [enable_reduce_matchers: <boolean> | default = true]
 
+  # (experimental) Enable projection pushdown to only fetch labels required for
+  # the query from storage.
+  # CLI flag: -querier.mimir-query-engine.enable-projection-pushdown
+  [enable_projection_pushdown: <boolean> | default = false]
+
 ring:
   # The key-value store used to share the hash ring across multiple instances.
   kvstore:
