@@ -8,6 +8,7 @@ import (
 	"math"
 	"syscall"
 	"testing"
+	"unsafe"
 
 	gogoproto "github.com/gogo/protobuf/proto"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -221,6 +222,7 @@ func (m *BufferHolder) SetBuffer(buf mem.Buffer) {
 func (m *BufferHolder) FreeBuffer() {
 	if m.buffer != nil {
 		m.buffer.Free()
+		m.buffer = nil
 	}
 }
 
@@ -592,9 +594,10 @@ type orderAwareMetricMetadata struct {
 
 func (m *WriteRequest) FreeBuffer() {
 	m.BufferHolder.FreeBuffer()
-	for p := range m.sourceBufferHolders {
-		p.FreeBuffer()
+	for _, h := range m.sourceBufferHolders {
+		h.FreeBuffer()
 	}
+	m.sourceBufferHolders = nil
 }
 
 // AddSourceBufferHolder adds a source BufferHolder to the WriteRequest,
@@ -605,14 +608,22 @@ func (m *WriteRequest) AddSourceBufferHolder(bufh *BufferHolder) {
 	if buf == nil {
 		return
 	}
-	if _, ok := m.sourceBufferHolders[bufh]; ok {
+	key := bufferKey(buf)
+	if m.sourceBufferHolders == nil {
+		m.sourceBufferHolders = map[uintptr]BufferHolder{}
+	}
+	if _, ok := m.sourceBufferHolders[key]; ok {
 		return
 	}
-
 	buf.Ref()
+	m.sourceBufferHolders[key] = BufferHolder{buffer: buf}
+}
 
-	if m.sourceBufferHolders == nil {
-		m.sourceBufferHolders = map[*BufferHolder]struct{}{}
+// bufferKey returns a unique key for the buffer based on the address of its underlying data.
+func bufferKey(buf mem.Buffer) uintptr {
+	data := buf.ReadOnlyData()
+	if len(data) == 0 {
+		return 0
 	}
-	m.sourceBufferHolders[bufh] = struct{}{}
+	return uintptr(unsafe.Pointer(&data[0]))
 }
