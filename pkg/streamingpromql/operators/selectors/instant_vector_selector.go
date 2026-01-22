@@ -27,7 +27,7 @@ type InstantVectorSelector struct {
 	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
 	Stats                                    *types.QueryStats
 	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps.
-	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps. Defaults to false, has to be set to true directly instead of when calling constructor.
+	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps.
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator

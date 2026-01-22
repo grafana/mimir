@@ -9,17 +9,17 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-type HandleInfoFunc struct{}
+type InsertOmittedTargetInfoSelector struct{}
 
-func (h *HandleInfoFunc) Name() string {
-	return "Handle info function"
+func (h *InsertOmittedTargetInfoSelector) Name() string {
+	return "Insert Omitted Target Info Selector"
 }
 
-func (h *HandleInfoFunc) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
+func (h *InsertOmittedTargetInfoSelector) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
 	return h.apply(expr), nil
 }
 
-func (h *HandleInfoFunc) apply(expr parser.Expr) parser.Expr {
+func (h *InsertOmittedTargetInfoSelector) apply(expr parser.Expr) parser.Expr {
 	switch expr := expr.(type) {
 	case *parser.Call:
 		if expr.Func.Name == "info" {

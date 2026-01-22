@@ -27,8 +27,13 @@ import (
 
 func TestOptimizationPass(t *testing.T) {
 	enableExtendedRangeSelectors := parser.EnableExtendedRangeSelectors
-	defer func() { parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors }()
+	enableExperimentalFunctions := parser.EnableExperimentalFunctions
+	defer func() {
+		parser.EnableExtendedRangeSelectors = enableExtendedRangeSelectors
+		parser.EnableExperimentalFunctions = enableExperimentalFunctions
+	}()
 	parser.EnableExtendedRangeSelectors = true
+	parser.EnableExperimentalFunctions = true
 
 	testCases := map[string]struct {
 		expr                        string
@@ -657,6 +662,24 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodes:      0,
 			expectedSelectorsEliminated: 0,
 			expectedSelectorsInspected:  2,
+		},
+		"info function": {
+			// This test verifies that CSE optimization correctly skips the 2nd argument to info function,
+			// allowing only the 1st argument to be deduplicated.
+			expr: `foo + target_info{k8s_cluster_name="cluster1"} + info(foo, {k8s_cluster_name="cluster1"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- RHS: VectorSelector: {k8s_cluster_name="cluster1", __name__="target_info"}
+					- RHS: FunctionCall: info(...)
+						- param 0: ref#1 Duplicate ...
+						- param 1: VectorSelector: {k8s_cluster_name="cluster1", __name__="target_info"}, return sample timestamps preserving histograms
+			`,
+			expectedDuplicateNodes:      1,
+			expectedSelectorsEliminated: 1,
+			expectedSelectorsInspected:  3,
 		},
 	}
 

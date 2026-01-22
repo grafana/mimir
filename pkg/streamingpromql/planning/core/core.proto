@@ -140,9 +140,9 @@ message VectorSelectorDetails {
   ];
   PositionRange expressionPosition = 4 [(gogoproto.nullable) = false];
   bool returnSampleTimestamps = 5;
-  bool returnSampleTimestampsPreserveHistograms = 6;
-  bool skipHistogramBuckets = 7;
-  bool smoothed = 8;
+  bool skipHistogramBuckets = 6;
+  bool smoothed = 7;
+  bool returnSampleTimestampsPreserveHistograms = 8;
 }
 
 message MatrixSelectorDetails {

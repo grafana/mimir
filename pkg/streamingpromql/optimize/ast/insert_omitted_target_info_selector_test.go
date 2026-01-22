@@ -27,11 +27,11 @@ func TestHandleInfoFunc(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	handleInfoFunc := &ast.HandleInfoFunc{}
+	insertOmittedTargetInfoSelector := &ast.InsertOmittedTargetInfoSelector{}
 
 	for input, expected := range testCases {
 		t.Run(input, func(t *testing.T) {
-			result := runASTOptimizationPassWithoutMetrics(t, ctx, input, handleInfoFunc)
+			result := runASTOptimizationPassWithoutMetrics(t, ctx, input, insertOmittedTargetInfoSelector)
 			require.Equal(t, expected, result.String())
 		})
 	}

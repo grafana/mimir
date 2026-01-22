@@ -563,7 +563,7 @@ func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParam
 	info, ok := args[1].(*selectors.InstantVectorSelector)
 	if !ok {
 		// Should be caught by the PromQL parser, but we check here for safety.
-		return nil, fmt.Errorf("expected an instant vector for 2nd argument for info, got %T", args[1])
+		return nil, fmt.Errorf("expected an instant vector selector for 2nd argument for info, got %T", args[1])
 	}
 
 	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition), nil

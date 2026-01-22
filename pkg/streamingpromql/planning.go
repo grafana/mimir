@@ -81,8 +81,8 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
-	planner.RegisterASTOptimizationPass(&ast.HandleInfoFunc{})    // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
+	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
 	if opts.EnablePruneToggles {
 		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
