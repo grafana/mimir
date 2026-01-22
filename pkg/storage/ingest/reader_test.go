@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"iter"
 	"math/rand"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -95,7 +96,7 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
@@ -107,7 +108,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -2598,6 +2599,82 @@ func TestPartitionReader_fetchLastCommittedOffset(t *testing.T) {
 	})
 }
 
+func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
+	const (
+		topicName   = "test-topic"
+		partitionID = int32(1)
+	)
+	ctx := context.Background()
+
+	setupTest := func(t *testing.T) (string, *consumerFunc, func()) {
+		cluster, clusterAddr := testkafka.CreateClusterWithoutCustomConsumerGroupsSupport(t, partitionID+1, topicName)
+		c := consumerFunc(func(context.Context, iter.Seq[*kgo.Record]) error { return nil })
+		return clusterAddr, &c, cluster.Close
+	}
+
+	t.Run("uses retention period to calculate timestamp-based offset when file is missing", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withTSDBRetentionPeriod(1*time.Hour),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+
+		require.NoError(t, err)
+		assert.NotEqual(t, kafkaOffsetStart, startOffset)
+		assert.Equal(t, startOffset-1, lastConsumedOffset)
+	})
+
+	t.Run("falls back to partition start when retention period is zero", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
+			withConsumeFromPositionAtStartup(consumeFromLastOffset),
+			withFileBasedOffsetEnforcement(true),
+			withTSDBRetentionPeriod(0),
+			withTargetAndMaxConsumerLagAtStartup(0, 0),
+		)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, kafkaOffsetStart, startOffset)
+		assert.Equal(t, int64(-1), lastConsumedOffset)
+	})
+
+	t.Run("file offset takes precedence over retention period", func(t *testing.T) {
+		clusterAddr, consumer, cleanup := setupTest(t)
+		defer cleanup()
+
+		tmpDir := t.TempDir()
+		offsetFilePath := filepath.Join(tmpDir, "offset")
+		offsetFile := newOffsetFile(offsetFilePath, log.NewNopLogger())
+		require.NoError(t, offsetFile.Write(42))
+
+		cfg := defaultReaderTestConfig(t, clusterAddr, topicName, partitionID, consumer)
+		cfg.kafka.ConsumeFromPositionAtStartup = consumeFromLastOffset
+		cfg.kafka.ConsumerGroupOffsetCommitFileEnforced = true
+		cfg.kafka.TSDBRetentionPeriod = 1 * time.Hour
+		cfg.kafka.TargetConsumerLagAtStartup = 0
+		cfg.kafka.MaxConsumerLagAtStartup = 0
+
+		reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+		require.NoError(t, err)
+
+		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
+
+		require.NoError(t, err)
+		assert.Equal(t, int64(43), startOffset)
+		assert.Equal(t, int64(42), lastConsumedOffset)
+	})
+}
+
 func TestPartitionCommitter(t *testing.T) {
 	t.Parallel()
 
@@ -2644,7 +2721,7 @@ func TestPartitionCommitter(t *testing.T) {
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
 
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, nil, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -2710,7 +2787,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, nil, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -2750,7 +2827,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, log.NewNopLogger(), reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, nil, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -2795,7 +2872,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			},
 		}
 
-		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 	})
@@ -2824,7 +2901,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			},
 		}
 
-		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 	})
@@ -2906,12 +2983,13 @@ func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Cli
 }
 
 type readerTestCfg struct {
-	kafka             KafkaConfig
-	partitionID       int32
-	consumer          consumerFactory
-	registry          *prometheus.Registry
-	logger            log.Logger
-	preCommitNotifier PreCommitNotifier
+	kafka               KafkaConfig
+	partitionID         int32
+	consumer            consumerFactory
+	registry            *prometheus.Registry
+	logger              log.Logger
+	preCommitNotifier   PreCommitNotifier
+	tsdbRetentionPeriod time.Duration
 }
 
 type readerTestCfgOpt func(cfg *readerTestCfg)
@@ -2984,6 +3062,18 @@ func withMaxBufferedBytes(i int) readerTestCfgOpt {
 	}
 }
 
+func withFileBasedOffsetEnforcement(enabled bool) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.kafka.ConsumerGroupOffsetCommitFileEnforced = enabled
+	}
+}
+
+func withTSDBRetentionPeriod(period time.Duration) readerTestCfgOpt {
+	return func(cfg *readerTestCfg) {
+		cfg.tsdbRetentionPeriod = period
+	}
+}
+
 var testingLogger = mimirtest.NewTestingLogger(nil)
 
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
@@ -3021,7 +3111,8 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 		notifier = &NoOpPreCommitNotifier{}
 	}
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.consumer, notifier, cfg.logger, cfg.registry)
+	cfg.kafka.TSDBRetentionPeriod = cfg.tsdbRetentionPeriod
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, notifier, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	// Reduce the time the fake kafka would wait for new records. Sometimes this blocks startup.
