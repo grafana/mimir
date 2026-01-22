@@ -11457,6 +11457,78 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-2"} 1
 			`,
 		},
+
+		"should soft fail on series with unsorted labels with native histogram": {
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{
+									{Name: "zzz", Value: "last"},
+									{Name: model.MetricNameLabel, Value: "test"},
+								},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+							},
+						},
+					},
+				},
+			},
+			expectedErrs: []globalerror.ErrorWithStatus{
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: "zzz", Value: "last"},
+					{Name: model.MetricNameLabel, Value: "test"},
+				}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: "zzz", Value: "last"},
+					{Name: model.MetricNameLabel, Value: "test"},
+				}), users[1]), codes.InvalidArgument),
+			},
+			expectedSampling: true,
+			nativeHistograms: true,
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-2"} 1
+			`,
+		},
+
+		"should soft fail on series with duplicate labels with native histogram": {
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{
+									{Name: model.MetricNameLabel, Value: "foo"},
+									{Name: model.MetricNameLabel, Value: "bar"},
+								},
+								Histograms: []mimirpb.Histogram{mimirpb.FromHistogramToHistogramProto(9, util_test.GenerateTestHistogram(1))},
+							},
+						},
+					},
+				},
+			},
+			expectedErrs: []globalerror.ErrorWithStatus{
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: model.MetricNameLabel, Value: "foo"},
+					{Name: model.MetricNameLabel, Value: "bar"},
+				}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: model.MetricNameLabel, Value: "foo"},
+					{Name: model.MetricNameLabel, Value: "bar"},
+				}), users[1]), codes.InvalidArgument),
+			},
+			expectedSampling: true,
+			nativeHistograms: true,
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-2"} 1
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
