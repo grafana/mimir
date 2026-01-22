@@ -67,6 +67,7 @@ func (h *InsertOmittedTargetInfoSelector) apply(expr parser.Expr) parser.Expr {
 		return expr
 	case *parser.AggregateExpr:
 		expr.Expr = h.apply(expr.Expr)
+		expr.Param = h.apply(expr.Param)
 		return expr
 	case *parser.SubqueryExpr:
 		expr.Expr = h.apply(expr.Expr)
