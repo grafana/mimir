@@ -190,10 +190,20 @@ func (p *Proxy) Start() error {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	// register routes
+	// register fan-out routes (explicit endpoints we want to mirror)
 	for _, route := range p.routes {
 		router.Path(route.Path).Methods(route.Methods...).Handler(NewProxyEndpoint(p.backends, route, p.metrics, p.logger, p.cfg.LogSlowResponseThreshold))
 	}
+
+	// register catch-all passthrough route for unsupported endpoints
+	// this must come AFTER specific routes so they take precedence
+	passthroughRoute := Route{
+		Path:      "/{path:.*}",
+		RouteName: "passthrough",
+		Methods:   []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"},
+	}
+	passthroughEndpoint := NewProxyEndpoint(p.backends, passthroughRoute, p.metrics, p.logger, p.cfg.LogSlowResponseThreshold)
+	router.PathPrefix("/").Handler(http.HandlerFunc(passthroughEndpoint.ServeHTTPPassthrough))
 
 	p.server = serv
 
