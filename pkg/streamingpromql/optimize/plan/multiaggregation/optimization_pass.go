@@ -67,6 +67,13 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 				return nil
 			}
 
+			if len(path) == 0 {
+				// Duplicate node is the root, which is not a valid case for multi-aggregation.
+				ineligibleDuplicateNodes[duplicate] = struct{}{}
+				delete(candidateDuplicateNodes, duplicate)
+				return nil
+			}
+
 			parent := path[len(path)-1]
 			aggregate, isAggregate := parent.(*core.AggregateExpression)
 			if !isAggregate {

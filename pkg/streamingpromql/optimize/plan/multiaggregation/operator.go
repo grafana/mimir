@@ -68,6 +68,11 @@ func (m *MultiAggregatorGroupEvaluator) ComputeOutputSeriesForAllInstances(ctx c
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries, m.memoryConsumptionTracker)
 
 	for _, instance := range m.instances {
+		if instance.aggregator == nil {
+			// Skip instances that failed to configure.
+			continue
+		}
+
 		groups, err := instance.aggregator.ComputeGroups(innerSeries)
 		if err != nil {
 			return err
@@ -87,6 +92,11 @@ func (m *MultiAggregatorGroupEvaluator) ReadNextSeries(ctx context.Context) erro
 
 	lastIndex := len(m.instances) - 1
 	for idx, instance := range m.instances {
+		if instance.aggregator == nil {
+			// Skip instances that failed to configure.
+			continue
+		}
+
 		isLastInstance := idx == lastIndex
 		if err := instance.aggregator.AccumulateNextInnerSeries(data, isLastInstance); err != nil {
 			return err
