@@ -43,8 +43,6 @@ func TestLabelsAreSorted(t *testing.T) {
 	})
 
 	t.Run("empty is ok", func(t *testing.T) {
-		assert.True(t, LabelsAreUniqueSorted([]LabelAdapter{
-			{Name: "a", Value: "z"},
-		}))
+		assert.True(t, LabelsAreUniqueSorted([]LabelAdapter{}))
 	})
 }
