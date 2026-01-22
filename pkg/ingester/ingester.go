@@ -545,6 +545,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		// where N is the total number of ingesters. Each ingester is part of their own consumer group
 		// so that they all replay the owned partition with no gaps.
 		kafkaCfg.FallbackClientErrorSampleRate = cfg.ErrorSampleRate
+		kafkaCfg.TSDBRetentionPeriod = cfg.BlocksStorageConfig.TSDB.Retention
 
 		// This is injected already higher up for methods invoked via the network.
 		// Here we use it so that pushes from kafka also get a tenant assigned since the PartitionReader invokes the ingester.

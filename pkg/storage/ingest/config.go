@@ -106,6 +106,11 @@ type KafkaConfig struct {
 	TargetConsumerLagAtStartup    time.Duration `yaml:"target_consumer_lag_at_startup"`
 	MaxConsumerLagAtStartup       time.Duration `yaml:"max_consumer_lag_at_startup"`
 
+	// TSDBRetentionPeriod is used as a fallback to determine the Kafka offset to start consuming from
+	// when file-based offset enforcement is enabled but no offset file exists. This should match the
+	// TSDB retention period configured in the ingester.
+	TSDBRetentionPeriod time.Duration `yaml:"-"`
+
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`
 	AutoCreateTopicDefaultPartitions int  `yaml:"auto_create_topic_default_partitions"`
 

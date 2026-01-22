@@ -71,6 +71,7 @@ type PartitionReader struct {
 	partitionID                           int32
 	consumerGroup                         string
 	concurrentFetchersMinBytesMaxWaitTime time.Duration
+	tsdbRetentionPeriod                   time.Duration
 
 	// client and fetcher are both start after PartitionReader creation. Fetcher could also be
 	// replaced during PartitionReader lifetime. To avoid concurrency issues with functions
@@ -115,6 +116,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
 		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
+		tsdbRetentionPeriod:                   kafkaCfg.TSDBRetentionPeriod,
 		highestConsumedTimestampBeforePartitionEnd: atomic.NewTime(time.Time{}),
 		notifier:   notifier,
 		logger:     log.With(logger, "partition", partitionID),
@@ -747,14 +749,26 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 			if r.kafkaCfg.ConsumerGroupOffsetCommitFileEnforced {
 				if fileOffset, exists := r.offsetFile.Read(); exists {
 					lastConsumedOffset = fileOffset
-					offset = lastConsumedOffset + 1 // We'll start consuming from the next offset after the last consumed.
+					offset = lastConsumedOffset + 1 // We'll start consuming from the next offset after the last consumed
 					level.Info(r.logger).Log("msg", "starting consumption from file-stored offset (enforcement enabled)", "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 					return offset, lastConsumedOffset, nil
 				}
-				// If file enforcement is enabled but file doesn't exist, start from beginning
-				level.Warn(r.logger).Log("msg", "file-based offset enforcement is enabled but file does not exist, will replay entire backlog", "consumer_group", r.consumerGroup)
+				// If file enforcement is enabled but file doesn't exist, fall back to retention period
+				if r.tsdbRetentionPeriod > 0 {
+					ts := time.Now().Add(-r.tsdbRetentionPeriod)
+					offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
+					if err != nil {
+						return 0, -1, err
+					}
+					if exists {
+						lastConsumedOffset = offset - 1 // Offset before the one we'll start the consumption from
+						level.Warn(r.logger).Log("msg", "file-based offset enforcement is enabled but file does not exist, starting from retention period", "retention_period", r.tsdbRetentionPeriod, "timestamp", ts.UnixMilli(), "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
+						return offset, lastConsumedOffset, nil
+					}
+				}
+				level.Warn(r.logger).Log("msg", "file-based offset enforcement is enabled but file does not exist and retention period calculation failed, will replay entire backlog", "consumer_group", r.consumerGroup)
 			} else {
-				// If file offset enforcement is disabled, use Kafka consumer group offset.
+				// If file offset enforcement is disabled, use Kafka consumer group offset
 				offset, exists, err := r.fetchLastCommittedOffset(ctx, cl)
 				if err != nil {
 					return 0, -1, err
