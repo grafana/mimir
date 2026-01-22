@@ -4374,7 +4374,8 @@ The `limits` block configures default and per-tenant limits imposed by component
 [query_ingesters_within: <duration> | default = 13h]
 
 # (experimental) Enable the experimental Prometheus feature for delayed name
-# removal.
+# removal within MQE, which only works if remote execution and running sharding
+# within MQE is enabled.
 # CLI flag: -querier.enable-delayed-name-removal
 [enable_delayed_name_removal: <boolean> | default = false]
 
