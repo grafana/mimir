@@ -26,31 +26,10 @@ import (
 )
 
 type Aggregation struct {
-	Inner                    types.InstantVectorOperator
-	TimeRange                types.QueryTimeRange
-	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
-	Without                  bool
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	Inner types.InstantVectorOperator
 
-	aggregationGroupFactory AggregationGroupFactory
-
-	Annotations *annotations.Annotations
-
-	metricNames        *operators.MetricNames
-	currentSeriesIndex int
-
+	aggregator         *Aggregator
 	expressionPosition posrange.PositionRange
-	emitAnnotationFunc types.EmitAnnotationFunc
-
-	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
-	remainingGroups             []*group // One entry per group, in the order we want to return them
-
-	haveEmittedMixedFloatsAndHistogramsWarning bool
-
-	// If the aggregation has a parameter, its values are expected
-	// to be filled here by the wrapping operator.
-	// Currently only used by the quantile aggregation.
-	ParamData types.ScalarData
 }
 
 func NewAggregation(
@@ -63,30 +42,16 @@ func NewAggregation(
 	annotations *annotations.Annotations,
 	expressionPosition posrange.PositionRange,
 ) (*Aggregation, error) {
-	opGroupFactory := AggregationGroupFactories[op]
-	if opGroupFactory == nil {
-		return nil, compat.NewNotSupportedError(fmt.Sprintf("aggregation operation with '%s'", op))
+	aggregator, err := NewAggregator(op, grouping, without, memoryConsumptionTracker, annotations, timeRange, inner.ExpressionPosition())
+	if err != nil {
+		return nil, err
 	}
-
-	if without {
-		grouping = append(grouping, model.MetricNameLabel)
-	}
-
-	slices.Sort(grouping)
 
 	a := &Aggregation{
-		Inner:                    inner,
-		TimeRange:                timeRange,
-		Grouping:                 grouping,
-		Without:                  without,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		Annotations:              annotations,
-		metricNames:              &operators.MetricNames{},
-		expressionPosition:       expressionPosition,
-		aggregationGroupFactory:  opGroupFactory,
+		Inner:              inner,
+		expressionPosition: expressionPosition,
+		aggregator:         aggregator,
 	}
-
-	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
 
 	return a, nil
 }
@@ -125,9 +90,9 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 	// that we are given matchers that apply to other labels since the matchers are
 	// created based hints applied to binary operations which come from aggregations but
 	// this prevents misuse.
-	if len(matchers) != 0 && len(a.Grouping) != 0 {
-		if !a.Without {
-			matchers = matchers.With(a.Grouping...)
+	if len(matchers) != 0 && len(a.aggregator.Grouping) != 0 {
+		if !a.aggregator.Without {
+			matchers = matchers.With(a.aggregator.Grouping...)
 		} else {
 			// We don't set hints for aggregations using "without" and we don't (yet) support
 			// excluding matchers so drop any extra matchers passed at runtime if this is a
@@ -142,8 +107,163 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 		return nil, err
 	}
 
-	defer types.SeriesMetadataSlicePool.Put(&innerSeries, a.MemoryConsumptionTracker)
+	defer types.SeriesMetadataSlicePool.Put(&innerSeries, a.aggregator.MemoryConsumptionTracker)
 
+	return a.aggregator.ComputeGroups(innerSeries)
+}
+
+func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
+	if !a.aggregator.HasMoreOutputSeries() {
+		return types.InstantVectorSeriesData{}, types.EOS
+	}
+
+	if err := a.accumulateUntilNextGroupComplete(ctx); err != nil {
+		return types.InstantVectorSeriesData{}, err
+	}
+
+	return a.aggregator.ComputeNextOutputSeries()
+}
+
+func (a *Aggregation) accumulateUntilNextGroupComplete(ctx context.Context) error {
+	for !a.aggregator.IsNextOutputSeriesComplete() {
+		data, err := a.Inner.NextSeries(ctx)
+		if err != nil {
+			if errors.Is(err, types.EOS) {
+				return fmt.Errorf("exhausted series before all groups were completed: %w", err)
+			}
+
+			return err
+		}
+
+		if err := a.aggregator.AccumulateNextInnerSeries(data, true); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (a *Aggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	// The wrapping operator (if any) is responsible for calling Prepare() on whatever provides a.ParamData, so we don't need to do it here.
+	return a.Inner.Prepare(ctx, params)
+}
+
+func (a *Aggregation) AfterPrepare(ctx context.Context) error {
+	// The wrapping operator (if any) is responsible for calling AfterPrepare() on whatever provides a.ParamData, so we don't need to do it here.
+	return a.Inner.AfterPrepare(ctx)
+}
+
+func (a *Aggregation) Finalize(ctx context.Context) error {
+	// The wrapping operator (if any) is responsible for calling Finalize() on whatever provides a.ParamData, so we don't need to do it here.
+	return a.Inner.Finalize(ctx)
+}
+
+func (a *Aggregation) SetParamData(data types.ScalarData) {
+	a.aggregator.ParamData = data
+}
+
+func (a *Aggregation) Close() {
+	a.Inner.Close()
+	a.aggregator.Close()
+}
+
+type groupSorter struct {
+	metadata []types.SeriesMetadata
+	groups   []*group
+}
+
+func (g groupSorter) Len() int {
+	return len(g.metadata)
+}
+
+func (g groupSorter) Less(i, j int) bool {
+	return g.groups[i].lastSeriesIndex < g.groups[j].lastSeriesIndex
+}
+
+func (g groupSorter) Swap(i, j int) {
+	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
+	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
+}
+
+func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
+}
+
+func newAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
+	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
+}
+
+// Aggregator performs aggregations over a set of input data.
+//
+// It is implemented separately to the Aggregation operator above to allow reuse by the multi-aggregation optimization.
+type Aggregator struct {
+	Grouping                 []string // If this is a 'without' aggregation, NewAggregation will ensure that this slice contains __name__.
+	Without                  bool
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	Annotations              *annotations.Annotations
+	TimeRange                types.QueryTimeRange
+
+	// If the aggregation has a parameter, its values are expected
+	// to be filled here by the wrapping operator.
+	// Currently only used by the quantile aggregation.
+	ParamData types.ScalarData
+
+	metricNames             *operators.MetricNames
+	currentSeriesIndex      int
+	aggregationGroupFactory AggregationGroupFactory
+	emitAnnotationFunc      types.EmitAnnotationFunc
+	innerExpressionPosition posrange.PositionRange
+
+	remainingInnerSeriesToGroup []*group // One entry per series produced by Inner, value is the group for that series
+	remainingGroups             []*group // One entry per group, in the order we want to return them
+
+	haveEmittedMixedFloatsAndHistogramsWarning bool
+}
+
+// NewAggregator creates a new Aggregator instance.
+//
+// It may mutate the grouping slice provided.
+func NewAggregator(
+	op parser.ItemType,
+	grouping []string,
+	without bool,
+	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
+	annotations *annotations.Annotations,
+	timeRange types.QueryTimeRange,
+	innerExpressionPosition posrange.PositionRange,
+) (*Aggregator, error) {
+	opGroupFactory := AggregationGroupFactories[op]
+	if opGroupFactory == nil {
+		return nil, compat.NewNotSupportedError(fmt.Sprintf("aggregation operation with '%s'", op))
+	}
+
+	if without {
+		grouping = append(grouping, model.MetricNameLabel)
+	}
+
+	slices.Sort(grouping)
+
+	a := &Aggregator{
+		Grouping:                 grouping,
+		Without:                  without,
+		MemoryConsumptionTracker: memoryConsumptionTracker,
+		Annotations:              annotations,
+		TimeRange:                timeRange,
+
+		metricNames:             &operators.MetricNames{},
+		aggregationGroupFactory: opGroupFactory,
+		innerExpressionPosition: innerExpressionPosition,
+	}
+
+	a.emitAnnotationFunc = a.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
+
+	return a, nil
+}
+
+// ComputeGroups determines the groups this Aggregator will produce for the given series.
+//
+// It is the caller's responsibility to return the provided slice to a pool.
+func (a *Aggregator) ComputeGroups(innerSeries []types.SeriesMetadata) ([]types.SeriesMetadata, error) {
 	if len(innerSeries) == 0 {
 		// No input series == no output series.
 		return nil, nil
@@ -204,14 +324,14 @@ func (a *Aggregation) SeriesMetadata(ctx context.Context, matchers types.Matcher
 	return seriesMetadata, nil
 }
 
-func (a *Aggregation) groupLabelsBytesFunc() SeriesToGroupLabelsBytesFunc {
+func (a *Aggregator) groupLabelsBytesFunc() SeriesToGroupLabelsBytesFunc {
 	return GroupLabelsBytesFunc(a.Grouping, a.Without)
 }
 
 // seriesToGroupLabelsFunc is a function that returns the output group labels for the given input series.
 type seriesToGroupLabelsFunc func(labels.Labels) labels.Labels
 
-func (a *Aggregation) groupLabelsFunc() seriesToGroupLabelsFunc {
+func (a *Aggregator) groupLabelsFunc() seriesToGroupLabelsFunc {
 	switch {
 	case a.Without:
 		lb := labels.NewBuilder(labels.EmptyLabels())
@@ -238,20 +358,34 @@ func (a *Aggregation) groupLabelsFunc() seriesToGroupLabelsFunc {
 
 var groupToSingleSeriesLabelsFunc = func(_ labels.Labels) labels.Labels { return labels.EmptyLabels() }
 
-func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeriesData, error) {
-	if len(a.remainingGroups) == 0 {
-		// No more groups left.
-		return types.InstantVectorSeriesData{}, types.EOS
+// AccumulateNextInnerSeries accumulates the provided series into its corresponding group.
+//
+// If takeOwnershipOfData is true, the provided data will be returned to a pool when this function returns,
+// and points within the data slices may be mutated. (For example, FloatHistogram instances may be mutated in-place.)
+//
+// If takeOwnershipOfData is false, the provided data will not be returned to a pool when this function returns,
+// and points within the data slices will not be mutated.
+func (a *Aggregator) AccumulateNextInnerSeries(data types.InstantVectorSeriesData, takeOwnershipOfData bool) error {
+	thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
+	a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
+	if err := thisSeriesGroup.aggregation.AccumulateSeries(data, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount, takeOwnershipOfData); err != nil {
+		return err
 	}
 
-	// Determine next group to return
+	if takeOwnershipOfData {
+		types.PutInstantVectorSeriesData(data, a.MemoryConsumptionTracker)
+	}
+
+	thisSeriesGroup.remainingSeriesCount--
+	a.currentSeriesIndex++
+
+	return nil
+}
+
+// ComputeNextOutputSeries computes the final result for the next output series from this Aggregator.
+func (a *Aggregator) ComputeNextOutputSeries() (types.InstantVectorSeriesData, error) {
 	thisGroup := a.remainingGroups[0]
 	a.remainingGroups = a.remainingGroups[1:]
-
-	// Iterate through inner series until the desired group is complete
-	if err := a.accumulateUntilGroupComplete(ctx, thisGroup); err != nil {
-		return types.InstantVectorSeriesData{}, err
-	}
 
 	// Construct the group and return it
 	seriesData, hasMixedData, err := thisGroup.aggregation.ComputeOutputSeries(a.ParamData, a.TimeRange, a.MemoryConsumptionTracker)
@@ -260,7 +394,7 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 	}
 
 	if hasMixedData && !a.haveEmittedMixedFloatsAndHistogramsWarning {
-		a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.Inner.ExpressionPosition()))
+		a.Annotations.Add(annotations.NewMixedFloatsHistogramsAggWarning(a.innerExpressionPosition))
 
 		// The warning description only varies based on the position of the expression this operator represents, so only emit it
 		// once, to avoid unnecessary work if there are many instances of floats and histograms conflicting.
@@ -269,56 +403,30 @@ func (a *Aggregation) NextSeries(ctx context.Context) (types.InstantVectorSeries
 
 	thisGroup.aggregation.Close(a.MemoryConsumptionTracker)
 	groupPool.Put(thisGroup)
+
 	return seriesData, nil
 }
 
-func (a *Aggregation) accumulateUntilGroupComplete(ctx context.Context, g *group) error {
-	for g.remainingSeriesCount > 0 {
-		s, err := a.Inner.NextSeries(ctx)
-		if err != nil {
-			if errors.Is(err, types.EOS) {
-				return fmt.Errorf("exhausted series before all groups were completed: %w", err)
-			}
-
-			return err
-		}
-
-		thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
-		a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
-		if err := thisSeriesGroup.aggregation.AccumulateSeries(s, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount); err != nil {
-			return err
-		}
-		thisSeriesGroup.remainingSeriesCount--
-
-		a.currentSeriesIndex++
-	}
-	return nil
+// IsNextOutputSeriesComplete returns true if all inner series for the next output series have been passed
+// to AccumulateNextInnerSeries.
+func (a *Aggregator) IsNextOutputSeriesComplete() bool {
+	return a.remainingGroups[0].remainingSeriesCount == 0
 }
 
-func (a *Aggregation) emitAnnotation(generator types.AnnotationGenerator) {
+// HasMoreOutputSeries returns true if there are more output series to produce.
+func (a *Aggregator) HasMoreOutputSeries() bool {
+	return len(a.remainingGroups) > 0
+}
+
+func (a *Aggregator) emitAnnotation(generator types.AnnotationGenerator) {
 	metricName := a.metricNames.GetMetricNameForSeries(a.currentSeriesIndex)
-	a.Annotations.Add(generator(metricName, a.Inner.ExpressionPosition()))
+	a.Annotations.Add(generator(metricName, a.innerExpressionPosition))
 }
 
-func (a *Aggregation) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	// The wrapping operator (if any) is responsible for calling Prepare() on whatever provides a.ParamData, so we don't need to do it here.
-	return a.Inner.Prepare(ctx, params)
-}
-
-func (a *Aggregation) AfterPrepare(ctx context.Context) error {
-	// The wrapping operator (if any) is responsible for calling AfterPrepare() on whatever provides a.ParamData, so we don't need to do it here.
-	return a.Inner.AfterPrepare(ctx)
-}
-
-func (a *Aggregation) Finalize(ctx context.Context) error {
-	// The wrapping operator (if any) is responsible for calling Finalize() on whatever provides a.ParamData, so we don't need to do it here.
-	return a.Inner.Finalize(ctx)
-}
-
-func (a *Aggregation) Close() {
-	// The wrapping operator is responsible for returning any a.ParamData slice
-	// since it is responsible for setting them up.
-	a.Inner.Close()
+func (a *Aggregator) Close() {
+	if a.ParamData.Samples != nil {
+		types.FPointSlicePool.Put(&a.ParamData.Samples, a.MemoryConsumptionTracker)
+	}
 
 	for _, g := range a.remainingGroups {
 		g.aggregation.Close(a.MemoryConsumptionTracker)
@@ -326,30 +434,4 @@ func (a *Aggregation) Close() {
 	}
 
 	a.remainingGroups = nil
-}
-
-type groupSorter struct {
-	metadata []types.SeriesMetadata
-	groups   []*group
-}
-
-func (g groupSorter) Len() int {
-	return len(g.metadata)
-}
-
-func (g groupSorter) Less(i, j int) bool {
-	return g.groups[i].lastSeriesIndex < g.groups[j].lastSeriesIndex
-}
-
-func (g groupSorter) Swap(i, j int) {
-	g.metadata[i], g.metadata[j] = g.metadata[j], g.metadata[i]
-	g.groups[i], g.groups[j] = g.groups[j], g.groups[i]
-}
-
-func newAggregationCounterResetCollisionWarning(_ string, expressionPosition posrange.PositionRange) error {
-	return annotations.NewHistogramCounterResetCollisionWarning(expressionPosition, annotations.HistogramAgg)
-}
-
-func newAggregationMismatchedCustomBucketsHistogramInfo(_ string, expressionPosition posrange.PositionRange) error {
-	return annotations.NewMismatchedCustomBucketsHistogramsInfo(expressionPosition, annotations.HistogramAgg)
 }
