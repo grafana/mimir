@@ -4,6 +4,11 @@
   local statefulSet = $.apps.v1.statefulSet,
   local volumeMount = $.core.v1.volumeMount,
 
+  _config+:: {
+    // Priority class for ingester pods.
+    ingester_priority_class: '',
+  },
+
   ingester_args::
     $._config.commonConfig +
     $._config.usageStatsConfig +
@@ -104,7 +109,7 @@
     $.newMimirNodeAffinityMatchers(nodeAffinityMatchers) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds($.ingester_termination_grace_period_seconds) +
     $.mimirVolumeMounts +
-    $.util.podPriority('high') +
+    (if $._config.ingester_priority_class != '' then statefulSet.spec.template.spec.withPriorityClassName($._config.ingester_priority_class) else {}) +
     (if withAntiAffinity then $.util.antiAffinity else {}),
 
   ingester_statefulset:

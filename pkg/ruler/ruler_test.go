@@ -305,11 +305,11 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	wg.Wait()
 
 	// Ensure we have metrics in the notifier.
-	assert.NoError(t, prom_testutil.GatherAndCompare(manager.registry.(*prometheus.Registry), strings.NewReader(`
+	assert.NoError(t, prom_testutil.GatherAndCompare(manager.registry.(*prometheus.Registry), strings.NewReader(fmt.Sprintf(`
 		# HELP cortex_prometheus_notifications_dropped_total Total number of alerts dropped due to errors when sending to Alertmanager.
 		# TYPE cortex_prometheus_notifications_dropped_total counter
-		cortex_prometheus_notifications_dropped_total{user="1"} 0
-	`), "cortex_prometheus_notifications_dropped_total"))
+		cortex_prometheus_notifications_dropped_total{alertmanager="%s/api/v2/alerts", user="1"} 0
+	`, overrides.RulerAlertmanagerClientConfig("1").AlertmanagerURL)), "cortex_prometheus_notifications_dropped_total"))
 }
 
 func TestRuler_Rules(t *testing.T) {

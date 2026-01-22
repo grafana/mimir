@@ -61,6 +61,10 @@ func (s *ScalarConstant) Prepare(_ context.Context, _ *types.PrepareParams) erro
 	return nil
 }
 
+func (s *ScalarConstant) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
 func (s *ScalarConstant) Finalize(_ context.Context) error {
 	// Nothing to do.
 	return nil

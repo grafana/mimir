@@ -103,6 +103,9 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 	}
 
 	for {
+		if res != nil {
+			res.FreeBuffer()
+		}
 		res, err = stream.Recv()
 		if errors.Is(err, io.EOF) {
 			// It's expected to get an EOF at the end of the stream.
@@ -159,6 +162,9 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			})
 		}
 	} else {
+		if res != nil {
+			res.FreeBuffer()
+		}
 		res, err = stream.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -180,6 +186,8 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 		// Get the streaming chunks.
 		idx := -1
 		for idx < len(streamingSeriesSet)-1 {
+			// res is guaranteed to be non-nil at this point.
+			res.FreeBuffer()
 			// We don't expect EOF errors here.
 			res, err = stream.Recv()
 			if err != nil {
@@ -225,12 +233,18 @@ func (s *storeTestServer) Series(ctx context.Context, req *storepb.SeriesRequest
 			}
 		}
 
+		// res is guaranteed to be non-nil at this point.
+		res.FreeBuffer()
 		res, err = stream.Recv()
+
 		for err == nil {
 			if res.GetHints() == nil && res.GetStats() == nil {
 				err = errors.Errorf("got unexpected response type %T", res.Result)
 				break
 			}
+
+			// res is guaranteed to be non-nil at this point.
+			res.FreeBuffer()
 			res, err = stream.Recv()
 		}
 		if errors.Is(err, io.EOF) {

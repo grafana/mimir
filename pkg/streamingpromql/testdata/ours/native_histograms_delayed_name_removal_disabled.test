@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/prometheus/prometheus/tree/main/promql/testdata/native_histograms.test
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Prometheus Authors
+
+# Test histogram_quantile annotations.
+load 1m
+  nonmonotonic_bucket{le="0.1"}   0+2x10
+  nonmonotonic_bucket{le="1"}     0+1x10
+  nonmonotonic_bucket{le="10"}    0+5x10
+  nonmonotonic_bucket{le="100"}   0+4x10
+  nonmonotonic_bucket{le="1000"}  0+9x10
+  nonmonotonic_bucket{le="+Inf"}  0+8x10
+  myHistogram1{abe="0.1"}   0+2x10
+  myHistogram2{le="Hello World"}   0+2x10
+  mixedHistogram{le="0.1"}   0+2x10
+  mixedHistogram{le="1"}     0+3x10
+  mixedHistogram{}           {{schema:0 count:10 sum:50 buckets:[1 2 3]}}
+
+eval instant at 1m histogram_quantile(0.5, nonmonotonic_bucket)
+  expect info msg: PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile)
+  {} 8.5
+
+eval instant at 1m histogram_quantile(0.5, myHistogram1)
+  expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of ""
+
+eval instant at 1m histogram_quantile(0.5, myHistogram2)
+  expect warn msg: PromQL warning: bucket label "le" is missing or has a malformed value of "Hello World"
+
+eval instant at 1m histogram_quantile(0.5, mixedHistogram)
+  expect warn msg: PromQL warning: vector contains a mix of classic and native histograms
+
+clear
+
+# Test native histogram quantile and fraction when the native histogram with exponential
+# buckets has NaN observations.
+load 1m
+  histogram_nan{case="100% NaNs"} {{schema:0 count:0 sum:0}} {{schema:0 count:3 sum:NaN}}
+  histogram_nan{case="20% NaNs"} {{schema:0 count:0 sum:0}} {{schema:0 count:15 sum:NaN buckets:[12]}}
+
+eval instant at 1m histogram_quantile(1, histogram_nan)
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  {case="100% NaNs"} NaN
+  {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.81, histogram_nan)
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  {case="100% NaNs"} NaN
+  {case="20% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.8, histogram_nan{case="100% NaNs"})
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  {case="100% NaNs"} NaN
+
+eval instant at 1m histogram_quantile(0.8, histogram_nan{case="20% NaNs"})
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+  {case="20% NaNs"} 1
+
+eval instant at 1m histogram_quantile(0.4, histogram_nan{case="100% NaNs"})
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is NaN
+  {case="100% NaNs"} NaN
+
+# histogram_quantile and histogram_fraction equivalence if quantile is not NaN
+eval instant at 1m histogram_quantile(0.4, histogram_nan{case="20% NaNs"})
+  expect info msg: PromQL info: input to histogram_quantile has NaN observations, result is skewed higher
+  {case="20% NaNs"} 0.7071067811865475

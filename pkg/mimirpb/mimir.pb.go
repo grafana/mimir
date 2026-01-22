@@ -294,7 +294,7 @@ type WriteRequest struct {
 	// from other WriteRequests, e. g. when batching, and thus holds references
 	// to those source buffers. The WriteRequest must hold a strong reference to
 	// each of these buffers.
-	sourceBufferHolders map[*BufferHolder]struct{}
+	sourceBufferHolders map[uintptr]BufferHolder
 
 	Timeseries []PreallocTimeseries    `protobuf:"bytes,1,rep,name=timeseries,proto3,customtype=PreallocTimeseries" json:"timeseries"`
 	Source     WriteRequest_SourceEnum `protobuf:"varint,2,opt,name=Source,proto3,enum=cortexpb.WriteRequest_SourceEnum" json:"Source,omitempty"`

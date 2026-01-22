@@ -339,8 +339,8 @@ func (r *StreamBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, 
 // writeSparseHeadersToFile uses protocol buffer to write StreamBinaryReader to disk at sparseHeadersPath.
 func writeSparseHeadersToFile(sparseHeadersPath string, reader *StreamBinaryReader) (retErr error) {
 	sparseHeaders := &indexheaderpb.Sparse{}
-	sparseHeaders.Symbols = reader.symbols.NewSparseSymbol()
-	sparseHeaders.PostingsOffsetTable = reader.postingsOffsetTable.NewSparsePostingOffsetTable()
+	sparseHeaders.Symbols = reader.symbols.ToSparseSymbols()
+	sparseHeaders.PostingsOffsetTable = reader.postingsOffsetTable.ToSparsePostingOffsetTable()
 
 	out, err := sparseHeaders.Marshal()
 	if err != nil {
