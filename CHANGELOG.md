@@ -145,6 +145,7 @@
 * [BUGFIX] Ingester: Query all ingesters when shuffle sharding is disabled. #14041
 * [BUGFIX] Store-gateway: Fix blocks being incorrectly dropped during shutdown when the store-gateway is terminated while fetching an updated bucket index. #14113
 * [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108
+* [BUGFIX] Ingester: Fix race condition during shutdown where TSDBs could be closed while appends are still in progress. #14094 #14127
 
 ### Mixin
 
