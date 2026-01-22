@@ -225,8 +225,6 @@ func TestOurTestCases(t *testing.T) {
 		if enableDelayedNameRemoval {
 			// This line only affects Prometheus engine, as MQE's is in NewStaticQueryLimitsProvider
 			opts.CommonOpts.EnableDelayedNameRemoval = true
-			// Disable the optimization pass, since it requires delayed name removal to be enabled.
-			opts.EnableEliminateDeduplicateAndMerge = false
 		}
 		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)

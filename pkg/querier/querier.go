@@ -846,13 +846,11 @@ func logClampEvent(spanLog *spanlogger.SpanLogger, originalT, clampedT int64, mi
 
 type TenantQueryLimitsProvider struct {
 	limits *validation.Overrides
-	opts   streamingpromql.EngineOpts
 }
 
-func NewTenantQueryLimitsProvider(limits *validation.Overrides, opts streamingpromql.EngineOpts) *TenantQueryLimitsProvider {
+func NewTenantQueryLimitsProvider(limits *validation.Overrides) *TenantQueryLimitsProvider {
 	return &TenantQueryLimitsProvider{
 		limits: limits,
-		opts:   opts,
 	}
 }
 
@@ -886,14 +884,20 @@ func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Cont
 		return false, err
 	}
 
+	hasEnabled := false
+	hasDisabled := false
 	for _, tenantID := range tenantIDs {
 		if p.limits.EnableDelayedNameRemoval(tenantID) {
-			// If any tenant has delayed name removal enabled, enable it for the whole query.
-			return true, nil
+			hasEnabled = true
+		} else {
+			hasDisabled = true
 		}
 	}
+	if hasEnabled && hasDisabled {
+		return false, fmt.Errorf("conflicting settings for EnableDelayedNameRemoval for tenants: %v", tenantIDs)
+	}
 
-	return false, nil
+	return hasEnabled, nil
 }
 
 type RequestMetrics struct {

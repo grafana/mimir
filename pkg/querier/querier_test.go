@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/cardinality"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/util"
@@ -1883,13 +1882,7 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 	}
 
 	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
-
-	// Create default engine options for testing
-	cfg := Config{}
-	flagext.DefaultValues(&cfg)
-	_, mqeOpts := engine.NewPromQLEngineOptions(cfg.EngineConfig, nil, log.NewNopLogger(), nil)
-
-	provider := NewTenantQueryLimitsProvider(overrides, mqeOpts)
+	provider := NewTenantQueryLimitsProvider(overrides)
 
 	testCases := map[string]struct {
 		ctx                              context.Context

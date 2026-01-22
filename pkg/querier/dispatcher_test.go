@@ -59,7 +59,7 @@ func TestDispatcher_HandleProtobuf(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	enableDelayedNameRemoval := false
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	createQueryRequest := func(expr string, timeRange types.QueryTimeRange) *prototypes.Any {

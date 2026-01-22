@@ -176,7 +176,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
 	enableDelayedNameRemoval, err := e.limitsProvider.GetEnableDelayedNameRemoval(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("could not get enable delayed name removal setting for tenant: %w", err)
+		return nil, fmt.Errorf("could not get 'enable delayed name removal' setting for tenant: %w", err)
 	}
 
 	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, enableDelayedNameRemoval, NoopPlanningObserver{})
