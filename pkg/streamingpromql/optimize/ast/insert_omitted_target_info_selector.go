@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -23,12 +25,30 @@ func (h *InsertOmittedTargetInfoSelector) apply(expr parser.Expr) parser.Expr {
 	switch expr := expr.(type) {
 	case *parser.Call:
 		if expr.Func.Name == "info" {
-			if len(expr.Args) == 1 {
+			switch length := len(expr.Args); length {
+			case 1:
 				infoExpr, err := parser.ParseExpr("target_info")
 				if err != nil {
 					panic(fmt.Sprintf("failed to parse target_info expression: %v", err))
 				}
 				expr.Args = append(expr.Args, infoExpr)
+			case 2:
+				dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
+				if !ok {
+					panic(fmt.Sprintf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1]))
+				}
+				hasMetricNameMatcher := false
+				for _, m := range dataLabelMatchersExpr.LabelMatchers {
+					if m.Name == model.MetricNameLabel {
+						hasMetricNameMatcher = true
+						break
+					}
+				}
+				if !hasMetricNameMatcher {
+					dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "target_info"))
+				}
+			default:
+				panic(fmt.Sprintf("expected 'info' function to have exactly 2 arguments, got %d", length))
 			}
 		}
 		for i, arg := range expr.Args {
@@ -54,7 +74,10 @@ func (h *InsertOmittedTargetInfoSelector) apply(expr parser.Expr) parser.Expr {
 	case *parser.StepInvariantExpr:
 		expr.Expr = h.apply(expr.Expr)
 		return expr
-	default:
+	case *parser.VectorSelector, *parser.MatrixSelector, *parser.NumberLiteral, *parser.StringLiteral, nil:
+		// no-op
 		return expr
+	default:
+		panic(fmt.Sprintf("unknown expression type: %T", expr))
 	}
 }
