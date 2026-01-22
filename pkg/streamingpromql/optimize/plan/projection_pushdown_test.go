@@ -47,6 +47,18 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			`,
 			expectedModified: 2,
 		},
+		"binary expression with literal and aggregation": {
+			expr: `vector(1) - avg by (zone) (bar)`,
+			expectedPlan: `
+				- BinaryExpression: LHS - RHS
+					- LHS: StepInvariantExpression
+						- FunctionCall: vector(...)
+							- NumberLiteral: 1
+					- RHS: AggregateExpression: avg by (zone)
+						- VectorSelector: {__name__="bar"}, include ("zone")
+			`,
+			expectedModified: 1,
+		},
 		"binary expression on with no aggregations": {
 			expr: `foo + on (zone) bar`,
 			expectedPlan: `
@@ -223,6 +235,46 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			`,
 			expectedModified: 1,
 		},
+		"aggregation over subquery": {
+			expr: `avg_over_time(foo[5m:30s])`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: avg_over_time(...)
+						- Subquery: [5m0s:30s]
+							- VectorSelector: {__name__="foo"}
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
+		},
+		"unary expression": {
+			expr: `-foo`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- UnaryExpression: -
+						- VectorSelector: {__name__="foo"}
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
+		},
+		"unary expression outside aggregation": {
+			expr: `-avg(foo)`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- UnaryExpression: -
+						- AggregateExpression: avg
+							- VectorSelector: {__name__="foo"}, include ()
+			`,
+			expectedModified: 1,
+		},
+		"aggregation with step invariant expression": {
+			expr: `avg(foo @ 0)`,
+			expectedPlan: `
+				- StepInvariantExpression
+					- AggregateExpression: avg
+						- VectorSelector: {__name__="foo"} @ 0 (1970-01-01T00:00:00Z), include ()
+			`,
+			expectedModified: 1,
+		},
 		"aggregation by no labels": {
 			expr: `avg(foo)`,
 			expectedPlan: `
@@ -244,7 +296,11 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			timeRange := types.NewInstantQueryTimeRange(time.Now())
+
+			// NOTE: We are using a range query time range because `StepInvariantExpression`s are
+			// unwrapped when they are part of an instant query (since there's no point).
+			now := time.Now()
+			timeRange := types.NewRangeQueryTimeRange(now.Add(-time.Hour), now, time.Minute)
 			observer := streamingpromql.NoopPlanningObserver{}
 
 			opts := streamingpromql.NewTestEngineOpts()
@@ -266,14 +322,20 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 				`, testCase.expectedModified)), "cortex_mimir_query_engine_projection_pushdown_modified_total",
 			))
 
-			for k, v := range testCase.expectedSkip {
-				require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+			// Assert that selectors were skipped or not skipped for the reason we expect.
+			require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_mimir_query_engine_projection_pushdown_skipped_total Total number of selectors where projections could not be used.
 					# TYPE cortex_mimir_query_engine_projection_pushdown_skipped_total counter
-					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="%s"} %d
-					`, k, v)), "cortex_mimir_query_engine_projection_pushdown_skipped_total",
-				))
-			}
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="binary-operation"} %d
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="deduplicate-and-merge"} %d
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="no-aggregations"} %d
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="not-supported"} %d
+					`,
+				testCase.expectedSkip[plan.SkipReasonBinaryOperation],
+				testCase.expectedSkip[plan.SkipReasonDeduplicate],
+				testCase.expectedSkip[plan.SkipReasonNoAggregations],
+				testCase.expectedSkip[plan.SkipReasonNotSupported])), "cortex_mimir_query_engine_projection_pushdown_skipped_total",
+			))
 		})
 	}
 }
