@@ -23,10 +23,10 @@ type SoftAppendErrorProcessor struct {
 	sampleTooFarInFuture           func(int64, []mimirpb.LabelAdapter)
 	errDuplicateSampleForTimestamp func(string, int64, []mimirpb.LabelAdapter)
 	maxSeriesPerUser               func(labels []mimirpb.LabelAdapter)
-	maxSeriesPerMetric             func(labels []mimirpb.LabelAdapter)
-	errLabelsNotSorted             func([]mimirpb.LabelAdapter)
+	maxSeriesPerMetric func(labels []mimirpb.LabelAdapter)
 	// Native histogram errors.
-	errHistogram func(error, int64, []mimirpb.LabelAdapter) bool
+	errHistogram       func(error, int64, []mimirpb.LabelAdapter) bool
+	errLabelsNotSorted func([]mimirpb.LabelAdapter)
 }
 
 func NewSoftAppendErrorProcessor(
