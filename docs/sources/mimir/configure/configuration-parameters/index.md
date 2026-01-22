@@ -1947,7 +1947,7 @@ mimir_query_engine:
   [enable_projection_pushdown: <boolean> | default = false]
 
   # (experimental) Enable computing multiple aggregations over the same data
-  # without buffering.
+  # without buffering. Requires common subexpression elimination to be enabled.
   # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
   [enable_multi_aggregation: <boolean> | default = true]
 
