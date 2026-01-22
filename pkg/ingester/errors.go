@@ -326,6 +326,36 @@ var _ ingesterError = perMetricSeriesLimitReachedError{}
 // Ensure that perMetricSeriesLimitReachedError is an softError.
 var _ softError = perMetricSeriesLimitReachedError{}
 
+type labelsNotSortedError struct {
+	series string
+}
+
+// newLabelsNotSortedError creates a new labelsNotSortedError indicating that a series has out-of-order or non-unique label names.
+func newLabelsNotSortedError(labels []mimirpb.LabelAdapter) labelsNotSortedError {
+	return labelsNotSortedError{
+		series: mimirpb.FromLabelAdaptersToString(labels),
+	}
+}
+
+func (e labelsNotSortedError) Error() string {
+	return fmt.Sprintf("%s This is for series %s",
+		globalerror.SeriesLabelsNotSorted.Message("received a series with out-of-order or non-unique label names"),
+		e.series,
+	)
+}
+
+func (e labelsNotSortedError) errorCause() mimirpb.ErrorCause {
+	return mimirpb.ERROR_CAUSE_BAD_DATA
+}
+
+func (e labelsNotSortedError) soft() {}
+
+// Ensure that labelsNotSortedError is an ingesterError.
+var _ ingesterError = labelsNotSortedError{}
+
+// Ensure that labelsNotSortedError is an softError.
+var _ softError = labelsNotSortedError{}
+
 // perMetricMetadataLimitReachedError is an ingesterError indicating that a per-metric metadata limit has been reached.
 type perMetricMetadataLimitReachedError struct {
 	limit  int
@@ -534,10 +564,12 @@ type ingesterErrSamplers struct {
 	maxSeriesPerUserLimitExceeded     *log.Sampler
 	maxMetadataPerUserLimitExceeded   *log.Sampler
 	nativeHistogramValidationError    *log.Sampler
+	labelsNotSorted                   *log.Sampler
 }
 
 func newIngesterErrSamplers(freq int64) ingesterErrSamplers {
 	return ingesterErrSamplers{
+		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),
 		log.NewSampler(freq),

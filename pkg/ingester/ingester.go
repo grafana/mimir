@@ -120,6 +120,7 @@ const (
 	reasonPerUserSeriesLimit     = "per_user_series_limit"
 	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
 	reasonInvalidNativeHistogram = "invalid-native-histogram"
+	reasonLabelsNotSorted        = "labels-not-sorted"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
@@ -1129,6 +1130,7 @@ type pushStats struct {
 	perUserSeriesLimitCount     int
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
+	labelsNotSortedCount        int
 }
 
 type ctxKey int
@@ -1456,6 +1458,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 				return true
 			},
+			func(labels []mimirpb.LabelAdapter) {
+				stats.labelsNotSortedCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonLabelsNotSorted, startAppend)
+				updateFirstPartial(i.errorSamplers.labelsNotSorted, func() softError {
+					return newLabelsNotSortedError(labels)
+				})
+			},
 		)
 	)
 
@@ -1562,6 +1571,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.invalidNativeHistogramCount > 0 {
 		discarded.invalidNativeHistogram.WithLabelValues(userID, group).Add(float64(stats.invalidNativeHistogramCount))
 	}
+	if stats.labelsNotSortedCount > 0 {
+		discarded.labelsNotSorted.WithLabelValues(userID, group).Add(float64(stats.labelsNotSortedCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -1608,11 +1620,13 @@ func (i *Ingester) pushSamplesToAppender(
 	defer idx.Close()
 
 	for _, ts := range timeseries {
-		// The labels must be sorted.
-		for i := 1; i < len(ts.Labels); i++ {
-			if ts.Labels[i].Name <= ts.Labels[i-1].Name {
-				return fmt.Errorf("labels not sorted: %s", mimirpb.FromLabelAdaptersToString(ts.Labels))
+		// The labels must be sorted. This is defensive programming; the distributor
+		// sorts labels before forwarding to ingesters.
+		if !mimirpb.LabelsAreUniqueSorted(ts.Labels) {
+			for _, sample := range ts.Samples {
+				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, sample.TimestampMs, ts.Labels)
 			}
+			continue
 		}
 
 		// Fast path in case we only have samples and they are all out of bound

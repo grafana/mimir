@@ -9337,7 +9337,7 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 	startAndWaitHealthy(t, ing, r)
 
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-	lbls := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "foo", Value: ""}, {Name: "bar", Value: ""}}}
+	lbls := [][]mimirpb.LabelAdapter{{{Name: model.MetricNameLabel, Value: "testmetric"}, {Name: "bar", Value: ""}, {Name: "foo", Value: ""}}}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing.Push(ctx, mimirpb.ToWriteRequest(
@@ -11564,6 +11564,74 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				newErrorWithStatus(wrapOrAnnotateWithUser(newExemplarMissingSeriesError(model.Time(1000), metricLabelAdapters, []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), users[1]), codes.InvalidArgument),
 			},
 			expectedSampling: false,
+		},
+		"should soft fail on series with unsorted labels": {
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{
+									{Name: "zzz", Value: "last"},
+									{Name: model.MetricNameLabel, Value: "test"},
+								},
+								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+							},
+						},
+					},
+				},
+			},
+			expectedErrs: []globalerror.ErrorWithStatus{
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: "zzz", Value: "last"},
+					{Name: model.MetricNameLabel, Value: "test"},
+				}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: "zzz", Value: "last"},
+					{Name: model.MetricNameLabel, Value: "test"},
+				}), users[1]), codes.InvalidArgument),
+			},
+			expectedSampling: true,
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-2"} 1
+			`,
+		},
+		"should soft fail on series with duplicate labels": {
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{
+									{Name: model.MetricNameLabel, Value: "foo"},
+									{Name: model.MetricNameLabel, Value: "bar"},
+								},
+								Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+							},
+						},
+					},
+				},
+			},
+			expectedErrs: []globalerror.ErrorWithStatus{
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: model.MetricNameLabel, Value: "foo"},
+					{Name: model.MetricNameLabel, Value: "bar"},
+				}), users[0]), codes.InvalidArgument),
+				newErrorWithStatus(wrapOrAnnotateWithUser(newLabelsNotSortedError([]mimirpb.LabelAdapter{
+					{Name: model.MetricNameLabel, Value: "foo"},
+					{Name: model.MetricNameLabel, Value: "bar"},
+				}), users[1]), codes.InvalidArgument),
+			},
+			expectedSampling: true,
+			expectedMetrics: `
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-1"} 4
+				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-2"} 1
+			`,
 		},
 	}
 
