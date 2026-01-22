@@ -1813,7 +1813,7 @@ func defaultLimitsConfig() validation.Limits {
 }
 
 func unlimitedQueryLimitsProvider() streamingpromql.QueryLimitsProvider {
-	return streamingpromql.NewStaticQueryLimitsProvider(0)
+	return streamingpromql.NewStaticQueryLimitsProvider(0, false)
 }
 
 func mustParseTime(input string) time.Time {

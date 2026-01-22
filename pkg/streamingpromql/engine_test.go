@@ -2262,7 +2262,7 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 
 		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 		require.NoError(t, err)
-		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0, delayedNameRemovalEnabled), stats.NewQueryMetrics(nil), planner)
 		require.NoError(t, err)
 		prometheusEngine := promql.NewEngine(opts.CommonOpts)
 
@@ -4963,7 +4963,7 @@ func TestStepInvariantMetrics(t *testing.T) {
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 			require.NoError(t, err)
 
 			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, tc.start, tc.end, tc.interval)
