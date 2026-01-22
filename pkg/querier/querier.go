@@ -48,7 +48,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var tracer = otel.Tracer("pkg/querier")
+var (
+	tracer                              = otel.Tracer("pkg/querier")
+	errConflictEnableDelayedNameRemoval = errors.New("conflicting settings for EnableDelayedNameRemoval")
+)
 
 // Config contains the configuration require to create a querier
 type Config struct {
@@ -894,7 +897,7 @@ func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Cont
 		}
 	}
 	if hasEnabled && hasDisabled {
-		return false, fmt.Errorf("conflicting settings for EnableDelayedNameRemoval for tenants: %v", tenantIDs)
+		return false, fmt.Errorf("%w for tenants: %v", errConflictEnableDelayedNameRemoval, tenantIDs)
 	}
 
 	return hasEnabled, nil

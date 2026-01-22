@@ -1874,6 +1874,7 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 			},
 			"user-3": {
 				MaxEstimatedMemoryConsumptionPerQuery: 3000,
+				EnableDelayedNameRemoval:              true,
 			},
 			"unlimited-user": {
 				MaxEstimatedMemoryConsumptionPerQuery: 0,
@@ -1904,13 +1905,17 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 			expectedLimit:                    0,
 			expectedEnableDelayedNameRemoval: false,
 		},
-		"multiple tenant IDs provided, all have limits, one has delayed name removal": {
-			ctx:                              user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
-			expectedLimit:                    4010,
+		"multiple tenant IDs provided, all have limits, all have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2|user-3"),
+			expectedLimit:                    3010,
 			expectedEnableDelayedNameRemoval: true,
 		},
+		"multiple tenant IDs provided, all have limits, conflict in delayed name removal": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
+			expectedError: errConflictEnableDelayedNameRemoval,
+		},
 		"multiple tenant IDs provided, one unlimited, none have delayed name removal": {
-			ctx:                              user.InjectOrgID(context.Background(), "user-1|unlimited-user|user-3"),
+			ctx:                              user.InjectOrgID(context.Background(), "user-1|unlimited-user"),
 			expectedLimit:                    0,
 			expectedEnableDelayedNameRemoval: false,
 		},
@@ -1919,7 +1924,12 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			actualLimit, actualErr := provider.GetMaxEstimatedMemoryConsumptionPerQuery(testCase.ctx)
-			actualEnableDelayedNameRemoval, _ := provider.GetEnableDelayedNameRemoval(testCase.ctx)
+			actualEnableDelayedNameRemoval, actualErr2 := provider.GetEnableDelayedNameRemoval(testCase.ctx)
+
+			// If the first call succeeded but the second failed, use the second error, otherwise keep the first.
+			if actualErr == nil && actualErr2 != nil {
+				actualErr = actualErr2
+			}
 
 			if testCase.expectedError == nil {
 				require.NoError(t, actualErr)
