@@ -1009,6 +1009,36 @@ func TestValidateLabelDuplication(t *testing.T) {
 		),
 	)
 	assert.Equal(t, expected, actual)
+
+	// Test that duplicate labels are still detected even when the second duplicate
+	// has a value that exceeds maxLabelValueLength and is handled by Truncate/Drop strategy.
+	// The over-length value must be on the second occurrence to trigger the bug where
+	// entering the value-too-long branch would skip the duplicate check.
+	for _, tc := range []struct {
+		name     string
+		strategy validation.LabelValueLengthOverLimitStrategy
+	}{
+		{"Truncate", validation.LabelValueLengthOverLimitStrategyTruncate},
+		{"Drop", validation.LabelValueLengthOverLimitStrategyDrop},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := labelValidationConfig{
+				maxLabelNameLength:                100,
+				maxLabelNamesPerSeries:            10,
+				maxLabelValueLength:               75, // Must be >= validation.LabelValueHashLen (71)
+				nameValidationScheme:              model.LegacyValidation,
+				labelValueLengthOverLimitStrategy: tc.strategy,
+			}
+			actual := validateLabels(newSampleValidationMetrics(nil), cfg, userID, "", []mimirpb.LabelAdapter{
+				{Name: model.MetricNameLabel, Value: "a"},
+				{Name: "foo", Value: "bar"},                    // First occurrence
+				{Name: "foo", Value: strings.Repeat("x", 100)}, // Duplicate with over-length value
+			}, false, false, nil, ts, nil)
+			require.NotNil(t, actual, "expected duplicate label error")
+			assert.Contains(t, actual.Error(), "duplicate label name")
+			assert.Contains(t, actual.Error(), "foo")
+		})
+	}
 }
 
 func TestValidateLabel_UseAfterRelease(t *testing.T) {
