@@ -1874,6 +1874,7 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 			},
 			"user-3": {
 				MaxEstimatedMemoryConsumptionPerQuery: 3000,
+				EnableDelayedNameRemoval:              true,
 			},
 			"unlimited-user": {
 				MaxEstimatedMemoryConsumptionPerQuery: 0,
@@ -1904,9 +1905,9 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 			expectedLimit:                    0,
 			expectedEnableDelayedNameRemoval: false,
 		},
-		"multiple tenant IDs provided, all have limits, one has delayed name removal": {
-			ctx:                              user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
-			expectedLimit:                    4010,
+		"multiple tenant IDs provided, all have limits, all have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2|user-3"),
+			expectedLimit:                    3010,
 			expectedEnableDelayedNameRemoval: true,
 		},
 		"multiple tenant IDs provided, one unlimited, none have delayed name removal": {
