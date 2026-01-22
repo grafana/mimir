@@ -199,6 +199,9 @@ func (m *MultiAggregatorInstanceOperator) Close() {
 	}
 
 	m.closed = true
+	if m.aggregator != nil {
+		m.aggregator.Close()
+	}
 	m.group.Close()
 }
 
