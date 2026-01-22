@@ -366,14 +366,14 @@ var groupToSingleSeriesLabelsFunc = func(_ labels.Labels) labels.Labels { return
 // If takeOwnershipOfData is false, the provided data will not be returned to a pool when this function returns,
 // and points within the data slices will not be mutated.
 func (a *Aggregator) AccumulateNextInnerSeries(data types.InstantVectorSeriesData, takeOwnershipOfData bool) error {
+	if takeOwnershipOfData {
+		defer types.PutInstantVectorSeriesData(data, a.MemoryConsumptionTracker)
+	}
+
 	thisSeriesGroup := a.remainingInnerSeriesToGroup[0]
 	a.remainingInnerSeriesToGroup = a.remainingInnerSeriesToGroup[1:]
 	if err := thisSeriesGroup.aggregation.AccumulateSeries(data, a.TimeRange, a.MemoryConsumptionTracker, a.emitAnnotationFunc, thisSeriesGroup.remainingSeriesCount, takeOwnershipOfData); err != nil {
 		return err
-	}
-
-	if takeOwnershipOfData {
-		types.PutInstantVectorSeriesData(data, a.MemoryConsumptionTracker)
 	}
 
 	thisSeriesGroup.remainingSeriesCount--
