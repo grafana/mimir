@@ -38,7 +38,7 @@ type InfoFunction struct {
 	expressionPosition posrange.PositionRange
 
 	// function to generate signature from labels without metric name
-	sigFunctionLabelsOnly func(labels.Labels) string
+	sigFunctionLabelsOnly func(labels.Labels) []byte
 	// dedicated buffer and scratch builder for sigFunctionLabelsOnly
 	sigLabelsOnlyBuf []byte
 	sigLabelsOnlyLb  labels.ScratchBuilder
@@ -165,16 +165,16 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	buf := make([]byte, 0, 1024)
 	lb := labels.NewScratchBuilder(0)
 
-	sigFunction := func(name string) func(labels.Labels) string {
+	sigFunction := func(name string) func(labels.Labels) []byte {
 		// Signature is the info metric name + identifying labels.
-		return func(lset labels.Labels) string {
+		return func(lset labels.Labels) []byte {
 			lb.Reset()
 			lb.Add(model.MetricNameLabel, name)
 			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
 				lb.Add(l.Name, l.Value)
 			})
 			lb.Sort()
-			return string(lb.Labels().Bytes(buf))
+			return lb.Labels().Bytes(buf)
 		}
 	}
 
@@ -184,18 +184,18 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	f.sigLabelsOnlyBuf = make([]byte, 0, 1024)
 	f.sigLabelsOnlyLb = labels.NewScratchBuilder(0)
 
-	f.sigFunctionLabelsOnly = func(lset labels.Labels) string {
+	f.sigFunctionLabelsOnly = func(lset labels.Labels) []byte {
 		// Signature is only the identifying labels without metric names.
 		f.sigLabelsOnlyLb.Reset()
 		lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
 			f.sigLabelsOnlyLb.Add(l.Name, l.Value)
 		})
 		f.sigLabelsOnlyLb.Sort()
-		return string(f.sigLabelsOnlyLb.Labels().Bytes(f.sigLabelsOnlyBuf))
+		return f.sigLabelsOnlyLb.Labels().Bytes(f.sigLabelsOnlyBuf)
 	}
 
 	// labels hash:function to generate signature from labels
-	sigFunctions := make(map[string]func(labels.Labels) string)
+	sigFunctions := make(map[string]func(labels.Labels) []byte)
 	// timestamp:(signature:labels + timestamp)
 	sigTimestamps := make(map[int64]map[string]labelsTime)
 	f.sigLabelsOnlyTimestamps = make(map[int64]map[string][]labels.Labels)
@@ -232,7 +232,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			if !exists {
 				sigsAtTimestamp = make(map[string]labelsTime)
 			}
-			if metricLabels, exists := sigsAtTimestamp[sig]; exists {
+			if metricLabels, exists := sigsAtTimestamp[string(sig)]; exists {
 				if metricLabels.time == origTs {
 					humanTime := time.UnixMilli(sample.T).UTC().Format("2006-01-02 15:04:05 UTC")
 					return fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", metricLabels.labels.String(), metadata.Labels.String(), sample.T, humanTime)
@@ -240,7 +240,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 					continue
 				}
 			}
-			sigsAtTimestamp[sig] = labelsTime{
+			sigsAtTimestamp[string(sig)] = labelsTime{
 				labels: metadata.Labels,
 				time:   origTs,
 			}
@@ -252,7 +252,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			if !exists {
 				sigLabelsOnlyAtTimestamp = make(map[string][]labels.Labels)
 			}
-			sigLabelsOnlyAtTimestamp[sigLabelsOnly] = append(sigLabelsOnlyAtTimestamp[sigLabelsOnly], metadata.Labels)
+			sigLabelsOnlyAtTimestamp[string(sigLabelsOnly)] = append(sigLabelsOnlyAtTimestamp[string(sigLabelsOnly)], metadata.Labels)
 			f.sigLabelsOnlyTimestamps[sample.T] = sigLabelsOnlyAtTimestamp
 		}
 
@@ -357,8 +357,8 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		}
 
 		sigLabelsOnly := f.sigFunctionLabelsOnly(innerSeries.Labels)
-		f.innerSigLabelsOnly[i] = sigLabelsOnly
-		labelSetsMap, exists := f.labelSets[sigLabelsOnly]
+		f.innerSigLabelsOnly[i] = string(sigLabelsOnly)
+		labelSetsMap, exists := f.labelSets[string(sigLabelsOnly)]
 		// If this inner series doesn't match the identifying labels of any info series, pass
 		// the original series metadata along unchanged, unless user specified label matchers.
 		if !exists {
