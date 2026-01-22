@@ -106,6 +106,11 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	if opts.EnableProjectionPushdown {
+		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
 	}
@@ -465,6 +470,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 		}, nil
 
 	case *parser.BinaryExpr:
+		if expr.VectorMatching != nil && (expr.VectorMatching.FillValues.RHS != nil || expr.VectorMatching.FillValues.LHS != nil) {
+			return nil, compat.NewNotSupportedError("'fill' modifier")
+		}
+
 		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)
 		if err != nil {
 			return nil, err

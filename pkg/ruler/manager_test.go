@@ -396,6 +396,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 
 		b, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
+		defer func() { _ = r.Body.Close() }()
 
 		err = json.Unmarshal(b, &alerts)
 		require.NoError(t, err)
@@ -447,7 +448,7 @@ func TestDefaultMultiTenantManager_WaitsToDrainPendingNotificationsOnShutdown(t 
 		require.FailNow(t, "gave up waiting for first notification request to be sent")
 	}
 
-	// Stop the manager, and queue a second notification once the manager is stopped.
+	// Queue a second notification immediately before the manager is stopped.
 	// This second notification will remain in the queue until we release the first notification's request by closing releaseReceiver below.
 	userManager.onStop = func() {
 		userManager.notifier.Send(&notifier.Alert{Labels: labels.FromStrings(labels.AlertName, "alert-2")})
@@ -595,13 +596,13 @@ func (m *managerMock) Run() {
 	defer m.running.Store(false)
 	m.running.Store(true)
 	<-m.done
-
-	if m.onStop != nil {
-		m.onStop()
-	}
 }
 
 func (m *managerMock) Stop() {
+	if m.onStop != nil {
+		m.onStop()
+	}
+
 	close(m.done)
 }
 

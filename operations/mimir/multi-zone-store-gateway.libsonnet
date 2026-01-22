@@ -14,6 +14,9 @@
 
     // Controls whether the multi (virtual) zone store-gateway should also be deployed multi-AZ.
     multi_zone_store_gateway_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
+    multi_zone_store_gateway_zone_a_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+    multi_zone_store_gateway_zone_b_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+    multi_zone_store_gateway_zone_c_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
   },
 
   local container = $.core.v1.container,
@@ -23,10 +26,10 @@
   local servicePort = $.core.v1.servicePort,
   local podAntiAffinity = $.apps.v1.deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
 
-  local isMultiAZEnabled = $._config.multi_zone_store_gateway_multi_az_enabled,
-  local isZoneAEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isZoneBEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
-  local isZoneCEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  local isMultiAZEnabled = $._config.multi_zone_store_gateway_zone_a_multi_az_enabled || $._config.multi_zone_store_gateway_zone_b_multi_az_enabled || $._config.multi_zone_store_gateway_zone_c_multi_az_enabled,
+  local isZoneAEnabled = $._config.multi_zone_store_gateway_zone_a_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = $._config.multi_zone_store_gateway_zone_b_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = $._config.multi_zone_store_gateway_zone_c_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
   assert !isMultiAZEnabled || $._config.multi_zone_store_gateway_enabled : 'store-gateway multi-AZ deployment requires store-gateway multi-zone to be enabled',
   assert !isMultiAZEnabled || $._config.multi_zone_memcached_enabled : 'store-gateway multi-AZ deployment requires memcached multi-zone to be enabled',

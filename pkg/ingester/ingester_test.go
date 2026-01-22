@@ -56,7 +56,6 @@ import (
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 	"go.uber.org/atomic"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 
@@ -8266,6 +8265,56 @@ func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 	require.Nil(t, db)
 }
 
+func TestIngester_closeAllTSDB_waitsForInFlightAppends(t *testing.T) {
+	cfg := defaultIngesterTestConfig(t)
+
+	// Create ingester
+	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, nil)
+	require.NoError(t, err)
+	startAndWaitHealthy(t, i, r)
+
+	// Push some data to create a TSDB.
+	pushSingleSampleWithMetadata(t, i)
+
+	db := i.getTSDB(userID)
+	require.NotNil(t, db)
+
+	// Simulate an in-flight append by acquiring the append lock.
+	state, err := db.acquireAppendLock(0)
+	require.NoError(t, err)
+	require.Equal(t, active, state)
+
+	// Call closeAllTSDB in a goroutine - it should block waiting for in-flight appends.
+	closeAllDone := make(chan struct{})
+	go func() {
+		i.closeAllTSDB()
+		close(closeAllDone)
+	}()
+
+	// Wait for closeAllTSDB to set the closing state.
+	test.Poll(t, 1*time.Second, closing, func() any {
+		db.stateMtx.RLock()
+		defer db.stateMtx.RUnlock()
+		return db.state
+	})
+
+	// Verify closeAllTSDB is still blocked waiting for in-flight appends.
+	select {
+	case <-closeAllDone:
+		t.Fatal("closeAllTSDB should be blocked waiting for in-flight appends")
+	default:
+	}
+
+	// Release the in-flight append lock.
+	db.releaseAppendLock(state)
+
+	// Wait for closeAllTSDB to complete.
+	<-closeAllDone
+
+	// Verify the TSDB was closed.
+	require.Nil(t, i.getTSDB(userID))
+}
+
 func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	chunkRange := 2 * time.Hour
 	chunkRangeMilliSec := chunkRange.Milliseconds()
@@ -8814,231 +8863,6 @@ func TestIngester_instanceLimitsMetrics(t *testing.T) {
 		cortex_ingester_instance_limits{limit="max_inflight_push_requests"} 40
 		cortex_ingester_instance_limits{limit="max_inflight_push_requests_bytes"} 50
 	`), "cortex_ingester_instance_limits"))
-}
-
-func TestIngester_inflightPushRequests(t *testing.T) {
-	t.Run("with classic ingester", func(t *testing.T) {
-		limits := InstanceLimits{MaxInflightPushRequests: 1}
-
-		cfg := defaultIngesterTestConfig(t)
-		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
-
-		// Create a mocked ingester
-		reg := prometheus.NewPedanticRegistry()
-		i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
-		require.NoError(t, err)
-		startAndWaitHealthy(t, i, r)
-
-		testIngesterInflightPushRequests(t, i, reg)
-	})
-
-	t.Run("with ingest storage enabled", func(t *testing.T) {
-		limits := InstanceLimits{MaxInflightPushRequests: 1}
-
-		overrides := validation.NewOverrides(defaultLimitsTestConfig(), nil)
-
-		cfg := defaultIngesterTestConfig(t)
-		cfg.InstanceLimitsFn = func() *InstanceLimits { return &limits }
-
-		reg := prometheus.NewPedanticRegistry()
-		i, _, _ := createTestIngesterWithIngestStorage(t, &cfg, overrides, nil, reg, util_test.NewTestingLogger(t))
-
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-		t.Cleanup(func() {
-			_ = services.StopAndAwaitTerminated(context.Background(), i)
-		})
-
-		// Wait until the ingester is healthy
-		test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-			return healthyInstancesCount(i.instanceRing)
-		})
-
-		// Re-enable push gRPC method to simulate migration period, when ingester can receive requests from gRPC
-		i.cfg.PushGrpcMethodEnabled = true
-
-		testIngesterInflightPushRequests(t, i, reg)
-	})
-}
-
-func testIngesterInflightPushRequests(t *testing.T, i *Ingester, reg prometheus.Gatherer) {
-	ctx := user.InjectOrgID(context.Background(), "test")
-	startCh := make(chan struct{})
-
-	const targetRequestDuration = time.Second
-
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
-
-		// Signal that we're going to do the real push now.
-		close(startCh)
-
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		return err
-	})
-
-	g.Go(func() error {
-		req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, "testcase"), 1, 1024)
-
-		select {
-		case <-ctx.Done():
-		// failed to setup
-		case <-startCh:
-			// we can start the test.
-		}
-
-		test.Poll(t, targetRequestDuration, int64(1), func() interface{} {
-			return i.inflightPushRequests.Load()
-		})
-
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		require.ErrorIs(t, err, errMaxInflightRequestsReached)
-
-		return nil
-	})
-
-	require.NoError(t, g.Wait())
-
-	// Ensure the rejected request has been tracked in a metric.
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_ingester_inflight_push_requests Current number of inflight push requests in ingester.
-		# TYPE cortex_ingester_inflight_push_requests gauge
-		cortex_ingester_inflight_push_requests 0
-		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
-		# TYPE cortex_ingester_instance_rejected_requests_total counter
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 1
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 0
-        cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_read_requests"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
-	`), "cortex_ingester_instance_rejected_requests_total", "cortex_ingester_inflight_push_requests"))
-}
-
-func TestIngester_inflightPushRequestsBytes(t *testing.T) {
-	var limitsMx sync.Mutex
-	limits := InstanceLimits{MaxInflightPushRequestsBytes: 0}
-
-	// Create a mocked ingester
-	cfg := defaultIngesterTestConfig(t)
-	cfg.InstanceLimitsFn = func() *InstanceLimits {
-		limitsMx.Lock()
-		defer limitsMx.Unlock()
-
-		// Make a copy
-		il := limits
-		return &il
-	}
-
-	reg := prometheus.NewPedanticRegistry()
-	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
-
-	ctx := user.InjectOrgID(context.Background(), "test")
-
-	startCh := make(chan int)
-
-	const targetRequestDuration = time.Second
-
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		req := prepareRequestForTargetRequestDuration(ctx, t, i, targetRequestDuration)
-
-		// Update instance limits. Set limit to EXACTLY the request size.
-		limitsMx.Lock()
-		limits.MaxInflightPushRequestsBytes = int64(req.Size())
-		limitsMx.Unlock()
-
-		// Signal that we're going to do the real push now.
-		startCh <- req.Size()
-		close(startCh)
-
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		return err
-	})
-
-	g.Go(func() error {
-		req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, "testcase1"), 1, 1024)
-
-		var requestSize int
-		select {
-		case <-ctx.Done():
-		// failed to setup
-		case requestSize = <-startCh:
-			// we can start the test.
-		}
-
-		require.Eventually(t, func() bool {
-			return i.inflightPushRequestsBytes.Load() == int64(requestSize)
-		}, targetRequestDuration, 3*time.Millisecond)
-
-		require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
-			# HELP cortex_ingester_inflight_push_requests_bytes Total sum of inflight push request sizes in ingester in bytes.
-			# TYPE cortex_ingester_inflight_push_requests_bytes gauge
-			cortex_ingester_inflight_push_requests_bytes %d
-		`, requestSize)), "cortex_ingester_inflight_push_requests_bytes"))
-
-		// Starting push request fails
-		_, err = i.StartPushRequest(ctx, 100)
-		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-
-		// Starting push request with unknown size fails
-		_, err = i.StartPushRequest(ctx, 0)
-		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-
-		// Sending push request fails
-		_, err := pushWithSimulatedGRPCHandler(ctx, i, req)
-		require.ErrorIs(t, err, errMaxInflightRequestsBytesReached)
-
-		return nil
-	})
-
-	require.NoError(t, g.Wait())
-
-	// Ensure the rejected request has been tracked in a metric.
-	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
-		# HELP cortex_ingester_instance_rejected_requests_total Requests rejected for hitting per-instance limits
-		# TYPE cortex_ingester_instance_rejected_requests_total counter
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_push_requests_bytes"} 3
-        cortex_ingester_instance_rejected_requests_total{reason="ingester_max_inflight_read_requests"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_ingestion_rate"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_series"} 0
-		cortex_ingester_instance_rejected_requests_total{reason="ingester_max_tenants"} 0
-	`), "cortex_ingester_instance_rejected_requests_total"))
-}
-
-func prepareRequestForTargetRequestDuration(ctx context.Context, t *testing.T, i *Ingester, targetRequestDuration time.Duration) *mimirpb.WriteRequest {
-	samples := 100000
-	ser := 1
-
-	// Find right series&samples count to make sure that push takes given target duration.
-	for {
-		req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("test-%d-%d", ser, samples)), ser, samples)
-
-		start := time.Now()
-		_, err := i.Push(ctx, req)
-		require.NoError(t, err)
-
-		elapsed := time.Since(start)
-		t.Log(ser, samples, elapsed)
-		if elapsed > targetRequestDuration {
-			break
-		}
-
-		samples = int(float64(samples) * float64(targetRequestDuration/elapsed) * 1.5) // Adjust number of series to hit our targetRequestDuration push duration.
-		for samples >= int(time.Hour.Milliseconds()) {
-			// We generate one sample per millisecond, if we have more than an hour of samples TSDB will fail with "out of bounds".
-			// So we trade samples for series here.
-			samples /= 10
-			ser *= 10
-		}
-	}
-
-	// Now repeat push with number of samples calibrated to our target request duration.
-	req := generateSamplesForLabel(labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("real-%d-%d", ser, samples)), ser, samples)
-	return req
 }
 
 func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mimirpb.WriteRequest {

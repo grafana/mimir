@@ -92,6 +92,7 @@ message VectorMatching {
   repeated string matchingLabels = 2;
   bool on = 3;
   repeated string include = 4;
+  VectorMatchFillValues fillValues = 5 [(gogoproto.nullable) = false];
 }
 
 message FunctionCallDetails {
@@ -142,6 +143,8 @@ message VectorSelectorDetails {
   bool returnSampleTimestamps = 5;
   bool skipHistogramBuckets = 6;
   bool smoothed = 7;
+  bool projectionInclude = 8;
+  repeated string projectionLabels = 9;
 }
 
 message MatrixSelectorDetails {
@@ -160,6 +163,8 @@ message MatrixSelectorDetails {
   bool smoothed = 7;
   bool anchored = 8;
   bool counterAware = 9;
+  bool projectionInclude = 10;
+  repeated string projectionLabels = 11;
 }
 
 message SubqueryDetails {
@@ -193,3 +198,10 @@ message DeduplicateAndMergeDetails {
 }
 
 message DropNameDetails {}
+
+message VectorMatchFillValues {
+  double rhs = 1;
+  double lhs = 2;
+  bool rhsSet = 3;
+  bool lhsSet = 4;
+}

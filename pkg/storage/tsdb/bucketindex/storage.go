@@ -33,6 +33,14 @@ func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvi
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
+	// wrapCorruptedError wraps err with ErrIndexCorrupted unless err is a context error.
+	wrapCorruptedError := func(err error) error {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		return fmt.Errorf("%w: %w", ErrIndexCorrupted, err)
+	}
+
 	userBkt := bucket.NewUserBucketClient(userID, bkt, cfgProvider)
 
 	// Get the bucket index.
@@ -48,7 +56,7 @@ func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvi
 	// Read all the content.
 	gzipReader, err := gzip.NewReader(reader)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrIndexCorrupted, err)
+		return nil, wrapCorruptedError(err)
 	}
 	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close bucket index gzip reader")
 
@@ -56,7 +64,7 @@ func ReadIndex(ctx context.Context, bkt objstore.Bucket, userID string, cfgProvi
 	index := &Index{}
 	d := json.NewDecoder(gzipReader)
 	if err := d.Decode(index); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrIndexCorrupted, err)
+		return nil, wrapCorruptedError(err)
 	}
 
 	return index, nil

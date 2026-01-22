@@ -571,8 +571,6 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
-			// enable response streaming
-			reqProcessor.streamingEnabled = true
 			// make sure responses don't get rejected as too large
 			reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
@@ -611,7 +609,6 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 	t.Run("should abort streaming if query is cancelled", func(t *testing.T) {
 		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
-		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
 		recvCount := atomic.NewInt64(0)
@@ -657,7 +654,6 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 	t.Run("should finish streaming if worker context is canceled", func(t *testing.T) {
 		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
-		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
 		recvCount := atomic.NewInt64(0)
@@ -700,7 +696,6 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 	t.Run("should finish streaming if scheduler client returns a non-cancellation error", func(t *testing.T) {
 		sp, loopClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
-		sp.streamingEnabled = true
 		sp.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
 		recvCount := atomic.NewInt64(0)
@@ -744,8 +739,6 @@ func TestSchedulerProcessor_ResponseStream(t *testing.T) {
 
 	t.Run("should retry streamed responses", func(t *testing.T) {
 		reqProcessor, processClient, httpRequestHandler, _, frontend := prepareSchedulerProcessor(t, true)
-		// enable response streaming
-		reqProcessor.streamingEnabled = true
 		// make sure responses don't get rejected as too large
 		reqProcessor.maxMessageSize = 5 * responseStreamingBodyChunkSizeBytes
 
