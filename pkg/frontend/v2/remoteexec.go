@@ -59,19 +59,6 @@ type ProtobufFrontend interface {
 //
 // It receives the nodes to evaluate, prepares the request for the frontend to send to queriers, and buffers
 // any received messages so they may be read by the corresponding remote execution operators in any order.
-//
-// Note that there are two kinds of indices here:
-//   - The stream indices reflect the order in which the Create...Execution methods are called (ie. the index into nodeIndexToStreamState).
-//   - The node indices are a way to identify which node in the query plan was requested in the serialized (Protobuf) form of the
-//     query plan.
-//
-// For example, if the expression was sum(foo) + max(bar), and the group evaluates both the sum(foo) and the max(bar) nodes:
-//
-//   - When CreateInstantVectorExecution for sum(foo) is called, this would create a stream with index 0
-//   - When CreateInstantVectorExecution for max(bar) is called, this would create a stream with index 1
-//   - When sendRequest is called, the sum and max nodes and their children are serialized as Protobuf and ToEncodedPlan
-//     returns the indices of the sum and max nodes in that encoded form. These are the values used by the querier to identify
-//     which node the results are for when sending results back to the query-frontend.
 type RemoteExecutionGroupEvaluator struct {
 	frontend                 ProtobufFrontend
 	cfg                      Config
@@ -79,10 +66,9 @@ type RemoteExecutionGroupEvaluator struct {
 	queryParameters          *planning.QueryParameters
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	stream                 ResponseStream
-	nodeStreamState        []*remoteExecutionNodeStreamState
-	requestSent            bool
-	nodeIndexToStreamState map[int64]*remoteExecutionNodeStreamState // Only populated once request is sent.
+	stream      ResponseStream
+	nodeStreams *remoteExecutionNodeStreamsCollection
+	requestSent bool
 }
 
 type remoteExecutionNodeStreamState struct {
@@ -106,6 +92,7 @@ func NewRemoteExecutionGroupEvaluator(frontend ProtobufFrontend, cfg Config, eag
 		eagerLoad:                eagerLoad,
 		queryParameters:          queryParameters,
 		memoryConsumptionTracker: memoryConsumptionTracker,
+		nodeStreams:              &remoteExecutionNodeStreamsCollection{},
 	}
 }
 
@@ -114,13 +101,7 @@ func (g *RemoteExecutionGroupEvaluator) enqueueEvaluation(node planning.Node, ti
 		return -1, errRequestAlreadySent
 	}
 
-	g.nodeStreamState = append(g.nodeStreamState, &remoteExecutionNodeStreamState{
-		node:      node,
-		timeRange: timeRange,
-		buffer:    &responseStreamBuffer{},
-	})
-
-	return remoteExecutionNodeStreamIndex(len(g.nodeStreamState) - 1), nil
+	return g.nodeStreams.addNodeStream(node, timeRange), nil
 }
 
 func (g *RemoteExecutionGroupEvaluator) CreateScalarExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (remoteexec.ScalarRemoteExecutionResponse, error) {
@@ -157,14 +138,14 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 
 	g.requestSent = true
 
-	if g.allNodesFinished() {
+	if g.nodeStreams.allFinished() {
 		// All nodes were closed already, nothing to do.
 		return nil
 	}
 
-	nodes := make([]planning.Node, 0, len(g.nodeStreamState))
+	nodes := make([]planning.Node, 0, len(g.nodeStreams.streams))
 	version := planning.QueryPlanVersionZero
-	for _, state := range g.nodeStreamState {
+	for _, state := range g.nodeStreams.streams {
 		nodes = append(nodes, state.node)
 		version = max(version, planning.MinimumRequiredPlanVersion(state.node))
 	}
@@ -186,22 +167,19 @@ func (g *RemoteExecutionGroupEvaluator) sendRequest(ctx context.Context) error {
 	}
 
 	overallQueriedTimeRange := planning.NoDataQueried()
-	g.nodeIndexToStreamState = make(map[int64]*remoteExecutionNodeStreamState, len(g.nodeStreamState))
+	g.nodeStreams.recordRequestNodeIndices(nodeIndices)
 
-	for streamIdx, nodeIdx := range nodeIndices {
-		state := g.nodeStreamState[streamIdx]
-		state.nodeIndex = nodeIdx
-		g.nodeIndexToStreamState[nodeIdx] = state
-		timeRange := state.timeRange
+	for _, stream := range g.nodeStreams.streams {
+		timeRange := stream.timeRange
 
-		queriedTimeRange, err := state.node.QueriedTimeRange(timeRange, g.cfg.LookBackDelta)
+		queriedTimeRange, err := stream.node.QueriedTimeRange(timeRange, g.cfg.LookBackDelta)
 		if err != nil {
 			return err
 		}
 
 		overallQueriedTimeRange = overallQueriedTimeRange.Union(queriedTimeRange)
 
-		req.Nodes = append(req.Nodes, querierpb.EvaluationNode{NodeIndex: nodeIdx, TimeRange: planning.ToEncodedTimeRange(timeRange)})
+		req.Nodes = append(req.Nodes, querierpb.EvaluationNode{NodeIndex: stream.nodeIndex, TimeRange: planning.ToEncodedTimeRange(timeRange)})
 	}
 
 	stats := stats.FromContext(ctx)
@@ -226,7 +204,7 @@ func (g *RemoteExecutionGroupEvaluator) getNextMessageForStream(ctx context.Cont
 		return nil, nil, errRequestNotSent
 	}
 
-	nodeStreamState := g.nodeStreamState[nodeStreamIndex]
+	nodeStreamState := g.nodeStreams.streams[nodeStreamIndex]
 	if nodeStreamState.finished {
 		return nil, nil, fmt.Errorf("can't read next message for node stream at index %v, as it is already finished", nodeStreamState.nodeIndex)
 	}
@@ -300,11 +278,11 @@ func (g *RemoteExecutionGroupEvaluator) getNodeStreamState(resp *querierpb.Evalu
 		return nil, fmt.Errorf("getNodeStreamState: unexpected message type %T, this is a bug", msg)
 	}
 
-	if nodeState, ok := g.nodeIndexToStreamState[idx]; ok {
+	if nodeState, ok := g.nodeStreams.nodeStreamForRequestNodeIndex(idx); ok {
 		return nodeState, nil
 	}
 
-	return nil, fmt.Errorf("received message of type %T for node with index %v, expected nodes with indices %v", resp.Message, idx, slices.Collect(maps.Keys(g.nodeIndexToStreamState)))
+	return nil, fmt.Errorf("received message of type %T for node with index %v, expected nodes with indices %v", resp.Message, idx, g.nodeStreams.knownNodeIndices())
 }
 
 func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
@@ -321,13 +299,13 @@ func (g *RemoteExecutionGroupEvaluator) readNextMessage(ctx context.Context) (*f
 }
 
 func (g *RemoteExecutionGroupEvaluator) finalizeStream(ctx context.Context, nodeStreamIndex remoteExecutionNodeStreamIndex) (*annotations.Annotations, stats.Stats, error) {
-	nodeState := g.nodeStreamState[nodeStreamIndex]
+	nodeState := g.nodeStreams.streams[nodeStreamIndex]
 	if nodeState.finished {
 		return nil, stats.Stats{}, fmt.Errorf("can't finalize node stream index %v, as it is already finished", nodeState.nodeIndex)
 	}
 
 	g.markStreamAsFinished(nodeStreamIndex)
-	if !g.allNodesFinished() {
+	if !g.nodeStreams.allFinished() {
 		// We'll return the actual evaluation information when the last node calls Finalize().
 		return nil, stats.Stats{}, nil
 	}
@@ -369,26 +347,16 @@ func (g *RemoteExecutionGroupEvaluator) tryToReadEvaluationCompleted(ctx context
 	return true, annos, stats, nil
 }
 
-func (g *RemoteExecutionGroupEvaluator) allNodesFinished() bool {
-	for _, state := range g.nodeStreamState {
-		if !state.finished {
-			return false
-		}
-	}
-
-	return true
-}
-
 func (g *RemoteExecutionGroupEvaluator) closeStream(nodeStreamIndex remoteExecutionNodeStreamIndex) {
 	g.markStreamAsFinished(nodeStreamIndex)
 
-	if g.allNodesFinished() {
+	if g.nodeStreams.allFinished() {
 		g.onAllStreamsFinished()
 	}
 }
 
 func (g *RemoteExecutionGroupEvaluator) markStreamAsFinished(nodeStreamIndex remoteExecutionNodeStreamIndex) {
-	nodeState := g.nodeStreamState[nodeStreamIndex]
+	nodeState := g.nodeStreams.streams[nodeStreamIndex]
 	if nodeState.finished {
 		return
 	}
@@ -402,6 +370,67 @@ func (g *RemoteExecutionGroupEvaluator) onAllStreamsFinished() {
 		g.stream.Close()
 		g.stream = nil
 	}
+}
+
+// remoteExecutionNodeStreamsCollection manages a set of nodes and their state in a single remote execution group.
+//
+// Note that there are two kinds of indices here:
+//   - The stream indices reflect the order in which the Create...Execution methods, which call addNodeStream, are called (ie. the index into streams).
+//   - The request node indices are a way to identify which node in the query plan was requested in the serialized (Protobuf) form of the
+//     query plan (ie. the keys in requestNodeIndexToStreamState).
+//
+// For example, if the expression was sum(foo) + max(bar), and the group evaluates both the sum(foo) and the max(bar) nodes:
+//
+//   - When CreateInstantVectorExecution for sum(foo) is called, this would create a stream with index 0
+//   - When CreateInstantVectorExecution for max(bar) is called, this would create a stream with index 1
+//   - When sendRequest is called, the sum and max nodes and their children are serialized as Protobuf and ToEncodedPlan
+//     returns the indices of the sum and max nodes in that encoded form. These are the values used by the querier to identify
+//     which node the results are for when sending results back to the query-frontend.
+type remoteExecutionNodeStreamsCollection struct {
+	streams                       []*remoteExecutionNodeStreamState
+	requestNodeIndexToStreamState map[int64]*remoteExecutionNodeStreamState
+}
+
+func (s *remoteExecutionNodeStreamsCollection) addNodeStream(node planning.Node, timeRange types.QueryTimeRange) remoteExecutionNodeStreamIndex {
+	idx := remoteExecutionNodeStreamIndex(len(s.streams))
+
+	s.streams = append(s.streams, &remoteExecutionNodeStreamState{
+		node:      node,
+		timeRange: timeRange,
+		buffer:    &responseStreamBuffer{},
+	})
+
+	return idx
+}
+
+func (s *remoteExecutionNodeStreamsCollection) recordRequestNodeIndices(nodeIndices []int64) {
+	s.requestNodeIndexToStreamState = make(map[int64]*remoteExecutionNodeStreamState, len(s.streams))
+
+	for streamIdx, nodeIdx := range nodeIndices {
+		state := s.streams[streamIdx]
+		state.nodeIndex = nodeIdx
+		s.requestNodeIndexToStreamState[nodeIdx] = state
+	}
+}
+
+func (s *remoteExecutionNodeStreamsCollection) nodeStreamForRequestNodeIndex(nodeIndex int64) (*remoteExecutionNodeStreamState, bool) {
+	stream, ok := s.requestNodeIndexToStreamState[nodeIndex]
+
+	return stream, ok
+}
+
+func (s *remoteExecutionNodeStreamsCollection) knownNodeIndices() []int64 {
+	return slices.Collect(maps.Keys(s.requestNodeIndexToStreamState))
+}
+
+func (s *remoteExecutionNodeStreamsCollection) allFinished() bool {
+	for _, state := range s.streams {
+		if !state.finished {
+			return false
+		}
+	}
+
+	return true
 }
 
 type ResponseStream interface {

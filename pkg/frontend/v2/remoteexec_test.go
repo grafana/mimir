@@ -1315,25 +1315,25 @@ func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
 }
 
 func requireNoBufferedDataForAllNodes(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
-	for idx, nodeState := range evaluator.nodeStreamState {
+	for idx, nodeState := range evaluator.nodeStreams.streams {
 		require.Falsef(t, nodeState.buffer.Any(), "expected node at index %v to have nothing buffered, but it has %v buffered messages", idx, nodeState.buffer.length)
 	}
 }
 
 func requireNoBufferedDataForNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node) {
 	nodeIndex := findNode(t, evaluator, node)
-	nodeState := evaluator.nodeStreamState[nodeIndex]
+	nodeState := evaluator.nodeStreams.streams[nodeIndex]
 	require.Falsef(t, nodeState.buffer.Any(), "expected node at index %v to have nothing buffered, but it has %v buffered messages", nodeIndex, nodeState.buffer.length)
 }
 
 func requireBufferedDataForNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node, expectedLength int) {
 	nodeIndex := findNode(t, evaluator, node)
-	nodeState := evaluator.nodeStreamState[nodeIndex]
+	nodeState := evaluator.nodeStreams.streams[nodeIndex]
 	require.Equalf(t, expectedLength, nodeState.buffer.length, "expected node at index %v to have nothing buffered, but it has %v buffered messages", nodeIndex, nodeState.buffer.length)
 }
 
 func findNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node) remoteExecutionNodeStreamIndex {
-	for idx, nodeState := range evaluator.nodeStreamState {
+	for idx, nodeState := range evaluator.nodeStreams.streams {
 		if nodeState.node == node {
 			return remoteExecutionNodeStreamIndex(idx)
 		}
