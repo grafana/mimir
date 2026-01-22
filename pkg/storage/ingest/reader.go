@@ -1035,11 +1035,6 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 
 	defer func() {
 		r.commitRequestsLatency.Observe(time.Since(startTime).Seconds())
-
-		if returnErr != nil {
-			level.Error(r.logger).Log("msg", "failed to commit last consumed offset to Kafka", "err", returnErr, "offset", offset)
-			r.commitFailuresTotal.Inc()
-		}
 	}()
 
 	// Commit the last consumed offset.
@@ -1048,9 +1043,14 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 
 	committed, err := r.admClient.CommitOffsets(ctx, r.consumerGroup, toCommit)
 	if err != nil {
+		level.Error(r.logger).Log("msg", "failed to commit last consumed offset to Kafka", "err", err, "offset", offset)
+		r.commitFailuresTotal.Inc()
 		return err
 	} else if !committed.Ok() {
-		return committed.Error()
+		err = committed.Error()
+		level.Error(r.logger).Log("msg", "failed to commit last consumed offset to Kafka", "err", err, "offset", offset)
+		r.commitFailuresTotal.Inc()
+		return err
 	}
 
 	committedOffset, _ := committed.Lookup(r.kafkaCfg.Topic, r.partitionID)
