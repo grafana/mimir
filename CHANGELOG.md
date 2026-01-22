@@ -135,7 +135,8 @@
 * [BUGFIX] Query-frontend: Fix `step()` duration expression returning 1000x larger value. #13920
 * [BUGFIX] Store-gateway: Fix parent-child relationship in LabelNames and LabelValues trace spans. #13932
 * [BUGFIX] MQE: Map remote execution storage errors correctly. #13944
-* [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108
+* [BUGFIX] Ingester: Fix race condition during shutdown where TSDBs could be closed while appends are still in progress. #14094 #14126
+* [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108 #14125
 
 ### Mixin
 
