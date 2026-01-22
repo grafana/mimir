@@ -353,7 +353,7 @@ func (e labelsNotSortedError) soft() {}
 // Ensure that labelsNotSortedError is an ingesterError.
 var _ ingesterError = labelsNotSortedError{}
 
-// Ensure that labelsNotSortedError is an softError.
+// Ensure that labelsNotSortedError is a softError.
 var _ softError = labelsNotSortedError{}
 
 // perMetricMetadataLimitReachedError is an ingesterError indicating that a per-metric metadata limit has been reached.
