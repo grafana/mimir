@@ -320,7 +320,7 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodesExaminedCount: 1,
 		},
 		"same selector but have both supported aggregation and unsupported count_values aggregation": {
-			expr:                                `sum(foo) + quantile(0.99, foo)`,
+			expr:                                `sum(foo) + count_values("value", foo)`,
 			expectUnchanged:                     true,
 			expectedDuplicateNodesExaminedCount: 1,
 		},

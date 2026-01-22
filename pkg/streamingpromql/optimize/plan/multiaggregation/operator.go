@@ -85,8 +85,9 @@ func (m *MultiAggregatorGroupEvaluator) ReadNextSeries(ctx context.Context) erro
 		return err
 	}
 
+	lastIndex := len(m.instances) - 1
 	for idx, instance := range m.instances {
-		isLastInstance := idx == len(m.instances)-1
+		isLastInstance := idx == lastIndex
 		if err := instance.aggregator.AccumulateNextInnerSeries(data, isLastInstance); err != nil {
 			return err
 		}
