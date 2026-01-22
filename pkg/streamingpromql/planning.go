@@ -605,10 +605,14 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 				vectorSelector.ReturnSampleTimestamps = true
 			}
 		case functions.FUNCTION_INFO:
-			vectorSelector, ok := args[1].(*core.VectorSelector)
-			if ok {
-				// Override float values to reflect original timestamps.
-				vectorSelector.ReturnSampleTimestampsPreserveHistograms = true
+			// The InsertOmittedTargetInfoSelector AST pass ensures there are always 2 arguments.
+			// Check len(args) >= 2 for safety in case the pass doesn't run (e.g., in tests).
+			if len(args) >= 2 {
+				vectorSelector, ok := args[1].(*core.VectorSelector)
+				if ok {
+					// Override float values to reflect original timestamps.
+					vectorSelector.ReturnSampleTimestampsPreserveHistograms = true
+				}
 			}
 		}
 
