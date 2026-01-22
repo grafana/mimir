@@ -110,6 +110,53 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.metrics.responsesTotal.WithLabelValues(downstreamRes.backend.Name(), r.Method, p.route.RouteName).Inc()
 }
 
+// ServeHTTPPassthrough forwards the request directly to the preferred backend without fan-out.
+// This is used for endpoints we don't want to mirror (e.g., OTLP, Influx).
+func (p *ProxyEndpoint) ServeHTTPPassthrough(w http.ResponseWriter, r *http.Request) {
+	logger, ctx := spanlogger.New(r.Context(), p.logger, tracer, "Passthrough proxied request")
+	defer logger.Finish()
+
+	logger.SetSpanAndLogTag("path", r.URL.Path)
+	logger.SetSpanAndLogTag("method", r.Method)
+	logger.SetSpanAndLogTag("backend", p.preferredBackend.Name())
+
+	level.Debug(logger).Log("msg", "Passing through request to preferred backend")
+
+	// If no preferred backend, return error
+	if p.preferredBackend == nil {
+		level.Error(logger).Log("msg", "No preferred backend configured for passthrough")
+		http.Error(w, "no preferred backend configured", http.StatusInternalServerError)
+		return
+	}
+
+	// Forward request directly to preferred backend
+	elapsed, status, body, err := p.preferredBackend.ForwardRequest(ctx, r, r.Body)
+
+	// Track metrics
+	p.metrics.requestDuration.WithLabelValues(p.preferredBackend.Name(), r.Method, "passthrough", strconv.Itoa(status)).Observe(elapsed.Seconds())
+
+	if err != nil {
+		level.Error(logger).Log("msg", "Passthrough request failed", "backend", p.preferredBackend.Name(), "err", err)
+		p.metrics.errorsTotal.WithLabelValues(p.preferredBackend.Name(), r.Method, "passthrough", "forward_error").Inc()
+
+		// Determine appropriate status code
+		statusCode := http.StatusBadGateway
+		if status > 0 {
+			statusCode = status
+		}
+		http.Error(w, fmt.Sprintf("failed to forward request: %v", err), statusCode)
+		return
+	}
+
+	// Return the backend response to client
+	w.WriteHeader(status)
+	if _, writeErr := w.Write(body); writeErr != nil {
+		level.Warn(logger).Log("msg", "Unable to write response", "err", writeErr)
+	}
+
+	p.metrics.responsesTotal.WithLabelValues(p.preferredBackend.Name(), r.Method, "passthrough").Inc()
+}
+
 func (p *ProxyEndpoint) executeBackendRequests(ctx context.Context, req *http.Request, body []byte, resCh chan *backendResponse, logger *spanlogger.SpanLogger) {
 	var (
 		wg              = sync.WaitGroup{}
