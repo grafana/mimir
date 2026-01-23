@@ -100,7 +100,7 @@ func (s *Spawner) plan() {
 	}
 
 	// TODO: Can track how many were actually accepted with metrics
-	_, _, err := s.planTracker.Offer(
+	accepted, _, err := s.planTracker.Offer(
 		jobs,
 		func(_ struct{}, _ struct{}) bool {
 			return false
@@ -111,7 +111,8 @@ func (s *Spawner) plan() {
 		return
 	}
 
-	for _, job := range jobs {
+	// Only update planMap for accepted jobs. The Offer method compacts accepted jobs to the front of the slice.
+	for _, job := range jobs[:accepted] {
 		s.planMap[job.id] = now
 	}
 }

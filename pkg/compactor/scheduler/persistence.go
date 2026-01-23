@@ -96,6 +96,12 @@ func deserializeCompactionJob(b []byte) (*Job[*CompactionJob], error) {
 	if err != nil {
 		return nil, err
 	}
+	if stored.Job == nil {
+		return nil, errors.New("corrupted data: missing Job field")
+	}
+	if stored.Info == nil {
+		return nil, errors.New("corrupted data: missing Info field")
+	}
 	job := &Job[*CompactionJob]{
 		value: &CompactionJob{
 			blocks:  stored.Job.BlockIds,

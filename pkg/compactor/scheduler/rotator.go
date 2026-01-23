@@ -185,7 +185,8 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 
 	tenantState, ok = r.tenantStateMap[tenant]
 	if !ok {
-		return false, nil
+		// Tenant was removed while switching locks, but cancellation already succeeded
+		return canceled, nil
 	}
 
 	if tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
