@@ -15,8 +15,8 @@ import (
 	"github.com/thanos-io/objstore"
 )
 
-// BucketDecbufFactory creates new in-memory decoding buffer instances
-// by fetching data directly from object storage.
+// BucketDecbufFactory creates new bucket-reader-backed Decbuf instances
+// for a specific index-header file in object storage
 type BucketDecbufFactory struct {
 	ctx        context.Context
 	bkt        objstore.BucketReader
@@ -32,10 +32,6 @@ func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, obje
 	}
 }
 
-// NewDecbufAtChecked returns a new bucket-backed decoding buffer positioned at offset + 4 bytes.
-// It expects the first 4 bytes after offset to hold the big endian encoded content length, followed
-// by the contents and the expected checksum. This method checks the CRC of the content and will
-// return an error Decbuf if it does not match the expected CRC.
 func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
 	// At this point we don't know the length of the section (length is -1).
 	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset), -1)
@@ -92,17 +88,10 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 	return d
 }
 
-// NewDecbufAtUnchecked returns a new bucket-backed decoding buffer positioned at offset + 4 bytes.
-// It expects the first 4 bytes after offset to hold the big endian encoded content length, followed
-// by the contents and the expected checksum. This method does NOT compute the CRC of the content.
-// To check the CRC of the content, use NewDecbufAtChecked.
 func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 	return bf.NewDecbufAtChecked(offset, nil)
 }
 
-// NewRawDecbuf returns a new bucket-backed decoding buffer positioned at the beginning of the file,
-// spanning the entire length of the file. It does not make any assumptions about the contents of the
-// file, nor does it perform any form of integrity check.
 func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 	const offset = int64(0)
 
@@ -139,13 +128,14 @@ func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 }
 
 // Close cleans up resources associated with this BucketDecbufFactory.
-// For bucket-based implementation, there are no resources to clean up.
+// For bucket-based implementation, there are no resources to clean up;
+// the bucket client lifecycle is managed by parent components.
 func (bf *BucketDecbufFactory) Close() error {
 	// Nothing to do for bucket-based implementation
 	return nil
 }
 
-// streamReader wraps an io.ReadCloser and provides the reader interface for streaming data.
+// streamReader implements BufReader with a bucket-based io.ReadCloser
 type streamReader struct {
 	rc     io.ReadCloser
 	buf    *bufio.Reader
@@ -188,7 +178,11 @@ func (r *streamReader) ResetAt(off int) error {
 	}
 
 	// Objstore hides the io.ReadSeekCloser, that the underlying bucket clients implement.
-	// So we reimplement it ourselves: close the r.rc, re-read the object from new offset, reset the r.buf and the rest of the state.
+	// So we reimplement it ourselves:
+	// 1. Close the r.rc
+	// 2. Re-read the object from new offset
+	// 3. Reset the r.buf and the rest of the state.
+	// TODO: evaluate if we need a more efficient approach
 	if err := r.seekReader(off); err != nil {
 		return err
 	}
@@ -204,7 +198,7 @@ func (r *streamReader) Skip(l int) error {
 		return ErrInvalidSize
 	}
 
-	// TODO(v): how to make sure we don't trash the cache when skipping
+	// TODO: how to make sure we don't trash the cache when skipping
 	n, err := r.buf.Discard(l)
 	if n > 0 {
 		r.pos += n

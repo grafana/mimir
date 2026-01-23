@@ -10952,7 +10952,7 @@
                       "required": false,
                       "desc": "Enable reading TSDB index-header sections from object storage instead of loading to and reading from local disk.",
                       "fieldValue": null,
-                      "fieldDefaultValue": true,
+                      "fieldDefaultValue": false,
                       "fieldFlag": "bucket-reader.enabled",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
