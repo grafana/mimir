@@ -467,8 +467,14 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	}
 	sp.Limit = limit
 
+	// Wrap with MemoryTrackingSeriesSet after merging to ensure memory is decreased only once per unique series.
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
 	if len(queriers) == 1 {
-		return queriers[0].Select(ctx, true, sp, matchers...)
+		return series.NewMemoryTrackingSeriesSet(queriers[0].Select(ctx, true, sp, matchers...), memoryTracker)
 	}
 
 	sets := make(chan storage.SeriesSet, len(queriers))
@@ -488,11 +494,6 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	// Wrap with MemoryTrackingSeriesSet after merging to ensure memory is decreased only once per unique series.
-	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
 	// We have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
 	return series.NewMemoryTrackingSeriesSet(mq.mergeSeriesSets(result), memoryTracker)
