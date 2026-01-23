@@ -1629,6 +1629,12 @@ func (i *Ingester) pushSamplesToAppender(
 			for _, h := range ts.Histograms {
 				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, h.Timestamp, ts.Labels)
 			}
+			// Count failed exemplars since they won't reach the exemplar processing code.
+			stats.failedExemplarsCount += len(ts.Exemplars)
+			// For series without samples or histograms, ensure the validation error is still reported.
+			if len(ts.Samples) == 0 && len(ts.Histograms) == 0 {
+				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, 0, ts.Labels)
+			}
 			continue
 		}
 
