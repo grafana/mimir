@@ -288,6 +288,13 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 	}
 	p.TimeSeries = TimeseriesFromPool()
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
+
+	// Defense-in-depth: verify TimeSeries is clean before unmarshalling.
+	// This complements the check in TimeseriesFromPool().
+	if len(p.Labels) > 0 || len(p.Samples) > 0 || len(p.Histograms) > 0 || len(p.Exemplars) > 0 || p.CreatedTimestamp != 0 {
+		panic("attempting to unmarshal into dirty TimeSeries: this indicates a bug in pool management")
+	}
+
 	if symbols != nil {
 		return p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName)
 	}
@@ -569,7 +576,18 @@ func ReuseSliceOnly(ts []PreallocTimeseries) {
 // TimeseriesFromPool retrieves a pointer to a TimeSeries from a sync.Pool.
 // ReuseTimeseries should be called once done, unless ReuseSlice was called on the slice that contains this TimeSeries.
 func TimeseriesFromPool() *TimeSeries {
-	return timeSeriesPool.Get().(*TimeSeries)
+	ts := timeSeriesPool.Get().(*TimeSeries)
+
+	// Panic if the pool returns a TimeSeries that wasn't properly cleaned.
+	// This indicates a bug where ReuseTimeseries was called on a TimeSeries
+	// that is still in use elsewhere (e.g., due to incorrect pool management).
+	// Silent corruption from dirty pool objects is very hard to diagnose,
+	// so we fail fast here to surface such bugs immediately.
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 {
+		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
+	}
+
+	return ts
 }
 
 // ReuseTimeseries puts the timeseries back into a sync.Pool for reuse.
