@@ -428,7 +428,7 @@ func ChildrenIter(node Node) func(func(Node) bool) {
 			yield(n.VectorSelector)
 		case *StepInvariantExpr:
 			yield(n.Expr)
-		case *NumberLiteral, *StringLiteral, *VectorSelector:
+		case *NumberLiteral, *StringLiteral, *VectorSelector, nil:
 			// nothing to do
 		default:
 			panic(fmt.Errorf("promql.ChildrenIter: unhandled node type %T", node))
