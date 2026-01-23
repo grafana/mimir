@@ -766,6 +766,7 @@ func copyHistogram(src Histogram) Histogram {
 		dstZeroCount = &Histogram_ZeroCountFloat{ZeroCountFloat: src.GetZeroCountFloat()}
 	}
 
+	//exhaustruct:enforce
 	return Histogram{
 		Count:          dstCount,
 		Sum:            src.Sum,
@@ -780,6 +781,7 @@ func copyHistogram(src Histogram) Histogram {
 		PositiveCounts: slices.Clone(src.PositiveCounts),
 		ResetHint:      src.ResetHint,
 		Timestamp:      src.Timestamp,
+		CustomValues:   slices.Clone(src.CustomValues),
 	}
 }
 

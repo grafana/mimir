@@ -15,6 +15,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -123,16 +124,20 @@ func TestDeepCopyTimeseries(t *testing.T) {
 			},
 			Histograms: []Histogram{
 				{
-					Timestamp:      4*time.Minute.Milliseconds() - 1,
 					Count:          &Histogram_CountInt{CountInt: 35},
 					Sum:            108,
-					ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: 2},
+					Schema:         histogram.CustomBucketsSchema,
 					ZeroThreshold:  0.01,
+					ZeroCount:      &Histogram_ZeroCountInt{ZeroCountInt: 2},
 					NegativeSpans:  []BucketSpan{{Offset: -1, Length: 1}, {Offset: -2, Length: 1}},
 					NegativeDeltas: []int64{7, 3},
+					NegativeCounts: []float64{8, 9},
 					PositiveSpans:  []BucketSpan{{Offset: 0, Length: 1}, {Offset: 2, Length: 1}},
 					PositiveDeltas: []int64{2, 21},
+					PositiveCounts: []float64{6, 7},
 					ResetHint:      Histogram_UNKNOWN,
+					Timestamp:      4*time.Minute.Milliseconds() - 1,
+					CustomValues:   []float64{3, 4},
 				},
 			},
 			Exemplars: []Exemplar{{
@@ -208,6 +213,14 @@ func TestDeepCopyTimeseries(t *testing.T) {
 		assert.NotEqual(t,
 			// Ignore deprecation warning for now
 			//nolint:staticcheck
+			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].NegativeCounts)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
+			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].NegativeCounts)).Data,
+		)
+		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].PositiveSpans)).Data,
 			// Ignore deprecation warning for now
 			//nolint:staticcheck
@@ -220,6 +233,22 @@ func TestDeepCopyTimeseries(t *testing.T) {
 			// Ignore deprecation warning for now
 			//nolint:staticcheck
 			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].PositiveDeltas)).Data,
+		)
+		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
+			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].PositiveCounts)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
+			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].PositiveCounts)).Data,
+		)
+		assert.NotEqual(t,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
+			(*reflect.SliceHeader)(unsafe.Pointer(&src.Histograms[histogramIdx].CustomValues)).Data,
+			// Ignore deprecation warning for now
+			//nolint:staticcheck
+			(*reflect.SliceHeader)(unsafe.Pointer(&dst.Histograms[histogramIdx].CustomValues)).Data,
 		)
 	}
 
