@@ -1861,20 +1861,17 @@ func (m *mockBlocksStorageQuerier) Close() error {
 	return nil
 }
 
-func TestTenantQueryLimitsProvider(t *testing.T) {
+func TestTenantQueryLimitsProvider_MaxEstimatedMemoryConsumptionPerQuery(t *testing.T) {
 	tenantLimits := &staticTenantLimits{
 		limits: map[string]*validation.Limits{
 			"user-1": {
 				MaxEstimatedMemoryConsumptionPerQuery: 1000,
-				EnableDelayedNameRemoval:              false,
 			},
 			"user-2": {
 				MaxEstimatedMemoryConsumptionPerQuery: 10,
-				EnableDelayedNameRemoval:              true,
 			},
 			"user-3": {
 				MaxEstimatedMemoryConsumptionPerQuery: 3000,
-				EnableDelayedNameRemoval:              true,
 			},
 			"unlimited-user": {
 				MaxEstimatedMemoryConsumptionPerQuery: 0,
@@ -1886,54 +1883,108 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 	provider := NewTenantQueryLimitsProvider(overrides)
 
 	testCases := map[string]struct {
-		ctx                              context.Context
-		expectedLimit                    uint64
-		expectedEnableDelayedNameRemoval bool
-		expectedError                    error
+		ctx           context.Context
+		expectedLimit uint64
+		expectedError error
 	}{
 		"no tenant ID provided": {
 			ctx:           context.Background(),
 			expectedError: user.ErrNoOrgID,
 		},
 		"single tenant ID provided, has limit": {
-			ctx:                              user.InjectOrgID(context.Background(), "user-1"),
-			expectedLimit:                    1000,
-			expectedEnableDelayedNameRemoval: false,
+			ctx:           user.InjectOrgID(context.Background(), "user-1"),
+			expectedLimit: 1000,
 		},
 		"single tenant ID provided, unlimited": {
-			ctx:                              user.InjectOrgID(context.Background(), "unlimited-user"),
-			expectedLimit:                    0,
-			expectedEnableDelayedNameRemoval: false,
+			ctx:           user.InjectOrgID(context.Background(), "unlimited-user"),
+			expectedLimit: 0,
 		},
-		"multiple tenant IDs provided, all have limits, all have delayed name removal": {
-			ctx:                              user.InjectOrgID(context.Background(), "user-2|user-3"),
-			expectedLimit:                    3010,
-			expectedEnableDelayedNameRemoval: true,
-		},
-		"multiple tenant IDs provided, all have limits, conflict in delayed name removal": {
+		"multiple tenant IDs provided, all have limits": {
 			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
-			expectedError: errConflictEnableDelayedNameRemoval,
+			expectedLimit: 4010,
 		},
-		"multiple tenant IDs provided, one unlimited, none have delayed name removal": {
-			ctx:                              user.InjectOrgID(context.Background(), "user-1|unlimited-user"),
-			expectedLimit:                    0,
-			expectedEnableDelayedNameRemoval: false,
+		"multiple tenant IDs provided, one unlimited": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|unlimited-user|user-3"),
+			expectedLimit: 0,
 		},
 	}
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			actualLimit, actualErr := provider.GetMaxEstimatedMemoryConsumptionPerQuery(testCase.ctx)
-			actualEnableDelayedNameRemoval, actualErr2 := provider.GetEnableDelayedNameRemoval(testCase.ctx)
-
-			// If the first call succeeded but the second failed, use the second error, otherwise keep the first.
-			if actualErr == nil && actualErr2 != nil {
-				actualErr = actualErr2
-			}
 
 			if testCase.expectedError == nil {
 				require.NoError(t, actualErr)
 				require.Equal(t, testCase.expectedLimit, actualLimit)
+			} else {
+				require.ErrorIs(t, actualErr, testCase.expectedError)
+			}
+		})
+	}
+}
+
+func TestTenantQueryLimitsProvider_EnableDelayedNameRemoval(t *testing.T) {
+	tenantLimits := &staticTenantLimits{
+		limits: map[string]*validation.Limits{
+			"user-1": {
+				EnableDelayedNameRemoval: false,
+			},
+			"user-2": {
+				EnableDelayedNameRemoval: true,
+			},
+			"user-3": {
+				EnableDelayedNameRemoval: true,
+			},
+			"user-4": {
+				// Not set, should default to false.
+			},
+		},
+	}
+
+	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
+	provider := NewTenantQueryLimitsProvider(overrides)
+
+	testCases := map[string]struct {
+		ctx                              context.Context
+		expectedEnableDelayedNameRemoval bool
+		expectedError                    error
+	}{
+		"single tenant ID provided, disabled delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+		"single tenant ID provided, enabled delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2"),
+			expectedEnableDelayedNameRemoval: true,
+		},
+		"single tenant ID provided, unspecified delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-4"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+		"multiple tenant IDs provided, all have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2|user-3"),
+			expectedEnableDelayedNameRemoval: true,
+		},
+		"multiple tenant IDs provided, conflict in delayed name removal": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
+			expectedError: errConflictEnableDelayedNameRemoval,
+		},
+		"multiple tenant IDs provided, conflict in delayed name removal with one unspecified": {
+			ctx:           user.InjectOrgID(context.Background(), "user-2|user-3|user-4"),
+			expectedError: errConflictEnableDelayedNameRemoval,
+		},
+		"multiple tenant IDs provided, none have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1|user-4"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actualEnableDelayedNameRemoval, actualErr := provider.GetEnableDelayedNameRemoval(testCase.ctx)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, actualErr)
 				require.Equal(t, testCase.expectedEnableDelayedNameRemoval, actualEnableDelayedNameRemoval)
 			} else {
 				require.ErrorIs(t, actualErr, testCase.expectedError)
