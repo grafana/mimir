@@ -1685,6 +1685,11 @@ func (i *Ingester) pushSamplesToAppender(
 			for _, h := range ts.Histograms {
 				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, h.Timestamp, ts.Labels)
 			}
+			if len(ts.Exemplars) > 0 {
+				updateFirstPartial(i.errorSamplers.labelsNotSorted, func() softError {
+					return newLabelsNotSortedError(ts.Labels)
+				})
+			}
 			stats.failedExemplarsCount += len(ts.Exemplars)
 			continue
 		}
