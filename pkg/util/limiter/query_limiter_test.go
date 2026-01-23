@@ -132,6 +132,235 @@ func TestQueryLimiter_AddSeries_ShouldReturnErrorOnLimitExceeded(t *testing.T) {
 	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
 }
 
+func TestQueryLimiter_AddSeries_HashCollision(t *testing.T) {
+	// This test uses a custom hash function to force hash collisions and verify the collision handling code.
+	const collisionHash = uint64(12345)
+
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+	seriesA := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_a",
+		"label":               "a",
+	})
+	seriesB := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_b",
+		"label":               "b",
+	})
+	seriesC := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_c",
+		"label":               "c",
+	})
+
+	// Override hash function to force collisions for seriesA and seriesB (but not seriesC)
+	limiter.hashFunc = func(l labels.Labels) uint64 {
+		if labels.Equal(l, seriesA) || labels.Equal(l, seriesB) {
+			return collisionHash
+		}
+		return l.Hash()
+	}
+
+	// Add seriesA - should go into uniqueSeries
+	returnedA1, err := limiter.AddSeries(seriesA, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedA1, seriesA)
+	require.Equal(t, 1, len(limiter.uniqueSeries))
+	require.Nil(t, limiter.conflictSeries, "conflictSeries should not be initialized yet")
+	require.Equal(t, 1, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+
+	// Add seriesB - should collide with seriesA and go into conflictSeries
+	returnedB1, err := limiter.AddSeries(seriesB, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedB1, seriesB)
+	require.Equal(t, 1, len(limiter.uniqueSeries), "uniqueSeries should still have only seriesA")
+	require.NotNil(t, limiter.conflictSeries, "conflictSeries should now be initialized")
+	require.Equal(t, 1, len(limiter.conflictSeries[collisionHash]), "should have one collision for this hash")
+	require.Equal(t, 2, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+
+	// Add duplicate of seriesA - should deduplicate correctly
+	returnedA2, err := limiter.AddSeries(seriesA, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedA2, returnedA1)
+	require.Equal(t, 2, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+
+	// Add duplicate of seriesB - should deduplicate from conflictSeries
+	returnedB2, err := limiter.AddSeries(seriesB, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedB2, returnedB1)
+	require.Equal(t, 2, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+
+	// Add seriesC (no collision) - should go into uniqueSeries normally
+	returnedC1, err := limiter.AddSeries(seriesC, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedC1, seriesC)
+	require.Equal(t, 2, len(limiter.uniqueSeries), "uniqueSeries should now have seriesA and seriesC")
+	require.Equal(t, 3, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+
+	// Verify no rejection metrics were incremented
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+}
+
+func TestQueryLimiter_AddSeries_HashCollisionWithLimit(t *testing.T) {
+	// Test that series limit is correctly enforced when hash collisions occur
+	const collisionHash = uint64(12345)
+
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(2, 0, 0, 0, stats.NewQueryMetrics(reg)) // Limit of 2 series
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+	seriesA := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_a",
+		"label":               "a",
+	})
+	seriesB := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_b",
+		"label":               "b",
+	})
+	seriesC := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_c",
+		"label":               "c",
+	})
+
+	// Override hash function to force collisions for seriesA and seriesB
+	limiter.hashFunc = func(l labels.Labels) uint64 {
+		if labels.Equal(l, seriesA) || labels.Equal(l, seriesB) {
+			return collisionHash
+		}
+		return l.Hash()
+	}
+
+	// Add seriesA and seriesB (which collide)
+	_, err := limiter.AddSeries(seriesA, memoryTracker)
+	require.NoError(t, err)
+	_, err = limiter.AddSeries(seriesB, memoryTracker)
+	require.NoError(t, err)
+	require.Equal(t, 1, len(limiter.uniqueSeries))
+	require.Equal(t, 1, countConflictSeries(limiter.conflictSeries))
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+
+	// Add seriesC - should exceed limit
+	returnedC, err := limiter.AddSeries(seriesC, memoryTracker)
+	require.Error(t, err)
+	require.True(t, returnedC.IsEmpty(), "should return empty labels on error")
+	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0)
+
+	// Try adding duplicate of seriesA when already over limit - should still reject
+	returnedA2, err := limiter.AddSeries(seriesA, memoryTracker)
+	require.Error(t, err)
+	require.True(t, returnedA2.IsEmpty(), "should return empty labels on error")
+	assertRejectedQueriesMetricValue(t, reg, 1, 0, 0, 0) // Counter should not increment again
+}
+
+func TestQueryLimiter_AddSeries_HashCollisionWithThreeCollidingSeries(t *testing.T) {
+	// Test that multiple series can collide on the same hash
+	const collisionHash = uint64(12345)
+
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
+	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
+
+	seriesA := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_a",
+		"label":               "a",
+	})
+	seriesB := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_b",
+		"label":               "b",
+	})
+	seriesC := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_c",
+		"label":               "c",
+	})
+
+	// Force all three series to collide
+	limiter.hashFunc = func(l labels.Labels) uint64 {
+		return collisionHash
+	}
+
+	// Add all three series
+	returnedA, err := limiter.AddSeries(seriesA, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedA, seriesA)
+	require.Equal(t, 1, len(limiter.uniqueSeries))
+	require.Nil(t, limiter.conflictSeries)
+
+	returnedB, err := limiter.AddSeries(seriesB, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedB, seriesB)
+	require.Equal(t, 1, len(limiter.uniqueSeries))
+	require.Equal(t, 1, len(limiter.conflictSeries[collisionHash]))
+
+	returnedC, err := limiter.AddSeries(seriesC, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedC, seriesC)
+	require.Equal(t, 1, len(limiter.uniqueSeries))
+	require.Equal(t, 2, len(limiter.conflictSeries[collisionHash]), "both seriesB and seriesC should be in conflictSeries")
+	require.Equal(t, 3, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+
+	// Verify deduplication works for all three
+	returnedA2, err := limiter.AddSeries(seriesA, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedA2, returnedA)
+
+	returnedB2, err := limiter.AddSeries(seriesB, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedB2, returnedB)
+
+	returnedC2, err := limiter.AddSeries(seriesC, memoryTracker)
+	require.NoError(t, err)
+	requireSameLabels(t, returnedC2, returnedC)
+
+	require.Equal(t, 3, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+
+	// Verify no rejection metrics were incremented
+	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
+}
+
+func TestQueryLimiter_AddSeries_MemoryTrackingWithDuplicates(t *testing.T) {
+	// Test that memory tracking correctly avoids double-counting for duplicate series
+	reg := prometheus.NewPedanticRegistry()
+	limiter := NewQueryLimiter(100, 0, 0, 0, stats.NewQueryMetrics(reg))
+
+	ctx := context.Background()
+	memoryTracker := NewMemoryConsumptionTracker(ctx, 1000000, nil, "test")
+
+	seriesA := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_a",
+		"label":               "value_a",
+	})
+	seriesB := labels.FromMap(map[string]string{
+		model.MetricNameLabel: "metric_b",
+		"label":               "value_b",
+	})
+
+	initialMemory := memoryTracker.CurrentEstimatedMemoryConsumptionBytes()
+
+	// Add seriesA - memory should increase
+	_, err := limiter.AddSeries(seriesA, memoryTracker)
+	require.NoError(t, err)
+	afterFirstAdd := memoryTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.Greater(t, afterFirstAdd, initialMemory, "Memory should increase after adding first series")
+
+	// Add duplicate of seriesA - memory should NOT increase
+	_, err = limiter.AddSeries(seriesA, memoryTracker)
+	require.NoError(t, err)
+	afterDuplicateA := memoryTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.Equal(t, afterFirstAdd, afterDuplicateA, "Memory should not increase for duplicate series")
+
+	// Add seriesB - memory should increase
+	_, err = limiter.AddSeries(seriesB, memoryTracker)
+	require.NoError(t, err)
+	afterSecondAdd := memoryTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.Greater(t, afterSecondAdd, afterDuplicateA, "Memory should increase after adding second series")
+
+	// Add duplicate of seriesB - memory should NOT increase
+	_, err = limiter.AddSeries(seriesB, memoryTracker)
+	require.NoError(t, err)
+	afterDuplicateB := memoryTracker.CurrentEstimatedMemoryConsumptionBytes()
+	require.Equal(t, afterSecondAdd, afterDuplicateB, "Memory should not increase for duplicate series")
+}
+
 func TestQueryLimiter_AddChunkBytes(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	limiter := NewQueryLimiter(0, 100, 0, 0, stats.NewQueryMetrics(reg))

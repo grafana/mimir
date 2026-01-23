@@ -41,6 +41,10 @@ type QueryLimiter struct {
 	maxEstimatedChunksPerQuery int
 
 	queryMetrics *stats.QueryMetrics
+
+	// hashFunc computes the hash of a labels.Labels. Defaults to labels.Labels.Hash() in production.
+	// Can be overridden in tests to force hash collisions.
+	hashFunc func(labels.Labels) uint64
 }
 
 // NewQueryLimiter makes a new per-query limiter. Each query limiter is configured using the
@@ -56,6 +60,7 @@ func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery
 		maxEstimatedChunksPerQuery: maxEstimatedChunksPerQuery,
 
 		queryMetrics: queryMetrics,
+		hashFunc:     func(l labels.Labels) uint64 { return l.Hash() },
 	}
 }
 
@@ -84,7 +89,7 @@ func countConflictSeries(series map[uint64][]labels.Labels) int {
 
 // AddSeries adds the input series and returns an error if the limit is reached.
 func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
-	fingerprint := newLabels.Hash()
+	fingerprint := ql.hashFunc(newLabels)
 
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
