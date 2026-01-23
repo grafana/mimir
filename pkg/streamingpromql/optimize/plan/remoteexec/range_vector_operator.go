@@ -10,19 +10,15 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type RangeVectorRemoteExec struct {
-	QueryParameters          *planning.QueryParameters
-	Node                     planning.Node
-	TimeRange                types.QueryTimeRange
-	RemoteExecutor           RemoteExecutor
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
-	EagerLoad                bool
-	expressionPosition       posrange.PositionRange
+	Node               planning.Node
+	TimeRange          types.QueryTimeRange
+	GroupEvaluator     GroupEvaluator
+	Annotations        *annotations.Annotations
+	QueryStats         *types.QueryStats
+	expressionPosition posrange.PositionRange
 
 	resp                      RangeVectorRemoteExecutionResponse
 	finalized                 bool
@@ -33,12 +29,16 @@ var _ types.RangeVectorOperator = &RangeVectorRemoteExec{}
 
 func (r *RangeVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	r.resp, err = r.RemoteExecutor.StartRangeVectorExecution(ctx, r.QueryParameters, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
-	return err
+	r.resp, err = r.GroupEvaluator.CreateRangeVectorExecution(ctx, r.Node, r.TimeRange)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (r *RangeVectorRemoteExec) AfterPrepare(ctx context.Context) error {
-	return nil
+	return r.resp.Start(ctx)
 }
 
 func (r *RangeVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {

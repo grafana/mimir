@@ -67,7 +67,6 @@ import (
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
@@ -961,10 +960,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.API.RegisterQueryFrontend2(frontend)
 
 	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
-
-		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_CONSUMER, remoteexec.NewRemoteExecutionConsumerMaterializer(executor)); err != nil {
-			return nil, fmt.Errorf("unable to register remote execution materializer: %w", err)
+		if err := v2.RegisterRemoteExecutionMaterializers(t.QueryFrontendStreamingEngine, frontend, t.Cfg.Frontend.FrontendV2); err != nil {
+			return nil, err
 		}
 	}
 
