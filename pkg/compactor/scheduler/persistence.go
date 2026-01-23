@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"go.etcd.io/bbolt"
 	bbolt_errors "go.etcd.io/bbolt/errors"
 
@@ -15,10 +17,10 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-func jobPersistenceManagerFactory(cfg Config) (JobPersistenceManager, error) {
+func jobPersistenceManagerFactory(cfg Config, logger log.Logger) (JobPersistenceManager, error) {
 	switch cfg.persistenceType {
 	case "bbolt":
-		return openBboltJobPersistenceManager(cfg.bboltPath)
+		return openBboltJobPersistenceManager(cfg.bboltPath, logger)
 	case "none":
 		return &NopJobPersistenceManager{}, nil
 	default:
@@ -103,19 +105,21 @@ func deserializeCompactionJob(b []byte) (*Job[*CompactionJob], error) {
 	}, nil
 }
 
-func openBboltJobPersistenceManager(path string) (*BboltJobPersistenceManager, error) {
+func openBboltJobPersistenceManager(path string, logger log.Logger) (*BboltJobPersistenceManager, error) {
 	db, err := bbolt.Open(path, 0600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
 	}
 
 	return &BboltJobPersistenceManager{
-		db: db,
+		db:     db,
+		logger: logger,
 	}, nil
 }
 
 type BboltJobPersistenceManager struct {
-	db *bbolt.DB
+	db     *bbolt.DB
+	logger log.Logger
 }
 
 func (m *BboltJobPersistenceManager) tenantName(tenant string) []byte {
@@ -171,7 +175,9 @@ func (m *BboltJobPersistenceManager) RecoverAll(
 ) (compactionTrackers map[string]*JobTracker[*CompactionJob], err error) {
 
 	compactionTrackers = make(map[string]*JobTracker[*CompactionJob])
+	numJobsRecovered := 0
 
+	level.Info(m.logger).Log("msg", "starting job recovery")
 	// Iterate through each bucket and create the corresponding JobTracker
 	err = m.db.Update(func(tx *bbolt.Tx) error {
 		return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
@@ -182,17 +188,21 @@ func (m *BboltJobPersistenceManager) RecoverAll(
 				if err != nil {
 					return err
 				}
+				numJobsRecovered += len(jobs)
 				planTracker.recoverFrom(jobs)
 				return nil
 			}
 
 			// Must be a tenant bucket
 			if len(bucketName) <= 1 || !strings.HasPrefix(bucketName, "u") {
-				return fmt.Errorf("invalid tenant name in database: %s", bucketName)
+				// Log a warning and delete
+				level.Warn(m.logger).Log("msg", "deleting bbolt bucket with invalid name", "name", bucketName)
+				return tx.DeleteBucket(name)
 			}
 			tenant, _ := strings.CutPrefix(bucketName, "u")
 			if !allowedTenants.IsAllowed(tenant) {
 				// This tenant is no longer allowed, remove their bucket
+				level.Warn(m.logger).Log("msg", "deleting bbolt bucket of tenant no longer allowed", "tenant", tenant)
 				return tx.DeleteBucket(name)
 			}
 
@@ -202,15 +212,17 @@ func (m *BboltJobPersistenceManager) RecoverAll(
 			if err != nil {
 				return err
 			}
+			numJobsRecovered += len(jobs)
 			jt.recoverFrom(jobs)
 			compactionTrackers[tenant] = jt
 			return nil
 		})
 	})
 	if err != nil {
+		level.Error(m.logger).Log("msg", "failed job recovery", "err", err)
 		return nil, err
 	}
-
+	level.Info(m.logger).Log("msg", "completed job recovery", "num_tenants_recovered", len(compactionTrackers), "num_jobs_recovered", numJobsRecovered)
 	return compactionTrackers, nil
 }
 
@@ -234,6 +246,7 @@ func newBboltJobPersister[V any](db *bbolt.DB, name []byte, serializer func(*Job
 	}
 }
 
+// recover is not exposed in the Job due to the argument required
 func (jp *BboltJobPersister[V]) recover(bucket *bbolt.Bucket) ([]*Job[V], error) {
 	// Recover jobs from database
 	jobs := make([]*Job[V], 0, 10)

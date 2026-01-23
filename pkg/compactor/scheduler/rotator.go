@@ -67,6 +67,15 @@ func (r *Rotator) iter(_ context.Context) error {
 	return nil
 }
 
+// PrepareForShutdown empties out tenants and the rotation. This prevents further persist calls to the underlying state.
+func (r *Rotator) PrepareForShutdown() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	r.tenantStateMap = make(map[string]*TenantRotationState)
+	r.rotation = []string{}
+}
+
 func (r *Rotator) RecoverFrom(m map[string]*JobTracker[*CompactionJob]) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()

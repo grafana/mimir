@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"container/list"
+	"errors"
 	"fmt"
 	"math/rand"
 	"slices"
@@ -65,10 +66,11 @@ type JobTracker[V any] struct {
 	jobType   string
 	metrics   *schedulerMetrics
 
-	mtx     *sync.Mutex
-	pending *list.List
-	active  *list.List
-	allJobs map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
+	mtx          *sync.Mutex
+	rejectOffers bool
+	pending      *list.List
+	active       *list.List
+	allJobs      map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
 }
 
 func NewJobTracker[V any](jobPersister JobPersister[V], maxLeases int, jobType string, metrics *schedulerMetrics) *JobTracker[V] {
@@ -87,6 +89,9 @@ func NewJobTracker[V any](jobPersister JobPersister[V], maxLeases int, jobType s
 }
 
 func (jt *JobTracker[V]) recoverFrom(jobs []*Job[V]) {
+	jt.mtx.Lock()
+	defer jt.mtx.Unlock()
+
 	leased := make([]*Job[V], 0, len(jobs))
 	for _, job := range jobs {
 		job.clock = jt.clock
@@ -109,6 +114,16 @@ func (jt *JobTracker[V]) recoverFrom(jobs []*Job[V]) {
 
 	jt.metrics.pendingJobs.WithLabelValues(jt.jobType).Set(float64(jt.pending.Len()))
 	jt.metrics.activeJobs.WithLabelValues(jt.jobType).Set(float64(jt.active.Len()))
+}
+
+func (jt *JobTracker[V]) PrepareForShutdown() {
+	jt.mtx.Lock()
+	defer jt.mtx.Unlock()
+
+	jt.allJobs = make(map[string]*list.Element)
+	jt.pending = list.New()
+	jt.active = list.New()
+	jt.rejectOffers = true
 }
 
 // Lease iterates the job queue for an acceptable job according to the provided canAccept function
@@ -315,6 +330,10 @@ func (jt *JobTracker[V]) CancelLease(id string, epoch int64) (canceled bool, bec
 func (jt *JobTracker[V]) Offer(jobs []*Job[V], shouldReplace func(prev, new V) bool) (accepted int, becamePending bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
+
+	if jt.rejectOffers {
+		return 0, false, errors.New("jobs are not currently being accepted")
+	}
 
 	wasEmpty := jt.isPendingEmpty()
 
