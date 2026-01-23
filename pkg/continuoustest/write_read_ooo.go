@@ -98,7 +98,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 	// We cannot use a label to differentiate between in-order and out-of-order samples, it needs to be the same actual series.
 
 	// First, write the in-order (minute-aligned) data.
-	for timestamp := t.nextInorderWriteTimestamp(now, &t.floatMetric); !timestamp.After(now); timestamp = t.nextInorderWriteTimestamp(now, &t.floatMetric) {
+	for timestamp := t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.floatMetric); !timestamp.After(now); timestamp = t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.floatMetric) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
 			errs.Add(err)
@@ -113,12 +113,12 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 	}
 }
 
-func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, records *MetricHistory) time.Time {
+func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval time.Duration, records *MetricHistory) time.Time {
 	if records.lastWrittenTimestamp.IsZero() {
-		return alignTimestampToInterval(now, inorderWriteInterval)
+		return alignTimestampToInterval(now, interval)
 	}
 
-	return records.lastWrittenTimestamp.Add(writeInterval)
+	return records.lastWrittenTimestamp.Add(interval)
 }
 
 func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, records *MetricHistory) error {
