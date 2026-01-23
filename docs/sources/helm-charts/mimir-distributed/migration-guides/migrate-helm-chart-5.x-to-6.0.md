@@ -96,7 +96,9 @@ After completing the prerequisites and choosing your ingest storage strategy, up
 helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE>
 ```
 
-### Fixing a broken upgrade
+## Troubleshoot
+
+### Misconfiguration in rollout-operator
 
 If you failed to install the rollout-operator CustomResourceDefinitions (CRDs) and did not disable the rollout-operator then your deployment will be in a bad state.
 
