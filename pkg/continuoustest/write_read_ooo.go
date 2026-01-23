@@ -8,6 +8,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
@@ -105,7 +106,10 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		level.Info(t.logger).Log("msg", "Dry-run writing in-order sample set", "timestamp", timestamp, "numSeries", len(series))
+		if err := t.writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, floatMetricMetadata, &t.floatMetric); err != nil {
+			errs.Add(err)
+			return
+		}
 	}
 }
 
@@ -190,4 +194,20 @@ func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, n
 			return
 		}
 	}
+}
+
+func (t *WriteReadOOOTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metricName string, metadata []prompb.MetricMetadata, records *MetricHistory) error {
+	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadOOOTest.writeSamples")
+	defer sp.Finish()
+	logger := log.With(sp, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName, "protocol", t.client.Protocol())
+
+	level.Info(logger).Log("msg", "Dry-run writing in-order sample set", "timestamp", timestamp, "numSeries", len(series))
+
+	records.lastWrittenTimestamp = timestamp
+	records.queryMaxTime = timestamp
+	if records.queryMinTime.IsZero() {
+		records.queryMinTime = timestamp
+	}
+
+	return nil
 }
