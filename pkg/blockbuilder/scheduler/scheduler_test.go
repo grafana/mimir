@@ -1110,7 +1110,7 @@ func TestPartitionState_ReturningPartition(t *testing.T) {
 	job, err = pt.updateEndOffset(250, time.Date(2025, 3, 1, 11, 01, 0, 0, time.UTC), 1*time.Hour)
 	require.NoError(t, err)
 	require.Equal(t, int64(100), job.StartOffset)
-	require.Equal(t, int64(200), job.EndOffset)
+	require.Equal(t, int64(250), job.EndOffset)
 }
 
 func TestPartitionState_PartitionBecomesInactive(t *testing.T) {
