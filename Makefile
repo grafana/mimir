@@ -374,7 +374,6 @@ lint: check-makefiles check-merge-conflicts
 		./pkg/alertmanager/... \
 		./pkg/compactor/... \
 		./pkg/distributor/... \
-		./pkg/flusher/... \
 		./pkg/frontend/... \
 		./pkg/ingester/... \
 		./pkg/querier/... \

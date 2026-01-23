@@ -46,7 +46,6 @@ import (
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
@@ -96,7 +95,6 @@ const (
 	CostAttributionService           string = "cost-attribution-service"
 	Distributor                      string = "distributor"
 	DistributorService               string = "distributor-service"
-	Flusher                          string = "flusher"
 	Ingester                         string = "ingester"
 	IngesterPartitionRing            string = "ingester-partitions-ring"
 	IngesterRing                     string = "ingester-ring"
@@ -808,23 +806,6 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 	return nil, nil
 }
 
-func (t *Mimir) initFlusher() (serv services.Service, err error) {
-	t.tsdbIngesterConfig()
-
-	t.Flusher, err = flusher.New(
-		t.Cfg.Flusher,
-		t.Cfg.Ingester,
-		t.Overrides,
-		t.Registerer,
-		util_log.Logger,
-	)
-	if err != nil {
-		return
-	}
-
-	return t.Flusher, nil
-}
-
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
@@ -1470,7 +1451,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(CostAttributionService, t.initCostAttributionService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
-	mm.RegisterModule(Flusher, t.initFlusher)
 	mm.RegisterModule(Ingester, t.initIngester)
 	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
@@ -1517,7 +1497,6 @@ func (t *Mimir) setupModuleManager() error {
 		CostAttributionService:           {API, Overrides},
 		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
-		Flusher:                          {Overrides, API},
 		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},

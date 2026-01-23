@@ -4955,27 +4955,6 @@
     },
     {
       "kind": "block",
-      "name": "flusher",
-      "required": false,
-      "desc": "",
-      "blockEntries": [
-        {
-          "kind": "field",
-          "name": "exit_after_flush",
-          "required": false,
-          "desc": "Stop after flush has finished. If false, process will keep running, doing nothing.",
-          "fieldValue": null,
-          "fieldDefaultValue": true,
-          "fieldFlag": "flusher.exit-after-flush",
-          "fieldType": "boolean",
-          "fieldCategory": "advanced"
-        }
-      ],
-      "fieldValue": null,
-      "fieldDefaultValue": null
-    },
-    {
-      "kind": "block",
       "name": "limits",
       "required": false,
       "desc": "",

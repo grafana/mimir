@@ -339,7 +339,6 @@
   "ingester.read-reactive-limiter.correlation-window": 50,
   "ingester.read-reactive-limiter.initial-rejection-factor": 2,
   "ingester.read-reactive-limiter.max-rejection-factor": 3,
-  "flusher.exit-after-flush": true,
   "distributor.request-rate-limit": 0,
   "distributor.request-burst-size": 0,
   "distributor.ingestion-rate-limit": 10000,
