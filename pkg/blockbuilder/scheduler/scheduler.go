@@ -175,17 +175,6 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 		return
 	}
 
-	now := time.Now()
-
-	for _, off := range consumeOffs {
-		// We have the initial end offset so we make the first updateEndOffset call for each partition.
-		ps := s.getPartitionState(off.topic, off.partition)
-		_, err := ps.updateEndOffset(off.end, now, s.cfg.JobSize)
-		if err != nil {
-			panic("initial end offset update failed: " + err.Error())
-		}
-	}
-
 	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger))
 	s.observations = nil
 	s.observationComplete = true
@@ -270,10 +259,8 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	newJobBucket := ts.Truncate(jobSize)
 
 	if s.jobBucket.IsZero() {
-		// We've never processed an end offset update for this partition.
-		// That means that it has just been created.
-		s.jobBucket = newJobBucket
 		s.endOffset = end
+		s.jobBucket = newJobBucket
 		return nil, nil
 	}
 
