@@ -971,7 +971,11 @@ func testDistributorWithCachingUnmarshalData(t *testing.T, cachingUnmarshalDataE
 				{
 					Samples:    1,
 					Histograms: 0,
-					Exemplars:  0,
+					// Mimir may silently drop outdated samples/histograms/exemplars during aggregation, due to age or
+					// other middlewares running in distributors. Mimir can't differentiate if a data point was dropped
+					// deliberately or accidentally. Hence, to avoid confusing clients we count every sample, histogram
+					// and exemplar that was received, even if we didn't ingest it.
+					Exemplars: 1,
 				},
 			},
 		},
