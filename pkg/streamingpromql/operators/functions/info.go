@@ -37,8 +37,6 @@ type InfoFunction struct {
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
 
-	// function to generate signature from labels without metric name
-	sigFunctionLabelsOnly func(labels.Labels) []byte
 	// dedicated buffer and scratch builder for sigFunctionLabelsOnly
 	sigLabelsOnlyBuf []byte
 	sigLabelsOnlyLb  labels.ScratchBuilder
@@ -161,6 +159,18 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	return matchers, false
 }
 
+// sigFunctionLabelsOnly generates signature from labels without metric name
+// Ensure this is only called after initializing f.sigLabelsOnlyBuf and f.sigLabelsOnlyLb
+func (f *InfoFunction) sigFunctionLabelsOnly(lset labels.Labels) []byte {
+	// Signature is only the identifying labels without metric names.
+	f.sigLabelsOnlyLb.Reset()
+	lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
+		f.sigLabelsOnlyLb.Add(l.Name, l.Value)
+	})
+	f.sigLabelsOnlyLb.Sort()
+	return f.sigLabelsOnlyLb.Labels().Bytes(f.sigLabelsOnlyBuf)
+}
+
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
 	buf := make([]byte, 0, 1024)
 	lb := labels.NewScratchBuilder(0)
@@ -179,20 +189,9 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	}
 
 	// Initialize dedicated buffer and scratch builder for sigFunctionLabelsOnly,
-	// since this closure is stored on the struct and called later when the local
-	// buf and lb would be out of scope.
+	// since this is also called later when the local buf and lb would be out of scope.
 	f.sigLabelsOnlyBuf = make([]byte, 0, 1024)
 	f.sigLabelsOnlyLb = labels.NewScratchBuilder(0)
-
-	f.sigFunctionLabelsOnly = func(lset labels.Labels) []byte {
-		// Signature is only the identifying labels without metric names.
-		f.sigLabelsOnlyLb.Reset()
-		lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
-			f.sigLabelsOnlyLb.Add(l.Name, l.Value)
-		})
-		f.sigLabelsOnlyLb.Sort()
-		return f.sigLabelsOnlyLb.Labels().Bytes(f.sigLabelsOnlyBuf)
-	}
 
 	// labels hash:function to generate signature from labels
 	sigFunctions := make(map[string]func(labels.Labels) []byte)
