@@ -571,11 +571,8 @@ func ReuseSliceOnly(ts []PreallocTimeseries) {
 func TimeseriesFromPool() *TimeSeries {
 	ts := timeSeriesPool.Get().(*TimeSeries)
 
-	// Panic if the pool returns a TimeSeries that wasn't properly cleaned.
-	// This indicates a bug where ReuseTimeseries was called on a TimeSeries
-	// that is still in use elsewhere (e.g., due to incorrect pool management).
-	// Silent corruption from dirty pool objects is very hard to diagnose,
-	// so we fail fast here to surface such bugs immediately.
+	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
+	// which is indicative of a hard bug that we want to catch as soon as possible.
 	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
