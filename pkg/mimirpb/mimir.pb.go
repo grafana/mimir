@@ -11744,14 +11744,17 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 		return nil
 	}
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
-		metadata[normalizeMetricName] = &orderAwareMetricMetadata{
-			MetricMetadata: MetricMetadata{
-				MetricFamilyName: normalizeMetricName,
-				Help:             help,
-				Unit:             unit,
-				Type:             MetricMetadata_MetricType(metricType),
-			},
-			order: len(metadata),
+		// Only add if not already present to preserve first occurrence and avoid index out of bounds panic.
+		if _, exists := metadata[normalizeMetricName]; !exists {
+			metadata[normalizeMetricName] = &orderAwareMetricMetadata{
+				MetricMetadata: MetricMetadata{
+					MetricFamilyName: normalizeMetricName,
+					Help:             help,
+					Unit:             unit,
+					Type:             MetricMetadata_MetricType(metricType),
+				},
+				order: len(metadata),
+			}
 		}
 	}
 
