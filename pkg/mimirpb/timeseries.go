@@ -288,6 +288,13 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 	}
 	p.TimeSeries = TimeseriesFromPool()
 	p.SkipUnmarshalingExemplars = p.skipUnmarshalingExemplars
+
+	// Defense-in-depth: verify TimeSeries is clean before unmarshalling.
+	// This complements the check in TimeseriesFromPool().
+	if len(p.TimeSeries.Labels) > 0 || len(p.TimeSeries.Samples) > 0 || len(p.TimeSeries.Histograms) > 0 || len(p.TimeSeries.Exemplars) > 0 {
+		panic("attempting to unmarshal into dirty TimeSeries: this indicates a bug in pool management")
+	}
+
 	if symbols != nil {
 		return p.UnmarshalRW2(dAtA, symbols, metadata, skipNormalizeMetricName)
 	}
