@@ -98,7 +98,7 @@ helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES
 
 ## Troubleshoot
 
-### Misconfiguration in rollout-operator
+### Rollout operator misconfiguration
 
 If you failed to install the rollout-operator CustomResourceDefinitions (CRDs) and did not disable the rollout-operator then your deployment will be in a bad state.
 
