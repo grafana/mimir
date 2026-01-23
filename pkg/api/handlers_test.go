@@ -41,16 +41,15 @@ func TestIndexPageContent(t *testing.T) {
 	require.False(t, strings.Contains(resp.Body.String(), "compactor/ring"))
 }
 
-func TestPathPrefix(t *testing.T) {
-	c := newIndexPageContent("/mimir")
-	c.AddLinks(defaultWeight, "Some group", []IndexPageLink{
-		{Desc: "Some link", Path: "/config"},
-		{Desc: "Some link", Path: "runtime_config"},
-	})
+func TestResolveBaseURL(t *testing.T) {
+	result := resolveBaseURL("/mimir", "/config")
+	require.Equal(t, "/mimir/config", result)
 
-	require.Equal(t, "/mimir/config", c.elements[0].Links[0].Path)
-	require.Equal(t, "runtime_config", c.elements[0].Links[1].Path)
+	result = resolveBaseURL("/mimir/", "/config")
+	require.Equal(t, "/mimir/config", result)
 
+	result = resolveBaseURL("/mimir", "runtime_config")
+	require.Equal(t, "runtime_config", result)
 }
 
 type diffConfigMock struct {

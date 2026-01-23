@@ -42,15 +42,15 @@ import (
 
 func newIndexPageContent(pathPrefix string) *IndexPageContent {
 	return &IndexPageContent{
-		PathPrefix: pathPrefix,
+		BaseURL: pathPrefix,
 	}
 }
 
 // IndexPageContent is a map of sections to path -> description.
 type IndexPageContent struct {
-	mu         sync.Mutex
-	PathPrefix string
-	elements   []IndexPageLinkGroup
+	mu       sync.Mutex
+	BaseURL  string
+	elements []IndexPageLinkGroup
 }
 
 type IndexPageLinkGroup struct {
@@ -78,12 +78,6 @@ const (
 func (pc *IndexPageContent) AddLinks(weight int, groupDesc string, links []IndexPageLink) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
-
-	for i := range links {
-		if strings.HasPrefix(links[i].Path, "/") {
-			links[i].Path = pc.PathPrefix + links[i].Path
-		}
-	}
 
 	// Append the links to the group if already existing.
 	for i, group := range pc.elements {
@@ -120,17 +114,27 @@ var indexPageHTML string
 
 type indexPageContents struct {
 	LinkGroups []IndexPageLinkGroup
+	BaseURL    string
 }
 
 //go:embed static
 var staticFiles embed.FS
 
+func resolveBaseURL(baseURL, path string) string {
+	if strings.HasPrefix(path, "/") {
+		return strings.TrimSuffix(baseURL, "/") + path
+	}
+	return path
+}
+
 func indexHandler(content *IndexPageContent) http.HandlerFunc {
-	templ := template.New("main")
+	templ := template.New("main").Funcs(template.FuncMap{
+		"resolveBaseURL": resolveBaseURL,
+	})
 	template.Must(templ.Parse(indexPageHTML))
 
 	return func(w http.ResponseWriter, _ *http.Request) {
-		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
+		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent(), BaseURL: content.BaseURL})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
