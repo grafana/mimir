@@ -1,5 +1,5 @@
 diff --git a/pkg/mimirpb/mimir.pb.go b/pkg/mimirpb/mimir.pb.go
-index c4d0bfb6f..de8364cdb 100644
+index 4dac3b5315..de8364cdbc 100644
 --- a/pkg/mimirpb/mimir.pb.go
 +++ b/pkg/mimirpb/mimir.pb.go
 @@ -275,9 +275,6 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
@@ -371,7 +371,7 @@ index c4d0bfb6f..de8364cdb 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11663,23 +11584,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11663,7 +11584,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -380,15 +380,7 @@ index c4d0bfb6f..de8364cdb 100644
  				if b < 0x80 {
  					break
  				}
- 			}
--			normalizeMetricName, _ = getMetricName(metricName, metricType)
--			if _, ok := metadata[normalizeMetricName]; ok {
--				// Already have metadata for this metric familiy name.
--				// Since we cannot have multiple definitions of the same
--				// metric family name, we ignore this metadata.
--				return nil
--			}
- 		case 3:
+@@ -11672,7 +11593,7 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  			if wireType != 0 {
  				return fmt.Errorf("proto: wrong wireType = %d for field HelpRef", wireType)
  			}
@@ -397,7 +389,7 @@ index c4d0bfb6f..de8364cdb 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11689,20 +11603,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11682,20 +11603,16 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -420,7 +412,7 @@ index c4d0bfb6f..de8364cdb 100644
  			for shift := uint(0); ; shift += 7 {
  				if shift >= 64 {
  					return ErrIntOverflowMimir
-@@ -11712,15 +11622,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11705,15 +11622,11 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  				}
  				b := dAtA[iNdEx]
  				iNdEx++
@@ -437,13 +429,21 @@ index c4d0bfb6f..de8364cdb 100644
  		default:
  			iNdEx = preIndex
  			skippy, err := skipMimir(dAtA[iNdEx:])
-@@ -11740,18 +11646,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
+@@ -11733,26 +11646,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata
  	if iNdEx > l {
  		return io.ErrUnexpectedEOF
  	}
+-	normalizeMetricName, _ = getMetricName(metricName, metricType)
 -	if len(normalizeMetricName) == 0 {
 -		return nil
 -	}
+-	if _, ok := metadata[normalizeMetricName]; ok {
+-		// Already have metadata for this metric familiy name.
+-		// Since we cannot have multiple definitions of the same
+-		// metric family name, we ignore this metadata.
+-		return nil
+-	}
+-	
 -	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
 -		metadata[normalizeMetricName] = &MetricMetadata{
 -			MetricFamilyName: normalizeMetricName,
