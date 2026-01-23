@@ -108,7 +108,7 @@ If you intend to use the rollout-operator, install the CRDs as described above.
 
 If you intend to disable the rollout-operator, follow these steps:
 
-1. Disable the rollout-operator in your values file
+1. Disable the rollout-operator in your values file.
 
 ```yaml
 rollout-operator:
