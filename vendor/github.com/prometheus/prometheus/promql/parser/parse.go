@@ -75,6 +75,11 @@ type parser struct {
 	// built histogram had a counter_reset_hint explicitly specified.
 	// This is used to populate CounterResetHintSet in SequenceValue.
 	lastHistogramCounterResetHintSet bool
+
+	// prevHistogramCounterResetHintSet stores the previous value of
+	// lastHistogramCounterResetHintSet before building a new histogram.
+	// This is used to preserve the base histogram's flag when building series.
+	prevHistogramCounterResetHintSet bool
 }
 
 type Opt func(p *parser)
@@ -516,30 +521,32 @@ func (p *parser) mergeMaps(left, right *map[string]any) (ret *map[string]any) {
 }
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	// Capture the hint set flag immediately after inc histogram is built.
-	// The base histogram's hint set flag was already captured.
-	hintSet := p.lastHistogramCounterResetHintSet
-	return p.histogramsSeries(base, inc, times, hintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	// Use the saved previous flag for the base histogram, and the current flag for inc.
+	baseHintSet := p.prevHistogramCounterResetHintSet
+	incHintSet := p.lastHistogramCounterResetHintSet
+	return p.histogramsSeries(base, inc, times, baseHintSet, incHintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		res, _, _, err := a.Add(b)
 		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	// Capture the hint set flag immediately after inc histogram is built.
-	hintSet := p.lastHistogramCounterResetHintSet
-	return p.histogramsSeries(base, inc, times, hintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	// Use the saved previous flag for the base histogram, and the current flag for inc.
+	baseHintSet := p.prevHistogramCounterResetHintSet
+	incHintSet := p.lastHistogramCounterResetHintSet
+	return p.histogramsSeries(base, inc, times, baseHintSet, incHintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		res, _, _, err := a.Sub(b)
 		return res, err
 	})
 }
 
-func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64, counterResetHintSet bool,
+func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64, baseCounterResetHintSet, incCounterResetHintSet bool,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
 ) ([]SequenceValue, error) {
 	ret := make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests.
-	ret[0] = SequenceValue{Histogram: base, CounterResetHintSet: counterResetHintSet}
+	// Use the base histogram's hint set flag for the base value.
+	ret[0] = SequenceValue{Histogram: base, CounterResetHintSet: baseCounterResetHintSet}
 	cur := base
 	for i := uint64(1); i <= times; i++ {
 		if cur.Schema > inc.Schema {
@@ -551,7 +558,8 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 		if err != nil {
 			return ret, err
 		}
-		ret[i] = SequenceValue{Histogram: cur, CounterResetHintSet: counterResetHintSet}
+		// Use the inc histogram's hint set flag for the incremented values.
+		ret[i] = SequenceValue{Histogram: cur, CounterResetHintSet: incCounterResetHintSet}
 	}
 
 	return ret, nil
@@ -560,6 +568,9 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 // buildHistogramFromMap is used in the grammar to take then individual parts of the histogram and complete it.
 func (p *parser) buildHistogramFromMap(desc *map[string]any) *histogram.FloatHistogram {
 	output := &histogram.FloatHistogram{}
+	// Save the previous flag value before resetting for the new histogram.
+	// This preserves the base histogram's flag when building series.
+	p.prevHistogramCounterResetHintSet = p.lastHistogramCounterResetHintSet
 	// Reset the flag for each new histogram being built.
 	p.lastHistogramCounterResetHintSet = false
 
