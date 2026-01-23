@@ -232,7 +232,7 @@ func TestQuerier(t *testing.T) {
 			// Generate TSDB head used to simulate querying the long-term storage.
 			db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk), q.valueType)
 			dbQueryable := TimeRangeQueryable{
-				Queryable: db,
+				Queryable: NewTestMemoryTrackingQueryable(db),
 				IsApplicable: func(_ context.Context, _ string, _ time.Time, _, _ int64, _ log.Logger, _ ...*labels.Matcher) bool {
 					return true
 				},
@@ -1436,6 +1436,7 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 		Timeout:            1 * time.Minute,
 	})
 	ctx := user.InjectOrgID(context.Background(), "0")
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, q.query, from, through, step)
 	require.NoError(t, err)
 
