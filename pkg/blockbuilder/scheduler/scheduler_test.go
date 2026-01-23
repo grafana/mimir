@@ -944,7 +944,7 @@ var _ offsetStore = (*mockOffsetFinder)(nil)
 
 func TestReturningPartitionNoSkip(t *testing.T) {
 	// The scenario is:
-	// * we learn the commit and planned offsets at startup of a partition that is inactive.
+	// * we learn the commit and end offsets at startup of a partition that is inactive.
 	// * this partition's end offset grows before we produce its first job.
 	// * the next time we produce a job it *should* start at the commit offset we learned at startup.
 	sched, _ := mustScheduler(t, 4)
