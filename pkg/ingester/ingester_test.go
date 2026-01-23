@@ -11492,7 +11492,6 @@ func TestIngester_PushWithSampledErrors(t *testing.T) {
 				cortex_discarded_samples_total{group="",reason="labels-not-sorted",user="user-2"} 1
 			`,
 		},
-
 		"should soft fail on series with duplicate labels with native histogram": {
 			reqs: []*mimirpb.WriteRequest{
 				{
