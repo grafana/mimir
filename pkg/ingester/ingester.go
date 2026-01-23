@@ -669,21 +669,25 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			// and leave hanging goroutines after exit.
 			i.subservicesWatcher.Close()
 
+			shutdownTimeout := 3 * time.Minute
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer shutdownCancel()
+
 			// Stop any services that may have been started in this method, in reverse order.
 			if i.subservicesAfterIngesterRingLifecycler != nil {
-				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesAfterIngesterRingLifecycler)
+				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesAfterIngesterRingLifecycler)
 			}
 			if i.lifecycler != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+				_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
 			}
 			if i.ingestReader != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.ingestReader)
+				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ingestReader)
 			}
 			if i.subservicesForPartitionReplay != nil {
-				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesForPartitionReplay)
+				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesForPartitionReplay)
 			}
 			if i.ownedSeriesService != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
+				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ownedSeriesService)
 			}
 		}
 	}()
@@ -744,7 +748,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if err := i.lifecycler.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
-	if err = ring.WaitInstanceState(ctx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
+	waitInstanceStateTimeOut := 7 * time.Minute // autoJoin timeout is 5 minutes
+	waitInstanceStateCtx, waitInstanceStateCancel := context.WithTimeout(ctx, waitInstanceStateTimeOut)
+	defer waitInstanceStateCancel()
+	if err = ring.WaitInstanceState(waitInstanceStateCtx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
 		return errors.Wrap(err, "failed to wait for instance to be active in ring")
 	}
 
