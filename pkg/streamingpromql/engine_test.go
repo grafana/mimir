@@ -194,8 +194,6 @@ func TestNewInstantQuery_Strings(t *testing.T) {
 // Once the streaming engine supports all PromQL features exercised by Prometheus' test cases, we can remove these files and instead call promql.RunBuiltinTests here instead.
 func TestUpstreamTestCases(t *testing.T) {
 	opts := NewTestEngineOpts()
-	// Disable the optimization pass, since it requires delayed name removal to be enabled.
-	opts.EnableEliminateDeduplicateAndMerge = false
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0, true), stats.NewQueryMetrics(nil), planner)

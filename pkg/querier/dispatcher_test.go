@@ -1119,7 +1119,7 @@ func TestDispatcher_HandleProtobuf_WithDelayedNameRemovalEnabled(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	opts := streamingpromql.NewTestEngineOpts()
-	// Disable the optimization pass, since it requires delayed name removal to be enabled.
+	// Disable the optimization pass because the test cases expect specific plan structures (including DeduplicateAndMerge nodes).
 	opts.EnableEliminateDeduplicateAndMerge = false
 	ctx := context.Background()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
