@@ -44,10 +44,10 @@ kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/char
 
 If you don't use the rollout-operator, disable it in your values file to prevent the installation of related webhooks which will interfere with subsequent rollouts:
 
-```yaml
-rollout_operator:
-  enabled: false
-```
+   ```yaml
+   rollout_operator:
+     enabled: false
+   ```
 
 ### Choose your ingest storage strategy
 
@@ -108,21 +108,21 @@ If you intend to disable the rollout-operator use the following sequence;
 
 1. Disable the rollout-operator in your values file
 
-```yaml
-rollout-operator:
-  enabled: false
-```
+   ```yaml
+   rollout-operator:
+     enabled: false
+   ```
 
 2. Delete the rollout-operator validating and mutating webhook configurations
 
-```bash
-kubectl delete validatingwebhookconfiguration no-downscale-<NAMESPACE>
-kubectl delete validatingwebhookconfiguration pod-eviction-<NAMESPACE>
-kubectl delete mutatingwebhookconfigurations prepare-downscale-<NAMESPACE>
-```
+   ```bash
+   kubectl delete validatingwebhookconfiguration no-downscale-<NAMESPACE>
+   kubectl delete validatingwebhookconfiguration pod-eviction-<NAMESPACE>
+   kubectl delete mutatingwebhookconfigurations prepare-downscale-<NAMESPACE>
+   ```
 
 3. Re-apply the updated configuration
 
-```bash
-helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE> --reset-values
-```
+   ```bash
+   helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE> --reset-values
+   ```
