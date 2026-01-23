@@ -93,30 +93,17 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 
 	existingLabels, foundDupe := ql.uniqueSeries[fingerprint]
 	if !foundDupe {
-		// newLabels is seen for the first time.
+		// newLabels is seen for the first time because it isn't in uniqueSeries map yet.
 		ql.uniqueSeries[fingerprint] = newLabels
-		uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
-		if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
-			if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
-				// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
-				ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
-			}
-
-			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
-		}
-		err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
-		if err != nil {
-			return labels.EmptyLabels(), err
-		}
-		return newLabels, nil
+		return ql.trackNewLabels(newLabels, uniqueSeriesBefore, tracker)
 	} else if !labels.Equal(existingLabels, newLabels) {
-		// newLabels hash is conflicted with the non-equal existingLabels.
+		// newLabels has not been seen before but its hash conflicted with existingLabels.
 		if ql.conflictSeries == nil {
 			ql.conflictSeries = make(map[uint64][]labels.Labels)
 		}
 		hashConflictLabels := ql.conflictSeries[fingerprint]
 		for _, existingConflictedLabels := range hashConflictLabels {
-			// Return the existingConflictedLabels because newLabels is seen before.
+			// newLabels is seen before in conflictSeries map, hence just return the existingConflictedLabels.
 			if labels.Equal(existingConflictedLabels, newLabels) {
 				if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
 					return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
@@ -124,27 +111,32 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 				return existingConflictedLabels, nil
 			}
 		}
-		// Track newLabels because it is not seen before.
+		// newLabels is not seen in the conflitSeries map so this is really newLabels.
 		ql.conflictSeries[fingerprint] = append(hashConflictLabels, newLabels)
-		uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
-		if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
-			if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
-				// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
-				ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
-			}
-			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
-		}
-		err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
-		if err != nil {
-			return labels.EmptyLabels(), err
-		}
-		return newLabels, nil
+		return ql.trackNewLabels(newLabels, uniqueSeriesBefore, tracker)
 	}
 
 	if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
 		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
 	return existingLabels, nil
+}
+
+func (ql *QueryLimiter) trackNewLabels(newLabels labels.Labels, uniqueSeriesBefore int, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+	uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
+	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
+		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
+			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
+			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
+		}
+
+		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+	}
+	err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
+	if err != nil {
+		return labels.EmptyLabels(), err
+	}
+	return newLabels, nil
 }
 
 // uniqueSeriesCount returns the count of unique series seen by this query limiter.
