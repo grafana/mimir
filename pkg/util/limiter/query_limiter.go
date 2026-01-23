@@ -104,6 +104,10 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 
 			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 		}
+		err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
+		if err != nil {
+			return labels.EmptyLabels(), err
+		}
 		return newLabels, nil
 	} else if !labels.Equal(existingLabels, newLabels) {
 		// newLabels hash is conflicted with the non-equal existingLabels.
@@ -127,6 +131,10 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 				ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
 			}
 			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		}
+		err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
+		if err != nil {
+			return labels.EmptyLabels(), err
 		}
 		return newLabels, nil
 	}
