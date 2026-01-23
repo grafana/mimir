@@ -22,5 +22,5 @@ func TestInstantVectorRemoteExec_FinalizeCalledAfterClosed(t *testing.T) {
 	require.True(t, resp.Closed, "the response should have been closed")
 
 	require.NoError(t, o.Finalize(context.Background()))
-	require.False(t, resp.GetEvaluationInfoCalled, "calling Finalize after Close should not try to read from the response stream")
+	require.False(t, resp.Finalized, "calling Finalize after Close should not try to read from the response stream")
 }

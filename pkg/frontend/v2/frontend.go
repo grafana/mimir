@@ -370,7 +370,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, httpRequest *httpgrpc.HTTP
 //
 // minT and maxT should be the start and end time of the queried data.
 // These timestamps should consider the lookback delta (ie. are not necessarily the time range provided in the query request).
-func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
+func (f *Frontend) DoProtobufRequest(requestContext context.Context, req proto.Message, minT, maxT time.Time) (ResponseStream, error) {
 	logger, requestContext := spanlogger.New(requestContext, f.log, tracer, "frontend.DoProtobufRequest")
 	logger.SetTag("request.type", proto.MessageName(req))
 
