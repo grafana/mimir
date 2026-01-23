@@ -99,6 +99,11 @@ func (s *Spawner) plan() {
 		}
 	}
 
+	tenants := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		tenants = append(tenants, job.id)
+	}
+
 	// TODO: Can track how many were actually accepted with metrics
 	_, _, err := s.planTracker.Offer(
 		jobs,
@@ -111,8 +116,8 @@ func (s *Spawner) plan() {
 		return
 	}
 
-	for _, job := range jobs {
-		s.planMap[job.id] = now
+	for _, tenant := range tenants {
+		s.planMap[tenant] = now
 	}
 }
 
