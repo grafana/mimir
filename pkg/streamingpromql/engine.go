@@ -177,7 +177,12 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 }
 
 func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
-	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, NoopPlanningObserver{})
+	enableDelayedNameRemoval, err := e.limitsProvider.GetEnableDelayedNameRemoval(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get 'enable delayed name removal' setting for tenant: %w", err)
+	}
+
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, enableDelayedNameRemoval, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
 	}
@@ -300,23 +305,31 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 type QueryLimitsProvider interface {
 	// GetMaxEstimatedMemoryConsumptionPerQuery returns the maximum estimated memory allowed to be consumed by a query in bytes, or 0 to disable the limit.
 	GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error)
+	// GetEnableDelayedNameRemoval indicates if the experimental feature for delayed name removal should be enabled.
+	GetEnableDelayedNameRemoval(ctx context.Context) (bool, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
 //
 // This should generally only be used in tests.
-func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64) QueryLimitsProvider {
+func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64, enableDelayedNameRemoval bool) QueryLimitsProvider {
 	return staticQueryLimitsProvider{
 		maxEstimatedMemoryConsumptionPerQuery: maxEstimatedMemoryConsumptionPerQuery,
+		enableDelayedNameRemoval:              enableDelayedNameRemoval,
 	}
 }
 
 type staticQueryLimitsProvider struct {
 	maxEstimatedMemoryConsumptionPerQuery uint64
+	enableDelayedNameRemoval              bool
 }
 
 func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
 	return p.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+func (p staticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
+	return p.enableDelayedNameRemoval, nil
 }
 
 type NoopQueryTracker struct{}

@@ -2207,7 +2207,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
 	}
 
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	frontend, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {

@@ -1898,11 +1898,6 @@ store_gateway_client:
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
-# (experimental) Enable the experimental Prometheus feature for delayed name
-# removal.
-# CLI flag: -querier.enable-delayed-name-removal
-[enable_delayed_name_removal: <boolean> | default = false]
-
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -4382,6 +4377,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
+
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal within MQE, which only works if remote execution and running sharding
+# within MQE is enabled.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
 
 # Limit the total query time range (end - start time). This limit is enforced in
 # the query-frontend on the received instant, range or remote read query.

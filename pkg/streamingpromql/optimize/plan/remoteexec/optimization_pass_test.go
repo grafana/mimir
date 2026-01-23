@@ -530,7 +530,7 @@ func TestOptimizationPass(t *testing.T) {
 		expr, err = rewriteForSubquerySpinoff(ctx, expr)
 		require.NoError(t, err)
 
-		p, err := planner.NewQueryPlan(ctx, expr, timeRange, observer)
+		p, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
 		require.NoError(t, err)
 		actual := p.String()
 		require.Equal(t, testutils.TrimIndent(expected), actual)

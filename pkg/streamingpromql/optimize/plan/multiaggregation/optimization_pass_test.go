@@ -405,7 +405,7 @@ func createPlan(t *testing.T, expr string, enableOptimizationPass bool, minimumQ
 		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
 	}
 
-	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, observer)
+	plan, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
 	require.NoError(t, err)
 	return plan.String()
 }

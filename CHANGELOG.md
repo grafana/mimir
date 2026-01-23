@@ -16,6 +16,7 @@
 * [CHANGE] Limits: removed the experimental `cost_attribution_labels` configuration option. Use `cost_attribution_labels_structured` instead. #13286
 * [CHANGE] Ingester: Renamed `cortex_ingest_storage_writer_buffered_produce_bytes` metric to `cortex_ingest_storage_writer_buffered_produce_bytes_distribution` (Prometheus summary), and added `cortex_ingest_storage_writer_buffered_produce_bytes` metric that exports the buffer size as a Prometheus Gauge. #13414
 * [CHANGE] Querier and query-frontend: Removed support for per-step stats when MQE is enabled. #13582
+* [CHANGE] Querier: Make the experimental `enable_delayed_name_removal` setting configurable as a per-tenant limit instead of a global flag. #13926
 * [CHANGE] Compactor: Require that uploaded TSDB blocks use v2 of the index file format. #13815
 * [CHANGE] Store-gateway: Remove support for generating index-headers from TSDB blocks that use v1 of the index file format. #13824
 * [CHANGE] Query-frontend: Removed support for calculating 'cache-adjusted samples processed' query statistic. The `-query-frontend.cache-samples-processed-stats` CLI flag has been deprecated and will be removed in a future release. Setting it has now no effect. #13582
