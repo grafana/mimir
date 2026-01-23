@@ -29,6 +29,7 @@ var (
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
 	uniqueSeries   map[uint64]labels.Labels
+	conflictSeries map[uint64][]labels.Labels
 
 	chunkBytesCount     atomic.Int64
 	chunkCount          atomic.Int64
@@ -73,52 +74,65 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 	return ql
 }
 
+func countConflictSeries(series map[uint64][]labels.Labels) int {
+	count := 0
+	for _, lbls := range series {
+		count += len(lbls)
+	}
+	return count
+}
+
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
-	fingerprint := seriesLabels.Hash()
+func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+	fingerprint := newLabels.Hash()
 
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
-	// We intentionally call increase memory for labels here before deduplication because,
-	// we want to balance with the decrease memory consumption calls through iterator that can contains duplicate labels too.
-	// In the case of hash collision, we also want to make sure the labels memory consumption is increased
-	// and decreased for the labels set that was conflicted.
-	err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
-	if err != nil {
-		return labels.EmptyLabels(), err
-	}
+	uniqueSeriesBefore := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
 
-	// Note that we are simplifying hash conflict check because we know they are going to be very rare.
-	uniqueSeriesBefore := len(ql.uniqueSeries)
-	existing, found := ql.uniqueSeries[fingerprint]
-	// This is the case where there are duplicated labels from previously seen series, hence we return the existing
-	// labels and not counting up the memory consumption.
-	if found && labels.Equal(existing, seriesLabels) {
-		// Still return error if the duplicated labels had been exceeding the limit.
-		if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
+	existingLabels, foundDupe := ql.uniqueSeries[fingerprint]
+	if !foundDupe {
+		// newLabels is seen for the first time.
+		ql.uniqueSeries[fingerprint] = newLabels
+		uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
+		if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
+			if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
+				// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
+				ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
+			}
+
 			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 		}
-		return existing, nil
-	}
-
-	// This can be either newly seen labels with different fingerprint or can also be newly seen labels whose hash
-	// conflicted with previous seen different labels.
-	// In both cases we just return the provided labels.
-	ql.uniqueSeries[fingerprint] = seriesLabels
-
-	uniqueSeriesAfter := len(ql.uniqueSeries)
-
-	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
-		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
-			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
-			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
+		return newLabels, nil
+	} else if !labels.Equal(existingLabels, newLabels) {
+		// newLabels hash is conflicted with the non-equal existingLabels.
+		if ql.conflictSeries == nil {
+			ql.conflictSeries = make(map[uint64][]labels.Labels)
 		}
-
-		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		hashConflictLabels := ql.conflictSeries[fingerprint]
+		for _, existingConflictedLabels := range hashConflictLabels {
+			// Return the existingConflictedLabels because newLabels is seen before.
+			if labels.Equal(existingConflictedLabels, newLabels) {
+				// TODO: do we need to validate series limit here?
+				return existingConflictedLabels, nil
+			}
+		}
+		// Track newLabels because it is not seen before.
+		ql.conflictSeries[fingerprint] = append(hashConflictLabels, newLabels)
+		uniqueSeriesAfter := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
+		if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
+			if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
+				// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
+				ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
+			}
+			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		}
+		return newLabels, nil
 	}
 
-	return seriesLabels, nil
+	// The series has been seen before
+	return existingLabels, nil
 }
 
 // uniqueSeriesCount returns the count of unique series seen by this query limiter.
