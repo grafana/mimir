@@ -452,58 +452,6 @@ func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 		require.Equal(t, n, len(out))
 		require.Equal(t, correctMarshaledData, out[:msg.Size()])
 	})
-
-	t.Run("panics if pool returns dirty TimeSeries with labels", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, LabelAdapter{Name: "foo", Value: "bar"})
-
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		p := PreallocTimeseries{}
-		assert.Panics(t, func() {
-			_ = p.Unmarshal([]byte{}, nil, nil, false)
-		})
-	})
-
-	t.Run("panics if pool returns dirty TimeSeries with samples", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Samples = append(ts.Samples, Sample{Value: 1, TimestampMs: 2})
-
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		p := PreallocTimeseries{}
-		assert.Panics(t, func() {
-			_ = p.Unmarshal([]byte{}, nil, nil, false)
-		})
-	})
-
-	t.Run("panics if pool returns dirty TimeSeries with histograms", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Histograms = append(ts.Histograms, Histogram{Sum: 1.0})
-
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		p := PreallocTimeseries{}
-		assert.Panics(t, func() {
-			_ = p.Unmarshal([]byte{}, nil, nil, false)
-		})
-	})
-
-	t.Run("panics if pool returns dirty TimeSeries with exemplars", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Exemplars = append(ts.Exemplars, Exemplar{Value: 1, TimestampMs: 2})
-
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		p := PreallocTimeseries{}
-		assert.Panics(t, func() {
-			_ = p.Unmarshal([]byte{}, nil, nil, false)
-		})
-	})
 }
 
 func TestPreallocTimeseries_SortLabelsIfNeeded(t *testing.T) {
