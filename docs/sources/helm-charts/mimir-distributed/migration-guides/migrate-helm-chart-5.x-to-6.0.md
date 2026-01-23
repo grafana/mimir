@@ -44,10 +44,10 @@ kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/char
 
 If you don't use the rollout-operator, disable it in your values file to prevent the installation of related webhooks which will interfere with subsequent rollouts:
 
-   ```yaml
-   rollout_operator:
-     enabled: false
-   ```
+```yaml
+rollout_operator:
+  enabled: false
+```
 
 ### Choose your ingest storage strategy
 
