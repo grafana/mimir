@@ -61,13 +61,16 @@ func deserializePlanJob(content []byte) (*Job[struct{}], error) {
 	if err := info.Unmarshal(content); err != nil {
 		return nil, err
 	}
-	return &Job[struct{}]{
+	job := &Job[struct{}]{
 		value:             struct{}{},
 		creationTime:      time.Unix(info.CreationTime, 0),
 		leaseCreationTime: time.Unix(info.LeaseCreationTime, 0),
 		numLeases:         int(info.NumLeases),
 		epoch:             info.Epoch,
-	}, nil
+	}
+	// Renewal times are not serialized, a buffer time is used across restarts instead
+	job.lastRenewalTime = job.leaseCreationTime
+	return job, nil
 
 }
 
@@ -93,7 +96,7 @@ func deserializeCompactionJob(b []byte) (*Job[*CompactionJob], error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Job[*CompactionJob]{
+	job := &Job[*CompactionJob]{
 		value: &CompactionJob{
 			blocks:  stored.Job.BlockIds,
 			isSplit: stored.Job.Split,
@@ -102,7 +105,10 @@ func deserializeCompactionJob(b []byte) (*Job[*CompactionJob], error) {
 		leaseCreationTime: time.Unix(stored.Info.LeaseCreationTime, 0),
 		numLeases:         int(stored.Info.NumLeases),
 		epoch:             stored.Info.Epoch,
-	}, nil
+	}
+	// Renewal times are not serialized, a buffer time is used across restarts instead
+	job.lastRenewalTime = job.leaseCreationTime
+	return job, nil
 }
 
 func openBboltJobPersistenceManager(path string, logger log.Logger) (*BboltJobPersistenceManager, error) {

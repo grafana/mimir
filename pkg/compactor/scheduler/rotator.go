@@ -28,12 +28,13 @@ const outsideRotation int = -1
 type Rotator struct {
 	services.Service
 
-	planTracker          *JobTracker[struct{}]
-	leaseDuration        time.Duration
-	leaseCheckInterval   time.Duration
-	metrics              *schedulerMetrics
-	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
-	logger               log.Logger
+	planTracker                   *JobTracker[struct{}]
+	leaseDuration                 time.Duration
+	leaseCheckInterval            time.Duration
+	initialLeaseMaintenanceBuffer time.Duration
+	metrics                       *schedulerMetrics
+	rotationIndexCounter          *atomic.Int32 // only increments, overflow is okay
+	logger                        log.Logger
 
 	mtx            *sync.RWMutex
 	tenantStateMap map[string]*TenantRotationState
@@ -47,23 +48,24 @@ type TenantRotationState struct {
 
 func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, metrics *schedulerMetrics, logger log.Logger) *Rotator {
 	r := &Rotator{
-		planTracker:          planTracker,
-		leaseDuration:        leaseDuration,
-		leaseCheckInterval:   leaseCheckInterval,
-		metrics:              metrics,
-		rotationIndexCounter: atomic.NewInt32(0),
-		mtx:                  &sync.RWMutex{},
-		tenantStateMap:       make(map[string]*TenantRotationState),
-		rotation:             make([]string, 0, 10), // initial size doesn't really matter
-		logger:               logger,
+		planTracker:                   planTracker,
+		leaseDuration:                 leaseDuration,
+		leaseCheckInterval:            leaseCheckInterval,
+		initialLeaseMaintenanceBuffer: leaseDuration * 2,
+		metrics:                       metrics,
+		rotationIndexCounter:          atomic.NewInt32(0),
+		mtx:                           &sync.RWMutex{},
+		tenantStateMap:                make(map[string]*TenantRotationState),
+		rotation:                      make([]string, 0, 10), // initial size doesn't really matter
+		logger:                        logger,
 	}
 
 	r.Service = services.NewTimerService(leaseCheckInterval, nil, r.iter, nil)
 	return r
 }
 
-func (r *Rotator) iter(_ context.Context) error {
-	r.LeaseMaintenance(r.leaseDuration)
+func (r *Rotator) iter(ctx context.Context) error {
+	r.LeaseMaintenance(ctx, r.leaseDuration)
 	return nil
 }
 
@@ -288,7 +290,18 @@ func (r *Rotator) RemoveTenant(tenant string) {
 	delete(r.tenantStateMap, tenant)
 }
 
-func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
+func (r *Rotator) LeaseMaintenance(ctx context.Context, leaseDuration time.Duration) {
+	// We avoid having to serialize lease renewals by providing an initial buffer time before enforcing lease expiration
+	if r.initialLeaseMaintenanceBuffer != 0 {
+		select {
+		case <-time.After(r.initialLeaseMaintenanceBuffer):
+			r.initialLeaseMaintenanceBuffer = 0
+			break
+		case <-ctx.Done():
+			return
+		}
+	}
+
 	_, err := r.planTracker.ExpireLeases(leaseDuration)
 	if err != nil {
 		level.Warn(r.logger).Log("msg", "background lease expiration failed for planning job tracker", "err", err)
@@ -297,6 +310,10 @@ func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
 	r.mtx.RLock()
 	addRotationFor := make([]string, 0, 10) // size is arbitrary
 	for tenant, tenantState := range r.tenantStateMap {
+		if ctx.Err() != nil {
+			r.mtx.RUnlock()
+			return
+		}
 		transition, err := tenantState.tracker.ExpireLeases(leaseDuration)
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "background lease expiration failed for tenant compaction job tracker", "tenant", tenant, "err", err)
@@ -306,8 +323,8 @@ func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
 	}
 	r.mtx.RUnlock()
 
-	if len(addRotationFor) == 0 {
-		// No tenant needs to be moved into the rotation
+	if len(addRotationFor) == 0 || ctx.Err() != nil {
+		// No tenant needs to be moved into the rotation or we're shutting down and don't care
 		return
 	}
 

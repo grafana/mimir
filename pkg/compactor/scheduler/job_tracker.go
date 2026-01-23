@@ -75,15 +75,16 @@ type JobTracker[V any] struct {
 
 func NewJobTracker[V any](jobPersister JobPersister[V], maxLeases int, jobType string, metrics *schedulerMetrics) *JobTracker[V] {
 	jt := &JobTracker[V]{
-		persister: jobPersister,
-		clock:     clock.New(),
-		maxLeases: maxLeases,
-		jobType:   jobType,
-		metrics:   metrics,
-		mtx:       &sync.Mutex{},
-		pending:   list.New(),
-		active:    list.New(),
-		allJobs:   make(map[string]*list.Element),
+		persister:    jobPersister,
+		clock:        clock.New(),
+		maxLeases:    maxLeases,
+		jobType:      jobType,
+		metrics:      metrics,
+		mtx:          &sync.Mutex{},
+		rejectOffers: false,
+		pending:      list.New(),
+		active:       list.New(),
+		allJobs:      make(map[string]*list.Element),
 	}
 	return jt
 }
@@ -267,6 +268,7 @@ func (jt *JobTracker[V]) ExpireLeases(leaseDuration time.Duration) (bool, error)
 	return wasEmpty && len(reviveJobs) > 0, nil
 }
 
+// RenewLease renews a lease to prevent it from being expired. This is intentionally not persisted. A buffer time is used across restarts instead.
 func (jt *JobTracker[V]) RenewLease(id string, epoch int64) bool {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
