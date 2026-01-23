@@ -28,7 +28,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
-	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -112,11 +111,6 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return storage.EmptySeriesSet()
 	}
 
-	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
 	now := time.Now().UnixMilli()
 	minT = clampMinTime(spanLog, minT, now, -queryIngestersWithin, "query ingesters within")
 
@@ -137,7 +131,7 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		projectionLabels = sp.ProjectionLabels
 	}
 
-	return series.NewMemoryTrackingSeriesSet(q.streamingSelect(ctx, minT, maxT, projectionInclude, projectionLabels, matchers), memoryTracker)
+	return q.streamingSelect(ctx, minT, maxT, projectionInclude, projectionLabels, matchers)
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, projectionInclude bool, projectionLabels []string, matchers []*labels.Matcher) storage.SeriesSet {
