@@ -1629,7 +1629,7 @@ func (i *Ingester) pushSamplesToAppender(
 	for _, ts := range timeseries {
 		// The labels must be sorted. This is defensive programming; the distributor
 		// sorts labels before forwarding to ingesters.
-		if !mimirpb.LabelsAreUniqueSorted(ts.Labels) {
+		if !mimirpb.AreLabelNamesSortedAndUnique(ts.Labels) {
 			for _, sample := range ts.Samples {
 				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, sample.TimestampMs, ts.Labels)
 			}
