@@ -78,53 +78,38 @@ func TestTimeseriesFromPool(t *testing.T) {
 		assert.Len(t, reused.Samples, 0)
 	})
 
-	t.Run("panics if pool returns dirty TimeSeries with labels", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, LabelAdapter{Name: "foo", Value: "bar"})
+	// Test that TimeseriesFromPool panics when it receives a dirty object from the pool.
+	dirtyPoolTests := []struct {
+		name    string
+		dirtyTS *TimeSeries
+	}{
+		{"labels", &TimeSeries{Labels: []LabelAdapter{{Name: "foo", Value: "bar"}}}},
+		{"samples", &TimeSeries{Samples: []Sample{{Value: 1, TimestampMs: 2}}}},
+		{"histograms", &TimeSeries{Histograms: []Histogram{{Sum: 1.0}}}},
+		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},
+		{"CreatedTimestamp", &TimeSeries{CreatedTimestamp: 1234567890}},
+		{"SkipUnmarshalingExemplars", &TimeSeries{SkipUnmarshalingExemplars: true}},
+	}
+	for _, tc := range dirtyPoolTests {
+		t.Run("panics if pool returns dirty TimeSeries with "+tc.name, func(t *testing.T) {
+			t.Cleanup(func() {
+				// Drain the pool to ensure isolation. sync.Pool.Get() never returns nil
+				// (it calls New if empty), so we just drain a fixed count.
+				for range 1000 {
+					timeSeriesPool.Get()
+				}
+			})
+			// Flood the pool with dirty objects because sync.Pool doesn't guarantee returning
+			// the same object that was just put in.
+			for range 100 {
+				timeSeriesPool.Put(tc.dirtyTS)
+			}
 
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		assert.Panics(t, func() {
-			TimeseriesFromPool()
+			assert.Panics(t, func() {
+				TimeseriesFromPool()
+			})
 		})
-	})
-
-	t.Run("panics if pool returns dirty TimeSeries with samples", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Samples = append(ts.Samples, Sample{Value: 1, TimestampMs: 2})
-
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		assert.Panics(t, func() {
-			TimeseriesFromPool()
-		})
-	})
-
-	t.Run("panics if pool returns dirty TimeSeries with histograms", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Histograms = append(ts.Histograms, Histogram{Sum: 1.0})
-
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		assert.Panics(t, func() {
-			TimeseriesFromPool()
-		})
-	})
-
-	t.Run("panics if pool returns dirty TimeSeries with exemplars", func(t *testing.T) {
-		ts := TimeseriesFromPool()
-		ts.Exemplars = append(ts.Exemplars, Exemplar{Value: 1, TimestampMs: 2})
-
-		// Put directly into pool without cleaning (simulating a bug)
-		timeSeriesPool.Put(ts)
-
-		assert.Panics(t, func() {
-			TimeseriesFromPool()
-		})
-	})
+	}
 }
 
 func TestCopyToYoloString(t *testing.T) {
