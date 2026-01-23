@@ -102,7 +102,7 @@ Follow this guidance to recover from common issues with the rollout operator dur
 
 ### Rollout operator misconfiguration
 
-If you failed to install the rollout-operator CustomResourceDefinitions (CRDs) and did not disable the rollout-operator then your deployment will be in a bad state.
+If you don't install the rollout operator CustomResourceDefinitions (CRDs) and don't disable the rollout operator, your deployment enters an error state.
 
 If you intend to use the rollout-operator, install the CRDs as described above.
 
