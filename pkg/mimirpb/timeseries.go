@@ -291,7 +291,7 @@ func (p *PreallocTimeseries) Unmarshal(dAtA []byte, symbols *rw2PagedSymbols, me
 
 	// Defense-in-depth: verify TimeSeries is clean before unmarshalling.
 	// This complements the check in TimeseriesFromPool().
-	if len(p.TimeSeries.Labels) > 0 || len(p.TimeSeries.Samples) > 0 || len(p.TimeSeries.Histograms) > 0 || len(p.TimeSeries.Exemplars) > 0 {
+	if len(p.TimeSeries.Labels) > 0 || len(p.TimeSeries.Samples) > 0 || len(p.TimeSeries.Histograms) > 0 || len(p.TimeSeries.Exemplars) > 0 || p.TimeSeries.CreatedTimestamp != 0 {
 		panic("attempting to unmarshal into dirty TimeSeries: this indicates a bug in pool management")
 	}
 
@@ -583,7 +583,7 @@ func TimeseriesFromPool() *TimeSeries {
 	// that is still in use elsewhere (e.g., due to incorrect pool management).
 	// Silent corruption from dirty pool objects is very hard to diagnose,
 	// so we fail fast here to surface such bugs immediately.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 {
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
 
