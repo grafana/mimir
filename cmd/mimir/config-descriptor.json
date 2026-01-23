@@ -2480,17 +2480,6 @@
           "fieldCategory": "advanced"
         },
         {
-          "kind": "field",
-          "name": "enable_delayed_name_removal",
-          "required": false,
-          "desc": "Enable the experimental Prometheus feature for delayed name removal.",
-          "fieldValue": null,
-          "fieldDefaultValue": false,
-          "fieldFlag": "querier.enable-delayed-name-removal",
-          "fieldType": "boolean",
-          "fieldCategory": "experimental"
-        },
-        {
           "kind": "block",
           "name": "mimir_query_engine",
           "required": false,
@@ -2581,6 +2570,17 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "querier.mimir-query-engine.enable-projection-pushdown",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
+            },
+            {
+              "kind": "field",
+              "name": "enable_multi_aggregation",
+              "required": false,
+              "desc": "Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled.",
+              "fieldValue": null,
+              "fieldDefaultValue": true,
+              "fieldFlag": "querier.mimir-query-engine.enable-multi-aggregation",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             }
@@ -5602,6 +5602,17 @@
           "fieldFlag": "querier.query-ingesters-within",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "enable_delayed_name_removal",
+          "required": false,
+          "desc": "Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "querier.enable-delayed-name-removal",
+          "fieldType": "boolean",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

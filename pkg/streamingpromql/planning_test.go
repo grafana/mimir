@@ -1493,11 +1493,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
-			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
+			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, testCase.enableDelayedNameRemoval, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
@@ -1537,7 +1536,7 @@ func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 
 	expr := `topk(5, foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	aggregationNode := plan.Root.(*core.AggregateExpression)
@@ -1559,7 +1558,7 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 
 	expr := `sum(foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
@@ -1577,7 +1576,7 @@ func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(
 
 	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
 
-	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
 	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
 	require.Nil(t, plan)
 }
@@ -1748,7 +1747,7 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -1784,7 +1783,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
-			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
+			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), false, NoopPlanningObserver{})
 			require.NoError(b, err)
 
 			b.Run("encode", func(b *testing.B) {
@@ -1838,7 +1837,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 
 	expr := "test"
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, NoopPlanningObserver{})
+	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	expectedPlanningActivities := []trackedQuery{

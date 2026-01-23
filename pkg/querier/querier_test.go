@@ -1812,7 +1812,7 @@ func defaultLimitsConfig() validation.Limits {
 }
 
 func unlimitedQueryLimitsProvider() streamingpromql.QueryLimitsProvider {
-	return streamingpromql.NewStaticQueryLimitsProvider(0)
+	return streamingpromql.NewStaticQueryLimitsProvider(0, false)
 }
 
 func mustParseTime(input string) time.Time {
@@ -1861,7 +1861,7 @@ func (m *mockBlocksStorageQuerier) Close() error {
 	return nil
 }
 
-func TestTenantQueryLimitsProvider(t *testing.T) {
+func TestTenantQueryLimitsProvider_MaxEstimatedMemoryConsumptionPerQuery(t *testing.T) {
 	tenantLimits := &staticTenantLimits{
 		limits: map[string]*validation.Limits{
 			"user-1": {
@@ -1916,6 +1916,76 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 			if testCase.expectedError == nil {
 				require.NoError(t, actualErr)
 				require.Equal(t, testCase.expectedLimit, actualLimit)
+			} else {
+				require.ErrorIs(t, actualErr, testCase.expectedError)
+			}
+		})
+	}
+}
+
+func TestTenantQueryLimitsProvider_EnableDelayedNameRemoval(t *testing.T) {
+	tenantLimits := &staticTenantLimits{
+		limits: map[string]*validation.Limits{
+			"user-1": {
+				EnableDelayedNameRemoval: false,
+			},
+			"user-2": {
+				EnableDelayedNameRemoval: true,
+			},
+			"user-3": {
+				EnableDelayedNameRemoval: true,
+			},
+			"user-4": {
+				// Not set, should default to false.
+			},
+		},
+	}
+
+	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
+	provider := NewTenantQueryLimitsProvider(overrides)
+
+	testCases := map[string]struct {
+		ctx                              context.Context
+		expectedEnableDelayedNameRemoval bool
+		expectedError                    error
+	}{
+		"single tenant ID provided, disabled delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+		"single tenant ID provided, enabled delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2"),
+			expectedEnableDelayedNameRemoval: true,
+		},
+		"single tenant ID provided, unspecified delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-4"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+		"multiple tenant IDs provided, all have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2|user-3"),
+			expectedEnableDelayedNameRemoval: true,
+		},
+		"multiple tenant IDs provided, conflict in delayed name removal": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
+			expectedError: errConflictEnableDelayedNameRemoval,
+		},
+		"multiple tenant IDs provided, conflict in delayed name removal with one unspecified": {
+			ctx:           user.InjectOrgID(context.Background(), "user-2|user-3|user-4"),
+			expectedError: errConflictEnableDelayedNameRemoval,
+		},
+		"multiple tenant IDs provided, none have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1|user-4"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actualEnableDelayedNameRemoval, actualErr := provider.GetEnableDelayedNameRemoval(testCase.ctx)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, actualErr)
+				require.Equal(t, testCase.expectedEnableDelayedNameRemoval, actualEnableDelayedNameRemoval)
 			} else {
 				require.ErrorIs(t, actualErr, testCase.expectedError)
 			}
