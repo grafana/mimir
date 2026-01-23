@@ -1627,18 +1627,6 @@ func (i *Ingester) pushSamplesToAppender(
 	defer idx.Close()
 
 	for _, ts := range timeseries {
-		// The labels must be sorted. This is defensive programming; the distributor
-		// sorts labels before forwarding to ingesters.
-		if !mimirpb.AreLabelNamesSortedAndUnique(ts.Labels) {
-			for _, sample := range ts.Samples {
-				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, sample.TimestampMs, ts.Labels)
-			}
-			for _, h := range ts.Histograms {
-				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, h.Timestamp, ts.Labels)
-			}
-			continue
-		}
-
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
@@ -1687,6 +1675,18 @@ func (i *Ingester) pushSamplesToAppender(
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
+
+		// The labels must be sorted. This is defensive programming; the distributor
+		// sorts labels before forwarding to ingesters.
+		if ref == 0 && !mimirpb.AreLabelNamesSortedAndUnique(ts.Labels) {
+			for _, sample := range ts.Samples {
+				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, sample.TimestampMs, ts.Labels)
+			}
+			for _, h := range ts.Histograms {
+				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, h.Timestamp, ts.Labels)
+			}
+			continue
+		}
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
