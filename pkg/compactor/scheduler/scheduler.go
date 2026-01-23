@@ -261,6 +261,35 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		return nil, notRunning()
 	}
 
+	// Prepare compaction jobs
+	now := s.clock.Now()
+	jobs := make([]*Job[*CompactionJob], 0, len(req.Jobs))
+	for _, job := range req.Jobs {
+		jobs = append(jobs, NewJob(
+			job.Id,
+			&CompactionJob{
+				blocks:  job.Job.BlockIds,
+				isSplit: job.Job.Split,
+			},
+			now,
+			s.clock,
+		))
+	}
+
+	// Offer compaction jobs BEFORE removing the plan job to prevent data loss.
+	// If offering fails, the plan job remains and can be retried.
+	// If the plan job doesn't exist or has a different epoch, the compaction jobs
+	// will still be offered but the subsequent Remove will return removed=false.
+	_, err := s.rotator.OfferJobs(req.Key.Id, jobs, func(previous *CompactionJob, new *CompactionJob) bool {
+		// Replace an existing job with the same ID if it has differs in type of compaction or has different blocks
+		return previous.isSplit != new.isSplit || !slices.EqualFunc(previous.blocks, new.blocks, slices.Equal)
+	})
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
+		return nil, failedTo("offering results")
+	}
+
+	// Now remove the plan job - if this fails, the compaction jobs are already persisted
 	removed, _, err := s.planTracker.Remove(req.Key.Id, req.Key.Epoch)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed removing plan job", "err", err)
@@ -268,27 +297,6 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	}
 	if removed {
 		level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
-		now := s.clock.Now()
-		jobs := make([]*Job[*CompactionJob], 0, len(req.Jobs))
-		for _, job := range req.Jobs {
-			jobs = append(jobs, NewJob(
-				job.Id,
-				&CompactionJob{
-					blocks:  job.Job.BlockIds,
-					isSplit: job.Job.Split,
-				},
-				now,
-				s.clock,
-			))
-		}
-		_, err := s.rotator.OfferJobs(req.Key.Id, jobs, func(previous *CompactionJob, new *CompactionJob) bool {
-			// Replace an existing job with the same ID if it has differs in type of compaction or has different blocks
-			return previous.isSplit != new.isSplit || !slices.EqualFunc(previous.blocks, new.blocks, slices.Equal)
-		})
-		if err != nil {
-			level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
-			return nil, failedTo("offering results")
-		}
 		return &compactorschedulerpb.PlannedJobsResponse{}, nil
 	}
 
