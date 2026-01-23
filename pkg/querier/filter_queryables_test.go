@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -65,6 +66,7 @@ func TestFilteringQueryablesViaHttpHeader(t *testing.T) {
 
 		ctx = user.InjectOrgID(ctx, "0")
 		ctx = tc.transformContext(ctx)
+		ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 		series := querier.Select(ctx, false, nil, matcher)
 		require.NoError(t, series.Err())
 
