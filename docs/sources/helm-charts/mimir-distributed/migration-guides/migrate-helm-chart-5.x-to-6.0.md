@@ -106,7 +106,7 @@ If you don't install the rollout operator CustomResourceDefinitions (CRDs) and d
 
 If you intend to use the rollout-operator, install the CRDs as described above.
 
-If you intend to disable the rollout-operator use the following sequence;
+If you intend to disable the rollout-operator, follow these steps:
 
 1. Disable the rollout-operator in your values file
 
