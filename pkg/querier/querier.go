@@ -488,9 +488,14 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
-	// we have all the sets from different sources (chunk from store, chunks from ingesters).
+	// Wrap with MemoryTrackingSeriesSet after merging to ensure memory is decreased only once per unique series.
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+	// We have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
-	return mq.mergeSeriesSets(result)
+	return series.NewMemoryTrackingSeriesSet(mq.mergeSeriesSets(result), memoryTracker)
 }
 
 func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
