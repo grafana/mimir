@@ -128,6 +128,13 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 		// and NOT the stable hashing because that's what TSDB expects. We don't need stable hashing in block builder.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
 
+		// The labels must be sorted. This is defensive programming; the distributor
+		// sorts labels before forwarding.
+		if ref == 0 && !mimirpb.AreLabelNamesSortedAndUnique(ts.Labels) {
+			discardedSamples += len(ts.Samples) + len(ts.Histograms)
+			continue
+		}
+
 		ingestCreatedTimestamp := ts.CreatedTimestamp > 0
 
 		for _, s := range ts.Samples {
