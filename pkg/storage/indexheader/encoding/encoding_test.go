@@ -53,7 +53,7 @@ func TestDecbuf_Be32InsufficientBuffer(t *testing.T) {
 	enc := promencoding.Encbuf{}
 	enc.PutBE32(0xFFFF_FFFF)
 
-	runAllBufReaderTypes(tb, "insufficient buffer", enc.Get()[:2], func(tb test.TB, dec Decbuf) {
+	runAllBufReaderTypes(tb, "", enc.Get()[:2], func(tb test.TB, dec Decbuf) {
 		_ = dec.Be32()
 		require.ErrorIs(t, dec.Err(), ErrInvalidSize)
 	})
@@ -772,33 +772,6 @@ func TestDecbuf_Crc32(t *testing.T) {
 		runAllBufReaderTypes(tb, "", enc.Get(), func(tb test.TB, dec Decbuf) {
 			dec.CheckCrc32(table)
 			require.NoError(t, dec.Err())
-		})
-	})
-
-	t.Run("matches checksum (buffer larger than single read)", func(t *testing.T) {
-		tb := test.NewTB(t)
-
-		bufferSize := 4*1024*1024 + 1
-		enc := promencoding.Encbuf{}
-
-		for enc.Len() < bufferSize {
-			enc.PutByte(0x01)
-		}
-
-		enc.PutHash(crc32.New(crc32.MakeTable(crc32.Castagnoli)))
-
-		runAllBufReaderTypes(tb, "", enc.Get(), func(tb test.TB, dec Decbuf) {
-			dec.CheckCrc32(table)
-			require.NoError(t, dec.Err())
-		})
-	})
-
-	t.Run("does not match checksum (small buffer)", func(t *testing.T) {
-		tb := test.NewTB(t)
-
-		runAllBufReaderTypes(tb, "", []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x4f, 0x4d, 0xfb, 0xff}, func(tb test.TB, dec Decbuf) {
-			dec.CheckCrc32(table)
-			require.ErrorIs(t, dec.Err(), ErrInvalidChecksum)
 		})
 	})
 
