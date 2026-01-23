@@ -1083,26 +1083,31 @@ func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
 
 func TestPartitionState_ReturningPartition(t *testing.T) {
 	// The scenario is:
-	// * we learn the commit and planned offsets at startup of a partition that is inactive.
+	// * we learn the commit and end offsets at startup of a partition that is inactive. (commit == end)
 	// * this partition's end offset grows before we produce its first job.
-	// * the next time we produce a job it *should* start at the commit offset we learned at startup.
+	// * the next time we produce a job it *should* start at the end offset we learned at startup.
+	l := test.NewTestingLogger(t)
 	pt := &partitionState{
 		topic:     "topic",
 		partition: 0,
 		planned: &advancingOffset{
 			name:   offsetNamePlanned,
 			off:    offsetEmpty,
-			logger: test.NewTestingLogger(t),
+			logger: l,
 		},
 		committed: &advancingOffset{
 			name:   offsetNameCommitted,
 			off:    offsetEmpty,
-			logger: test.NewTestingLogger(t),
+			logger: l,
 		},
 	}
 	pt.initCommit(100)
 
-	job, err := pt.updateEndOffset(200, time.Date(2025, 3, 1, 10, 55, 0, 0, time.UTC), 1*time.Hour)
+	job, err := pt.updateEndOffset(100, time.Date(2025, 3, 1, 10, 1, 10, 0, time.UTC), 1*time.Hour)
+	require.NoError(t, err)
+	require.Nil(t, job)
+
+	job, err = pt.updateEndOffset(200, time.Date(2025, 3, 1, 10, 55, 0, 0, time.UTC), 1*time.Hour)
 	require.NoError(t, err)
 	require.Nil(t, job)
 
