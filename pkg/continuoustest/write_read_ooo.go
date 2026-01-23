@@ -10,6 +10,7 @@ import (
 	"github.com/grafana/dskit/multierror"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/prompb"
 	"golang.org/x/time/rate"
 )
 
@@ -85,19 +86,35 @@ func (t *WriteReadOOOTest) Run(ctx context.Context, now time.Time) error {
 	// Collect all errors on this test run
 	errs := new(multierror.MultiError)
 
-	t.RunInner(ctx, now, writeLimiter, errs, oooFloatMetricName)
+	t.RunInner(ctx, now, writeLimiter, errs, oooFloatMetricName, generateSineWaveSeries)
 
 	return errs.Err()
 }
 
-func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName string) {
+func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName string, generateSeries generateSeriesFunc) {
 	// Samples aligned with the minute are written in-order.
 	// Samples at :20 and :40 past the minute are written out-of-order by approximatelyMaxOOOLag.
 	// We cannot use a label to differentiate between in-order and out-of-order samples, it needs to be the same actual series.
+
+	// First, write the in-order (minute-aligned) data.
+	for timestamp := t.nextInorderWriteTimestamp(now, &t.floatMetric); !timestamp.After(now); timestamp = t.nextInorderWriteTimestamp(now, &t.floatMetric) {
+		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
+			// Context has been canceled, so we should interrupt.
+			errs.Add(err)
+			return
+		}
+
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
+		level.Info(t.logger).Log("msg", "Dry-run writing in-order sample set", "timestamp", timestamp, "numSeries", len(series))
+	}
 }
 
-func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time) time.Time {
-	return alignTimestampToInterval(now, inorderWriteInterval)
+func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, records *MetricHistory) time.Time {
+	if records.lastWrittenTimestamp.IsZero() {
+		return alignTimestampToInterval(now, inorderWriteInterval)
+	}
+
+	return records.lastWrittenTimestamp.Add(writeInterval)
 }
 
 func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, records *MetricHistory) error {
