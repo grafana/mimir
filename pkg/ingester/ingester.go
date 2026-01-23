@@ -1685,6 +1685,7 @@ func (i *Ingester) pushSamplesToAppender(
 			for _, h := range ts.Histograms {
 				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, h.Timestamp, ts.Labels)
 			}
+			stats.failedExemplarsCount += len(ts.Exemplars)
 			continue
 		}
 
