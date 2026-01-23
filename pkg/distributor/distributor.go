@@ -814,7 +814,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // validateSamples validates samples of a single timeseries and removes the ones with duplicated timestamps.
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
-// The returned error may retain the series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Samples) == 0 {
 		return nil
@@ -861,7 +861,7 @@ func (d *Distributor) validateSamples(now model.Time, ts *mimirpb.PreallocTimese
 // validateHistograms validates histograms of a single timeseries and removes the ones with duplicated timestamps.
 // Returns an error explaining the first validation finding.
 // May alter timeseries data in-place.
-// The returned error may retain the series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 func (d *Distributor) validateHistograms(now model.Time, ts *mimirpb.PreallocTimeseries, userID, group string) error {
 	if len(ts.Histograms) == 0 {
 		return nil
@@ -958,7 +958,7 @@ func (d *Distributor) validateExemplars(ts *mimirpb.PreallocTimeseries, userID s
 // Validates a single series from a write request.
 // May alter timeseries data in-place.
 // Returns an error explaining the first validation finding. Non-nil error means the timeseries should be removed from the request.
-// The returned error may retain the series labels.
+// The returned error MUST NOT retain label strings - they point into a gRPC buffer which is re-used.
 // It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(nowt time.Time, ts *mimirpb.PreallocTimeseries, userID, group string, skipLabelValidation, skipLabelCountValidation bool, minExemplarTS, maxExemplarTS int64) error {
 	cat := d.costAttributionMgr.SampleTracker(userID)
