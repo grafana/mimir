@@ -290,6 +290,18 @@ func (r *Rotator) RemoveTenant(tenant string) {
 	delete(r.tenantStateMap, tenant)
 }
 
+// Tenants returns a list of all tenant IDs currently in the rotator.
+func (r *Rotator) Tenants() []string {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	tenants := make([]string, 0, len(r.tenantStateMap))
+	for tenant := range r.tenantStateMap {
+		tenants = append(tenants, tenant)
+	}
+	return tenants
+}
+
 func (r *Rotator) LeaseMaintenance(ctx context.Context, leaseDuration time.Duration) {
 	// We avoid having to serialize lease renewals by providing an initial buffer time before enforcing lease expiration
 	if r.initialLeaseMaintenanceBuffer != 0 {

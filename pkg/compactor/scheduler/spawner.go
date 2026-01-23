@@ -65,8 +65,8 @@ func NewSpawner(
 }
 
 func (s *Spawner) start(ctx context.Context) error {
-	// The rotator gets prepoluated upon recovery, use that to determine tenants that are already active
-	for tenant := range s.rotator.tenantStateMap {
+	// The rotator gets prepopulated upon recovery, use that to determine tenants that are already active
+	for _, tenant := range s.rotator.Tenants() {
 		s.planMap[tenant] = time.Time{}
 	}
 
