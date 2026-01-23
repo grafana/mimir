@@ -518,9 +518,9 @@ func (q *blocksStoreQuerier) selectSorted(ctx context.Context, sp *storage.Selec
 		}
 	}
 
-	return series.NewMemoryTrackingSeriesSet(series.NewSeriesSetWithWarnings(
+	return series.NewSeriesSetWithWarnings(
 		storage.NewMergeSeriesSet(resSeriesSets, 0, storage.ChainedSeriesMerge),
-		resWarnings), memoryTracker)
+		resWarnings)
 }
 
 func (q *blocksStoreQuerier) startBuffering(streamReaders []*storeGatewayStreamReader) error {
