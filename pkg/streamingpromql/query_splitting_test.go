@@ -4,6 +4,7 @@ package streamingpromql
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -629,10 +630,10 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
-// TestQuerySplitting_TestFiles runs PromQL test files with query splitting enabled.
-// This verifies that splitting produces correct results for various functions.
-// TODO: Run all engine test files with query splitting enabled (maybe with smaller splits like 1m)
+// TestQuerySplitting_TestFiles runs PromQL test files specifically created to test query splitting with a 2h split interval.
 func TestQuerySplitting_TestFiles(t *testing.T) {
+	const splitInterval = 2 * time.Hour
+
 	testdataFS := os.DirFS("./testdata")
 	testFiles, err := fs.Glob(testdataFS, "ours-only/*splitting*.test")
 	require.NoError(t, err)
@@ -640,42 +641,120 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 
 	for _, testFile := range testFiles {
 		t.Run(testFile, func(t *testing.T) {
+			registry := prometheus.NewRegistry()
+			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval)
+
+			engine := &testSplittingEngine{
+				engine: innerEngine,
+				orgID:  "test-user",
+			}
+
+			newStorage := func(t testutil.T) storage.Storage {
+				base := promqltest.LoadedStorage(t, "")
+				return &storageWithCloseCallback{
+					Storage: base,
+					onClose: cacheBackend.Reset,
+				}
+			}
+
 			f, err := testdataFS.Open(testFile)
 			require.NoError(t, err)
 			defer f.Close()
 
 			b, err := io.ReadAll(f)
 			require.NoError(t, err)
+
 			testScript := string(b)
-
-			opts := NewTestEngineOpts()
-			opts.RangeVectorSplitting.Enabled = true
-			opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
-
-			planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-			require.NoError(t, err)
-
-			cacheBackend := newTestCacheBackend()
-			cacheFactory := cache.NewResultsCacheWithBackend(cacheBackend, prometheus.NewRegistry(), log.NewNopLogger())
-
-			innerEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner, cacheFactory)
-			require.NoError(t, err)
-
-			engine := &engineWithOrgID{engine: innerEngine, orgID: "test-user"}
-
-			newStorage := func(t testutil.T) storage.Storage {
-				base := promqltest.LoadedStorage(t, "")
-				return &storageWithCloseCallback{
-					Storage: base,
-					// storage.Close() is called every time there's a clear command in the promql test
-					// We also want to clear the cache data on clear, so hook onto that event to reset the cache
-					onClose: cacheBackend.Reset,
-				}
-			}
-
 			promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
 		})
 	}
+}
+
+// TestQuerySplitting_AllTestFiles runs ALL PromQL test files with query splitting enabled.
+func TestQuerySplitting_AllTestFiles(t *testing.T) {
+	testdataFS := os.DirFS("./testdata")
+
+	oursTests, err := fs.Glob(testdataFS, "ours/*.test")
+	require.NoError(t, err)
+
+	upstreamTests, err := fs.Glob(testdataFS, "upstream/*.test")
+	require.NoError(t, err)
+
+	allTests := append(oursTests, upstreamTests...)
+	require.NotEmpty(t, allTests, "expected to find test files")
+
+	splitIntervals := []time.Duration{
+		30 * time.Second,
+		5 * time.Minute,
+		1 * time.Hour,
+	}
+
+	for _, splitInterval := range splitIntervals {
+		splitInterval := splitInterval
+		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
+			totalQueries := 0
+			queriesWithSplit := 0
+
+			for _, testFile := range allTests {
+				t.Run(testFile, func(t *testing.T) {
+					registry := prometheus.NewRegistry()
+					innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval)
+
+					engine := &testSplittingEngine{
+						engine: innerEngine,
+						orgID:  "test-user",
+						onQueryExec: func(splitQueriesCount uint32) {
+							totalQueries++
+							if splitQueriesCount > 0 {
+								queriesWithSplit++
+							}
+						},
+					}
+
+					newStorage := func(t testutil.T) storage.Storage {
+						base := promqltest.LoadedStorage(t, "")
+						return &storageWithCloseCallback{
+							Storage: base,
+							onClose: cacheBackend.Reset,
+						}
+					}
+
+					f, err := testdataFS.Open(testFile)
+					require.NoError(t, err)
+					defer f.Close()
+
+					b, err := io.ReadAll(f)
+					require.NoError(t, err)
+
+					testScript := string(b)
+					promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
+				})
+			}
+
+			t.Logf("Total queries executed: %d", totalQueries)
+			t.Logf("Queries with splitting applied: %d", queriesWithSplit)
+		})
+	}
+}
+
+func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration) (promql.QueryEngine, *testCacheBackend) {
+	t.Helper()
+
+	opts := NewTestEngineOpts()
+	opts.RangeVectorSplitting.Enabled = true
+	opts.RangeVectorSplitting.SplitInterval = splitInterval
+	opts.CommonOpts.Reg = registry
+
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	cacheBackend := newTestCacheBackend()
+	cacheFactory := cache.NewResultsCacheWithBackend(cacheBackend, registry, log.NewNopLogger())
+
+	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(registry), planner, cacheFactory)
+	require.NoError(t, err)
+
+	return engine, cacheBackend
 }
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
@@ -805,37 +884,52 @@ func (s *storageWithCloseCallback) Close() error {
 	return s.Storage.Close()
 }
 
-// engineWithOrgID wraps a query engine to return queries with orgID injection.
-// This is needed for query splitting tests the cache key requires the orgID.
-type engineWithOrgID struct {
-	engine promql.QueryEngine
-	orgID  string
+type testSplittingEngine struct {
+	engine      promql.QueryEngine
+	orgID       string
+	onQueryExec func(splitQueriesCount uint32)
 }
 
-func (e *engineWithOrgID) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (e *testSplittingEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	ctx = user.InjectOrgID(ctx, e.orgID)
+
 	query, err := e.engine.NewInstantQuery(ctx, q, opts, qs, ts)
 	if err != nil {
 		return nil, err
 	}
-	return &queryWithOrgID{Query: query, orgID: e.orgID}, nil
+
+	return &testSplittingQuery{Query: query, orgID: e.orgID, onExec: e.onQueryExec}, nil
 }
 
-func (e *engineWithOrgID) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+func (e *testSplittingEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	ctx = user.InjectOrgID(ctx, e.orgID)
+
 	query, err := e.engine.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 	if err != nil {
 		return nil, err
 	}
-	return &queryWithOrgID{Query: query, orgID: e.orgID}, nil
+
+	return &testSplittingQuery{Query: query, orgID: e.orgID, onExec: e.onQueryExec}, nil
 }
 
-type queryWithOrgID struct {
+type testSplittingQuery struct {
 	promql.Query
-	orgID string
+	orgID  string
+	onExec func(splitQueriesCount uint32)
 }
 
-func (q *queryWithOrgID) Exec(ctx context.Context) *promql.Result {
+func (q *testSplittingQuery) Exec(ctx context.Context) *promql.Result {
 	ctx = user.InjectOrgID(ctx, q.orgID)
-	return q.Query.Exec(ctx)
+
+	queryStats, ctx := stats.ContextWithEmptyStats(ctx)
+
+	result := q.Query.Exec(ctx)
+
+	if q.onExec != nil {
+		q.onExec(queryStats.LoadSplitQueries())
+	}
+
+	return result
 }
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
