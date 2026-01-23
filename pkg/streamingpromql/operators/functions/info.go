@@ -219,6 +219,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 		// Error out if we get histograms for an info metric.
 		if len(d.Histograms) > 0 {
+			types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 			return fmt.Errorf("this should be an info metric, with float samples: %s", metadata.Labels)
 		}
 
@@ -234,6 +235,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			}
 			if metricLabels, exists := sigsAtTimestamp[string(sig)]; exists {
 				if metricLabels.time == origTs {
+					types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 					humanTime := time.UnixMilli(sample.T).UTC().Format("2006-01-02 15:04:05 UTC")
 					return fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", metricLabels.labels.String(), metadata.Labels.String(), sample.T, humanTime)
 				} else if metricLabels.time > origTs {
@@ -578,6 +580,7 @@ func (f *InfoFunction) getSplitResult(ts int64, sigLabelsOnly string, storedSeri
 		}
 		hists, err := types.HPointSlicePool.Get(lenHistograms, f.MemoryConsumptionTracker)
 		if err != nil {
+			types.FPointSlicePool.Put(&floats, f.MemoryConsumptionTracker)
 			return types.InstantVectorSeriesData{}, "", false, err
 		}
 		splitResult = types.InstantVectorSeriesData{
