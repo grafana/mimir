@@ -97,7 +97,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.DurationVar(&cfg.EagerLoadingPersistInterval, prefix+"eager-loading-persist-interval", time.Minute, "Interval at which the store-gateway persists block IDs of lazy loaded index-headers. Ignored if index-header eager loading is disabled.")
 	f.BoolVar(&cfg.VerifyOnLoad, prefix+"verify-on-load", false, "If true, verify the checksum of index headers upon loading them (either on startup or lazily when lazy loading is enabled). Setting to true helps detect disk corruption at the cost of slowing down index header loading.")
 
-	cfg.BucketReader.RegisterFlagsWithPrefix(f, "bucket-reader.")
+	cfg.BucketReader.RegisterFlagsWithPrefix(f, prefix+"bucket-reader.")
 }
 
 func (cfg *Config) Validate() error {
@@ -126,7 +126,7 @@ type BucketReaderConfig struct {
 }
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage instead of loading to and reading from local disk.")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections will not be downloaded to local disk.")
 	f.StringVar((*string)(&cfg.BucketIndexSections), prefix+"index-sections", string(SectionAll), fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionAll))
 }
 

@@ -10950,10 +10950,10 @@
                       "kind": "field",
                       "name": "enabled",
                       "required": false,
-                      "desc": "Enable reading TSDB index-header sections from object storage instead of loading to and reading from local disk.",
+                      "desc": "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections will not be downloaded to local disk.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
-                      "fieldFlag": "bucket-reader.enabled",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.enabled",
                       "fieldType": "boolean",
                       "fieldCategory": "experimental"
                     },
@@ -10964,7 +10964,7 @@
                       "desc": "Index sections to read from object storage instead of local disk. Valid sections: all",
                       "fieldValue": null,
                       "fieldDefaultValue": "all",
-                      "fieldFlag": "bucket-reader.index-sections",
+                      "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.index-sections",
                       "fieldType": "string",
                       "fieldCategory": "experimental"
                     }

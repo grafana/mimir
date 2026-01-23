@@ -5506,13 +5506,15 @@ bucket_store:
 
     bucket_reader:
       # (experimental) Enable reading TSDB index-header sections from object
-      # storage instead of loading to and reading from local disk.
-      # CLI flag: -bucket-reader.enabled
+      # storage. When enabled, the configured
+      # -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
+      # will not be downloaded to local disk.
+      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.enabled
       [enabled: <boolean> | default = false]
 
       # (experimental) Index sections to read from object storage instead of
       # local disk. Valid sections: all
-      # CLI flag: -bucket-reader.index-sections
+      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
       [index_sections: <string> | default = "all"]
 
   # (advanced) This option controls how many series to fetch per batch. The

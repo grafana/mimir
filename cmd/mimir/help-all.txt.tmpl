@@ -531,6 +531,10 @@ Usage of ./cmd/mimir/mimir:
     	Override the default minimum TLS version. Allowed values: VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
+  -blocks-storage.bucket-store.index-header.bucket-reader.enabled
+    	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections will not be downloaded to local disk.
+  -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
+    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: all (default "all")
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
     	Maximum number of concurrent index header loads across all tenants. If set to 0, concurrency is unlimited. (default 4)
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency-queue-timeout duration
@@ -853,10 +857,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
-  -bucket-reader.enabled
-    	[experimental] Enable reading TSDB index-header sections from object storage instead of loading to and reading from local disk.
-  -bucket-reader.index-sections string
-    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: all (default "all")
   -common.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -common.instrument-reference-leaks.before-reuse-period duration
