@@ -61,6 +61,10 @@ func (t *WriteReadOOOTest) Name() string {
 
 // Init implements Test.
 func (t *WriteReadOOOTest) Init(ctx context.Context, now time.Time) error {
+	if !t.cfg.Enabled {
+		return nil
+	}
+
 	err := t.recoverPast(ctx, now, oooFloatMetricName, querySumFloat, generateSineWaveValue, &t.floatMetric)
 	if err != nil {
 		return err
@@ -71,6 +75,10 @@ func (t *WriteReadOOOTest) Init(ctx context.Context, now time.Time) error {
 
 // Run implements Test.
 func (t *WriteReadOOOTest) Run(ctx context.Context, now time.Time) error {
+	if !t.cfg.Enabled {
+		return nil
+	}
+
 	// Configure the rate limiter to send a sample for each series per second. At startup, this test may catch up
 	// with previous missing writes: this rate limit reduces the chances to hit the ingestion limit on Mimir side.
 	writeLimiter := rate.NewLimiter(rate.Limit(t.cfg.NumSeries), t.cfg.NumSeries)
