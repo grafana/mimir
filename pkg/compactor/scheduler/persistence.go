@@ -96,6 +96,9 @@ func deserializeCompactionJob(b []byte) (*Job[*CompactionJob], error) {
 	if err != nil {
 		return nil, err
 	}
+	if stored.Info == nil || stored.Job == nil {
+		return nil, errors.New("invalid compaction job can not be deserialized")
+	}
 	job := &Job[*CompactionJob]{
 		value: &CompactionJob{
 			blocks:  stored.Job.BlockIds,
@@ -146,7 +149,7 @@ func (m *BboltJobPersistenceManager) InitializeTenant(tenant string) (JobPersist
 	if err != nil {
 		return nil, err
 	}
-	return newBboltJobPersister(m.db, tenantName, serializeCompactionJob, deserializeCompactionJob), nil
+	return newBboltJobPersister(m.db, tenantName, serializeCompactionJob, deserializeCompactionJob, m.logger), nil
 }
 
 func (m *BboltJobPersistenceManager) InitializePlanning() (JobPersister[struct{}], error) {
@@ -160,7 +163,7 @@ func (m *BboltJobPersistenceManager) InitializePlanning() (JobPersister[struct{}
 	if err != nil {
 		return nil, err
 	}
-	return newBboltJobPersister(m.db, planningName, serializePlanJob, deserializePlanJob), nil
+	return newBboltJobPersister(m.db, planningName, serializePlanJob, deserializePlanJob, m.logger), nil
 }
 
 func (m *BboltJobPersistenceManager) DeleteTenant(tenant string) error {
@@ -189,7 +192,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(
 		return tx.ForEach(func(name []byte, b *bbolt.Bucket) error {
 			bucketName := string(name)
 			if bucketName == "planning" {
-				jp := newBboltJobPersister(m.db, []byte(bucketName), serializePlanJob, deserializePlanJob)
+				jp := newBboltJobPersister(m.db, []byte(bucketName), serializePlanJob, deserializePlanJob, m.logger)
 				jobs, err := jp.recover(b)
 				if err != nil {
 					return err
@@ -212,7 +215,7 @@ func (m *BboltJobPersistenceManager) RecoverAll(
 				return tx.DeleteBucket(name)
 			}
 
-			jp := newBboltJobPersister(m.db, m.tenantName(tenant), serializeCompactionJob, deserializeCompactionJob)
+			jp := newBboltJobPersister(m.db, m.tenantName(tenant), serializeCompactionJob, deserializeCompactionJob, m.logger)
 			jt := compactionTrackerFactory(jp)
 			jobs, err := jp.recover(b)
 			if err != nil {
@@ -241,14 +244,16 @@ type BboltJobPersister[V any] struct {
 	name         []byte
 	serializer   func(*Job[V]) ([]byte, error)
 	deserializer func([]byte) (*Job[V], error)
+	logger       log.Logger
 }
 
-func newBboltJobPersister[V any](db *bbolt.DB, name []byte, serializer func(*Job[V]) ([]byte, error), deserializer func([]byte) (*Job[V], error)) *BboltJobPersister[V] {
+func newBboltJobPersister[V any](db *bbolt.DB, name []byte, serializer func(*Job[V]) ([]byte, error), deserializer func([]byte) (*Job[V], error), logger log.Logger) *BboltJobPersister[V] {
 	return &BboltJobPersister[V]{
 		db:           db,
 		name:         name,
 		serializer:   serializer,
 		deserializer: deserializer,
+		logger:       logger,
 	}
 }
 
@@ -260,7 +265,8 @@ func (jp *BboltJobPersister[V]) recover(bucket *bbolt.Bucket) ([]*Job[V], error)
 	for k, v := c.First(); k != nil; k, v = c.Next() {
 		job, err := jp.deserializer(v)
 		if err != nil {
-			return nil, err
+			level.Warn(jp.logger).Log("msg", "failed to deserialize job, skipping it", "bucket", string(jp.name), "err", err)
+			continue
 		}
 
 		job.id = string(k)
