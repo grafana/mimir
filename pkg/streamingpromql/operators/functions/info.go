@@ -496,6 +496,9 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		for _, point := range result.Floats {
 			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
+				for _, data := range storedSeriesResults {
+					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
+				}
 				types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 				return types.InstantVectorSeriesData{}, err
 			}
@@ -509,6 +512,9 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		for _, point := range result.Histograms {
 			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
+				for _, data := range storedSeriesResults {
+					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
+				}
 				types.PutInstantVectorSeriesData(result, f.MemoryConsumptionTracker)
 				return types.InstantVectorSeriesData{}, err
 			}
