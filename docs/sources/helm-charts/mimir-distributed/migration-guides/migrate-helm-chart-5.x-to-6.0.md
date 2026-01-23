@@ -115,7 +115,7 @@ rollout-operator:
   enabled: false
 ```
 
-2. Delete the rollout-operator validating and mutating webhook configurations
+2. Delete the rollout-operator validating and mutating webhook configurations.
 
 ```bash
 kubectl delete validatingwebhookconfiguration no-downscale-<NAMESPACE>
