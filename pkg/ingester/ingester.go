@@ -669,7 +669,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			// and leave hanging goroutines after exit.
 			i.subservicesWatcher.Close()
 
-			shutdownTimeout := 2 * time.Minute
+			shutdownTimeout := 3 * time.Minute
 			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 			defer shutdownCancel()
 
@@ -748,7 +748,7 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if err := i.lifecycler.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
-	waitInstanceStateTimeOut := (5 * time.Minute) + (30 * time.Second) // autoJoin timeout is 5 minutes
+	waitInstanceStateTimeOut := 7 * time.Minute // autoJoin timeout is 5 minutes
 	waitInstanceStateCtx, waitInstanceStateCancel := context.WithTimeout(ctx, waitInstanceStateTimeOut)
 	defer waitInstanceStateCancel()
 	if err = ring.WaitInstanceState(waitInstanceStateCtx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
