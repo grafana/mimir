@@ -11668,13 +11668,6 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 					break
 				}
 			}
-			normalizeMetricName, _ = getMetricName(metricName, metricType)
-			if _, ok := metadata[normalizeMetricName]; ok {
-				// Already have metadata for this metric familiy name.
-				// Since we cannot have multiple definitions of the same
-				// metric family name, we ignore this metadata.
-				return nil
-			}
 		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field HelpRef", wireType)
@@ -11740,9 +11733,17 @@ func MetricMetadataUnmarshalRW2(dAtA []byte, symbols *rw2PagedSymbols, metadata 
 	if iNdEx > l {
 		return io.ErrUnexpectedEOF
 	}
+	normalizeMetricName, _ = getMetricName(metricName, metricType)
 	if len(normalizeMetricName) == 0 {
 		return nil
 	}
+	if _, ok := metadata[normalizeMetricName]; ok {
+		// Already have metadata for this metric familiy name.
+		// Since we cannot have multiple definitions of the same
+		// metric family name, we ignore this metadata.
+		return nil
+	}
+	
 	if len(unit) > 0 || len(help) > 0 || metricType != 0 {
 		metadata[normalizeMetricName] = &MetricMetadata{
 			MetricFamilyName: normalizeMetricName,

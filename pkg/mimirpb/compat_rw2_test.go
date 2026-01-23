@@ -117,6 +117,81 @@ func TestRW2Unmarshal(t *testing.T) {
 		require.Equal(t, expected, &received)
 	})
 
+	t.Run("metadata for all metric types map to expected values", func(t *testing.T) {
+		tc := []struct {
+			name    string
+			rw2Type MetadataRW2_MetricType
+			rw1Type MetricMetadata_MetricType
+		}{
+			{"UNKNOWN", METRIC_TYPE_UNSPECIFIED, UNKNOWN},
+			{"COUNTER", METRIC_TYPE_COUNTER, COUNTER},
+			{"GAUGE", METRIC_TYPE_GAUGE, GAUGE},
+			{"HISTOGRAM", METRIC_TYPE_HISTOGRAM, HISTOGRAM},
+			{"GAUGEHISTOGRAM", METRIC_TYPE_GAUGEHISTOGRAM, GAUGEHISTOGRAM},
+			{"SUMMARY", METRIC_TYPE_SUMMARY, SUMMARY},
+			{"INFO", METRIC_TYPE_INFO, INFO},
+			{"STATESET", METRIC_TYPE_STATESET, STATESET},
+		}
+
+		for _, tt := range tc {
+			t.Run(tt.name, func(t *testing.T) {
+				syms := test.NewSymbolTableBuilder(nil)
+				writeRequest := &WriteRequest{
+					TimeseriesRW2: []TimeSeriesRW2{
+						{
+							LabelsRefs: []uint32{syms.GetSymbol("__name__"), syms.GetSymbol("test_metric_total")},
+							Metadata: MetadataRW2{
+								Type:    tt.rw2Type,
+								HelpRef: syms.GetSymbol("test_metric_help"),
+								UnitRef: syms.GetSymbol("test_metric_unit"),
+							},
+						},
+					},
+				}
+				writeRequest.SymbolsRW2 = syms.GetSymbols()
+				data, err := writeRequest.Marshal()
+				require.NoError(t, err)
+
+				// Unmarshal the data back into Mimir's WriteRequest.
+				received := PreallocWriteRequest{}
+				received.UnmarshalFromRW2 = true
+				err = received.Unmarshal(data)
+				require.NoError(t, err)
+
+				expected := &PreallocWriteRequest{
+					WriteRequest: WriteRequest{
+						Timeseries: []PreallocTimeseries{
+							{
+								TimeSeries: &TimeSeries{
+									Labels: []LabelAdapter{
+										{
+											Name:  "__name__",
+											Value: "test_metric_total",
+										},
+									},
+									Samples:   []Sample{},
+									Exemplars: []Exemplar{},
+								},
+							},
+						},
+						Metadata: []*MetricMetadata{
+							{
+								MetricFamilyName: "test_metric_total",
+								Type:             tt.rw1Type,
+								Help:             "test_metric_help",
+								Unit:             "test_metric_unit",
+							},
+						},
+						unmarshalFromRW2: true,
+					},
+					UnmarshalFromRW2: true,
+				}
+				// Check that the unmarshalled data matches the original data.
+				require.Equal(t, expected, &received)
+			})
+		}
+	})
+
 	t.Run("rw2 with offset produces expected WriteRequest", func(t *testing.T) {
 		syms := test.NewSymbolTableBuilderWithCommon(nil, 256, nil)
 		// Create a new WriteRequest with some sample data.
