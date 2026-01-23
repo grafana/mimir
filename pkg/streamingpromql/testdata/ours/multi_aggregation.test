@@ -69,3 +69,7 @@ eval instant at 0 label_replace(sum by (group) (histogram_metric), "subgroup", "
   {group="a", subgroup="1"} {{count:6}}
   {group="b", subgroup="1"} {{count:9}}
   {group="c", subgroup="1"} {{count:6}}
+
+# Make sure that running a supported and unsupported aggregation in the same expression works.
+eval range from 0 to 10m step 1m sum(float_metric) + quantile(0.9, float_metric)
+  {} 19.6+19.6x10
