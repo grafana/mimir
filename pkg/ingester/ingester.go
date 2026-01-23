@@ -669,25 +669,35 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			// and leave hanging goroutines after exit.
 			i.subservicesWatcher.Close()
 
-			shutdownTimeout := 3 * time.Minute
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-			defer shutdownCancel()
+			// Each operation gets its own timeout to ensure later operations aren't starved
+			// if earlier ones consume significant time.
+			perOperationTimeout := 3 * time.Minute
 
 			// Stop any services that may have been started in this method, in reverse order.
 			if i.subservicesAfterIngesterRingLifecycler != nil {
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), perOperationTimeout)
 				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesAfterIngesterRingLifecycler)
+				shutdownCancel()
 			}
 			if i.lifecycler != nil {
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), perOperationTimeout)
 				_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
+				shutdownCancel()
 			}
 			if i.ingestReader != nil {
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), perOperationTimeout)
 				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ingestReader)
+				shutdownCancel()
 			}
 			if i.subservicesForPartitionReplay != nil {
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), perOperationTimeout)
 				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesForPartitionReplay)
+				shutdownCancel()
 			}
 			if i.ownedSeriesService != nil {
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), perOperationTimeout)
 				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ownedSeriesService)
+				shutdownCancel()
 			}
 		}
 	}()
