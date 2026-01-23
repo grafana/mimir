@@ -715,7 +715,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        200 * time.Millisecond,
 			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"old data with single unconsumed record": {
 			offsets: []*offsetTime{
@@ -741,7 +741,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        200 * time.Millisecond,
 			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 2000, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"empty partition: no data": {
 			offsets:        []*offsetTime{},
@@ -750,7 +750,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        200 * time.Millisecond,
 			endTime:        time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC),
 			minScanTime:    time.Date(2025, 2, 20, 10, 0, 0, 600*1000000, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 0, time: time.Date(2025, 3, 1, 10, 0, 0, 600*1000000, time.UTC)}},
 		},
 		"data gaps wider than job size": {
 			offsets: []*offsetTime{
@@ -852,7 +852,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        1 * time.Minute,
 			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
 			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 1004, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
 		},
 		"resume < start < end": {
 			offsets: []*offsetTime{
@@ -877,7 +877,7 @@ func TestConsumptionRanges(t *testing.T) {
 			jobSize:        1 * time.Minute,
 			endTime:        time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC),
 			minScanTime:    time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
-			expectedRanges: []*offsetTime{},
+			expectedRanges: []*offsetTime{{offset: 1003, time: time.Date(2025, 3, 1, 10, 3, 40, 0, time.UTC)}},
 		},
 		"hour-based ranges when resume < start": {
 			offsets: []*offsetTime{
@@ -942,6 +942,43 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 
 var _ offsetStore = (*mockOffsetFinder)(nil)
 
+func TestReturningPartitionNoSkip(t *testing.T) {
+	// The scenario is:
+	// * we learn the commit and planned offsets at startup of a partition that is inactive.
+	// * this partition's end offset grows before we produce its first job.
+	// * the next time we produce a job it *should* start at the commit offset we learned at startup.
+	sched, _ := mustScheduler(t, 4)
+	sched.cfg.MaxScanAge = 1 * time.Hour
+
+	finder := &mockOffsetFinder{
+		offsets:       nil,
+		end:           1000,
+		distinctTimes: make(map[time.Time]struct{}),
+	}
+
+	consumeOffs := []partitionOffsets{
+		{topic: "topic", partition: 0, start: 100, resume: 100, end: 100},
+	}
+
+	endTime := time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)
+	sched.populateInitialJobs(context.Background(), consumeOffs, finder, endTime)
+
+	// Now if we observe later end offsets, we should produce jobs that do not have gaps.
+	p0 := sched.getPartitionState("topic", 0)
+	j, err := p0.updateEndOffset(200, time.Date(2025, 3, 1, 10, 45, 0, 0, time.UTC), sched.cfg.JobSize)
+	require.NoError(t, err)
+	require.Nil(t, j)
+
+	j, err = p0.updateEndOffset(300, time.Date(2025, 3, 1, 11, 15, 0, 0, time.UTC), sched.cfg.JobSize)
+	require.NoError(t, err)
+	require.Equal(t, &schedulerpb.JobSpec{
+		Topic:       "topic",
+		Partition:   0,
+		StartOffset: 100,
+		EndOffset:   300,
+	}, j)
+}
+
 func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 	// Ensure that the probe times are reused across partitions, which is a
 	// necessary condition for cached offset reuse in the offsetFinder.
@@ -965,7 +1002,7 @@ func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 		{topic: "topic", partition: 3, start: 100, resume: 100, end: 1000},
 	}
 
-	sched.populateInitialJobs(context.Background(), consumeOffs, finder)
+	sched.populateInitialJobs(context.Background(), consumeOffs, finder, time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC))
 	require.Len(t, finder.distinctTimes, 4, "four partitions will each be probed four times, but the probe times should be the same across each partition")
 }
 
@@ -1079,38 +1116,6 @@ func TestPartitionState_TerminallyDormantPartition(t *testing.T) {
 		assert.Nil(t, j)
 		assert.NoError(t, err)
 	}
-}
-
-func TestPartitionState_ReturningPartition(t *testing.T) {
-	// The scenario is:
-	// * we learn the commit and planned offsets at startup of a partition that is inactive.
-	// * this partition's end offset grows before we produce its first job.
-	// * the next time we produce a job it *should* start at the commit offset we learned at startup.
-	pt := &partitionState{
-		topic:     "topic",
-		partition: 0,
-		planned: &advancingOffset{
-			name:   offsetNamePlanned,
-			off:    offsetEmpty,
-			logger: test.NewTestingLogger(t),
-		},
-		committed: &advancingOffset{
-			name:   offsetNameCommitted,
-			off:    offsetEmpty,
-			logger: test.NewTestingLogger(t),
-		},
-	}
-	pt.initCommit(100)
-
-	job, err := pt.updateEndOffset(200, time.Date(2025, 3, 1, 10, 55, 0, 0, time.UTC), 1*time.Hour)
-	require.NoError(t, err)
-	require.Nil(t, job)
-
-	// Then in the new hour, end offset moves again.
-	job, err = pt.updateEndOffset(250, time.Date(2025, 3, 1, 11, 01, 0, 0, time.UTC), 1*time.Hour)
-	require.NoError(t, err)
-	require.Equal(t, int64(100), job.StartOffset)
-	require.Equal(t, int64(250), job.EndOffset)
 }
 
 func TestPartitionState_PartitionBecomesInactive(t *testing.T) {

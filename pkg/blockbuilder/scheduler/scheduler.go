@@ -175,7 +175,7 @@ func (s *BlockBuilderScheduler) completeObservationMode(ctx context.Context) {
 		return
 	}
 
-	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger))
+	s.populateInitialJobs(ctx, consumeOffs, newOffsetFinder(s.adminClient, s.logger), time.Now())
 	s.observations = nil
 	s.observationComplete = true
 }
@@ -410,7 +410,7 @@ func (s *BlockBuilderScheduler) enqueuePendingJobs() {
 	}
 }
 
-func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore) {
+func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consumeOffs []partitionOffsets, offStore offsetStore, endTime time.Time) {
 	// (Note that the lock is already held because we're in startup mode.)
 
 	// While during normal operation we are periodically asking about every
@@ -421,7 +421,6 @@ func (s *BlockBuilderScheduler) populateInitialJobs(ctx context.Context, consume
 	// those two offsets and seeding the schedule by calling updateEndOffset for
 	// each of them- just like we do during normal operation.
 
-	endTime := time.Now()
 	minScanTime := endTime.Add(-s.cfg.MaxScanAge)
 
 	for _, off := range consumeOffs {
@@ -488,8 +487,8 @@ func probeInitialOffsets(ctx context.Context, offs offsetStore, topic string, pa
 	endTime time.Time, jobSize time.Duration, minScanTime time.Time, logger log.Logger) ([]*offsetTime, error) {
 
 	if commit >= end || start >= end {
-		// No new data to consume.
-		return []*offsetTime{}, nil
+		// No new data to consume. Return the single end offset so it is initially registered.
+		return []*offsetTime{{offset: end, time: endTime}}, nil
 	}
 
 	// Pick a more high-resolution interval to scan for the sentinel offsets.
