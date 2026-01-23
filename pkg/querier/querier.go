@@ -468,7 +468,14 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	sp.Limit = limit
 
 	if len(queriers) == 1 {
-		return queriers[0].Select(ctx, true, sp, matchers...)
+		// Wrap with MemoryTrackingSeriesSet to ensure memory is decreased for each unique series.
+		memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+		if err != nil {
+			// No memory tracker in context; return without wrapping.
+			// In production, the tracker should always be present.
+			return queriers[0].Select(ctx, true, sp, matchers...)
+		}
+		return series.NewMemoryTrackingSeriesSet(queriers[0].Select(ctx, true, sp, matchers...), memoryTracker)
 	}
 
 	sets := make(chan storage.SeriesSet, len(queriers))
@@ -488,14 +495,18 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		}
 	}
 
+	// We have all the sets from different sources (chunk from store, chunks from ingesters).
+	// mergeSeriesSets will return sorted set.
+	mergedSet := mq.mergeSeriesSets(result)
+
 	// Wrap with MemoryTrackingSeriesSet after merging to ensure memory is decreased only once per unique series.
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
-		return storage.ErrSeriesSet(err)
+		// No memory tracker in context; return without wrapping.
+		// In production, the tracker should always be present.
+		return mergedSet
 	}
-	// We have all the sets from different sources (chunk from store, chunks from ingesters).
-	// mergeSeriesSets will return sorted set.
-	return series.NewMemoryTrackingSeriesSet(mq.mergeSeriesSets(result), memoryTracker)
+	return series.NewMemoryTrackingSeriesSet(mergedSet, memoryTracker)
 }
 
 func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
