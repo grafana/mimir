@@ -28,9 +28,6 @@ type PartitionRingWatcher struct {
 
 	// Metrics.
 	numPartitionsGaugeVec *prometheus.GaugeVec
-
-	// opts is used to propagate the options each time the ring is updated.
-	opts PartitionRingOptions
 }
 
 type PartitionRingWatcherDelegate interface {
@@ -39,11 +36,7 @@ type PartitionRingWatcherDelegate interface {
 }
 
 func NewPartitionRingWatcher(name, key string, kv kv.Client, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
-	return NewPartitionRingWatcherWithOptions(name, key, kv, DefaultPartitionRingOptions(), logger, reg)
-}
-
-func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts PartitionRingOptions, logger log.Logger, reg prometheus.Registerer) *PartitionRingWatcher {
-	emptyRing, err := NewPartitionRingWithOptions(*NewPartitionRingDesc(), opts)
+	emptyRing, err := NewPartitionRing(*NewPartitionRingDesc())
 	if err != nil {
 		panic(err) // This should never executes.
 	}
@@ -57,7 +50,6 @@ func NewPartitionRingWatcherWithOptions(name, key string, kv kv.Client, opts Par
 			Help:        "Number of partitions by state in the partitions ring.",
 			ConstLabels: map[string]string{"name": name},
 		}, []string{"state"}),
-		opts: opts,
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.loop, nil).WithName("partitions-ring-watcher")
@@ -107,7 +99,7 @@ func (w *PartitionRingWatcher) loop(ctx context.Context) error {
 }
 
 func (w *PartitionRingWatcher) updatePartitionRing(desc *PartitionRingDesc) error {
-	newRing, err := NewPartitionRingWithOptions(*desc, w.opts)
+	newRing, err := NewPartitionRing(*desc)
 	if err != nil {
 		return errors.Wrap(err, "failed to create partition ring from descriptor")
 	}

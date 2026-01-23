@@ -41,9 +41,6 @@ type PartitionRing struct {
 
 	// activePartitionsCount is a saved count of active partitions to avoid recomputing it.
 	activePartitionsCount int
-
-	// opts is used to propagate the options to sub rings when shuffle sharding.
-	opts PartitionRingOptions
 }
 
 // PartitionRingOptions holds optional configuration parameters for creating a PartitionRing.
@@ -80,7 +77,6 @@ func NewPartitionRingWithOptions(desc PartitionRingDesc, opts PartitionRingOptio
 		ownersByPartition:     desc.ownersByPartition(),
 		activePartitionsCount: desc.activePartitionsCount(),
 		shuffleShardCache:     shuffleShardCache,
-		opts:                  opts,
 	}, nil
 }
 
@@ -285,7 +281,7 @@ func (r *PartitionRing) shuffleShard(identifier string, size int, lookbackPeriod
 		}
 	}
 
-	return NewPartitionRingWithOptions(r.desc.WithPartitions(result), r.opts)
+	return NewPartitionRing(r.desc.WithPartitions(result))
 }
 
 // PartitionsCount returns the number of partitions in the ring.
