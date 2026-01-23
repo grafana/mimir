@@ -42,10 +42,6 @@ func handleAnalysis(w http.ResponseWriter, r *http.Request, planner *streamingpr
 		return nil, http.StatusNotFound, errors.New("query planning is disabled, analysis is not available")
 	}
 
-	if limitsProvider == nil {
-		return nil, http.StatusInternalServerError, errors.New("limits provider is not configured")
-	}
-
 	enableDelayedNameRemoval, err := limitsProvider.GetEnableDelayedNameRemoval(r.Context())
 	if err != nil {
 		return nil, http.StatusBadRequest, fmt.Errorf("could not get enable delayed name removal setting: %w", err)
