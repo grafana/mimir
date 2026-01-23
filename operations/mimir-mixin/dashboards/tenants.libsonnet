@@ -752,7 +752,7 @@ local filename = 'mimir-tenants.json';
         ) +
         $.queryPanel(
           'avg(cortex_alertmanager_alerts_limiter_current_alerts{%(job)s, user="$user"})' % {
-            job: $.jobMatcher($._config.job_names.alertmanager)
+            job: $.jobMatcher($._config.job_names.alertmanager),
           },
           'alerts'
         ) +
@@ -770,7 +770,7 @@ local filename = 'mimir-tenants.json';
         ) +
         $.queryPanel(
           'avg(cortex_alertmanager_alerts_limiter_current_alerts_size_bytes{%(job)s, user="$user"})' % {
-            job: $.jobMatcher($._config.job_names.alertmanager)
+            job: $.jobMatcher($._config.job_names.alertmanager),
           },
           'size'
         ) +
