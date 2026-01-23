@@ -125,6 +125,18 @@ func TestTimeseriesFromPool(t *testing.T) {
 			TimeseriesFromPool()
 		})
 	})
+
+	t.Run("panics if pool returns dirty TimeSeries with SkipUnmarshalingExemplars", func(t *testing.T) {
+		ts := TimeseriesFromPool()
+		ts.SkipUnmarshalingExemplars = true
+
+		// Put directly into pool without cleaning (simulating a bug)
+		timeSeriesPool.Put(ts)
+
+		assert.Panics(t, func() {
+			TimeseriesFromPool()
+		})
+	})
 }
 
 func TestCopyToYoloString(t *testing.T) {
