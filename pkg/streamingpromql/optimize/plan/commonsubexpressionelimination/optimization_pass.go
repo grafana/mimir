@@ -137,7 +137,8 @@ func (e *OptimizationPass) accumulatePath(soFar path) []path {
 
 // ShouldSkipChild determines if a child node should be skipped during common subexpression elimination.
 // Currently this is only used to skip the 2nd argument to info function calls, as we don't want to
-// deduplicate these since those are parameters specified by the user and not a direct query of the info metric.
+// deduplicate these as we need the matchers calculated by the info function at evaluation time to be
+// applied, and these are ignored by the Duplicate operator.
 func (e *OptimizationPass) ShouldSkipChild(node planning.Node, childIdx int) bool {
 	functionCall, ok := node.(*core.FunctionCall)
 	if !ok {

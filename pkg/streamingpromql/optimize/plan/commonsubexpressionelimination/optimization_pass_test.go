@@ -663,9 +663,9 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsEliminated: 0,
 			expectedSelectorsInspected:  2,
 		},
-		"info function": {
-			// This test verifies that CSE optimization correctly skips the 2nd argument to info function,
-			// allowing only the 1st argument to be deduplicated.
+		// These tests verify that CSE optimization correctly skips the 2nd argument to info function,
+		// allowing only the 1st argument to be deduplicated.
+		"info function with arguments included separately": {
 			expr: `foo + {k8s_cluster_name="cluster1"} + info(foo, {k8s_cluster_name="cluster1"})`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
@@ -680,6 +680,21 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateNodes:      1,
 			expectedSelectorsEliminated: 1,
 			expectedSelectorsInspected:  3,
+		},
+		"info function called twice with same 2nd argument but different 1st arguments": {
+			expr: `info(foo, {k8s_cluster_name="cluster1"}) + info(bar, {k8s_cluster_name="cluster1"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: info(...)
+						- param 0: VectorSelector: {__name__="foo"}
+						- param 1: VectorSelector: {k8s_cluster_name="cluster1"}, return sample timestamps preserving histograms
+					- RHS: FunctionCall: info(...)
+						- param 0: VectorSelector: {__name__="bar"}
+						- param 1: VectorSelector: {k8s_cluster_name="cluster1"}, return sample timestamps preserving histograms
+			`,
+			expectedDuplicateNodes:      0,
+			expectedSelectorsEliminated: 0,
+			expectedSelectorsInspected:  2,
 		},
 	}
 

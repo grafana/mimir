@@ -14,7 +14,7 @@ import (
 type InsertOmittedTargetInfoSelector struct{}
 
 func (h *InsertOmittedTargetInfoSelector) Name() string {
-	return "Insert Omitted Target Info Selector"
+	return "Insert omitted target info selector"
 }
 
 func (h *InsertOmittedTargetInfoSelector) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {

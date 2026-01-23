@@ -20,10 +20,11 @@ func TestHandleInfoFunc(t *testing.T) {
 	parser.EnableExperimentalFunctions = true
 
 	testCases := map[string]string{
-		"info(metric)":      "info(metric, target_info)",
-		"info(metric @ 60)": "info(metric @ 60.000, target_info)",
-		"1 + info(metric)":  "1 + info(metric, target_info)",
-		"info(metric + 1)":  "info(metric + 1, target_info)",
+		`info(metric)`:               `info(metric, target_info)`,
+		`info(metric @ 60)`:          `info(metric @ 60.000, target_info)`,
+		`1 + info(metric)`:           `1 + info(metric, target_info)`,
+		`info(metric + 1)`:           `info(metric + 1, target_info)`,
+		`info(metric, {env="prod"})`: `info(metric, {__name__="target_info",env="prod"})`,
 	}
 
 	ctx := context.Background()

@@ -12,6 +12,7 @@ import (
 	"github.com/grafana/regexp"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	model_timestamp "github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
@@ -219,7 +220,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 		// Error out if we get histograms for an info metric.
 		if len(d.Histograms) > 0 {
 			types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
-			return fmt.Errorf("this should be an info metric, with float samples: %s", metadata.Labels)
+			return fmt.Errorf("info(): expected an info metric with float samples, but got %d float samples and %d histogram samples in series %s", len(d.Floats), len(d.Histograms), metadata.Labels)
 		}
 
 		for _, sample := range d.Floats {
@@ -235,8 +236,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			if metricLabels, exists := sigsAtTimestamp[string(sig)]; exists {
 				if metricLabels.time == origTs {
 					types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
-					humanTime := time.UnixMilli(sample.T).UTC().Format("2006-01-02 15:04:05 UTC")
-					return fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", metricLabels.labels.String(), metadata.Labels.String(), sample.T, humanTime)
+					return fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", metricLabels.labels.String(), metadata.Labels.String(), sample.T, model_timestamp.Time(sample.T).Format(time.RFC3339Nano))
 				} else if metricLabels.time > origTs {
 					continue
 				}

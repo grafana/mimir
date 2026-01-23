@@ -588,10 +588,11 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			// Check len(args) == 2 for safety in case the pass doesn't run (e.g., in tests).
 			if len(args) == 2 {
 				vectorSelector, ok := args[1].(*core.VectorSelector)
-				if ok {
-					// Override float values to reflect original timestamps.
-					vectorSelector.ReturnSampleTimestampsPreserveHistograms = true
+				if !ok {
+					return nil, fmt.Errorf("expected second argument of info() to be a VectorSelector, got %T", args[1])
 				}
+				// Override float values to reflect original timestamps.
+				vectorSelector.ReturnSampleTimestampsPreserveHistograms = true
 			}
 		}
 
