@@ -167,7 +167,7 @@ func TestQueryLimiter_AddSeries_HashCollision(t *testing.T) {
 	requireSameLabels(t, returnedA1, seriesA)
 	require.Equal(t, 1, len(limiter.uniqueSeries))
 	require.Nil(t, limiter.conflictSeries, "conflictSeries should not be initialized yet")
-	require.Equal(t, 1, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+	require.Equal(t, 1, limiter.uniqueSeriesCount())
 
 	// Add seriesB - should collide with seriesA and go into conflictSeries
 	returnedB1, err := limiter.AddSeries(seriesB, memoryTracker)
@@ -176,26 +176,26 @@ func TestQueryLimiter_AddSeries_HashCollision(t *testing.T) {
 	require.Equal(t, 1, len(limiter.uniqueSeries), "uniqueSeries should still have only seriesA")
 	require.NotNil(t, limiter.conflictSeries, "conflictSeries should now be initialized")
 	require.Equal(t, 1, len(limiter.conflictSeries[collisionHash]), "should have one collision for this hash")
-	require.Equal(t, 2, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+	require.Equal(t, 2, limiter.uniqueSeriesCount())
 
 	// Add duplicate of seriesA - should deduplicate correctly
 	returnedA2, err := limiter.AddSeries(seriesA, memoryTracker)
 	require.NoError(t, err)
 	requireSameLabels(t, returnedA2, returnedA1)
-	require.Equal(t, 2, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+	require.Equal(t, 2, limiter.uniqueSeriesCount())
 
 	// Add duplicate of seriesB - should deduplicate from conflictSeries
 	returnedB2, err := limiter.AddSeries(seriesB, memoryTracker)
 	require.NoError(t, err)
 	requireSameLabels(t, returnedB2, returnedB1)
-	require.Equal(t, 2, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+	require.Equal(t, 2, limiter.uniqueSeriesCount())
 
 	// Add seriesC (no collision) - should go into uniqueSeries normally
 	returnedC1, err := limiter.AddSeries(seriesC, memoryTracker)
 	require.NoError(t, err)
 	requireSameLabels(t, returnedC1, seriesC)
 	require.Equal(t, 2, len(limiter.uniqueSeries), "uniqueSeries should now have seriesA and seriesC")
-	require.Equal(t, 3, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+	require.Equal(t, 3, limiter.uniqueSeriesCount())
 
 	// Verify no rejection metrics were incremented
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
@@ -296,7 +296,7 @@ func TestQueryLimiter_AddSeries_HashCollisionWithThreeCollidingSeries(t *testing
 	requireSameLabels(t, returnedC, seriesC)
 	require.Equal(t, 1, len(limiter.uniqueSeries))
 	require.Equal(t, 2, len(limiter.conflictSeries[collisionHash]), "both seriesB and seriesC should be in conflictSeries")
-	require.Equal(t, 3, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+	require.Equal(t, 3, limiter.uniqueSeriesCount())
 
 	// Verify deduplication works for all three
 	returnedA2, err := limiter.AddSeries(seriesA, memoryTracker)
@@ -311,7 +311,7 @@ func TestQueryLimiter_AddSeries_HashCollisionWithThreeCollidingSeries(t *testing
 	require.NoError(t, err)
 	requireSameLabels(t, returnedC2, returnedC)
 
-	require.Equal(t, 3, len(limiter.uniqueSeries)+countConflictSeries(limiter.conflictSeries))
+	require.Equal(t, 3, limiter.uniqueSeriesCount())
 
 	// Verify no rejection metrics were incremented
 	assertRejectedQueriesMetricValue(t, reg, 0, 0, 0, 0)
