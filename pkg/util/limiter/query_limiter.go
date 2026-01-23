@@ -91,35 +91,36 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 
 	uniqueSeriesBefore := len(ql.uniqueSeries) + countConflictSeries(ql.conflictSeries)
 
-	existingLabels, foundDupe := ql.uniqueSeries[fingerprint]
-	if !foundDupe {
-		// newLabels is seen for the first time because it isn't in uniqueSeries map yet.
+	if existingLabels, foundDuplicate := ql.uniqueSeries[fingerprint]; !foundDuplicate {
+		// newLabels is seen for the first time hence we track the series limit and its labels memory consumption.
 		ql.uniqueSeries[fingerprint] = newLabels
 		return ql.trackNewLabels(newLabels, uniqueSeriesBefore, tracker)
-	} else if !labels.Equal(existingLabels, newLabels) {
-		// newLabels has not been seen before but its hash conflicted with existingLabels.
-		if ql.conflictSeries == nil {
-			ql.conflictSeries = make(map[uint64][]labels.Labels)
+	} else if labels.Equal(existingLabels, newLabels) {
+		// newLabels is seen before, deduplicate it by returning existingLabels.
+		if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
+			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 		}
-		hashConflictLabels := ql.conflictSeries[fingerprint]
-		for _, existingConflictedLabels := range hashConflictLabels {
-			// newLabels is seen before in conflictSeries map, hence just return the existingConflictedLabels.
-			if labels.Equal(existingConflictedLabels, newLabels) {
-				if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
-					return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
-				}
-				return existingConflictedLabels, nil
-			}
-		}
-		// newLabels is not seen in the conflitSeries map so this is really newLabels.
-		ql.conflictSeries[fingerprint] = append(hashConflictLabels, newLabels)
-		return ql.trackNewLabels(newLabels, uniqueSeriesBefore, tracker)
+		return existingLabels, nil
 	}
 
-	if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
-		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+	// newLabels' hash conflicted with existingLabels.
+	if ql.conflictSeries == nil {
+		// Note that we only track second labels' hash conflict onward in this map. The first conflict always in uniqueSeries map.
+		ql.conflictSeries = make(map[uint64][]labels.Labels)
 	}
-	return existingLabels, nil
+	hashConflictLabels := ql.conflictSeries[fingerprint]
+	for _, existingConflictedLabels := range hashConflictLabels {
+		// newLabels is seen before in conflictSeries map, hence just return the existingConflictedLabels.
+		if labels.Equal(existingConflictedLabels, newLabels) {
+			if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
+				return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+			}
+			return existingConflictedLabels, nil
+		}
+	}
+	// Despite there was a hash conflict, newLabels is actually seen for the first time hence we track the series limit and its labels memory consumption.
+	ql.conflictSeries[fingerprint] = append(hashConflictLabels, newLabels)
+	return ql.trackNewLabels(newLabels, uniqueSeriesBefore, tracker)
 }
 
 func (ql *QueryLimiter) trackNewLabels(newLabels labels.Labels, uniqueSeriesBefore int, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
