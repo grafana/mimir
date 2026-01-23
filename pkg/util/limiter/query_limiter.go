@@ -118,7 +118,9 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 		for _, existingConflictedLabels := range hashConflictLabels {
 			// Return the existingConflictedLabels because newLabels is seen before.
 			if labels.Equal(existingConflictedLabels, newLabels) {
-				// TODO: do we need to validate series limit here?
+				if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
+					return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+				}
 				return existingConflictedLabels, nil
 			}
 		}
@@ -139,7 +141,9 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 		return newLabels, nil
 	}
 
-	// The series has been seen before
+	if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
+		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+	}
 	return existingLabels, nil
 }
 
