@@ -96,7 +96,9 @@ After completing the prerequisites and choosing your ingest storage strategy, up
 helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE>
 ```
 
-## Troubleshoot
+## Troubleshooting
+
+Follow this guidance to recover from common issues with the rollout operator during migration.
 
 ### Rollout operator misconfiguration
 
