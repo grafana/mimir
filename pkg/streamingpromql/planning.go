@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/prometheus/prometheus/blob/main/promql/functions.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Prometheus Authors
 
 package streamingpromql
 
@@ -26,8 +29,10 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -62,8 +67,8 @@ type QueryPlanner struct {
 	planStageLatency         *prometheus.HistogramVec
 	generatedPlans           *prometheus.CounterVec
 	versionProvider          QueryPlanVersionProvider
-
-	logger log.Logger
+	planningMetricsTracker   *planningmetrics.MetricsTracker
+	logger                   log.Logger
 
 	// Replaced during testing to ensure timing produces consistent results.
 	TimeSince func(time.Time) time.Duration
@@ -103,8 +108,21 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	}
 
+	if opts.EnableProjectionPushdown {
+		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	if opts.EnableMultiAggregation {
+		if !opts.EnableCommonSubexpressionElimination {
+			return nil, errors.New("cannot enable multi-aggregation without common subexpression elimination")
+		}
+
+		planner.RegisterQueryPlanOptimizationPass(multiaggregation.NewOptimizationPass(opts.CommonOpts.Reg))
 	}
 
 	if opts.EnableNarrowBinarySelectors {
@@ -140,8 +158,8 @@ func NewQueryPlannerWithoutOptimizationPasses(opts EngineOpts, versionProvider Q
 			Name: "cortex_mimir_query_engine_plans_generated_total",
 			Help: "Total number of query plans generated.",
 		}, []string{"version"}),
-
-		versionProvider: versionProvider,
+		planningMetricsTracker: planningmetrics.NewMetricsTracker(opts.CommonOpts.Reg),
+		versionProvider:        versionProvider,
 
 		logger:    opts.Logger,
 		TimeSince: time.Since,
@@ -241,7 +259,7 @@ func (p *QueryPlanner) NewQueryPlan(ctx context.Context, qs string, timeRange ty
 	spanLogger.DebugLog("msg", "AST optimisation passes completed", "expression", expr)
 
 	plan, err := p.runPlanningStage("Original plan", observer, func() (*planning.QueryPlan, error) {
-		root, err := p.nodeFromExpr(expr)
+		root, err := p.nodeFromExpr(expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -394,7 +412,7 @@ func (p *QueryPlanner) runPlanningStage(stageName string, observer PlanningObser
 	return plan, nil
 }
 
-func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
+func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeRange) (planning.Node, error) {
 	switch expr := expr.(type) {
 	case *parser.VectorSelector:
 		return &core.VectorSelector{
@@ -431,7 +449,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.AggregateExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -439,7 +457,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		var param planning.Node
 
 		if expr.Param != nil {
-			param, err = p.nodeFromExpr(expr.Param)
+			param, err = p.nodeFromExpr(expr.Param, timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -462,12 +480,16 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.BinaryExpr:
-		lhs, err := p.nodeFromExpr(expr.LHS)
+		if expr.VectorMatching != nil && (expr.VectorMatching.FillValues.RHS != nil || expr.VectorMatching.FillValues.LHS != nil) {
+			return nil, compat.NewNotSupportedError("'fill' modifier")
+		}
+
+		lhs, err := p.nodeFromExpr(expr.LHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
 
-		rhs, err := p.nodeFromExpr(expr.RHS)
+		rhs, err := p.nodeFromExpr(expr.RHS, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -526,7 +548,7 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		args := make([]planning.Node, 0, len(expr.Args))
 
 		for _, arg := range expr.Args {
-			node, err := p.nodeFromExpr(arg)
+			node, err := p.nodeFromExpr(arg, timeRange)
 			if err != nil {
 				return nil, err
 			}
@@ -542,6 +564,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				if !supported {
 					return nil, ErrSmoothedIncompatibleFunction{functionName: expr.Func.Name}
 				}
+				// We only need to calculate the counter-aware interpolated smoothed points if the outer function is rate or increase.
+				// The delta function does not require the counter adjusted points.
+				// See Prometheus function.go - funcDelta(), funcRate(), funcIncrease() - only rate and increase set isCounter=true
+				matrixSelector.CounterAware = expr.Func.Name == "rate" || expr.Func.Name == "increase"
 			}
 
 			args = append(args, node)
@@ -570,6 +596,10 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				if ok {
 					vectorSelector.ReturnSampleTimestamps = true
 					f.Args[0] = stepInvariantExpression.Inner
+
+					// Note - we do not update the step invariant metrics tracker as this will already have been updated when the
+					// argument expression was created.
+
 					return &core.StepInvariantExpression{
 						Inner: &core.DeduplicateAndMerge{
 							Inner:                      f,
@@ -606,10 +636,6 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		return f, nil
 
 	case *parser.SubqueryExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
-		if err != nil {
-			return nil, err
-		}
 
 		step := expr.Step
 
@@ -617,8 +643,12 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 			step = time.Duration(p.noStepSubqueryIntervalFn(expr.Range.Milliseconds())) * time.Millisecond
 		}
 
-		return &core.Subquery{
-			Inner: inner,
+		// Construct the Subquery in 2 phases.
+		// The first step initializes the SubqueryDetails, which allows us to determine the children time range.
+		// The second step then creates the inner expression, passing in this child time range.
+		// This is needed by the step invariant expression handler which will require this child time range to
+		// accurately calculate the number of steps saved.
+		subquery := &core.Subquery{
 			SubqueryDetails: &core.SubqueryDetails{
 				Timestamp:          core.TimeFromTimestamp(expr.Timestamp),
 				Offset:             expr.OriginalOffset,
@@ -626,10 +656,20 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 				Step:               step,
 				ExpressionPosition: core.PositionRangeFrom(expr.PositionRange()),
 			},
-		}, nil
+		}
+
+		childTimeRange := subquery.ChildrenTimeRange(timeRange)
+
+		inner, err := p.nodeFromExpr(expr.Expr, childTimeRange)
+		if err != nil {
+			return nil, err
+		}
+
+		subquery.Inner = inner
+		return subquery, nil
 
 	case *parser.UnaryExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
@@ -679,13 +719,20 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr) (planning.Node, error) {
 		}, nil
 
 	case *parser.ParenExpr:
-		return p.nodeFromExpr(expr.Expr)
+		return p.nodeFromExpr(expr.Expr, timeRange)
 
 	case *parser.StepInvariantExpr:
-		inner, err := p.nodeFromExpr(expr.Expr)
+		inner, err := p.nodeFromExpr(expr.Expr, timeRange)
 		if err != nil {
 			return nil, err
 		}
+
+		// There is no advantage to wrapping an instant query in a step invariant.
+		if timeRange.StepCount <= 1 {
+			return inner, nil
+		}
+
+		p.planningMetricsTracker.StepInvariantTracker.OnStepInvariantExpressionAdded(timeRange.StepCount)
 
 		return &core.StepInvariantExpression{
 			Inner:                          inner,

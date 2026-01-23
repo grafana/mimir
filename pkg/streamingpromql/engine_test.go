@@ -42,6 +42,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
+	"github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -69,6 +70,63 @@ func init() {
 			tracesdk.WithSpanProcessor(tracesdk.NewSimpleSpanProcessor(spanExporter)),
 		),
 	)
+}
+
+func TestUnsupportedPromQLFeatures(t *testing.T) {
+	binOpFillModifierEnabled := parser.EnableBinopFillModifiers
+	parser.EnableBinopFillModifiers = true
+	defer func() { parser.EnableBinopFillModifiers = binOpFillModifierEnabled }()
+
+	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
+	// different cases and make sure we produce a reasonable error message when these cases are encountered.
+	unsupportedExpressions := map[string]string{
+		"left_vector + fill_right(0) right_vector": "'fill' modifier",
+		"left_vector + fill(0) right_vector":       "'fill' modifier",
+		"left_vector + fill_left(0) right_vector":  "'fill' modifier",
+	}
+
+	for expression, expectedError := range unsupportedExpressions {
+		t.Run(expression, func(t *testing.T) {
+			requireQueryIsUnsupported(t, expression, expectedError)
+		})
+	}
+}
+
+func requireQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
+	t.Run("range query", func(t *testing.T) {
+		requireRangeQueryIsUnsupported(t, expression, expectedError)
+	})
+
+	t.Run("instant query", func(t *testing.T) {
+		requireInstantQueryIsUnsupported(t, expression, expectedError)
+	})
+}
+
+func requireRangeQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	qry, err := engine.NewRangeQuery(context.Background(), nil, nil, expression, time.Now().Add(-time.Hour), time.Now(), time.Minute)
+	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+	require.ErrorIs(t, err, compat.NotSupportedError{})
+	require.Nil(t, qry)
+}
+
+func requireInstantQueryIsUnsupported(t *testing.T, expression string, expectedError string) {
+	opts := NewTestEngineOpts()
+	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+	engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	require.NoError(t, err)
+
+	qry, err := engine.NewInstantQuery(context.Background(), nil, nil, expression, time.Now())
+	require.Error(t, err)
+	require.ErrorIs(t, err, compat.NotSupportedError{})
+	require.EqualError(t, err, "not supported by streaming engine: "+expectedError)
+	require.Nil(t, qry)
 }
 
 func TestNewRangeQuery_InvalidQueryTime(t *testing.T) {
@@ -195,13 +253,17 @@ func TestOurTestCases(t *testing.T) {
 
 			testScript := string(b)
 
-			t.Run("Mimir's engine", func(t *testing.T) {
-				if strings.Contains(testFile, "name_label_dropping") {
-					promqltest.RunTest(t, testScript, mimirEngineWithDelayedNameRemoval)
-					return
-				}
+			mimirEngineToTest := mimirEngine
+			prometheusEngineToTest := prometheusEngine
 
-				promqltest.RunTest(t, testScript, mimirEngine)
+			// switch to the alternate engines if we need delayed name removal
+			if strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled") {
+				mimirEngineToTest = mimirEngineWithDelayedNameRemoval
+				prometheusEngineToTest = prometheusEngineWithDelayedNameRemoval
+			}
+
+			t.Run("Mimir's engine", func(t *testing.T) {
+				promqltest.RunTest(t, testScript, mimirEngineToTest)
 			})
 
 			// Run the tests against Prometheus' engine to ensure our test cases are valid.
@@ -210,12 +272,7 @@ func TestOurTestCases(t *testing.T) {
 					t.Skip("disabled for Prometheus' engine due to bug in Prometheus' engine")
 				}
 
-				if strings.Contains(testFile, "name_label_dropping") {
-					promqltest.RunTest(t, testScript, prometheusEngineWithDelayedNameRemoval)
-					return
-				}
-
-				promqltest.RunTest(t, testScript, prometheusEngine)
+				promqltest.RunTest(t, testScript, prometheusEngineToTest)
 			})
 		})
 	}
@@ -2150,12 +2207,32 @@ func (t *timeoutTestingQueryTracker) Close() error {
 }
 
 type annotationTestCase struct {
-	data                               string
-	expr                               string
-	expectedWarningAnnotations         []string
-	expectedInfoAnnotations            []string
+	data                       string
+	expr                       string
+	expectedWarningAnnotations []string
+	expectedInfoAnnotations    []string
+
+	// an alternate set of annotations for when delayed name removal is enabled.
+	// if not set the test will fall back to expectedWarningAnnotations / expectedInfoAnnotations
+	expectedWarningAnnotationsDelayedNameRemovalEnabled []string
+	expectedInfoAnnotationsDelayedNameRemovalEnabled    []string
+
 	skipComparisonWithPrometheusReason string
 	instantEvaluationTimestamp         *time.Time
+}
+
+func (a annotationTestCase) getExpectedInfoAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedInfoAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedInfoAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedInfoAnnotations
+}
+
+func (a annotationTestCase) getExpectedWarningAnnotations(delayedNameRemovalEnabled bool) []string {
+	if delayedNameRemovalEnabled && a.expectedWarningAnnotationsDelayedNameRemovalEnabled != nil {
+		return a.expectedWarningAnnotationsDelayedNameRemovalEnabled
+	}
+	return a.expectedWarningAnnotations
 }
 
 func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
@@ -2163,19 +2240,36 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 	step := time.Minute
 	endT := startT.Add(2 * step)
 
-	opts := NewTestEngineOpts()
-	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-	mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
-	require.NoError(t, err)
-	prometheusEngine := promql.NewEngine(opts.CommonOpts)
-
 	const prometheusEngineName = "Prometheus' engine"
-	engines := map[string]promql.QueryEngine{
-		"Mimir's engine": mimirEngine,
+	const mimirEngineName = "Mimir's engine"
 
-		// Compare against Prometheus' engine to verify our test cases are valid.
-		prometheusEngineName: prometheusEngine,
+	// create 2 sets of engines - a Mimir and Prometheus engine each with EnableDelayedNameRemoval=true and other with EnableDelayedNameRemoval=false
+	// there are some histogram annotation test cases which will emit a different warning/info annotation string depending on the delayed name removal setting
+	engineSets := make([]struct {
+		mimirEngine               promql.QueryEngine
+		prometheusEngine          promql.QueryEngine
+		delayedNameRemovalEnabled bool
+	}, 0, 2)
+
+	for _, delayedNameRemovalEnabled := range []bool{true, false} {
+		opts := NewTestEngineOpts()
+		opts.CommonOpts.EnableDelayedNameRemoval = delayedNameRemovalEnabled
+
+		planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+		require.NoError(t, err)
+		mimirEngine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+		require.NoError(t, err)
+		prometheusEngine := promql.NewEngine(opts.CommonOpts)
+
+		engineSets = append(engineSets, struct {
+			mimirEngine               promql.QueryEngine
+			prometheusEngine          promql.QueryEngine
+			delayedNameRemovalEnabled bool
+		}{
+			mimirEngine:               mimirEngine,
+			prometheusEngine:          prometheusEngine,
+			delayedNameRemovalEnabled: delayedNameRemovalEnabled,
+		})
 	}
 
 	for name, testCase := range testCases {
@@ -2199,36 +2293,43 @@ func runAnnotationTests(t *testing.T, testCases map[string]annotationTestCase) {
 			}
 
 			for queryType, generator := range queryTypes {
-				t.Run(queryType, func(t *testing.T) {
-					results := make([]*promql.Result, 0, 2)
+				for _, engineSet := range engineSets {
+					subTestName := fmt.Sprintf("%s - delayed name removal enabled=%t", queryType, engineSet.delayedNameRemovalEnabled)
+					t.Run(subTestName, func(t *testing.T) {
+						results := make([]*promql.Result, 0, 2)
 
-					for engineName, engine := range engines {
-						if engineName == prometheusEngineName && testCase.skipComparisonWithPrometheusReason != "" {
-							t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
-							continue
+						for _, engine := range []promql.QueryEngine{engineSet.mimirEngine, engineSet.prometheusEngine} {
+							if engine == engineSet.prometheusEngine && testCase.skipComparisonWithPrometheusReason != "" {
+								t.Logf("Skipping comparison with Prometheus' engine: %v", testCase.skipComparisonWithPrometheusReason)
+								continue
+							}
+							engineName := mimirEngineName
+							if engine == engineSet.prometheusEngine {
+								engineName = prometheusEngineName
+							}
+							t.Run(engineName, func(t *testing.T) {
+								query, err := generator(engine)
+								require.NoError(t, err)
+								t.Cleanup(query.Close)
+
+								res := query.Exec(context.Background())
+								require.NoError(t, res.Err)
+								results = append(results, res)
+
+								warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
+								require.ElementsMatch(t, testCase.getExpectedWarningAnnotations(engineSet.delayedNameRemovalEnabled), warnings)
+								require.ElementsMatch(t, testCase.getExpectedInfoAnnotations(engineSet.delayedNameRemovalEnabled), infos)
+							})
 						}
-						t.Run(engineName, func(t *testing.T) {
-							query, err := generator(engine)
-							require.NoError(t, err)
-							t.Cleanup(query.Close)
 
-							res := query.Exec(context.Background())
-							require.NoError(t, res.Err)
-							results = append(results, res)
-
-							warnings, infos := res.Warnings.AsStrings(testCase.expr, 0, 0)
-							require.ElementsMatch(t, testCase.expectedWarningAnnotations, warnings)
-							require.ElementsMatch(t, testCase.expectedInfoAnnotations, infos)
-						})
-					}
-
-					// If both results are available, compare them (sometimes we skip prometheus)
-					if len(results) == 2 {
-						// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
-						// or vice-versa where no result may be expected etc.
-						mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
-					}
-				})
+						// If both results are available, compare them (sometimes we skip prometheus)
+						if len(results) == 2 {
+							// We do this extra comparison to ensure that we don't skip a series that may be outputted during a warning
+							// or vice-versa where no result may be expected etc.
+							mqetest.RequireEqualResults(t, testCase.expr, results[0], results[1], false)
+						}
+					})
+				}
 			}
 		})
 	}
@@ -3090,6 +3191,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="c"})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "abc" for metric name "series" (1:25)`},
 		},
 		"invalid quantile warning": {
 			data:                       mixedClassicHistograms,
@@ -3100,17 +3202,23 @@ func TestHistogramAnnotations(t *testing.T) {
 			data:                       mixedClassicHistograms,
 			expr:                       `histogram_quantile(0.5, series{host="a"})`,
 			expectedWarningAnnotations: []string{`PromQL warning: vector contains a mix of classic and native histograms (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:25)`},
 		},
 		"forced monotonicity info": {
 			data:                    mixedClassicHistograms,
 			expr:                    `histogram_quantile(0.5, series{host="d"})`,
 			expectedInfoAnnotations: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) (1:25)`},
+			expectedInfoAnnotationsDelayedNameRemovalEnabled: []string{`PromQL info: input to histogram_quantile needed to be fixed for monotonicity (see https://prometheus.io/docs/prometheus/latest/querying/functions/#histogram_quantile) for metric name "series" (1:25)`},
 		},
 		"both mixed classic+native histogram and invalid quantile warnings": {
 			data: mixedClassicHistograms,
 			expr: `histogram_quantile(9, series{host="a"})`,
 			expectedWarningAnnotations: []string{
 				`PromQL warning: vector contains a mix of classic and native histograms (1:23)`,
+				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
+			},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{
+				`PromQL warning: vector contains a mix of classic and native histograms for metric name "series" (1:23)`,
 				`PromQL warning: quantile value should be between 0 and 1, got 9 (1:20)`,
 			},
 		},
@@ -3125,6 +3233,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
 		},
 		"extra entry in series without le label": {
 			data: `
@@ -3133,6 +3242,7 @@ func TestHistogramAnnotations(t *testing.T) {
 			`,
 			expr:                       `histogram_quantile(0.5, series{})`,
 			expectedWarningAnnotations: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" (1:25)`},
+			expectedWarningAnnotationsDelayedNameRemovalEnabled: []string{`PromQL warning: bucket label "le" is missing or has a malformed value of "" for metric name "series" (1:25)`},
 		},
 	}
 
@@ -4716,6 +4826,166 @@ func TestExtendedRangeSelectorsIrregular(t *testing.T) {
 			require.NoError(t, res.Err)
 			require.Equal(t, tc.expected, res.Value)
 
+		})
+	}
+}
+
+func TestStepInvariantMetrics(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `
+	load 1m
+    	metric 0 1 2 3 4 5
+		nodata _ _ _ _ _ _
+		histogram {{schema:3 sum:4 count:4 buckets:[1 2 1]}}+{{schema:5 sum:2 count:1 buckets:[1] offset:1}}x6
+	`)
+	t.Cleanup(func() { storage.Close() })
+
+	tc := []struct {
+		query    string
+		start    time.Time
+		end      time.Time
+		interval time.Duration
+
+		expectedNodes      int
+		expectedStepsSaved int
+	}{
+		{
+			query:              "metric @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:         "metric @ 20",
+			start:         time.Unix(0, 0).Add(time.Second * 50),
+			end:           time.Unix(0, 0).Add(time.Second * 50),
+			interval:      time.Second * 10,
+			expectedNodes: 0, // step invariant operation has been removed
+		},
+		{
+			query:              "nodata @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "metric @ 20 + metric @ 30",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1, // the left and right are all wrapped into a single step invariant
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "metric @ 20 * metric + metric @ 30",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      2,
+			expectedStepsSaved: 10,
+		},
+		{
+			query:              "abs(metric @ 20 * metric + metric @ 30)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      2,
+			expectedStepsSaved: 10,
+		},
+		{
+			query:              "scalar(metric @ 20)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "histogram @ 20",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			query:              "(metric @ 20 or metric) or (histogram @ 20 or histogram) or (vector(scalar(metric @ 30)) or metric)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      3,
+			expectedStepsSaved: 15,
+		},
+		{
+			query:              "timestamp(metric @ 20)",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 5,
+		},
+		{
+			// the step invariant is relative to a sub-query. The sub-query step count is used
+			query:              "avg_over_time((vector(1))[10m:1m])",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 9,
+		},
+		{
+			// the step invariant is relative to a sub-query. The sub-query step count is used
+			query:              "avg_over_time((rate(http_requests_total[5m]) + metric @ 10)[10m:1m])",
+			start:              time.Unix(0, 0),
+			end:                time.Unix(0, 0).Add(time.Second * 50),
+			interval:           time.Second * 10,
+			expectedNodes:      1,
+			expectedStepsSaved: 9,
+		},
+	}
+
+	for _, tc := range tc {
+		t.Run(tc.query, func(t *testing.T) {
+
+			registry := prometheus.NewRegistry()
+
+			opts := NewTestEngineOpts()
+			opts.CommonOpts.Reg = registry
+
+			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+			require.NoError(t, err)
+
+			engine, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+			require.NoError(t, err)
+
+			qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, tc.start, tc.end, tc.interval)
+			require.NoError(t, err)
+			res := qry.Exec(context.Background())
+			require.NoError(t, res.Err)
+
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(fmt.Sprintf(`
+							# HELP cortex_mimir_query_engine_step_invariant_nodes_total Total number of step invariant nodes.
+							# TYPE cortex_mimir_query_engine_step_invariant_nodes_total counter
+							cortex_mimir_query_engine_step_invariant_nodes_total %d
+						`, tc.expectedNodes)), "cortex_mimir_query_engine_step_invariant_nodes_total"))
+
+			require.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(fmt.Sprintf(`
+							# HELP cortex_mimir_query_engine_step_invariant_steps_saved_total Total number of steps which were saved from being evaluated due to step invariant handling.
+							# TYPE cortex_mimir_query_engine_step_invariant_steps_saved_total counter
+							cortex_mimir_query_engine_step_invariant_steps_saved_total %d
+						`, tc.expectedStepsSaved)), "cortex_mimir_query_engine_step_invariant_steps_saved_total"))
+
+			// Extra assertions to ensure we do not introduce bad test data
+			if tc.expectedNodes == 0 {
+				// If there are no step invariant nodes, then we do not expect to have any steps saved
+				require.Equal(t, 0, tc.expectedStepsSaved)
+			} else {
+				// If there are step invariant nodes, then we expect to have saved steps
+				require.Greater(t, tc.expectedStepsSaved, 0)
+			}
 		})
 	}
 }

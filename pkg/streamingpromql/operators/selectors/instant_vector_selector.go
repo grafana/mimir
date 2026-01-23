@@ -213,6 +213,10 @@ func (v *InstantVectorSelector) Prepare(ctx context.Context, params *types.Prepa
 	return v.Selector.Prepare(ctx, params)
 }
 
+func (v *InstantVectorSelector) AfterPrepare(ctx context.Context) error {
+	return nil
+}
+
 func (v *InstantVectorSelector) Finalize(ctx context.Context) error {
 	// Nothing to do.
 	return nil

@@ -129,9 +129,17 @@ func (e *Evaluator) Evaluate(ctx context.Context, observer EvaluationObserver) (
 		defer e.closeOperators()
 	}
 
+	prepareParams := &types.PrepareParams{}
+
 	for _, req := range e.nodeRequests {
-		if err := req.operator.Prepare(ctx, &types.PrepareParams{}); err != nil {
+		if err := req.operator.Prepare(ctx, prepareParams); err != nil {
 			return fmt.Errorf("failed to prepare query: %w", err)
+		}
+	}
+
+	for _, req := range e.nodeRequests {
+		if err := req.operator.AfterPrepare(ctx); err != nil {
+			return err
 		}
 	}
 

@@ -67,7 +67,6 @@ import (
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
@@ -470,6 +469,7 @@ func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 
 func (t *Mimir) initOverrides() (serv services.Service, err error) {
 	t.Overrides = validation.NewOverrides(t.Cfg.LimitsConfig, t.TenantLimits)
+	t.QueryLimitsProvider = querier.NewTenantQueryLimitsProvider(t.Overrides)
 	// overrides don't have operational state, nor do they need to do anything more in starting/stopping phase,
 	// so there is no need to return any service.
 	return nil, nil
@@ -544,7 +544,15 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine, t.QuerierStreamingEngine, err = querier.New(
-		t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, registerer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner,
+		t.Cfg.Querier,
+		t.Overrides,
+		t.Distributor,
+		t.AdditionalStorageQueryables,
+		registerer,
+		util_log.Logger,
+		t.ActivityTracker,
+		t.QuerierQueryPlanner,
+		t.QueryLimitsProvider,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("could not create queryable: %w", err)
@@ -888,7 +896,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(promOpts))
 	case querier.MimirEngine:
 		var err error
-		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
+		t.QueryFrontendStreamingEngine, err = streamingpromql.NewEngine(mqeOpts, t.QueryLimitsProvider, stats.NewQueryMetrics(mqeOpts.CommonOpts.Reg), t.QueryFrontendQueryPlanner)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create Mimir Query Engine: %w", err)
 		}
@@ -952,10 +960,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.API.RegisterQueryFrontend2(frontend)
 
 	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
-
-		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_CONSUMER, remoteexec.NewRemoteExecutionConsumerMaterializer(executor)); err != nil {
-			return nil, fmt.Errorf("unable to register remote execution materializer: %w", err)
+		if err := v2.RegisterRemoteExecutionMaterializers(t.QueryFrontendStreamingEngine, frontend, t.Cfg.Frontend.FrontendV2); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1097,7 +1103,17 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		// TODO: Consider wrapping logger to differentiate from querier module logger
 		rulerRegisterer := prometheus.WrapRegistererWith(rulerEngine, t.Registerer)
 
-		queryable, _, eng, _, err := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.AdditionalStorageQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker, t.QuerierQueryPlanner)
+		queryable, _, eng, _, err := querier.New(
+			t.Cfg.Querier,
+			t.Overrides,
+			t.Distributor,
+			t.AdditionalStorageQueryables,
+			rulerRegisterer,
+			util_log.Logger,
+			t.ActivityTracker,
+			t.QuerierQueryPlanner,
+			t.QueryLimitsProvider,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("could not create queryable for ruler: %w", err)
 		}
