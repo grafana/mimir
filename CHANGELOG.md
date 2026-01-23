@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.17.x / unreleased
+
+* [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682
+
 ## 2.17.4
 
 ### Grafana Mimir
