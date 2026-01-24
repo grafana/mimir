@@ -404,6 +404,10 @@ func (c *UsageTrackerClient) TrackSeriesAsync(ctx context.Context, userID string
 		return nil
 	}
 
+	if c.batchTrackingClient == nil {
+		return errors.New("batched tracking is not enabled")
+	}
+
 	var (
 		batchOptions = ring.DoBatchOptions{
 			Cleanup:       nil,
@@ -690,7 +694,7 @@ func (c *batchTrackingClient) TrackSeries(partition int32, userID string, series
 	c.batchersMtx.Lock()
 	b, ok := c.batchers[partition]
 	if !ok {
-		b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.clientsPool, c.stoppingChan)
+		b = NewPartitionBatcher(partition, c.maxSeriesPerBatch, c.batchDelay, c.logger, c.trackerClient, c.stoppingChan)
 		// May as well start the flusher outside of the lock.
 		defer b.startFlusher()
 		c.batchers[partition] = b
@@ -724,7 +728,6 @@ type PartitionBatcher struct {
 	seriesCount int
 
 	trackerClient *UsageTrackerClient
-	clientsPool   *client.Pool
 	workersPool   *concurrency.ReusableGoroutinesPool
 
 	maxSeriesPerBatch int
@@ -733,7 +736,7 @@ type PartitionBatcher struct {
 	stoppingChan      <-chan struct{}
 }
 
-func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, clientsPool *client.Pool, stopping <-chan struct{}) *PartitionBatcher {
+func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time.Duration, logger log.Logger, trackerClient *UsageTrackerClient, stopping <-chan struct{}) *PartitionBatcher {
 	return &PartitionBatcher{
 		partition: partition,
 
@@ -741,7 +744,6 @@ func NewPartitionBatcher(partition int32, maxSeriesPerBatch int, batchDelay time
 		seriesCount: 0,
 
 		trackerClient: trackerClient,
-		clientsPool:   clientsPool,
 		workersPool:   concurrency.NewReusableGoroutinesPool(2),
 
 		maxSeriesPerBatch: maxSeriesPerBatch,
@@ -822,7 +824,9 @@ func (b *PartitionBatcher) flush(users []*usagetrackerpb.TrackSeriesBatchUser) e
 
 		for _, rejection := range rejections {
 			for _, user := range rejection.Users {
-				b.trackerClient.rejectionObserver.ObserveUsageTrackerRejection(user.UserID)
+				if len(user.RejectedSeriesHashes) > 0 {
+					b.trackerClient.rejectionObserver.ObserveUsageTrackerRejection(user.UserID)
+				}
 			}
 		}
 	}
