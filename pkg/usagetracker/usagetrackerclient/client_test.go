@@ -1098,14 +1098,14 @@ func TestUsageTrackerClient_TrackSeriesBatch(t *testing.T) {
 		require.NoError(t, err)
 
 		// Wait a bit for the async flush to complete
-		// FIXME: this will flake.
-		time.Sleep(100 * time.Millisecond)
 
-		// Should have automatically flushed when threshold was exceeded
-		instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
-		instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
-		instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1)
-		instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0)
+		require.Eventually(t, func() bool {
+			// Should have automatically flushed when threshold was exceeded
+			return (instances["usage-tracker-zone-a-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0) &&
+				instances["usage-tracker-zone-a-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0) &&
+				instances["usage-tracker-zone-b-1"].AssertNumberOfCalls(t, "TrackSeriesBatch", 1) &&
+				instances["usage-tracker-zone-b-2"].AssertNumberOfCalls(t, "TrackSeriesBatch", 0))
+		}, 5*time.Second, 10*time.Millisecond)
 
 		require.Equal(t, 0, r.rejections["user-1"])
 		require.Equal(t, 0, r.rejections["user-2"])
