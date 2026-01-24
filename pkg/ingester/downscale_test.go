@@ -27,7 +27,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		Timestamp int64 `json:"timestamp"`
 	}
 
-	setup := func(startIngester bool) (*Ingester, *ring.Ring) {
+	setup := func(t *testing.T, startIngester bool) (*Ingester, *ring.Ring) {
 		cfg := defaultIngesterTestConfig(t)
 		ingestersRing := createAndStartRing(t, cfg.IngesterRing.ToRingConfig())
 
@@ -43,11 +43,11 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 	t.Run("POST request should switch the instance ring entry to read-only", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, r := setup(true)
+		ingester, r := setup(t, true)
 
 		// Pre-condition: entry is not read-only.
 		test.Poll(t, 10*time.Second, false, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly
 		})
@@ -62,7 +62,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 
 		// Post-condition: entry is read only.
 		test.Poll(t, 10*time.Second, true, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly && inst.ReadOnlyUpdatedTimestamp == resp.Timestamp
 		})
@@ -81,14 +81,14 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 	t.Run("DELETE request should switch the instance ring entry to not read-only", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, r := setup(true)
+		ingester, r := setup(t, true)
 		res := httptest.NewRecorder()
 
 		// Switch entry to read-only.
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
 		require.Equal(t, http.StatusOK, res.Code)
 		test.Poll(t, 10*time.Second, true, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly
 		})
@@ -104,7 +104,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 
 		// Post-condition: entry is not read only.
 		test.Poll(t, 10*time.Second, false, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly
 		})
@@ -113,7 +113,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 	t.Run("should return ServiceUnavailable when service is not running", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, _ := setup(false)
+		ingester, _ := setup(t, false)
 
 		res := httptest.NewRecorder()
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
@@ -135,7 +135,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 		t.Parallel()
 
 		cfg := defaultIngesterTestConfig(t)
-		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, nil, nil, util_test.NewTestingLogger(t))
+		ingester, _, _ := createTestIngesterWithIngestStorage(t, &cfg, nil, nil, nil, util_test.NewTestingLogger(t))
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ingester))
@@ -149,14 +149,14 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 	t.Run("should return Conflict when read-only and any compaction is in progress", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, r := setup(true)
+		ingester, r := setup(t, true)
 		res := httptest.NewRecorder()
 
 		// Switch entry to read-only.
 		ingester.PrepareInstanceRingDownscaleHandler(res, httptest.NewRequest(http.MethodPost, target, nil))
 		require.Equal(t, http.StatusOK, res.Code)
 		test.Poll(t, 10*time.Second, true, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly
 		})
@@ -172,7 +172,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 
 		// Post-condition: entry should still be read-only
 		test.Poll(t, 10*time.Second, true, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly
 		})
@@ -181,11 +181,11 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 	t.Run("should return OK when not read-only and any compaction is in progress", func(t *testing.T) {
 		t.Parallel()
 
-		ingester, r := setup(true)
+		ingester, r := setup(t, true)
 
 		// Pre-condition: entry is not read-only.
 		test.Poll(t, 10*time.Second, false, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly
 		})
@@ -205,7 +205,7 @@ func TestIngester_PrepareInstanceRingDownscaleHandler(t *testing.T) {
 
 		// Post-condition: entry is still not read only.
 		test.Poll(t, 10*time.Second, false, func() interface{} {
-			inst, err := r.GetInstance(ingester.lifecycler.ID)
+			inst, err := r.GetInstance(ingester.ingesterID)
 			require.NoError(t, err)
 			return inst.ReadOnly
 		})

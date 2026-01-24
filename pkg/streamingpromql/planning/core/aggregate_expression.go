@@ -26,6 +26,10 @@ type AggregateExpression struct {
 }
 
 func (a *AggregateExpression) Describe() string {
+	return a.AggregateExpressionDetails.Describe()
+}
+
+func (a *AggregateExpressionDetails) Describe() string {
 	builder := &strings.Builder{}
 	builder.WriteString(a.Op.Describe())
 
@@ -113,13 +117,25 @@ func (a *AggregateExpression) ReplaceChild(idx int, node planning.Node) error {
 func (a *AggregateExpression) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherAggregateExpression, ok := other.(*AggregateExpression)
 
-	return ok &&
-		a.Op == otherAggregateExpression.Op &&
-		slices.Equal(a.Grouping, otherAggregateExpression.Grouping) &&
-		a.Without == otherAggregateExpression.Without
+	return ok && a.EquivalentTo(otherAggregateExpression.AggregateExpressionDetails)
 }
 
-func (a *AggregateExpression) MergeHints(_ planning.Node) error {
+func (a *AggregateExpressionDetails) EquivalentTo(other *AggregateExpressionDetails) bool {
+	return a.Op == other.Op &&
+		slices.Equal(a.Grouping, other.Grouping) &&
+		a.Without == other.Without
+}
+
+func (a *AggregateExpression) MergeHints(other planning.Node) error {
+	otherAggregateExpression, ok := other.(*AggregateExpression)
+	if !ok {
+		return fmt.Errorf("cannot merge hints from %T into %T", other, a)
+	}
+
+	return a.AggregateExpressionDetails.MergeHints(otherAggregateExpression.AggregateExpressionDetails)
+}
+
+func (a *AggregateExpressionDetails) MergeHints(other *AggregateExpressionDetails) error {
 	// Nothing to do.
 	return nil
 }

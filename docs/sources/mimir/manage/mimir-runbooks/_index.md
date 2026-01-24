@@ -1944,7 +1944,7 @@ How to **investigate**:
 
 Data recovery / temporary mitigation: Refer the runbook for `MimirBlockBuilderNoCycleProcessing` above.
 
-#### MimirBlockBuilderHasNotShippedBlocks
+### MimirBlockBuilderHasNotShippedBlocks
 
 Similar to [`MimirIngesterNotShippingBlocks`](#MimirIngesterNotShippingBlocks) but for block-builder.
 
@@ -1968,7 +1968,7 @@ If the block-builder permanently missed consuming some portion of the partition,
 - If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
 - Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
 
-#### MimirBlockBuilderSchedulerNotRunning
+### MimirBlockBuilderSchedulerNotRunning
 
 This fires when the block-builder-scheduler has not performed its critical job scheduling duties in the last 30 minutes. It can indicate that the service is suddenly not running, or is degraded.
 
@@ -1982,7 +1982,7 @@ How to **investigate**:
 - This generally means something is either wrong with the block-builder-scheduler replica or the Kafka system it is attempting to monitor. Viewing logs for the block-builder-scheduler should help you to identify the problem.
 - If there are no logs, then the block-builder-scheduler may not be running, which you can investigate by examining the StatefulSet/pod details in Kubernetes.
 
-#### MimirBlockBuilderDataSkipped
+### MimirBlockBuilderDataSkipped
 
 This alert fires when the block-builder-scheduler has detected a gap in either committed jobs or planned jobs.
 
@@ -2001,7 +2001,7 @@ Data recovery / temporary mitigation:
 
 You need to make block-builder consume the skipped data. Refer to the section under "Data recovery" for the `MimirBlockBuilderHasNotShippedBlocks` alert.
 
-#### MimirBlockBuilderPersistentJobFailure
+### MimirBlockBuilderPersistentJobFailure
 
 This alert fires when the block-builder-scheduler has detected a single job failing multiple times.
 

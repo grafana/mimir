@@ -10,19 +10,15 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type InstantVectorRemoteExec struct {
-	QueryParameters          *planning.QueryParameters
-	Node                     planning.Node
-	TimeRange                types.QueryTimeRange
-	RemoteExecutor           RemoteExecutor
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
-	EagerLoad                bool
-	expressionPosition       posrange.PositionRange
+	Node               planning.Node
+	TimeRange          types.QueryTimeRange
+	GroupEvaluator     GroupEvaluator
+	Annotations        *annotations.Annotations
+	QueryStats         *types.QueryStats
+	expressionPosition posrange.PositionRange
 
 	resp      InstantVectorRemoteExecutionResponse
 	finalized bool
@@ -32,8 +28,16 @@ var _ types.InstantVectorOperator = &InstantVectorRemoteExec{}
 
 func (r *InstantVectorRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	r.resp, err = r.RemoteExecutor.StartInstantVectorExecution(ctx, r.QueryParameters, r.Node, r.TimeRange, r.MemoryConsumptionTracker, r.EagerLoad)
-	return err
+	r.resp, err = r.GroupEvaluator.CreateInstantVectorExecution(ctx, r.Node, r.TimeRange)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *InstantVectorRemoteExec) AfterPrepare(ctx context.Context) error {
+	return r.resp.Start(ctx)
 }
 
 func (r *InstantVectorRemoteExec) SeriesMetadata(ctx context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {

@@ -257,6 +257,12 @@ func (ssi *ThreadSafeStorageSeriesIterator) AtT() int64 {
 	return ssi.underlying.AtT()
 }
 
+// TODO(krajorama): test AtST when chunk format with start timestamp
+// is available.
+func (ssi *ThreadSafeStorageSeriesIterator) AtST() int64 {
+	return ssi.underlying.AtST()
+}
+
 func (ssi *ThreadSafeStorageSeriesIterator) Next() chunkenc.ValueType {
 	return ssi.underlying.Next()
 }

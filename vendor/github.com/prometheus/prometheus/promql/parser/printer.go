@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -171,6 +171,19 @@ func (node *BinaryExpr) getMatchingStr() string {
 			writeLabels(&b, vm.Include)
 			b.WriteString(")")
 			matching += b.String()
+		}
+
+		if vm.FillValues.LHS != nil || vm.FillValues.RHS != nil {
+			if vm.FillValues.LHS == vm.FillValues.RHS {
+				matching += fmt.Sprintf(" fill (%v)", *vm.FillValues.LHS)
+			} else {
+				if vm.FillValues.LHS != nil {
+					matching += fmt.Sprintf(" fill_left (%v)", *vm.FillValues.LHS)
+				}
+				if vm.FillValues.RHS != nil {
+					matching += fmt.Sprintf(" fill_right (%v)", *vm.FillValues.RHS)
+				}
+			}
 		}
 	}
 	return matching

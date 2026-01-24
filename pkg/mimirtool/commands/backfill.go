@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
-	"github.com/sirupsen/logrus"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 
 	"github.com/grafana/mimir/pkg/mimirtool/client"
 )
@@ -43,9 +44,11 @@ func (l blockList) IsCumulative() bool {
 	return true
 }
 
-func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
+func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
 	cmd := app.Command("backfill", "Upload Prometheus TSDB blocks to Grafana Mimir compactor.")
-	cmd.Action(c.backfill)
+	cmd.Action(func(_ *kingpin.ParseContext) error {
+		return c.backfill(logConfig.Logger())
+	})
 	cmd.Arg("block-dir", "block to upload").Required().SetValue(&c.blocks)
 
 	cmd.Flag("address", "Address of the Grafana Mimir cluster; alternatively, set "+envVars.Address+".").
@@ -99,13 +102,10 @@ func (c *BackfillCommand) Register(app *kingpin.Application, envVars EnvVarNames
 		DurationVar(&c.sleepTime)
 }
 
-func (c *BackfillCommand) backfill(_ *kingpin.ParseContext) error {
-	logrus.WithFields(logrus.Fields{
-		"blocks": c.blocks.String(),
-		"user":   c.clientConfig.ID,
-	}).Println("Backfilling")
+func (c *BackfillCommand) backfill(logger log.Logger) error {
+	level.Info(logger).Log("msg", "Backfilling", "blocks", c.blocks.String(), "user", c.clientConfig.ID)
 
-	cli, err := client.New(c.clientConfig)
+	cli, err := client.New(c.clientConfig, logger)
 	if err != nil {
 		return err
 	}

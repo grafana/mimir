@@ -9,10 +9,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
@@ -30,7 +31,7 @@ type RuleNamespace struct {
 
 // LintExpressions runs the `expr` from a rule through the PromQL or LogQL parser and
 // compares its output. If it differs from the parser, it uses the parser's instead.
-func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
+func (r RuleNamespace) LintExpressions(backend string, logger log.Logger) (int, int, error) {
 	var parseFn func(string) (fmt.Stringer, error)
 	var queryLanguage string
 
@@ -49,7 +50,7 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 	var count, mod int
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
-			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting %s", queryLanguage)
+			level.Debug(logger).Log("msg", "linting expression", "language", queryLanguage, "rule", getRuleName(rule))
 			exp, err := parseFn(rule.Expr)
 			if err != nil {
 				return count, mod, err
@@ -57,11 +58,7 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 
 			count++
 			if rule.Expr != exp.String() {
-				log.WithFields(log.Fields{
-					"rule":        getRuleName(rule),
-					"currentExpr": rule.Expr,
-					"afterExpr":   exp.String(),
-				}).Debugf("expression differs")
+				level.Debug(logger).Log("msg", "expression differs", "rule", getRuleName(rule), "currentExpr", rule.Expr, "afterExpr", exp.String())
 
 				mod++
 				r.Groups[i].Rules[j].Expr = exp.String()
@@ -75,7 +72,7 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 // CheckRecordingRules checks that recording rules have at least one colon in their name, this is based
 // on the recording rules best practices here: https://prometheus.io/docs/practices/rules/
 // Returns the number of rules that don't match the requirements.
-func (r RuleNamespace) CheckRecordingRules(strict bool) int {
+func (r RuleNamespace) CheckRecordingRules(strict bool, logger log.Logger) int {
 	var name string
 	var count int
 	reqChunks := 2
@@ -89,16 +86,11 @@ func (r RuleNamespace) CheckRecordingRules(strict bool) int {
 				continue
 			}
 			name = rule.Record
-			log.WithFields(log.Fields{"rule": name}).Debugf("linting recording rule name")
+			level.Debug(logger).Log("msg", "linting recording rule name", "rule", name)
 			chunks := strings.Split(name, ":")
 			if len(chunks) < reqChunks {
 				count++
-				log.WithFields(log.Fields{
-					"rule":      getRuleName(rule),
-					"ruleGroup": group.Name,
-					"file":      r.Filepath,
-					"error":     "recording rule name does not match level:metric:operation format, must contain at least one colon",
-				}).Errorf("bad recording rule name")
+				level.Error(logger).Log("msg", "bad recording rule name", "rule", getRuleName(rule), "ruleGroup", group.Name, "file", r.Filepath, "error", "recording rule name does not match level:metric:operation format, must contain at least one colon")
 			}
 		}
 	}
@@ -108,7 +100,7 @@ func (r RuleNamespace) CheckRecordingRules(strict bool) int {
 // AggregateBy modifies the aggregation rules in groups to include a given Label.
 // If the applyTo function is provided, the aggregation is applied only to rules
 // for which the applyTo function returns true.
-func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.Rule) bool) (int, int, error) {
+func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.RuleGroup, rule rulefmt.Rule) bool, logger log.Logger) (int, int, error) {
 	// `count` represents the number of rules we evaluated.
 	// `mod` represents the number of rules we modified - a modification can either be a lint or adding the
 	// label in the aggregation.
@@ -118,16 +110,13 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 		for j, rule := range group.Rules {
 			// Skip it if the applyTo function returns false.
 			if applyTo != nil && !applyTo(group, rule) {
-				log.WithFields(log.Fields{
-					"group": group.Name,
-					"rule":  getRuleName(rule),
-				}).Debugf("skipped")
+				level.Debug(logger).Log("msg", "skipped", "group", group.Name, "rule", getRuleName(rule))
 
 				count++
 				continue
 			}
 
-			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("evaluating...")
+			level.Debug(logger).Log("msg", "evaluating...", "rule", getRuleName(rule))
 			exp, err := parser.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
@@ -136,16 +125,12 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 			count++
 			// Given inspect will help us traverse every node in the AST, Let's create the
 			// function that will modify the labels.
-			f := exprNodeInspectorFunc(rule, label)
+			f := exprNodeInspectorFunc(rule, label, logger)
 			parser.Inspect(exp, f)
 
 			// Only modify the ones that actually changed.
 			if rule.Expr != exp.String() {
-				log.WithFields(log.Fields{
-					"rule":        getRuleName(rule),
-					"currentExpr": rule.Expr,
-					"afterExpr":   exp.String(),
-				}).Debugf("expression differs")
+				level.Debug(logger).Log("msg", "expression differs", "rule", getRuleName(rule), "currentExpr", rule.Expr, "afterExpr", exp.String())
 				mod++
 				r.Groups[i].Rules[j].Expr = exp.String()
 			}
@@ -157,14 +142,14 @@ func (r RuleNamespace) AggregateBy(label string, applyTo func(group rwrulefmt.Ru
 
 // exprNodeInspectorFunc returns a PromQL inspector.
 // It modifies most PromQL expressions to include a given label.
-func exprNodeInspectorFunc(rule rulefmt.Rule, label string) func(node parser.Node, path []parser.Node) error {
+func exprNodeInspectorFunc(rule rulefmt.Rule, label string, logger log.Logger) func(node parser.Node, path []parser.Node) error {
 	return func(node parser.Node, _ []parser.Node) error {
 		var err error
 		switch n := node.(type) {
 		case *parser.AggregateExpr:
-			err = prepareAggregationExpr(n, label, getRuleName(rule))
+			err = prepareAggregationExpr(n, label, getRuleName(rule), logger)
 		case *parser.BinaryExpr:
-			err = prepareBinaryExpr(n, label, getRuleName(rule))
+			err = prepareBinaryExpr(n, label, getRuleName(rule), logger)
 		default:
 			return err
 		}
@@ -173,7 +158,7 @@ func exprNodeInspectorFunc(rule rulefmt.Rule, label string) func(node parser.Nod
 	}
 }
 
-func prepareAggregationExpr(e *parser.AggregateExpr, label string, ruleName string) error {
+func prepareAggregationExpr(e *parser.AggregateExpr, label string, ruleName string, logger log.Logger) error {
 	// If the aggregation is about dropping labels (e.g. without), we don't want to modify
 	// this expression. Omission as long as it is not the cluster label will include it.
 	// TODO: We probably want to check whenever the label we're trying to include is included in the omission.
@@ -188,15 +173,13 @@ func prepareAggregationExpr(e *parser.AggregateExpr, label string, ruleName stri
 		}
 	}
 
-	log.WithFields(
-		log.Fields{"rule": ruleName, "lbls": strings.Join(e.Grouping, ", ")},
-	).Debugf("aggregation without '%s' label, adding.", label)
+	level.Debug(logger).Log("msg", "aggregation without label, adding", "label", label, "rule", ruleName, "lbls", strings.Join(e.Grouping, ", "))
 
 	e.Grouping = append(e.Grouping, label)
 	return nil
 }
 
-func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string) error {
+func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string, logger log.Logger) error {
 	if e.VectorMatching == nil {
 		return nil
 	}
@@ -219,9 +202,7 @@ func prepareBinaryExpr(e *parser.BinaryExpr, label string, rule string) error {
 		}
 	}
 
-	log.WithFields(
-		log.Fields{"rule": rule, "lbls": strings.Join(e.VectorMatching.MatchingLabels, ", ")},
-	).Debugf("binary expression without '%s' label, adding.", label)
+	level.Debug(logger).Log("msg", "binary expression without label, adding", "label", label, "rule", rule, "lbls", strings.Join(e.VectorMatching.MatchingLabels, ", "))
 
 	e.VectorMatching.MatchingLabels = append(e.VectorMatching.MatchingLabels, label)
 	return nil

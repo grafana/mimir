@@ -5,12 +5,13 @@ package commands
 import (
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
 
 func TestAnalyzeRuleFiles(t *testing.T) {
-	mir, err := AnalyzeRuleFiles([]string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation)
+	mir, err := AnalyzeRuleFiles([]string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, 28, len(mir.MetricsUsed))
 	expectedMetrics := model.LabelValues{
