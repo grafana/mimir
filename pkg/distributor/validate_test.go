@@ -402,8 +402,11 @@ func TestValidateLabels(t *testing.T) {
 	// injectedLongLabelValue is 100 chars, exceeding the 75 char limit for truncate/drop users.
 	injectedLongLabelValue := strings.Repeat("L", 100)
 	// Pre-compute the expected hash for the injected long label.
-	injectedLabelTruncatedValue := injectedLongLabelValue[:4] + hashLabelValueInto(injectedLongLabelValue, injectedLongLabelValue)
-	injectedLabelDroppedValue := hashLabelValueInto(injectedLongLabelValue, injectedLongLabelValue)
+	// Use separate copies because hashLabelValueInto mutates the backing array in place.
+	truncateSrc := strings.Repeat("L", 100)
+	injectedLabelTruncatedValue := "LLLL" + hashLabelValueInto(truncateSrc, truncateSrc)
+	dropSrc := strings.Repeat("L", 100)
+	injectedLabelDroppedValue := hashLabelValueInto(dropSrc, dropSrc)
 
 	for _, c := range testCases {
 		caseSchemes := validationSchemes
