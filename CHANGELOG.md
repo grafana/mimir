@@ -158,6 +158,7 @@
 * [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108
 * [BUGFIX] Ingester: Add timeouts to wait for instance state on startup and deferred shutdown of tasks on failure. #14134
 * [BUGFIX] Distributor: Fix duplicate label validation bypass when label value exceeds length limit and is handled by Truncate or Drop strategy. #14131
+* [BUGFIX] Block-builder-scheduler: Fix bug where data could be skipped when partition is fully consumed at startup but later grows. #14136
 
 ### Mixin
 
