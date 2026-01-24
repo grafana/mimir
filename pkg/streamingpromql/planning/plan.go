@@ -29,7 +29,7 @@ func (v QueryPlanVersion) String() string {
 	return strconv.FormatUint(uint64(v), 10)
 }
 
-var MaximumSupportedQueryPlanVersion = QueryPlanV4
+var MaximumSupportedQueryPlanVersion = QueryPlanV5
 
 // IMPORTANT:
 // Do not change the value or meaning of these constants once they have been merged.
@@ -51,6 +51,9 @@ const QueryPlanV3 = QueryPlanVersion(3)
 
 // QueryPlanV4 introduces support for evaluating smoothed and anchored extended range modifiers.
 const QueryPlanV4 = QueryPlanVersion(4)
+
+// QueryPlanV5 introduces support for multi-aggregation nodes.
+const QueryPlanV5 = QueryPlanVersion(5)
 
 type QueryPlan struct {
 	Root       Node
@@ -149,7 +152,8 @@ type Node interface {
 	// expression.
 	ExpressionPosition() (posrange.PositionRange, error)
 
-	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes these nodes.
+	// MinimumRequiredPlanVersion returns the minimum query plan version required to execute a plan that includes this node.
+	// It does not consider the query plan version required by any of its children (for that, use planning.MinimumRequiredPlanVersion).
 	MinimumRequiredPlanVersion() QueryPlanVersion
 
 	// FIXME: implementations for many of the above methods can be generated automatically
@@ -280,14 +284,15 @@ func (p *QueryPlan) DeterminePlanVersion() error {
 	if p.Root == nil {
 		return errors.New("query plan version can not be determined without a root node")
 	}
-	p.Version = p.maxMinimumRequiredPlanVersion(p.Root)
+	p.Version = MinimumRequiredPlanVersion(p.Root)
 	return nil
 }
 
-func (p *QueryPlan) maxMinimumRequiredPlanVersion(node Node) QueryPlanVersion {
+// MinimumRequiredPlanVersion returns the minimum required query plan version of node and all its children.
+func MinimumRequiredPlanVersion(node Node) QueryPlanVersion {
 	maxVersion := node.MinimumRequiredPlanVersion()
 	for child := range ChildrenIter(node) {
-		maxVersion = max(maxVersion, p.maxMinimumRequiredPlanVersion(child))
+		maxVersion = max(maxVersion, MinimumRequiredPlanVersion(child))
 	}
 	return maxVersion
 }

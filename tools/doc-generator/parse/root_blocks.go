@@ -16,7 +16,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -95,11 +94,6 @@ var (
 			Name:       "alertmanager_storage",
 			StructType: reflect.TypeOf(alertstore.Config{}),
 			Desc:       "The alertmanager_storage block configures the alertmanager storage backend.",
-		},
-		{
-			Name:       "flusher",
-			StructType: reflect.TypeOf(flusher.Config{}),
-			Desc:       "The flusher block configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.",
 		},
 		{
 			Name:       "ingester_client",

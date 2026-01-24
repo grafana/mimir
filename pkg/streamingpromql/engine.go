@@ -26,6 +26,7 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -81,8 +82,10 @@ func NewEngine(opts EngineOpts, limitsProvider QueryLimitsProvider, metrics *sta
 		planning.NODE_TYPE_DEDUPLICATE_AND_MERGE: planning.NodeMaterializerFunc[*core.DeduplicateAndMerge](core.MaterializeDeduplicateAndMerge),
 		planning.NODE_TYPE_DROP_NAME:             planning.NodeMaterializerFunc[*core.DropName](core.MaterializeDropName),
 
-		planning.NODE_TYPE_DUPLICATE:                 planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
-		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION: planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
+		planning.NODE_TYPE_DUPLICATE:                  planning.NodeMaterializerFunc[*commonsubexpressionelimination.Duplicate](commonsubexpressionelimination.MaterializeDuplicate),
+		planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION:  planning.NodeMaterializerFunc[*core.StepInvariantExpression](core.MaterializeStepInvariantExpression),
+		planning.NODE_TYPE_MULTI_AGGREGATION_GROUP:    planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationGroup](multiaggregation.MaterializeMultiAggregationGroup),
+		planning.NODE_TYPE_MULTI_AGGREGATION_INSTANCE: planning.NodeMaterializerFunc[*multiaggregation.MultiAggregationInstance](multiaggregation.MaterializeMultiAggregationInstance),
 	}
 
 	return &Engine{
@@ -174,7 +177,12 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 }
 
 func (e *Engine) newQueryFromPlanner(ctx context.Context, queryable storage.Queryable, opts promql.QueryOpts, qs string, timeRange types.QueryTimeRange) (promql.Query, error) {
-	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, NoopPlanningObserver{})
+	enableDelayedNameRemoval, err := e.limitsProvider.GetEnableDelayedNameRemoval(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("could not get 'enable delayed name removal' setting for tenant: %w", err)
+	}
+
+	plan, err := e.planner.NewQueryPlan(ctx, qs, timeRange, enableDelayedNameRemoval, NoopPlanningObserver{})
 	if err != nil {
 		return nil, err
 	}
@@ -297,23 +305,31 @@ func (e *Engine) materializeAndCreateEvaluator(ctx context.Context, queryable st
 type QueryLimitsProvider interface {
 	// GetMaxEstimatedMemoryConsumptionPerQuery returns the maximum estimated memory allowed to be consumed by a query in bytes, or 0 to disable the limit.
 	GetMaxEstimatedMemoryConsumptionPerQuery(ctx context.Context) (uint64, error)
+	// GetEnableDelayedNameRemoval indicates if the experimental feature for delayed name removal should be enabled.
+	GetEnableDelayedNameRemoval(ctx context.Context) (bool, error)
 }
 
 // NewStaticQueryLimitsProvider returns a QueryLimitsProvider that always returns the provided limits.
 //
 // This should generally only be used in tests.
-func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64) QueryLimitsProvider {
+func NewStaticQueryLimitsProvider(maxEstimatedMemoryConsumptionPerQuery uint64, enableDelayedNameRemoval bool) QueryLimitsProvider {
 	return staticQueryLimitsProvider{
 		maxEstimatedMemoryConsumptionPerQuery: maxEstimatedMemoryConsumptionPerQuery,
+		enableDelayedNameRemoval:              enableDelayedNameRemoval,
 	}
 }
 
 type staticQueryLimitsProvider struct {
 	maxEstimatedMemoryConsumptionPerQuery uint64
+	enableDelayedNameRemoval              bool
 }
 
 func (p staticQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(_ context.Context) (uint64, error) {
 	return p.maxEstimatedMemoryConsumptionPerQuery, nil
+}
+
+func (p staticQueryLimitsProvider) GetEnableDelayedNameRemoval(_ context.Context) (bool, error) {
+	return p.enableDelayedNameRemoval, nil
 }
 
 type NoopQueryTracker struct{}

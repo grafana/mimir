@@ -71,6 +71,7 @@ const (
 	resultsCacheTTLForOutOfOrderWindowFlag    = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
 	alignQueriesWithStepFlag                  = "query-frontend.align-queries-with-step"
 	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
+	EnableDelayedNameRemovalFlag              = "querier.enable-delayed-name-removal"
 	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
 	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
 
@@ -211,6 +212,7 @@ type Limits struct {
 	QueryShardingMaxShardedQueries        int            `yaml:"query_sharding_max_sharded_queries" json:"query_sharding_max_sharded_queries"`
 	QueryShardingMaxRegexpSizeBytes       int            `yaml:"query_sharding_max_regexp_size_bytes" json:"query_sharding_max_regexp_size_bytes"`
 	QueryIngestersWithin                  model.Duration `yaml:"query_ingesters_within" json:"query_ingesters_within" category:"advanced"`
+	EnableDelayedNameRemoval              bool           `yaml:"enable_delayed_name_removal" json:"enable_delayed_name_removal" category:"experimental"`
 
 	// Query-frontend limits.
 	MaxTotalQueryLength                    model.Duration         `yaml:"max_total_query_length" json:"max_total_query_length"`
@@ -426,6 +428,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.QueryShardingMaxRegexpSizeBytes, "query-frontend.query-sharding-max-regexp-size-bytes", 4096, "Disable query sharding for any query containing a regular expression matcher longer than the configured number of bytes. 0 to disable the limit.")
 	_ = l.QueryIngestersWithin.Set("13h")
 	f.Var(&l.QueryIngestersWithin, QueryIngestersWithinFlag, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
+	f.BoolVar(&l.EnableDelayedNameRemoval, EnableDelayedNameRemovalFlag, false, "Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.")
 
 	_ = l.RulerEvaluationDelay.Set("1m")
 	f.Var(&l.RulerEvaluationDelay, "ruler.evaluation-delay-duration", "Duration to delay the evaluation of rules to ensure the underlying metrics have been pushed.")
@@ -1034,6 +1037,16 @@ func (o *Overrides) QueryShardingMaxRegexpSizeBytes(userID string) int {
 // 0 means all queries are sent to ingester.
 func (o *Overrides) QueryIngestersWithin(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).QueryIngestersWithin)
+}
+
+// EnableDelayedNameRemoval returns whether delayed name removal is enabled for this user.
+// If enabled, this delays the removal of the __name__ label to the last step of the query evaluation.
+// This is useful in certain scenarios where the __name__ label must be preserved or where applying a
+// regex-matcher to the __name__ label may otherwise lead to duplicate labelset errors.
+// This only applies for MQE. The Prometheus engine feature is not controlled per tenant, and we
+// currently do not expose a flag to set it globally.
+func (o *Overrides) EnableDelayedNameRemoval(userID string) bool {
+	return o.getOverridesForUser(userID).EnableDelayedNameRemoval
 }
 
 // EnforceMetadataMetricName whether to enforce the presence of a metric name on metadata.

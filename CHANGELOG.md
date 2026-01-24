@@ -16,6 +16,7 @@
 * [CHANGE] Limits: removed the experimental `cost_attribution_labels` configuration option. Use `cost_attribution_labels_structured` instead. #13286
 * [CHANGE] Ingester: Renamed `cortex_ingest_storage_writer_buffered_produce_bytes` metric to `cortex_ingest_storage_writer_buffered_produce_bytes_distribution` (Prometheus summary), and added `cortex_ingest_storage_writer_buffered_produce_bytes` metric that exports the buffer size as a Prometheus Gauge. #13414
 * [CHANGE] Querier and query-frontend: Removed support for per-step stats when MQE is enabled. #13582
+* [CHANGE] Querier: Make the experimental `enable_delayed_name_removal` setting configurable as a per-tenant limit instead of a global flag. #13926
 * [CHANGE] Compactor: Require that uploaded TSDB blocks use v2 of the index file format. #13815
 * [CHANGE] Store-gateway: Remove support for generating index-headers from TSDB blocks that use v1 of the index file format. #13824
 * [CHANGE] Query-frontend: Removed support for calculating 'cache-adjusted samples processed' query statistic. The `-query-frontend.cache-samples-processed-stats` CLI flag has been deprecated and will be removed in a future release. Setting it has now no effect. #13582
@@ -26,10 +27,11 @@
 * [CHANGE] Store-gateway: Warn when loading index headers based on TSDB blocks that use v1 of the index file format. #13834
 * [CHANGE] Cache: Remove the experimental setting `-<prefix>.memcached.dns-ignore-startup-failures` that allowed failure to discover Memcached servers to be a soft error and always consider failure to discover Memcached servers a hard error. #14038
 * [CHANGE] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14052
+* [CHANGE] Ingester: Removed the `-target=flusher` mode. If you need to flush ingester data, use the `/ingester/flush` HTTP endpoint instead. #14032
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
-* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058 #13685 #13800 #14027
+* [FEATURE] Query-frontend and querier: Add experimental support for performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13058 #13685 #13800 #14001 #14027
 * [FEATURE] MQE: Add support for experimental extended range selector modifiers `smoothed` and `anchored`. You can enable these modifiers with `-query-frontend.enabled-promql-extended-range-selectors=smoothed,anchored` #13398
 * [FEATURE] Querier: Add `querier.mimir-query-engine.enable-reduce-matchers` flag that enables a new MQE AST optimization pass that eliminates duplicate or redundant matchers that are part of selector expressions. #13178
 * [FEATURE] Continuous test: Add `prometheus2` option `-tests.write-protocol` flag to select Prometheus Remote-Write 2.0 as a protocol. #13659 #13982
@@ -110,6 +112,7 @@
 * [ENHANCEMENT] MQE: Include metric name in `histogram_quantile` warning/info annotations when delayed name removal is enabled. #13905
 * [ENHANCEMENT] MQE: Add metrics to track step-invariant expression usage and data point reuse savings: `cortex_mimir_query_engine_step_invariant_nodes_total` and `cortex_mimir_query_engine_step_invariant_steps_saved_total`. #13911
 * [ENHANCEMENT] MQE: Add explicit error handling for unsupported Prometheus experimental binary operator modifiers `fill`, `fill_left` and `fill_right`. #14107
+* [ENHANCEMENT] MQE: Add experimental support for computing multiple aggregations over the same data without buffering. Enable with `-querier.mimir-query-engine.enable-multi-aggregation=true`. #14123
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
@@ -153,6 +156,8 @@
 * [BUGFIX] Ingester: Fix race condition during shutdown where TSDBs could be closed while appends are still in progress. #14094
 * [BUGFIX] Store-gateway: Fix blocks being incorrectly dropped during shutdown when the store-gateway is terminated while fetching an updated bucket index. #14113
 * [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108
+* [BUGFIX] Ingester: Add timeouts to wait for instance state on startup and deferred shutdown of tasks on failure. #14134
+* [BUGFIX] Distributor: Fix duplicate label validation bypass when label value exceeds length limit and is handled by Truncate or Drop strategy. #14131
 
 ### Mixin
 

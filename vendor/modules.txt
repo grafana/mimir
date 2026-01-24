@@ -795,7 +795,7 @@ github.com/grafana/alerting/receivers/wecom/v1
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
-# github.com/grafana/dskit v0.0.0-20260115221100-0ee97c59102f
+# github.com/grafana/dskit v0.0.0-20260123032120-fb7d1aad51e6
 ## explicit; go 1.24.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast

@@ -628,37 +628,6 @@ func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
 	return nil
 }
 
-// NewForFlusher is a special version of ingester used by Flusher. This
-// ingester is not ingesting anything, its only purpose is to react on Flush
-// method and flush all openened TSDBs when called.
-func NewForFlusher(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	i, err := newIngester(cfg, limits, nil, registerer, logger)
-	if err != nil {
-		return nil, err
-	}
-	i.metrics = newIngesterMetrics(registerer, false, i.getInstanceLimits, nil, &i.inflightPushRequests, &i.inflightPushRequestsBytes)
-
-	i.ingesterID = "flusher"
-	i.limiter = NewLimiter(limits, flusherLimiterStrategy{})
-
-	// This ingester will not start any subservices (lifecycler, compaction, shipping),
-	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
-	i.BasicService = services.NewIdleService(i.startingForFlusher, i.stoppingForFlusher)
-	return i, nil
-}
-
-func (i *Ingester) startingForFlusher(ctx context.Context) error {
-	if err := i.openExistingTSDB(ctx); err != nil {
-		// Try to rollback and close opened TSDBs before halting the ingester.
-		i.closeAllTSDB()
-
-		return errors.Wrap(err, "opening existing TSDBs")
-	}
-
-	// Don't start any sub-services (lifecycler, compaction, shipper) at all.
-	return nil
-}
-
 func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
 		if err != nil {
@@ -669,21 +638,25 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 			// and leave hanging goroutines after exit.
 			i.subservicesWatcher.Close()
 
+			shutdownTimeout := 3 * time.Minute
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer shutdownCancel()
+
 			// Stop any services that may have been started in this method, in reverse order.
 			if i.subservicesAfterIngesterRingLifecycler != nil {
-				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesAfterIngesterRingLifecycler)
+				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesAfterIngesterRingLifecycler)
 			}
 			if i.lifecycler != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+				_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
 			}
 			if i.ingestReader != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.ingestReader)
+				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ingestReader)
 			}
 			if i.subservicesForPartitionReplay != nil {
-				_ = services.StopManagerAndAwaitStopped(context.Background(), i.subservicesForPartitionReplay)
+				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesForPartitionReplay)
 			}
 			if i.ownedSeriesService != nil {
-				_ = services.StopAndAwaitTerminated(context.Background(), i.ownedSeriesService)
+				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ownedSeriesService)
 			}
 		}
 	}()
@@ -744,7 +717,10 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	if err := i.lifecycler.AwaitRunning(ctx); err != nil {
 		return errors.Wrap(err, "failed to start lifecycler")
 	}
-	if err = ring.WaitInstanceState(ctx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
+	waitInstanceStateTimeOut := 7 * time.Minute // autoJoin timeout is 5 minutes
+	waitInstanceStateCtx, waitInstanceStateCancel := context.WithTimeout(ctx, waitInstanceStateTimeOut)
+	defer waitInstanceStateCancel()
+	if err = ring.WaitInstanceState(waitInstanceStateCtx, i.instanceRing, i.cfg.IngesterRing.InstanceID, ring.ACTIVE); err != nil {
 		return errors.Wrap(err, "failed to wait for instance to be active in ring")
 	}
 
@@ -799,13 +775,6 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	}
 
 	return err
-}
-
-func (i *Ingester) stoppingForFlusher(_ error) error {
-	if !i.cfg.BlocksStorageConfig.TSDB.KeepUserTSDBOpenOnShutdown {
-		i.closeAllTSDB()
-	}
-	return nil
 }
 
 func (i *Ingester) stopping(_ error) error {
@@ -2716,7 +2685,6 @@ func (i *Ingester) createTSDB(userID string, walReplayConcurrency int) (*userTSD
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 	matchersConfig := i.limits.ActiveSeriesCustomTrackersConfig(userID)
 
-	// flusher doesn't actually start the ingester services
 	initialLocalLimit := 0
 	if i.limiter != nil {
 		initialLocalLimit = i.limiter.maxSeriesPerUser(userID, 0)
@@ -3782,12 +3750,11 @@ func (i *Ingester) TransferOut(_ context.Context) error {
 	return ring.ErrTransferDisabled
 }
 
-// Flush will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
+// Flush will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured),
+// or from the /ingester/flush HTTP endpoint.
 //
-// When called as during Lifecycler shutdown, this happens as part of normal Ingester shutdown (see stopping method).
+// When called during Lifecycler shutdown, this happens as part of normal Ingester shutdown (see stopping method).
 // Samples are not received at this stage. Compaction and Shipping loops have already been stopped as well.
-//
-// When used from flusher, ingester is constructed in a way that compaction, shipping and receiving of samples is never started.
 func (i *Ingester) Flush() {
 	level.Info(i.logger).Log("msg", "starting to flush and ship TSDB blocks")
 

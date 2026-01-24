@@ -46,7 +46,6 @@ import (
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
@@ -67,7 +66,6 @@ import (
 	streamingpromqlcompat "github.com/grafana/mimir/pkg/streamingpromql/compat"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
-	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/analysis"
 	"github.com/grafana/mimir/pkg/usagestats"
 	"github.com/grafana/mimir/pkg/usagetracker"
@@ -97,7 +95,6 @@ const (
 	CostAttributionService           string = "cost-attribution-service"
 	Distributor                      string = "distributor"
 	DistributorService               string = "distributor-service"
-	Flusher                          string = "flusher"
 	Ingester                         string = "ingester"
 	IngesterPartitionRing            string = "ingester-partitions-ring"
 	IngesterRing                     string = "ingester-ring"
@@ -809,23 +806,6 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 	return nil, nil
 }
 
-func (t *Mimir) initFlusher() (serv services.Service, err error) {
-	t.tsdbIngesterConfig()
-
-	t.Flusher, err = flusher.New(
-		t.Cfg.Flusher,
-		t.Cfg.Ingester,
-		t.Overrides,
-		t.Registerer,
-		util_log.Logger,
-	)
-	if err != nil {
-		return
-	}
-
-	return t.Flusher, nil
-}
-
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
@@ -961,10 +941,8 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	t.API.RegisterQueryFrontend2(frontend)
 
 	if t.QueryFrontendStreamingEngine != nil && t.Cfg.Frontend.QueryMiddleware.EnableRemoteExecution {
-		executor := v2.NewRemoteExecutor(frontend, t.Cfg.Frontend.FrontendV2)
-
-		if err := t.QueryFrontendStreamingEngine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_CONSUMER, remoteexec.NewRemoteExecutionConsumerMaterializer(executor)); err != nil {
-			return nil, fmt.Errorf("unable to register remote execution materializer: %w", err)
+		if err := v2.RegisterRemoteExecutionMaterializers(t.QueryFrontendStreamingEngine, frontend, t.Cfg.Frontend.FrontendV2); err != nil {
+			return nil, err
 		}
 	}
 
@@ -1014,7 +992,7 @@ func (t *Mimir) initQuerierQueryPlanner() (services.Service, error) {
 	// Only expose the querier's planner through the analysis endpoint if the query-frontend isn't running in this process.
 	// If the query-frontend is running in this process, it will expose its planner through the analysis endpoint.
 	if !t.Cfg.isQueryFrontendEnabled() {
-		analysisHandler := analysis.Handler(t.QuerierQueryPlanner)
+		analysisHandler := analysis.Handler(t.QuerierQueryPlanner, t.QueryLimitsProvider)
 		t.API.RegisterQueryAnalysisAPI(analysisHandler)
 	}
 
@@ -1053,7 +1031,7 @@ func (t *Mimir) initQueryFrontendQueryPlanner() (services.Service, error) {
 	// FIXME: results returned by the analysis endpoint won't include any changes made by query middlewares
 	// like sharding, splitting etc.
 	// Once these are running as MQE optimisation passes, they'll automatically be included in the analysis result.
-	analysisHandler := analysis.Handler(t.QueryFrontendQueryPlanner)
+	analysisHandler := analysis.Handler(t.QueryFrontendQueryPlanner, t.QueryLimitsProvider)
 	t.API.RegisterQueryAnalysisAPI(analysisHandler)
 
 	return nil, nil
@@ -1473,7 +1451,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(CostAttributionService, t.initCostAttributionService, modules.UserInvisibleModule)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
-	mm.RegisterModule(Flusher, t.initFlusher)
 	mm.RegisterModule(Ingester, t.initIngester)
 	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
@@ -1520,7 +1497,6 @@ func (t *Mimir) setupModuleManager() error {
 		CostAttributionService:           {API, Overrides},
 		Distributor:                      {DistributorService, API, ActiveGroupsCleanupService, Vault, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		DistributorService:               {IngesterRing, IngesterPartitionRing, Overrides, Vault, CostAttributionService},
-		Flusher:                          {Overrides, API},
 		Ingester:                         {IngesterService, API, ActiveGroupsCleanupService, Vault},
 		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
