@@ -226,7 +226,7 @@ type partitionState struct {
 	topic     string
 	partition int32
 
-	endOffset int64
+	offset    int64
 	jobBucket time.Time
 
 	committed *advancingOffset
@@ -259,7 +259,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	newJobBucket := ts.Truncate(jobSize)
 
 	if s.jobBucket.IsZero() {
-		s.endOffset = end
+		s.offset = end
 		s.jobBucket = newJobBucket
 		return nil, nil
 	}
@@ -268,7 +268,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.endOffset, end)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offset, end)
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
@@ -276,15 +276,15 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 		// bucket if it has data and start a new one.
 
 		var job *schedulerpb.JobSpec
-		if s.endOffset < end {
+		if s.offset < end {
 			job = &schedulerpb.JobSpec{
 				Topic:       s.topic,
 				Partition:   s.partition,
-				StartOffset: s.endOffset,
+				StartOffset: s.offset,
 				EndOffset:   end,
 			}
 		}
-		s.endOffset = end
+		s.offset = end
 		s.jobBucket = newJobBucket
 		return job, nil
 	}
