@@ -110,10 +110,11 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	blocksByAddr := make(map[string][]ulid.ULID)
 	instances := make(map[string]ring.InstanceDesc)
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
+	ringBuffersOpt := ring.WithBuffers(ring.MakeBuffersForGet())
 
 	// Find the replication set of each block we need to query.
 	for _, block := range blocks {
-		var ringOpts []ring.Option
+		ringOpts := []ring.Option{ringBuffersOpt}
 		if eligible, replicationFactor := s.dynamicReplication.EligibleForQuerying(block); eligible {
 			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
