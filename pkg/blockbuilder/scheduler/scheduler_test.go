@@ -1657,7 +1657,7 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sched, _ := mustScheduler(t, 4)
+			sched, _ := mustScheduler(t, 1)
 			sched.cfg.MaxScanAge = 1 * time.Hour
 			sched.cfg.JobSize = 1 * time.Hour
 
@@ -1681,10 +1681,10 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			// Call populateInitialJobs to set up initial state
 			sched.populateInitialJobs(context.Background(), consumeOffs, finder, tt.initialTime)
 
+			collectedJobs := []*schedulerpb.JobSpec{}
+
 			// Apply future end offset observations and collect jobs returned from updateEndOffset
 			ps := sched.getPartitionState("topic", 0)
-
-			collectedJobs := []*schedulerpb.JobSpec{}
 
 			for _, obs := range tt.futureObservations {
 				job, err := ps.updateEndOffset(obs.offset, obs.timestamp, sched.cfg.JobSize)
@@ -1694,23 +1694,17 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 				}
 			}
 
-			// Verify basic properties:
-			// 1. Jobs should cover [resume, final_end_offset) without gaps
-			// 2. Jobs should be in order
-			// 3. Jobs should not overlap
-
-			println(len(collectedJobs))
+			// Verify that jobs cover [resume, final_end_offset) without gaps
 
 			if len(collectedJobs) == 0 {
-				// Only data-less partitions should produce no jobs.
 				require.GreaterOrEqual(t, tt.initialResume, tt.expectedFinalEnd,
-					"if no jobs were created, resume should be >= final end offset")
+					"only data-less partitions should produce no jobs")
 				return
 			}
 
 			// Verify first job starts at or after resume offset
 			require.Equal(t, tt.initialResume, collectedJobs[0].StartOffset,
-				"first job should start at or after resume offset")
+				"first job should start at resume offset")
 
 			// Verify last job ends at expected final end
 			require.Equal(t, tt.expectedFinalEnd, collectedJobs[len(collectedJobs)-1].EndOffset,
@@ -1724,14 +1718,6 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 				require.Equal(t, current.EndOffset, next.StartOffset,
 					"jobs should have no gaps: job %d ends at %d but next job starts at %d",
 					i, current.EndOffset, next.StartOffset)
-			}
-
-			// Verify all jobs are within [resume, expectedFinalEnd]
-			for i, job := range collectedJobs {
-				require.GreaterOrEqual(t, job.StartOffset, tt.initialResume,
-					"job %d starts before resume offset", i)
-				require.LessOrEqual(t, job.EndOffset, tt.expectedFinalEnd,
-					"job %d ends after expected final end offset", i)
 			}
 		})
 	}
