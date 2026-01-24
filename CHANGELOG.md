@@ -109,7 +109,7 @@
 * [ENHANCEMENT] Querier: Add experimental flag `-querier.mimir-query-engine.enable-projection-pushdown` to enable an MQE optimization pass for reducing data transfered between queriers and the storage layer. #14006
 * [ENHANCEMENT] Ingester: Reduce likelihood of ingestion being paused while idle TSDB compaction is in progress. #13978
 * [ENHANCEMENT] Ingester: Extend `cortex_ingester_tsdb_forced_compactions_in_progress` metric to report a value of 1 when there's an idle or forced TSDB head compaction in progress. #13979
-* [ENHANCEMENT] Usage-tracker, distributor: Distributor will accumulate batches of series and send them to usage-tracker in fewer RPCs if '-distributor.usage-tracker-client.use-batched-tracking' is enabled. #13966 #13983
+* [ENHANCEMENT] Usage-tracker, distributor: Distributor accumulates batches of series and sends them to usage-tracker in fewer RPCs if '-distributor.usage-tracker-client.use-batched-tracking' is enabled. #13966 #13983
 * [ENHANCEMENT] MQE: Include metric name in `histogram_quantile` warning/info annotations when delayed name removal is enabled. #13905
 * [ENHANCEMENT] MQE: Add metrics to track step-invariant expression usage and data point reuse savings: `cortex_mimir_query_engine_step_invariant_nodes_total` and `cortex_mimir_query_engine_step_invariant_steps_saved_total`. #13911
 * [ENHANCEMENT] MQE: Add explicit error handling for unsupported Prometheus experimental binary operator modifiers `fill`, `fill_left` and `fill_right`. #14107
