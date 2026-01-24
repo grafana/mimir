@@ -689,7 +689,7 @@ func TestUpdateSchedule(t *testing.T) {
 	`), "cortex_blockbuilder_scheduler_partition_end_offset"))
 }
 
-func TestConsumptionRanges(t *testing.T) {
+func TestInitialOffsetProbing(t *testing.T) {
 	ctx := context.Background()
 
 	tests := map[string]struct {
@@ -941,43 +941,6 @@ func (o *mockOffsetFinder) offsetAfterTime(_ context.Context, _ string, _ int32,
 }
 
 var _ offsetStore = (*mockOffsetFinder)(nil)
-
-func TestReturningPartitionNoSkip(t *testing.T) {
-	// The scenario is:
-	// * we learn the commit and end offsets at startup of a partition that is inactive.
-	// * this partition's end offset grows before we produce its first job.
-	// * the next time we produce a job it *should* start at the commit offset we learned at startup.
-	sched, _ := mustScheduler(t, 4)
-	sched.cfg.MaxScanAge = 1 * time.Hour
-
-	finder := &mockOffsetFinder{
-		offsets:       nil,
-		end:           1000,
-		distinctTimes: make(map[time.Time]struct{}),
-	}
-
-	consumeOffs := []partitionOffsets{
-		{topic: "topic", partition: 0, start: 100, resume: 100, end: 100},
-	}
-
-	endTime := time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)
-	sched.populateInitialJobs(context.Background(), consumeOffs, finder, endTime)
-
-	// Now if we observe later end offsets, we should produce jobs that do not have gaps.
-	p0 := sched.getPartitionState("topic", 0)
-	j, err := p0.updateEndOffset(200, time.Date(2025, 3, 1, 10, 45, 0, 0, time.UTC), sched.cfg.JobSize)
-	require.NoError(t, err)
-	require.Nil(t, j)
-
-	j, err = p0.updateEndOffset(300, time.Date(2025, 3, 1, 11, 15, 0, 0, time.UTC), sched.cfg.JobSize)
-	require.NoError(t, err)
-	require.Equal(t, &schedulerpb.JobSpec{
-		Topic:       "topic",
-		Partition:   0,
-		StartOffset: 100,
-		EndOffset:   300,
-	}, j)
-}
 
 func TestPopulateInitialJobs_ProbeTimesReused(t *testing.T) {
 	// Ensure that the probe times are reused across partitions, which is a
@@ -1597,4 +1560,179 @@ func TestBlockBuilderScheduler_NoCommit_NoGap(t *testing.T) {
 
 	pp.committed.advance(k2.id, spec2)
 	requireGaps(t, reg, 1, 1, "a gap after a non-empty committed offset should register a gap")
+}
+
+// TestStartupToRegularModeJobProduction tests that the scheduler correctly
+// produces jobs when transitioning from startup mode to regular mode with a
+// variety of cases.
+func TestStartupToRegularModeJobProduction(t *testing.T) {
+	type endOffsetObservation struct {
+		offset    int64
+		timestamp time.Time
+	}
+
+	type testCase struct {
+		name               string
+		initialStart       int64
+		initialResume      int64
+		initialEnd         int64
+		initialTime        time.Time
+		offsets            []*offsetTime
+		futureObservations []endOffsetObservation
+		expectedFinalEnd   int64
+	}
+
+	tests := [...]testCase{
+		{
+			name: "dormant partitition that receives data after startup",
+			// The scenario is this:
+			// * we learn the resume and end offsets at startup of a partition that is inactive. (resume == end)
+			// * this partition's end offset grows before we produce its first job.
+			// * the next time we produce a job it *should* start at the end offset we learned at startup.
+			initialStart:  50,
+			initialResume: 100,
+			initialEnd:    100,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 10, 45, 0, 0, time.UTC)},
+				{offset: 300, timestamp: time.Date(2025, 3, 1, 11, 15, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 300,
+		},
+		{
+			name:          "multiple observations, same bucket",
+			initialStart:  100,
+			initialResume: 100,
+			initialEnd:    100,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 150, timestamp: time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)},
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 10, 45, 0, 0, time.UTC)},
+				{offset: 250, timestamp: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 250,
+		},
+		{
+			name:          "multiple observations, different buckets",
+			initialStart:  100,
+			initialResume: 100,
+			initialEnd:    100,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 10, 30, 0, 0, time.UTC)},
+				{offset: 300, timestamp: time.Date(2025, 3, 1, 11, 15, 0, 0, time.UTC)},
+				{offset: 400, timestamp: time.Date(2025, 3, 1, 12, 30, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 400,
+		},
+		{
+			name:          "no growth after initial",
+			initialStart:  100,
+			initialResume: 200,
+			initialEnd:    200,
+			initialTime:   time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+				{offset: 200, timestamp: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 200,
+		},
+		{
+			name:          "end later than resume",
+			initialStart:  100,
+			initialResume: 200,
+			initialEnd:    500,
+			initialTime:   time.Date(2025, 3, 1, 9, 0, 0, 0, time.UTC),
+			offsets: []*offsetTime{
+				{offset: 200, time: time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)},
+				{offset: 500, time: time.Date(2025, 3, 1, 10, 15, 0, 0, time.UTC)},
+			},
+			futureObservations: []endOffsetObservation{
+				{offset: 600, timestamp: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+				{offset: 700, timestamp: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 700,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sched, _ := mustScheduler(t, 4)
+			sched.cfg.MaxScanAge = 1 * time.Hour
+			sched.cfg.JobSize = 1 * time.Hour
+
+			// Create a mock offset finder that returns the initial end offset
+			finder := &mockOffsetFinder{
+				offsets:       tt.offsets,
+				end:           tt.initialEnd,
+				distinctTimes: make(map[time.Time]struct{}),
+			}
+
+			consumeOffs := []partitionOffsets{
+				{
+					topic:     "topic",
+					partition: 0,
+					start:     tt.initialStart,
+					resume:    tt.initialResume,
+					end:       tt.initialEnd,
+				},
+			}
+
+			// Call populateInitialJobs to set up initial state
+			sched.populateInitialJobs(context.Background(), consumeOffs, finder, tt.initialTime)
+
+			// Apply future end offset observations and collect jobs returned from updateEndOffset
+			ps := sched.getPartitionState("topic", 0)
+
+			collectedJobs := []*schedulerpb.JobSpec{}
+
+			for _, obs := range tt.futureObservations {
+				job, err := ps.updateEndOffset(obs.offset, obs.timestamp, sched.cfg.JobSize)
+				require.NoError(t, err)
+				if job != nil {
+					collectedJobs = append(collectedJobs, job)
+				}
+			}
+
+			// Verify basic properties:
+			// 1. Jobs should cover [resume, final_end_offset) without gaps
+			// 2. Jobs should be in order
+			// 3. Jobs should not overlap
+
+			println(len(collectedJobs))
+
+			if len(collectedJobs) == 0 {
+				// Only data-less partitions should produce no jobs.
+				require.GreaterOrEqual(t, tt.initialResume, tt.expectedFinalEnd,
+					"if no jobs were created, resume should be >= final end offset")
+				return
+			}
+
+			// Verify first job starts at or after resume offset
+			require.Equal(t, tt.initialResume, collectedJobs[0].StartOffset,
+				"first job should start at or after resume offset")
+
+			// Verify last job ends at expected final end
+			require.Equal(t, tt.expectedFinalEnd, collectedJobs[len(collectedJobs)-1].EndOffset,
+				"last job should end at expected final end offset")
+
+			// Verify no gaps and no overlaps between consecutive jobs
+			for i := 0; i < len(collectedJobs)-1; i++ {
+				current := collectedJobs[i]
+				next := collectedJobs[i+1]
+
+				require.Equal(t, current.EndOffset, next.StartOffset,
+					"jobs should have no gaps: job %d ends at %d but next job starts at %d",
+					i, current.EndOffset, next.StartOffset)
+			}
+
+			// Verify all jobs are within [resume, expectedFinalEnd]
+			for i, job := range collectedJobs {
+				require.GreaterOrEqual(t, job.StartOffset, tt.initialResume,
+					"job %d starts before resume offset", i)
+				require.LessOrEqual(t, job.EndOffset, tt.expectedFinalEnd,
+					"job %d ends after expected final end offset", i)
+			}
+		})
+	}
 }
