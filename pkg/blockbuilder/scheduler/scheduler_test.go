@@ -1584,7 +1584,7 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 
 	tests := [...]testCase{
 		{
-			name: "dormant partitition that receives data after startup",
+			name: "dormant partition that receives data after startup",
 			// The scenario is this:
 			// * we learn the resume and end offsets at startup of a partition that is inactive. (resume == end)
 			// * this partition's end offset grows before we produce its first job.
