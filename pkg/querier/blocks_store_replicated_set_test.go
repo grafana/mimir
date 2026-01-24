@@ -606,6 +606,126 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	})
 }
 
+func BenchmarkBlocksStoreReplicationSet_GetClientsFor(b *testing.B) {
+	const (
+		numInstancesPerZone = 300
+		numTokens           = 512
+		numBlocks           = 10
+		replicationFactor   = 3
+		userID              = "user-1"
+	)
+
+	zones := []string{"zone-1", "zone-2", "zone-3"}
+
+	// Create recent blocks (triggers dynamic replication when enabled).
+	now := time.Now()
+	blocks := make(bucketindex.Blocks, numBlocks)
+	for i := range numBlocks {
+		blocks[i] = &bucketindex.Block{
+			ID:      ulid.MustNew(uint64(i+1), nil),
+			MinTime: now.Add(-2 * time.Hour).UnixMilli(),
+			MaxTime: now.Add(-1 * time.Hour).UnixMilli(),
+		}
+	}
+
+	testCases := []struct {
+		name               string
+		zone3State         ring.InstanceState
+		dynamicReplication bool
+	}{
+		{"all zones ACTIVE", ring.ACTIVE, false},
+		{"one zone JOINING", ring.JOINING, false},
+		{"one zone LEAVING", ring.LEAVING, false},
+		{"all zones ACTIVE with dynamic replication", ring.ACTIVE, true},
+		{"one zone JOINING with dynamic replication", ring.JOINING, true},
+		{"one zone LEAVING with dynamic replication", ring.LEAVING, true},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			ctx := context.Background()
+			registeredAt := time.Now()
+
+			// Setup ring store.
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			b.Cleanup(func() { _ = closer.Close() })
+
+			// Populate ring.
+			err := ringStore.CAS(ctx, storegateway.RingKey, func(interface{}) (interface{}, bool, error) {
+				d := ring.NewDesc()
+				tokenGen := ring.NewRandomTokenGeneratorWithSeed(42)
+
+				for _, zone := range zones {
+					state := ring.ACTIVE
+					if zone == "zone-3" {
+						state = tc.zone3State
+					}
+					for i := 0; i < numInstancesPerZone; i++ {
+						id := fmt.Sprintf("%s-instance-%d", zone, i)
+						d.AddIngester(id, id, zone, tokenGen.GenerateTokens(numTokens, nil), state, registeredAt, false, time.Time{}, nil)
+					}
+				}
+				return d, true, nil
+			})
+			require.NoError(b, err)
+
+			// Create the ring client.
+			ringCfg := ring.Config{}
+			flagext.DefaultValues(&ringCfg)
+			ringCfg.ReplicationFactor = replicationFactor
+			ringCfg.ZoneAwarenessEnabled = true
+
+			r, err := ring.NewWithStoreClientAndStrategy(ringCfg, storegateway.RingNameForClient, storegateway.RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+			require.NoError(b, err)
+			b.Cleanup(func() {
+				require.NoError(b, services.StopAndAwaitTerminated(ctx, r))
+			})
+
+			// Create dynamic replication.
+			var dynRepl storegateway.DynamicReplication
+			if tc.dynamicReplication {
+				dynRepl = storegateway.NewMaxTimeDynamicReplication(storegateway.Config{
+					ShardingRing:       storegateway.RingConfig{ReplicationFactor: replicationFactor},
+					DynamicReplication: storegateway.DynamicReplicationConfig{Enabled: true, MaxTimeThreshold: 25 * time.Hour, Multiple: 5},
+				}, 0)
+			} else {
+				dynRepl = storegateway.NewNopDynamicReplication(replicationFactor)
+			}
+
+			// Create blocksStoreReplicationSet.
+			limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
+			s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, dynRepl, nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+			require.NoError(b, err)
+			require.NoError(b, services.StartAndAwaitRunning(ctx, s))
+			b.Cleanup(func() {
+				require.NoError(b, services.StopAndAwaitTerminated(ctx, s))
+			})
+
+			// Wait for ring client initialization.
+			test.Poll(b, 5*time.Second, numInstancesPerZone*len(zones), func() interface{} {
+				all, err := r.GetAllHealthy(storegateway.BlocksOwnerSync)
+				if err != nil {
+					return 0
+				}
+				return len(all.Instances)
+			})
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				clients, err := s.GetClientsFor(userID, blocks, nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				for c := range clients {
+					_ = c.(io.Closer).Close()
+				}
+			}
+		})
+	}
+}
+
 func getStoreGatewayClientAddrs(clients map[BlocksStoreClient][]ulid.ULID) map[string][]ulid.ULID {
 	addrs := map[string][]ulid.ULID{}
 	for c, blockIDs := range clients {
