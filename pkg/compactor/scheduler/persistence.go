@@ -137,7 +137,7 @@ func (m *BboltJobPersistenceManager) tenantName(tenant string) []byte {
 
 func (m *BboltJobPersistenceManager) createBucket(name []byte) error {
 	return m.db.Update(func(tx *bbolt.Tx) error {
-		_, err := tx.CreateBucket(name)
+		_, err := tx.CreateBucketIfNotExists(name)
 		return err
 	})
 }
