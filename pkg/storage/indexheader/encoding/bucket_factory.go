@@ -93,7 +93,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 }
 
 func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
-	const offset = int64(0)
+	const offset = 0
 
 	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, -1)
 	if err != nil {
@@ -112,8 +112,9 @@ func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
 	}
 
-	r := newStreamReader(rc, 0, int(attrs.Size))
-	r.seekReader = func(off int) error {
+	r := newStreamReader(rc, offset, int(attrs.Size))
+	r.seekReader = func(_ int) error {
+		// Create reader from full file range
 		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, attrs.Size)
 		if err != nil {
 			return err

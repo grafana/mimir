@@ -10950,7 +10950,7 @@
                       "kind": "field",
                       "name": "enabled",
                       "required": false,
-                      "desc": "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections will not be downloaded to local disk.",
+                      "desc": "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.",
                       "fieldValue": null,
                       "fieldDefaultValue": false,
                       "fieldFlag": "blocks-storage.bucket-store.index-header.bucket-reader.enabled",

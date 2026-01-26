@@ -104,7 +104,7 @@ func (cfg *Config) Validate() error {
 	if cfg.LazyLoadingConcurrency < 0 {
 		return errInvalidIndexHeaderLazyLoadingConcurrency
 	}
-	return nil
+	return cfg.BucketReader.Validate()
 }
 
 type Section string
@@ -126,12 +126,12 @@ type BucketReaderConfig struct {
 }
 
 func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections will not be downloaded to local disk.")
+	f.BoolVar(&cfg.Enabled, prefix+"enabled", false, "Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.")
 	f.StringVar((*string)(&cfg.BucketIndexSections), prefix+"index-sections", string(SectionAll), fmt.Sprintf("Index sections to read from object storage instead of local disk. Valid sections: %s", SectionAll))
 }
 
 func (cfg *BucketReaderConfig) Validate() error {
-	if slices.Contains([]Section{SectionAll}, cfg.BucketIndexSections) {
+	if !slices.Contains([]Section{SectionAll}, cfg.BucketIndexSections) {
 		return errInvalidIndexHeaderSection
 	}
 	return nil

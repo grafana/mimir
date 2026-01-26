@@ -532,7 +532,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.index-cache.memcached.tls-server-name string
     	Override the expected name on the server certificate.
   -blocks-storage.bucket-store.index-header.bucket-reader.enabled
-    	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections will not be downloaded to local disk.
+    	[experimental] Enable reading TSDB index-header sections from object storage. When enabled, the configured -blocks-storage.bucket-store.index-header.bucket-reader.index-sections are not downloaded to local disk.
   -blocks-storage.bucket-store.index-header.bucket-reader.index-sections string
     	[experimental] Index sections to read from object storage instead of local disk. Valid sections: all (default "all")
   -blocks-storage.bucket-store.index-header.lazy-loading-concurrency int
