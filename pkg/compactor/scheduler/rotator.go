@@ -171,6 +171,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, 
 
 	canceled, transition, err := tenantState.tracker.CancelLease(key, epoch)
 	if err != nil {
+		r.mtx.RUnlock()
 		return false, err
 	}
 	if !transition {
