@@ -195,9 +195,7 @@ func (s *Scheduler) stop(_ error) error {
 
 	// Prepare for shutdown by making sure no more persist operations are possible.
 	// Since each of these takes a write lock, we know after they return all subsequent calls will see an empty state.
-	// The only cases to still handle then are:
-	// - lease update requests, since "not found" is interpreted as the lease being invalid.
-	// - planned job completion, so offered jobs need to be blocked with an error in the plan tracker
+	// The only cases to still handle then are lease update requests, since "not found" is interpreted as the lease being invalid.
 	s.rotator.PrepareForShutdown()
 	s.planTracker.PrepareForShutdown()
 
@@ -287,13 +285,17 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		))
 	}
 
-	_, err := s.rotator.OfferJobs(req.Key.Id, jobs, func(previous *CompactionJob, new *CompactionJob) bool {
+	added, err := s.rotator.OfferJobs(req.Key.Id, jobs, func(previous *CompactionJob, new *CompactionJob) bool {
 		// Replace an existing job with the same ID if it has differs in type of compaction or has different blocks
 		return previous.isSplit != new.isSplit || !slices.EqualFunc(previous.blocks, new.blocks, slices.Equal)
 	})
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, failedTo("offering results")
+	} else if added == 0 && !s.isRunning(){
+		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
+		// Worst case we are accidentally pushing them to return the same results later
+		return nil, notRunning()
 	}
 
 	_, _, err = s.planTracker.Remove(req.Key.Id, req.Key.Epoch)

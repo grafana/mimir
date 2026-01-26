@@ -4,7 +4,6 @@ package scheduler
 
 import (
 	"container/list"
-	"errors"
 	"fmt"
 	"math/rand"
 	"slices"
@@ -67,7 +66,6 @@ type JobTracker[V any] struct {
 	metrics   *schedulerMetrics
 
 	mtx          *sync.Mutex
-	rejectOffers bool
 	pending      *list.List
 	active       *list.List
 	allJobs      map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
@@ -81,7 +79,6 @@ func NewJobTracker[V any](jobPersister JobPersister[V], maxLeases int, jobType s
 		jobType:      jobType,
 		metrics:      metrics,
 		mtx:          &sync.Mutex{},
-		rejectOffers: false,
 		pending:      list.New(),
 		active:       list.New(),
 		allJobs:      make(map[string]*list.Element),
@@ -124,7 +121,6 @@ func (jt *JobTracker[V]) PrepareForShutdown() {
 	jt.allJobs = make(map[string]*list.Element)
 	jt.pending = list.New()
 	jt.active = list.New()
-	jt.rejectOffers = true
 }
 
 // Lease iterates the job queue for an acceptable job according to the provided canAccept function
@@ -332,10 +328,6 @@ func (jt *JobTracker[V]) CancelLease(id string, epoch int64) (canceled bool, bec
 func (jt *JobTracker[V]) Offer(jobs []*Job[V], shouldReplace func(prev, new V) bool) (accepted int, becamePending bool, err error) {
 	jt.mtx.Lock()
 	defer jt.mtx.Unlock()
-
-	if jt.rejectOffers {
-		return 0, false, errors.New("jobs are not currently being accepted")
-	}
 
 	wasEmpty := jt.isPendingEmpty()
 
