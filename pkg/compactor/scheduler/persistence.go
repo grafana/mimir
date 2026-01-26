@@ -270,7 +270,6 @@ func (jp *BboltJobPersister[V]) recover(bucket *bbolt.Bucket) ([]*Job[V], error)
 		}
 
 		job.id = string(k)
-		job.lastRenewalTime = job.leaseCreationTime
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
