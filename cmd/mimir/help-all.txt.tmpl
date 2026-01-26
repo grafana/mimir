@@ -3338,7 +3338,7 @@ Usage of ./cmd/mimir/mimir:
   -store-gateway.sharding-ring.etcd.username string
     	Etcd username.
   -store-gateway.sharding-ring.excluded-zones comma-separated-list-of-strings
-    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.
+    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones are filtered out from the ring. You need to set this option on the store-gateway, querier, and ruler when running in microservices mode.
   -store-gateway.sharding-ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -store-gateway.sharding-ring.heartbeat-timeout duration
