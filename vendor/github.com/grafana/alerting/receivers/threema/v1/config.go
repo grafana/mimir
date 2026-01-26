@@ -60,56 +60,54 @@ func NewConfig(jsonData json.RawMessage, decryptFn receivers.DecryptFunc) (Confi
 	return settings, nil
 }
 
-func Schema() schema.IntegrationSchemaVersion {
-	return schema.IntegrationSchemaVersion{
-		Version:   Version,
-		CanCreate: true,
-		Options: []schema.Field{
-			{
-				Label:          "Gateway ID",
-				Element:        schema.ElementTypeInput,
-				InputType:      schema.InputTypeText,
-				Placeholder:    "*3MAGWID",
-				Description:    "Your 8 character Threema Gateway Basic ID (starting with a *).",
-				PropertyName:   "gateway_id",
-				Required:       true,
-				ValidationRule: "\\*[0-9A-Z]{7}",
-			},
-			{
-				Label:          "Recipient ID",
-				Element:        schema.ElementTypeInput,
-				InputType:      schema.InputTypeText,
-				Placeholder:    "YOUR3MID",
-				Description:    "The 8 character Threema ID that should receive the alerts.",
-				PropertyName:   "recipient_id",
-				Required:       true,
-				ValidationRule: "[0-9A-Z]{8}",
-			},
-			{
-				Label:        "API Secret",
-				Element:      schema.ElementTypeInput,
-				InputType:    schema.InputTypeText,
-				Description:  "Your Threema Gateway API secret.",
-				PropertyName: "api_secret",
-				Required:     true,
-				Secure:       true,
-			},
-			{ // New in 9.3
-				Label:        "Title",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Description:  "Templated title of the message.",
-				PropertyName: "title",
-				Placeholder:  templates.DefaultMessageTitleEmbed,
-			},
-			{ // New in 9.3
-				Label:        "Description",
-				Element:      schema.ElementTypeTextArea,
-				InputType:    schema.InputTypeText,
-				Description:  "Templated description of the message.",
-				PropertyName: "description",
-				Placeholder:  templates.DefaultMessageEmbed,
-			},
+var Schema = schema.IntegrationSchemaVersion{
+	Version:   Version,
+	CanCreate: true,
+	Options: []schema.Field{
+		{
+			Label:          "Gateway ID",
+			Element:        schema.ElementTypeInput,
+			InputType:      schema.InputTypeText,
+			Placeholder:    "*3MAGWID",
+			Description:    "Your 8 character Threema Gateway Basic ID (starting with a *).",
+			PropertyName:   "gateway_id",
+			Required:       true,
+			ValidationRule: "\\*[0-9A-Z]{7}",
 		},
-	}
+		{
+			Label:          "Recipient ID",
+			Element:        schema.ElementTypeInput,
+			InputType:      schema.InputTypeText,
+			Placeholder:    "YOUR3MID",
+			Description:    "The 8 character Threema ID that should receive the alerts.",
+			PropertyName:   "recipient_id",
+			Required:       true,
+			ValidationRule: "[0-9A-Z]{8}",
+		},
+		{
+			Label:        "API Secret",
+			Element:      schema.ElementTypeInput,
+			InputType:    schema.InputTypeText,
+			Description:  "Your Threema Gateway API secret.",
+			PropertyName: "api_secret",
+			Required:     true,
+			Secure:       true,
+		},
+		{ // New in 9.3
+			Label:        "Title",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Description:  "Templated title of the message.",
+			PropertyName: "title",
+			Placeholder:  templates.DefaultMessageTitleEmbed,
+		},
+		{ // New in 9.3
+			Label:        "Description",
+			Element:      schema.ElementTypeTextArea,
+			InputType:    schema.InputTypeText,
+			Description:  "Templated description of the message.",
+			PropertyName: "description",
+			Placeholder:  templates.DefaultMessageEmbed,
+		},
+	},
 }
