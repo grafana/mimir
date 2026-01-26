@@ -1572,14 +1572,15 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 	}
 
 	type testCase struct {
-		name               string
-		initialStart       int64
-		initialResume      int64
-		initialEnd         int64
-		initialTime        time.Time
-		offsets            []*offsetTime
-		futureObservations []endOffsetObservation
-		expectedFinalEnd   int64
+		name                     string
+		partitionAbsentInitially bool
+		initialStart             int64
+		initialResume            int64
+		initialEnd               int64
+		initialTime              time.Time
+		offsets                  []*offsetTime
+		futureObservations       []endOffsetObservation
+		expectedFinalEnd         int64
 	}
 
 	tests := [...]testCase{
@@ -1653,6 +1654,16 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 			},
 			expectedFinalEnd: 700,
 		},
+		{
+			name:                     "partition absent at startup",
+			partitionAbsentInitially: true,
+			initialTime:              time.Date(2025, 3, 1, 9, 0, 0, 0, time.UTC),
+			futureObservations: []endOffsetObservation{
+				{offset: 600, timestamp: time.Date(2025, 3, 1, 11, 0, 0, 0, time.UTC)},
+				{offset: 700, timestamp: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC)},
+			},
+			expectedFinalEnd: 700,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1668,14 +1679,18 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 				distinctTimes: make(map[time.Time]struct{}),
 			}
 
-			consumeOffs := []partitionOffsets{
-				{
-					topic:     "topic",
-					partition: 0,
-					start:     tt.initialStart,
-					resume:    tt.initialResume,
-					end:       tt.initialEnd,
-				},
+			var consumeOffs []partitionOffsets
+
+			if !tt.partitionAbsentInitially {
+				consumeOffs = []partitionOffsets{
+					{
+						topic:     "topic",
+						partition: 0,
+						start:     tt.initialStart,
+						resume:    tt.initialResume,
+						end:       tt.initialEnd,
+					},
+				}
 			}
 
 			// Call populateInitialJobs to set up initial state
@@ -1702,7 +1717,7 @@ func TestStartupToRegularModeJobProduction(t *testing.T) {
 				return
 			}
 
-			// Verify first job starts at or after resume offset
+			// Verify first job starts at resume offset
 			require.Equal(t, tt.initialResume, collectedJobs[0].StartOffset,
 				"first job should start at resume offset")
 
