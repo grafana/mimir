@@ -67,7 +67,7 @@ var (
 		//   with some tokens, and it's loading owned blocks. The JOINING store-gateway takes some
 		//   tokens previously belonging to other instances, so – if these other instances are
 		//   ACTIVE – they will keep their blocks loaded until the new owner is ACTIVE. In this
-		//   case, we want to extend the replica set and ret to query the blocks from the previous
+		//   case, we want to extend the replica set and try to query the blocks from the previous
 		//   owner.
 		// - LEAVING: the store-gateway is shutting down (or is already terminated, and it's expected
 		//   to come back soon, e.g. during a rolling update). In this case, there's no other
