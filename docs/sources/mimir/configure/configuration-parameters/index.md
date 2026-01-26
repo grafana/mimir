@@ -1925,7 +1925,7 @@ mimir_query_engine:
   # the query plan when it can be proven that each input series produces a
   # unique output series.
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
-  [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
+  [enable_eliminate_deduplicate_and_merge: <boolean> | default = true]
 
   # (experimental) Enable eliminating duplicate or redundant matchers that are
   # part of selector expressions.

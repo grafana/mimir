@@ -2546,7 +2546,7 @@
               "required": false,
               "desc": "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.",
               "fieldValue": null,
-              "fieldDefaultValue": false,
+              "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
