@@ -97,6 +97,13 @@ func (o *OptimizationPass) wrapSplitRangeVectorFunctions(ctx context.Context, n 
 		level.Warn(o.logger).Log("msg", "failed to extract tenant ID for range vector splitting, skipping optimization", "err", err)
 		return n, nil
 	}
+
+	// Skip processing children of subqueries - range vectors inside subqueries
+	// create a range query context which isn't supported yet.
+	if _, isSubquery := n.(*core.Subquery); isSubquery {
+		return n, nil
+	}
+
 	if functionCall, isFunctionCall := n.(*core.FunctionCall); isFunctionCall {
 		o.functionNodesInspected.Inc()
 		wrappedNode, err := o.trySplitFunction(functionCall, timeRange, tenantID)

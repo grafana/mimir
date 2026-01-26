@@ -61,8 +61,9 @@ type FunctionOverRangeVectorSplit[T any] struct {
 	seriesToSplits   [][]SplitSeries
 	currentSeriesIdx int
 
-	fullyEvaluated bool
-	finalized      bool
+	metadataConsumed bool
+	fullyEvaluated   bool
+	finalized        bool
 
 	logger     log.Logger
 	cacheStats *cache.CacheStats
@@ -258,6 +259,10 @@ func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start 
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	if m.metadataConsumed {
+		return nil, fmt.Errorf("SeriesMetadata() called multiple times on FunctionOverRangeVectorSplit")
+	}
+
 	m.seriesMetadataStart = time.Now()
 	defer func() {
 		m.seriesMetadataEnd = time.Now()
@@ -272,6 +277,8 @@ func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, ma
 	if m.metricNames != nil {
 		m.metricNames.CaptureMetricNames(metadata)
 	}
+
+	m.metadataConsumed = true
 
 	if m.FuncDef.SeriesMetadataFunction.Func != nil {
 		return m.FuncDef.SeriesMetadataFunction.Func(metadata, m.MemoryConsumptionTracker, m.enableDelayedNameRemoval)
@@ -336,7 +343,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 		}
 
 		// Clear elements in metadata before putting back in pool, since element decrease is already accounted for.
-		splitMetadata = splitMetadata[:0]
+		clear(splitMetadata)
 		types.SeriesMetadataSlicePool.Put(&splitMetadata, m.MemoryConsumptionTracker)
 	}
 
@@ -525,10 +532,6 @@ func (p *CachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParam
 }
 
 func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if c.metadata == nil {
-		return nil, fmt.Errorf("SeriesMetadata() called multiple times on CachedSplit")
-	}
-
 	seriesMetadata, err := types.SeriesMetadataSlicePool.Get(len(c.metadata), c.parent.MemoryConsumptionTracker)
 	if err != nil {
 		return nil, err
@@ -541,8 +544,6 @@ func (c *CachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matc
 			return nil, err
 		}
 	}
-
-	c.metadata = nil
 
 	return seriesMetadata, nil
 }
@@ -624,10 +625,6 @@ func (p *UncachedSplit[T]) Prepare(ctx context.Context, params *types.PreparePar
 }
 
 func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if p.metadata != nil {
-		return nil, fmt.Errorf("SeriesMetadata() called multiple times on UncachedSplit")
-	}
-
 	seriesMetadata, err := p.operator.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err

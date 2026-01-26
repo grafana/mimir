@@ -102,7 +102,8 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, rangeStart,
 	}
 
 	if hCount == 1 {
-		firstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H)
+		// Copy to avoid sharing memory with ring buffer that may be reused across series
+		firstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H.Copy())
 		return RateIntermediate{
 			FirstHistogram:                 &firstHistProto,
 			LastHistogram:                  &firstHistProto,
@@ -121,8 +122,9 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, rangeStart,
 		return RateIntermediate{}, err
 	}
 
-	firstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H)
-	lastHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, lastPoint.H)
+	// Copy to avoid sharing memory with ring buffer that may be reused across series
+	firstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H.Copy())
+	lastHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, lastPoint.H.Copy())
 	deltaHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, delta)
 
 	return RateIntermediate{

@@ -8,6 +8,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -630,63 +632,26 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
-// TestQuerySplitting_TestFiles runs PromQL test files specifically created to test query splitting with a 2h split interval.
 func TestQuerySplitting_TestFiles(t *testing.T) {
-	const splitInterval = 2 * time.Hour
-
-	testdataFS := os.DirFS("./testdata")
-	testFiles, err := fs.Glob(testdataFS, "ours-only/*splitting*.test")
-	require.NoError(t, err)
-	require.NotEmpty(t, testFiles, "expected to find test files matching pattern 'ours-only/*splitting*.test'")
-
-	for _, testFile := range testFiles {
-		t.Run(testFile, func(t *testing.T) {
-			registry := prometheus.NewRegistry()
-			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval)
-
-			engine := &testSplittingEngine{
-				engine: innerEngine,
-				orgID:  "test-user",
-			}
-
-			newStorage := func(t testutil.T) storage.Storage {
-				base := promqltest.LoadedStorage(t, "")
-				return &storageWithCloseCallback{
-					Storage: base,
-					onClose: cacheBackend.Reset,
-				}
-			}
-
-			f, err := testdataFS.Open(testFile)
-			require.NoError(t, err)
-			defer f.Close()
-
-			b, err := io.ReadAll(f)
-			require.NoError(t, err)
-
-			testScript := string(b)
-			promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
-		})
-	}
-}
-
-// TestQuerySplitting_AllTestFiles runs ALL PromQL test files with query splitting enabled.
-func TestQuerySplitting_AllTestFiles(t *testing.T) {
 	testdataFS := os.DirFS("./testdata")
 
 	oursTests, err := fs.Glob(testdataFS, "ours/*.test")
 	require.NoError(t, err)
 
+	oursOnlyTests, err := fs.Glob(testdataFS, "ours-only/*.test")
+	require.NoError(t, err)
+
 	upstreamTests, err := fs.Glob(testdataFS, "upstream/*.test")
 	require.NoError(t, err)
 
-	allTests := append(oursTests, upstreamTests...)
+	allTests := append(oursTests, oursOnlyTests...)
+	allTests = append(allTests, upstreamTests...)
 	require.NotEmpty(t, allTests, "expected to find test files")
 
 	splitIntervals := []time.Duration{
 		30 * time.Second,
 		5 * time.Minute,
-		1 * time.Hour,
+		2 * time.Hour,
 	}
 
 	for _, splitInterval := range splitIntervals {
@@ -695,39 +660,26 @@ func TestQuerySplitting_AllTestFiles(t *testing.T) {
 			totalQueries := 0
 			queriesWithSplit := 0
 
+			registry := prometheus.NewRegistry()
+			engine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, false)
+
+			registryDelayed := prometheus.NewRegistry()
+			engineDelayed, cacheBackendDelayed := createSplittingEngineWithCache(t, registryDelayed, splitInterval, true)
+
 			for _, testFile := range allTests {
 				t.Run(testFile, func(t *testing.T) {
-					registry := prometheus.NewRegistry()
-					innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval)
+					enableDelayedNameRemoval := strings.Contains(testFile, "name_label_dropping")
 
-					engine := &testSplittingEngine{
-						engine: innerEngine,
-						orgID:  "test-user",
-						onQueryExec: func(splitQueriesCount uint32) {
-							totalQueries++
-							if splitQueriesCount > 0 {
-								queriesWithSplit++
-							}
-						},
+					selectedEngine := engine
+					selectedCache := cacheBackend
+					if enableDelayedNameRemoval {
+						selectedEngine = engineDelayed
+						selectedCache = cacheBackendDelayed
 					}
 
-					newStorage := func(t testutil.T) storage.Storage {
-						base := promqltest.LoadedStorage(t, "")
-						return &storageWithCloseCallback{
-							Storage: base,
-							onClose: cacheBackend.Reset,
-						}
-					}
-
-					f, err := testdataFS.Open(testFile)
-					require.NoError(t, err)
-					defer f.Close()
-
-					b, err := io.ReadAll(f)
-					require.NoError(t, err)
-
-					testScript := string(b)
-					promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
+					total, withSplit := runTestFileWithSplitting(t, testdataFS, testFile, selectedEngine, selectedCache)
+					totalQueries += total
+					queriesWithSplit += withSplit
 				})
 			}
 
@@ -737,13 +689,53 @@ func TestQuerySplitting_AllTestFiles(t *testing.T) {
 	}
 }
 
-func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration) (promql.QueryEngine, *testCacheBackend) {
+func runTestFileWithSplitting(t *testing.T, testdataFS fs.FS, testFile string, innerEngine promql.QueryEngine, cacheBackend *testCacheBackend) (totalQueries, queriesWithSplit int) {
+	t.Helper()
+
+	engine := &testSplittingEngine{
+		engine: innerEngine,
+		orgID:  "test-user",
+		onQueryExec: func(splitQueriesCount uint32) {
+			totalQueries++
+			if splitQueriesCount > 0 {
+				queriesWithSplit++
+			}
+		},
+	}
+
+	newStorage := func(t testutil.T) storage.Storage {
+		base := promqltest.LoadedStorage(t, "")
+		return &storageWithCloseCallback{
+			Storage: base,
+			onClose: cacheBackend.Reset,
+		}
+	}
+
+	f, err := testdataFS.Open(testFile)
+	require.NoError(t, err)
+	defer f.Close()
+
+	b, err := io.ReadAll(f)
+	require.NoError(t, err)
+
+	testScript := string(b)
+	promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
+
+	return totalQueries, queriesWithSplit
+}
+
+func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool) (promql.QueryEngine, *testCacheBackend) {
 	t.Helper()
 
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
 	opts.CommonOpts.Reg = registry
+	opts.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
+	if enableDelayedNameRemoval {
+		// Disable the optimization pass, since it requires delayed name removal to be enabled.
+		opts.EnableEliminateDeduplicateAndMerge = false
+	}
 
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
@@ -838,7 +830,8 @@ func (c *testCacheBackend) GetMulti(_ context.Context, keys []string, _ ...dskit
 	result := make(map[string][]byte)
 	for _, key := range keys {
 		if data, ok := c.items[key]; ok && len(data) > 0 {
-			result[key] = data
+			// Clone bytes to simulate network serialization
+			result[key] = slices.Clone(data)
 			c.hits++
 		}
 	}
@@ -926,7 +919,7 @@ func (q *testSplittingQuery) Exec(ctx context.Context) *promql.Result {
 	result := q.Query.Exec(ctx)
 
 	if q.onExec != nil {
-		q.onExec(queryStats.LoadSplitQueries())
+		q.onExec(queryStats.LoadSplitRangeVectors())
 	}
 
 	return result
