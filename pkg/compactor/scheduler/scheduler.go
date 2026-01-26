@@ -292,7 +292,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, failedTo("offering results")
-	} else if added == 0 && !s.isRunning(){
+	} else if added == 0 && !s.isRunning() {
 		// This request may have erroneously seen empty state. Transform it to an unavailable error to preserve state in the worker.
 		// Worst case we are accidentally pushing them to return the same results later
 		return nil, notRunning()

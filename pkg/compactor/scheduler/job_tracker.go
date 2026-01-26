@@ -65,23 +65,23 @@ type JobTracker[V any] struct {
 	jobType   string
 	metrics   *schedulerMetrics
 
-	mtx          *sync.Mutex
-	pending      *list.List
-	active       *list.List
-	allJobs      map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
+	mtx     *sync.Mutex
+	pending *list.List
+	active  *list.List
+	allJobs map[string]*list.Element // all tracked jobs will be in this map, element is in one and only one of pending or active
 }
 
 func NewJobTracker[V any](jobPersister JobPersister[V], maxLeases int, jobType string, metrics *schedulerMetrics) *JobTracker[V] {
 	jt := &JobTracker[V]{
-		persister:    jobPersister,
-		clock:        clock.New(),
-		maxLeases:    maxLeases,
-		jobType:      jobType,
-		metrics:      metrics,
-		mtx:          &sync.Mutex{},
-		pending:      list.New(),
-		active:       list.New(),
-		allJobs:      make(map[string]*list.Element),
+		persister: jobPersister,
+		clock:     clock.New(),
+		maxLeases: maxLeases,
+		jobType:   jobType,
+		metrics:   metrics,
+		mtx:       &sync.Mutex{},
+		pending:   list.New(),
+		active:    list.New(),
+		allJobs:   make(map[string]*list.Element),
 	}
 	return jt
 }
