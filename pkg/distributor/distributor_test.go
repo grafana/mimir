@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -9636,6 +9637,116 @@ func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
 			for n := 0; n < b.N; n++ {
 				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), err error) { return reqs[n], func() {}, nil }))
 				require.NoError(b, err)
+			}
+		})
+	}
+}
+
+// mockHATracker is a mock implementation of haTracker for testing
+type mockHATracker struct {
+	services.Service
+	http.Handler
+	errToReturn error
+}
+
+func (m *mockHATracker) checkReplica(ctx context.Context, userID, cluster, replica string, _ time.Time, _ time.Time) error {
+	return m.errToReturn
+}
+
+func (m *mockHATracker) cleanupHATrackerMetricsForUser(userID string) {
+	// No-op for mock
+}
+
+func TestDistributor_replicaObserved(t *testing.T) {
+	//limits := &validation.Overrides{}
+	userID := "test-user"
+	cluster := "c1"
+	replica := "r1"
+	now := time.Now()
+	ts := now.Unix()
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	testConfig := prepConfig{numDistributors: 1, enableTracker: true}
+
+	replicasDidNotMatch := &replicasDidNotMatchError{}
+	tooManyClusters := &tooManyClustersError{}
+	unknownErr := errors.New("unknown")
+
+	tests := []struct {
+		name         string
+		cluster      string
+		replica      string
+		haTrackerErr error
+		wantState    replicaState
+		wantErr      error
+	}{
+		{
+			name:         "primary replica",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: nil,
+			wantState:    replicaIsPrimary,
+			wantErr:      nil,
+		},
+		{
+			name:         "deduped replica",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: replicasDidNotMatch,
+			wantState:    replicaDeduped,
+			wantErr:      replicasDidNotMatch,
+		},
+		{
+			name:         "too many clusters",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: tooManyClusters,
+			wantState:    replicaRejectedTooManyClusters,
+			wantErr:      tooManyClusters,
+		},
+		{
+			name:         "unknown error",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: unknownErr,
+			wantState:    replicaRejectedUnknown,
+			wantErr:      unknownErr,
+		},
+		{
+			name:         "missing cluster label",
+			cluster:      "",
+			replica:      replica,
+			haTrackerErr: nil,
+			wantState:    replicaNotHA,
+			wantErr:      nil,
+		},
+		{
+			name:         "missing replica label",
+			cluster:      cluster,
+			replica:      "",
+			haTrackerErr: nil,
+			wantState:    replicaNotHA,
+			wantErr:      nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _, _, _ := prepare(t, testConfig)
+			require.Len(t, d, 1)
+
+			// Mock HA tracker behavior
+			mockHATracker := &mockHATracker{
+				errToReturn: tc.haTrackerErr,
+			}
+			d[0].HATracker = mockHATracker
+
+			state, err := d[0].replicaObserved(ctx, userID, haReplica{cluster: tc.cluster, replica: tc.replica}, ts)
+			assert.Equal(t, tc.wantState, state)
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, err, tc.wantErr)
+			} else {
+				assert.NoError(t, err)
 			}
 		})
 	}

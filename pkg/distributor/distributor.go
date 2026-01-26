@@ -1189,11 +1189,13 @@ func (d *Distributor) replicaObserved(ctx context.Context, userID string, replic
 
 	isAccepted, err := d.checkSample(ctx, userID, replica.cluster, replica.replica, ts)
 	if err != nil {
+		var replicasDidNotMatch *replicasDidNotMatchError
+		var tooManyClusters *tooManyClustersError
 		switch {
-		case errors.As(err, &replicasDidNotMatchError{}):
+		case errors.As(err, &replicasDidNotMatch):
 			// These samples have been deduped.
 			return replicaDeduped, err
-		case errors.As(err, &tooManyClustersError{}):
+		case errors.As(err, &tooManyClusters):
 			return replicaRejectedTooManyClusters, err
 		default:
 			return replicaRejectedUnknown, err
