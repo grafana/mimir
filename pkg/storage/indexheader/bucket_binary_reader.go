@@ -278,14 +278,14 @@ func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, 
 }
 
 // fetchRange fetches a range of bytes from the object storage.
-func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, offset, length int64) ([]byte, error) {
+func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, offset, length int64) (data []byte, err error) {
 	rc, err := r.bkt.GetRange(ctx, objectPath, offset, length)
 	if err != nil {
 		return nil, fmt.Errorf("get range [%d, %d): %w", offset, offset+length, err)
 	}
 	defer runutil.CloseWithErrCapture(&err, rc, "close range reader %s", objectPath)
 
-	data, err := io.ReadAll(rc)
+	data, err = io.ReadAll(rc)
 	if err != nil {
 		return nil, fmt.Errorf("read range data: %w", err)
 	}
@@ -294,7 +294,7 @@ func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, 
 		return nil, fmt.Errorf("expected %d bytes, got %d", length, len(data))
 	}
 
-	return data, nil
+	return data, err
 }
 
 // Close implements Reader.
