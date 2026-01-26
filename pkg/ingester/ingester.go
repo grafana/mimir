@@ -661,6 +661,13 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 		}
 	}()
 
+	// Ensure the TSDB directory exists before checking for markers.
+	// This is required for ingesters starting with empty disks to support operations
+	// like scale down that need to write markers even when no TSDBs have been created yet.
+	if err := os.MkdirAll(i.cfg.BlocksStorageConfig.TSDB.Dir, os.ModePerm); err != nil {
+		return errors.Wrap(err, "failed to create TSDB directory")
+	}
+
 	// First of all we have to check if the shutdown marker is set. This needs to be done
 	// as first thing because, if found, it may change the behaviour of the ingester startup.
 	if exists, err := shutdownmarker.Exists(shutdownmarker.GetPath(i.cfg.BlocksStorageConfig.TSDB.Dir)); err != nil {
