@@ -220,6 +220,7 @@ func (r *Rotator) OfferJobs(tenant string, jobs []*Job[*CompactionJob], shouldRe
 	tenantState, ok := r.tenantStateMap[tenant]
 	if !ok {
 		r.mtx.RUnlock()
+		level.Warn(r.logger).Log("msg", "tenant not found when offering jobs, results will be discarded", "tenant", tenant, "job_count", len(jobs))
 		return 0, nil
 	}
 	added, transition, err := tenantState.tracker.Offer(jobs, shouldReplace)
