@@ -286,13 +286,13 @@ func (r *Rotator) AddTenant(tenant string, jobTracker *JobTracker[*CompactionJob
 	}
 }
 
-func (r *Rotator) RemoveTenant(tenant string) {
+func (r *Rotator) RemoveTenant(tenant string) (*JobTracker[*CompactionJob], bool) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
 	if !ok {
-		return
+		return nil, false
 	}
 
 	// Note: don't care if there are active/pending jobs in this tenant.
@@ -302,6 +302,7 @@ func (r *Rotator) RemoveTenant(tenant string) {
 		r.removeFromRotation(tenantState)
 	}
 	delete(r.tenantStateMap, tenant)
+	return tenantState.tracker, true
 }
 
 func (r *Rotator) LeaseMaintenance(ctx context.Context, leaseDuration time.Duration) {

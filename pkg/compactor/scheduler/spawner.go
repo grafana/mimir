@@ -157,10 +157,14 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 				level.Warn(s.logger).Log("msg", "failed removing empty tenant from plan tracker", "tenant", tenant, "err", err)
 				continue
 			}
-			s.rotator.RemoveTenant(tenant)
+			tracker, ok := s.rotator.RemoveTenant(tenant)
 			err = s.jpm.DeleteTenant(tenant)
 			if err != nil {
 				level.Warn(s.logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "tenant", tenant, "error", err)
+				if ok {
+					// Preserve 1:1 with rotator and planMap
+					s.rotator.AddTenant(tenant, tracker)
+				}
 				continue
 			}
 			delete(s.planMap, tenant)
