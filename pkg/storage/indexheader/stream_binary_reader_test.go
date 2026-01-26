@@ -59,12 +59,13 @@ func TestStreamBinaryReader_ShouldBuildSparseHeadersFromFileSimple(t *testing.T)
 
 	// Read sparse index headers to disk on second build.
 	sparseHeadersPath := filepath.Join(tmpDir, blockID.String(), block.SparseIndexHeaderFilename)
-	sparseData, err := os.ReadFile(sparseHeadersPath)
+	sparseData, err := os.Open(sparseHeadersPath)
 	require.NoError(t, err)
 
 	logger := spanlogger.FromContext(context.Background(), log.NewNopLogger())
-	err = r.loadFromSparseIndexHeader(logger, sparseData, 3)
+	err = r.loadFromSparseIndexHeader(context.Background(), logger, sparseData, 3)
 	require.NoError(t, err)
+	require.NoError(t, sparseData.Close())
 }
 
 // TestStreamBinaryReader_CheckSparseHeadersCorrectnessExtensive tests if StreamBinaryReader
@@ -247,7 +248,7 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	// Read the sparse header file content and save its size
 	originalSparseData, err := os.ReadFile(sparseHeadersPath)
 	require.NoError(t, err)
-	originalSparseHeader, err := decodeSparseData(logger, originalSparseData)
+	originalSparseHeader, err := decodeSparseData(ctx, bytes.NewReader(originalSparseData))
 	require.NoError(t, err)
 
 	// Delete the local sparse header file to ensure we'll need to get it from the object store
@@ -275,11 +276,12 @@ func TestStreamBinaryReader_UsesSparseHeaderFromObjectStore(t *testing.T) {
 	require.Equal(t, sparseHeaderObjPath, trackedBkt.downloadedPath, "The correct path should have been downloaded")
 
 	// Verify that the sparse header file exists locally
-	newSparseData, err := os.ReadFile(sparseHeadersPath)
+	newSparseData, err := os.Open(sparseHeadersPath)
 	require.NoError(t, err)
-	newSparseHeader, err := decodeSparseData(logger, newSparseData)
+	newSparseHeader, err := decodeSparseData(ctx, newSparseData)
 	require.NoError(t, err)
 	require.Equal(t, originalSparseHeader, newSparseHeader, "Downloaded file should have the same size as the original")
+	require.NoError(t, newSparseData.Close())
 
 	// Check that the reader is functional by performing a label names query
 	labelNames, err := newReader.LabelNames(ctx)

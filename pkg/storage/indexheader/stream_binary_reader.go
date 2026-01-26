@@ -30,6 +30,7 @@ import (
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/indexheader/indexheaderpb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/atomicfs"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -200,10 +201,11 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	}
 
 	// 1. Try to load from local file first
-	localSparseHeaderBytes, err := os.ReadFile(sparseHeadersPath)
+	localSparseHeader, err := os.Open(sparseHeadersPath)
 	if err == nil {
+		defer localSparseHeader.Close()
 		level.Debug(logger).Log("msg", "loading sparse index-header from local disk")
-		err = r.loadFromSparseIndexHeader(logger, localSparseHeaderBytes, postingOffsetsInMemSampling)
+		err = r.loadFromSparseIndexHeader(ctx, logger, localSparseHeader, postingOffsetsInMemSampling)
 		if err == nil {
 			return nil
 		}
@@ -215,11 +217,17 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	}
 
 	// 2. Fall back to the bucket
-	bucketSparseHeaderBytes, err := tryReadBucketSparseHeader(ctx, logger, bkt, id)
+	bucketSparseHeaderReader, err := tryOpenBucketSparseHeader(ctx, logger, bkt, id)
 	if err == nil {
-		// Try to load the downloaded sparse header
-		err = r.loadFromSparseIndexHeader(logger, bucketSparseHeaderBytes, postingOffsetsInMemSampling)
+		defer runutil.CloseWithLogOnErr(logger, bucketSparseHeaderReader, "close sparse index-header reader")
+
+		// Try to load from the sparse header
+		err = r.loadFromSparseIndexHeader(ctx, logger, bucketSparseHeaderReader, postingOffsetsInMemSampling)
 		if err == nil {
+			// Check if we've been canceled after downloading
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			tryWriteSparseHeadersToFile(logger, sparseHeadersPath, r)
 			return nil
 		}
@@ -238,44 +246,26 @@ func (r *StreamBinaryReader) loadSparseHeader(ctx context.Context, logger log.Lo
 	return nil
 }
 
-// tryReadBucketSparseHeader attempts to download the sparse header from the object store.
-// It returns the sparse header data if successful, nil + error otherwise.
-func tryReadBucketSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID) ([]byte, error) {
+// tryOpenBucketSparseHeader attempts to open a reader for the sparse header from the object store.
+// It returns the reader if successful, nil + error otherwise.
+func tryOpenBucketSparseHeader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, id ulid.ULID) (io.ReadCloser, error) {
 	if bkt == nil {
 		return nil, fmt.Errorf("bucket is nil")
 	}
 	sparseHeaderObjPath := filepath.Join(id.String(), block.SparseIndexHeaderFilename)
 
-	reader, err := bkt.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
-	if err != nil {
-		return nil, fmt.Errorf("getting sparse index-header from bucket: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(logger, reader, "close sparse index-header reader")
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("reading sparse index-header from bucket: %w", err)
-	}
-
-	// Check if we've been canceled after downloading
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	level.Info(logger).Log("msg", "downloaded sparse index-header from bucket")
-
-	return data, nil
+	return bkt.ReaderWithExpectedErrs(bkt.IsObjNotFoundErr).Get(ctx, sparseHeaderObjPath)
 }
 
 // loadFromSparseIndexHeader load from sparse index-header on disk.
-func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparseData []byte, postingOffsetsInMemSampling int) (err error) {
+func (r *StreamBinaryReader) loadFromSparseIndexHeader(ctx context.Context, logger log.Logger, sparseData io.Reader, postingOffsetsInMemSampling int) (err error) {
 	start := time.Now()
 	defer func() {
 		level.Info(logger).Log("msg", "loaded sparse index-header from disk", "elapsed", time.Since(start))
 	}()
 
 	level.Debug(logger).Log("msg", "loading sparse index-header from disk")
-	sparseHeaders, err := decodeSparseData(logger, sparseData)
+	sparseHeaders, err := decodeSparseData(ctx, sparseData)
 	if err != nil {
 		return err
 	}
@@ -293,25 +283,16 @@ func (r *StreamBinaryReader) loadFromSparseIndexHeader(logger log.Logger, sparse
 	return nil
 }
 
-func decodeSparseData(logger log.Logger, sparseData []byte) (*indexheaderpb.Sparse, error) {
-	sparseHeaders := &indexheaderpb.Sparse{}
-
-	gzipped := bytes.NewReader(sparseData)
-	gzipReader, err := gzip.NewReader(gzipped)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create sparse index-header gzip reader: %w", err)
-	}
-	defer runutil.CloseWithLogOnErr(logger, gzipReader, "close sparse index-header gzip reader")
-
-	sparseData, err = io.ReadAll(gzipReader)
+func decodeSparseData(ctx context.Context, sparseData io.Reader) (*indexheaderpb.Sparse, error) {
+	sparseHeaders := indexheaderpb.Sparse{}
+	// ParseProtoReader requires a max size; we supply a very broad estimate.
+	// We could read the size from last 4 bytes of the file (per gzip spec), but it's probably not worth it.
+	const maxSize = 1 << 31 // 2GiB
+	_, err := util.ParseProtoReader(ctx, sparseData, 0, maxSize, nil, &sparseHeaders, util.Gzip)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read sparse index-header: %w", err)
 	}
-
-	if err := sparseHeaders.Unmarshal(sparseData); err != nil {
-		return nil, fmt.Errorf("failed to decode sparse index-header file: %w", err)
-	}
-	return sparseHeaders, err
+	return &sparseHeaders, nil
 }
 
 // loadFromIndexHeader loads in symbols and postings offset table from the index-header.
