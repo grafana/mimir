@@ -18,15 +18,16 @@ import (
 // BucketDecbufFactory creates new bucket-reader-backed Decbuf instances
 // for a specific index-header file in object storage
 type BucketDecbufFactory struct {
-	ctx        context.Context
 	bkt        objstore.BucketReader
 	objectPath string // Path to index file in bucket
 }
 
 // NewBucketDecbufFactory creates a new BucketDecbufFactory for the given object path.
-func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, objectPath string) *BucketDecbufFactory {
+// Note: The context parameter is kept for API compatibility but is not stored.
+// Operations use context.Background() to avoid failures when lazy-loaded readers
+// outlive a request-scoped initialization context.
+func NewBucketDecbufFactory(_ context.Context, bkt objstore.BucketReader, objectPath string) *BucketDecbufFactory {
 	return &BucketDecbufFactory{
-		ctx:        ctx,
 		bkt:        bkt,
 		objectPath: objectPath,
 	}
@@ -34,7 +35,7 @@ func NewBucketDecbufFactory(ctx context.Context, bkt objstore.BucketReader, obje
 
 func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table) Decbuf {
 	// At this point we don't know the length of the section (length is -1).
-	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset), -1)
+	rc, err := bf.bkt.GetRange(context.Background(), bf.objectPath, int64(offset), -1)
 	if err != nil {
 		return Decbuf{E: fmt.Errorf("get range from %s at offset %d: %w", bf.objectPath, offset, err)}
 	}
@@ -64,7 +65,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtChecked(offset int, table *crc32.Table
 
 	r := newStreamReader(rc, len(lengthBytes), bufLength)
 	r.seekReader = func(off int) error {
-		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(offset+off), -1)
+		rc, err := bf.bkt.GetRange(context.Background(), bf.objectPath, int64(offset+off), -1)
 		if err != nil {
 			return err
 		}
@@ -95,7 +96,7 @@ func (bf *BucketDecbufFactory) NewDecbufAtUnchecked(offset int) Decbuf {
 func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 	const offset = 0
 
-	rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, -1)
+	rc, err := bf.bkt.GetRange(context.Background(), bf.objectPath, offset, -1)
 	if err != nil {
 		return Decbuf{E: fmt.Errorf("get range from %s at offset %d: %w", bf.objectPath, offset, err)}
 	}
@@ -107,7 +108,7 @@ func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 		}
 	}()
 
-	attrs, err := bf.bkt.Attributes(bf.ctx, bf.objectPath)
+	attrs, err := bf.bkt.Attributes(context.Background(), bf.objectPath)
 	if err != nil {
 		return Decbuf{E: fmt.Errorf("get size from %s: %w", bf.objectPath, err)}
 	}
@@ -115,7 +116,7 @@ func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 	r := newStreamReader(rc, offset, int(attrs.Size))
 	r.seekReader = func(_ int) error {
 		// Create reader from full file range
-		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, attrs.Size)
+		rc, err := bf.bkt.GetRange(context.Background(), bf.objectPath, offset, attrs.Size)
 		if err != nil {
 			return err
 		}
