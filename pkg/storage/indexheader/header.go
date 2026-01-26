@@ -131,7 +131,7 @@ func (cfg *BucketReaderConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix s
 }
 
 func (cfg *BucketReaderConfig) Validate() error {
-	if slices.Contains([]Section{SectionAll}, cfg.BucketIndexSections) {
+	if !slices.Contains([]Section{SectionAll}, cfg.BucketIndexSections) {
 		return errInvalidIndexHeaderSection
 	}
 	return nil

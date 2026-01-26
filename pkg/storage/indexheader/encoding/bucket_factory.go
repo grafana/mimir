@@ -114,7 +114,7 @@ func (bf *BucketDecbufFactory) NewRawDecbuf() Decbuf {
 
 	r := newStreamReader(rc, 0, int(attrs.Size))
 	r.seekReader = func(off int) error {
-		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, offset, attrs.Size)
+		rc, err := bf.bkt.GetRange(bf.ctx, bf.objectPath, int64(off), -1)
 		if err != nil {
 			return err
 		}

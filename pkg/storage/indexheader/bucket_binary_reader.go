@@ -69,9 +69,13 @@ func NewBucketBinaryReader(
 	defer spanLog.Finish()
 
 	dir = filepath.Join(dir, blockID.String())
-	if df, err := os.Open(dir); err != nil && os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("cannot create index-header dir: %w", err)
+	if df, err := os.Open(dir); err != nil {
+		if os.IsNotExist(err) {
+			if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+				return nil, fmt.Errorf("cannot create index-header dir: %w", err)
+			}
+		} else {
+			return nil, fmt.Errorf("cannot open index-header dir: %w", err)
 		}
 	} else {
 		_ = df.Close()
