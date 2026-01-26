@@ -61,7 +61,7 @@ var (
 		// try to query the block from the next ACTIVE instance in the ring that may still have
 		// the blocks loaded.
 		//
-		// Why are the states for which this scenario applies?
+		// What are the states for which this scenario applies?
 		// - PENDING: not used by the store-gateway.
 		// - JOINING: the store-gateway has been started, it just registered itself in the ring
 		//   with some tokens, and it's loading owned blocks. The JOINING store-gateway takes some
