@@ -289,9 +289,10 @@ type memoryTrackingQueryable struct {
 
 func (m memoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
 	q, err := m.inner.Querier(mint, maxt)
-	return memoryTrackingQuerier{
-		inner: q,
-	}, err
+	if err != nil {
+		return nil, err
+	}
+	return memoryTrackingQuerier{inner: q}, nil
 }
 
 type memoryTrackingQuerier struct {
