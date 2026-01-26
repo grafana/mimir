@@ -135,7 +135,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
-			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, testQueryable{q})
+			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, memoryTrackingQueryable{q})
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
 
@@ -148,7 +148,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 // This test checks that the way we set up the ingester and PromQL engine does what we expect
 // (ie. that we can query the data we write to the ingester)
 func TestBenchmarkSetup(t *testing.T) {
-	q := createBenchmarkQueryable(t, []int{1})
+	q := memoryTrackingQueryable{createBenchmarkQueryable(t, []int{1})}
 
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -157,6 +157,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64((NumIntervals-1)*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
@@ -281,35 +282,36 @@ func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Du
 	return time.Duration(math.MaxInt64)
 }
 
-type testQueryable struct {
+// memoryTracking queryable will return querier that will return MemoryTrackingSeriesSet.
+type memoryTrackingQueryable struct {
 	inner storage.Queryable
 }
 
-func (t testQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
-	q, err := t.inner.Querier(mint, maxt)
-	return testQuerier{
+func (m memoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := m.inner.Querier(mint, maxt)
+	return memoryTrackingQuerier{
 		inner: q,
 	}, err
 }
 
-type testQuerier struct {
+type memoryTrackingQuerier struct {
 	inner storage.Querier
 }
 
-func (t testQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return t.inner.LabelValues(ctx, name, hints, matchers...)
+func (m memoryTrackingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return m.inner.LabelValues(ctx, name, hints, matchers...)
 }
 
-func (t testQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return t.inner.LabelNames(ctx, hints, matchers...)
+func (m memoryTrackingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return m.inner.LabelNames(ctx, hints, matchers...)
 }
 
-func (t testQuerier) Close() error {
-	return t.inner.Close()
+func (m memoryTrackingQuerier) Close() error {
+	return m.inner.Close()
 }
 
-func (t testQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	ss := t.inner.Select(ctx, sortSeries, hints, matchers...)
+func (m memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	ss := m.inner.Select(ctx, sortSeries, hints, matchers...)
 	tracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
