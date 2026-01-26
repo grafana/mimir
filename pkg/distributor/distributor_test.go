@@ -5735,6 +5735,87 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 	}
 }
 
+func TestSortByAccepted(t *testing.T) {
+	tests := []struct {
+		name             string
+		states           []replicaState
+		expectedAccepted int
+	}{
+		{
+			name:             "empty request",
+			states:           []replicaState{},
+			expectedAccepted: 0,
+		},
+		{
+			name:             "all accepted (primary)",
+			states:           []replicaState{replicaIsPrimary, replicaIsPrimary, replicaIsPrimary},
+			expectedAccepted: 3,
+		},
+		{
+			name:             "all accepted (not HA)",
+			states:           []replicaState{replicaNotHA, replicaNotHA},
+			expectedAccepted: 2,
+		},
+		{
+			name:             "all rejected (deduped)",
+			states:           []replicaState{replicaDeduped, replicaDeduped},
+			expectedAccepted: 0,
+		},
+		{
+			name:             "mixed: accept, reject, accept",
+			states:           []replicaState{replicaIsPrimary, replicaDeduped, replicaIsPrimary},
+			expectedAccepted: 2,
+		},
+		{
+			name:             "mixed: reject, accept, reject",
+			states:           []replicaState{replicaDeduped, replicaIsPrimary, replicaDeduped},
+			expectedAccepted: 1,
+		},
+		{
+			name:             "mixed: reject, reject, accept",
+			states:           []replicaState{replicaDeduped, replicaDeduped, replicaIsPrimary},
+			expectedAccepted: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			count := len(tc.states)
+			req := &mimirpb.WriteRequest{
+				Timeseries: make([]mimirpb.PreallocTimeseries, count),
+			}
+			replicas := make([]haReplica, count)
+			replicaInfos := make(map[haReplica]*replicaInfo)
+
+			for i, state := range tc.states {
+				req.Timeseries[i] = mimirpb.PreallocTimeseries{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: "id", Value: fmt.Sprintf("%d", i)}},
+					},
+				}
+				r := haReplica{cluster: "c", replica: fmt.Sprintf("%d", i)}
+				replicas[i] = r
+				replicaInfos[r] = &replicaInfo{state: state}
+			}
+
+			lastAcceptedIdx := sortByAccepted(req, replicaInfos, replicas)
+			require.Equal(t, tc.expectedAccepted-1, lastAcceptedIdx)
+
+			for i := 0; i < count; i++ {
+				r := replicas[i]
+				info := replicaInfos[r]
+				isAccepted := info.state.equals(replicaAccepted)
+
+				if i <= lastAcceptedIdx {
+					require.True(t, isAccepted, "index %d should be accepted, state: %v", i, info.state)
+				} else {
+					require.False(t, isAccepted, "index %d should be rejected, state: %v", i, info.state)
+				}
+			}
+		})
+	}
+}
+
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	m, err := labels.NewMatcher(t, n, v)
 	if err != nil {
