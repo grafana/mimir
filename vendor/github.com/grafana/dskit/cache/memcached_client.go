@@ -116,10 +116,6 @@ type MemcachedClientConfig struct {
 
 	// TLS to use to connect to the Memcached server.
 	TLS dstls.ClientConfig `yaml:",inline"`
-
-	// DNSIgnoreStartupFailures allows the client to start even if initial DNS resolution fails.
-	// When true, DNS failures are logged but client creation succeeds.
-	DNSIgnoreStartupFailures bool `yaml:"dns_ignore_startup_failures" category:"experimental"`
 }
 
 func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
@@ -135,7 +131,6 @@ func (c *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.F
 	f.IntVar(&c.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached, in bytes. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 	f.BoolVar(&c.TLSEnabled, prefix+"tls-enabled", false, "Enable connecting to Memcached with TLS.")
 	c.TLS.RegisterFlagsWithPrefix(prefix, f)
-	f.BoolVar(&c.DNSIgnoreStartupFailures, prefix+"dns-ignore-startup-failures", true, "Allow client creation even if initial DNS resolution fails.")
 }
 
 func (c *MemcachedClientConfig) Validate() error {
@@ -231,7 +226,7 @@ func NewMemcachedClientWithConfig(logger log.Logger, name string, config Memcach
 	go mcClient.resolveAddrsLoop()
 
 	// Do initial DNS resolution
-	if err := mcClient.resolveAddrs(); err != nil && !config.DNSIgnoreStartupFailures {
+	if err = mcClient.resolveAddrs(); err != nil {
 		mcClient.Stop()
 		return nil, err
 	}

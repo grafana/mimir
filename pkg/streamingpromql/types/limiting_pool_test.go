@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -238,6 +239,83 @@ func TestLimitingPool_Mangling(t *testing.T) {
 
 	p.Put(&s, tracker)
 	require.Equal(t, []int{123, 123, 123, 123}, sCopy, "returned slice should be mangled when mangling is enabled")
+}
+
+func TestLimitingBucketedPool_AppendToSlice(t *testing.T) {
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	onPutHookSlices := [][]promql.FPoint{}
+	p := NewLimitingBucketedPool(
+		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		limiter.FPointSlices,
+		FPointSize,
+		false,
+		nil,
+		func(s []promql.FPoint, _ *limiter.MemoryConsumptionTracker) {
+			onPutHookSlices = append(onPutHookSlices, s)
+		},
+	)
+
+	s1, err := p.Get(2, tracker)
+	require.NoError(t, err)
+	require.Equal(t, 2, cap(s1))
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s2, err := p.AppendToSlice(s1, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	require.NoError(t, err)
+	require.Len(t, s2, 2)
+	require.Same(t, unsafe.SliceData(s1), unsafe.SliceData(s2))
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s3, err := p.AppendToSlice(s2, tracker, promql.FPoint{T: 3, F: 3.0}, promql.FPoint{T: 4, F: 4.0}, promql.FPoint{T: 5, F: 5.0})
+	require.NoError(t, err)
+	require.Len(t, s3, 5)
+	require.Equal(t, 8, cap(s3))
+	require.NotSame(t, unsafe.SliceData(s2), unsafe.SliceData(s3))
+	require.Equal(t, 8*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+	require.Equal(t, []promql.FPoint{{T: 1, F: 1.0}, {T: 2, F: 2.0}, {T: 3, F: 3.0}, {T: 4, F: 4.0}, {T: 5, F: 5.0}}, s3)
+	require.Len(t, onPutHookSlices, 1)
+	require.Equal(t, onPutHookSlices[0], []promql.FPoint{{T: 0, F: 0}, {T: 0, F: 0}})
+
+	// Get another slice from the pool.
+	// This is likely (but not guaranteed) to get the s2 slice that was returned to the pool when AppendToSlice() was
+	// called but s2's capacity was exceeded.
+	s4, err := p.Get(2, tracker)
+	require.NoError(t, err)
+	require.Equal(t, 2, cap(s4))
+	// Check the first element is empty (i.e. old data has been cleared).
+	require.Equal(t, []promql.FPoint{{T: 0, F: 0}}, s4[:1])
+	p.Put(&s4, tracker)
+
+	p.Put(&s3, tracker)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
+}
+
+func TestLimitingBucketedPool_AppendToSlice_Error(t *testing.T) {
+	_, metric := createRejectedMetric()
+
+	tracker := limiter.NewMemoryConsumptionTracker(context.Background(), 2*FPointSize, metric, "")
+	p := NewLimitingBucketedPool(
+		pool.NewBucketedPool(1024, func(size int) []promql.FPoint { return make([]promql.FPoint, 0, size) }),
+		limiter.FPointSlices,
+		FPointSize,
+		false,
+		nil,
+		nil,
+	)
+
+	s, err := p.Get(2, tracker)
+	require.NoError(t, err)
+	require.Equal(t, 2, cap(s))
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	require.NoError(t, err)
+	require.Equal(t, 2*FPointSize, tracker.CurrentEstimatedMemoryConsumptionBytes())
+
+	s, err = p.AppendToSlice(s, tracker, promql.FPoint{T: 1, F: 1.0}, promql.FPoint{T: 2, F: 2.0})
+	require.Error(t, err)
+	require.Nil(t, s)
+	require.Equal(t, uint64(0), tracker.CurrentEstimatedMemoryConsumptionBytes())
 }
 
 func TestLimitingBucketedPool_MaxExpectedPointsPerSeriesConstantIsPowerOfTwo(t *testing.T) {

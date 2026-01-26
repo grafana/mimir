@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
+	prototypes "github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -22,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -38,12 +40,16 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/remoteexec"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
+	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestScalarExecutionResponse(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
@@ -56,10 +62,12 @@ func TestScalarExecutionResponse(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := &scalarExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	require.NoError(t, response.Start(ctx))
 	d, err := response.GetValues(ctx)
 	require.NoError(t, err)
 
@@ -78,38 +86,38 @@ func TestScalarExecutionResponse(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestInstantVectorExecutionResponse(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
 				),
 			},
 			{
-				msg: newInstantVectorSeriesData(
-					generateFPoints(1000, 2, 0),
-					generateHPoints(3000, 2, 0),
-				),
+				msg: newInstantVectorSeriesData(0, generateFPoints(1000, 2, 0), generateHPoints(3000, 2, 0)),
 			},
 			{
-				msg: newInstantVectorSeriesData(
-					generateFPoints(1000, 2, 1),
-					generateHPoints(3000, 2, 1),
-				),
+				msg: newInstantVectorSeriesData(0, generateFPoints(1000, 2, 1), generateHPoints(3000, 2, 1)),
 			},
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -147,14 +155,18 @@ func TestInstantVectorExecutionResponse(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -183,10 +195,12 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -235,14 +249,18 @@ func TestInstantVectorExecutionResponse_Batching(t *testing.T) {
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					true,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -251,10 +269,12 @@ func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -269,27 +289,26 @@ func TestInstantVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 }
 
 func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
-				msg: newSeriesMetadata(
-					false,
-					labels.FromStrings("series", "1"),
-				),
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
 			},
 			{
-				msg: newInstantVectorSeriesData(
-					generateFPoints(1000, 3, 0),
-					generateHPoints(4000, 9, 0),
-				),
+				msg: newInstantVectorSeriesData(0, generateFPoints(1000, 3, 0), generateHPoints(4000, 9, 0)),
 			},
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := &instantVectorExecutionResponse{stream: stream, memoryConsumptionTracker: memoryConsumptionTracker}
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -316,14 +335,18 @@ func TestInstantVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testin
 	require.Zero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 }
 
 func TestRangeVectorExecutionResponse(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -372,10 +395,12 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -427,15 +452,19 @@ func TestRangeVectorExecutionResponse(t *testing.T) {
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
 func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					true,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -444,10 +473,12 @@ func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -462,10 +493,14 @@ func TestRangeVectorExecutionResponse_DelayedNameRemoval(t *testing.T) {
 }
 
 func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
 				msg: newSeriesMetadata(
+					0,
 					false,
 					labels.FromStrings("series", "1"),
 					labels.FromStrings("series", "2"),
@@ -494,10 +529,12 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -527,18 +564,18 @@ func TestRangeVectorExecutionResponse_ExpectedSeriesMismatch(t *testing.T) {
 	require.Nil(t, data)
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
 func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.T) {
+	ctx := context.Background()
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+
 	stream := &mockResponseStream{
 		responses: []mockResponse{
 			{
-				msg: newSeriesMetadata(
-					false,
-					labels.FromStrings("series", "1"),
-				),
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
 			},
 			{
 				msg: newRangeVectorStepData(
@@ -553,10 +590,12 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 		},
 	}
 
-	ctx := context.Background()
-	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	frontend := &mockFrontend{stream: stream}
+	group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+	response, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
 
-	response := newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+	require.NoError(t, response.Start(ctx))
 	series, err := response.GetSeriesMetadata(ctx)
 	require.NoError(t, err)
 
@@ -579,7 +618,7 @@ func TestRangeVectorExecutionResponse_PointSliceLengthNotAPowerOfTwo(t *testing.
 	require.NotZero(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes())
 
 	response.Close()
-	require.True(t, stream.closed)
+	require.True(t, stream.closed.Load())
 	require.Zerof(t, memoryConsumptionTracker.CurrentEstimatedMemoryConsumptionBytes(), "buffers should be released when closing response, have: %v", memoryConsumptionTracker.DescribeCurrentMemoryConsumption())
 }
 
@@ -757,16 +796,34 @@ func TestEnsureHPointSliceCapacityIsPowerOfTwo(t *testing.T) {
 	}
 }
 
-func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
-	responseCreators := map[string]func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
-		"scalar": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
-			return &scalarExecutionResponse{stream, memoryConsumptionTracker}
+func TestExecutionResponses_Finalize(t *testing.T) {
+	responseCreators := map[string]func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse{
+		"scalar": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
+			frontend := &mockFrontend{stream: stream}
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+			resp, err := group.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			require.NoError(t, err)
+			require.NoError(t, resp.Start(ctx))
+
+			return resp
 		},
-		"instant vector": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
-			return newInstantVectorExecutionResponse(stream, memoryConsumptionTracker)
+		"instant vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
+			frontend := &mockFrontend{stream: stream}
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+			resp, err := group.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			require.NoError(t, err)
+			require.NoError(t, resp.Start(ctx))
+
+			return resp
 		},
-		"range vector": func(stream responseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
-			return newRangeVectorExecutionResponse(stream, memoryConsumptionTracker)
+		"range vector": func(t *testing.T, ctx context.Context, stream ResponseStream, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) remoteexec.RemoteExecutionResponse {
+			frontend := &mockFrontend{stream: stream}
+			group := NewRemoteExecutionGroupEvaluator(frontend, Config{}, true, &planning.QueryParameters{}, memoryConsumptionTracker)
+			resp, err := group.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+			require.NoError(t, err)
+			require.NoError(t, resp.Start(ctx))
+
+			return resp
 		},
 	}
 
@@ -784,9 +841,9 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 
 				ctx := context.Background()
 				memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
-				response := responseCreator(stream, memoryConsumptionTracker)
+				response := responseCreator(t, ctx, stream, memoryConsumptionTracker)
 
-				annos, stats, err := response.GetEvaluationInfo(ctx)
+				annos, stats, err := response.Finalize(ctx)
 				if expectSuccess {
 					require.NoError(t, err)
 					require.Equal(t, expectedTotalSamples, stats.SamplesProcessed)
@@ -833,12 +890,16 @@ func TestExecutionResponses_GetEvaluationInfo(t *testing.T) {
 type mockResponseStream struct {
 	release   chan struct{}
 	responses []mockResponse
-	closed    bool
+	closed    atomic.Bool
 }
 
 func (m *mockResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResultStreamRequest, error) {
 	if m.release != nil {
 		<-m.release
+	}
+
+	if m.closed.Load() {
+		return nil, errors.New("mock response stream is closed")
 	}
 
 	if len(m.responses) == 0 {
@@ -852,7 +913,7 @@ func (m *mockResponseStream) Next(ctx context.Context) (*frontendv2pb.QueryResul
 }
 
 func (m *mockResponseStream) Close() {
-	m.closed = true
+	m.closed.Store(true)
 }
 
 type mockResponse struct {
@@ -901,7 +962,7 @@ func newScalarValue(samples ...mimirpb.Sample) *frontendv2pb.QueryResultStreamRe
 	}
 }
 
-func newSeriesMetadata(dropName bool, series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
+func newSeriesMetadata(nodeIndex int64, dropName bool, series ...labels.Labels) *frontendv2pb.QueryResultStreamRequest {
 	protoSeries := make([]querierpb.SeriesMetadata, 0, len(series))
 	for _, series := range series {
 		protoSeries = append(protoSeries, querierpb.SeriesMetadata{
@@ -915,7 +976,8 @@ func newSeriesMetadata(dropName bool, series ...labels.Labels) *frontendv2pb.Que
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_SeriesMetadata{
 					SeriesMetadata: &querierpb.EvaluateQueryResponseSeriesMetadata{
-						Series: protoSeries,
+						NodeIndex: nodeIndex,
+						Series:    protoSeries,
 					},
 				},
 			},
@@ -923,12 +985,13 @@ func newSeriesMetadata(dropName bool, series ...labels.Labels) *frontendv2pb.Que
 	}
 }
 
-func newInstantVectorSeriesData(floats []promql.FPoint, histograms []promql.HPoint) *frontendv2pb.QueryResultStreamRequest {
+func newInstantVectorSeriesData(nodeIndex int64, floats []promql.FPoint, histograms []promql.HPoint) *frontendv2pb.QueryResultStreamRequest {
 	return &frontendv2pb.QueryResultStreamRequest{
 		Data: &frontendv2pb.QueryResultStreamRequest_EvaluateQueryResponse{
 			EvaluateQueryResponse: &querierpb.EvaluateQueryResponse{
 				Message: &querierpb.EvaluateQueryResponse_InstantVectorSeriesData{
 					InstantVectorSeriesData: &querierpb.EvaluateQueryResponseInstantVectorSeriesData{
+						NodeIndex: nodeIndex,
 						Series: []querierpb.InstantVectorSeriesData{
 							{
 								Floats:     mimirpb.FromFPointsToSamples(floats),
@@ -1035,20 +1098,751 @@ func requireEqualHPointRingBuffer(t *testing.T, buffer *types.HPointRingBufferVi
 	}
 }
 
-func TestRemoteExecutor_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *testing.T) {
+func TestRemoteExecutionGroupEvaluator_ReadingMessagesInReturnedOrder(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the data in order, confirm nothing is buffered.
+	series, err := resp1.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "1")}), series)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	data, err := resp1.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	annos, returnedStats, err := resp1.Finalize(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	_, err = resp1.GetNextSeries(ctx)
+	require.EqualError(t, err, "can't read next message for node stream at index 0, as it is already finished")
+
+	series, err = resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2")}), series)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	data, err = resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData = types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	annos, returnedStats, err = resp2.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	_, err = resp2.GetNextSeries(ctx)
+	require.EqualError(t, err, "can't read next message for node stream at index 1, as it is already finished")
+
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+}
+
+func TestRemoteExecutionGroupEvaluator_ReadingMessagesOutOfOrder(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1"), labels.FromStrings("series", "2")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "3"), labels.FromStrings("series", "4")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 41}, {T: 2000, F: 42}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "3"), labels.FromStrings("series", "4")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Read the second message from the second node, message for first node should still be buffered.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}}}
+	require.Equal(t, expectedData, data)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Now go and read the cached message for the first node, one more message for the first node.
+	series, err = resp1.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "1"), labels.FromStrings("series", "2")}), series)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	data, err = resp1.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData = types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Read the evaluation completed message for the first node, which should cause no buffering as we'll
+	// read the results when we are done with the second node.
+	annos, returnedStats, err := resp1.Finalize(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	annos, returnedStats, err = resp2.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+}
+
+func requireNoBufferedDataForAllNodes(t *testing.T, evaluator *RemoteExecutionGroupEvaluator) {
+	for idx, nodeState := range evaluator.nodeStreams.streams {
+		require.Falsef(t, nodeState.buffer.Any(), "expected node at index %v to have nothing buffered, but it has %v buffered messages", idx, nodeState.buffer.length)
+	}
+}
+
+func requireNoBufferedDataForNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node) {
+	nodeIndex := findNode(t, evaluator, node)
+	nodeState := evaluator.nodeStreams.streams[nodeIndex]
+	require.Falsef(t, nodeState.buffer.Any(), "expected node at index %v to have nothing buffered, but it has %v buffered messages", nodeIndex, nodeState.buffer.length)
+}
+
+func requireBufferedDataForNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node, expectedLength int) {
+	nodeIndex := findNode(t, evaluator, node)
+	nodeState := evaluator.nodeStreams.streams[nodeIndex]
+	require.Equalf(t, expectedLength, nodeState.buffer.length, "expected node at index %v to have nothing buffered, but it has %v buffered messages", nodeIndex, nodeState.buffer.length)
+}
+
+func findNode(t *testing.T, evaluator *RemoteExecutionGroupEvaluator, node planning.Node) remoteExecutionNodeStreamIndex {
+	for idx, nodeState := range evaluator.nodeStreams.streams {
+		if nodeState.node == node {
+			return remoteExecutionNodeStreamIndex(idx)
+		}
+	}
+	require.Failf(t, "cannot find node in evaluator", "expected to find node %v in evaluator", node)
+	panic("should never reach here")
+}
+
+func TestRemoteExecutionGroupEvaluator_ReceiveMessageForUnexpectedNode(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(10, false, labels.FromStrings("series", "1"), labels.FromStrings("series", "2")),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	node := createDummyNode()
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	series, err := resp.GetSeriesMetadata(ctx)
+	require.EqualError(t, err, "received message of type *querierpb.EvaluateQueryResponse_SeriesMetadata for node with index 10, expected nodes with indices [0]")
+	require.Empty(t, series)
+}
+
+func TestRemoteExecutionGroupEvaluator_ReceiveUnexpectedMessageWithoutNodeIndex(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	node := createDummyNode()
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	series, err := resp.GetSeriesMetadata(ctx)
+	require.EqualError(t, err, "getNodeStreamState: unexpected message type *querierpb.EvaluateQueryResponse_EvaluationCompleted, this is a bug")
+	require.Empty(t, series)
+}
+
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithFinalize(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Finalize the first node, confirm the buffered message is dropped.
+	annos, returnedStats, err := resp1.Finalize(ctx)
+	require.NoError(t, err)
+	require.Empty(t, annos, "should not return annotations for first node, these should be returned when the second node calls Finalize")
+	require.Equal(t, stats.Stats{}, returnedStats, "should not return statistics for first node, these should be returned when the second node calls Finalize")
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Read the second message from the second node, confirm nothing is buffered for the first node.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	annos, returnedStats, err = resp2.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+}
+
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithEarlyCloseOfOneNode(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Close the first node, confirm the buffered message is dropped.
+	resp1.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Read the second message from the second node, confirm nothing is buffered for the first node.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Finalize the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	annos, returnedStats, err := resp2.Finalize(ctx)
+	require.NoError(t, err)
+	expectedAnnos := annotations.New()
+	expectedAnnos.Add(newRemoteInfo("an info annotation"))
+	expectedAnnos.Add(newRemoteWarning("a warning annotation"))
+	require.Equal(t, expectedAnnos, annos)
+	expectedStats := stats.Stats{SamplesProcessed: 1234}
+	require.Equal(t, expectedStats, returnedStats)
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed.Load(), "stream should be closed after finalizing last node")
+}
+
+func TestRemoteExecutionGroupEvaluator_BufferingBehaviourWithCloseCalls(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireBufferedDataForNode(t, evaluator, node1, 1)
+	requireNoBufferedDataForNode(t, evaluator, node2)
+
+	// Close the first node, confirm the buffered message is dropped.
+	resp1.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	resp1.Close() // Closing it again shouldn't matter.
+
+	// Read the second message from the second node, confirm nothing is buffered for the first node.
+	data, err := resp2.GetNextSeries(ctx)
+	require.NoError(t, err)
+	expectedData := types.InstantVectorSeriesData{Floats: []promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}}}
+	require.Equal(t, expectedData, data)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Close the second node, skipping over the remaining message, confirm the remaining message is not buffered and the underlying stream is closed.
+	resp2.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed.Load(), "stream should be closed after closing last node")
+
+	resp2.Close() // Closing it again shouldn't matter.
+}
+
+func TestRemoteExecutionGroupEvaluator_AllNodesClosedBeforeRequestSent(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newErrorMessage(mimirpb.QUERY_ERROR_TYPE_INTERNAL, "this should never be read"),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Close both nodes.
+	resp1.Close()
+	resp2.Close()
+
+	// Start the request - neither Start() call should initiate the request.
+	require.NoError(t, resp1.Start(ctx))
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 0, frontend.requestCount)
+}
+
+func TestRemoteExecutionGroupEvaluator_SomeNodesClosedBeforeRequestSent(t *testing.T) {
+	ctx := context.Background()
+
+	stream := &mockResponseStream{
+		responses: []mockResponse{
+			{
+				msg: newSeriesMetadata(0, false, labels.FromStrings("series", "1")),
+			},
+			{
+				msg: newSeriesMetadata(1, false, labels.FromStrings("series", "2"), labels.FromStrings("series", "3")),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					0,
+					[]promql.FPoint{{T: 1000, F: 11}, {T: 2000, F: 12}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 21}, {T: 2000, F: 22}},
+					nil,
+				),
+			},
+			{
+				msg: newInstantVectorSeriesData(
+					1,
+					[]promql.FPoint{{T: 1000, F: 31}, {T: 2000, F: 32}},
+					nil,
+				),
+			},
+			{
+				msg: newEvaluationCompleted(
+					1234,
+					[]string{"a warning annotation"},
+					[]string{"an info annotation"},
+				),
+			},
+		},
+	}
+
+	frontend := &mockFrontend{stream: stream}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	node1 := createDummyNode()
+	resp1, err := evaluator.CreateInstantVectorExecution(ctx, node1, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	node2 := createDummyNode()
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, node2, types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Close the first node, and then start the second.
+	resp1.Close()
+	require.Equal(t, 0, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Read the first message from the second node, confirm that the message for the first node is not buffered.
+	series, err := resp2.GetSeriesMetadata(ctx)
+	require.NoError(t, err)
+	require.Equal(t, testutils.LabelsToSeriesMetadata([]labels.Labels{labels.FromStrings("series", "2"), labels.FromStrings("series", "3")}), series)
+	requireNoBufferedDataForAllNodes(t, evaluator)
+
+	// Close the second node, skipping over the remaining messages, confirm the remaining messages are not buffered and the underlying stream is closed.
+	resp2.Close()
+	requireNoBufferedDataForAllNodes(t, evaluator) // The messages we skipped over should not be buffered.
+
+	require.True(t, stream.closed.Load(), "stream should be closed after closing last node")
+	resp2.Close() // Closing it again shouldn't matter.
+}
+
+func TestRemoteExecutionGroupEvaluator_AddingNodesAfterRequestSent(t *testing.T) {
+	ctx := context.Background()
+	frontend := &mockFrontend{}
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontend, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
+
+	// Queue up evaluation of two nodes.
+	resp1, err := evaluator.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	resp2, err := evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.NoError(t, err)
+
+	// Start the request - the first Start() call should send the request, and the second should be a no-op.
+	require.NoError(t, resp1.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+	require.NoError(t, resp2.Start(ctx))
+	require.Equal(t, 1, frontend.requestCount)
+
+	// Try to queue up evaluation of further nodes, which should fail.
+	_, err = evaluator.CreateScalarExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.Equal(t, err, errRequestAlreadySent)
+
+	_, err = evaluator.CreateInstantVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.Equal(t, err, errRequestAlreadySent)
+
+	_, err = evaluator.CreateRangeVectorExecution(ctx, createDummyNode(), types.NewInstantQueryTimeRange(time.Now()))
+	require.Equal(t, err, errRequestAlreadySent)
+}
+
+func TestRemoteExecutionGroupEvaluator_CorrectlyPassesQueriedTimeRangeAndUpdatesQueryStats(t *testing.T) {
 	frontendMock := &timeRangeCapturingFrontend{}
 	cfg := Config{LookBackDelta: 7 * time.Minute}
-	executor := NewRemoteExecutor(frontendMock, cfg)
-
-	endT := time.Now().Truncate(time.Minute).UTC()
-	startT := endT.Add(-time.Hour)
-	timeRange := types.NewRangeQueryTimeRange(startT, endT, time.Minute)
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, cfg, false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	stats, ctx := stats.ContextWithEmptyStats(context.Background())
 	stats.AddRemoteExecutionRequests(12)
+
+	endT := time.Now().Truncate(time.Minute).UTC()
+	startT := endT.Add(-time.Hour)
+	timeRange1 := types.NewRangeQueryTimeRange(startT, startT.Add(5*time.Minute), time.Minute)
+	timeRange2 := types.NewRangeQueryTimeRange(endT.Add(-10*time.Minute), endT, time.Minute)
+
 	node := &core.VectorSelector{VectorSelectorDetails: &core.VectorSelectorDetails{}}
-	_, err := executor.startExecution(ctx, &planning.QueryParameters{}, node, timeRange, false, 1)
+	_, err := evaluator.CreateInstantVectorExecution(ctx, node, timeRange1)
 	require.NoError(t, err)
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node, timeRange2)
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx)) // It doesn't matter which response we call Start on.
 
 	require.Equal(t, startT.Add(-cfg.LookBackDelta+time.Millisecond), frontendMock.minT)
 	require.Equal(t, endT, frontendMock.maxT)
@@ -1060,20 +1854,21 @@ type timeRangeCapturingFrontend struct {
 	maxT time.Time
 }
 
-func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
+func (m *timeRangeCapturingFrontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (ResponseStream, error) {
 	m.minT = minT
 	m.maxT = maxT
 	return nil, nil
 }
 
-func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
+func TestRemoteExecutionGroupEvaluator_SendsQueryPlanVersion(t *testing.T) {
 	frontendMock := &requestCapturingFrontendMock{}
-	executor := NewRemoteExecutor(frontendMock, Config{})
+	memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+	evaluator := NewRemoteExecutionGroupEvaluator(frontendMock, Config{}, false, &planning.QueryParameters{}, memoryConsumptionTracker)
 
 	ctx := context.Background()
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
-	node := &nodeWithOverriddenVersion{
+	node1 := &nodeWithOverriddenVersion{
 		child: &nodeWithOverriddenVersion{
 			child:   &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
 			version: 55,
@@ -1081,13 +1876,24 @@ func TestRemoteExecutor_SendsQueryPlanVersion(t *testing.T) {
 		version: 44,
 	}
 
-	_, err := executor.startExecution(ctx, &planning.QueryParameters{}, node, timeRange, false, 1)
+	node2 := &nodeWithOverriddenVersion{
+		child: &nodeWithOverriddenVersion{
+			child:   &core.NumberLiteral{NumberLiteralDetails: &core.NumberLiteralDetails{Value: 1234}},
+			version: 56,
+		},
+		version: 43,
+	}
+
+	_, err := evaluator.CreateInstantVectorExecution(ctx, node1, timeRange)
 	require.NoError(t, err)
+	resp, err := evaluator.CreateInstantVectorExecution(ctx, node2, timeRange)
+	require.NoError(t, err)
+	require.NoError(t, resp.Start(ctx)) // It doesn't matter which response we call Start on.
 
 	require.NotNil(t, frontendMock.request)
 	require.IsType(t, &querierpb.EvaluateQueryRequest{}, frontendMock.request)
 	request := frontendMock.request.(*querierpb.EvaluateQueryRequest)
-	require.Equal(t, planning.QueryPlanVersion(55), request.Plan.Version, "should set request plan version to match the highest version required by all nodes")
+	require.Equal(t, planning.QueryPlanVersion(56), request.Plan.Version, "should set request plan version to match the highest version required by all nodes and their children")
 }
 
 type nodeWithOverriddenVersion struct {
@@ -1163,7 +1969,7 @@ type requestCapturingFrontendMock struct {
 	request proto.Message
 }
 
-func (m *requestCapturingFrontendMock) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (*ProtobufResponseStream, error) {
+func (m *requestCapturingFrontendMock) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (ResponseStream, error) {
 	m.request = req
 	return nil, nil
 }
@@ -1288,7 +2094,7 @@ func TestEagerLoadingResponseStream_ClosesInnerStreamWhenClosed(t *testing.T) {
 	inner := &mockResponseStream{}
 	stream := newEagerLoadingResponseStream(context.Background(), inner)
 	stream.Close()
-	require.True(t, inner.closed)
+	require.True(t, inner.closed.Load())
 }
 
 func TestEagerLoadingResponseStream_ClosedWhileBuffering(t *testing.T) {
@@ -1401,7 +2207,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 		planner.RegisterASTOptimizationPass(sharding.NewOptimizationPass(limits, 0, nil, logger))
 	}
 
-	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	engine, err := streamingpromql.NewEngine(opts, streamingpromql.NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 	require.NoError(t, err)
 
 	frontend, _ := setupFrontend(t, nil, func(f *Frontend, msg *schedulerpb.FrontendToScheduler) *schedulerpb.SchedulerToFrontend {
@@ -1424,9 +2230,11 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 				count.Dec()
 			}
 
+			nodeIdx := requestedNodeIndex(t, msg)
+
 			// Simulate doing some work, then send an empty response.
 			time.Sleep(20 * time.Millisecond)
-			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(false), newEvaluationCompleted(0, nil, nil))
+			err := sendStreamingResponseWithErrorCapture(f, msg.UserID, msg.QueryID, beforeLastMessageSent, newSeriesMetadata(nodeIdx, false), newEvaluationCompleted(0, nil, nil))
 			require.NoError(t, err)
 		}()
 
@@ -1434,8 +2242,7 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	})
 
 	cfg := Config{LookBackDelta: 7 * time.Minute}
-	executor := NewRemoteExecutor(frontend, cfg)
-	require.NoError(t, engine.RegisterNodeMaterializer(planning.NODE_TYPE_REMOTE_EXEC_CONSUMER, remoteexec.NewRemoteExecutionConsumerMaterializer(executor)))
+	require.NoError(t, RegisterRemoteExecutionMaterializers(engine, frontend, cfg))
 
 	expr, err := parser.ParseExpr("sum(foo)")
 	require.NoError(t, err)
@@ -1465,6 +2272,14 @@ func runQueryParallelismTestCase(t *testing.T, enableMQESharding bool) {
 	require.NoError(t, err)
 	require.NotZero(t, maxConcurrent, "expected at least one query to be executed")
 	require.LessOrEqualf(t, maxConcurrent, maxQueryParallelism, "max query parallelism %v went over the configured limit of %v", maxConcurrent, maxQueryParallelism)
+}
+
+func requestedNodeIndex(t *testing.T, msg *schedulerpb.FrontendToScheduler) int64 {
+	request := querierpb.EvaluateQueryRequest{}
+	require.NoError(t, prototypes.UnmarshalAny(msg.GetProtobufRequest().Payload, &request))
+	require.Len(t, request.Nodes, 1)
+
+	return request.Nodes[0].NodeIndex
 }
 
 type mockLimitedParallelismLimits struct {
@@ -1552,7 +2367,7 @@ func generateBenchmarkResponse(seriesCount int, pointCount int, batchSize int) [
 		series = append(series, labels.FromStrings(model.MetricNameLabel, "my_metric", "idx", strconv.Itoa(i)))
 	}
 
-	msgs = append(msgs, newSeriesMetadata(false, series...))
+	msgs = append(msgs, newSeriesMetadata(0, false, series...))
 
 	pendingSeriesData := make([]querierpb.InstantVectorSeriesData, 0, batchSize)
 	appendSeriesDataMessage := func() {
@@ -1610,4 +2425,20 @@ func encode(t testing.TB, msgs []*frontendv2pb.QueryResultStreamRequest) [][]byt
 	}
 
 	return encoded
+}
+
+type mockFrontend struct {
+	requestCount int
+	stream       ResponseStream
+}
+
+func (m *mockFrontend) DoProtobufRequest(ctx context.Context, req proto.Message, minT, maxT time.Time) (ResponseStream, error) {
+	m.requestCount++
+	return m.stream, nil
+}
+
+func createDummyNode() planning.Node {
+	return &core.NumberLiteral{
+		NumberLiteralDetails: &core.NumberLiteralDetails{},
+	}
 }

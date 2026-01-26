@@ -423,6 +423,13 @@ func (t *RangeQuery) Prepare(ctx context.Context, params *types.PrepareParams) e
 	return t.Param.Prepare(ctx, params)
 }
 
+func (t *RangeQuery) AfterPrepare(ctx context.Context) error {
+	if err := t.Inner.AfterPrepare(ctx); err != nil {
+		return err
+	}
+	return t.Param.AfterPrepare(ctx)
+}
+
 func (t *RangeQuery) Finalize(ctx context.Context) error {
 	if err := t.Inner.Finalize(ctx); err != nil {
 		return err

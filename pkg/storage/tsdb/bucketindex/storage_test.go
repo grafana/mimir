@@ -6,15 +6,21 @@
 package bucketindex
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/json"
+	"io"
 	"path"
 	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
@@ -39,6 +45,56 @@ func TestReadIndex_ShouldReturnErrorIfIndexIsCorrupted(t *testing.T) {
 	idx, err := ReadIndex(ctx, bkt, userID, nil, log.NewNopLogger())
 	require.ErrorIs(t, err, ErrIndexCorrupted)
 	require.Nil(t, idx)
+}
+
+func TestReadIndex_ShouldNotReturnErrIndexCorruptedOnContextErrors(t *testing.T) {
+	const userID = "user-1"
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+
+	// Create a real bucket and write a valid index to it.
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bkt = block.BucketWithGlobalMarkers(bkt)
+	block.MockStorageBlock(t, bkt, userID, 10, 20)
+	block.MockStorageBlock(t, bkt, userID, 20, 30)
+	block.MockStorageDeletionMark(t, bkt, userID, block.MockStorageBlock(t, bkt, userID, 30, 40))
+
+	u := NewUpdater(bkt, userID, nil, 16, 16, logger)
+	idx, _, err := u.UpdateIndex(ctx, nil)
+	require.NoError(t, err)
+
+	// Serialize the index to gzip+JSON (same format as WriteIndex).
+	content, err := json.Marshal(idx)
+	require.NoError(t, err)
+
+	var gzipContent bytes.Buffer
+	gzipWriter := gzip.NewWriter(&gzipContent)
+	_, err = gzipWriter.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, gzipWriter.Close())
+
+	for _, expectedErr := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(expectedErr.Error(), func(t *testing.T) {
+			// Create a mock bucket that returns a reader which fails mid-read.
+			mockBkt := &bucket.ClientMock{}
+			mockBkt.On("Get", mock.Anything, path.Join(userID, IndexCompressedFilename)).Return(
+				func(_ context.Context, _ string) (io.ReadCloser, error) {
+					return &errorAfterFirstReadReader{
+						reader:    bytes.NewReader(gzipContent.Bytes()),
+						err:       expectedErr,
+						firstRead: true,
+					}, nil
+				},
+			)
+
+			actualIdx, err := ReadIndex(ctx, mockBkt, userID, nil, logger)
+			require.Nil(t, actualIdx)
+			require.ErrorIs(t, err, expectedErr)
+			require.NotErrorIs(t, err, ErrIndexCorrupted)
+			require.NotErrorIs(t, err, ErrIndexNotFound)
+		})
+	}
 }
 
 func TestReadIndex_ShouldReturnTheParsedIndexOnSuccess(t *testing.T) {
@@ -117,4 +173,28 @@ func TestDeleteIndex_ShouldNotReturnErrorIfIndexDoesNotExist(t *testing.T) {
 	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	assert.NoError(t, DeleteIndex(ctx, bkt, "user-1", nil))
+}
+
+// errorAfterFirstReadReader is a reader that returns a small chunk on the first read,
+// then returns the configured error on subsequent reads and Close().
+type errorAfterFirstReadReader struct {
+	reader    io.Reader
+	err       error
+	firstRead bool
+}
+
+func (r *errorAfterFirstReadReader) Read(p []byte) (int, error) {
+	if r.firstRead {
+		r.firstRead = false
+		// Only read a single byte to force multiple reads.
+		if len(p) > 1 {
+			p = p[:1]
+		}
+		return r.reader.Read(p)
+	}
+	return 0, r.err
+}
+
+func (r *errorAfterFirstReadReader) Close() error {
+	return r.err
 }

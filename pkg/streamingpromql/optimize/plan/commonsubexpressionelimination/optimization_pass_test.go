@@ -650,7 +650,7 @@ func TestOptimizationPass(t *testing.T) {
 							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: rate(...)
-							- MatrixSelector: {__name__="foo"}[5m0s] smoothed
+							- MatrixSelector: {__name__="foo"}[5m0s] smoothed counter aware
 			`,
 			expectedDuplicateNodes:      0,
 			expectedSelectorsEliminated: 0,
@@ -683,12 +683,12 @@ func TestOptimizationPass(t *testing.T) {
 			}
 
 			if testCase.expectUnchanged {
-				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+				p, err := plannerWithoutOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
 				require.NoError(t, err)
 				testCase.expectedPlan = p.String()
 			}
 
-			p, err := plannerWithOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+			p, err := plannerWithOptimizationPass.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -884,7 +884,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -949,7 +949,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
 			for b.Loop() {
-				_, err := planner.NewQueryPlan(ctx, expr, timeRange, observer)
+				_, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
 
 				if err != nil {
 					require.NoError(b, err)

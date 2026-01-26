@@ -451,8 +451,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.chunks-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -blocks-storage.bucket-store.chunks-cache.memcached.dns-ignore-startup-failures
-    	[experimental] Allow client creation even if initial DNS resolution fails. (default true)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency int
@@ -501,8 +499,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.index-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -blocks-storage.bucket-store.index-cache.memcached.dns-ignore-startup-failures
-    	[experimental] Allow client creation even if initial DNS resolution fails. (default true)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency int
@@ -567,8 +563,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -blocks-storage.bucket-store.metadata-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -blocks-storage.bucket-store.metadata-cache.memcached.dns-ignore-startup-failures
-    	[experimental] Allow client creation even if initial DNS resolution fails. (default true)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency int
@@ -1337,6 +1331,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum inflight requests limit (default 200)
   -distributor.reactive-limiter.max-limit-factor float
     	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
+  -distributor.reactive-limiter.max-limit-factor-decay float
+    	[experimental] Logarithmic decay applied to the maxLimitFactor based on current inflight requests (default 1)
   -distributor.reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 2)
   -distributor.reactive-limiter.min-limit uint
@@ -1435,8 +1431,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
-  -flusher.exit-after-flush
-    	Stop after flush has finished. If false, process will keep running, doing nothing. (default true)
   -h
     	Print basic help.
   -help
@@ -1707,6 +1701,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum inflight requests limit (default 200)
   -ingester.push-reactive-limiter.max-limit-factor float
     	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
+  -ingester.push-reactive-limiter.max-limit-factor-decay float
+    	[experimental] Logarithmic decay applied to the maxLimitFactor based on current inflight requests (default 1)
   -ingester.push-reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
   -ingester.push-reactive-limiter.min-limit uint
@@ -1753,6 +1749,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Maximum inflight requests limit (default 200)
   -ingester.read-reactive-limiter.max-limit-factor float
     	[experimental] The maximum inflight limit as a multiple of current inflight requests (default 5)
+  -ingester.read-reactive-limiter.max-limit-factor-decay float
+    	[experimental] Logarithmic decay applied to the maxLimitFactor based on current inflight requests (default 1)
   -ingester.read-reactive-limiter.max-rejection-factor float
     	[experimental] The number of allowed queued requests, as a multiple of current inflight requests, after which all requests are rejected (default 3)
   -ingester.read-reactive-limiter.min-limit uint
@@ -2062,7 +2060,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.dns-lookup-period duration
     	How often to query DNS for query-frontend or query-scheduler address. (default 10s)
   -querier.enable-delayed-name-removal
-    	[experimental] Enable the experimental Prometheus feature for delayed name removal.
+    	[experimental] Enable the experimental Prometheus feature for delayed name removal within MQE, which only works if remote execution and running sharding within MQE is enabled.
   -querier.enable-query-engine-fallback
     	[experimental] If set to true and the Mimir query engine is in use, fall back to using the Prometheus query engine for any queries not supported by the Mimir query engine. (default true)
   -querier.filter-queryables-enabled
@@ -2157,8 +2155,12 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled. (default true)
   -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
     	[experimental] Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.
+  -querier.mimir-query-engine.enable-multi-aggregation
+    	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
     	[experimental] Enable generating selectors for one side of a binary expression based on results from the other side.
+  -querier.mimir-query-engine.enable-projection-pushdown
+    	[experimental] Enable projection pushdown to only fetch labels required for the query from storage.
   -querier.mimir-query-engine.enable-prune-toggles
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
@@ -2177,8 +2179,6 @@ Usage of ./cmd/mimir/mimir:
     	Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester. (default 13h)
   -querier.query-store-after duration
     	The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. If this option is enabled, the time range of the query sent to the store-gateway will be manipulated to ensure the query end is not more recent than 'now - query-store-after'. (default 12h0m0s)
-  -querier.response-streaming-enabled
-    	[experimental] Enables streaming of responses from querier to query-frontend for response types that support it (currently only `active_series` responses do). (default true)
   -querier.ring.auto-forget-unhealthy-periods int
     	Number of consecutive timeout periods after which Mimir automatically removes an unhealthy instance in the ring. Set to 0 to disable auto-forget. (default 10)
   -querier.ring.consul.acl-token string
@@ -2489,8 +2489,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -query-frontend.results-cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -query-frontend.results-cache.memcached.dns-ignore-startup-failures
-    	[experimental] Allow client creation even if initial DNS resolution fails. (default true)
   -query-frontend.results-cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -query-frontend.results-cache.memcached.max-async-concurrency int
@@ -2711,8 +2709,6 @@ Usage of ./cmd/mimir/mimir:
     	Comma-separated list of memcached addresses. Each address can be an IP address, hostname, or an entry specified in the DNS Service Discovery format.
   -ruler-storage.cache.memcached.connect-timeout duration
     	The connection timeout. (default 200ms)
-  -ruler-storage.cache.memcached.dns-ignore-startup-failures
-    	[experimental] Allow client creation even if initial DNS resolution fails. (default true)
   -ruler-storage.cache.memcached.max-async-buffer-size int
     	The maximum number of enqueued asynchronous operations allowed. (default 25000)
   -ruler-storage.cache.memcached.max-async-concurrency int

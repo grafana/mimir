@@ -246,7 +246,7 @@ func TestQuerier(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, []TimeRangeQueryable{dbQueryable}, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			testRangeQuery(t, queryable, through, q)
@@ -357,7 +357,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 
 	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 	require.NoError(t, err)
 
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
@@ -465,7 +465,7 @@ func TestBatchMergeChunks(t *testing.T) {
 
 	planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
-	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+	queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 	require.NoError(t, err)
 
 	query, err := engine.NewRangeQuery(ctx, queryable, nil, `rate({__name__=~".+"}[10s])`, queryStart, queryEnd, queryStep)
@@ -596,9 +596,10 @@ func TestQuerier_QueryIngestersWithinConfig(t *testing.T) {
 			limits.QueryIngestersWithin = model.Duration(c.queryIngestersWithin)
 			overrides := validation.NewOverrides(limits, nil)
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, nil)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, nil, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
+			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
@@ -675,7 +676,7 @@ func TestQuerier_ValidateQueryTimeRange(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "dummy", c.queryStartTime, c.queryEndTime, time.Minute)
@@ -753,7 +754,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLength(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			// Create the PromQL engine to execute the query.
@@ -881,7 +882,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				query, err := engine.NewRangeQuery(ctx, queryable, nil, testData.query, testData.queryStartTime, testData.queryEndTime, time.Minute)
@@ -911,7 +912,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -951,7 +952,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -983,7 +984,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 				require.NoError(t, err)
-				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner)
+				queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, logger, nil, planner, unlimitedQueryLimitsProvider())
 				require.NoError(t, err)
 
 				q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1066,6 +1067,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
+			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
@@ -1083,7 +1085,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxLabelsQueryRange(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1185,6 +1187,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "test")
+			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 
 			var cfg Config
 			flagext.DefaultValues(&cfg)
@@ -1200,7 +1203,7 @@ func TestQuerier_ValidateQuery_MaxSeriesQueryLimit(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
@@ -1300,7 +1303,7 @@ func TestQuerier_ValidateQuery_MaxLabelNamesLimit(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(start), util.TimeToMillis(end))
@@ -1393,7 +1396,7 @@ func TestQuerier_ValidateQuery_MaxLabelValuesLimit(t *testing.T) {
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, nil, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 
 			q, err := queryable.Querier(util.TimeToMillis(start), util.TimeToMillis(end))
@@ -1568,9 +1571,10 @@ func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 
 			planner, err := streamingpromql.NewQueryPlanner(cfg.EngineConfig.MimirQueryEngine, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
-			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil, planner)
+			queryable, _, _, _, err := New(cfg, overrides, distributor, querierQueryables, nil, log.NewNopLogger(), nil, planner, unlimitedQueryLimitsProvider())
 			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "0")
+			ctx = limiter.AddMemoryTrackerToContext(ctx, limiter.NewUnlimitedMemoryConsumptionTracker(ctx))
 			query, err := engine.NewRangeQuery(ctx, queryable, nil, "metric", c.mint, c.maxt, 1*time.Minute)
 			require.NoError(t, err)
 
@@ -1807,6 +1811,10 @@ func defaultLimitsConfig() validation.Limits {
 	return limits
 }
 
+func unlimitedQueryLimitsProvider() streamingpromql.QueryLimitsProvider {
+	return streamingpromql.NewStaticQueryLimitsProvider(0, false)
+}
+
 func mustParseTime(input string) time.Time {
 	parsed, err := time.Parse(time.RFC3339, input)
 	if err != nil {
@@ -1853,7 +1861,7 @@ func (m *mockBlocksStorageQuerier) Close() error {
 	return nil
 }
 
-func TestTenantQueryLimitsProvider(t *testing.T) {
+func TestTenantQueryLimitsProvider_MaxEstimatedMemoryConsumptionPerQuery(t *testing.T) {
 	tenantLimits := &staticTenantLimits{
 		limits: map[string]*validation.Limits{
 			"user-1": {
@@ -1908,6 +1916,76 @@ func TestTenantQueryLimitsProvider(t *testing.T) {
 			if testCase.expectedError == nil {
 				require.NoError(t, actualErr)
 				require.Equal(t, testCase.expectedLimit, actualLimit)
+			} else {
+				require.ErrorIs(t, actualErr, testCase.expectedError)
+			}
+		})
+	}
+}
+
+func TestTenantQueryLimitsProvider_EnableDelayedNameRemoval(t *testing.T) {
+	tenantLimits := &staticTenantLimits{
+		limits: map[string]*validation.Limits{
+			"user-1": {
+				EnableDelayedNameRemoval: false,
+			},
+			"user-2": {
+				EnableDelayedNameRemoval: true,
+			},
+			"user-3": {
+				EnableDelayedNameRemoval: true,
+			},
+			"user-4": {
+				// Not set, should default to false.
+			},
+		},
+	}
+
+	overrides := validation.NewOverrides(defaultLimitsConfig(), tenantLimits)
+	provider := NewTenantQueryLimitsProvider(overrides)
+
+	testCases := map[string]struct {
+		ctx                              context.Context
+		expectedEnableDelayedNameRemoval bool
+		expectedError                    error
+	}{
+		"single tenant ID provided, disabled delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+		"single tenant ID provided, enabled delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2"),
+			expectedEnableDelayedNameRemoval: true,
+		},
+		"single tenant ID provided, unspecified delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-4"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+		"multiple tenant IDs provided, all have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-2|user-3"),
+			expectedEnableDelayedNameRemoval: true,
+		},
+		"multiple tenant IDs provided, conflict in delayed name removal": {
+			ctx:           user.InjectOrgID(context.Background(), "user-1|user-2|user-3"),
+			expectedError: errConflictEnableDelayedNameRemoval,
+		},
+		"multiple tenant IDs provided, conflict in delayed name removal with one unspecified": {
+			ctx:           user.InjectOrgID(context.Background(), "user-2|user-3|user-4"),
+			expectedError: errConflictEnableDelayedNameRemoval,
+		},
+		"multiple tenant IDs provided, none have delayed name removal": {
+			ctx:                              user.InjectOrgID(context.Background(), "user-1|user-4"),
+			expectedEnableDelayedNameRemoval: false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			actualEnableDelayedNameRemoval, actualErr := provider.GetEnableDelayedNameRemoval(testCase.ctx)
+
+			if testCase.expectedError == nil {
+				require.NoError(t, actualErr)
+				require.Equal(t, testCase.expectedEnableDelayedNameRemoval, actualEnableDelayedNameRemoval)
 			} else {
 				require.ErrorIs(t, actualErr, testCase.expectedError)
 			}

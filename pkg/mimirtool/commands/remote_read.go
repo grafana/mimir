@@ -31,6 +31,8 @@ import (
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/alecthomas/units"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid/v2"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -45,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/backfill"
 	mimirtool_client "github.com/grafana/mimir/pkg/mimirtool/client"
@@ -99,10 +100,15 @@ type RemoteReadCommand struct {
 	readSizeLimit uint64
 	blockDuration time.Duration
 	useChunks     bool
+
+	logger log.Logger
 }
 
-func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames) {
-	remoteReadCmd := app.Command("remote-read", "Inspect stored series in Grafana Mimir using the remote read API.")
+func (c *RemoteReadCommand) Register(app *kingpin.Application, envVars EnvVarNames, logConfig *LoggerConfig) {
+	remoteReadCmd := app.Command("remote-read", "Inspect stored series in Grafana Mimir using the remote read API.").PreAction(func(_ *kingpin.ParseContext) error {
+		c.logger = logConfig.Logger()
+		return nil
+	})
 	exportCmd := remoteReadCmd.Command("export", "Export metrics remote read series into a local TSDB.").Action(c.export)
 	dumpCmd := remoteReadCmd.Command("dump", "Dump remote read series.").Action(c.dump)
 	statsCmd := remoteReadCmd.Command("stats", "Show statistic of remote read series.").Action(c.stats)
@@ -229,7 +235,7 @@ func (c *RemoteReadCommand) readClient() (remote.ReadClient, error) {
 		}
 	}
 
-	log.Infof("Created remote read client using endpoint '%s'", redactedURL(addressURL))
+	level.Info(c.logger).Log("msg", "created remote read client", "endpoint", redactedURL(addressURL))
 
 	return readClient, nil
 }
@@ -255,11 +261,11 @@ func (c *RemoteReadCommand) parseArgsAndPrepareClient() (query func(context.Cont
 	}
 
 	return func(ctx context.Context, queryFrom, queryTo time.Time) (storage.SeriesSet, error) {
-		log.Infof("Querying time from=%s to=%s with %d selectors", queryFrom.Format(time.RFC3339), queryTo.Format(time.RFC3339), len(c.selectors))
+		level.Info(c.logger).Log("msg", "querying time", "from", queryFrom.Format(time.RFC3339), "to", queryTo.Format(time.RFC3339), "selectors", len(c.selectors))
 		// Use already parsed selectors
 		var pbQueries []*prompb.Query
 		for i, matchers := range c.selectors {
-			log.Debugf("Selector %d: %v", i+1, matchers)
+			level.Debug(c.logger).Log("msg", "selector", "index", i+1, "matchers", fmt.Sprintf("%v", matchers))
 
 			pbQuery, err := remote.ToQuery(
 				int64(model.TimeFromUnixNano(queryFrom.UnixNano())),
@@ -433,7 +439,7 @@ func (c *RemoteReadCommand) stats(_ *kingpin.ParseContext) error {
 
 	for _, line := range strings.Split(output.String(), "\n") {
 		if len(line) != 0 {
-			log.Info(line)
+			level.Info(c.logger).Log("msg", line)
 		}
 	}
 
@@ -455,15 +461,15 @@ func (c *RemoteReadCommand) export(_ *kingpin.ParseContext) error {
 		if err != nil {
 			return err
 		}
-		log.Infof("Created TSDB in path '%s'", c.tsdbPath)
+		level.Info(c.logger).Log("msg", "created TSDB", "path", c.tsdbPath)
 	} else {
 		if _, err := os.Stat(c.tsdbPath); err != nil && os.IsNotExist(err) {
 			if err = os.Mkdir(c.tsdbPath, 0755); err != nil {
 				return err
 			}
-			log.Infof("Created TSDB in path '%s'", c.tsdbPath)
+			level.Info(c.logger).Log("msg", "created TSDB", "path", c.tsdbPath)
 		} else {
-			log.Infof("Using existing TSDB in path '%s'", c.tsdbPath)
+			level.Info(c.logger).Log("msg", "using existing TSDB", "path", c.tsdbPath)
 		}
 	}
 
@@ -522,7 +528,7 @@ func (c *RemoteReadCommand) printBlocks(blocks []ulid.ULID) error {
 		defer pipeR.Close()
 		scanner := bufio.NewScanner(pipeR)
 		for scanner.Scan() {
-			log.Info(scanner.Text())
+			level.Info(c.logger).Log("msg", scanner.Text())
 		}
 	}()
 	defer func() { <-done }()

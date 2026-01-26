@@ -3,6 +3,10 @@
     ingest_storage_enabled: false,
     ingest_storage_kafka_backend: 'kafka',
 
+    // When false and ingest storage is enabled, ingesters will run without tokens in the ring.
+    // This is only valid when ingest_storage_enabled is true.
+    ingest_storage_ingester_ring_tokens_enabled: true,
+
     // Mimir ingesters migrated from classic architecture to partitions run their instances hash ring
     // on a dedicated prefix, which has been introduced as part of the migration process.
     ingest_storage_ingester_instance_ring_dedicated_prefix_enabled: false,
@@ -96,15 +100,22 @@
     $.ingest_storage_kafka_producer_args +
     $.ingest_storage_ruler_args,
 
-  ingester_args+:: if !$._config.ingest_storage_enabled then {} else
+  ingester_args+:: if !$._config.ingest_storage_enabled then {} else (
     $.ingest_storage_kafka_ingestion_args +
-    $.ingest_storage_ingester_args {
+    $.ingest_storage_ingester_args +
+    {
       // How long to wait before deleting an inactive partition, that doesn't have an owner.
       'ingester.partition-ring.delete-inactive-partition-after': if 'querier.query-ingesters-within' in $.querier_args then
         $.querier_args['querier.query-ingesters-within']
       else
         '13h',  // The default -querier.query-ingesters-within in Mimir is 13 hours.
-    },
+    } + (
+      if $._config.ingest_storage_ingester_ring_tokens_enabled then {} else {
+        'ingester.ring.num-tokens': 0,
+        'ingester.ring.tokens-file-path': null,
+      }
+    )
+  ),
 
   query_frontend_args+:: if !$._config.ingest_storage_enabled then {} else
     $.ingest_storage_query_frontend_args,

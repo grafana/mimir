@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
+	mqetest "github.com/grafana/mimir/pkg/streamingpromql/testutils"
 )
 
 const (
@@ -89,7 +89,7 @@ func buildFuzzTestEnvironment(f *testing.F, dataFile string, queryFile string, s
 
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(f, err)
-	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), planner)
+	mqe, err := NewEngine(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), planner)
 	require.NoError(f, err)
 
 	environment := &fuzzTestEnvironment{
@@ -113,7 +113,6 @@ func fixUpAndAssertPostingErrors(t *testing.T, prom, mqe *promql.Result) {
 
 // testInstantQueries executes the given query against both engines and asserts that the results match
 func testInstantQueries(t *testing.T, startT time.Time, query string, testEnvironment *fuzzTestEnvironment) {
-
 	prometheusQuery, prometheusError := testEnvironment.prometheus.NewInstantQuery(context.Background(), testEnvironment.queryable, nil, query, startT)
 	mqeQuery, mqeError := testEnvironment.mqe.NewInstantQuery(context.Background(), testEnvironment.queryable, nil, query, startT)
 
@@ -161,7 +160,7 @@ func executeQueriesAndCompareResults(t *testing.T, testEnvironment fuzzTestEnvir
 	fixUpAndAssertPostingErrors(t, prom, mqe)
 
 	// Assert that the results match exactly. Note that annotations comparison will be ignored if the query is in the given ignore map
-	testutils.RequireEqualResults(t, query, prom, mqe, testEnvironment.ignoreAnnotations[query])
+	mqetest.RequireEqualResults(t, query, prom, mqe, testEnvironment.ignoreAnnotations[query])
 }
 
 // FuzzQuery is a test function which invokes a set of queries against the Prometheus and MQE query engines and validates that their responses are identical.
@@ -172,7 +171,6 @@ func executeQueriesAndCompareResults(t *testing.T, testEnvironment fuzzTestEnvir
 // * Add additional step sizes or time ranges to consider
 // When the Go Fuzzer is used, it will randomize the inputs of query string, start time, end time and step size.
 func FuzzQuery(f *testing.F) {
-
 	steps := []time.Duration{
 		time.Second,
 		time.Second * 2,

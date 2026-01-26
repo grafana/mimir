@@ -27,8 +27,9 @@ type RangeVectorDuplicationBuffer struct {
 	consumers               []*rangeVectorConsumerState
 	buffer                  *SeriesDataRingBuffer[bufferedRangeVectorStepData]
 
-	// Multiple RangeVectorDuplicationConsumers will call InstantVectorDuplicationBuffer.Prepare(), so this ensures idempotency.
-	prepared bool
+	// Multiple RangeVectorDuplicationConsumers will call RangeVectorDuplicationBuffer.Prepare() and AfterPrepare(), so this ensures idempotency.
+	prepareCalled      bool
+	afterPrepareCalled bool
 }
 
 type rangeVectorConsumerState struct {
@@ -193,7 +194,7 @@ func (b *RangeVectorDuplicationBuffer) NextStepSamples(ctx context.Context, cons
 	}
 
 	// Clone the step data, so that the inner operator can mutate the ring buffer on the next NextStepSamples call.
-	clonedData, err := cloneStepData(stepData, b.MemoryConsumptionTracker)
+	clonedData, err := cloneStepData(stepData)
 	if err != nil {
 		return nil, err
 	}
@@ -243,14 +244,21 @@ func (b *RangeVectorDuplicationBuffer) allConsumersClosed() bool {
 }
 
 func (b *RangeVectorDuplicationBuffer) Prepare(ctx context.Context, params *types.PrepareParams) error {
-	if b.prepared {
+	if b.prepareCalled {
 		return nil
 	}
-	if err := b.Inner.Prepare(ctx, params); err != nil {
-		return err
+
+	b.prepareCalled = true
+	return b.Inner.Prepare(ctx, params)
+}
+
+func (b *RangeVectorDuplicationBuffer) AfterPrepare(ctx context.Context) error {
+	if b.afterPrepareCalled {
+		return nil
 	}
-	b.prepared = true
-	return nil
+
+	b.afterPrepareCalled = true
+	return b.Inner.AfterPrepare(ctx)
 }
 
 func (b *RangeVectorDuplicationBuffer) Finalize(ctx context.Context, consumerIndex int) error {
@@ -285,18 +293,14 @@ type bufferedRangeVectorStepData struct {
 	histogramBuffer *types.HPointRingBuffer
 }
 
-func cloneStepData(stepData *types.RangeVectorStepData, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (bufferedRangeVectorStepData, error) {
+func cloneStepData(stepData *types.RangeVectorStepData) (bufferedRangeVectorStepData, error) {
 	buffered := bufferedRangeVectorStepData{
 		stepData: &types.RangeVectorStepData{
-			StepT:                        stepData.StepT,
-			RangeStart:                   stepData.RangeStart,
-			RangeEnd:                     stepData.RangeEnd,
-			Smoothed:                     stepData.Smoothed,
-			Anchored:                     stepData.Anchored,
-			SmoothedBasisForTailPointSet: stepData.SmoothedBasisForTailPointSet,
-			SmoothedBasisForHeadPointSet: stepData.SmoothedBasisForHeadPointSet,
-			SmoothedBasisForTailPoint:    stepData.SmoothedBasisForTailPoint,
-			SmoothedBasisForHeadPoint:    stepData.SmoothedBasisForHeadPoint,
+			StepT:      stepData.StepT,
+			RangeStart: stepData.RangeStart,
+			RangeEnd:   stepData.RangeEnd,
+			Smoothed:   stepData.Smoothed,
+			Anchored:   stepData.Anchored,
 		},
 	}
 
@@ -351,6 +355,10 @@ func (d *RangeVectorDuplicationConsumer) ExpressionPosition() posrange.PositionR
 
 func (d *RangeVectorDuplicationConsumer) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	return d.Buffer.Prepare(ctx, params)
+}
+
+func (d *RangeVectorDuplicationConsumer) AfterPrepare(ctx context.Context) error {
+	return d.Buffer.AfterPrepare(ctx)
 }
 
 func (d *RangeVectorDuplicationConsumer) Finalize(ctx context.Context) error {

@@ -13,11 +13,16 @@ import (
 
 // AggregationGroup accumulates series that have been grouped together and computes the output series data.
 type AggregationGroup interface {
-	// AccumulateSeries takes in a series as part of the group
-	// remainingSeriesInGroup includes the current series (ie if data is the last series, then remainingSeriesInGroup is 1)
-	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint) error
+	// AccumulateSeries takes in a series as part of the group.
+	//
+	// remainingSeriesInGroup includes the current series (i.e., if data is the last series, then remainingSeriesInGroup is 1).
+	//
+	// The slices and points within data may be mutated by implementations if mutatingDataAllowed is true.
+	AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, remainingSeriesInGroup uint, mutatingDataAllowed bool) error
+
 	// ComputeOutputSeries does any final calculations and returns the grouped series data
 	ComputeOutputSeries(param types.ScalarData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) (types.InstantVectorSeriesData, bool, error)
+
 	// Close releases any resources held by the group.
 	// Close is guaranteed to be called at most once per group.
 	Close(memoryConsumptionTracker *limiter.MemoryConsumptionTracker)

@@ -980,12 +980,12 @@ func TestParallelStorageShards_ShardWriteRequest(t *testing.T) {
 
 			for i, req := range tc.requests {
 				req = asDeserializedWriteRequest(req)
-				mimirpb_testutil.TrackBufferRefCount(req)
+				trackedBuf := mimirpb_testutil.TrackBuffer(req)
 				tc.requests[i] = req
 
 				// When everything's done, check that there are no buffer leaks.
 				defer func() {
-					require.Equal(t, 0, mimirpb_testutil.BufferRefCount(req))
+					require.Equal(t, 0, trackedBuf.RefCount())
 				}()
 			}
 

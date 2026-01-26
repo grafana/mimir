@@ -5,6 +5,8 @@ package core
 import (
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,12 +28,64 @@ func (h *BinaryExpressionHints) ToOperatorType() *binops.Hints {
 	}
 }
 
+func (f *VectorMatchFillValues) ToPrometheusType() parser.VectorMatchFillValues {
+	// Why are we doing this?
+	// The prometheus VectorMatchFillValues uses *float64 fields.
+	// In the current mimir protobufs configuration, we are not able to do an optional double (which would map to a *float64)
+	// ie message VectorMatchFillValues {
+	//  	optional double rhs = 1;
+	//  	optional double lhs = 2;
+	//}
+
+	out := parser.VectorMatchFillValues{}
+
+	if f.RhsSet {
+		out.RHS = &f.Rhs
+	}
+	if f.LhsSet {
+		out.LHS = &f.Lhs
+	}
+	return out
+}
+
+func VectorMatchFillValuesFrom(in parser.VectorMatchFillValues) VectorMatchFillValues {
+	out := VectorMatchFillValues{}
+
+	if in.RHS != nil {
+		out.Rhs = *in.RHS
+		out.RhsSet = true
+	}
+	if in.LHS != nil {
+		out.Lhs = *in.LHS
+		out.LhsSet = true
+	}
+	return out
+}
+
 func (v *VectorMatching) ToPrometheusType() *parser.VectorMatching {
-	return (*parser.VectorMatching)(v)
+	if v == nil {
+		return nil
+	}
+	return &parser.VectorMatching{
+		Card:           v.Card,
+		MatchingLabels: v.MatchingLabels,
+		On:             v.On,
+		Include:        v.Include,
+		FillValues:     v.FillValues.ToPrometheusType(),
+	}
 }
 
 func VectorMatchingFrom(v *parser.VectorMatching) *VectorMatching {
-	return (*VectorMatching)(v)
+	if v == nil {
+		return nil
+	}
+	return &VectorMatching{
+		Card:           v.Card,
+		MatchingLabels: v.MatchingLabels,
+		On:             v.On,
+		Include:        v.Include,
+		FillValues:     VectorMatchFillValuesFrom(v.FillValues),
+	}
 }
 
 func PositionRangeFrom(pos posrange.PositionRange) PositionRange {
@@ -81,6 +135,28 @@ func matchersEqual(a, b *LabelMatcher) bool {
 	return a.Type == b.Type &&
 		a.Name == b.Name &&
 		a.Value == b.Value
+}
+
+// LabelMatchersStringer generates a human-readable version of multiple LabelMatchers
+// for use in logs or traces.
+type LabelMatchersStringer []*LabelMatcher
+
+func (l LabelMatchersStringer) String() string {
+	var builder strings.Builder
+	builder.WriteByte('{')
+
+	for i, m := range l {
+		builder.WriteString(m.Name)
+		builder.WriteString(m.Type.String())
+		builder.WriteString(strconv.Quote(m.Value))
+
+		if i < len(l)-1 {
+			builder.WriteString(", ")
+		}
+	}
+
+	builder.WriteByte('}')
+	return builder.String()
 }
 
 var itemTypeToAggregationOperation = map[parser.ItemType]AggregationOperation{

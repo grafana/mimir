@@ -10,19 +10,15 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
 type ScalarRemoteExec struct {
-	QueryParameters          *planning.QueryParameters
-	Node                     planning.Node
-	TimeRange                types.QueryTimeRange
-	RemoteExecutor           RemoteExecutor
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Annotations              *annotations.Annotations
-	QueryStats               *types.QueryStats
-	EagerLoad                bool
-	expressionPosition       posrange.PositionRange
+	Node               planning.Node
+	TimeRange          types.QueryTimeRange
+	GroupEvaluator     GroupEvaluator
+	Annotations        *annotations.Annotations
+	QueryStats         *types.QueryStats
+	expressionPosition posrange.PositionRange
 
 	resp      ScalarRemoteExecutionResponse
 	finalized bool
@@ -32,8 +28,16 @@ var _ types.ScalarOperator = &ScalarRemoteExec{}
 
 func (s *ScalarRemoteExec) Prepare(ctx context.Context, params *types.PrepareParams) error {
 	var err error
-	s.resp, err = s.RemoteExecutor.StartScalarExecution(ctx, s.QueryParameters, s.Node, s.TimeRange, s.MemoryConsumptionTracker, s.EagerLoad)
-	return err
+	s.resp, err = s.GroupEvaluator.CreateScalarExecution(ctx, s.Node, s.TimeRange)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (s *ScalarRemoteExec) AfterPrepare(ctx context.Context) error {
+	return s.resp.Start(ctx)
 }
 
 func (s *ScalarRemoteExec) GetValues(ctx context.Context) (types.ScalarData, error) {

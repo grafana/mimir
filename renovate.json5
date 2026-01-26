@@ -4,6 +4,17 @@
     'config:recommended',
     'schedule:daily'
   ],
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'Update Docker images in Jsonnet files',
+      managerFilePatterns: ['\\.jsonnet$'],
+      matchStrings: [
+        "image:\\s*'(?<depName>.+):(?<currentValue>[^'/@]+)'",
+      ],
+      datasourceTemplate: 'docker',
+    },
+  ],
   baseBranchPatterns: [
     'main',
     'release-3.0',

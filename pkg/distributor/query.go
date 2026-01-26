@@ -137,7 +137,11 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	// Lookup ingesters ring because ingest storage is disabled.
 	shardSize := d.limits.IngestionTenantShardSize(userID)
 	r := d.ingestersRing
-	r = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.ShuffleShardingLookbackPeriod, time.Now())
+
+	// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
+	if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; lookbackPeriod > 0 {
+		r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
+	}
 
 	replicationSet, err := r.GetReplicationSetForOperation(readNoExtend)
 	if err != nil {
@@ -347,11 +351,8 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			if err := memoryConsumptionTracker.IncreaseMemoryConsumptionForLabels(l); err != nil {
-				return nil, false, err
-			}
-
-			if err := queryLimiter.AddSeries(l); err != nil {
+			uniqueSeriesLabels, err := queryLimiter.AddSeries(l, memoryConsumptionTracker)
+			if err != nil {
 				return nil, false, err
 			}
 
@@ -364,7 +365,7 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 				return nil, false, err
 			}
 
-			labelsBatch = append(labelsBatch, l)
+			labelsBatch = append(labelsBatch, uniqueSeriesLabels)
 		}
 
 		return labelsBatch, resp.IsEndOfSeriesStream, nil

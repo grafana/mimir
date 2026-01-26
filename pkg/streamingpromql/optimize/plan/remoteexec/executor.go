@@ -10,18 +10,17 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
-	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-type RemoteExecutor interface {
-	// StartScalarExecution submits a request to remotely evaluate an expression that produces a scalar.
-	StartScalarExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (ScalarRemoteExecutionResponse, error)
+type GroupEvaluator interface {
+	// CreateScalarExecution creates a request to remotely evaluate an expression that produces a scalar.
+	CreateScalarExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (ScalarRemoteExecutionResponse, error)
 
-	// StartInstantVectorExecution submits a request to remotely evaluate an expression that produces an instant vector.
-	StartInstantVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (InstantVectorRemoteExecutionResponse, error)
+	// CreateInstantVectorExecution creates a request to remotely evaluate an expression that produces an instant vector.
+	CreateInstantVectorExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (InstantVectorRemoteExecutionResponse, error)
 
-	// StartRangeVectorExecution submits a request to remotely evaluate an expression that produces a range vector.
-	StartRangeVectorExecution(ctx context.Context, params *planning.QueryParameters, node planning.Node, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, eagerLoad bool) (RangeVectorRemoteExecutionResponse, error)
+	// CreateRangeVectorExecution creates a request to remotely evaluate an expression that produces a range vector.
+	CreateRangeVectorExecution(ctx context.Context, node planning.Node, timeRange types.QueryTimeRange) (RangeVectorRemoteExecutionResponse, error)
 }
 
 type ScalarRemoteExecutionResponse interface {
@@ -59,15 +58,28 @@ type RangeVectorRemoteExecutionResponse interface {
 }
 
 type RemoteExecutionResponse interface {
-	// GetEvaluationInfo returns the annotations and statistics from the remote evaluation, or the next available error from the stream.
+	// Start triggers evaluation of the request.
 	//
-	// If any unread part of the response is not the evaluation info (eg. there is unread series data), this is skipped until the evaluation info or an error is found.
+	// Start must be called before calling any other method on the response (except Close).
+	// Calling another method before calling Start may lead to unpredictable behaviour.
+	Start(ctx context.Context) error
+
+	// Finalize finishes evaluation of the request.
 	//
-	// GetEvaluationInfo can only be called before Close is called.
-	GetEvaluationInfo(ctx context.Context) (*annotations.Annotations, stats.Stats, error)
+	// If there is any unread data for this request, it is discarded.
+	//
+	// If this is the last request in a group, it returns the annotations and statistics from the remote evaluation, or otherwise returns an empty set of annotations
+	// and statistics.
+	//
+	// Finalize can only be called before Close is called.
+	Finalize(ctx context.Context) (*annotations.Annotations, stats.Stats, error)
 
 	// Close cleans up any resources associated with this request.
 	//
-	// If the request is still inflight, it is cancelled.
+	// If there is any unread data for this request, it is discarded.
+	//
+	// If this is the last request in a group, any resources associated with the group itself are also cleaned up.
+	//
+	// It is safe to call Close multiple times on the same request.
 	Close()
 }

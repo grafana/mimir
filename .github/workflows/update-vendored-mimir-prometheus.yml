@@ -69,7 +69,7 @@ jobs:
           set-safe-directory: '*'
 
       - name: Set up Go
-        uses: actions/setup-go@4dc6199c7b1a012772edbd06daecab0f50c9053c # v6
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
           # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
           go-version: "1.25.5"
@@ -145,7 +145,7 @@ jobs:
 
       - name: Create Pull Request
         id: create_pull_request
-        uses: peter-evans/create-pull-request@98357b18bf14b5342f975ff684046ec3b2a07725 # v8.0.0
+        uses: peter-evans/create-pull-request@c0f553fe549906ede9cf27b5156039d195d2ece0 # v8.1.0
         with:
           token: ${{ steps.app-token.outputs.token }}
           title: '[${{ steps.branch-names.outputs.mimir_branch }}] Update mimir-prometheus to ${{ steps.get-commit-info.outputs.short_hash }}'

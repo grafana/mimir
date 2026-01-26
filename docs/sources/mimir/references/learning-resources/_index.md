@@ -13,6 +13,10 @@ weight: 130
 
 To learn more about Grafana Mimir, see the following resources:
 
+- September 2025 blog post: "[Faster, more memory-efficient performance in Grafana Mimir: a closer look at Mimir Query Engine](/blog/faster-more-memory-efficient-performance-in-grafana-mimir-a-closer-look-at-mimir-query-engine/)"
+- May 2025 GrafanaCon 2025 talk: "[Mimir 3.0 preview: Major improvements to stability, performance, cost, and scalability](/events/grafanacon/2025/preview-mimir-3.0-release-for-metrics/)"
+- February 2025 blog post: "[The next generation of Grafana Mimir: Inside Mimir’s redesigned architecture for increased reliability](/blog/the-next-generation-of-grafana-mimir-inside-mimirs-redesigned-architecture-for-increased-reliability/)"
+- March 2024 blog post: "[How we improved ingester load balancing in Grafana Mimir with spread-minimizing tokens](/blog/how-we-improved-ingester-load-balancing-in-grafana-mimir-with-spread-minimizing-tokens/)"
 - July 2022 blog post: "[How Grafana Mimir helped Pipedrive overcome Prometheus scalability limits](/blog/2022/07/28/how-grafana-mimir-helped-pipedrive-overcome-prometheus-scalability-limits/)"
 - July 2022 blog post: "[New in Grafana Mimir: Ingest Graphite, Datadog, Influx, and Prometheus metrics into a single storage backend](/blog/2022/07/25/new-in-grafana-mimir-ingest-graphite-datadog-influx-and-prometheus-metrics-into-a-single-storage-backend/)"
 - July 2022 blog post: "[How we improved Grafana Mimir query performance by up to 10x](/blog/2022/07/20/how-we-improved-grafana-mimir-query-performance-by-up-to-10x/)"

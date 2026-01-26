@@ -175,10 +175,6 @@ api:
 # The ingester block configures the ingester.
 [ingester: <ingester>]
 
-# The flusher block configures the WAL flusher target, used to manually run
-# one-time flushes when scaling down ingesters.
-[flusher: <flusher>]
-
 # The limits block configures default and per-tenant limits imposed by
 # components.
 [limits: <limits>]
@@ -1085,6 +1081,11 @@ reactive_limiter:
   # CLI flag: -distributor.reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -distributor.reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -distributor.reactive-limiter.recent-window-min-duration
@@ -1529,6 +1530,11 @@ push_reactive_limiter:
   # CLI flag: -ingester.push-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
 
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.push-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
+
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
   # CLI flag: -ingester.push-reactive-limiter.recent-window-min-duration
@@ -1591,6 +1597,11 @@ read_reactive_limiter:
   # requests
   # CLI flag: -ingester.read-reactive-limiter.max-limit-factor
   [max_limit_factor: <float> | default = 5]
+
+  # (experimental) Logarithmic decay applied to the maxLimitFactor based on
+  # current inflight requests
+  # CLI flag: -ingester.read-reactive-limiter.max-limit-factor-decay
+  [max_limit_factor_decay: <float> | default = 1]
 
   # (experimental) Minimum duration of the window that is used to collect recent
   # response time samples
@@ -1883,11 +1894,6 @@ store_gateway_client:
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
-# (experimental) Enable the experimental Prometheus feature for delayed name
-# removal.
-# CLI flag: -querier.enable-delayed-name-removal
-[enable_delayed_name_removal: <boolean> | default = false]
-
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -1925,6 +1931,16 @@ mimir_query_engine:
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
   [enable_reduce_matchers: <boolean> | default = true]
+
+  # (experimental) Enable projection pushdown to only fetch labels required for
+  # the query from storage.
+  # CLI flag: -querier.mimir-query-engine.enable-projection-pushdown
+  [enable_projection_pushdown: <boolean> | default = false]
+
+  # (experimental) Enable computing multiple aggregations over the same data
+  # without buffering. Requires common subexpression elimination to be enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
+  [enable_multi_aggregation: <boolean> | default = true]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -3225,17 +3241,6 @@ local:
   [path: <string> | default = ""]
 ```
 
-### flusher
-
-The `flusher` block configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
-
-```yaml
-# (advanced) Stop after flush has finished. If false, process will keep running,
-# doing nothing.
-# CLI flag: -flusher.exit-after-flush
-[exit_after_flush: <boolean> | default = true]
-```
-
 ### ingester_client
 
 The `ingester_client` block configures how the distributors connect to the ingesters.
@@ -3575,12 +3580,6 @@ grpc_client_config:
 # query-scheduler.
 # The CLI flags prefix for this block configuration is: querier.scheduler-client
 [query_scheduler_grpc_client_config: <grpc_client>]
-
-# (experimental) Enables streaming of responses from querier to query-frontend
-# for response types that support it (currently only `active_series` responses
-# do).
-# CLI flag: -querier.response-streaming-enabled
-[response_streaming_enabled: <boolean> | default = true]
 ```
 
 ### etcd
@@ -4363,6 +4362,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
+
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal within MQE, which only works if remote execution and running sharding
+# within MQE is enabled.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
 
 # Limit the total query time range (end - start time). This limit is enforced in
 # the query-frontend on the received instant, range or remote read query.
@@ -6282,10 +6287,6 @@ The `memcached` block configures the Memcached-based caching backend. The suppor
 # VersionTLS10, VersionTLS11, VersionTLS12, VersionTLS13
 # CLI flag: -<prefix>.memcached.tls-min-version
 [tls_min_version: <string> | default = ""]
-
-# (experimental) Allow client creation even if initial DNS resolution fails.
-# CLI flag: -<prefix>.memcached.dns-ignore-startup-failures
-[dns_ignore_startup_failures: <boolean> | default = true]
 ```
 
 ### s3_storage_backend

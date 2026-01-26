@@ -117,6 +117,20 @@ func TestCases(metricSizes []int) []BenchCase {
 			Steps: 10000,
 		},
 		{
+			Expr: "delta(a_X[1m] smoothed)",
+		},
+		{
+			Expr:  "delta(a_X[1m] smoothed)",
+			Steps: 10000,
+		},
+		{
+			Expr: "delta(a_X[2h] smoothed)",
+		},
+		{
+			Expr:  "delta(a_X[2h] smoothed)",
+			Steps: 10000,
+		},
+		{
 			Expr: "rate(a_X[1m] anchored)",
 		},
 		{

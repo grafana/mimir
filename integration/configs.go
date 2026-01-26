@@ -256,6 +256,9 @@ blocks_storage:
 			"-ingest-storage.kafka.topic":   "ingest",
 			"-ingest-storage.kafka.address": fmt.Sprintf("%s-kafka:9092", networkName),
 
+			// Disable gRPC push since ingest storage uses Kafka for ingestion.
+			"-ingester.push-grpc-method-enabled": "false",
+
 			// To simplify integration tests, we use strong read consistency by default.
 			// Integration tests that want to test the eventual consistency can override it.
 			"-ingest-storage.read-consistency": api.ReadConsistencyStrong,

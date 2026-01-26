@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 )
 
@@ -194,7 +195,7 @@ func TestDoRequest(t *testing.T) {
 				AuthToken:    tc.authToken,
 				ID:           tc.id,
 				ExtraHeaders: tc.extraHeaders,
-			})
+			}, log.NewNopLogger())
 			require.NoError(t, err)
 
 			res, err := client.doRequest(ctx, "/test", http.MethodGet, nil, -1)
