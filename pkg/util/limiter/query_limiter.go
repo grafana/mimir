@@ -79,14 +79,6 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 	return ql
 }
 
-func countConflictSeries(series map[uint64][]labels.Labels) int {
-	count := 0
-	for _, lbls := range series {
-		count += len(lbls)
-	}
-	return count
-}
-
 // AddSeries adds the input series and returns an error if the limit is reached.
 func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
 	fingerprint := ql.hashFunc(newLabels)
@@ -126,6 +118,14 @@ func (ql *QueryLimiter) AddSeries(newLabels labels.Labels, tracker *MemoryConsum
 	// Despite there was a hash conflict, newLabels is actually seen for the first time hence we track the series limit and its labels memory consumption.
 	ql.conflictSeries[fingerprint] = append(hashConflictLabels, newLabels)
 	return ql.trackNewLabels(newLabels, uniqueSeriesBefore, tracker)
+}
+
+func countConflictSeries(series map[uint64][]labels.Labels) int {
+	count := 0
+	for _, lbls := range series {
+		count += len(lbls)
+	}
+	return count
 }
 
 func (ql *QueryLimiter) trackNewLabels(newLabels labels.Labels, uniqueSeriesBefore int, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
