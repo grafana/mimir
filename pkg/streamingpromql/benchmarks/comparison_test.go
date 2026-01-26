@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/distributor"
@@ -31,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -125,6 +127,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
+	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 
 	for _, c := range cases {
 		t.Run(c.Name(), func(t *testing.T) {
@@ -132,7 +135,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
-			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
+			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, testQueryable{q})
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
 
@@ -276,4 +279,40 @@ type alwaysQueryIngestersConfigProvider struct{}
 
 func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Duration {
 	return time.Duration(math.MaxInt64)
+}
+
+type testQueryable struct {
+	inner storage.Queryable
+}
+
+func (t testQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := t.inner.Querier(mint, maxt)
+	return testQuerier{
+		inner: q,
+	}, err
+}
+
+type testQuerier struct {
+	inner storage.Querier
+}
+
+func (t testQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return t.inner.LabelValues(ctx, name, hints, matchers...)
+}
+
+func (t testQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return t.inner.LabelNames(ctx, hints, matchers...)
+}
+
+func (t testQuerier) Close() error {
+	return t.inner.Close()
+}
+
+func (t testQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	ss := t.inner.Select(ctx, sortSeries, hints, matchers...)
+	tracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+	return series.NewMemoryTrackingSeriesSet(ss, tracker)
 }
