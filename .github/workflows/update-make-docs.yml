@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
-      - uses: grafana/writers-toolkit/update-make-docs@f65819d6a412b752c0e0263375215f049507b0e6 # update-make-docs@v1.3.0
+      - uses: grafana/writers-toolkit/update-make-docs@b25ced993bb3b5270f1e9bf7601b39abc352ae51 # update-make-docs@v1.3.0
         with:
           pr_options: >
             --label type/docs
