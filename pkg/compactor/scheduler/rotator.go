@@ -4,6 +4,7 @@ package scheduler
 
 import (
 	"context"
+	"iter"
 	"sync"
 	"time"
 
@@ -67,6 +68,18 @@ func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, 
 func (r *Rotator) iter(ctx context.Context) error {
 	r.LeaseMaintenance(ctx, r.leaseDuration)
 	return nil
+}
+
+func (r *Rotator) Tenants() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		r.mtx.RLock()
+		defer r.mtx.RUnlock()
+		for tenant := range r.tenantStateMap {
+			if !yield(tenant) {
+				return
+			}
+		}
+	}
 }
 
 // PrepareForShutdown empties out tenants and the rotation. This prevents further persist calls to the underlying state.

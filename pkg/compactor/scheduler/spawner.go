@@ -66,11 +66,9 @@ func NewSpawner(
 
 func (s *Spawner) start(ctx context.Context) error {
 	// The rotator gets prepoluated upon recovery, use that to determine tenants that are already active
-	s.rotator.mtx.Lock()
-	for tenant := range s.rotator.tenantStateMap {
+	for tenant := range s.rotator.Tenants() {
 		s.planMap[tenant] = time.Time{}
 	}
-	s.rotator.mtx.Unlock()
 
 	b := backoff.New(ctx, s.userDiscoveryBackoff)
 	var err error
