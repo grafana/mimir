@@ -171,6 +171,7 @@
   "querier.mimir-query-engine.enable-common-subexpression-elimination": true,
   "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries": true,
   "querier.mimir-query-engine.enable-skipping-histogram-decoding": true,
+  "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge": true,
   "querier.mimir-query-engine.enable-reduce-matchers": true,
   "querier.mimir-query-engine.enable-multi-aggregation": true,
   "querier.ring.store": "memberlist",
