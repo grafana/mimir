@@ -960,6 +960,15 @@ func TestHATrackerFindHALabels(t *testing.T) {
 			},
 			haReplica{cluster: "cluster-3", replica: "3"},
 		},
+		{
+			[]mimirpb.LabelAdapter{
+				{Name: replicaLabel, Value: "r1"},
+				{Name: clusterLabel, Value: "c1"},
+				{Name: replicaLabel, Value: "r2"}, // Should be ignored due to fast path
+				{Name: clusterLabel, Value: "c2"}, // Should be ignored due to fast path
+			},
+			haReplica{cluster: "c1", replica: "r1"},
+		},
 	}
 
 	for _, c := range cases {
