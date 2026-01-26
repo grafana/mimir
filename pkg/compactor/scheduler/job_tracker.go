@@ -250,7 +250,7 @@ func (jt *JobTracker[V]) ExpireLeases(leaseDuration time.Duration) (bool, error)
 
 	err := jt.persister.WriteAndDeleteJobs(reviveJobs, deleteJobs)
 	if err != nil {
-		return false, fmt.Errorf("failed writing offered jobs: %w", err)
+		return false, fmt.Errorf("failed persisting expired lease changes: %w", err)
 	}
 
 	for _, j := range reviveJobs {
