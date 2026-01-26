@@ -606,6 +606,114 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	})
 }
 
+// TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety verifies that reusing
+// ring buffers across multiple block lookups in GetClientsFor doesn't corrupt instance data.
+func TestBlocksStoreReplicationSet_GetClientsFor_BufferReuseSafety(t *testing.T) {
+	// Use block IDs with different hash values to ensure they map to different instances.
+	blockID1 := ulid.MustNew(1, nil) // hash: 283204220
+	blockID2 := ulid.MustNew(2, nil) // hash: 444110359
+	blockID3 := ulid.MustNew(5, nil) // hash: 2931974232
+	blockID4 := ulid.MustNew(6, nil) // hash: 3092880371
+
+	block1Hash := mimir_tsdb.HashBlockID(blockID1)
+	block2Hash := mimir_tsdb.HashBlockID(blockID2)
+	block3Hash := mimir_tsdb.HashBlockID(blockID3)
+	block4Hash := mimir_tsdb.HashBlockID(blockID4)
+
+	minT := time.Now().Add(-5 * time.Hour)
+	maxT := minT.Add(2 * time.Hour)
+
+	blocks := bucketindex.Blocks{
+		newBlock(blockID1, minT, maxT),
+		newBlock(blockID2, minT, maxT),
+		newBlock(blockID3, minT, maxT),
+		newBlock(blockID4, minT, maxT),
+	}
+
+	userID := "user-A"
+	registeredAt := time.Now()
+	ctx := context.Background()
+
+	// Setup the ring with instances in different zones.
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	require.NoError(t, ringStore.CAS(ctx, "test", func(interface{}) (interface{}, bool, error) {
+		d := ring.NewDesc()
+		// Each instance owns one block and is in a distinct zone.
+		d.AddIngester("instance-1", "127.0.0.1", "zone-a", []uint32{block1Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+		d.AddIngester("instance-2", "127.0.0.2", "zone-b", []uint32{block2Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+		d.AddIngester("instance-3", "127.0.0.3", "zone-c", []uint32{block3Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+		d.AddIngester("instance-4", "127.0.0.4", "zone-d", []uint32{block4Hash + 1}, ring.ACTIVE, registeredAt, false, time.Time{}, nil)
+		return d, true, nil
+	}))
+
+	ringCfg := ring.Config{}
+	flagext.DefaultValues(&ringCfg)
+	ringCfg.ReplicationFactor = 1
+
+	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, r))
+	})
+
+	limits := &blocksStoreLimitsMock{storeGatewayTenantShardSize: 0}
+
+	reg := prometheus.NewPedanticRegistry()
+	s, err := newBlocksStoreReplicationSet(r, noLoadBalancing, storegateway.NewNopDynamicReplication(ringCfg.ReplicationFactor), nil, limits, StoreGatewayClientConfig{}, log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, s))
+	})
+
+	// Wait until the ring client has initialised the state.
+	test.Poll(t, time.Second, true, func() interface{} {
+		all, err := r.GetAllHealthy(storegateway.BlocksRead)
+		return err == nil && len(all.Instances) == 4
+	})
+
+	// Query all blocks at once. This exercises the buffer reuse across multiple block lookups.
+	clients, err := s.GetClientsFor(userID, blocks, nil)
+	require.NoError(t, err)
+	defer func() {
+		for c := range clients {
+			c.(io.Closer).Close() //nolint:errcheck
+		}
+	}()
+
+	// Verify we got the expected number of clients (one per block since RF=1 and each instance owns one block).
+	assert.Len(t, clients, 4)
+
+	// Build a map from address to zone for verification.
+	expectedZoneByAddr := map[string]string{
+		"127.0.0.1": "zone-a",
+		"127.0.0.2": "zone-b",
+		"127.0.0.3": "zone-c",
+		"127.0.0.4": "zone-d",
+	}
+
+	// Verify that each client has the correct zone information.
+	// If buffer reuse corrupted the instance data, the zones would be wrong.
+	for client := range clients {
+		addr := client.RemoteAddress()
+		expectedZone, ok := expectedZoneByAddr[addr]
+		require.True(t, ok, "unexpected client address: %s", addr)
+		assert.Equal(t, expectedZone, client.RemoteZone(), "zone mismatch for client at %s - this could indicate buffer reuse corruption", addr)
+	}
+
+	// Verify the block assignment is correct.
+	clientAddrs := getStoreGatewayClientAddrs(clients)
+	expectedClients := map[string][]ulid.ULID{
+		"127.0.0.1": {blockID1},
+		"127.0.0.2": {blockID2},
+		"127.0.0.3": {blockID3},
+		"127.0.0.4": {blockID4},
+	}
+	assert.Equal(t, expectedClients, clientAddrs)
+}
+
 func BenchmarkBlocksStoreReplicationSet_GetClientsFor(b *testing.B) {
 	const (
 		numInstancesPerZone = 300

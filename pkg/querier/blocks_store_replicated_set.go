@@ -110,6 +110,9 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 	blocksByAddr := make(map[string][]ulid.ULID)
 	instances := make(map[string]ring.InstanceDesc)
 	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
+
+	// It's safe to reuse buffers across iterations, as far as we don't retain the ReplicationSet.Instances slice
+	// (retaining individual instances from the slice is fine).
 	ringBuffersOpt := ring.WithBuffers(ring.MakeBuffersForGet())
 
 	// Find the replication set of each block we need to query.
@@ -119,7 +122,6 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 			ringOpts = append(ringOpts, ring.WithReplicationFactor(replicationFactor))
 		}
 
-		// Note that we don't pass buffers since we retain instances from the returned replication set.
 		set, err := userRing.GetWithOptions(mimir_tsdb.HashBlockID(block.ID), storegateway.BlocksRead, ringOpts...)
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to get store-gateway replication set owning the block %s", block.ID)
