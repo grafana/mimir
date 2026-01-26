@@ -6085,6 +6085,13 @@ sharding_ring:
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
 
+  # (advanced) Comma-separated list of zones to exclude from the ring. Instances
+  # in excluded zones will be filtered out from the ring. This option needs be
+  # set both on the store-gateway, querier and ruler when running in
+  # microservices mode.
+  # CLI flag: -store-gateway.sharding-ring.excluded-zones
+  [excluded_zones: <string> | default = ""]
+
   # (advanced) Minimum time to wait for ring stability at startup, if set to
   # positive value.
   # CLI flag: -store-gateway.sharding-ring.wait-stability-min-duration

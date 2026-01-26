@@ -12598,6 +12598,17 @@
             },
             {
               "kind": "field",
+              "name": "excluded_zones",
+              "required": false,
+              "desc": "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.",
+              "fieldValue": null,
+              "fieldDefaultValue": "",
+              "fieldFlag": "store-gateway.sharding-ring.excluded-zones",
+              "fieldType": "string",
+              "fieldCategory": "advanced"
+            },
+            {
+              "kind": "field",
               "name": "wait_stability_min_duration",
               "required": false,
               "desc": "Minimum time to wait for ring stability at startup, if set to positive value.",
