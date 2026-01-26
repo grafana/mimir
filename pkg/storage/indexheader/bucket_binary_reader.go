@@ -278,14 +278,14 @@ func (r *BucketBinaryReader) loadFromIndexHeader(logger log.Logger, cfg Config, 
 }
 
 // fetchRange fetches a range of bytes from the object storage.
-func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, offset, length int64) ([]byte, error) {
+func (r *BucketBinaryReader) fetchRange(ctx context.Context, objectPath string, offset, length int64) (data []byte, err error) {
 	rc, err := r.bkt.GetRange(ctx, objectPath, offset, length)
 	if err != nil {
 		return nil, fmt.Errorf("get range [%d, %d): %w", offset, offset+length, err)
 	}
 	defer runutil.CloseWithErrCapture(&err, rc, "close range reader %s", objectPath)
 
-	data, err := io.ReadAll(rc)
+	data, err = io.ReadAll(rc)
 	if err != nil {
 		return nil, fmt.Errorf("read range data: %w", err)
 	}
@@ -322,11 +322,9 @@ func (r *BucketBinaryReader) PostingsOffset(_ context.Context, name string, valu
 
 // LookupSymbol implements Reader.
 func (r *BucketBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
-	if r.indexVersion == index.FormatV1 {
-		// For v1, refs are actual offset inside index, not index-header.
-		// Adjust for the header length difference.
-		o += HeaderLen - index.HeaderLen
-	}
+	// Note: Unlike StreamBinaryReader, BucketBinaryReader reads directly from the TSDB index file,
+	// so no offset adjustment is needed for V1 indexes. V1 symbol refs are offsets into the TSDB
+	// index, and that's exactly what we're reading from.
 
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
