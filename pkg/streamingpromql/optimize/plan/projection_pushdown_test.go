@@ -235,13 +235,25 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			`,
 			expectedModified: 1,
 		},
-		"aggregation over subquery": {
+		"aggregation function over subquery": {
 			expr: `avg_over_time(foo[5m:30s])`,
 			expectedPlan: `
 				- DeduplicateAndMerge
 					- FunctionCall: avg_over_time(...)
 						- Subquery: [5m0s:30s]
 							- VectorSelector: {__name__="foo"}
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
+		},
+		"aggregation and aggregation function over subquery": {
+			expr: `sum(avg_over_time(foo[5m:30s]))`,
+			expectedPlan: `
+				- AggregateExpression: sum
+					- DeduplicateAndMerge
+						- FunctionCall: avg_over_time(...)
+							- Subquery: [5m0s:30s]
+								- VectorSelector: {__name__="foo"}
 			`,
 			expectedModified: 0,
 			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
@@ -265,6 +277,17 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 							- VectorSelector: {__name__="foo"}, include ()
 			`,
 			expectedModified: 1,
+		},
+		"unary expression inside aggregation": {
+			expr: `avg(-foo)`,
+			expectedPlan: `
+				- AggregateExpression: avg
+					- DeduplicateAndMerge
+						- UnaryExpression: -
+							- VectorSelector: {__name__="foo"}
+			`,
+			expectedModified: 0,
+			expectedSkip:     map[plan.SkipReason]int{plan.SkipReasonDeduplicate: 1},
 		},
 		"aggregation with step invariant expression": {
 			expr: `avg(foo @ 0)`,
@@ -326,15 +349,15 @@ func TestProjectionPushdownOptimizationPass(t *testing.T) {
 			require.NoError(t, testutil.CollectAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_mimir_query_engine_projection_pushdown_skipped_total Total number of selectors where projections could not be used.
 					# TYPE cortex_mimir_query_engine_projection_pushdown_skipped_total counter
-					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="binary-operation"} %d
-					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="deduplicate-and-merge"} %d
-					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="no-aggregations"} %d
-					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="not-supported"} %d
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="%s"} %d
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="%s"} %d
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="%s"} %d
+					cortex_mimir_query_engine_projection_pushdown_skipped_total{reason="%s"} %d
 					`,
-				testCase.expectedSkip[plan.SkipReasonBinaryOperation],
-				testCase.expectedSkip[plan.SkipReasonDeduplicate],
-				testCase.expectedSkip[plan.SkipReasonNoAggregations],
-				testCase.expectedSkip[plan.SkipReasonNotSupported])), "cortex_mimir_query_engine_projection_pushdown_skipped_total",
+				plan.SkipReasonBinaryOperation, testCase.expectedSkip[plan.SkipReasonBinaryOperation],
+				plan.SkipReasonDeduplicate, testCase.expectedSkip[plan.SkipReasonDeduplicate],
+				plan.SkipReasonNoAggregations, testCase.expectedSkip[plan.SkipReasonNoAggregations],
+				plan.SkipReasonNotSupported, testCase.expectedSkip[plan.SkipReasonNotSupported])), "cortex_mimir_query_engine_projection_pushdown_skipped_total",
 			))
 		})
 	}
