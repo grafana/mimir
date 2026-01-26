@@ -40,6 +40,7 @@ const (
 	cardinalityActiveSeriesPathSuffix                 = "/api/v1/cardinality/active_series"
 	cardinalityActiveNativeHistogramMetricsPathSuffix = "/api/v1/cardinality/active_native_histogram_metrics"
 	labelNamesPathSuffix                              = "/api/v1/labels"
+	infoLabelsPathSuffix                              = "/api/v1/info_labels"
 	remoteReadPathSuffix                              = "/api/v1/read"
 	seriesPathSuffix                                  = "/api/v1/series"
 
@@ -678,8 +679,12 @@ func IsLabelValuesQuery(path string) bool {
 	return labelValuesPathSuffix.MatchString(path)
 }
 
+func IsInfoLabelsQuery(path string) bool {
+	return strings.HasSuffix(path, infoLabelsPathSuffix)
+}
+
 func IsLabelsQuery(path string) bool {
-	return IsLabelNamesQuery(path) || IsLabelValuesQuery(path)
+	return IsLabelNamesQuery(path) || IsLabelValuesQuery(path) || IsInfoLabelsQuery(path)
 }
 
 func IsSeriesQuery(path string) bool {

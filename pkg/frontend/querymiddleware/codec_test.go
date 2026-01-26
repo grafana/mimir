@@ -723,6 +723,38 @@ func TestCodec_DecodeEncodeLabelsQueryRequest(t *testing.T) {
 			expectedGetStartOrDefault: 1708502400 * 1e3,
 			expectedGetEndOrDefault:   1708588800 * 1e3,
 		},
+		{
+			name:        "info_labels with start and end timestamps, no matcher sets",
+			url:         "/api/v1/info_labels?end=1708588800&start=1708502400",
+			expectedURL: "/api/v1/info_labels?end=1708588800&start=1708502400",
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:             "/api/v1/info_labels",
+				Start:            1708502400 * 1e3,
+				End:              1708588800 * 1e3,
+				LabelMatcherSets: nil,
+			},
+			expectedGetLabelName:      "",
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
+		{
+			name:        "info_labels with matcher sets and limit",
+			url:         "/api/v1/info_labels?end=1708588800&limit=10&match%5B%5D=up%7Bjob%3D%22prometheus%22%7D&start=1708502400",
+			expectedURL: "/api/v1/info_labels?end=1708588800&limit=10&match%5B%5D=up%7Bjob%3D%22prometheus%22%7D&start=1708502400",
+			expectedStruct: &PrometheusLabelNamesQueryRequest{
+				Path:  "/api/v1/info_labels",
+				Start: 1708502400 * 1e3,
+				End:   1708588800 * 1e3,
+				Limit: 10,
+				LabelMatcherSets: []string{
+					`up{job="prometheus"}`,
+				},
+			},
+			expectedGetLabelName:      "",
+			expectedLimit:             10,
+			expectedGetStartOrDefault: 1708502400 * 1e3,
+			expectedGetEndOrDefault:   1708588800 * 1e3,
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			for _, reqMethod := range []string{http.MethodGet, http.MethodPost} {

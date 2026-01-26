@@ -127,6 +127,9 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 		request                       *http.Request
 		expectedCacheKeyPrefix        string
 		expectedCacheKeyWithLabelName bool
+		// usesDefaultMetricMatch indicates that the request type includes
+		// the default metric_match value ("target_info") in the cache key.
+		usesDefaultMetricMatch bool
 	}{
 		"label names API": {
 			requestPath:                   "/api/v1/labels",
@@ -137,6 +140,12 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 			requestPath:                   fmt.Sprintf("/api/v1/label/%s/values", labelName),
 			expectedCacheKeyPrefix:        labelValuesQueryCachePrefix,
 			expectedCacheKeyWithLabelName: true,
+		},
+		"info labels API": {
+			requestPath:                   "/api/v1/info_labels",
+			expectedCacheKeyPrefix:        infoLabelsQueryCachePrefix,
+			expectedCacheKeyWithLabelName: false,
+			usesDefaultMetricMatch:        true,
 		},
 	}
 
@@ -157,11 +166,19 @@ func TestDefaultCacheKeyGenerator_LabelValuesCacheKey(t *testing.T) {
 
 					assert.Equal(t, requestTypeData.expectedCacheKeyPrefix, actual.CacheKeyPrefix)
 
+					var expectedCacheKey string
 					if requestTypeData.expectedCacheKeyWithLabelName {
-						assert.Equal(t, testData.expectedCacheKeyWithLabelName, actual.CacheKey)
+						expectedCacheKey = testData.expectedCacheKeyWithLabelName
 					} else {
-						assert.Equal(t, testData.expectedCacheKeyWithoutLabelName, actual.CacheKey)
+						expectedCacheKey = testData.expectedCacheKeyWithoutLabelName
 					}
+
+					// Info labels requests include the default metric_match value in the cache key.
+					if requestTypeData.usesDefaultMetricMatch {
+						expectedCacheKey = expectedCacheKey + string(stringParamSeparator) + "target_info"
+					}
+
+					assert.Equal(t, expectedCacheKey, actual.CacheKey)
 				})
 			}
 		})
@@ -176,6 +193,7 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 		matcherSets      [][]*labels.Matcher
 		expectedCacheKey string
 		limit            uint64
+		metricMatch      string
 	}{
 		"start and end time are aligned to 2h boundaries": {
 			startTime: mustParseTime("2023-07-05T00:00:00Z"),
@@ -276,13 +294,78 @@ func TestGenerateLabelsQueryRequestCacheKey(t *testing.T) {
 				"10",
 			}, string(stringParamSeparator)),
 		},
+		"with metric_match for info_labels": {
+			startTime:   mustParseTime("2023-07-05T00:00:00Z"),
+			endTime:     mustParseTime("2023-07-05T06:00:00Z"),
+			metricMatch: "target_info",
+			expectedCacheKey: strings.Join([]string{
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
+				"",
+				"target_info",
+			}, string(stringParamSeparator)),
+		},
+		"with metric_match and limit": {
+			startTime:   mustParseTime("2023-07-05T00:00:00Z"),
+			endTime:     mustParseTime("2023-07-05T06:00:00Z"),
+			limit:       5,
+			metricMatch: "build_info",
+			expectedCacheKey: strings.Join([]string{
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T00:00:00Z")),
+				fmt.Sprintf("%d", mustParseTime("2023-07-05T06:00:00Z")),
+				"",
+				"5",
+				"build_info",
+			}, string(stringParamSeparator)),
+		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expectedCacheKey, generateLabelsQueryRequestCacheKey(testData.startTime, testData.endTime, testData.labelName, testData.matcherSets, testData.limit))
+			assert.Equal(t, testData.expectedCacheKey, generateLabelsQueryRequestCacheKey(testData.startTime, testData.endTime, testData.labelName, testData.matcherSets, testData.limit, testData.metricMatch))
 		})
 	}
+}
+
+func TestInfoLabelsCacheKeyIsolation(t *testing.T) {
+	codec := newTestCodec()
+	c := DefaultCacheKeyGenerator{codec: codec}
+
+	// Create requests with the same parameters but different endpoints/metric_match values.
+	labelNamesReq, _ := http.NewRequest("GET", "/api/v1/labels?start=1000&end=2000", nil)
+	infoLabelsDefaultReq, _ := http.NewRequest("GET", "/api/v1/info_labels?start=1000&end=2000", nil)
+	infoLabelsTargetInfoReq, _ := http.NewRequest("GET", "/api/v1/info_labels?start=1000&end=2000&metric_match=target_info", nil)
+	infoLabelsBuildInfoReq, _ := http.NewRequest("GET", "/api/v1/info_labels?start=1000&end=2000&metric_match=build_info", nil)
+
+	labelNamesKey, err := c.LabelValues(labelNamesReq)
+	require.NoError(t, err)
+
+	infoLabelsDefaultKey, err := c.LabelValues(infoLabelsDefaultReq)
+	require.NoError(t, err)
+
+	infoLabelsTargetInfoKey, err := c.LabelValues(infoLabelsTargetInfoReq)
+	require.NoError(t, err)
+
+	infoLabelsBuildInfoKey, err := c.LabelValues(infoLabelsBuildInfoReq)
+	require.NoError(t, err)
+
+	// Verify different prefixes for label_names vs info_labels.
+	assert.Equal(t, labelNamesQueryCachePrefix, labelNamesKey.CacheKeyPrefix, "label names should use ln: prefix")
+	assert.Equal(t, infoLabelsQueryCachePrefix, infoLabelsDefaultKey.CacheKeyPrefix, "info labels should use il: prefix")
+	assert.Equal(t, infoLabelsQueryCachePrefix, infoLabelsTargetInfoKey.CacheKeyPrefix, "info labels should use il: prefix")
+	assert.Equal(t, infoLabelsQueryCachePrefix, infoLabelsBuildInfoKey.CacheKeyPrefix, "info labels should use il: prefix")
+
+	// Verify label_names and info_labels have different cache keys even with same start/end.
+	assert.NotEqual(t, labelNamesKey.CacheKey, infoLabelsDefaultKey.CacheKey,
+		"label_names and info_labels should have different cache keys")
+
+	// Verify info_labels with default metric_match equals explicit target_info.
+	assert.Equal(t, infoLabelsDefaultKey.CacheKey, infoLabelsTargetInfoKey.CacheKey,
+		"info_labels with default and explicit target_info should have same cache key")
+
+	// Verify different metric_match values produce different cache keys.
+	assert.NotEqual(t, infoLabelsTargetInfoKey.CacheKey, infoLabelsBuildInfoKey.CacheKey,
+		"info_labels with different metric_match values should have different cache keys")
 }
 
 func TestParseRequestMatchersParam(t *testing.T) {

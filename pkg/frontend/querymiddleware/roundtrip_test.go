@@ -743,12 +743,54 @@ func TestIsLabelsQuery(t *testing.T) {
 		}, {
 			path:     "/prometheus/api/v1/label/test/unknown/values",
 			expected: false,
+		}, {
+			path:     "/api/v1/info_labels",
+			expected: true,
+		}, {
+			path:     "/prometheus/api/v1/info_labels",
+			expected: true,
+		}, {
+			path:     "/info_labels",
+			expected: false,
+		}, {
+			path:     "/api/v1/info_labels/unknown",
+			expected: false,
 		},
 	}
 
 	for _, testData := range tests {
 		t.Run(testData.path, func(t *testing.T) {
 			assert.Equal(t, testData.expected, IsLabelsQuery(testData.path))
+		})
+	}
+}
+
+func TestIsInfoLabelsQuery(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{
+			path:     "/api/v1/info_labels",
+			expected: true,
+		}, {
+			path:     "/prometheus/api/v1/info_labels",
+			expected: true,
+		}, {
+			path:     "/info_labels",
+			expected: false,
+		}, {
+			path:     "/api/v1/info_labels/unknown",
+			expected: false,
+		}, {
+			path:     "/api/v1/labels",
+			expected: false,
+		},
+	}
+
+	for _, testData := range tests {
+		t.Run(testData.path, func(t *testing.T) {
+			assert.Equal(t, testData.expected, IsInfoLabelsQuery(testData.path))
 		})
 	}
 }
