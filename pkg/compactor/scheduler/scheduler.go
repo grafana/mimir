@@ -215,6 +215,11 @@ func (s *Scheduler) isRunning() bool {
 }
 
 func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
+	if !s.isRunning() {
+		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
+		return nil, notRunning()
+	}
+
 	// Plan jobs are checked first
 	tenant, _, epoch, ok, err := s.planTracker.Lease(func(tenant string, _ struct{}) bool {
 		// TODO: Using req.WorkerId, can this worker plan for this tenant?
