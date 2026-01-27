@@ -219,8 +219,8 @@ eval range from 0 to 4m step 1m sum by (label) (single_histogram)
   {label="value2"} 0 5 {{schema:1 count:14 sum:15 buckets:[4 6 4]}} {{schema:0 count:8 sum:4 buckets:[2 5 1]}} 10
 
 eval range from 0 to 4m step 1m avg by (label) (single_histogram)
-  {label="value"}  0 1   {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}                                       2
-  {label="value2"} 0 2.5 {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}} {{schema:0 count:4 sum:2 buckets:[1 2.5 0.5] counter_reset_hint:gauge}} 5
+  {label="value"}  0 1   {{count:4 sum:2 buckets:[1 2 1]}}            {{sum:2 count:4 buckets:[1 2 1]}}              2
+  {label="value2"} 0 2.5 {{schema:1 count:7 sum:7.5 buckets:[2 3 2]}} {{schema:0 count:4 sum:2 buckets:[1 2.5 0.5]}} 5
 
 eval range from 0 to 4m step 1m quantile by (label) (0.5, single_histogram)
   {label="value"}  0 1   _ _ 2
