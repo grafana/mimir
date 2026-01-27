@@ -17,11 +17,8 @@ func (h *InsertOmittedTargetInfoSelector) Name() string {
 	return "Insert omitted target info selector"
 }
 
-func (h *InsertOmittedTargetInfoSelector) Apply(_ context.Context, expr parser.Expr) (parser.Expr, error) {
-	return h.apply(expr), nil
-}
-
-func (h *InsertOmittedTargetInfoSelector) apply(root parser.Expr) parser.Expr {
+func (h *InsertOmittedTargetInfoSelector) Apply(_ context.Context, root parser.Expr) (parser.Expr, error) {
+	var inspectionError error
 	parser.Inspect(root, func(node parser.Node, _ []parser.Node) error {
 		switch expr := node.(type) {
 		case *parser.Call:
@@ -30,13 +27,15 @@ func (h *InsertOmittedTargetInfoSelector) apply(root parser.Expr) parser.Expr {
 				case 1:
 					infoExpr, err := parser.ParseExpr("target_info")
 					if err != nil {
-						panic(fmt.Sprintf("failed to parse target_info expression: %v", err))
+						inspectionError = fmt.Errorf("failed to parse target_info expression: %v", err)
+						return inspectionError
 					}
 					expr.Args = append(expr.Args, infoExpr)
 				case 2:
 					dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
 					if !ok {
-						panic(fmt.Sprintf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1]))
+						inspectionError = fmt.Errorf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1])
+						return inspectionError
 					}
 					hasMetricNameMatcher := false
 					for _, m := range dataLabelMatchersExpr.LabelMatchers {
@@ -49,12 +48,17 @@ func (h *InsertOmittedTargetInfoSelector) apply(root parser.Expr) parser.Expr {
 						dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "target_info"))
 					}
 				default:
-					panic(fmt.Sprintf("expected 'info' function to have exactly 2 arguments, got %d", length))
+					inspectionError = fmt.Errorf("expected 'info' function to have exactly 2 arguments, got %d", length)
+					return inspectionError
 				}
 			}
 		}
 		return nil
 	})
 
-	return root
+	if inspectionError != nil {
+		return nil, inspectionError
+	}
+
+	return root, nil
 }
