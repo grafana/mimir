@@ -226,13 +226,19 @@ type partitionState struct {
 	topic     string
 	partition int32
 
-	offset    int64
-	jobBucket time.Time
+	// nextJobStartOffset is the start offset of the next job that will be
+	// planned when a new jobBucket is entered.
+	nextJobStartOffset int64
+	jobBucket          time.Time
 
+	// committed is the locally known committed offset for this partition.
 	committed *advancingOffset
-	planned   *advancingOffset
+	// planned is the locally known planned offset for this partition. It is the
+	// highest offset through which jobs have been planned for this partition.
+	planned *advancingOffset
 
-	// pendingJobs are jobs that are waiting to be enqueued. The job creation policy is what allows them to advance to the plannedJobs list.
+	// pendingJobs are jobs that are waiting to be enqueued. The job creation
+	// policy is what allows them to advance to the plannedJobs list.
 	pendingJobs *list.List
 	// plannedJobs are jobs that are either ready to be assigned, in-progress, or completed.
 	plannedJobs *list.List
@@ -259,7 +265,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	newJobBucket := ts.Truncate(jobSize)
 
 	if s.jobBucket.IsZero() {
-		s.offset = end
+		s.nextJobStartOffset = s.planned.offset()
 		s.jobBucket = newJobBucket
 		return nil, nil
 	}
@@ -268,7 +274,7 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 	case bucketBefore:
 		// New bucket is before our current one. This should only happen if our
 		// Kafka's end offsets aren't monotonically increasing.
-		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.offset, end)
+		return nil, fmt.Errorf("time went backwards: %s < %s (%d, %d)", newJobBucket, s.jobBucket, s.nextJobStartOffset, end)
 	case bucketSame:
 		// Observation is in the currently tracked bucket. No action needed.
 	case bucketAfter:
@@ -276,15 +282,15 @@ func (s *partitionState) updateEndOffset(end int64, ts time.Time, jobSize time.D
 		// bucket if it has data and start a new one.
 
 		var job *schedulerpb.JobSpec
-		if s.offset < end {
+		if s.nextJobStartOffset < end {
 			job = &schedulerpb.JobSpec{
 				Topic:       s.topic,
 				Partition:   s.partition,
-				StartOffset: s.offset,
+				StartOffset: s.nextJobStartOffset,
 				EndOffset:   end,
 			}
 		}
-		s.offset = end
+		s.nextJobStartOffset = end
 		s.jobBucket = newJobBucket
 		return job, nil
 	}
