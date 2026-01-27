@@ -49,6 +49,7 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	c.attempts.Inc()
 
 	matchersReduced := false
+	var applyErr error
 	c.apply(root, func(node parser.Node) {
 		switch expr := node.(type) {
 		case *parser.VectorSelector:
@@ -76,7 +77,11 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 				)
 			}
 		}
-	})
+	}, &applyErr)
+
+	if applyErr != nil {
+		return nil, applyErr
+	}
 
 	if matchersReduced {
 		c.success.Inc()
@@ -85,14 +90,14 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	return root, nil
 }
 
-func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node)) {
-	if node == nil {
+func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node), errPtr *error) {
+	if node == nil || *errPtr != nil {
 		return
 	}
 
 	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
 		// Only reduce matchers for the first argument of info(), not the second.
-		c.apply(call.Args[0], fn)
+		c.apply(call.Args[0], fn, errPtr)
 		return
 	}
 
@@ -100,29 +105,29 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node)) {
 
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
-		c.apply(n.Expr, fn)
-		c.apply(n.Param, fn)
+		c.apply(n.Expr, fn, errPtr)
+		c.apply(n.Param, fn, errPtr)
 	case *parser.BinaryExpr:
-		c.apply(n.LHS, fn)
-		c.apply(n.RHS, fn)
+		c.apply(n.LHS, fn, errPtr)
+		c.apply(n.RHS, fn, errPtr)
 	case *parser.Call:
 		for _, arg := range n.Args {
-			c.apply(arg, fn)
+			c.apply(arg, fn, errPtr)
 		}
 	case *parser.MatrixSelector:
-		c.apply(n.VectorSelector, fn)
+		c.apply(n.VectorSelector, fn, errPtr)
 	case *parser.SubqueryExpr:
-		c.apply(n.Expr, fn)
+		c.apply(n.Expr, fn, errPtr)
 	case *parser.ParenExpr:
-		c.apply(n.Expr, fn)
+		c.apply(n.Expr, fn, errPtr)
 	case *parser.UnaryExpr:
-		c.apply(n.Expr, fn)
+		c.apply(n.Expr, fn, errPtr)
 	case *parser.StepInvariantExpr:
-		c.apply(n.Expr, fn)
+		c.apply(n.Expr, fn, errPtr)
 	case *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
 		// no children to traverse
 	default:
-		panic(fmt.Sprintf("unknown expression type: %T", n))
+		*errPtr = fmt.Errorf("unknown expression type: %T", n)
 	}
 }
 
