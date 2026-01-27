@@ -176,42 +176,18 @@ func (f *InfoFunction) sigFunctionLabelsOnly(lset labels.Labels) []byte {
 }
 
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
-	buf := make([]byte, 0, 1024)
-	lb := labels.NewScratchBuilder(0)
-
-	sigFunction := func(name string) func(labels.Labels) []byte {
-		// Signature is the info metric name + identifying labels.
-		return func(lset labels.Labels) []byte {
-			lb.Reset()
-			lb.Add(model.MetricNameLabel, name)
-			lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
-				lb.Add(l.Name, l.Value)
-			})
-			lb.Sort()
-			return lb.Labels().Bytes(buf)
-		}
-	}
-
 	// Initialize dedicated buffer and scratch builder for sigFunctionLabelsOnly,
 	// since this is also called later when the local buf and lb would be out of scope.
 	f.sigLabelsOnlyBuf = make([]byte, 0, 1024)
 	f.sigLabelsOnlyLb = labels.NewScratchBuilder(0)
 
-	// labels hash:function to generate signature from labels
-	sigFunctions := make(map[string]func(labels.Labels) []byte)
-	// timestamp:(signature:labels + timestamp)
-	sigTimestamps := make(map[int64]map[string]labelsTime)
+	// metric name:(timestamp:(labels-only signature:labels + timestamp))
+	sigTimestampsByMetric := make(map[string]map[int64]map[string]labelsTime)
 	f.sigLabelsOnlyTimestamps = make(map[int64]map[string][]labels.Labels)
 	f.labelSets = make(map[string]map[string][]labels.Labels)
 
 	for _, metadata := range infoMetadata {
 		metricName := metadata.Labels.Get(model.MetricNameLabel)
-		sigFunc, exists := sigFunctions[metricName]
-		if !exists {
-			sigFunc = sigFunction(metricName)
-			sigFunctions[metricName] = sigFunc
-		}
-		sig := sigFunc(metadata.Labels)
 		sigLabelsOnly := f.sigFunctionLabelsOnly(metadata.Labels)
 
 		// Read all samples for this info series.
@@ -232,11 +208,16 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			// Check for duplicate series for the same timestamp and signature.
 			// If a duplicate is found, only error out if the original timestamp is the same.
 			// Otherwise, keep the one with the latest original timestamp.
+			sigTimestamps, exists := sigTimestampsByMetric[metricName]
+			if !exists {
+				sigTimestamps = make(map[int64]map[string]labelsTime)
+				sigTimestampsByMetric[metricName] = sigTimestamps
+			}
 			sigsAtTimestamp, exists := sigTimestamps[sample.T]
 			if !exists {
 				sigsAtTimestamp = make(map[string]labelsTime)
 			}
-			if metricLabels, exists := sigsAtTimestamp[string(sig)]; exists {
+			if metricLabels, exists := sigsAtTimestamp[string(sigLabelsOnly)]; exists {
 				if metricLabels.time == origTs {
 					types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 					return fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", metricLabels.labels.String(), metadata.Labels.String(), sample.T, model_timestamp.Time(sample.T).Format(time.RFC3339Nano))
@@ -244,7 +225,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 					continue
 				}
 			}
-			sigsAtTimestamp[string(sig)] = labelsTime{
+			sigsAtTimestamp[string(sigLabelsOnly)] = labelsTime{
 				labels: metadata.Labels,
 				time:   origTs,
 			}
