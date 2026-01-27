@@ -304,25 +304,34 @@ func makeLabelSetsHash(labelSets []labels.Labels) string {
 func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata, dataLabelMatchers types.Matchers) map[int]struct{} {
 	ignoreSeries := make(map[int]struct{})
 
-	var infoMatcher *labels.Matcher
+	var infoNameMatchers []*labels.Matcher
 	for _, m := range dataLabelMatchers {
 		if m.Name == model.MetricNameLabel {
-			infoMatcher, _ = m.ToPrometheusType()
-			break
+			matcher, _ := m.ToPrometheusType()
+			infoNameMatchers = append(infoNameMatchers, matcher)
 		}
 	}
-	if infoMatcher == nil {
+	if len(infoNameMatchers) == 0 {
 		return nil
 	}
 
 	for i, s := range innerMetadata {
 		name := s.Labels.Get(model.MetricNameLabel)
-		if infoMatcher.Matches(name) {
+		if matchersMatch(infoNameMatchers, name) {
 			ignoreSeries[i] = struct{}{}
 		}
 	}
 
 	return ignoreSeries
+}
+
+func matchersMatch(matchers []*labels.Matcher, value string) bool {
+	for _, m := range matchers {
+		if !m.Matches(value) {
+			return false
+		}
+	}
+	return true
 }
 
 // combineSeriesMetadata combines inner series metadata with info series labels.
