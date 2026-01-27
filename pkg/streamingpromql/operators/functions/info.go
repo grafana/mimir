@@ -38,17 +38,17 @@ type InfoFunction struct {
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
 
-	// dedicated buffer and scratch builder for sigFunctionLabelsOnly
-	sigLabelsOnlyBuf []byte
-	sigLabelsOnlyLb  labels.ScratchBuilder
-	// timestamp:(labels only signature:array of labels)
-	sigLabelsOnlyTimestamps map[int64]map[string][]labels.Labels
-	// labels only signature:(label sets hash:array of labels)
+	// dedicated buffer and scratch builder for sigFunction
+	sigBuf []byte
+	sigLb  labels.ScratchBuilder
+	// timestamp:(signature:array of labels)
+	sigTimestamps map[int64]map[string][]labels.Labels
+	// signature:(label sets hash:array of labels)
 	labelSets map[string]map[string][]labels.Labels
 	// inner series index - (info series label sets hash: index for ordering)
 	labelSetsOrder []map[string]int
-	// inner series index - inner series labels only signature
-	innerSigLabelsOnly []string
+	// inner series index - inner series signature
+	innerSig []string
 	// stored series results for current inner series
 	storedSeriesResults []types.InstantVectorSeriesData
 
@@ -163,32 +163,32 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	return matchers, false
 }
 
-// sigFunctionLabelsOnly generates signature from labels without metric name
-// Ensure this is only called after initializing f.sigLabelsOnlyBuf and f.sigLabelsOnlyLb
-func (f *InfoFunction) sigFunctionLabelsOnly(lset labels.Labels) []byte {
+// sigFunction generates signature from labels without metric name
+// Ensure this is only called after initializing f.sigBuf and f.sigLb
+func (f *InfoFunction) sigFunction(lset labels.Labels) []byte {
 	// Signature is only the identifying labels without metric names.
-	f.sigLabelsOnlyLb.Reset()
+	f.sigLb.Reset()
 	lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
-		f.sigLabelsOnlyLb.Add(l.Name, l.Value)
+		f.sigLb.Add(l.Name, l.Value)
 	})
-	f.sigLabelsOnlyLb.Sort()
-	return f.sigLabelsOnlyLb.Labels().Bytes(f.sigLabelsOnlyBuf)
+	f.sigLb.Sort()
+	return f.sigLb.Labels().Bytes(f.sigBuf)
 }
 
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
-	// Initialize dedicated buffer and scratch builder for sigFunctionLabelsOnly,
+	// Initialize dedicated buffer and scratch builder for sigFunction,
 	// since this is also called later when the local buf and lb would be out of scope.
-	f.sigLabelsOnlyBuf = make([]byte, 0, 1024)
-	f.sigLabelsOnlyLb = labels.NewScratchBuilder(0)
+	f.sigBuf = make([]byte, 0, 1024)
+	f.sigLb = labels.NewScratchBuilder(0)
 
 	// metric name:(timestamp:(labels-only signature:labels + timestamp))
 	sigTimestampsByMetric := make(map[string]map[int64]map[string]labelsTime)
-	f.sigLabelsOnlyTimestamps = make(map[int64]map[string][]labels.Labels)
+	f.sigTimestamps = make(map[int64]map[string][]labels.Labels)
 	f.labelSets = make(map[string]map[string][]labels.Labels)
 
 	for _, metadata := range infoMetadata {
 		metricName := metadata.Labels.Get(model.MetricNameLabel)
-		sigLabelsOnly := f.sigFunctionLabelsOnly(metadata.Labels)
+		sig := f.sigFunction(metadata.Labels)
 
 		// Read all samples for this info series.
 		d, err := f.Info.NextSeries(ctx)
@@ -217,7 +217,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 			if !exists {
 				sigsAtTimestamp = make(map[string]labelsTime)
 			}
-			if metricLabels, exists := sigsAtTimestamp[string(sigLabelsOnly)]; exists {
+			if metricLabels, exists := sigsAtTimestamp[string(sig)]; exists {
 				if metricLabels.time == origTs {
 					types.PutInstantVectorSeriesData(d, f.MemoryConsumptionTracker)
 					return fmt.Errorf("found duplicate series for info metric: existing %s, new %s, @ %d (%s)", metricLabels.labels.String(), metadata.Labels.String(), sample.T, model_timestamp.Time(sample.T).Format(time.RFC3339Nano))
@@ -225,7 +225,7 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 					continue
 				}
 			}
-			sigsAtTimestamp[string(sigLabelsOnly)] = labelsTime{
+			sigsAtTimestamp[string(sig)] = labelsTime{
 				labels: metadata.Labels,
 				time:   origTs,
 			}
@@ -233,12 +233,12 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 			// We summarise the info series by recording per timestamp and labels-only signature
 			// the series labels we've seen.
-			sigLabelsOnlyAtTimestamp, exists := f.sigLabelsOnlyTimestamps[sample.T]
+			sigAtTimestamp, exists := f.sigTimestamps[sample.T]
 			if !exists {
-				sigLabelsOnlyAtTimestamp = make(map[string][]labels.Labels)
+				sigAtTimestamp = make(map[string][]labels.Labels)
 			}
-			sigLabelsOnlyAtTimestamp[string(sigLabelsOnly)] = append(sigLabelsOnlyAtTimestamp[string(sigLabelsOnly)], metadata.Labels)
-			f.sigLabelsOnlyTimestamps[sample.T] = sigLabelsOnlyAtTimestamp
+			sigAtTimestamp[string(sig)] = append(sigAtTimestamp[string(sig)], metadata.Labels)
+			f.sigTimestamps[sample.T] = sigAtTimestamp
 		}
 
 		// Return the info series data to the pool as we no longer need the raw samples
@@ -250,13 +250,13 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 	// This will be used to generate all label sets for each inner series that can actually
 	// be used, instead of generating all theoretically possible combinations which grows
 	// exponentially.
-	for _, sigLabelsOnlyAtTimestamp := range f.sigLabelsOnlyTimestamps {
-		for sigLabelsOnly, labelSets := range sigLabelsOnlyAtTimestamp {
+	for _, sigAtTimestamp := range f.sigTimestamps {
+		for sig, labelSets := range sigAtTimestamp {
 			labelsArr := append([]labels.Labels(nil), labelSets...)
-			if _, exists := f.labelSets[sigLabelsOnly]; !exists {
-				f.labelSets[sigLabelsOnly] = make(map[string][]labels.Labels)
+			if _, exists := f.labelSets[sig]; !exists {
+				f.labelSets[sig] = make(map[string][]labels.Labels)
 			}
-			f.labelSets[sigLabelsOnly][makeLabelSetsHash(labelSets)] = labelsArr
+			f.labelSets[sig][makeLabelSetsHash(labelSets)] = labelsArr
 		}
 	}
 
@@ -339,7 +339,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 	lb := labels.NewBuilder(labels.EmptyLabels())
 
 	f.labelSetsOrder = make([]map[string]int, len(innerMetadata))
-	f.innerSigLabelsOnly = make([]string, len(innerMetadata))
+	f.innerSig = make([]string, len(innerMetadata))
 
 	extraLabelSets := make(map[int][]labels.Labels)
 	totalLabelSetsCount := 0
@@ -353,9 +353,9 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			continue
 		}
 
-		sigLabelsOnly := f.sigFunctionLabelsOnly(innerSeries.Labels)
-		f.innerSigLabelsOnly[i] = string(sigLabelsOnly)
-		labelSetsMap, exists := f.labelSets[string(sigLabelsOnly)]
+		sig := f.sigFunction(innerSeries.Labels)
+		f.innerSig[i] = string(sig)
+		labelSetsMap, exists := f.labelSets[string(sig)]
 		// If this inner series doesn't match the identifying labels of any info series, pass
 		// the original series metadata along unchanged, unless user specified label matchers.
 		if !exists {
@@ -494,7 +494,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		}
 
 		labelSetsOrder := f.labelSetsOrder[f.nextInnerSeriesIndex]
-		sigLabelsOnly := f.innerSigLabelsOnly[f.nextInnerSeriesIndex]
+		sig := f.innerSig[f.nextInnerSeriesIndex]
 		storedSeriesResults := make(map[string]types.InstantVectorSeriesData)
 
 		lenFloats := len(result.Floats)
@@ -502,7 +502,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 
 		// Go timestamp by timestamp and sort samples into the correct split series by copying.
 		for _, point := range result.Floats {
-			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sig, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
 				for _, data := range storedSeriesResults {
 					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
@@ -518,7 +518,7 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 		}
 
 		for _, point := range result.Histograms {
-			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sigLabelsOnly, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
+			splitResult, labelSetsHash, skip, err := f.getSplitResult(point.T, sig, storedSeriesResults, labelSetsOrder, lenFloats, lenHistograms)
 			if err != nil {
 				for _, data := range storedSeriesResults {
 					types.PutInstantVectorSeriesData(data, f.MemoryConsumptionTracker)
@@ -563,12 +563,12 @@ func (f *InfoFunction) NextSeries(ctx context.Context) (types.InstantVectorSerie
 	}
 }
 
-func (f *InfoFunction) getSplitResult(ts int64, sigLabelsOnly string, storedSeriesResults map[string]types.InstantVectorSeriesData, labelSetsOrder map[string]int, lenFloats, lenHistograms int) (types.InstantVectorSeriesData, string, bool, error) {
+func (f *InfoFunction) getSplitResult(ts int64, sig string, storedSeriesResults map[string]types.InstantVectorSeriesData, labelSetsOrder map[string]int, lenFloats, lenHistograms int) (types.InstantVectorSeriesData, string, bool, error) {
 	// Get the label sets seen for this timestamp and labels-only signature and create a hash.
 	var labelSetsHash string
-	labelSetsBySig, exists := f.sigLabelsOnlyTimestamps[ts]
+	labelSetsBySig, exists := f.sigTimestamps[ts]
 	if exists {
-		labelSets, exists := labelSetsBySig[sigLabelsOnly]
+		labelSets, exists := labelSetsBySig[sig]
 		if exists {
 			labelSetsHash = makeLabelSetsHash(labelSets)
 		} else {
