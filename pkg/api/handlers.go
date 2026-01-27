@@ -40,14 +40,16 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func newIndexPageContent() *IndexPageContent {
-	return &IndexPageContent{}
+func newIndexPageContent(pathPrefix string) *IndexPageContent {
+	return &IndexPageContent{
+		BaseURL: pathPrefix,
+	}
 }
 
 // IndexPageContent is a map of sections to path -> description.
 type IndexPageContent struct {
-	mu sync.Mutex
-
+	mu       sync.Mutex
+	BaseURL  string
 	elements []IndexPageLinkGroup
 }
 
@@ -112,17 +114,27 @@ var indexPageHTML string
 
 type indexPageContents struct {
 	LinkGroups []IndexPageLinkGroup
+	BaseURL    string
 }
 
 //go:embed static
 var staticFiles embed.FS
 
+func resolveBaseURL(baseURL, path string) string {
+	if strings.HasPrefix(path, "/") {
+		return strings.TrimSuffix(baseURL, "/") + path
+	}
+	return path
+}
+
 func indexHandler(content *IndexPageContent) http.HandlerFunc {
-	templ := template.New("main")
+	templ := template.New("main").Funcs(template.FuncMap{
+		"resolveBaseURL": resolveBaseURL,
+	})
 	template.Must(templ.Parse(indexPageHTML))
 
 	return func(w http.ResponseWriter, _ *http.Request) {
-		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent()})
+		err := templ.Execute(w, indexPageContents{LinkGroups: content.GetContent(), BaseURL: content.BaseURL})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}

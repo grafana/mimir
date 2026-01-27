@@ -22,13 +22,13 @@
             <img alt="Mimir logo" class="mimir-brand" src="{{ "static/mimir-icon.png" }}">
         </div>
     </div>
-    {{ range $i, $ := .LinkGroups }}
+    {{ range $i, $group := .LinkGroups }}
         <div class="row service-row border-bottom py-3">
-            <div class="col-sm-3 text-start text-sm-end"><h2>{{ $.Desc }}</h2></div>
+            <div class="col-sm-3 text-start text-sm-end"><h2>{{ $group.Desc }}</h2></div>
             <div class="col-sm-9">
                 <ul class="my-0 list-unstyled">
-                    {{ range $.Links }}
-                        <li><a href="{{ .Path }}">{{ .Desc }}</a>
+                    {{ range $group.Links }}
+                       <li><a href="{{ resolveBaseURL $.BaseURL .Path }}">{{ .Desc }}</a>
                             {{ if .Dangerous }}<span
                                     class="badge bg-danger rounded-pill align-middle">Dangerous</span>{{ end }}</li>
                     {{ end }}
