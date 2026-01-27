@@ -367,13 +367,19 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			continue
 		}
 
+		// Get all possible combinations of info series labels with this inner series,
+		// and track them properly so we know exactly how many to pull from the pool later.
+		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
+
+		// If user specified label matchers but no labels from info series matched, skip this series.
+		if len(dataLabelMatchersMap) > 0 && len(newLabelSets) == 0 {
+			continue
+		}
+
 		// Pass the original series metadata along unchanged.
 		f.labelSetsOrder[i] = map[string]int{"inner": 0}
 		totalLabelSetsCount++
 
-		// Get all possible combinations of info series labels with this inner series,
-		// and track them properly so we know exactly how many to pull from the pool later.
-		newLabelSets, labelSetsOrder := combineLabels(lb, innerSeries, labelSetsMap, dataLabelMatchersMap)
 		extraLabelSets[i] = newLabelSets
 		totalLabelSetsCount += len(newLabelSets)
 		for j, labelSetsHash := range labelSetsOrder {
