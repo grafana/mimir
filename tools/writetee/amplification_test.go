@@ -40,16 +40,15 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 	compressed := snappy.Encode(nil, marshaled)
 
 	// Amplify with factor 2.0 (no tracker for test)
-	// RW 2.0 requests are converted to RW 1.0 format, then amplified
+	// RW 2.0 requests are now kept in native RW 2.0 format (symbol table + uint32 refs)
 	ampResult, err := AmplifyWriteRequest(compressed, 2.0, nil)
 	require.NoError(t, err)
 
-	// Decompress and unmarshal the result
+	// Decompress and unmarshal the result using native RW2 unmarshal
 	decompressed, err := snappy.Decode(nil, ampResult.Body)
 	require.NoError(t, err)
 
-	var result mimirpb.WriteRequest
-	err = proto.Unmarshal(decompressed, &result)
+	result, err := mimirpb.UnmarshalWriteRequestRW2Native(decompressed)
 	require.NoError(t, err)
 
 	// Verify results
@@ -59,23 +58,33 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 	assert.Equal(t, 1, ampResult.OriginalSeriesCount)
 	assert.Equal(t, 1, ampResult.AmplifiedSeriesCount)
 
-	// Verify first time series is the original
-	assert.Equal(t, 2, len(result.Timeseries[0].Labels), "first time series should have 2 labels")
-	assert.Equal(t, "__name__", result.Timeseries[0].Labels[0].Name)
-	assert.Equal(t, "http_requests_total", result.Timeseries[0].Labels[0].Value)
+	// Verify symbols table includes original symbols plus __amplified__ and "1"
+	assert.Contains(t, result.Symbols, "__amplified__", "should have __amplified__ symbol")
+	assert.Contains(t, result.Symbols, "1", "should have replica number symbol")
 
-	// Verify second time series has the amplified label
-	assert.Equal(t, 3, len(result.Timeseries[1].Labels), "second time series should have 3 labels (original + amplified)")
+	// Verify first time series is the original (4 label refs: name, value, method, GET)
+	assert.Equal(t, 4, len(result.Timeseries[0].LabelsRefs), "first time series should have 4 label refs")
 
-	// Find the amplified label
-	var hasAmplifiedLabel bool
-	for _, label := range result.Timeseries[1].Labels {
-		if label.Name == "__amplified__" {
-			hasAmplifiedLabel = true
-			assert.Equal(t, "1", label.Value)
+	// Verify second time series has amplified label (6 label refs: original 4 + __amplified__ + replica)
+	assert.Equal(t, 6, len(result.Timeseries[1].LabelsRefs), "second time series should have 6 label refs (original 4 + amplified 2)")
+
+	// Verify the amplified label is in the symbol table and referenced
+	amplifiedSymbolIdx := -1
+	replicaSymbolIdx := -1
+	for i, sym := range result.Symbols {
+		if sym == "__amplified__" {
+			amplifiedSymbolIdx = i
+		}
+		if sym == "1" {
+			replicaSymbolIdx = i
 		}
 	}
-	assert.True(t, hasAmplifiedLabel, "second time series should have __amplified__ label")
+	assert.NotEqual(t, -1, amplifiedSymbolIdx, "__amplified__ should be in symbol table")
+	assert.NotEqual(t, -1, replicaSymbolIdx, "replica number should be in symbol table")
+
+	// Verify the last two refs in the amplified series point to __amplified__ and replica number
+	assert.Equal(t, uint32(amplifiedSymbolIdx), result.Timeseries[1].LabelsRefs[4], "should reference __amplified__ symbol")
+	assert.Equal(t, uint32(replicaSymbolIdx), result.Timeseries[1].LabelsRefs[5], "should reference replica number symbol")
 
 	// Verify samples are preserved
 	assert.Equal(t, 1, len(result.Timeseries[1].Samples))

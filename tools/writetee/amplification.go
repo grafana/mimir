@@ -134,54 +134,33 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 	var req mimirpb.WriteRequest
 	err = proto.Unmarshal(decompressed, &req)
 
-	// If RW 1.0 unmarshal fails with RW 2.0 error, convert and amplify RW 2.0
+	// If RW 1.0 unmarshal fails with RW 2.0 error, amplify RW 2.0 in native format
 	if err != nil {
 		// Check if this is a RW 2.0 request by looking for the specific error message
 		if !isRW2Error(err) {
 			return AmplificationResult{}, fmt.Errorf("failed to unmarshal write request: %w", err)
 		}
-		// Use PreallocWriteRequest with UnmarshalFromRW2=true to convert RW 2.0 to RW 1.0
-		var prealloc mimirpb.PreallocWriteRequest
-		prealloc.UnmarshalFromRW2 = true // Enable RW 2.0 parsing
 
-		if err := prealloc.Unmarshal(decompressed); err != nil {
+		// Unmarshal as RW 2.0 data in native format using our custom unmarshal
+		// This keeps data in native RW 2.0 format (symbol table + uint32 refs)
+		// avoiding the 12.5x memory expansion of converting to RW 1.0
+		rw2Req, err := mimirpb.UnmarshalWriteRequestRW2Native(decompressed)
+		if err != nil {
 			return AmplificationResult{}, fmt.Errorf("failed to unmarshal RW 2.0 write request: %w", err)
 		}
 
-		// After unmarshaling with UnmarshalFromRW2=true, the data is in Timeseries (RW 1.0 format)
-		originalSeriesCount := len(prealloc.WriteRequest.Timeseries)
+		originalSeriesCount := len(rw2Req.Timeseries)
 
-		// Record RW 2.0 series for dynamic adjustment
+		// Record RW 2.0 series for observability
 		if tracker != nil && originalSeriesCount > 0 {
 			tracker.RecordRW2Series(originalSeriesCount)
 		}
 
-		// Amplify the converted RW 2.0 data (now in RW 1.0 format)
-		fullCopies := int(math.Floor(amplificationFactor))
-		fractionalPart := amplificationFactor - float64(fullCopies)
-
-		amplifiedSeries := make([]mimirpb.PreallocTimeseries, 0, len(prealloc.WriteRequest.Timeseries)*fullCopies)
-
-		for _, ts := range prealloc.WriteRequest.Timeseries {
-			// Keep the original
-			amplifiedSeries = append(amplifiedSeries, ts)
-
-			// Create full copies
-			for i := 1; i < fullCopies; i++ {
-				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, i))
-			}
-
-			// Handle fractional part with probability
-			if fractionalPart > 0 && rand.Float64() < fractionalPart {
-				amplifiedSeries = append(amplifiedSeries, amplifyTimeSeries(&ts, fullCopies))
-			}
-		}
-
-		// Replace the time series in the request
-		prealloc.WriteRequest.Timeseries = amplifiedSeries
+		// Amplify RW 2.0 data in native format (avoids 12.5x memory expansion)
+		amplifiedRW2 := amplifyRW2Request(rw2Req, amplificationFactor)
 
 		// Marshal back to protobuf
-		amplifiedProto, err := proto.Marshal(&prealloc.WriteRequest)
+		amplifiedProto, err := proto.Marshal(&amplifiedRW2)
 		if err != nil {
 			return AmplificationResult{}, fmt.Errorf("failed to marshal amplified RW 2.0 write request: %w", err)
 		}
@@ -192,7 +171,7 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		return AmplificationResult{
 			Body:                 amplifiedBody,
 			OriginalSeriesCount:  originalSeriesCount,
-			AmplifiedSeriesCount: len(amplifiedSeries) - originalSeriesCount,
+			AmplifiedSeriesCount: len(amplifiedRW2.Timeseries) - originalSeriesCount,
 			IsRW2:                true,
 			WasAmplified:         true,
 		}, nil
@@ -249,6 +228,102 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 	}, nil
 }
 
+
+// amplifyRW2Request amplifies a RW 2.0 request in native format.
+// This avoids the 12.5x memory expansion of converting RW 2.0 → RW 1.0.
+// Instead, we just add a few strings to the symbol table and duplicate uint32 label ref arrays.
+func amplifyRW2Request(req *mimirpb.WriteRequestRW2, amplificationFactor float64) mimirpb.WriteRequestRW2 {
+	fullCopies := int(math.Floor(amplificationFactor))
+	fractionalPart := amplificationFactor - float64(fullCopies)
+
+	// Build the amplified symbol table
+	// Start with original symbols, then add __amplified__ and replica numbers
+	amplifiedSymbols := make([]string, len(req.Symbols))
+	copy(amplifiedSymbols, req.Symbols)
+
+	// Add amplification label name symbol
+	amplifiedLabelSymbolRef := uint32(len(amplifiedSymbols))
+	amplifiedSymbols = append(amplifiedSymbols, amplifiedLabelName)
+
+	// Add replica number symbols (1, 2, 3, ...)
+	replicaSymbolRefs := make([]uint32, fullCopies)
+	for i := 1; i < fullCopies; i++ {
+		replicaSymbolRefs[i] = uint32(len(amplifiedSymbols))
+		amplifiedSymbols = append(amplifiedSymbols, fmt.Sprintf("%d", i))
+	}
+
+	// Handle fractional part - might need one more replica symbol
+	var fractionalReplicaRef uint32
+	if fractionalPart > 0 {
+		fractionalReplicaRef = uint32(len(amplifiedSymbols))
+		amplifiedSymbols = append(amplifiedSymbols, fmt.Sprintf("%d", fullCopies))
+	}
+
+	// Amplify time series
+	amplifiedSeries := make([]mimirpb.TimeSeriesRW2, 0, len(req.Timeseries)*fullCopies)
+
+	for _, ts := range req.Timeseries {
+		// Keep the original (no amplification label)
+		amplifiedSeries = append(amplifiedSeries, ts)
+
+		// Create full copies with amplification label
+		for i := 1; i < fullCopies; i++ {
+			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, amplifiedLabelSymbolRef, replicaSymbolRefs[i]))
+		}
+
+		// Handle fractional part with probability
+		if fractionalPart > 0 && rand.Float64() < fractionalPart {
+			amplifiedSeries = append(amplifiedSeries, amplifyTimeSeriesRW2(&ts, amplifiedLabelSymbolRef, fractionalReplicaRef))
+		}
+	}
+
+	return mimirpb.WriteRequestRW2{
+		Symbols:    amplifiedSymbols,
+		Timeseries: amplifiedSeries,
+	}
+}
+
+// amplifyTimeSeriesRW2 creates a copy of an RW 2.0 time series with the amplified label added.
+// This operates on uint32 label references, not actual label strings.
+func amplifyTimeSeriesRW2(original *mimirpb.TimeSeriesRW2, labelNameRef, labelValueRef uint32) mimirpb.TimeSeriesRW2 {
+	// Copy the time series
+	ts := mimirpb.TimeSeriesRW2{
+		// Copy label refs and append amplification label refs
+		LabelsRefs: make([]uint32, len(original.LabelsRefs)+2),
+		// Copy samples
+		Samples: make([]mimirpb.Sample, len(original.Samples)),
+		// Copy exemplars
+		Exemplars: make([]mimirpb.ExemplarRW2, len(original.Exemplars)),
+		// Copy histograms
+		Histograms: make([]mimirpb.Histogram, len(original.Histograms)),
+		// Copy metadata
+		Metadata:         original.Metadata,
+		CreatedTimestamp: original.CreatedTimestamp,
+	}
+
+	// Copy label refs
+	copy(ts.LabelsRefs, original.LabelsRefs)
+	// Add amplification label refs
+	ts.LabelsRefs[len(original.LabelsRefs)] = labelNameRef
+	ts.LabelsRefs[len(original.LabelsRefs)+1] = labelValueRef
+
+	// Deep copy samples
+	copy(ts.Samples, original.Samples)
+
+	// Deep copy exemplars
+	for i := range original.Exemplars {
+		ts.Exemplars[i] = mimirpb.ExemplarRW2{
+			LabelsRefs: append([]uint32(nil), original.Exemplars[i].LabelsRefs...),
+			Value:      original.Exemplars[i].Value,
+			Timestamp:  original.Exemplars[i].Timestamp,
+		}
+	}
+
+	// Deep copy histograms
+	copy(ts.Histograms, original.Histograms)
+
+	return ts
+}
 
 // amplifyTimeSeries creates a copy of a time series with the amplified label added.
 // The replicaNum is included in the label value to ensure uniqueness.
