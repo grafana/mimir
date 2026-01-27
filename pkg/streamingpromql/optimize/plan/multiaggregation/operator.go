@@ -20,8 +20,9 @@ type MultiAggregatorGroupEvaluator struct {
 
 	instances []*MultiAggregatorInstanceOperator
 
-	prepareCalled      bool
-	afterPrepareCalled bool
+	haveComputedSeriesMetadata bool
+	prepareCalled              bool
+	afterPrepareCalled         bool
 }
 
 func NewMultiAggregatorGroupEvaluator(
@@ -65,6 +66,7 @@ func (m *MultiAggregatorGroupEvaluator) ComputeOutputSeriesForAllInstances(ctx c
 		return err
 	}
 
+	m.haveComputedSeriesMetadata = true
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries, m.memoryConsumptionTracker)
 
 	for _, instance := range m.instances {
@@ -160,7 +162,7 @@ func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) erro
 }
 
 func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if m.outputSeriesMetadata == nil {
+	if !m.group.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
 			return nil, err
 		}
