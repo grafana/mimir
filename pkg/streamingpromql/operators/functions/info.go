@@ -608,6 +608,14 @@ func (f *InfoFunction) Prepare(ctx context.Context, params *types.PrepareParams)
 	return f.Info.Prepare(ctx, params)
 }
 
+func (f *InfoFunction) AfterPrepare(ctx context.Context) error {
+	if err := f.Inner.AfterPrepare(ctx); err != nil {
+		return err
+	}
+
+	return f.Info.AfterPrepare(ctx)
+}
+
 func (f *InfoFunction) Finalize(ctx context.Context) error {
 	if err := f.Inner.Finalize(ctx); err != nil {
 		return err
