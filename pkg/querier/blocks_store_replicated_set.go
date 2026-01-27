@@ -128,7 +128,10 @@ func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blocks bucketin
 		}
 
 		// Pick a non excluded store-gateway instance.
-		inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones)
+
+// Pick a non excluded store-gateway instance.
+// We copy the instance descriptor, and we don't use the replication set's slice buffers any more beyond this point.
+inst := getNonExcludedInstance(set, exclude[block.ID], s.balancingStrategy, s.preferredZones)
 		if inst == nil {
 			return nil, fmt.Errorf("no store-gateway instance left after checking exclude for block %s", block.ID)
 		}
