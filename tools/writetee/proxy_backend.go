@@ -16,19 +16,28 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
+type BackendType int
+
+const (
+	BackendTypeMirrored BackendType = iota
+	BackendTypeAmplified
+)
+
 type ProxyBackend interface {
 	Name() string
 	Endpoint() *url.URL
 	Preferred() bool
+	BackendType() BackendType
 	ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, error)
 }
 
 // proxyBackend holds the information of a single backend.
 type proxyBackend struct {
-	name     string
-	endpoint *url.URL
-	client   *http.Client
-	timeout  time.Duration
+	name        string
+	endpoint    *url.URL
+	client      *http.Client
+	timeout     time.Duration
+	backendType BackendType
 
 	// Whether this is the preferred backend from which picking up
 	// the response and sending it back to the client.
@@ -36,7 +45,7 @@ type proxyBackend struct {
 }
 
 // NewProxyBackend makes a new proxyBackend
-func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool) ProxyBackend {
+func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, preferred bool, skipTLSVerify bool, backendType BackendType) ProxyBackend {
 	innerTransport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
@@ -55,10 +64,11 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	tracingTransport := otelhttp.NewTransport(innerTransport)
 
 	return &proxyBackend{
-		name:      name,
-		endpoint:  endpoint,
-		timeout:   timeout,
-		preferred: preferred,
+		name:        name,
+		endpoint:    endpoint,
+		timeout:     timeout,
+		preferred:   preferred,
+		backendType: backendType,
 		client: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return errors.New("the write-tee proxy does not follow redirects")
@@ -80,6 +90,10 @@ func (b *proxyBackend) Preferred() bool {
 	return b.preferred
 }
 
+func (b *proxyBackend) BackendType() BackendType {
+	return b.backendType
+}
+
 func (b *proxyBackend) ForwardRequest(ctx context.Context, orig *http.Request, body io.ReadCloser) (time.Duration, int, []byte, error) {
 	req, err := b.createBackendRequest(ctx, orig, body)
 	if err != nil {
@@ -98,6 +112,12 @@ func (b *proxyBackend) createBackendRequest(ctx context.Context, orig *http.Requ
 	req.Body = body
 	// RequestURI can't be set on a cloned request. It's only for handlers.
 	req.RequestURI = ""
+
+	// Remove Content-Length header so the HTTP client recalculates it from the body.
+	// This is important when the body has been amplified and is larger than the original.
+	req.ContentLength = -1
+	req.Header.Del("Content-Length")
+
 	// Replace the endpoint with the backend one.
 	req.URL.Scheme = b.endpoint.Scheme
 	req.URL.Host = b.endpoint.Host
