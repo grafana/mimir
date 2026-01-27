@@ -127,7 +127,6 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 
 	for _, c := range cases {
 		t.Run(c.Name(), func(t *testing.T) {
@@ -157,7 +156,6 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64((NumIntervals-1)*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
