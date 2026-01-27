@@ -95,7 +95,10 @@ func (f *InfoFunction) SeriesMetadata(ctx context.Context, matchers types.Matche
 	if err := f.processSamplesFromInfoSeries(ctx, infoMetadata); err != nil {
 		return nil, err
 	}
-	ignoreSeries := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
+	ignoreSeries, err := f.identifyIgnoreSeries(innerMetadata, f.Info.Selector.Matchers)
+	if err != nil {
+		return nil, err
+	}
 	return f.combineSeriesMetadata(innerMetadata, ignoreSeries, f.Info.Selector.Matchers)
 }
 
@@ -301,18 +304,21 @@ func makeLabelSetsHash(labelSets []labels.Labels) string {
 }
 
 // identifyIgnoreSeries marks inner series that are info metrics and are to be ignored.
-func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata, dataLabelMatchers types.Matchers) map[int]struct{} {
+func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata, dataLabelMatchers types.Matchers) (map[int]struct{}, error) {
 	ignoreSeries := make(map[int]struct{})
 
 	var infoNameMatchers []*labels.Matcher
 	for _, m := range dataLabelMatchers {
 		if m.Name == model.MetricNameLabel {
-			matcher, _ := m.ToPrometheusType()
+			matcher, err := m.ToPrometheusType()
+			if err != nil {
+				return nil, err
+			}
 			infoNameMatchers = append(infoNameMatchers, matcher)
 		}
 	}
 	if len(infoNameMatchers) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	for i, s := range innerMetadata {
@@ -322,7 +328,7 @@ func (f *InfoFunction) identifyIgnoreSeries(innerMetadata []types.SeriesMetadata
 		}
 	}
 
-	return ignoreSeries
+	return ignoreSeries, nil
 }
 
 func matchersMatch(matchers []*labels.Matcher, value string) bool {
