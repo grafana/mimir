@@ -156,7 +156,7 @@
 * [BUGFIX] Ingester: Fix race condition during shutdown where TSDBs could be closed while appends are still in progress. #14094
 * [BUGFIX] Store-gateway: Fix blocks being incorrectly dropped during shutdown when the store-gateway is terminated while fetching an updated bucket index. #14113
 * [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108
-* [BUGFIX] Ingester: Add timeouts to wait for instance state on startup and deferred shutdown of tasks on failure. #14134
+* [BUGFIX] Ingester: Add timeouts to wait for instance state on startup and deferred shutdown of tasks on failure. #14134, #14180
 * [BUGFIX] Distributor: Fix duplicate label validation bypass when label value exceeds length limit and is handled by Truncate or Drop strategy. #14131
 * [BUGFIX] Block-builder-scheduler: Fix bug where data could be skipped when partition is fully consumed at startup but later grows. #14136
 
