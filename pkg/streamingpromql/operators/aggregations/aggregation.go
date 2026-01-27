@@ -164,7 +164,11 @@ func (a *Aggregation) SetParamData(data types.ScalarData) {
 
 func (a *Aggregation) Close() {
 	a.Inner.Close()
-	a.aggregator.Close()
+
+	if a.aggregator != nil {
+		a.aggregator.Close()
+		a.aggregator = nil
+	}
 }
 
 type groupSorter struct {
@@ -434,4 +438,5 @@ func (a *Aggregator) Close() {
 	}
 
 	a.remainingGroups = nil
+	a.remainingInnerSeriesToGroup = nil
 }

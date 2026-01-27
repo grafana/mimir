@@ -215,6 +215,7 @@ func (s *Selector) Next(ctx context.Context, existing chunkenc.Iterator) (chunke
 func (s *Selector) Close() {
 	if s.series != nil {
 		s.series.Close()
+		s.series = nil
 	}
 
 	if s.querier != nil {
