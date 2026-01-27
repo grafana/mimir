@@ -12,7 +12,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 )
 
-func TestHandleInfoFunc(t *testing.T) {
+func TestInsertOmittedTargetInfoSelector(t *testing.T) {
 	enableExperimentalFunctions := parser.EnableExperimentalFunctions
 	t.Cleanup(func() {
 		parser.EnableExperimentalFunctions = enableExperimentalFunctions
