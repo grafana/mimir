@@ -91,7 +91,8 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node)) {
 	}
 
 	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
-		// Stop traversal if this is an info() call
+		// Only reduce matchers for the first argument of info(), not the second.
+		c.apply(call.Args[0], fn)
 		return
 	}
 

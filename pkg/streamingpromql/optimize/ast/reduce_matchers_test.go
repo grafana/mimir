@@ -134,9 +134,9 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 			expectedQuery: `max_over_time(rate(test_series{foo="bar"}[5m])[1d:5m])`,
 		},
 		{
-			name:          "do not reduce matchers for info function",
+			name:          "do not reduce matchers for 2nd argument to info function",
 			inputQuery:    `info(test_series{foo="bar",foo="bar"}, {__name__="test_info",foo="bar",foo="bar"})`,
-			expectedQuery: `info(test_series{foo="bar",foo="bar"}, {__name__="test_info",foo="bar",foo="bar"})`,
+			expectedQuery: `info(test_series{foo="bar"}, {__name__="test_info",foo="bar",foo="bar"})`,
 		},
 	}
 
