@@ -399,9 +399,17 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		return nil, err
 	}
 
-	// Do a second pass to actually produce final series metadata using exact numbers from the pool.
+	labelSetsHashes := make(map[uint64]int) // hash -> input series index
+
+	// Do a second pass to actually produce final series metadata using exact numbers from the pool,
+	// while checking for any clashes in final label sets that come from different input series.
 	for i, innerSeries := range innerMetadata {
 		if _, shouldPassInner := f.labelSetsOrder[i]["inner"]; shouldPassInner {
+			hash := innerSeries.Labels.Hash()
+			if existingSeriesIndex, exists := labelSetsHashes[hash]; exists && existingSeriesIndex != i {
+				return nil, fmt.Errorf("vector cannot contain metrics with the same labelset")
+			}
+			labelSetsHashes[hash] = i
 			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, innerSeries)
 			if err != nil {
 				return nil, err
@@ -409,6 +417,11 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		}
 
 		for _, newLabels := range extraLabelSets[i] {
+			hash := newLabels.Hash()
+			if existingSeriesIndex, exists := labelSetsHashes[hash]; exists && existingSeriesIndex != i {
+				return nil, fmt.Errorf("vector cannot contain metrics with the same labelset")
+			}
+			labelSetsHashes[hash] = i
 			result, err = types.AppendSeriesMetadata(f.MemoryConsumptionTracker, result, types.SeriesMetadata{
 				Labels:   newLabels,
 				DropName: innerSeries.DropName,

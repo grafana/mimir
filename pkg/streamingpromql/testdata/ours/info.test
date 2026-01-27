@@ -128,3 +128,21 @@ load 1m
   target_info{instance="a", job="1", data="warning"} _ 1 _
 
 eval_fail range from 0m to 2m step 1m info(metric_total)
+
+clear
+
+load 1m
+  my_metric{job="foo", instance="1", env="test"} 1 2 3
+  my_metric{job="foo", instance="1"} 4 5 6
+  target_info{job="foo", instance="1", env="test"} 1 1 1
+
+eval_fail range from 0m to 2m step 1m info(my_metric)
+
+clear
+
+load 1m
+  my_metric{job="foo", instance="1", env="test"} 1 2 3
+  my_metric{job="foo", instance="1"} 1 2 3
+  target_info{job="foo", instance="1", env="test"} 1 1 1
+
+eval_fail range from 0m to 2m step 1m info(my_metric)
