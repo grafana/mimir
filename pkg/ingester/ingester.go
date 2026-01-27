@@ -633,7 +633,11 @@ func (i *Ingester) starting(ctx context.Context) (err error) {
 	defer func() {
 		if err != nil {
 			// If starting() fails for any reason (e.g., context canceled), lifecycler must be stopped.
-			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
+			shutdownTimeout := 1 * time.Minute
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
+			defer shutdownCancel()
+
+			_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
 		}
 	}()
 
