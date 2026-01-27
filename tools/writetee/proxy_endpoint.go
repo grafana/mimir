@@ -203,11 +203,15 @@ func (p *ProxyEndpoint) executeBackendRequests(ctx context.Context, req *http.Re
 					} else {
 						bodyToSend = result.Body
 						if result.WasAmplified {
-							// Get current adjustment stats for logging
-							rw1, rw2, rw2Ratio, adjustedFactor := p.amplificationTracker.GetStats()
+							// Get current stats for logging
+							rw1, rw2, rw2Ratio := p.amplificationTracker.GetStats()
 							logger.SetSpanAndLogTag("amplified", "true")
-							logger.SetSpanAndLogTag("target_amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
-							logger.SetSpanAndLogTag("adjusted_amplification_factor", fmt.Sprintf("%.2f", adjustedFactor))
+							if result.IsRW2 {
+								logger.SetSpanAndLogTag("format", "rw2")
+							} else {
+								logger.SetSpanAndLogTag("format", "rw1")
+							}
+							logger.SetSpanAndLogTag("amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
 							logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
 							logger.SetSpanAndLogTag("total_rw1_series", rw1)
 							logger.SetSpanAndLogTag("total_rw2_series", rw2)
@@ -216,8 +220,9 @@ func (p *ProxyEndpoint) executeBackendRequests(ctx context.Context, req *http.Re
 							logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
 							logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
 						} else if result.IsRW2 {
-							_, _, rw2Ratio, _ := p.amplificationTracker.GetStats()
-							logger.SetSpanAndLogTag("rw2_skipped", "true")
+							// This should not happen anymore - RW 2.0 is now amplified
+							_, _, rw2Ratio := p.amplificationTracker.GetStats()
+							logger.SetSpanAndLogTag("rw2_not_amplified", "true")
 							logger.SetSpanAndLogTag("rw2_series_count", result.OriginalSeriesCount)
 							logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
 						}

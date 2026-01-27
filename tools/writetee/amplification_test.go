@@ -40,14 +40,47 @@ func TestAmplifyWriteRequest_RW2(t *testing.T) {
 	compressed := snappy.Encode(nil, marshaled)
 
 	// Amplify with factor 2.0 (no tracker for test)
-	// Note: RW 2.0 requests are not amplified to avoid memory-intensive symbol table conversion
-	result, err := AmplifyWriteRequest(compressed, 2.0, nil)
+	// RW 2.0 requests are converted to RW 1.0 format, then amplified
+	ampResult, err := AmplifyWriteRequest(compressed, 2.0, nil)
 	require.NoError(t, err)
 
-	// Verify the result is unchanged (no amplification for RW 2.0)
-	assert.Equal(t, compressed, result.Body, "RW 2.0 requests should be returned unmodified")
-	assert.True(t, result.IsRW2, "should be detected as RW 2.0")
-	assert.False(t, result.WasAmplified, "should not be amplified")
+	// Decompress and unmarshal the result
+	decompressed, err := snappy.Decode(nil, ampResult.Body)
+	require.NoError(t, err)
+
+	var result mimirpb.WriteRequest
+	err = proto.Unmarshal(decompressed, &result)
+	require.NoError(t, err)
+
+	// Verify results
+	assert.Equal(t, 2, len(result.Timeseries), "should have 2 time series (original + 1 amplified copy)")
+	assert.True(t, ampResult.IsRW2, "should be detected as RW 2.0")
+	assert.True(t, ampResult.WasAmplified, "should be amplified")
+	assert.Equal(t, 1, ampResult.OriginalSeriesCount)
+	assert.Equal(t, 1, ampResult.AmplifiedSeriesCount)
+
+	// Verify first time series is the original
+	assert.Equal(t, 2, len(result.Timeseries[0].Labels), "first time series should have 2 labels")
+	assert.Equal(t, "__name__", result.Timeseries[0].Labels[0].Name)
+	assert.Equal(t, "http_requests_total", result.Timeseries[0].Labels[0].Value)
+
+	// Verify second time series has the amplified label
+	assert.Equal(t, 3, len(result.Timeseries[1].Labels), "second time series should have 3 labels (original + amplified)")
+
+	// Find the amplified label
+	var hasAmplifiedLabel bool
+	for _, label := range result.Timeseries[1].Labels {
+		if label.Name == "__amplified__" {
+			hasAmplifiedLabel = true
+			assert.Equal(t, "1", label.Value)
+		}
+	}
+	assert.True(t, hasAmplifiedLabel, "second time series should have __amplified__ label")
+
+	// Verify samples are preserved
+	assert.Equal(t, 1, len(result.Timeseries[1].Samples))
+	assert.Equal(t, float64(100), result.Timeseries[1].Samples[0].Value)
+	assert.Equal(t, int64(1000), result.Timeseries[1].Samples[0].TimestampMs)
 }
 
 func TestAmplifyWriteRequest_RW1(t *testing.T) {

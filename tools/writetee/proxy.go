@@ -125,7 +125,7 @@ func NewProxy(cfg ProxyConfig, logger log.Logger, routes []Route, registerer pro
 		registerer:           registerer,
 		metrics:              NewProxyMetrics(registerer),
 		routes:               routes,
-		amplificationTracker: NewAmplificationTracker(cfg.AmplificationFactor),
+		amplificationTracker: NewAmplificationTracker(),
 	}
 
 	// Parse mirrored backend endpoints (comma separated).
