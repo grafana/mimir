@@ -438,4 +438,5 @@ func (a *Aggregator) Close() {
 	}
 
 	a.remainingGroups = nil
+	a.remainingInnerSeriesToGroup = nil
 }
