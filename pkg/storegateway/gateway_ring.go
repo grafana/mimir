@@ -53,11 +53,27 @@ var (
 
 	// BlocksRead is the operation run by the querier to query blocks via the store-gateway.
 	BlocksRead = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, func(s ring.InstanceState) bool {
-		// Blocks can only be queried from ACTIVE instances. However, if the block belongs to
-		// a non-active instance, then we should extend the replication set and try to query it
-		// from the next ACTIVE instance in the ring (which is expected to have it because a
-		// store-gateway keeps their previously owned blocks until new owners are ACTIVE).
-		return s != ring.ACTIVE
+		// Blocks can only be queried from ACTIVE instances.
+		//
+		// However, a running store-gateway keeps previously loaded blocks even if they lose
+		// ownership, if – by looking at the ring – they see that the new owner is not ACTIVE
+		// in the ring yet. For this specific scenario, we want to extend the replica set and
+		// try to query the block from the next ACTIVE instance in the ring that may still have
+		// the blocks loaded.
+		//
+		// What are the states for which this scenario applies?
+		// - PENDING: not used by the store-gateway.
+		// - JOINING: the store-gateway has been started, it just registered itself in the ring
+		//   with some tokens, and it's loading owned blocks. The JOINING store-gateway takes some
+		//   tokens previously belonging to other instances, so – if these other instances are
+		//   ACTIVE – they will keep their blocks loaded until the new owner is ACTIVE. In this
+		//   case, we want to extend the replica set and try to query the blocks from the previous
+		//   owner.
+		// - LEAVING: the store-gateway is shutting down (or is already terminated, and it's expected
+		//   to come back soon, e.g. during a rolling update). In this case, there's no other
+		//   extra instance (a part from the number of instances defined by the RF) that has loaded
+		//   the LEAVING instance's blocks, so extending the replica set is pointless.
+		return s == ring.JOINING
 	})
 )
 
