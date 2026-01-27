@@ -53,7 +53,6 @@ import (
 	"github.com/grafana/mimir/pkg/continuoustest"
 	"github.com/grafana/mimir/pkg/costattribution"
 	"github.com/grafana/mimir/pkg/distributor"
-	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
@@ -121,7 +120,6 @@ type Config struct {
 	Querier                        querier.Config                  `yaml:"querier"`
 	IngesterClient                 client.Config                   `yaml:"ingester_client"`
 	Ingester                       ingester.Config                 `yaml:"ingester"`
-	Flusher                        flusher.Config                  `yaml:"flusher"`
 	LimitsConfig                   validation.Limits               `yaml:"limits"`
 	Worker                         querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend                       frontend.CombinedFrontendConfig `yaml:"frontend"`
@@ -192,7 +190,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Querier.RegisterFlags(f, logger)
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f, logger)
-	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f, logger)
@@ -863,7 +860,6 @@ type Mimir struct {
 	ActiveGroupsCleanup              *util.ActiveGroupsCleanupService
 	Distributor                      *distributor.Distributor
 	Ingester                         *ingester.Ingester
-	Flusher                          *flusher.Flusher
 	RuntimeConfig                    *runtimeconfig.Manager
 	QuerierQueryable                 prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable                prom_storage.ExemplarQueryable

@@ -1431,8 +1431,6 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable pooling of buffers used for marshaling write requests. (default true)
   -enable-go-runtime-metrics
     	Set to true to enable all Go runtime metrics, such as go_sched_* and go_memstats_*.
-  -flusher.exit-after-flush
-    	Stop after flush has finished. If false, process will keep running, doing nothing. (default true)
   -h
     	Print basic help.
   -help
@@ -2156,7 +2154,7 @@ Usage of ./cmd/mimir/mimir:
   -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
     	[experimental] Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled. (default true)
   -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
-    	[experimental] Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.
+    	[experimental] Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series. (default true)
   -querier.mimir-query-engine.enable-multi-aggregation
     	[experimental] Enable computing multiple aggregations over the same data without buffering. Requires common subexpression elimination to be enabled. (default true)
   -querier.mimir-query-engine.enable-narrow-binary-selectors
@@ -3341,6 +3339,8 @@ Usage of ./cmd/mimir/mimir:
     	Override the expected name on the server certificate.
   -store-gateway.sharding-ring.etcd.username string
     	Etcd username.
+  -store-gateway.sharding-ring.excluded-zones comma-separated-list-of-strings
+    	Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring. This option needs be set both on the store-gateway, querier and ruler when running in microservices mode.
   -store-gateway.sharding-ring.heartbeat-period duration
     	Period at which to heartbeat to the ring. (default 15s)
   -store-gateway.sharding-ring.heartbeat-timeout duration

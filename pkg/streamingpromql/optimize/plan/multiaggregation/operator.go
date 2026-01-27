@@ -20,8 +20,9 @@ type MultiAggregatorGroupEvaluator struct {
 
 	instances []*MultiAggregatorInstanceOperator
 
-	prepareCalled      bool
-	afterPrepareCalled bool
+	haveComputedSeriesMetadata bool
+	prepareCalled              bool
+	afterPrepareCalled         bool
 }
 
 func NewMultiAggregatorGroupEvaluator(
@@ -65,9 +66,15 @@ func (m *MultiAggregatorGroupEvaluator) ComputeOutputSeriesForAllInstances(ctx c
 		return err
 	}
 
+	m.haveComputedSeriesMetadata = true
 	defer types.SeriesMetadataSlicePool.Put(&innerSeries, m.memoryConsumptionTracker)
 
 	for _, instance := range m.instances {
+		if instance.aggregator == nil {
+			// Already closed.
+			continue
+		}
+
 		groups, err := instance.aggregator.ComputeGroups(innerSeries)
 		if err != nil {
 			return err
@@ -88,6 +95,16 @@ func (m *MultiAggregatorGroupEvaluator) ReadNextSeries(ctx context.Context) erro
 	lastIndex := len(m.instances) - 1
 	for idx, instance := range m.instances {
 		isLastInstance := idx == lastIndex
+
+		if instance.aggregator == nil {
+			// Already closed.
+			if isLastInstance {
+				types.PutInstantVectorSeriesData(data, m.memoryConsumptionTracker)
+			}
+
+			continue
+		}
+
 		if err := instance.aggregator.AccumulateNextInnerSeries(data, isLastInstance); err != nil {
 			return err
 		}
@@ -160,7 +177,7 @@ func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) erro
 }
 
 func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if m.outputSeriesMetadata == nil {
+	if !m.group.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
 			return nil, err
 		}
@@ -203,6 +220,7 @@ func (m *MultiAggregatorInstanceOperator) Close() {
 
 	if m.aggregator != nil {
 		m.aggregator.Close()
+		m.aggregator = nil
 	}
 
 	m.group.Close()

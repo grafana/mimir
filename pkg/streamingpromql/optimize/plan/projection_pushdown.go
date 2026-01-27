@@ -56,7 +56,7 @@ type ProjectionPushdownOptimizationPass struct {
 }
 
 func NewProjectionPushdownOptimizationPass(reg prometheus.Registerer, logger log.Logger) *ProjectionPushdownOptimizationPass {
-	return &ProjectionPushdownOptimizationPass{
+	pass := &ProjectionPushdownOptimizationPass{
 		examined: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_projection_pushdown_examined_total",
 			Help: "Total number of selectors that the optimization pass examined to see if projections could be used.",
@@ -71,6 +71,16 @@ func NewProjectionPushdownOptimizationPass(reg prometheus.Registerer, logger log
 		}, []string{"reason"}),
 		logger: logger,
 	}
+
+	// Initialize each of the expected reasons to skip applying projections to a query.
+	// This makes testing the pass easier since all series exist even when we haven't
+	// skipped something for a particular reason.
+	pass.skipped.WithLabelValues(SkipReasonBinaryOperation.String())
+	pass.skipped.WithLabelValues(SkipReasonDeduplicate.String())
+	pass.skipped.WithLabelValues(SkipReasonNoAggregations.String())
+	pass.skipped.WithLabelValues(SkipReasonNotSupported.String())
+
+	return pass
 }
 
 func (p *ProjectionPushdownOptimizationPass) Name() string {
@@ -176,6 +186,16 @@ func examinePath(path []planning.Node) (map[string]struct{}, SkipReason) {
 			}
 
 			maps.Copy(requiredLabels, m)
+		case *core.DropName:
+			// DropName isn't unsafe to use with projections, but it requires a
+			// DeduplicateAndMerge node which doesn't work with projections. Don't
+			// do anything here and let the logic hit the DeduplicateAndMerge block.
+		case *core.StepInvariantExpression, *core.Subquery, *core.UnaryExpression:
+			// These type of expressions are safe to use projections with, but they don't
+			// need any special handling that affects which labels we need from storage.
+		default:
+			// Anything we haven't accounted for results in projections not being used.
+			return nil, SkipReasonNotSupported
 		}
 	}
 

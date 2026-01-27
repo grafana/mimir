@@ -175,10 +175,6 @@ api:
 # The ingester block configures the ingester.
 [ingester: <ingester>]
 
-# The flusher block configures the WAL flusher target, used to manually run
-# one-time flushes when scaling down ingesters.
-[flusher: <flusher>]
-
 # The limits block configures default and per-tenant limits imposed by
 # components.
 [limits: <limits>]
@@ -1929,7 +1925,7 @@ mimir_query_engine:
   # the query plan when it can be proven that each input series produces a
   # unique output series.
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
-  [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
+  [enable_eliminate_deduplicate_and_merge: <boolean> | default = true]
 
   # (experimental) Enable eliminating duplicate or redundant matchers that are
   # part of selector expressions.
@@ -3243,17 +3239,6 @@ local:
   # Path at which alertmanager configurations are stored.
   # CLI flag: -alertmanager-storage.local.path
   [path: <string> | default = ""]
-```
-
-### flusher
-
-The `flusher` block configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
-
-```yaml
-# (advanced) Stop after flush has finished. If false, process will keep running,
-# doing nothing.
-# CLI flag: -flusher.exit-after-flush
-[exit_after_flush: <boolean> | default = true]
 ```
 
 ### ingester_client
@@ -6099,6 +6084,13 @@ sharding_ring:
   # querier and ruler when running in microservices mode.
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
+
+  # (advanced) Comma-separated list of zones to exclude from the ring. Instances
+  # in excluded zones will be filtered out from the ring. This option needs be
+  # set both on the store-gateway, querier and ruler when running in
+  # microservices mode.
+  # CLI flag: -store-gateway.sharding-ring.excluded-zones
+  [excluded_zones: <string> | default = ""]
 
   # (advanced) Minimum time to wait for ring stability at startup, if set to
   # positive value.

@@ -7777,53 +7777,6 @@ func TestIngester_flushing(t *testing.T) {
 	}
 }
 
-func TestIngester_ForFlush(t *testing.T) {
-	cfg := defaultIngesterTestConfig(t)
-	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
-	cfg.BlocksStorageConfig.TSDB.ShipInterval = 10 * time.Minute // Long enough to not be reached during the test.
-
-	// Create ingester
-	reg := prometheus.NewPedanticRegistry()
-	i, r, err := prepareIngesterWithBlocksStorage(t, cfg, nil, reg)
-	require.NoError(t, err)
-	startAndWaitHealthy(t, i, r)
-
-	// Push some data.
-	pushSingleSampleWithMetadata(t, i)
-
-	// Stop ingester.
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
-
-	// Nothing shipped yet.
-	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-		# TYPE cortex_ingester_shipper_uploads_total counter
-		cortex_ingester_shipper_uploads_total 0
-	`), "cortex_ingester_shipper_uploads_total"))
-
-	// Restart ingester in "For Flusher" mode. We reuse the same config (esp. same dir)
-	reg = prometheus.NewPedanticRegistry()
-	i, err = NewForFlusher(i.cfg, i.limits, reg, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-
-	// Our single sample should be reloaded from WAL
-	verifyCompactedHead(t, i, false)
-	i.Flush()
-
-	// Head should be empty after flushing.
-	verifyCompactedHead(t, i, true)
-
-	// Verify that block has been shipped.
-	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(`
-		# HELP cortex_ingester_shipper_uploads_total Total number of uploaded TSDB blocks
-		# TYPE cortex_ingester_shipper_uploads_total counter
-		cortex_ingester_shipper_uploads_total 1
-	`), "cortex_ingester_shipper_uploads_total"))
-
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
-}
-
 func mockUserShipper(t *testing.T, i *Ingester) *uploaderMock {
 	m := &uploaderMock{}
 	userDB, err := i.getOrCreateTSDB(userID)

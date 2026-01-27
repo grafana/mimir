@@ -586,12 +586,15 @@ func validateLabels(m *sampleValidationMetrics, cfg labelValidationConfig, userI
 			default:
 				panic(fmt.Errorf("unexpected value: %v", labelValueLengthOverLimitStrategy))
 			}
-		} else if lastLabelName == l.Name {
+		}
+
+		// Duplicate check moved outside else-if chain so it always runs,
+		// even when value-too-long handling (Truncate/Drop) modified the label.
+		if lastLabelName == l.Name {
 			cat.IncrementDiscardedSamples(ls, 1, reasonDuplicateLabelNames, ts)
 			m.duplicateLabelNames.WithLabelValues(userID, group).Inc()
 			return fmt.Errorf(duplicateLabelMsgFormat, l.Name, mimirpb.FromLabelAdaptersToString(ls))
 		}
-
 		lastLabelName = l.Name
 	}
 
