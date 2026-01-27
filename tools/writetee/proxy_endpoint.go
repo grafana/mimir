@@ -28,6 +28,8 @@ type ProxyEndpoint struct {
 	metrics               *ProxyMetrics
 	logger                log.Logger
 	slowResponseThreshold time.Duration
+	amplificationFactor   float64
+	amplificationTracker  *AmplificationTracker
 
 	// The preferred backend, if any.
 	preferredBackend ProxyBackend
@@ -35,7 +37,7 @@ type ProxyEndpoint struct {
 	route Route
 }
 
-func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, slowResponseThreshold time.Duration) *ProxyEndpoint {
+func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetrics, logger log.Logger, slowResponseThreshold time.Duration, amplificationFactor float64, amplificationTracker *AmplificationTracker) *ProxyEndpoint {
 	var preferredBackend ProxyBackend
 	for _, backend := range backends {
 		if backend.Preferred() {
@@ -50,6 +52,8 @@ func NewProxyEndpoint(backends []ProxyBackend, route Route, metrics *ProxyMetric
 		metrics:               metrics,
 		logger:                logger,
 		slowResponseThreshold: slowResponseThreshold,
+		amplificationFactor:   amplificationFactor,
+		amplificationTracker:  amplificationTracker,
 		preferredBackend:      preferredBackend,
 	}
 }
@@ -182,11 +186,47 @@ func (p *ProxyEndpoint) executeBackendRequests(ctx context.Context, req *http.Re
 			logger.SetSpanAndLogTag("route_name", p.route.RouteName)
 			logger.SetSpanAndLogTag("backend", b.Name())
 			logger.SetSpanAndLogTag("method", req.Method)
+			logger.SetSpanAndLogTag("backend_type", fmt.Sprintf("%d", b.BackendType()))
 
 			// Create a new reader for this backend
 			var bodyReader io.ReadCloser
+			var bodyToSend []byte
+
 			if len(body) > 0 {
-				bodyReader = io.NopCloser(bytes.NewReader(body))
+				// Amplify the request body for amplified backends
+				if b.BackendType() == BackendTypeAmplified && p.amplificationFactor > 1.0 {
+					result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
+					if err != nil {
+						level.Error(logger).Log("msg", "Failed to amplify write request", "backend", b.Name(), "err", err)
+						// Fall back to original body on amplification error
+						bodyToSend = body
+					} else {
+						bodyToSend = result.Body
+						if result.WasAmplified {
+							// Get current adjustment stats for logging
+							rw1, rw2, rw2Ratio, adjustedFactor := p.amplificationTracker.GetStats()
+							logger.SetSpanAndLogTag("amplified", "true")
+							logger.SetSpanAndLogTag("target_amplification_factor", fmt.Sprintf("%.1f", p.amplificationFactor))
+							logger.SetSpanAndLogTag("adjusted_amplification_factor", fmt.Sprintf("%.2f", adjustedFactor))
+							logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
+							logger.SetSpanAndLogTag("total_rw1_series", rw1)
+							logger.SetSpanAndLogTag("total_rw2_series", rw2)
+							logger.SetSpanAndLogTag("original_size", len(body))
+							logger.SetSpanAndLogTag("amplified_size", len(result.Body))
+							logger.SetSpanAndLogTag("original_series_count", result.OriginalSeriesCount)
+							logger.SetSpanAndLogTag("amplified_series_count", result.AmplifiedSeriesCount)
+						} else if result.IsRW2 {
+							_, _, rw2Ratio, _ := p.amplificationTracker.GetStats()
+							logger.SetSpanAndLogTag("rw2_skipped", "true")
+							logger.SetSpanAndLogTag("rw2_series_count", result.OriginalSeriesCount)
+							logger.SetSpanAndLogTag("rw2_ratio", fmt.Sprintf("%.3f", rw2Ratio))
+						}
+					}
+				} else {
+					bodyToSend = body
+				}
+
+				bodyReader = io.NopCloser(bytes.NewReader(bodyToSend))
 			}
 
 			elapsed, status, respBody, err := b.ForwardRequest(ctx, req, bodyReader)
