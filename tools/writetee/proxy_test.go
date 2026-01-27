@@ -30,7 +30,7 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "no backends",
 			cfg: ProxyConfig{
-				BackendEndpoints: "",
+				BackendMirroredEndpoints: "",
 			},
 			routes:      []Route{},
 			expectedErr: "at least 1 backend is required",
@@ -38,7 +38,7 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "invalid backend URL",
 			cfg: ProxyConfig{
-				BackendEndpoints: "://invalid-url",
+				BackendMirroredEndpoints: "://invalid-url",
 			},
 			routes:      []Route{},
 			expectedErr: "invalid backend endpoint",
@@ -46,7 +46,7 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "preferred backend not in list",
 			cfg: ProxyConfig{
-				BackendEndpoints: "http://backend1:8080,http://backend2:8080",
+				BackendMirroredEndpoints: "http://backend1:8080,http://backend2:8080",
 				PreferredBackend: "backend3",
 			},
 			routes:      []Route{},
@@ -55,7 +55,7 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "valid single backend",
 			cfg: ProxyConfig{
-				BackendEndpoints: "http://backend1:8080",
+				BackendMirroredEndpoints: "http://backend1:8080",
 			},
 			routes:      []Route{},
 			expectedErr: "",
@@ -63,7 +63,7 @@ func TestNewProxy_Validation(t *testing.T) {
 		{
 			name: "valid multiple backends with preferred",
 			cfg: ProxyConfig{
-				BackendEndpoints: "http://backend1:8080,http://backend2:8080",
+				BackendMirroredEndpoints: "http://backend1:8080,http://backend2:8080",
 				PreferredBackend: "backend1",
 			},
 			routes:      []Route{},
@@ -166,7 +166,7 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 				servers = append(servers, server)
 
 				// Parse the server URL and create a backend
-				backend := NewProxyBackend(mb.name, mustParseURL(server.URL), 5*time.Second, mb.name == tt.preferredBackend, false)
+				backend := NewProxyBackend(mb.name, mustParseURL(server.URL), 5*time.Second, mb.name == tt.preferredBackend, false, BackendTypeMirrored)
 				backendInterfaces = append(backendInterfaces, backend)
 			}
 
@@ -176,7 +176,7 @@ func TestProxyEndpoint_ResponseSelection(t *testing.T) {
 				Methods:   []string{"POST"},
 			}
 
-			endpoint := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0)
+			endpoint := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil)
 
 			// Create a test request
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test body")))
@@ -203,7 +203,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 	}))
 	defer server.Close()
 
-	backend := NewProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, false, false)
+	backend := NewProxyBackend("backend1", mustParseURL(server.URL), 5*time.Second, false, false, BackendTypeMirrored)
 	backendInterfaces := []ProxyBackend{backend}
 
 	route := Route{
@@ -212,7 +212,7 @@ func TestProxyEndpoint_BodySizeLimit(t *testing.T) {
 		Methods:   []string{"POST"},
 	}
 
-	endpoint := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0)
+	endpoint := NewProxyEndpoint(backendInterfaces, route, metrics, logger, 0, 1.0, nil)
 
 	tests := []struct {
 		name               string
@@ -315,7 +315,7 @@ func TestProxyBackend_AuthHandling(t *testing.T) {
 			testServerURL := mustParseURL(server.URL)
 			endpointURL.Host = testServerURL.Host
 
-			backend := NewProxyBackend("backend1", endpointURL, 5*time.Second, false, false)
+			backend := NewProxyBackend("backend1", endpointURL, 5*time.Second, false, false, BackendTypeMirrored)
 
 			// Create a request with auth if specified
 			req := httptest.NewRequest("POST", "/api/v1/push", bytes.NewReader([]byte("test")))
