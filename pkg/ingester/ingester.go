@@ -629,35 +629,11 @@ func (i *Ingester) generateHeadStatisticsForAllUsers(context.Context) error {
 }
 
 func (i *Ingester) starting(ctx context.Context) (err error) {
+
 	defer func() {
 		if err != nil {
-			// If starting() fails for any reason (e.g., context canceled), services must be stopped.
-
-			// Subservices watcher was started in New();
-			// Failure to close it can block subservices from shutting down
-			// and leave hanging goroutines after exit.
-			i.subservicesWatcher.Close()
-
-			shutdownTimeout := 3 * time.Minute
-			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
-			defer shutdownCancel()
-
-			// Stop any services that may have been started in this method, in reverse order.
-			if i.subservicesAfterIngesterRingLifecycler != nil {
-				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesAfterIngesterRingLifecycler)
-			}
-			if i.lifecycler != nil {
-				_ = services.StopAndAwaitTerminated(shutdownCtx, i.lifecycler)
-			}
-			if i.ingestReader != nil {
-				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ingestReader)
-			}
-			if i.subservicesForPartitionReplay != nil {
-				_ = services.StopManagerAndAwaitStopped(shutdownCtx, i.subservicesForPartitionReplay)
-			}
-			if i.ownedSeriesService != nil {
-				_ = services.StopAndAwaitTerminated(shutdownCtx, i.ownedSeriesService)
-			}
+			// If starting() fails for any reason (e.g., context canceled), lifecycler must be stopped.
+			_ = services.StopAndAwaitTerminated(context.Background(), i.lifecycler)
 		}
 	}()
 
