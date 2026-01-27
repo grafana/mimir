@@ -135,8 +135,8 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 		},
 		{
 			name:          "do not reduce matchers for 2nd argument to info function",
-			inputQuery:    `info(test_series{foo="bar",foo="bar"}, {__name__="test_info",foo="bar",foo="bar"})`,
-			expectedQuery: `info(test_series{foo="bar"}, {__name__="test_info",foo="bar",foo="bar"})`,
+			inputQuery:    `info(test_series{foo="bar",foo="bar",data=~".+",yet_another_data=~".*"}, {__name__="test_info",foo="bar",foo="bar",data=~".+",yet_another_data=~".*"})`,
+			expectedQuery: `info(test_series{foo="bar",data=~".+"}, {__name__="test_info",foo="bar",foo="bar",data=~".+",yet_another_data=~".*"})`,
 		},
 	}
 
@@ -144,8 +144,11 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			pass := ast.NewReduceMatchers(prometheus.NewPedanticRegistry(), log.NewNopLogger())
 			outputExpr := runASTOptimizationPassWithoutMetrics(t, context.Background(), tt.inputQuery, pass)
+			expectedExpr, err := parser.ParseExpr(tt.expectedQuery)
+			require.NoError(t, err)
+			expectedQuery := expectedExpr.String()
 			outputQuery := outputExpr.String()
-			require.Equal(t, tt.expectedQuery, outputQuery)
+			require.Equal(t, expectedQuery, outputQuery)
 		})
 	}
 }
