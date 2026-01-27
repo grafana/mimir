@@ -1489,7 +1489,9 @@ groups:
             message: Mimir {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has detected skipped data.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimirblockbuilderdataskipped
           expr: |
-            increase(cortex_blockbuilder_scheduler_job_gap_detected[1m]) > 0
+            sum by (cluster, namespace, instance) (
+              increase(cortex_blockbuilder_scheduler_job_gap_detected[1h])
+            ) > 0
           labels:
             severity: critical
         - alert: MimirBlockBuilderPersistentJobFailure
