@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
@@ -101,6 +102,12 @@ func TestReduceMatchers_Apply_Vectors(t *testing.T) {
 }
 
 func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
+	enableExperimentalFunctions := parser.EnableExperimentalFunctions
+	t.Cleanup(func() {
+		parser.EnableExperimentalFunctions = enableExperimentalFunctions
+	})
+	parser.EnableExperimentalFunctions = true
+
 	tests := []struct {
 		name          string
 		inputQuery    string
@@ -125,6 +132,11 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 			name:          "should remove a regex matcher if it is a superset of an equals matcher for subquery",
 			inputQuery:    `max_over_time(rate(test_series{foo="bar",foo=~"bar|baz|bing"}[5m])[1d:5m])`,
 			expectedQuery: `max_over_time(rate(test_series{foo="bar"}[5m])[1d:5m])`,
+		},
+		{
+			name:          "do not reduce matchers for info function",
+			inputQuery:    `info(test_series{foo="bar",foo="bar"}, {__name__="test_info",foo="bar",foo="bar"})`,
+			expectedQuery: `info(test_series{foo="bar",foo="bar"}, {__name__="test_info",foo="bar",foo="bar"})`,
 		},
 	}
 

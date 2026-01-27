@@ -4,6 +4,7 @@ package ast
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -48,7 +49,7 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	c.attempts.Inc()
 
 	matchersReduced := false
-	parser.Inspect(root, func(node parser.Node, _ []parser.Node) error {
+	c.apply(root, func(node parser.Node) {
 		switch expr := node.(type) {
 		case *parser.VectorSelector:
 			retained, dropped := reduceMatchers(expr.LabelMatchers)
@@ -75,7 +76,6 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 				)
 			}
 		}
-		return nil
 	})
 
 	if matchersReduced {
@@ -83,6 +83,46 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	}
 
 	return root, nil
+}
+
+func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node)) {
+	if node == nil {
+		return
+	}
+
+	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
+		// Stop traversal if this is an info() call
+		return
+	}
+
+	fn(node)
+
+	switch n := node.(type) {
+	case *parser.AggregateExpr:
+		c.apply(n.Expr, fn)
+		c.apply(n.Param, fn)
+	case *parser.BinaryExpr:
+		c.apply(n.LHS, fn)
+		c.apply(n.RHS, fn)
+	case *parser.Call:
+		for _, arg := range n.Args {
+			c.apply(arg, fn)
+		}
+	case *parser.MatrixSelector:
+		c.apply(n.VectorSelector, fn)
+	case *parser.SubqueryExpr:
+		c.apply(n.Expr, fn)
+	case *parser.ParenExpr:
+		c.apply(n.Expr, fn)
+	case *parser.UnaryExpr:
+		c.apply(n.Expr, fn)
+	case *parser.StepInvariantExpr:
+		c.apply(n.Expr, fn)
+	case *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
+		// no children to traverse
+	default:
+		panic(fmt.Sprintf("unknown expression type: %T", n))
+	}
 }
 
 func reduceMatchers(existing []*labels.Matcher) (retained []*labels.Matcher, dropped []*labels.Matcher) {
