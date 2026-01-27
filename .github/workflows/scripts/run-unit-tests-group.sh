@@ -86,7 +86,7 @@ FAILED_PACKAGES=$(grep "FAIL\s*github.com/grafana/mimir/.*" /tmp/test-output.log
 
 # Store in GitHub environment variable if any packages failed
 if [[ -n "$FAILED_PACKAGES" ]]; then
-    echo "FAILED_PACKAGES=${FAILED_PACKAGES}" >> "/tmp/foo"
+    echo "FAILED_PACKAGES=${FAILED_PACKAGES}" >> "$GITHUB_ENV"
 fi
 
 if [[ $RACE_ENABLED_EXIT_CODE -ne 0 ]]; then
