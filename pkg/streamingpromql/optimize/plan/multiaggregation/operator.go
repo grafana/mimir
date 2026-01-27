@@ -74,6 +74,7 @@ func (m *MultiAggregatorGroupEvaluator) ComputeOutputSeriesForAllInstances(ctx c
 		}
 
 		instance.outputSeriesMetadata = groups
+		instance.haveComputedSeriesMetadata = true
 	}
 
 	return nil
@@ -123,7 +124,8 @@ type MultiAggregatorInstanceOperator struct {
 	expressionPosition posrange.PositionRange
 	aggregator         *aggregations.Aggregator
 
-	outputSeriesMetadata []types.SeriesMetadata
+	haveComputedSeriesMetadata bool
+	outputSeriesMetadata       []types.SeriesMetadata
 
 	finalized bool
 	closed    bool
@@ -160,7 +162,7 @@ func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) erro
 }
 
 func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
-	if m.outputSeriesMetadata == nil {
+	if !m.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
 			return nil, err
 		}
