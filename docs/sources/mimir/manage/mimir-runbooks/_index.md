@@ -1968,12 +1968,13 @@ If the block-builder permanently missed consuming some portion of the partition,
 3. If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
 4. Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
 
-If you just need to "rewind" the commit for a number of partitions so block-builder consumed a skipped section of data:
+If you just need to "rewind" the commit for a number of partitions so block-builder can consume a skipped section of data:
 
 1. Identify which partitions whose commit needs to be rewound, and the offsets they should be set to.
-2. Establish that you can use the Kafka command line tool `kafka-consumer-groups.sh`, which comes commonly in Kafka container images. (For example, `bitnamilegacy/kafka`.)
+2. Verify that you can use the Kafka command line tool `kafka-consumer-groups.sh`, which comes commonly in Kafka distributions and container images. (e.g., in `bitnamilegacy/kafka`.)
 3. To avoid consumer group offset conflicts, scale down to zero replicas or otherwise disable any running `block-builder-scheduler` replicas.
 3. Execute the command in *dry-run mode*:
+
       `kafka-consumer-groups.sh --group $BLOCK_BUILDER_GROUP --topic $TOPIC:$PARTITION --reset-offsets --to-offset $OFFSET --dry-run`
 
     where:
