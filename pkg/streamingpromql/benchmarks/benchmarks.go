@@ -418,6 +418,18 @@ func TestCases(metricSizes []int) []BenchCase {
 		{
 			Expr: "sum(sum_over_time(a_X[1d])) / sum(count_over_time(a_X[1d]))",
 		},
+		{
+			Expr: `info(info_sparse_100, {__name__="target_info_X"})`,
+		},
+		{
+			Expr: `info(info_sparse_2000, {__name__="target_info_X"})`,
+		},
+		{
+			Expr: `info(info_dense_100, {__name__="target_info_X"})`,
+		},
+		{
+			Expr: `info(info_dense_2000, {__name__="target_info_X"})`,
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.

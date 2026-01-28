@@ -25,7 +25,11 @@ func (v *VectorSelector) Describe() string {
 	d := describeSelector(v.Matchers, v.Timestamp, v.Offset, nil, v.SkipHistogramBuckets, false, v.Smoothed, false, v.ProjectionLabels, v.ProjectionInclude)
 
 	if v.ReturnSampleTimestamps {
-		return d + ", return sample timestamps"
+		d = d + ", return sample timestamps"
+	}
+
+	if v.ReturnSampleTimestampsPreserveHistograms {
+		d = d + ", return sample timestamps preserving histograms"
 	}
 
 	return d
@@ -71,6 +75,7 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
 		v.Offset == otherVectorSelector.Offset &&
 		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
+		v.ReturnSampleTimestampsPreserveHistograms == otherVectorSelector.ReturnSampleTimestampsPreserveHistograms &&
 		v.Smoothed == otherVectorSelector.Smoothed
 }
 
@@ -112,7 +117,7 @@ func MaterializeVectorSelector(v *VectorSelector, _ *planning.Materializer, time
 		ProjectionLabels:         v.ProjectionLabels,
 	}
 
-	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps)), nil
+	return planning.NewSingleUseOperatorFactory(selectors.NewInstantVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, v.ReturnSampleTimestamps, v.ReturnSampleTimestampsPreserveHistograms)), nil
 }
 
 func (v *VectorSelector) ResultType() (parser.ValueType, error) {

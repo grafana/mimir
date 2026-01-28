@@ -79,6 +79,7 @@ func TestFunctionDeduplicateAndMerge(t *testing.T) {
 		"hour":                         `hour({__name__=~"float.*"})`,
 		"idelta":                       `idelta({__name__=~"float.*"}[1m])`,
 		"increase":                     `increase({__name__=~"float.*"}[1m])`,
+		"info":                         `<skip>`, // info() doesn't drop the metric name, so this test doesn't apply.
 		"irate":                        `irate({__name__=~"float.*"}[1m])`,
 		"label_join":                   `label_join({__name__=~"float.*"}, "__name__", "", "env")`,
 		"label_replace":                `label_replace({__name__=~"float.*"}, "__name__", "$1", "env", "(.*)")`,
