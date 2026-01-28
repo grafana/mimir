@@ -850,9 +850,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
-			// Create a new deduplicator scoped to this Select() call to handle duplicate series
-			// within this single store-gateway query. This ensures accurate memory tracking for queries
-			// like "foo + foo" where each operand gets its own deduplicator.
 			deduplicator := limiter.NewSeriesDeduplicator()
 
 			for {
@@ -1037,6 +1034,7 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 
 			uniqueSeriesLabels, _ := deduplicator.Deduplicate(ls, memoryTracker)
 
+			// Add series fingerprint to query limiter; will return error if we are over the limit
 			if limitErr := queryLimiter.AddSeries(uniqueSeriesLabels); limitErr != nil {
 				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
 			}
