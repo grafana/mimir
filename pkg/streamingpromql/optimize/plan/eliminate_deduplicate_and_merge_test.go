@@ -728,6 +728,27 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 2,
 			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
+		"binary operation * expression": {
+			expr: `rate(foo[5m]) * rate(bar[5m])`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- BinaryExpression: LHS * RHS
+					- LHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="bar"}[5m0s]
+				`,
+			expectedPlanWithDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- DropName
+						- BinaryExpression: LHS * RHS
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="foo"}[5m0s]
+							- RHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
+				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 2,
+			nodesEliminatedWithDelayedNameRemoval:    2,
+		},
 		"binary operation with nested rate functions and non-name equal matcher": {
 			expr: `rate(foo[5m]) + rate({__name__=~"bar.*"}[5m])`,
 			expectedPlanWithoutDelayedNameRemoval: `
@@ -802,7 +823,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 3,
 			nodesEliminatedWithDelayedNameRemoval:    4,
 		},
-		"nested binary operations, with one eligible for elimination": {
+		"nested binary operations not wrapped in DeduplicateAndMerge, with one eligible for elimination": {
 			expr: `rate(bar[5m]) / (baz * foo)`,
 			expectedPlanWithoutDelayedNameRemoval: `
 				- BinaryExpression: LHS / RHS
@@ -813,13 +834,42 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 						- RHS: VectorSelector: {__name__="foo"}
 				`,
 			expectedPlanWithDelayedNameRemoval: `
-				- BinaryExpression: LHS / RHS
-					- LHS: FunctionCall: rate(...)
-						- MatrixSelector: {__name__="bar"}[5m0s]
-					- RHS: BinaryExpression: LHS * RHS
-						- LHS: VectorSelector: {__name__="baz"}
-						- RHS: VectorSelector: {__name__="foo"}
+				- DeduplicateAndMerge
+					- DropName
+						- BinaryExpression: LHS / RHS
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
+							- RHS: BinaryExpression: LHS * RHS
+								- LHS: VectorSelector: {__name__="baz"}
+								- RHS: VectorSelector: {__name__="foo"}
 				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 1,
+			nodesEliminatedWithDelayedNameRemoval:    1,
+		},
+		"nested binary operations wrapped in DeduplicateAndMerge, with one eligible for elimination": {
+			expr: `rate(bar[5m]) or (baz or foo)`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- BinaryExpression: LHS or RHS
+						- LHS: FunctionCall: rate(...)
+							- MatrixSelector: {__name__="bar"}[5m0s]
+						- RHS: DeduplicateAndMerge
+							- BinaryExpression: LHS or RHS
+								- LHS: VectorSelector: {__name__="baz"}
+								- RHS: VectorSelector: {__name__="foo"}
+				`,
+			expectedPlanWithDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- DropName
+						- BinaryExpression: LHS or RHS
+							- LHS: FunctionCall: rate(...)
+								- MatrixSelector: {__name__="bar"}[5m0s]
+							- RHS: BinaryExpression: LHS or RHS
+								- LHS: VectorSelector: {__name__="baz"}
+								- RHS: VectorSelector: {__name__="foo"}
+				`,
+			nodesEliminatedWithoutDelayedNameRemoval: 1,
+			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
 	}
 
