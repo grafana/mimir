@@ -3,6 +3,8 @@
 package limiter
 
 import (
+	"sync"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -14,7 +16,12 @@ import (
 // - Deduplication of series with the same labels within a Select() call
 // - Hash collision handling when different series have the same hash
 // - Tracking which series have already been seen to avoid double-counting memory
+//
+// SeriesDeduplicator is thread-safe and can be used concurrently from multiple goroutines.
+// This is important when querying multiple sources (ingesters or store-gateways) in parallel,
+// to ensure that series replicated across multiple sources are only counted once for memory tracking.
 type SeriesDeduplicator struct {
+	mtx            sync.Mutex
 	uniqueSeries   map[uint64]labels.Labels
 	conflictSeries map[uint64][]labels.Labels
 
@@ -37,7 +44,11 @@ func NewSeriesDeduplicator() *SeriesDeduplicator {
 // If it's new, it returns the input labels and isDuplicate=false.
 //
 // This method handles hash collisions by checking label equality even when hashes match.
+// This method is thread-safe.
 func (sd *SeriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+	sd.mtx.Lock()
+	defer sd.mtx.Unlock()
+
 	fingerprint := sd.hashFunc(newLabels)
 
 	// Check if we've seen this hash before
@@ -76,7 +87,11 @@ func (sd *SeriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *M
 }
 
 // SeriesCount returns the total number of unique series seen by this deduplicator.
+// This method is thread-safe.
 func (sd *SeriesDeduplicator) SeriesCount() int {
+	sd.mtx.Lock()
+	defer sd.mtx.Unlock()
+
 	count := len(sd.uniqueSeries)
 	for _, conflicts := range sd.conflictSeries {
 		count += len(conflicts)

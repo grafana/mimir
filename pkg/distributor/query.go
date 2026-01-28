@@ -219,6 +219,12 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 	}
 	reqStats := stats.FromContext(ctx)
 
+	// Create a shared deduplicator across all ingesters to ensure that series replicated
+	// across multiple ingesters are only counted once for memory tracking purposes.
+	// This is important because memory consumption is increased per-source but decreased
+	// only once when iterating over the merged result.
+	deduplicator := limiter.NewSeriesDeduplicator()
+
 	// queryIngester MUST call cancelContext once processing is completed in order to release resources. It's required
 	// by ring.DoMultiUntilQuorumWithoutSuccessfulContextCancellation() to properly release resources.
 	queryIngester := func(ctx context.Context, ing *ring.InstanceDesc, cancelContext context.CancelCauseFunc) (ingesterQueryResult, error) {
@@ -267,8 +273,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 		if err != nil {
 			return result, err
 		}
-
-		deduplicator := limiter.NewSeriesDeduplicator()
 
 		for {
 			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryConsumptionTracker, deduplicator)

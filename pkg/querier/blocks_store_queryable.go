@@ -811,6 +811,12 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 	debugQuery := chunkinfologger.IsChunkInfoLoggingEnabled(ctx)
 
+	// Create a shared deduplicator across all store-gateways to ensure that series replicated
+	// across multiple store-gateways are only counted once for memory tracking purposes.
+	// This is important because memory consumption is increased per-source but decreased
+	// only once when iterating over the merged result.
+	deduplicator := limiter.NewSeriesDeduplicator()
+
 	// Concurrently fetch series from all clients.
 	for c, blockIDs := range clients {
 		g.Go(func() error {
@@ -849,8 +855,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			var myWarnings annotations.Annotations
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
-
-			deduplicator := limiter.NewSeriesDeduplicator()
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
