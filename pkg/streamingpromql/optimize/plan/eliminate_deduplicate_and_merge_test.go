@@ -802,6 +802,25 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 3,
 			nodesEliminatedWithDelayedNameRemoval:    4,
 		},
+		"nested binary operations, with one eligible for elimination": {
+			expr: `rate(bar[5m]) / (baz * foo)`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- BinaryExpression: LHS / RHS
+					- LHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="bar"}[5m0s]
+					- RHS: BinaryExpression: LHS * RHS
+						- LHS: VectorSelector: {__name__="baz"}
+						- RHS: VectorSelector: {__name__="foo"}
+				`,
+			expectedPlanWithDelayedNameRemoval: `
+				- BinaryExpression: LHS / RHS
+					- LHS: FunctionCall: rate(...)
+						- MatrixSelector: {__name__="bar"}[5m0s]
+					- RHS: BinaryExpression: LHS * RHS
+						- LHS: VectorSelector: {__name__="baz"}
+						- RHS: VectorSelector: {__name__="foo"}
+				`,
+		},
 	}
 
 	ctx := context.Background()
