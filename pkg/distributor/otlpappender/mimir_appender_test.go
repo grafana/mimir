@@ -592,6 +592,127 @@ func TestMimirAppender(t *testing.T) {
 	}
 }
 
+func TestMimirAppender_SetResourceContext(t *testing.T) {
+	testCases := map[string]struct {
+		persistResourceAttributes bool
+		resourceAttrs             map[string]string
+		appends                   func(*testing.T, *MimirAppender)
+		expectResourceAttrs       *mimirpb.ResourceAttributes
+		skipTargetInfo            bool // If true, append target_info metric
+	}{
+		"resource attributes disabled": {
+			persistResourceAttributes: false,
+			resourceAttrs:             map[string]string{"service.name": "myservice", "host.name": "myhost"},
+			appends: func(t *testing.T, ca *MimirAppender) {
+				require.NoError(t, ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "my_metric"),
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+						MetricFamilyName: "my_metric",
+					},
+					0, 1000, 42.0, nil))
+			},
+			expectResourceAttrs: nil, // Disabled, so no attrs
+		},
+		"resource attributes enabled with identifying attrs": {
+			persistResourceAttributes: true,
+			resourceAttrs:             map[string]string{"service.name": "myservice", "host.name": "myhost"},
+			appends: func(t *testing.T, ca *MimirAppender) {
+				require.NoError(t, ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "my_metric"),
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+						MetricFamilyName: "my_metric",
+					},
+					0, 1000, 42.0, nil))
+			},
+			expectResourceAttrs: &mimirpb.ResourceAttributes{
+				Identifying: []mimirpb.ResourceAttributeEntry{
+					{Key: "service.name", Value: "myservice"},
+				},
+				Descriptive: []mimirpb.ResourceAttributeEntry{
+					{Key: "host.name", Value: "myhost"},
+				},
+				Timestamp: 1000,
+			},
+		},
+		"target_info metric skips resource attributes": {
+			persistResourceAttributes: true,
+			resourceAttrs:             map[string]string{"service.name": "myservice"},
+			appends: func(t *testing.T, ca *MimirAppender) {
+				require.NoError(t, ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "target_info"),
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeInfo},
+						MetricFamilyName: "target_info",
+					},
+					0, 1000, 1.0, nil))
+			},
+			expectResourceAttrs: nil, // target_info should not have resource attrs
+			skipTargetInfo:      true,
+		},
+		"empty resource clears context": {
+			persistResourceAttributes: true,
+			resourceAttrs:             nil, // Empty resource
+			appends: func(t *testing.T, ca *MimirAppender) {
+				require.NoError(t, ca.AppendSample(
+					labels.FromStrings(model.MetricNameLabel, "my_metric"),
+					otlpappender.Metadata{
+						Metadata:         metadata.Metadata{Type: model.MetricTypeGauge},
+						MetricFamilyName: "my_metric",
+					},
+					0, 1000, 42.0, nil))
+			},
+			expectResourceAttrs: nil,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			appender := NewCombinedAppender()
+			appender.PersistResourceAttributes = tc.persistResourceAttributes
+
+			// Simulate SetResourceContext by directly setting the fields.
+			// In production, this is called with an OTLP pcommon.Resource.
+			if tc.resourceAttrs != nil {
+				for k, v := range tc.resourceAttrs {
+					entry := mimirpb.ResourceAttributeEntry{Key: k, Value: v}
+					// service.name is an identifying attribute
+					if k == "service.name" || k == "service.namespace" || k == "service.instance.id" {
+						appender.resourceIdentifying = append(appender.resourceIdentifying, entry)
+					} else {
+						appender.resourceDescriptive = append(appender.resourceDescriptive, entry)
+					}
+				}
+			}
+
+			tc.appends(t, appender)
+
+			series, _ := appender.GetResult()
+			require.Len(t, series, 1)
+
+			if tc.expectResourceAttrs == nil {
+				require.Nil(t, series[0].ResourceAttributes)
+			} else {
+				require.NotNil(t, series[0].ResourceAttributes)
+				// Check identifying attrs
+				require.Equal(t, len(tc.expectResourceAttrs.Identifying), len(series[0].ResourceAttributes.Identifying))
+				for i, expected := range tc.expectResourceAttrs.Identifying {
+					require.Equal(t, expected.Key, series[0].ResourceAttributes.Identifying[i].Key)
+					require.Equal(t, expected.Value, series[0].ResourceAttributes.Identifying[i].Value)
+				}
+				// Check descriptive attrs
+				require.Equal(t, len(tc.expectResourceAttrs.Descriptive), len(series[0].ResourceAttributes.Descriptive))
+				for i, expected := range tc.expectResourceAttrs.Descriptive {
+					require.Equal(t, expected.Key, series[0].ResourceAttributes.Descriptive[i].Key)
+					require.Equal(t, expected.Value, series[0].ResourceAttributes.Descriptive[i].Value)
+				}
+				require.Equal(t, tc.expectResourceAttrs.Timestamp, series[0].ResourceAttributes.Timestamp)
+			}
+		})
+	}
+}
+
 // adapted from pkg/distributor/distributor_test.go
 func labelsWithHashCollision() (labels.Labels, labels.Labels) {
 	// These two series have the same XXHash; thanks to https://github.com/pstibrany/labels_hash_collisions

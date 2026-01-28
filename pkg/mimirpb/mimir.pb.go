@@ -499,6 +499,11 @@ type TimeSeries struct {
 
 	// Skip unmarshaling of exemplars.
 	SkipUnmarshalingExemplars bool
+
+	// OTel resource attributes for this time series.
+	// This field is not serialized over the wire in RW1/RW2 protocol but is used
+	// for internal communication between distributor and ingester.
+	ResourceAttributes *ResourceAttributes
 }
 
 func (m *TimeSeries) Reset()      { *m = TimeSeries{} }
