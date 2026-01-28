@@ -2090,6 +2090,7 @@ spec:
     name: querier
   triggers:
   - metadata:
+      ignoreNullValues: "true"
       metricName: cortex_querier_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -2097,6 +2098,7 @@ spec:
     name: cortex_querier_hpa_default
     type: prometheus
   - metadata:
+      ignoreNullValues: "true"
       metricName: cortex_querier_hpa_default_requests_duration
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
