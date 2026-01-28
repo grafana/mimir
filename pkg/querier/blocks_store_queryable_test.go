@@ -3190,6 +3190,11 @@ func (m *storeGatewayClientMock) RemoteZone() string {
 	return m.remoteZone
 }
 
+func (m *storeGatewayClientMock) ResourceAttributes(context.Context, *storepb.ResourceAttributesRequest, ...grpc.CallOption) (storegatewaypb.StoreGateway_ResourceAttributesClient, error) {
+	// Return empty stream for tests - resource attributes not mocked
+	return nil, nil
+}
+
 type storeGatewaySeriesClientMock struct {
 	grpc.ClientStream
 
@@ -3269,6 +3274,11 @@ func (m *cancelerStoreGatewayClientMock) RemoteAddress() string {
 
 func (m *cancelerStoreGatewayClientMock) RemoteZone() string {
 	return m.remoteZone
+}
+
+func (m *cancelerStoreGatewayClientMock) ResourceAttributes(ctx context.Context, _ *storepb.ResourceAttributesRequest, _ ...grpc.CallOption) (storegatewaypb.StoreGateway_ResourceAttributesClient, error) {
+	m.cancel()
+	return nil, ctx.Err()
 }
 
 type blocksStoreLimitsMock struct {
