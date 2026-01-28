@@ -13,12 +13,14 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -202,8 +204,6 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 		require.NoError(b, bkt.Close())
 	})
 
-	b.ReportAllocs()
-
 	for _, nameCount := range []int{50, 100, 200} {
 		for _, valueCount := range []int{100, 500, 1000, 5000} {
 			nameSymbols := generateSymbols("name", nameCount)
@@ -220,7 +220,13 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
-			bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, idIndexV2, 32, Config{})
+			cfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
+			bucketReg := prometheus.NewPedanticRegistry()
+			metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bucketReg), "")
+			cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bucketReg)
+			require.NoError(b, err)
+
+			bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, idIndexV2, 32, Config{})
 			require.NoError(b, err)
 			b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
 
@@ -247,6 +253,10 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 			b.ResetTimer()
 			for _, reader := range readers {
 				b.Run(fmt.Sprintf("Names=%d/Values=%d/Reader=%s", len(nameSymbols), len(valueSymbols), reader.name), func(b *testing.B) {
+					b.ReportAllocs()
+
+					baselineMetrics := test.RecordBucketMetrics(b, bucketReg, []string{"get_range"})
+
 					for i := 0; i < b.N; i++ {
 						name := labelNames[i%len(labelNames)]
 
@@ -256,6 +266,9 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 						require.NoError(b, err)
 						require.NotEmpty(b, values)
 					}
+
+					metricsDiff := test.RecordBucketMetricsDiff(b, bucketReg, []string{"get_range"}, baselineMetrics)
+					test.ReportBucketMetrics(b, metricsDiff)
 				})
 			}
 		}
@@ -266,16 +279,21 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	ctx := context.Background()
 	tests, blockID, bucketDir, bkt := labelValuesTestCases(test.NewTB(b))
 
-	instBkt := objstore.WithNoopInstr(bkt)
+	instrBkt := objstore.WithNoopInstr(bkt)
 	b.Cleanup(func() {
 		require.NoError(b, bkt.Close())
 	})
 
-	diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instBkt, bucketDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+	diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, blockID, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
 
-	bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), instBkt, bucketDir, blockID, 32, Config{})
+	cfg := bucketcache.NewCachingBucketConfig() // Caches nothing by default
+	bucketReg := prometheus.NewPedanticRegistry()
+	metricsBkt := objstore.WrapWithMetrics(instrBkt, prometheus.WrapRegistererWithPrefix("thanos_", bucketReg), "")
+	cachingBucket, err := bucketcache.NewCachingBucket("test", metricsBkt, cfg, log.NewNopLogger(), bucketReg)
+	require.NoError(b, err)
+	bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), cachingBucket, bucketDir, blockID, 32, Config{})
 	require.NoError(b, err)
 	b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
 
@@ -285,21 +303,30 @@ func BenchmarkLabelValuesOffsetsIndexV2_WithPrefix(b *testing.B) {
 	require.NoError(b, err)
 	require.Equal(b, diskNames, bucketReaderNames)
 
-	readers := map[string]Reader{
-		"disk":   diskReader,
-		"bucket": bucketReader,
+	readers := []struct {
+		name string
+		Reader
+	}{
+		{"disk", diskReader},
+		{"bucket", bucketReader},
 	}
 
 	b.ResetTimer()
-	b.ReportAllocs()
-	for readerName, reader := range readers {
-		for lbl, tcs := range tests {
-			for _, tc := range tcs {
-				b.Run(fmt.Sprintf("Reader=%s/Label=%s/Prefix='%s'/Desc=%s", readerName, lbl, tc.prefix, tc.desc), func(b *testing.B) {
+
+	for lbl, tcs := range tests {
+		for _, tc := range tcs {
+			for _, reader := range readers {
+				b.Run(fmt.Sprintf("Label=%s/Prefix='%s'/Desc=%s/Reader=%s", lbl, tc.prefix, tc.desc, reader.name), func(b *testing.B) {
+					b.ReportAllocs()
 					for i := 0; i < b.N; i++ {
+						baselineMetrics := test.RecordBucketMetrics(b, bucketReg, []string{"get_range"})
+
 						values, err := reader.LabelValuesOffsets(context.Background(), lbl, tc.prefix, tc.filter)
 						require.NoError(b, err)
 						require.Equal(b, tc.expected, len(values))
+
+						metricsDiff := test.RecordBucketMetricsDiff(b, bucketReg, []string{"get_range"}, baselineMetrics)
+						test.ReportBucketMetrics(b, metricsDiff)
 					}
 				})
 			}
