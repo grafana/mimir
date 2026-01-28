@@ -322,11 +322,10 @@ func (r *BucketBinaryReader) PostingsOffset(_ context.Context, name string, valu
 
 // LookupSymbol implements Reader.
 func (r *BucketBinaryReader) LookupSymbol(_ context.Context, o uint32) (string, error) {
-	if r.indexVersion == index.FormatV1 {
-		// For v1, refs are actual offset inside index, not index-header.
-		// Adjust for the header length difference.
-		o += HeaderLen - index.HeaderLen
-	}
+	// Note: Unlike StreamBinaryReader, we don't need to adjust v1 offsets here.
+	// StreamBinaryReader reads from the index-header file (different header length),
+	// but BucketBinaryReader reads directly from the TSDB index file, so v1 symbol
+	// references are already correct TSDB offsets.
 
 	if s, ok := r.nameSymbols[o]; ok {
 		return s, nil
