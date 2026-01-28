@@ -144,55 +144,6 @@ func BenchmarkLabelNames(b *testing.B) {
 	}
 }
 
-func BenchmarkLabelValuesOffsetsIndexV1(b *testing.B) {
-	ctx := context.Background()
-
-	bucketDir := b.TempDir()
-	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
-	require.NoError(b, err)
-	b.Cleanup(func() {
-		require.NoError(b, bkt.Close())
-	})
-
-	metaIndexV1, err := block.ReadMetaFromDir("./testdata/index_format_v1")
-	require.NoError(b, err)
-	test.Copy(b, "./testdata/index_format_v1", filepath.Join(bucketDir, metaIndexV1.ULID.String()))
-
-	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(bucketDir, metaIndexV1.ULID.String()), block.ThanosMeta{
-		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: block.TestSource,
-	}, &metaIndexV1.BlockMeta)
-
-	require.NoError(b, err)
-	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, metaIndexV1.ULID.String()), nil)
-	require.NoError(b, err)
-
-	indexName := filepath.Join(bucketDir, metaIndexV1.ULID.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, metaIndexV1.ULID, indexName))
-
-	benchmarkReader(b, bucketDir, metaIndexV1.ULID, func(b *testing.B, br Reader) {
-		names, err := br.LabelNames(ctx)
-		require.NoError(b, err)
-
-		rand.Shuffle(len(names), func(i, j int) {
-			names[i], names[j] = names[j], names[i]
-		})
-
-		b.ResetTimer()
-
-		for i := 0; i < b.N; i++ {
-			name := names[i%len(names)]
-
-			values, err := br.LabelValuesOffsets(ctx, name, "", func(string) bool {
-				return true
-			})
-
-			require.NoError(b, err)
-			require.NotEmpty(b, values)
-		}
-	})
-}
-
 func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 	ctx := context.Background()
 
