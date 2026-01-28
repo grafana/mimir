@@ -467,6 +467,33 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	}
 	sp.Limit = limit
 
+	// For "series" func queries, sub-queriers (like distributorQuerier) return labels without memory tracking,
+	// so we shouldn't wrap with MemoryTrackingSeriesSet which would try to decrease memory consumption.
+	if sp.Func == "series" {
+		if len(queriers) == 1 {
+			return queriers[0].Select(ctx, true, sp, matchers...)
+		}
+
+		sets := make(chan storage.SeriesSet, len(queriers))
+		for _, querier := range queriers {
+			go func(querier storage.Querier) {
+				sets <- querier.Select(ctx, true, sp, matchers...)
+			}(querier)
+		}
+
+		var result []storage.SeriesSet
+		for range queriers {
+			select {
+			case set := <-sets:
+				result = append(result, set)
+			case <-ctx.Done():
+				return storage.ErrSeriesSet(ctx.Err())
+			}
+		}
+
+		return mq.mergeSeriesSets(result)
+	}
+
 	// Wrap with MemoryTrackingSeriesSet after merging to ensure memory is decreased only once per unique series.
 	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
