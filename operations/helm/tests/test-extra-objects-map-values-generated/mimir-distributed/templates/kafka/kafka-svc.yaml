@@ -1,0 +1,25 @@
+---
+# Source: mimir-distributed/templates/kafka/kafka-svc.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-extra-objects-map-values-mimir-kafka
+  labels:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/component: kafka
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    {}
+  namespace: "citestns"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9092
+      protocol: TCP
+      name: kafka
+      targetPort: kafka
+  selector:
+    app.kubernetes.io/name: mimir
+    app.kubernetes.io/instance: test-extra-objects-map-values
+    app.kubernetes.io/component: kafka
