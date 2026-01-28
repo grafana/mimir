@@ -1870,7 +1870,7 @@ func (db *DB) CompactStaleHead() error {
 	}
 	db.head.RebuildSymbolTable(db.logger)
 
-	db.logger.Info("Ending stale series compaction", "num_series", meta.Stats.NumSeries, "duration", time.Since(start))
+	db.logger.Info("Ending stale series compaction", "num_series", len(staleSeriesRefs), "duration", time.Since(start))
 	return nil
 }
 
