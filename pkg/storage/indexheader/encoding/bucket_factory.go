@@ -148,7 +148,9 @@ type streamReader struct {
 
 var netbufPool = sync.Pool{
 	New: func() any {
-		return bufio.NewReaderSize(nil, 1<<20) // 1MiB buffer to reduce number of network IO
+		// 1MiB buffer chosen as starting point;
+		// we could make this configurable and benchmark.
+		return bufio.NewReaderSize(nil, 1<<20)
 	},
 }
 
