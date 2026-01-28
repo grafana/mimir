@@ -859,6 +859,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
+			// Create a new deduplicator scoped to this Select() call to handle duplicate series
+			// within this single store-gateway query. This ensures accurate memory tracking for queries
+			// like "foo + foo" where each operand gets its own deduplicator.
+			deduplicator := limiter.NewSeriesDeduplicator()
+
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
 				// in another goroutine).
@@ -871,7 +876,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 				var shouldRetry bool
 
 				myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, memoryTracker, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					c, stream, queryLimiter, memoryTracker, deduplicator, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck
@@ -995,7 +1000,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, deduplicator *limiter.SeriesDeduplicator, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -1039,9 +1044,9 @@ func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegat
 		for _, s := range ss.Series {
 			ls := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			// Add series fingerprint to query limiter; will return error if we are over the limit
-			uniqueSeriesLabels, limitErr := queryLimiter.AddSeries(ls, memoryTracker)
-			if limitErr != nil {
+			uniqueSeriesLabels, _ := deduplicator.Deduplicate(ls, memoryTracker)
+
+			if limitErr := queryLimiter.AddSeries(uniqueSeriesLabels); limitErr != nil {
 				return myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, false, false, limitErr
 			}
 
