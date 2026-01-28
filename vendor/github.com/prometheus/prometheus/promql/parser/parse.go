@@ -75,6 +75,12 @@ type parser struct {
 	// built histogram had a counter_reset_hint explicitly specified.
 	// This is used to populate CounterResetHintSet in SequenceValue.
 	lastHistogramCounterResetHintSet bool
+
+	// previousHistogramCounterResetHintSet stores the hint flag from the
+	// histogram built before the most recent one. This is needed for
+	// histogramsIncreaseSeries/histogramsDecreaseSeries where we need to
+	// know the base histogram's flag separately from the increment's flag.
+	previousHistogramCounterResetHintSet bool
 }
 
 type Opt func(p *parser)
@@ -516,30 +522,33 @@ func (p *parser) mergeMaps(left, right *map[string]any) (ret *map[string]any) {
 }
 
 func (p *parser) histogramsIncreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	// Capture the hint set flag immediately after inc histogram is built.
-	// The base histogram's hint set flag was already captured.
-	hintSet := p.lastHistogramCounterResetHintSet
-	return p.histogramsSeries(base, inc, times, hintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	// After inc histogram is built, previousHistogramCounterResetHintSet holds the base's flag
+	// and lastHistogramCounterResetHintSet holds the inc's flag.
+	baseHintSet := p.previousHistogramCounterResetHintSet
+	incHintSet := p.lastHistogramCounterResetHintSet
+	return p.histogramsSeries(base, inc, times, baseHintSet, incHintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		res, _, _, err := a.Add(b)
 		return res, err
 	})
 }
 
 func (p *parser) histogramsDecreaseSeries(base, inc *histogram.FloatHistogram, times uint64) ([]SequenceValue, error) {
-	// Capture the hint set flag immediately after inc histogram is built.
-	hintSet := p.lastHistogramCounterResetHintSet
-	return p.histogramsSeries(base, inc, times, hintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+	// After inc histogram is built, previousHistogramCounterResetHintSet holds the base's flag
+	// and lastHistogramCounterResetHintSet holds the inc's flag.
+	baseHintSet := p.previousHistogramCounterResetHintSet
+	incHintSet := p.lastHistogramCounterResetHintSet
+	return p.histogramsSeries(base, inc, times, baseHintSet, incHintSet, func(a, b *histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
 		res, _, _, err := a.Sub(b)
 		return res, err
 	})
 }
 
-func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64, counterResetHintSet bool,
+func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint64, baseCounterResetHintSet, incCounterResetHintSet bool,
 	combine func(*histogram.FloatHistogram, *histogram.FloatHistogram) (*histogram.FloatHistogram, error),
 ) ([]SequenceValue, error) {
 	ret := make([]SequenceValue, times+1)
 	// Add an additional value (the base) for time 0, which we ignore in tests.
-	ret[0] = SequenceValue{Histogram: base, CounterResetHintSet: counterResetHintSet}
+	ret[0] = SequenceValue{Histogram: base, CounterResetHintSet: baseCounterResetHintSet}
 	cur := base
 	for i := uint64(1); i <= times; i++ {
 		if cur.Schema > inc.Schema {
@@ -551,7 +560,7 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 		if err != nil {
 			return ret, err
 		}
-		ret[i] = SequenceValue{Histogram: cur, CounterResetHintSet: counterResetHintSet}
+		ret[i] = SequenceValue{Histogram: cur, CounterResetHintSet: incCounterResetHintSet}
 	}
 
 	return ret, nil
@@ -560,6 +569,9 @@ func (*parser) histogramsSeries(base, inc *histogram.FloatHistogram, times uint6
 // buildHistogramFromMap is used in the grammar to take then individual parts of the histogram and complete it.
 func (p *parser) buildHistogramFromMap(desc *map[string]any) *histogram.FloatHistogram {
 	output := &histogram.FloatHistogram{}
+	// Save the previous flag before resetting, so histogramsIncreaseSeries/
+	// histogramsDecreaseSeries can access the base histogram's flag.
+	p.previousHistogramCounterResetHintSet = p.lastHistogramCounterResetHintSet
 	// Reset the flag for each new histogram being built.
 	p.lastHistogramCounterResetHintSet = false
 
