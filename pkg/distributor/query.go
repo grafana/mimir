@@ -268,8 +268,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			return result, err
 		}
 
+		deduplicator := limiter.NewSeriesDeduplicator()
+
 		for {
-			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryConsumptionTracker)
+			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryConsumptionTracker, deduplicator)
 			if errors.Is(err, io.EOF) {
 				// We will never get an EOF here from an ingester that is streaming chunks, so we don't need to do anything to set up streaming here.
 				return result, nil
@@ -339,7 +341,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 // receiveResponse receives a response from stream returns the label sets of each series.
 // A bool is also returned to indicate whether the end of the stream has been reached.
-func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) ([]labels.Labels, bool, error) {
+func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, deduplicator *limiter.SeriesDeduplicator) ([]labels.Labels, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		return nil, false, err
@@ -351,8 +353,13 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			uniqueSeriesLabels, err := queryLimiter.AddSeries(l, memoryConsumptionTracker)
+			// Deduplicate series within this Select() call
+			uniqueSeriesLabels, err := deduplicator.Deduplicate(l, memoryConsumptionTracker)
 			if err != nil {
+				return nil, false, err
+			}
+
+			if err := queryLimiter.AddSeries(uniqueSeriesLabels); err != nil {
 				return nil, false, err
 			}
 
