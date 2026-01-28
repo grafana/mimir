@@ -354,7 +354,6 @@ func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_Qu
 		for _, s := range resp.StreamingSeries {
 			l := mimirpb.FromLabelAdaptersToLabelsWithCopy(s.Labels)
 
-			// Deduplicate series within this Select() call
 			uniqueSeriesLabels, err := deduplicator.Deduplicate(l, memoryConsumptionTracker)
 			if err != nil {
 				return nil, false, err
