@@ -3265,6 +3265,7 @@ respsLoop:
 	}
 
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
+	memoryTracker, err := mimir_limiter.MemoryConsumptionTrackerFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -3272,6 +3273,11 @@ respsLoop:
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
 		if err := queryLimiter.AddSeries(m); err != nil {
+			return nil, err
+		}
+
+		// Track memory consumption for labels so that MemoryTrackingSeriesSet can decrease it when iterating.
+		if err := memoryTracker.IncreaseMemoryConsumptionForLabels(m); err != nil {
 			return nil, err
 		}
 
