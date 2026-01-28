@@ -316,7 +316,7 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	}
 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
-	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram, nil)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Range query result check failed", "err", err)
@@ -373,7 +373,7 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	}
 
 	t.metrics.queryResultChecksTotal.WithLabelValues(typeLabel).Inc()
-	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram)
+	_, err = verifySamplesSum(matrix, t.cfg.NumSeries, 0, generateValue, generateSampleHistogram, nil)
 	if err != nil {
 		t.metrics.queryResultChecksFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Instant query result check failed", "err", err)
@@ -485,7 +485,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither")
 			return
 		}
-		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram)
+		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram, nil)
 		if lastMatchingIdx == -1 {
 			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no timestamps where the returned value matched the expected value", "err", err)
 			return

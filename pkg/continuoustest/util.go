@@ -39,6 +39,7 @@ type generateHistogramFunc func(t time.Time) prompb.Histogram
 type generateSeriesFunc func(name string, t time.Time, numSeries int, extraLabels ...prompb.Label) []prompb.TimeSeries
 type generateValueFunc func(t time.Time) float64
 type generateSampleHistogramFunc func(t time.Time, numSeries int) *model.SampleHistogram
+type skipTimestampFunc func(t time.Time) bool
 
 type histogramProfile struct {
 	metricName              string
@@ -336,7 +337,8 @@ func generateHistogramFloatValue(t time.Time, gauge bool) float64 {
 // of expectedSeries and checks whether the actual values match the expected ones.
 // Samples are checked in backward order, from newest to oldest. Returns error if values don't match,
 // and the index of the last sample that matched the expectation or -1 if no sample matches.
-func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (lastMatchingIdx int, err error) {
+// If skipTimestamp is not nil and returns true for a given timestamp, that sample is skipped.
+func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, skipTimestamp skipTimestampFunc) (lastMatchingIdx int, err error) {
 	lastMatchingIdx = -1
 	if len(matrix) != 1 {
 		return lastMatchingIdx, fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
@@ -360,6 +362,11 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 				return lastMatchingIdx, fmt.Errorf("found null pointer in histogram")
 			}
 			ts := time.UnixMilli(int64(histogram.Timestamp)).UTC()
+
+			// Skip this sample if the caller requested it.
+			if skipTimestamp != nil && skipTimestamp(ts) {
+				continue
+			}
 
 			// Assert on value.
 			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
@@ -386,6 +393,11 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 	for idx := len(samples) - 1; idx >= 0; idx-- {
 		sample := samples[idx]
 		ts := time.UnixMilli(int64(sample.Timestamp)).UTC()
+
+		// Skip this sample if the caller requested it.
+		if skipTimestamp != nil && skipTimestamp(ts) {
+			continue
+		}
 
 		// Assert on value.
 		expectedValue := generateValue(ts) * float64(expectedSeries)

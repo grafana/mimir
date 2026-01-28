@@ -18,8 +18,9 @@ import (
 )
 
 const (
-	oooFloatMetricName   = "mimir_continuous_sine_wave_ooo_v2"
-	inorderWriteInterval = 1 * time.Minute
+	oooFloatMetricName      = "mimir_continuous_sine_wave_ooo_v2"
+	inorderWriteInterval    = 1 * time.Minute
+	outOfOrderWriteInterval = 20 * time.Second
 )
 
 type WriteReadOOOTestConfig struct {
@@ -30,8 +31,8 @@ type WriteReadOOOTestConfig struct {
 }
 
 func (cfg *WriteReadOOOTestConfig) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.Enabled, "tests.write-read-ooo-test.enabled", true, "Enables a test that writes samples out-of-order and verifies query results.")
-	f.IntVar(&cfg.NumSeries, "tests.write-read-ooo-test.num-series", 10000, "Number of series used for the test.")
+	f.BoolVar(&cfg.Enabled, "tests.write-read-ooo-test.enabled", false, "Enables a test that writes samples out-of-order and verifies query results.")
+	f.IntVar(&cfg.NumSeries, "tests.write-read-ooo-test.num-series", 5000, "Number of series used for the test.")
 	f.DurationVar(&cfg.MaxOOOLag, "tests.write-read-ooo-test.max-ooo-lag", 1*time.Hour, "The maximum time in which the writing of a sample might be delayed. Must be smaller than the tenant's out-of-order time window or delayed writes will be rejected.")
 	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-ooo-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
 }
@@ -126,7 +127,7 @@ func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval tim
 func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, records *MetricHistory) error {
 	// We have two "series" embedded into one, aligned to different steps.
 	// First recover to the larger one, which represents the in-order samples.
-	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, inorderWriteInterval, metricName, querySum, generateValue)
+	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, inorderWriteInterval, metricName, querySum, generateValue, nil)
 	if from.IsZero() || to.IsZero() {
 		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
@@ -141,17 +142,34 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 	records.queryMaxTime = to
 	level.Info(t.logger).Log("msg", "Successfully found previously written inorder samples time range and recovered writes and reads from there", "metric_name", metricName, "last_written_timestamp", records.lastWrittenTimestamp, "query_min_time", records.queryMinTime, "query_max_time", records.queryMaxTime)
 
+	// Search a second time, but at a tighter step, to find how far back we've written the more dense, fully-formed series.
+	// Don't process the samples from the in-order time range, we care about the gaps.
+	skipInorderTimestamps := func(ts time.Time) bool {
+		return ts.Equal(alignTimestampToInterval(ts, inorderWriteInterval))
+	}
+	from, to = t.findPreviouslyWrittenTimeRange(ctx, now, outOfOrderWriteInterval, metricName, querySum, generateValue, skipInorderTimestamps)
+	if from.IsZero() || to.IsZero() {
+		level.Info(t.logger).Log("msg", "No valid previously written OOO samples found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
+		return nil
+	}
+	if to.Before(now.Add(-writeMaxAge)) {
+		level.Info(t.logger).Log("msg", "Previously written OOO samples time range found but latest written sample is too old to recover", "metric_name", metricName, "last_sample_timestamp", to)
+		return nil
+	}
+
+	level.Info(t.logger).Log("msg", "Found time range for densely written samples", "from", from, "to", to)
+
 	return nil
 }
 
-func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, step time.Duration, metricName string, querySum querySumFunc, generateValue generateValueFunc) (from, to time.Time) {
-	end := alignTimestampToInterval(now, writeInterval)
+func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, step time.Duration, metricName string, querySum querySumFunc, generateValue generateValueFunc, skipTimestamp skipTimestampFunc) (from, to time.Time) {
+	end := alignTimestampToInterval(now, step)
 
 	var samples []model.SamplePair
 	query := querySum(metricName)
 
 	for {
-		start := alignTimestampToInterval(maxTime(now.Add(-t.cfg.MaxQueryAge), end.Add(-24*time.Hour).Add(step)), writeInterval)
+		start := alignTimestampToInterval(maxTime(now.Add(-t.cfg.MaxQueryAge), end.Add(-24*time.Hour).Add(step)), step)
 		if !start.Before(end) {
 			// We've hit the max query age, so we'll keep the last computed valid time range (if any).
 			return
@@ -180,7 +198,7 @@ func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, n
 		end = start.Add(-step)
 
 		fullMatrix := model.Matrix{{Values: samples}}
-		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, nil)
+		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, nil, skipTimestamp)
 		if lastMatchingIdx == -1 {
 			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no timestamps where the returned value matched the expected value", "err", err)
 			return
