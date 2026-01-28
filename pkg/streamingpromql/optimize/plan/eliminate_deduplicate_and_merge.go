@@ -5,6 +5,7 @@ package plan
 import (
 	"context"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -132,7 +133,7 @@ func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
 			}
 		}
 
-		return true, nil
+		return isNameLabelDropped(node), nil
 	case *core.UnaryExpression:
 		return canEliminateDeduplicateAndMerge(node.Inner)
 	case *core.DeduplicateAndMerge, *core.AggregateExpression:
@@ -174,6 +175,41 @@ func hasExactNameMatcher(matchers []*core.LabelMatcher) bool {
 	}
 
 	return false
+}
+
+// isNameLabelDropped returns false if the children of n contain operations that manipulate
+// labels which can potentially re-introduce the __name__ label without any subsequent operations
+// that drop __name__, true otherwise.
+func isNameLabelDropped(n planning.Node) bool {
+	dropped := true
+	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+
+		state := 0
+		// label_replace and label_join functions can potentially re-introduce __name__ labels
+		// after they have been dropped by an inner function (like `rate(...)`). If we see one
+		// of these functions, we check the path between it and our root node, `n`, to ensure
+		// that the label_replace function has a corresponding DeduplicateAndMerge node and there
+		// is at least one more that indicates the path contains a function that drops __name__.
+		if isLabelReplaceOrJoinFunction(node) {
+			state = 2
+
+			for i := len(path) - 1; i >= 0; i-- {
+				if _, ok := path[i].(*core.DeduplicateAndMerge); ok {
+					state--
+				} else if isLabelReplaceOrJoinFunction(path[i]) {
+					state++
+				}
+			}
+		}
+
+		if state > 0 {
+			dropped = false
+		}
+
+		return nil
+	}))
+
+	return dropped
 }
 
 func isLabelReplaceOrJoinFunction(node planning.Node) bool {
