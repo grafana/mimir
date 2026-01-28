@@ -1973,18 +1973,19 @@ If you just need to "rewind" the commit for a number of partitions so block-buil
 1. Identify which partitions whose commit needs to be rewound, and the offsets they should be set to.
 2. Verify that you can use the Kafka command line tool `kafka-consumer-groups.sh`, which comes commonly in Kafka distributions and container images. (e.g., in `bitnamilegacy/kafka`.)
 3. To avoid consumer group offset conflicts, scale down to zero replicas or otherwise disable any running `block-builder-scheduler` replicas.
-3. Execute the command in *dry-run mode*:
+4. Execute the command in _dry-run mode_:
 
-      `kafka-consumer-groups.sh --group $BLOCK_BUILDER_GROUP --topic $TOPIC:$PARTITION --reset-offsets --to-offset $OFFSET --dry-run`
+   `kafka-consumer-groups.sh --group $BLOCK_BUILDER_GROUP --topic $TOPIC:$PARTITION --reset-offsets --to-offset $OFFSET --dry-run`
 
-    where:
-    * `BLOCK_BUILDER_GROUP` is the consumer group specified in the `block-builder-scheduler` configuration. ("block-builder" by default.)
-    * `TOPIC` is the Kafka topic specified in the `block-builder-scheduler` configuration.
-    * `PARTITION` and `OFFSET` are the first pair of items located in step 1
-4. If you are satisfied with the result, run it again without the `--dry-run` flag.
-5. Repeat for the other partition/offset pairs from step 1.
-6. Re-enable block-builder-scheduler, and verify using logs that it begins creating jobs starting from the offsets you've rewound to.
+   where:
 
+   - `BLOCK_BUILDER_GROUP` is the consumer group specified in the `block-builder-scheduler` configuration. ("block-builder" by default.)
+   - `TOPIC` is the Kafka topic specified in the `block-builder-scheduler` configuration.
+   - `PARTITION` and `OFFSET` are the first pair of items located in step 1
+
+5. If you are satisfied with the result, run it again without the `--dry-run` flag.
+6. Repeat for the other partition/offset pairs from step 1.
+7. Re-enable block-builder-scheduler, and verify using logs that it begins creating jobs starting from the offsets you've rewound to.
 
 ### MimirBlockBuilderSchedulerNotRunning
 
