@@ -197,59 +197,68 @@ func BenchmarkLabelValuesOffsetsIndexV2(b *testing.B) {
 	bucketDir := b.TempDir()
 	bkt, err := filesystem.NewBucket(filepath.Join(bucketDir, "bkt"))
 	require.NoError(b, err)
-	instBkt := objstore.WithNoopInstr(bkt)
+	instrBkt := objstore.WithNoopInstr(bkt)
 	b.Cleanup(func() {
 		require.NoError(b, bkt.Close())
 	})
 
-	nameSymbols := generateSymbols("name", 10)
-	valueSymbols := generateSymbols("value", 100)
-	idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
-	require.NoError(b, err)
-	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
-	require.NoError(b, err)
-
-	indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
-	require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
-
-	diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instBkt, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
-	require.NoError(b, err)
-	b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
-
-	bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), instBkt, bucketDir, idIndexV2, 32, Config{})
-	require.NoError(b, err)
-	b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
-
-	diskNames, err := diskReader.LabelNames(ctx)
-	require.NoError(b, err)
-	bucketReaderNames, err := bucketReader.LabelNames(ctx)
-	require.NoError(b, err)
-	require.Equal(b, diskNames, bucketReaderNames)
-
-	rand.Shuffle(len(diskNames), func(i, j int) {
-		diskNames[i], diskNames[j] = diskNames[j], diskNames[i]
-	})
-
-	readers := map[string]Reader{
-		"disk":   diskReader,
-		"bucket": bucketReader,
-	}
-
-	b.ResetTimer()
 	b.ReportAllocs()
-	for readerName, reader := range readers {
-		b.Run(fmt.Sprintf("Reader=%s/Names=%d/Values=%d", readerName, len(nameSymbols), len(valueSymbols)), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				name := diskNames[i%len(diskNames)]
 
-				values, err := reader.LabelValuesOffsets(ctx, name, "", func(string) bool {
-					return true
-				})
+	for _, nameCount := range []int{50, 100, 200} {
+		for _, valueCount := range []int{100, 500, 1000, 5000} {
+			nameSymbols := generateSymbols("name", nameCount)
+			valueSymbols := generateSymbols("value", valueCount)
+			idIndexV2, err := block.CreateBlock(ctx, bucketDir, generateLabels(nameSymbols, valueSymbols), 100, 0, 1000, labels.FromStrings("ext1", "1"))
+			require.NoError(b, err)
+			_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(bucketDir, idIndexV2.String()), nil)
+			require.NoError(b, err)
 
-				require.NoError(b, err)
-				require.NotEmpty(b, values)
+			indexName := filepath.Join(bucketDir, idIndexV2.String(), block.IndexHeaderFilename)
+			require.NoError(b, WriteBinary(ctx, bkt, idIndexV2, indexName))
+
+			diskReader, err := NewStreamBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, idIndexV2, 32, NewStreamBinaryReaderMetrics(nil), Config{})
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, diskReader.Close()) })
+
+			bucketReader, err := NewBucketBinaryReader(ctx, log.NewNopLogger(), instrBkt, bucketDir, idIndexV2, 32, Config{})
+			require.NoError(b, err)
+			b.Cleanup(func() { require.NoError(b, bucketReader.Close()) })
+
+			labelNames, err := diskReader.LabelNames(ctx)
+			require.NoError(b, err)
+
+			// Check that disk & bucket readers got the same label names before proceeding
+			bucketLabelNames, err := bucketReader.LabelNames(ctx)
+			require.NoError(b, err)
+			require.Equal(b, labelNames, bucketLabelNames)
+
+			rand.Shuffle(len(labelNames), func(i, j int) {
+				labelNames[i], labelNames[j] = labelNames[j], labelNames[i]
+			})
+
+			readers := []struct {
+				name string
+				Reader
+			}{
+				{"disk", diskReader},
+				{"bucket", bucketReader},
 			}
-		})
+
+			b.ResetTimer()
+			for _, reader := range readers {
+				b.Run(fmt.Sprintf("Names=%d/Values=%d/Reader=%s", len(nameSymbols), len(valueSymbols), reader.name), func(b *testing.B) {
+					for i := 0; i < b.N; i++ {
+						name := labelNames[i%len(labelNames)]
+
+						values, err := reader.LabelValuesOffsets(ctx, name, "", func(string) bool {
+							return true
+						})
+						require.NoError(b, err)
+						require.NotEmpty(b, values)
+					}
+				})
+			}
+		}
 	}
 }
 
