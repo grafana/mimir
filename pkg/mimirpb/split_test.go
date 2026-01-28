@@ -450,6 +450,7 @@ func TestSplitWriteRequestByMaxMarshalSize_WriteRequestHasChanged(t *testing.T) 
 		"rw2symbols",
 		"BufferHolder",
 		"sourceBufferHolders",
+		"arena",
 	}, fieldNames)
 }
 

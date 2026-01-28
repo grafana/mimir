@@ -288,6 +288,7 @@ func (MetadataRW2_MetricType) EnumDescriptor() ([]byte, []int) {
 }
 
 type WriteRequest struct {
+	ArenaHolder
 	// Keep reference to buffer for unsafe references.
 	BufferHolder
 	// sourceBufferHolders is populated when the WriteRequest is synthesized
@@ -7457,7 +7458,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			}
 			m.Timeseries = append(m.Timeseries, PreallocTimeseries{})
 			m.Timeseries[len(m.Timeseries)-1].skipUnmarshalingExemplars = m.skipUnmarshalingExemplars
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(m.arena, dAtA[iNdEx:postIndex], nil, nil, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -7593,7 +7594,7 @@ func (m *WriteRequest) Unmarshal(dAtA []byte) error {
 			if metadata == nil {
 				metadata = metadataSetFromSettings(m.skipDeduplicateMetadata)
 			}
-			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
+			if err := m.Timeseries[len(m.Timeseries)-1].Unmarshal(m.arena, dAtA[iNdEx:postIndex], &m.rw2symbols, metadata, m.skipNormalizeMetadataMetricName); err != nil {
 				return err
 			}
 			iNdEx = postIndex

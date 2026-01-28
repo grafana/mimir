@@ -1053,7 +1053,7 @@ func TestValidateLabel_UseAfterRelease(t *testing.T) {
 
 	// Unmarshal into a reusable PreallocTimeseries.
 	var ts mimirpb.PreallocTimeseries
-	err = ts.Unmarshal(buf, nil, nil, false)
+	err = ts.Unmarshal(nil, buf, nil, nil, false)
 	require.NoError(t, err)
 
 	// Call validateLabels to get a LabelValueTooLongError.

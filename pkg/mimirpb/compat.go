@@ -17,6 +17,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/grafana/mimir/pkg/util/arena"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -37,7 +38,7 @@ func ToWriteRequest(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exempl
 // NewWriteRequest creates a new empty WriteRequest with metadata
 func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum) *WriteRequest {
 	return &WriteRequest{
-		Timeseries: PreallocTimeseriesSliceFromPool(),
+		Timeseries: AllocPreallocTimeseriesSlice(nil),
 		Metadata:   metadata,
 		Source:     source,
 	}
@@ -48,19 +49,19 @@ func NewWriteRequest(metadata []*MetricMetadata, source WriteRequest_SourceEnum)
 // method implies that only a single sample and optionally exemplar can be set for each series.
 func (m *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range samples {
-		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, lbls[i]...)
-		ts.Samples = append(ts.Samples, s)
+		ts := AllocTimeSeries(m.arena)
+		ts.Labels = arena.Append(m.arena, ts.Labels, lbls[i]...)
+		ts.Samples = arena.Append(m.arena, ts.Samples, s)
 
 		if exemplars != nil {
 			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
 			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
 			if e := exemplars[i]; e != nil {
-				ts.Exemplars = append(ts.Exemplars, *e)
+				ts.Exemplars = arena.Append(m.arena, ts.Exemplars, *e)
 			}
 		}
 
-		m.Timeseries = append(m.Timeseries, PreallocTimeseries{TimeSeries: ts})
+		m.Timeseries = arena.Append(m.arena, m.Timeseries, PreallocTimeseries{TimeSeries: ts})
 	}
 	return m
 }
@@ -70,19 +71,19 @@ func (m *WriteRequest) AddFloatSeries(lbls [][]LabelAdapter, samples []Sample, e
 // method implies that only a single sample and optionally exemplar can be set for each series.
 func (m *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Histogram, exemplars []*Exemplar) *WriteRequest {
 	for i, s := range histograms {
-		ts := TimeseriesFromPool()
-		ts.Labels = append(ts.Labels, lbls[i]...)
-		ts.Histograms = append(ts.Histograms, s)
+		ts := AllocTimeSeries(m.arena)
+		ts.Labels = arena.Append(m.arena, ts.Labels, lbls[i]...)
+		ts.Histograms = arena.Append(m.arena, ts.Histograms, s)
 
 		if exemplars != nil {
 			// If provided, we expect a matched entry for exemplars (like labels and samples) but the
 			// entry may be nil since not every timeseries is guaranteed to have an exemplar.
 			if e := exemplars[i]; e != nil {
-				ts.Exemplars = append(ts.Exemplars, *e)
+				ts.Exemplars = arena.Append(m.arena, ts.Exemplars, *e)
 			}
 		}
 
-		m.Timeseries = append(m.Timeseries, PreallocTimeseries{TimeSeries: ts})
+		m.Timeseries = arena.Append(m.arena, m.Timeseries, PreallocTimeseries{TimeSeries: ts})
 	}
 
 	return m
@@ -93,7 +94,7 @@ func (m *WriteRequest) AddHistogramSeries(lbls [][]LabelAdapter, histograms []Hi
 // to be added per time series for simplicity.
 func (m *WriteRequest) AddExemplarsAt(i int, exemplars []*Exemplar) *WriteRequest {
 	for _, e := range exemplars {
-		m.Timeseries[i].Exemplars = append(m.Timeseries[i].Exemplars, *e)
+		m.Timeseries[i].Exemplars = arena.Append(m.arena, m.Timeseries[i].Exemplars, *e)
 	}
 	return m
 }

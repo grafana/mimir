@@ -700,5 +700,6 @@ func TestWriteRequestRW2Conversion_WriteRequestHasChanged(t *testing.T) {
 		"rw2symbols",
 		"BufferHolder",
 		"sourceBufferHolders",
+		"arena",
 	}, fieldNames)
 }

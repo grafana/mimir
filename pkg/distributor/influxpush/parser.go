@@ -19,6 +19,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/arena"
 )
 
 // This has to match existing code in influx2cortex otherwise all customer series would
@@ -26,7 +27,7 @@ import (
 const internalLabel = "__proxy_source__"
 
 // ParseInfluxLineReader parses a Influx Line Protocol request from an io.Reader.
-func ParseInfluxLineReader(_ context.Context, r *http.Request, maxSize int) ([]mimirpb.PreallocTimeseries, int, error) {
+func ParseInfluxLineReader(ctx context.Context, r *http.Request, maxSize int) ([]mimirpb.PreallocTimeseries, int, error) {
 	qp := r.URL.Query()
 	precision := qp.Get("precision")
 	if precision == "" {
@@ -57,20 +58,20 @@ func ParseInfluxLineReader(_ context.Context, r *http.Request, maxSize int) ([]m
 	if err != nil {
 		return nil, dataLen, fmt.Errorf("can't parse points: %s", err)
 	}
-	ts, err := writeRequestFromInfluxPoints(points)
+	ts, err := writeRequestFromInfluxPoints(arena.FromContext(ctx), points)
 	return ts, dataLen, err
 }
 
-func writeRequestFromInfluxPoints(points []models.Point) ([]mimirpb.PreallocTimeseries, error) {
+func writeRequestFromInfluxPoints(a *arena.Arena, points []models.Point) ([]mimirpb.PreallocTimeseries, error) {
 	// Technically the same series should not be repeated. We should put all the samples for
 	// a series in single client.Timeseries. Having said that doing it is not very optimal and the
 	// occurrence of multiple timestamps for the same series is rare. Only reason I see it happening is
 	// for backfilling and this is not the API for that. Keeping that in mind, we are going to create a new
 	// client.Timeseries for each sample.
 
-	returnTs := mimirpb.PreallocTimeseriesSliceFromPool()[:0]
+	returnTs := mimirpb.AllocPreallocTimeseriesSlice(a)[:0]
 	if cap(returnTs) < len(points) {
-		returnTs = make([]mimirpb.PreallocTimeseries, 0, len(points))
+		returnTs = arena.MakeSlice[mimirpb.PreallocTimeseries](a, 0, len(points))
 	}
 	for _, pt := range points {
 		var err error
