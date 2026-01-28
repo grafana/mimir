@@ -1499,6 +1499,10 @@ func (m *errDistributor) ActiveNativeHistogramMetrics(context.Context, []*labels
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) ResourceAttributes(context.Context, int64, int64, []*labels.Matcher, int64) ([]*client.SeriesResourceAttributes, error) {
+	return nil, errDistributorError
+}
+
 func TestQuerier_QueryStoreAfterConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
