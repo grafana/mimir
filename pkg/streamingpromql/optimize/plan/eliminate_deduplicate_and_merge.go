@@ -4,12 +4,12 @@ package plan
 
 import (
 	"context"
-	"slices"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
@@ -63,134 +63,117 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	e.attempts.Inc()
 
-	// nodes is a list of DeduplicateAndMerge nodes in the order of their appearance in the plan.
-	var nodes []dedupNodeInfo
-	e.collect(plan.Root, nil, -1, &nodes, plan.Parameters.EnableDelayedNameRemoval)
+	newRoot, eliminatedAny, err := e.apply(plan.Root)
 
-	// If there are any DeduplicateAndMerge nodes we are not keeping, increment the modified counter.
-	if slices.ContainsFunc(nodes, func(n dedupNodeInfo) bool { return !n.keep }) {
-		e.modified.Inc()
-	}
-
-	newRoot, err := e.eliminate(nodes)
 	if err != nil {
 		return nil, err
 	}
+
 	if newRoot != nil {
 		plan.Root = newRoot
 	}
+
+	if eliminatedAny {
+		e.modified.Inc()
+	}
+
 	return plan, nil
 }
 
-// collect collects DeduplicateAndMerge nodes from the plan and marks them for removal or keeping.
-func (e *EliminateDeduplicateAndMergeOptimizationPass) collect(node planning.Node, parent planning.Node, childIndex int, nodes *[]dedupNodeInfo, enableDelayedNameRemoval bool) {
-	// If this is a binary expression, we need to retain the top-level (delayed name removal)
-	// or closest (non-delayed name removal) deduplicate and merge node. However, we can potentially
-	// remove deduplicate and merge nodes on either side of the binary expression.
-	if _, isBinaryOp := node.(*core.BinaryExpression); isBinaryOp {
-		if enableDelayedNameRemoval {
-			if len(*nodes) > 0 {
-				(*nodes)[0].keep = true
-			}
-		} else {
-			if len(*nodes) >= 1 {
-				(*nodes)[len(*nodes)-1].keep = true
+func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node) (planning.Node, bool, error) {
+	// Try to eliminate DeduplicateAndMerge nodes in children first.
+	var eliminatedAny bool
+
+	for idx := range node.ChildCount() {
+		replacement, eliminatedInChild, err := e.apply(node.Child(idx))
+		if err != nil {
+			return nil, false, err
+		}
+
+		eliminatedAny = eliminatedAny || eliminatedInChild
+
+		if replacement != nil {
+			if err := node.ReplaceChild(idx, replacement); err != nil {
+				return nil, false, err
 			}
 		}
 	}
 
-	if dedupNode, isDedup := node.(*core.DeduplicateAndMerge); isDedup {
-		*nodes = append(*nodes, dedupNodeInfo{
-			node:       dedupNode,
-			parent:     parent,
-			childIndex: childIndex,
-		})
+	deduplicateAndMerge, isDeduplicateAndMerge := node.(*core.DeduplicateAndMerge)
+	if !isDeduplicateAndMerge {
+		return nil, eliminatedAny, nil
 	}
 
-	selector := getSelectorType(node)
-	switch selector {
-	case selectorWithExactName:
-		// Series with the same name are guaranteed to have the same labels, so we can eliminate all DeduplicateAndMerge nodes.
-		return
-	case selectorWithoutExactName:
-		if enableDelayedNameRemoval {
-			// With Delayed Name Removal name is dropped at the very end of query execution.
-			// Keep the DeduplicateAndMerge closest to root to handle final deduplication.
-			if len(*nodes) > 0 {
-				(*nodes)[0].keep = true
-			}
-		} else {
-			// Without delayed name removal name is dropped immediately, so there should be no duplicates after.
-			// So, keep only the DeduplicateAndMerge closest to the selector.
-			if len(*nodes) >= 1 {
-				(*nodes)[len(*nodes)-1].keep = true
+	if ok, err := canEliminateDeduplicateAndMerge(deduplicateAndMerge.Inner); err != nil {
+		return nil, false, err
+	} else if ok {
+		return deduplicateAndMerge.Inner, true, nil
+	}
+
+	return nil, eliminatedAny, nil
+}
+
+func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
+	switch node := node.(type) {
+	case *core.VectorSelector:
+		return hasExactNameMatcher(node.Matchers), nil
+	case *core.MatrixSelector:
+		return hasExactNameMatcher(node.Matchers), nil
+	case *core.FunctionCall:
+		if isLabelReplaceOrJoinFunction(node) {
+			return false, nil
+		}
+
+		for _, child := range node.Args {
+			if ok, err := canEliminateDeduplicateAndMerge(child); err != nil {
+				return false, err
+			} else if !ok {
+				return false, nil
 			}
 		}
-		return
-	}
 
-	// label_replace or label_join manipulate labels, so they could cause duplicates or reintroduce the __name__ label.
-	// Keep DeduplicateAndMerge wrapping label_replace or label_join to handle potential duplicates.
-	if isLabelReplaceOrJoinFunction(node) {
-		switch len(*nodes) {
-		case 0:
-		case 1:
-			(*nodes)[0].keep = true
-		default:
-			if enableDelayedNameRemoval {
-				// Also keep the root DeduplicateAndMerge to handle final deduplication, if delayed name removal is enabled.
-				// Name is dropped at the very end of query execution and label_replace or label_join might mess with it even if selector guarantees unique series.
-				(*nodes)[len(*nodes)-1].keep = true
-			} else {
-				// Also keep DeduplicateAndMerge wrapping closest __name__ dropping operation, in case __name__ is reintroduced by label_replace or label_join and operation's result should be deduplicated.
-				(*nodes)[len(*nodes)-2].keep = true
-				(*nodes)[len(*nodes)-1].keep = true
-			}
+		return true, nil
+	case *core.UnaryExpression:
+		return canEliminateDeduplicateAndMerge(node.Inner)
+	case *core.DeduplicateAndMerge, *core.AggregateExpression:
+		return true, nil
+	case *core.DropName:
+		return false, nil
+	case *core.BinaryExpression:
+		if node.Op == core.BINARY_LOR {
+			return false, nil
 		}
-	}
 
-	for i := range node.ChildCount() {
-		e.collect(node.Child(i), node, i, nodes, enableDelayedNameRemoval)
+		lhsType, err := node.LHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+
+		rhsType, err := node.RHS.ResultType()
+		if err != nil {
+			return false, err
+		}
+
+		isVectorScalar := lhsType != rhsType && (lhsType == parser.ValueTypeScalar || rhsType == parser.ValueTypeScalar)
+		if isVectorScalar {
+			return false, nil
+		}
+
+		return true, nil
+
+	default:
+		return false, nil
 	}
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) eliminate(dedupNodes []dedupNodeInfo) (planning.Node, error) {
-	var newRoot planning.Node
-
-	for _, dedupInfo := range dedupNodes {
-		if dedupInfo.keep {
-			continue
-		}
-		if dedupInfo.parent == nil {
-			newRoot = dedupInfo.node.Inner
-			continue
-		}
-		if err := dedupInfo.parent.ReplaceChild(dedupInfo.childIndex, dedupInfo.node.Inner); err != nil {
-			return nil, err
-		}
-	}
-	return newRoot, nil
-}
-
-// getSelectorType determines if node is a selector and whether it has an exact name matcher.
-func getSelectorType(node planning.Node) selectorType {
-	var matchers []*core.LabelMatcher
-
-	if vs, isVectorSelector := node.(*core.VectorSelector); isVectorSelector {
-		matchers = vs.Matchers
-	} else if ms, isMatrixSelector := node.(*core.MatrixSelector); isMatrixSelector {
-		matchers = ms.Matchers
-	} else {
-		return notSelector
-	}
-
+func hasExactNameMatcher(matchers []*core.LabelMatcher) bool {
 	for _, matcher := range matchers {
 		if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual {
-			return selectorWithExactName
+			return true
 		}
 	}
 
-	return selectorWithoutExactName
+	return false
 }
 
 func isLabelReplaceOrJoinFunction(node planning.Node) bool {
