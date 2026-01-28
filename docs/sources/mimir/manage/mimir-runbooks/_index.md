@@ -1961,12 +1961,29 @@ How to **investigate**:
 
 Data recovery / temporary mitigation:
 
-If the block-builder permanently missed consuming some portion of the partition, or there is an ongoing issue preventing it from consuming, try the following:
+If the block-builder permanently missed consuming some portion of the partition, or there is an ongoing issue with the code preventing it from consuming, try the following:
 
-- Increase the retention of the Kafka topic to buy some time.
-- Spin up a new set of block-builders and block-builder-scheduler with an older version and a **new kafka consumer group**. The latter is so it didn't conflict with the existing block-builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
-- If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
-- Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
+1. Consider increasing the retention of the Kafka topic to buy some time.
+2. Spin up a new set of block-builders and block-builder-scheduler with an older version and a **new kafka consumer group**. The latter is so it didn't conflict with the existing block-builders. Choose the last version where no issue was seen; in most cases it will be the version before the one that caused the alert.
+3. If the `block-builder-scheduler.lookback-on-no-commit` does not cover the time when the issue started, set it long enough so that these new block-builders start back far enough to cover the missing data.
+4. Investigate why the block-builder fails, while the ingesters, who consumed the same data, don't.
+
+If you just need to "rewind" the commit for a number of partitions so block-builder consumed a skipped section of data:
+
+1. Identify which partitions whose commit needs to be rewound, and the offsets they should be set to.
+2. Establish that you can use the Kafka command line tool `kafka-consumer-groups.sh`, which comes commonly in Kafka container images. (For example, `bitnamilegacy/kafka`.)
+3. To avoid consumer group offset conflicts, scale down to zero replicas or otherwise disable any running `block-builder-scheduler` replicas.
+3. Execute the command in *dry-run mode*:
+      `kafka-consumer-groups.sh --group $BLOCK_BUILDER_GROUP --topic $TOPIC:$PARTITION --reset-offsets --to-offset $OFFSET --dry-run`
+
+    where:
+    * `BLOCK_BUILDER_GROUP` is the consumer group specified in the `block-builder-scheduler` configuration. ("block-builder" by default.)
+    * `TOPIC` is the Kafka topic specified in the `block-builder-scheduler` configuration.
+    * `PARTITION` and `OFFSET` are the first pair of items located in step 1
+4. If you are satisfied with the result, run it again without the `--dry-run` flag.
+5. Repeat for the other partition/offset pairs from step 1.
+6. Re-enable block-builder-scheduler, and verify using logs that it begins creating jobs starting from the offsets you've rewound to.
+
 
 ### MimirBlockBuilderSchedulerNotRunning
 
