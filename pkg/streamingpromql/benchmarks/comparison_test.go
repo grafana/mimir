@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/distributor"
@@ -32,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -134,7 +132,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
-			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, memoryTrackingQueryable{q})
+			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
 
@@ -147,7 +145,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 // This test checks that the way we set up the ingester and PromQL engine does what we expect
 // (ie. that we can query the data we write to the ingester)
 func TestBenchmarkSetup(t *testing.T) {
-	q := memoryTrackingQueryable{createBenchmarkQueryable(t, []int{1})}
+	q := createBenchmarkQueryable(t, []int{1})
 
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlanner(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
@@ -278,42 +276,4 @@ type alwaysQueryIngestersConfigProvider struct{}
 
 func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Duration {
 	return time.Duration(math.MaxInt64)
-}
-
-// memoryTracking queryable will return querier that will return MemoryTrackingSeriesSet which will decrease
-// memory consumption as the series is iterated..
-type memoryTrackingQueryable struct {
-	inner storage.Queryable
-}
-
-func (m memoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
-	q, err := m.inner.Querier(mint, maxt)
-	return memoryTrackingQuerier{
-		inner: q,
-	}, err
-}
-
-type memoryTrackingQuerier struct {
-	inner storage.Querier
-}
-
-func (m memoryTrackingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return m.inner.LabelValues(ctx, name, hints, matchers...)
-}
-
-func (m memoryTrackingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
-	return m.inner.LabelNames(ctx, hints, matchers...)
-}
-
-func (m memoryTrackingQuerier) Close() error {
-	return m.inner.Close()
-}
-
-func (m memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	ss := m.inner.Select(ctx, sortSeries, hints, matchers...)
-	tracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-	return series.NewMemoryTrackingSeriesSet(ss, tracker)
 }
