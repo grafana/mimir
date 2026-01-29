@@ -46,7 +46,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollision(t *testing.T) {
 	requireSameLabels(t, returnedA1, seriesA)
 	require.Equal(t, 1, len(deduplicator.uniqueSeries))
 	require.Nil(t, deduplicator.conflictSeries, "conflictSeries should not be initialized yet")
-	require.Equal(t, 1, deduplicator.SeriesCount())
+	require.Equal(t, 1, deduplicator.seriesCount())
 
 	// Add seriesB - should collide with seriesA and go into conflictSeries
 	returnedB1, err := deduplicator.Deduplicate(seriesB, memoryTracker)
@@ -55,26 +55,26 @@ func TestSeriesDeduplicator_Deduplicate_HashCollision(t *testing.T) {
 	require.Equal(t, 1, len(deduplicator.uniqueSeries), "uniqueSeries should still have only seriesA")
 	require.NotNil(t, deduplicator.conflictSeries, "conflictSeries should now be initialized")
 	require.Equal(t, 1, len(deduplicator.conflictSeries[collisionHash]), "should have one collision for this hash")
-	require.Equal(t, 2, deduplicator.SeriesCount())
+	require.Equal(t, 2, deduplicator.seriesCount())
 
 	// Add duplicate of seriesA - should deduplicate correctly
 	returnedA2, err := deduplicator.Deduplicate(seriesA, memoryTracker)
 	require.NoError(t, err)
 	requireSameLabels(t, returnedA2, returnedA1)
-	require.Equal(t, 2, deduplicator.SeriesCount())
+	require.Equal(t, 2, deduplicator.seriesCount())
 
 	// Add duplicate of seriesB - should deduplicate from conflictSeries
 	returnedB2, err := deduplicator.Deduplicate(seriesB, memoryTracker)
 	require.NoError(t, err)
 	requireSameLabels(t, returnedB2, returnedB1)
-	require.Equal(t, 2, deduplicator.SeriesCount())
+	require.Equal(t, 2, deduplicator.seriesCount())
 
 	// Add seriesC (no collision) - should go into uniqueSeries normally
 	returnedC1, err := deduplicator.Deduplicate(seriesC, memoryTracker)
 	require.NoError(t, err)
 	requireSameLabels(t, returnedC1, seriesC)
 	require.Equal(t, 2, len(deduplicator.uniqueSeries), "uniqueSeries should now have seriesA and seriesC")
-	require.Equal(t, 3, deduplicator.SeriesCount())
+	require.Equal(t, 3, deduplicator.seriesCount())
 }
 
 func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t *testing.T) {
@@ -120,7 +120,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 	requireSameLabels(t, returnedC, seriesC)
 	require.Equal(t, 1, len(deduplicator.uniqueSeries))
 	require.Equal(t, 2, len(deduplicator.conflictSeries[collisionHash]), "both seriesB and seriesC should be in conflictSeries")
-	require.Equal(t, 3, deduplicator.SeriesCount())
+	require.Equal(t, 3, deduplicator.seriesCount())
 
 	// Verify deduplication works for all three
 	returnedA2, err := deduplicator.Deduplicate(seriesA, memoryTracker)
@@ -135,7 +135,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 	require.NoError(t, err)
 	requireSameLabels(t, returnedC2, returnedC)
 
-	require.Equal(t, 3, deduplicator.SeriesCount())
+	require.Equal(t, 3, deduplicator.seriesCount())
 }
 
 func TestSeriesDeduplicator_Deduplicate_MemoryTrackingWithDuplicates(t *testing.T) {
