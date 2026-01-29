@@ -28,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkinfologger"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -118,6 +119,18 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(minT), model.Time(maxT), sp, matchers...)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
+		}
+
+		memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
+		}
+
+		for _, m := range ms {
+			err := memoryTracker.IncreaseMemoryConsumptionForLabels(m)
+			if err != nil {
+				return storage.ErrSeriesSet(err)
+			}
 		}
 		return series.LabelsToSeriesSet(ms)
 	}
