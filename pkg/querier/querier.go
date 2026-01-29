@@ -393,6 +393,11 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.Select")
 	defer spanLog.Finish()
 
+	// Add a SeriesDeduplicator to track memory consumption for unique series labels.
+	// This is required so that when MemoryTrackingSeriesSet calls DecreaseMemoryConsumptionForLabels,
+	// the memory was previously increased by the deduplicator.
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
+
 	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.EmptySeriesSet()
