@@ -3,14 +3,11 @@ package continuoustest
 import (
 	"context"
 	"flag"
-	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
 	"golang.org/x/time/rate"
@@ -109,7 +106,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := t.writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, floatMetricMetadata, &t.inOrderSamples); err != nil {
+		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, t.cfg.NumSeries, floatMetricMetadata, &t.inOrderSamples, t.client, t.metrics, t.logger); err != nil {
 			errs.Add(err)
 			return
 		}
@@ -125,7 +122,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := t.writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, floatMetricMetadata, &t.outOfOrderSamples); err != nil {
+		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, t.cfg.NumSeries, floatMetricMetadata, &t.outOfOrderSamples, t.client, t.metrics, t.logger); err != nil {
 			errs.Add(err)
 			return
 		}
@@ -191,53 +188,6 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 	outOfOrderRecords.queryMinTime = from
 	outOfOrderRecords.queryMaxTime = to
 	level.Info(t.logger).Log("msg", "Found time range for densely written samples", "from", from, "to", to)
-
-	return nil
-}
-
-func (t *WriteReadOOOTest) writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metricName string, metadata []prompb.MetricMetadata, records *MetricHistory) error {
-	sp, ctx := spanlogger.New(ctx, t.logger, tracer, "WriteReadOOOTest.writeSamples")
-	defer sp.Finish()
-	logger := log.With(sp, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName, "protocol", t.client.Protocol())
-
-	start := time.Now()
-	statusCode, err := t.client.WriteSeries(ctx, series, metadata)
-	t.metrics.writesLatency.WithLabelValues(typeLabel).Observe(time.Since(start).Seconds())
-	t.metrics.writesTotal.WithLabelValues(typeLabel).Inc()
-
-	if statusCode/100 != 2 {
-		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
-		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
-	} else {
-		level.Info(logger).Log("msg", "Remote write series succeeded", "timestamp", timestamp, "numSeries", len(series))
-	}
-
-	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
-	// The series may have been not written at all or partially written (eg. we hit some limit).
-	// We keep writing the next interval, but we reset the query timestamp because we can't reliably
-	// assert on query results due to possible gaps.
-	if statusCode/100 == 4 {
-		records.lastWrittenTimestamp = timestamp
-		records.queryMinTime = time.Time{}
-		records.queryMaxTime = time.Time{}
-		return nil
-	}
-
-	// If the write request failed because of a network or 5xx error, we'll retry to write series
-	// in the next test run.
-	if err != nil {
-		return fmt.Errorf("failed to remote write series: %w", err)
-	}
-	if statusCode/100 != 2 {
-		return fmt.Errorf("remote write series failed with status code %d: %w", statusCode, err)
-	}
-
-	// The write request succeeded.
-	records.lastWrittenTimestamp = timestamp
-	records.queryMaxTime = timestamp
-	if records.queryMinTime.IsZero() {
-		records.queryMinTime = timestamp
-	}
 
 	return nil
 }
