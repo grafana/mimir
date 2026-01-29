@@ -140,18 +140,6 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Equal(t, now.Add(-30*time.Minute), oooHistory.queryMaxTime)
 	})
 
-	t.Run("previously written in-order data points are in the range [-2h, -1m]", func(t *testing.T) {
-		// client := newMockClient()
-		// TODO: Set up mocks.
-		//
-		// reg := prometheus.NewPedanticRegistry()
-		// test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
-		//
-		// require.NoError(t, test.Init(context.Background(), now))
-		//
-		// TODO: Implement assertions.
-	})
-
 	t.Run("the most recent previously written in-order sample is older than 1h ago", func(t *testing.T) {
 		// client := newMockClient()
 		// TODO: Set up mocks.
