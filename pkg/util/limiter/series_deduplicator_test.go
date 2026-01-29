@@ -266,6 +266,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_50pct(b *testing.B)
 		series = append(series, uniqueSet[i%uniqueSeries])
 	}
 
+	b.ResetTimer()
 	b.ReportAllocs()
 
 	deduplicator := NewSeriesDeduplicator()
