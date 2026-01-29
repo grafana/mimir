@@ -161,7 +161,7 @@ func (t *WriteReadOOOTest) isInOrderTimestamp(ts time.Time) bool {
 func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, inOrderRecords, outOfOrderRecords *MetricHistory) error {
 	// We have two "series" embedded into one, aligned to different steps.
 	// First recover to the larger one, which represents the in-order samples.
-	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, inorderWriteInterval, metricName, querySum, generateValue, nil)
+	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, inorderWriteInterval, metricName, querySum, generateValue, nil, nil)
 	if from.IsZero() || to.IsZero() {
 		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
@@ -178,7 +178,7 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 
 	// Search a second time, but at a tighter step, to find how far back we've written the more dense, fully-formed series.
 	// Ignore the samples from the in-order time range, only look at the gaps.
-	from, to = t.findPreviouslyWrittenTimeRange(ctx, now, outOfOrderWriteInterval, metricName, querySum, generateValue, t.isInOrderTimestamp)
+	from, to = t.findPreviouslyWrittenTimeRange(ctx, now, outOfOrderWriteInterval, metricName, querySum, generateValue, nil, t.isInOrderTimestamp)
 	if from.IsZero() || to.IsZero() {
 		level.Info(t.logger).Log("msg", "No valid previously written OOO samples found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
@@ -196,10 +196,11 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 	return nil
 }
 
-func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, step time.Duration, metricName string, querySum querySumFunc, generateValue generateValueFunc, skipTimestamp skipTimestampFunc) (from, to time.Time) {
+func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, step time.Duration, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, skipTimestamp skipTimestampFunc) (from, to time.Time) {
 	end := alignTimestampToInterval(now, step)
 
 	var samples []model.SamplePair
+	var histograms []model.SampleHistogramPair
 	query := querySum(metricName)
 
 	for {
@@ -229,22 +230,38 @@ func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, n
 		}
 
 		samples = append(matrix[0].Values, samples...)
+		histograms = append(matrix[0].Histograms, histograms...)
 		end = start.Add(-step)
 
-		fullMatrix := model.Matrix{{Values: samples}}
-		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, nil, skipTimestamp)
+		var fullMatrix model.Matrix
+		useHistograms := false
+		if len(samples) > 0 && len(histograms) == 0 {
+			fullMatrix = model.Matrix{{Values: samples}}
+		} else if len(histograms) > 0 && len(samples) == 0 {
+			fullMatrix = model.Matrix{{Histograms: histograms}}
+			useHistograms = true
+		} else {
+			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither")
+			return
+		}
+		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram, skipTimestamp)
 		if lastMatchingIdx == -1 {
 			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no timestamps where the returned value matched the expected value", "err", err)
 			return
 		}
 
-		from = samples[lastMatchingIdx].Timestamp.Time()
-		to = samples[len(samples)-1].Timestamp.Time()
+		if useHistograms {
+			from = histograms[lastMatchingIdx].Timestamp.Time()
+			to = histograms[len(histograms)-1].Timestamp.Time()
+		} else {
+			from = samples[lastMatchingIdx].Timestamp.Time()
+			to = samples[len(samples)-1].Timestamp.Time()
+		}
 
 		level.Info(logger).Log("msg", "Found previously written samples", "from", from, "to", to, "issue_with_earlier_data", err)
 		// If the last matching sample is not the one at the beginning of the queried time range
 		// then it means we've found the oldest previously written sample and we can stop searching it.
-		if lastMatchingIdx != 0 || !samples[0].Timestamp.Time().Equal(start) {
+		if lastMatchingIdx != 0 || (!useHistograms && !samples[0].Timestamp.Time().Equal(start)) || (useHistograms && !histograms[0].Timestamp.Time().Equal(start)) {
 			return
 		}
 	}
