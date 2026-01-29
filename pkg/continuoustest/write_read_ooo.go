@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	oooFloatMetricName      = "mimir_continuous_sine_wave_ooo_v2"
+	oooFloatMetricName      = "mimir_continuous_test_sine_wave_ooo_v2"
 	inorderWriteInterval    = 1 * time.Minute
 	outOfOrderWriteInterval = 20 * time.Second
 	oooTestWriteMaxAge      = 110 * time.Minute

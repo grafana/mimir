@@ -32,10 +32,10 @@ func init() {
 func TestWriteReadOOOTest_Init(t *testing.T) {
 	logger := log.NewNopLogger()
 	now := time.Unix(10*86400, 0)
+	expQuery := "sum(max_over_time(mimir_continuous_test_sine_wave_ooo_v2[1s]))"
 
 	t.Run("no previously written samples found", func(t *testing.T) {
 		client := newMockClient()
-		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
 		expFrom := now.Add(-24 * time.Hour).Add(inorderWriteInterval)
 		expTo := now
 		expStep := time.Minute
@@ -48,19 +48,12 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 
 		require.NoError(t, err)
 		client.AssertNumberOfCalls(t, "QueryRange", 1)
-		inOrderHistory := test.inOrderSamples
-		require.Zero(t, inOrderHistory.lastWrittenTimestamp)
-		require.Zero(t, inOrderHistory.queryMinTime)
-		require.Zero(t, inOrderHistory.queryMaxTime)
-		oooHistory := test.outOfOrderSamples
-		require.Zero(t, oooHistory.lastWrittenTimestamp)
-		require.Zero(t, oooHistory.queryMinTime)
-		require.Zero(t, oooHistory.queryMaxTime)
+		assertHistoryEmpty(t, test.inOrderSamples)
+		assertHistoryEmpty(t, test.outOfOrderSamples)
 	})
 
 	t.Run("previously written in-order samples found but no OOO samples", func(t *testing.T) {
 		client := newMockClient()
-		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
 		existingData := model.Matrix{{
 			Values: generateFloatSamplesSum(now.Add(-2*time.Hour), now.Add(-1*time.Minute), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue),
 		}}
@@ -84,20 +77,14 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 
 		require.NoError(t, err)
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
-		inOrderHistory := test.inOrderSamples
-		require.Equal(t, now.Add(-1*time.Minute), inOrderHistory.lastWrittenTimestamp)
-		require.Equal(t, now.Add(-2*time.Hour), inOrderHistory.queryMinTime)
-		require.Equal(t, now.Add(-1*time.Minute), inOrderHistory.queryMaxTime)
-		oooHistory := test.outOfOrderSamples
-		require.Zero(t, oooHistory.lastWrittenTimestamp)
-		require.Zero(t, oooHistory.queryMinTime)
-		require.Zero(t, oooHistory.queryMaxTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.inOrderSamples.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-2*time.Hour), test.inOrderSamples.queryMinTime)
+		require.Equal(t, now.Add(-1*time.Minute), test.inOrderSamples.queryMaxTime)
+		assertHistoryEmpty(t, test.outOfOrderSamples)
 	})
 
 	t.Run("in-order samples from [-3h, -30m] and OOO samples from [-3h, -1h30m]", func(t *testing.T) {
 		client := newMockClient()
-		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
-
 		inOrderData := model.Matrix{{
 			Values: generateFloatSamplesSum(now.Add(-3*time.Hour), now.Add(-30*time.Minute), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue),
 		}}
@@ -129,21 +116,16 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 
 		require.NoError(t, err)
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
-
-		// In-order samples should be recovered.
-		inOrderHistory := test.inOrderSamples
-		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.lastWrittenTimestamp)
-		require.Equal(t, now.Add(-3*time.Hour), inOrderHistory.queryMinTime)
-		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.queryMaxTime)
-		oooHistory := test.outOfOrderSamples
-		require.Equal(t, now.Add(-30*time.Minute), oooHistory.lastWrittenTimestamp)
-		require.Equal(t, now.Add(-3*time.Hour).Add(20*time.Second), oooHistory.queryMinTime)
-		require.Equal(t, now.Add(-30*time.Minute), oooHistory.queryMaxTime)
+		require.Equal(t, now.Add(-30*time.Minute), test.inOrderSamples.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-3*time.Hour), test.inOrderSamples.queryMinTime)
+		require.Equal(t, now.Add(-30*time.Minute), test.inOrderSamples.queryMaxTime)
+		require.Equal(t, now.Add(-30*time.Minute), test.outOfOrderSamples.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-3*time.Hour).Add(20*time.Second), test.outOfOrderSamples.queryMinTime)
+		require.Equal(t, now.Add(-30*time.Minute), test.outOfOrderSamples.queryMaxTime)
 	})
 
 	t.Run("samples exist, but nothing within maxWriteAge, causes us to start fresh", func(t *testing.T) {
 		client := newMockClient()
-		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
 		existingData := model.Matrix{{
 			Values: generateFloatSamplesSum(now.Add(-4*time.Hour), now.Add(-3*time.Hour), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue),
 		}}
@@ -159,19 +141,12 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 
 		require.NoError(t, err)
 		client.AssertNumberOfCalls(t, "QueryRange", 1)
-		inOrderHistory := test.inOrderSamples
-		require.Zero(t, inOrderHistory.lastWrittenTimestamp)
-		require.Zero(t, inOrderHistory.queryMinTime)
-		require.Zero(t, inOrderHistory.queryMaxTime)
-		oooHistory := test.outOfOrderSamples
-		require.Zero(t, oooHistory.lastWrittenTimestamp)
-		require.Zero(t, oooHistory.queryMinTime)
-		require.Zero(t, oooHistory.queryMaxTime)
+		assertHistoryEmpty(t, test.inOrderSamples)
+		assertHistoryEmpty(t, test.outOfOrderSamples)
 	})
 
 	t.Run("if the first query for in-order samples fails, we start up as if there is no history", func(t *testing.T) {
 		client := newMockClient()
-		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
 		inOrderFrom := now.Add(-24 * time.Hour).Add(inorderWriteInterval)
 		inOrderTo := now
 		client.On("QueryRange", mock.Anything, expQuery, inOrderFrom, inOrderTo, inorderWriteInterval, mock.Anything).
@@ -183,19 +158,12 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 
 		require.NoError(t, err)
 		client.AssertNumberOfCalls(t, "QueryRange", 1)
-		inOrderHistory := test.inOrderSamples
-		require.Zero(t, inOrderHistory.lastWrittenTimestamp)
-		require.Zero(t, inOrderHistory.queryMinTime)
-		require.Zero(t, inOrderHistory.queryMaxTime)
-		oooHistory := test.outOfOrderSamples
-		require.Zero(t, oooHistory.lastWrittenTimestamp)
-		require.Zero(t, oooHistory.queryMinTime)
-		require.Zero(t, oooHistory.queryMaxTime)
+		assertHistoryEmpty(t, test.inOrderSamples)
+		assertHistoryEmpty(t, test.outOfOrderSamples)
 	})
 
 	t.Run("the query for OOO samples fails after in-order samples are recovered, we start up with no OOO history", func(t *testing.T) {
 		client := newMockClient()
-		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
 		existingData := model.Matrix{{
 			Values: generateFloatSamplesSum(now.Add(-2*time.Hour), now.Add(-30*time.Minute), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue),
 		}}
@@ -214,13 +182,16 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 
 		require.NoError(t, err)
 		client.AssertNumberOfCalls(t, "QueryRange", 2)
-		inOrderHistory := test.inOrderSamples
-		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.lastWrittenTimestamp)
-		require.Equal(t, now.Add(-2*time.Hour), inOrderHistory.queryMinTime)
-		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.queryMaxTime)
-		oooHistory := test.outOfOrderSamples
-		require.Zero(t, oooHistory.lastWrittenTimestamp)
-		require.Zero(t, oooHistory.queryMinTime)
-		require.Zero(t, oooHistory.queryMaxTime)
+		require.Equal(t, now.Add(-30*time.Minute), test.inOrderSamples.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-2*time.Hour), test.inOrderSamples.queryMinTime)
+		require.Equal(t, now.Add(-30*time.Minute), test.inOrderSamples.queryMaxTime)
+		assertHistoryEmpty(t, test.outOfOrderSamples)
 	})
+}
+
+func assertHistoryEmpty(t *testing.T, h MetricHistory) {
+	t.Helper()
+	require.Zero(t, h.lastWrittenTimestamp)
+	require.Zero(t, h.queryMinTime)
+	require.Zero(t, h.queryMaxTime)
 }
