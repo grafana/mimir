@@ -64,7 +64,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Name() string {
 func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, plan *planning.QueryPlan, _ planning.QueryPlanVersion) (*planning.QueryPlan, error) {
 	e.attempts.Inc()
 
-	newRoot, eliminatedAny, err := e.apply(plan.Root)
+	newRoot, eliminatedAny, err := e.apply(plan.Root, plan.Parameters.EnableDelayedNameRemoval)
 
 	if err != nil {
 		return nil, err
@@ -81,12 +81,12 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) Apply(_ context.Context, 
 	return plan, nil
 }
 
-func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node) (planning.Node, bool, error) {
+func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node, delayedNameRemoval bool) (planning.Node, bool, error) {
 	// Try to eliminate DeduplicateAndMerge nodes in children first.
 	var eliminatedAny bool
 
 	for idx := range node.ChildCount() {
-		replacement, eliminatedInChild, err := e.apply(node.Child(idx))
+		replacement, eliminatedInChild, err := e.apply(node.Child(idx), delayedNameRemoval)
 		if err != nil {
 			return nil, false, err
 		}
@@ -105,7 +105,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node)
 		return nil, eliminatedAny, nil
 	}
 
-	if ok, err := canEliminateDeduplicateAndMerge(deduplicateAndMerge.Inner); err != nil {
+	if ok, err := canEliminateDeduplicateAndMerge(deduplicateAndMerge.Inner, delayedNameRemoval); err != nil {
 		return nil, false, err
 	} else if ok {
 		return deduplicateAndMerge.Inner, true, nil
@@ -114,19 +114,19 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node)
 	return nil, eliminatedAny, nil
 }
 
-func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
+func canEliminateDeduplicateAndMerge(node planning.Node, delayedNameRemoval bool) (bool, error) {
 	switch node := node.(type) {
 	case *core.VectorSelector:
-		return hasExactNameMatcher(node.Matchers), nil
+		return hasExactNameMatcher(node.Matchers) || delayedNameRemoval, nil
 	case *core.MatrixSelector:
-		return hasExactNameMatcher(node.Matchers), nil
+		return hasExactNameMatcher(node.Matchers) || delayedNameRemoval, nil
 	case *core.FunctionCall:
 		if isLabelReplaceOrJoinFunction(node) {
 			return false, nil
 		}
 
 		for _, child := range node.Args {
-			if ok, err := canEliminateDeduplicateAndMerge(child); err != nil {
+			if ok, err := canEliminateDeduplicateAndMerge(child, delayedNameRemoval); err != nil {
 				return false, err
 			} else if !ok {
 				return false, nil
@@ -135,13 +135,13 @@ func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
 
 		return isNameLabelDropped(node), nil
 	case *core.UnaryExpression:
-		return canEliminateDeduplicateAndMerge(node.Inner)
+		return canEliminateDeduplicateAndMerge(node.Inner, delayedNameRemoval)
 	case *core.DeduplicateAndMerge, *core.AggregateExpression:
 		return true, nil
 	case *core.DropName:
 		return false, nil
 	case *core.BinaryExpression:
-		if node.Op == core.BINARY_LOR {
+		if node.Op == core.BINARY_LOR && !delayedNameRemoval {
 			return false, nil
 		}
 
@@ -194,7 +194,7 @@ func isNameLabelDropped(n planning.Node) bool {
 			state = 2
 
 			for i := len(path) - 1; i >= 0; i-- {
-				if _, ok := path[i].(*core.DeduplicateAndMerge); ok {
+				if path[i].NodeType() == planning.NODE_TYPE_DEDUPLICATE_AND_MERGE {
 					state--
 				} else if isLabelReplaceOrJoinFunction(path[i]) {
 					state++
