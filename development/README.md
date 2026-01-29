@@ -39,6 +39,18 @@ Available profiles:
 
 > **Note**: Compose down will stop all profiles unless specified.
 
+## OTLP Resource Attributes Demo
+
+The monolithic mode includes a demo script that showcases how Mimir persists OTel resource attributes from OTLP metrics. This demonstrates the end-to-end flow from OTLP ingestion through both ingesters and store-gateways.
+
+```bash
+cd mimir-monolithic-mode
+./compose-up.sh
+./scripts/otlp-resource-attrs-demo.sh
+```
+
+See [mimir-monolithic-mode/scripts/README.md](./mimir-monolithic-mode/scripts/README.md) for details.
+
 ## OTEL collector
 
 Experimental support for running OpenTelemetry collector in the Monolithic mode.
