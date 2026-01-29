@@ -765,7 +765,7 @@
   // Rulers
   //
 
-  newRulerScaledObject(name, extra_matchers='')::
+  newRulerScaledObject(name, extra_matchers='', weight=1)::
     $.newResourceScaledObject(
       name=name,
       container_name='ruler',
@@ -779,6 +779,7 @@
       // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
       scale_down_period=600,
       extra_matchers=extra_matchers,
+      weight=weight,
     ),
 
   ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newRulerScaledObject('ruler'),

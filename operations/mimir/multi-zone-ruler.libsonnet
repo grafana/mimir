@@ -8,6 +8,11 @@
     // Controls whether the traffic should be routed to multi-zone ruler.
     // This setting can be used by downstream projects during migrations from single to multi-zone.
     multi_zone_ruler_routing_enabled: $._config.multi_zone_ruler_enabled,
+
+    // When enabled, all ruler zones use aggregate metrics across all zones for autoscaling,
+    // ensuring balanced replica counts. When disabled, each zone scales independently.
+    // Defaults to multi_zone_ruler_enabled but can be overridden for progressive rollout.
+    multi_zone_ruler_balanced_autoscaling_enabled: $._config.multi_zone_ruler_enabled,
   },
 
   local container = $.core.v1.container,
@@ -118,7 +123,20 @@
     else
       super.ruler_scaled_object,
 
-  ruler_zone_a_scaled_object: if !isAutoscalingZoneAEnabled then null else $.newRulerScaledObject('ruler-zone-a', 'pod=~"ruler-zone-a.*"'),
-  ruler_zone_b_scaled_object: if !isAutoscalingZoneBEnabled then null else $.newRulerScaledObject('ruler-zone-b', 'pod=~"ruler-zone-b.*"'),
-  ruler_zone_c_scaled_object: if !isAutoscalingZoneCEnabled then null else $.newRulerScaledObject('ruler-zone-c', 'pod=~"ruler-zone-c.*"'),
+  // When balanced autoscaling is enabled, all zones use aggregate metrics to ensure balanced replica counts.
+  // The weight divides the aggregate metric by the number of zones so each zone scales to its fair share.
+  // When disabled, each zone scales independently based on its own metrics.
+  local numZones = std.length($._config.multi_zone_availability_zones),
+  local rulerZoneExtraMatchers(zone) =
+    if $._config.multi_zone_ruler_balanced_autoscaling_enabled
+    then 'pod=~"ruler-zone-.*"'
+    else 'pod=~"ruler-zone-%s.*"' % zone,
+  local rulerZoneWeight =
+    if $._config.multi_zone_ruler_balanced_autoscaling_enabled
+    then 1.0 / numZones
+    else 1,
+
+  ruler_zone_a_scaled_object: if !isAutoscalingZoneAEnabled then null else $.newRulerScaledObject('ruler-zone-a', rulerZoneExtraMatchers('a'), rulerZoneWeight),
+  ruler_zone_b_scaled_object: if !isAutoscalingZoneBEnabled then null else $.newRulerScaledObject('ruler-zone-b', rulerZoneExtraMatchers('b'), rulerZoneWeight),
+  ruler_zone_c_scaled_object: if !isAutoscalingZoneCEnabled then null else $.newRulerScaledObject('ruler-zone-c', rulerZoneExtraMatchers('c'), rulerZoneWeight),
 }
