@@ -140,7 +140,7 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Equal(t, now.Add(-30*time.Minute), oooHistory.queryMaxTime)
 	})
 
-	t.Run("the most recent previously written in-order sample is older than maxOooWriteAge", func(t *testing.T) {
+	t.Run("samples exist, but nothing within maxWriteAge, causes us to start fresh", func(t *testing.T) {
 		client := newMockClient()
 		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
 		existingData := model.Matrix{{
@@ -168,18 +168,6 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Zero(t, oooHistory.queryMaxTime)
 	})
 
-	t.Run("the most recent previously written OOO sample is older than 1h ago", func(t *testing.T) {
-		// client := newMockClient()
-		// TODO: Set up mocks.
-		//
-		// reg := prometheus.NewPedanticRegistry()
-		// test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
-		//
-		// require.NoError(t, test.Init(context.Background(), now))
-		//
-		// TODO: Implement assertions.
-	})
-
 	t.Run("the first query for in-order samples fails", func(t *testing.T) {
 		// client := newMockClient()
 		// TODO: Set up mocks.
@@ -198,20 +186,6 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		//
 		// reg := prometheus.NewPedanticRegistry()
 		// test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
-		//
-		// require.NoError(t, test.Init(context.Background(), now))
-		//
-		// TODO: Implement assertions.
-	})
-
-	t.Run("the configured query max age is < 24h", func(t *testing.T) {
-		// client := newMockClient()
-		// TODO: Set up mocks.
-		//
-		// testCfg := cfgOOO
-		// testCfg.MaxQueryAge = 2 * time.Hour
-		// reg := prometheus.NewPedanticRegistry()
-		// test := NewWriteReadOOOTest(testCfg, client, logger, reg)
 		//
 		// require.NoError(t, test.Init(context.Background(), now))
 		//
