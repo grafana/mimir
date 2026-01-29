@@ -209,7 +209,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_NoDuplicates(b *tes
 	}
 }
 
-func BenchmarkSeriesDeduplicator_Deduplicate__WithCallerDedup_90pct(b *testing.B) {
+func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_90pct(b *testing.B) {
 	const (
 		metricName   = "test_metric"
 		uniqueSeries = 100
