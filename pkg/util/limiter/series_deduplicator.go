@@ -3,13 +3,23 @@
 package limiter
 
 import (
+	"context"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+type seriesDeduplicatorCtxKey struct{}
+
+var (
+	sdCtxKey = seriesDeduplicatorCtxKey{}
+)
+
 // SeriesDeduplicator is used to deduplicate series and track the unique series memory consumption.
-type SeriesDeduplicator struct {
+type SeriesDeduplicator interface {
+	Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error)
+}
+type seriesDeduplicator struct {
 	uniqueSeriesMx sync.Mutex
 	uniqueSeries   map[uint64]labels.Labels
 	conflictSeries map[uint64][]labels.Labels
@@ -18,12 +28,24 @@ type SeriesDeduplicator struct {
 	hashFunc func(labels.Labels) uint64
 }
 
-func NewSeriesDeduplicator() *SeriesDeduplicator {
-	return &SeriesDeduplicator{
+func NewSeriesDeduplicator() SeriesDeduplicator {
+	return &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
 		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
 	}
+}
+
+func AddSeriesDeduplicatorToContext(ctx context.Context, deduplicator SeriesDeduplicator) context.Context {
+	return context.WithValue(ctx, sdCtxKey, deduplicator)
+}
+
+func SeriesDeduplicatorFromContextWithFallback(ctx context.Context) SeriesDeduplicator {
+	sd, ok := ctx.Value(sdCtxKey).(SeriesDeduplicator)
+	if !ok {
+		return &noopSeriesDeduplicator{}
+	}
+	return sd
 }
 
 // Deduplicate checks if the given series has been seen before in this deduplicator's scope.
@@ -31,14 +53,14 @@ func NewSeriesDeduplicator() *SeriesDeduplicator {
 // If it's new, it returns the input labels.
 //
 // This method handles hash collisions by checking label equality even when hashes match.
-func (sd *SeriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
 	fingerprint := sd.hashFunc(newLabels)
 
 	sd.uniqueSeriesMx.Lock()
 	defer sd.uniqueSeriesMx.Unlock()
 
 	// Check if we've seen this hash before
-	if existingLabels, foundDuplicate := sd.uniqueSeries[fingerprint]; !foundDuplicate {
+	if existingLabels, found := sd.uniqueSeries[fingerprint]; !found {
 		// newLabels is seen for the first time hence we track the series limit and its labels memory consumption.
 		sd.uniqueSeries[fingerprint] = newLabels
 		return sd.trackNewLabels(newLabels, tracker)
@@ -66,7 +88,7 @@ func (sd *SeriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 	return sd.trackNewLabels(newLabels, tracker)
 }
 
-func (sd *SeriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+func (sd *seriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
 	err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
 	if err != nil {
 		return labels.EmptyLabels(), err
@@ -74,7 +96,7 @@ func (sd *SeriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *M
 	return newLabels, nil
 }
 
-func (sd *SeriesDeduplicator) seriesCount() int {
+func (sd *seriesDeduplicator) seriesCount() int {
 	sd.uniqueSeriesMx.Lock()
 	defer sd.uniqueSeriesMx.Unlock()
 
@@ -83,4 +105,10 @@ func (sd *SeriesDeduplicator) seriesCount() int {
 		count += len(conflicts)
 	}
 	return count
+}
+
+type noopSeriesDeduplicator struct{}
+
+func (n noopSeriesDeduplicator) Deduplicate(newLabels labels.Labels, _ *MemoryConsumptionTracker) (labels.Labels, error) {
+	return newLabels, nil
 }

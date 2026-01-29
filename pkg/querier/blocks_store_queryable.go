@@ -850,7 +850,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
-			deduplicator := limiter.NewSeriesDeduplicator()
+			deduplicator := limiter.SeriesDeduplicatorFromContextWithFallback(ctx)
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
@@ -988,7 +988,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 	return seriesSets, queriedBlocks, warnings, streamReaders, estimateChunks, nil //nolint:govet // It's OK to return without cancelling reqCtx, see comment above.
 }
 
-func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, deduplicator *limiter.SeriesDeduplicator, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
+func (q *blocksStoreQuerier) receiveMessage(c BlocksStoreClient, stream storegatewaypb.StoreGateway_SeriesClient, queryLimiter *limiter.QueryLimiter, memoryTracker *limiter.MemoryConsumptionTracker, deduplicator limiter.SeriesDeduplicator, myWarnings annotations.Annotations, myQueriedBlocks []ulid.ULID, myStreamingSeriesLabels []labels.Labels, indexBytesFetched uint64) (annotations.Annotations, []ulid.ULID, []labels.Labels, uint64, bool, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
