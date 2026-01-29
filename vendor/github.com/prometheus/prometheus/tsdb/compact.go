@@ -33,12 +33,14 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -292,6 +294,13 @@ func (c *LeveledCompactor) Plan(dir string) ([]string, error) {
 			return nil, err
 		}
 		if c.blockExcludeFunc != nil && c.blockExcludeFunc(meta) {
+			// Compactions work from oldest to newest, uploads do the same (usually).
+			// If you continue here you'll skip compactions on this one block, but:
+			// * all further blocks are NOT yet uploaded
+			// * some or all further blocks are uploaded
+			//
+			// If we continue and there are newer blocks to pick from,
+			// then you will compact in a non-continuous way, leaving gaps of individual un-compacted blocks.
 			break
 		}
 		dms = append(dms, dirMeta{dir, meta})
@@ -778,6 +787,9 @@ func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, b
 		if base.Compaction.FromOutOfOrder() {
 			meta.Compaction.SetOutOfOrder()
 		}
+		if base.Compaction.FromStaleSeries() {
+			meta.Compaction.SetStaleSeries()
+		}
 	}
 
 	err := c.write(dest, []shardedBlock{{meta: meta}}, DefaultBlockPopulator{}, b)
@@ -940,6 +952,46 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blockPop
 		// Create an empty tombstones file.
 		if _, err := tombstones.WriteFile(c.logger, ob.tmpDir, tombstones.NewMemTombstones()); err != nil {
 			return fmt.Errorf("write new tombstones file: %w", err)
+		}
+
+		// Merge and write series metadata and resource attributes from source blocks.
+		// Metadata is deduplicated by metric name - later blocks overwrite earlier ones.
+		// Resource attributes are merged by labels hash - time ranges are extended.
+		//
+		// NOTE: For split compaction (multiple output shards), metadata is replicated
+		// to all shards rather than filtered per-shard. This is acceptable because:
+		// - Metric metadata is deduplicated by name, not series-specific
+		// - Resource attributes are keyed by labelsHash; queries filter by series
+		// - Per-shard filtering would add complexity for minimal storage savings
+		mergedMeta := seriesmetadata.NewMemSeriesMetadata()
+		for _, b := range blocks {
+			mr, err := b.SeriesMetadata()
+			if err != nil {
+				return fmt.Errorf("get series metadata from block: %w", err)
+			}
+			// Merge metric metadata
+			err = mr.IterByMetricName(func(name string, meta metadata.Metadata) error {
+				// Use 0 for hash since we're deduplicating by name only
+				mergedMeta.Set(name, 0, meta)
+				return nil
+			})
+			if err != nil {
+				mr.Close()
+				return fmt.Errorf("iterate series metadata: %w", err)
+			}
+			// Merge versioned resources (unified attributes + entities)
+			err = mr.IterVersionedResources(func(labelsHash uint64, resources *seriesmetadata.VersionedResource) error {
+				// SetVersionedResource merges versions automatically if entry exists
+				mergedMeta.SetVersionedResource(labelsHash, resources)
+				return nil
+			})
+			mr.Close() // Must close to release pending readers
+			if err != nil {
+				return fmt.Errorf("iterate resource attributes: %w", err)
+			}
+		}
+		if _, err := seriesmetadata.WriteFile(c.logger, ob.tmpDir, mergedMeta); err != nil {
+			return fmt.Errorf("write series metadata file: %w", err)
 		}
 
 		df, err := fileutil.OpenDir(ob.tmpDir)

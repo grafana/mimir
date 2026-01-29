@@ -175,3 +175,53 @@ message LabelValuesResponse {
   /// implementation of a specific store.
   google.protobuf.Any hints = 3;
 }
+
+// ResourceAttributesRequest queries OTel resource attributes for series matching matchers.
+message ResourceAttributesRequest {
+  // Reserved for Thanos compatibility.
+  reserved 1;
+  reserved 2;
+
+  int64 start = 3;
+  int64 end = 4;
+
+  // hints is an opaque data structure that can be used to carry additional information.
+  google.protobuf.Any hints = 5;
+
+  repeated LabelMatcher matchers = 6 [(gogoproto.nullable) = false];
+  int64 limit = 7;
+}
+
+// ResourceAttributesResponse contains batches of series with their resource attributes.
+message ResourceAttributesResponse {
+  repeated ResourceAttributesSeriesData items = 1;
+  repeated string warnings = 2;
+
+  /// hints is an opaque data structure that can be used to carry additional information from the store.
+  google.protobuf.Any hints = 3;
+}
+
+// ResourceAttributesSeriesData contains resource data for a single series.
+message ResourceAttributesSeriesData {
+  // The series labels as a map of name->value.
+  map<string, string> labels = 1;
+
+  // Resource versions for this series.
+  repeated ResourceVersionData versions = 2;
+}
+
+// ResourceVersionData represents a snapshot of resource data at a point in time.
+message ResourceVersionData {
+  map<string, string> identifying = 1;
+  map<string, string> descriptive = 2;
+  repeated EntityData entities = 3;
+  int64 min_time_ms = 4;
+  int64 max_time_ms = 5;
+}
+
+// EntityData represents a typed OTel entity.
+message EntityData {
+  string type = 1;
+  map<string, string> id = 2;
+  map<string, string> description = 3;
+}
