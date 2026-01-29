@@ -363,7 +363,6 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 			}
 			ts := time.UnixMilli(int64(histogram.Timestamp)).UTC()
 
-			// Skip this sample if the caller requested it.
 			if skipTimestamp != nil && skipTimestamp(ts) {
 				continue
 			}
@@ -394,7 +393,6 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 		sample := samples[idx]
 		ts := time.UnixMilli(int64(sample.Timestamp)).UTC()
 
-		// Skip this sample if the caller requested it.
 		if skipTimestamp != nil && skipTimestamp(ts) {
 			continue
 		}

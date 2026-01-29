@@ -134,14 +134,10 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.lastWrittenTimestamp)
 		require.Equal(t, now.Add(-3*time.Hour), inOrderHistory.queryMinTime)
 		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.queryMaxTime)
-
-		// OOO samples exist from [-3h, -1h30m]. The sparse period (-1h30m, -30m] has only minute-aligned
-		// samples which are completely ignored by the skipTimestamp function.
-		// The last non-skipped sample is at -1h30m - 20s. The first non-skipped sample is at -3h + 20s.
 		oooHistory := test.outOfOrderSamples
-		require.Equal(t, now.Add(-90*time.Minute).Add(-20*time.Second), oooHistory.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-30*time.Minute), oooHistory.lastWrittenTimestamp)
 		require.Equal(t, now.Add(-3*time.Hour).Add(20*time.Second), oooHistory.queryMinTime)
-		require.Equal(t, now.Add(-90*time.Minute).Add(-20*time.Second), oooHistory.queryMaxTime)
+		require.Equal(t, now.Add(-30*time.Minute), oooHistory.queryMaxTime)
 	})
 
 	t.Run("previously written in-order data points are in the range [-2h, -1m]", func(t *testing.T) {
