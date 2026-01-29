@@ -23,14 +23,16 @@ type Spawner struct {
 	services.Service
 
 	logger               log.Logger
+	metrics              *schedulerMetrics
 	clock                clock.Clock
 	allowedTenants       *util.AllowList
 	bkt                  objstore.Bucket
+	jpm                  JobPersistenceManager
 	planningInterval     time.Duration
 	userDiscoveryBackoff backoff.Config
 	rotator              *Rotator
+	maxLeases            int
 
-	// Mutable state
 	planMap     map[string]time.Time
 	planTracker *JobTracker[struct{}]
 }
@@ -41,23 +43,33 @@ func NewSpawner(
 	rotator *Rotator,
 	planTracker *JobTracker[struct{}],
 	bkt objstore.Bucket,
+	jpm JobPersistenceManager,
+	metrics *schedulerMetrics,
 	logger log.Logger) *Spawner {
 	s := &Spawner{
 		logger:               logger,
+		metrics:              metrics,
 		clock:                clock.New(),
 		allowedTenants:       allowList,
 		bkt:                  bkt,
+		jpm:                  jpm,
 		planningInterval:     cfg.planningInterval,
 		userDiscoveryBackoff: cfg.userDiscoveryBackoff,
 		rotator:              rotator,
 		planMap:              make(map[string]time.Time),
 		planTracker:          planTracker,
+		maxLeases:            cfg.maxLeases,
 	}
 	s.Service = services.NewTimerService(cfg.planningCheckInterval, s.start, s.iter, nil)
 	return s
 }
 
 func (s *Spawner) start(ctx context.Context) error {
+	// The rotator gets prepoluated upon recovery, use that to determine tenants that are already active
+	for tenant := range s.rotator.Tenants() {
+		s.planMap[tenant] = time.Time{}
+	}
+
 	b := backoff.New(ctx, s.userDiscoveryBackoff)
 	var err error
 	for b.Ongoing() {
@@ -84,17 +96,29 @@ func (s *Spawner) plan() {
 	for tenant, lastSubmitted := range s.planMap {
 		if now.Sub(lastSubmitted) > s.planningInterval {
 			jobs = append(jobs, NewJob(tenant, struct{}{}, now, s.clock))
-			s.planMap[tenant] = now
 		}
 	}
 
+	tenants := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		tenants = append(tenants, job.id)
+	}
+
 	// TODO: Can track how many were actually accepted with metrics
-	s.planTracker.Offer(
+	_, _, err := s.planTracker.Offer(
 		jobs,
 		func(_ struct{}, _ struct{}) bool {
 			return false
 		},
 	)
+	if err != nil {
+		level.Error(s.logger).Log("msg", "failed submitting plan jobs", "err", err)
+		return
+	}
+
+	for _, tenant := range tenants {
+		s.planMap[tenant] = now
+	}
 }
 
 func (s *Spawner) discoverTenants(ctx context.Context) error {
@@ -115,6 +139,12 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 
 		if _, ok := s.planMap[tenant]; !ok {
 			// Discovered a new tenant
+			persister, err := s.jpm.InitializeTenant(tenant)
+			if err != nil {
+				return err
+			}
+			tracker := NewJobTracker(persister, s.maxLeases, "compaction", s.metrics)
+			s.rotator.AddTenant(tenant, tracker)
 			s.planMap[tenant] = time.Time{}
 		}
 	}
@@ -122,8 +152,21 @@ func (s *Spawner) discoverTenants(ctx context.Context) error {
 	for tenant := range s.planMap {
 		if _, ok := seen[tenant]; !ok {
 			level.Info(s.logger).Log("msg", "removing empty tenant from compactor scheduler", "tenant", tenant)
-			s.planTracker.RemoveForcefully(tenant)
-			s.rotator.RemoveTenant(tenant)
+			_, _, err := s.planTracker.RemoveForcefully(tenant)
+			if err != nil {
+				level.Warn(s.logger).Log("msg", "failed removing empty tenant from plan tracker", "tenant", tenant, "err", err)
+				continue
+			}
+			tracker, ok := s.rotator.RemoveTenant(tenant)
+			err = s.jpm.DeleteTenant(tenant)
+			if err != nil {
+				level.Warn(s.logger).Log("msg", "failed removing tenant bucket from compactor scheduler", "tenant", tenant, "error", err)
+				if ok {
+					// Preserve 1:1 with rotator and planMap
+					s.rotator.AddTenant(tenant, tracker)
+				}
+				continue
+			}
 			delete(s.planMap, tenant)
 		}
 	}

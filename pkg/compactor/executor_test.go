@@ -830,7 +830,7 @@ func TestEmptyCompactionDir(t *testing.T) {
 
 			tc.setupDir(t, compactDir)
 
-			err := emptyCompactionDir(log.NewNopLogger(), compactDir)
+			err := emptyCompactionDir(compactDir)
 			require.NoError(t, err)
 
 			info, err := os.Stat(compactDir)
