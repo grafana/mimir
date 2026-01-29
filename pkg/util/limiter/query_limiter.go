@@ -28,7 +28,7 @@ var (
 
 type QueryLimiter struct {
 	uniqueSeriesMx sync.Mutex
-	uniqueSeries   map[uint64]labels.Labels
+	uniqueSeries   map[uint64]struct{}
 
 	chunkBytesCount     atomic.Int64
 	chunkCount          atomic.Int64
@@ -47,7 +47,7 @@ type QueryLimiter struct {
 func NewQueryLimiter(maxSeriesPerQuery, maxChunkBytesPerQuery, maxChunksPerQuery int, maxEstimatedChunksPerQuery int, queryMetrics *stats.QueryMetrics) *QueryLimiter {
 	return &QueryLimiter{
 		uniqueSeriesMx: sync.Mutex{},
-		uniqueSeries:   map[uint64]labels.Labels{},
+		uniqueSeries:   map[uint64]struct{}{},
 
 		maxSeriesPerQuery:          maxSeriesPerQuery,
 		maxChunkBytesPerQuery:      maxChunkBytesPerQuery,
@@ -74,51 +74,29 @@ func QueryLimiterFromContextWithFallback(ctx context.Context) *QueryLimiter {
 }
 
 // AddSeries adds the input series and returns an error if the limit is reached.
-func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+func (ql *QueryLimiter) AddSeries(seriesLabels labels.Labels) validation.LimitError {
+	// If the max series is unlimited just return without managing map
+	if ql.maxSeriesPerQuery == 0 {
+		return nil
+	}
 	fingerprint := seriesLabels.Hash()
 
 	ql.uniqueSeriesMx.Lock()
 	defer ql.uniqueSeriesMx.Unlock()
 
-	// We intentionally call increase memory for labels here before deduplication because,
-	// we want to balance with the decrease memory consumption calls through iterator that can contains duplicate labels too.
-	// In the case of hash collision, we also want to make sure the labels memory consumption is increased
-	// and decreased for the labels set that was conflicted.
-	err := tracker.IncreaseMemoryConsumptionForLabels(seriesLabels)
-	if err != nil {
-		return labels.EmptyLabels(), err
-	}
-
-	// Note that we are simplifying hash conflict check because we know they are going to be very rare.
 	uniqueSeriesBefore := len(ql.uniqueSeries)
-	existing, found := ql.uniqueSeries[fingerprint]
-	// This is the case where there are duplicated labels from previously seen series, hence we return the existing
-	// labels and not counting up the memory consumption.
-	if found && labels.Equal(existing, seriesLabels) {
-		// Still return error if the duplicated labels had been exceeding the limit.
-		if ql.maxSeriesPerQuery != 0 && uniqueSeriesBefore > ql.maxSeriesPerQuery {
-			return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
-		}
-		return existing, nil
-	}
-
-	// This can be either newly seen labels with different fingerprint or can also be newly seen labels whose hash
-	// conflicted with previous seen different labels.
-	// In both cases we just return the provided labels.
-	ql.uniqueSeries[fingerprint] = seriesLabels
-
+	ql.uniqueSeries[fingerprint] = struct{}{}
 	uniqueSeriesAfter := len(ql.uniqueSeries)
 
-	if ql.maxSeriesPerQuery != 0 && uniqueSeriesAfter > ql.maxSeriesPerQuery {
+	if uniqueSeriesAfter > ql.maxSeriesPerQuery {
 		if uniqueSeriesBefore <= ql.maxSeriesPerQuery {
 			// If we've just exceeded the limit for the first time for this query, increment the failed query metric.
 			ql.queryMetrics.QueriesRejectedTotal.WithLabelValues(stats.RejectReasonMaxSeries).Inc()
 		}
 
-		return labels.EmptyLabels(), NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
+		return NewMaxSeriesHitLimitError(uint64(ql.maxSeriesPerQuery))
 	}
-
-	return seriesLabels, nil
+	return nil
 }
 
 // uniqueSeriesCount returns the count of unique series seen by this query limiter.
