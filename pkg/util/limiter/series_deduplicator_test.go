@@ -5,6 +5,7 @@ package limiter
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -16,7 +17,11 @@ func TestSeriesDeduplicator_Deduplicate_HashCollision(t *testing.T) {
 	// This test uses a custom hash function to force hash collisions and verify the collision handling code.
 	const collisionHash = uint64(12345)
 
-	deduplicator := NewSeriesDeduplicator()
+	deduplicator := &seriesDeduplicator{
+		uniqueSeriesMx: sync.Mutex{},
+		uniqueSeries:   make(map[uint64]labels.Labels),
+		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
+	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	seriesA := labels.FromMap(map[string]string{
@@ -81,7 +86,11 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 	// Test that multiple series can collide on the same hash
 	const collisionHash = uint64(12345)
 
-	deduplicator := NewSeriesDeduplicator()
+	deduplicator := &seriesDeduplicator{
+		uniqueSeriesMx: sync.Mutex{},
+		uniqueSeries:   make(map[uint64]labels.Labels),
+		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
+	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	seriesA := labels.FromMap(map[string]string{
