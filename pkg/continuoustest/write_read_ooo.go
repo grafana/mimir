@@ -250,6 +250,7 @@ func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, n
 			return
 		}
 
+		// Update the previously written time range.
 		if useHistograms {
 			from = histograms[lastMatchingIdx].Timestamp.Time()
 			to = histograms[len(histograms)-1].Timestamp.Time()
@@ -259,6 +260,7 @@ func (t *WriteReadOOOTest) findPreviouslyWrittenTimeRange(ctx context.Context, n
 		}
 
 		level.Info(logger).Log("msg", "Found previously written samples", "from", from, "to", to, "issue_with_earlier_data", err)
+
 		// If the last matching sample is not the one at the beginning of the queried time range
 		// then it means we've found the oldest previously written sample and we can stop searching it.
 		if lastMatchingIdx != 0 || (!useHistograms && !samples[0].Timestamp.Time().Equal(start)) || (useHistograms && !histograms[0].Timestamp.Time().Equal(start)) {

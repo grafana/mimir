@@ -436,16 +436,15 @@ func (t *WriteReadSeriesTest) nextWriteTimestamp(now time.Time, records *MetricH
 	return records.lastWrittenTimestamp.Add(writeInterval)
 }
 
-func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (from, to time.Time) {
-	end := alignTimestampToInterval(now, writeInterval)
-	step := writeInterval
+func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, step time.Duration, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, skipTimestamp skipTimestampFunc) (from, to time.Time) {
+	end := alignTimestampToInterval(now, step)
 
 	var samples []model.SamplePair
 	var histograms []model.SampleHistogramPair
 	query := querySum(metricName)
 
 	for {
-		start := alignTimestampToInterval(maxTime(now.Add(-t.cfg.MaxQueryAge), end.Add(-24*time.Hour).Add(step)), writeInterval)
+		start := alignTimestampToInterval(maxTime(now.Add(-t.cfg.MaxQueryAge), end.Add(-24*time.Hour).Add(step)), step)
 		if !start.Before(end) {
 			// We've hit the max query age, so we'll keep the last computed valid time range (if any).
 			return
@@ -485,7 +484,7 @@ func (t *WriteReadSeriesTest) findPreviouslyWrittenTimeRange(ctx context.Context
 			level.Error(logger).Log("msg", "The range query used to find previously written samples returned either both floats and histograms or neither")
 			return
 		}
-		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram, nil)
+		lastMatchingIdx, err := verifySamplesSum(fullMatrix, t.cfg.NumSeries, step, generateValue, generateSampleHistogram, skipTimestamp)
 		if lastMatchingIdx == -1 {
 			level.Warn(logger).Log("msg", "The range query used to find previously written samples returned no timestamps where the returned value matched the expected value", "err", err)
 			return
