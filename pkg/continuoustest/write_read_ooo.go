@@ -126,15 +126,11 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-
-		level.Info(t.logger).Log("msg", "Dry run OOO sample write", "timestamp", timestamp, "numSeries", len(series))
-		t.outOfOrderSamples.lastWrittenTimestamp = timestamp
-		t.outOfOrderSamples.queryMaxTime = timestamp
-		if t.outOfOrderSamples.queryMinTime.IsZero() {
-			t.outOfOrderSamples.queryMinTime = timestamp
+		if err := t.writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, floatMetricMetadata, &t.outOfOrderSamples); err != nil {
+			errs.Add(err)
+			return
 		}
 	}
-
 }
 
 func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval time.Duration, records *MetricHistory) time.Time {
