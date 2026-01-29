@@ -53,15 +53,16 @@ type Selector struct {
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	querier   storage.Querier
-	seriesSet storage.SeriesSet
-	series    *seriesList
+	querier            storage.Querier
+	seriesSet          storage.SeriesSet
+	series             *seriesList
+	seriesDeduplicator limiter.SeriesDeduplicator
 
 	seriesIdx int
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
-	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
+	s.seriesDeduplicator = limiter.NewSeriesDeduplicator()
 	if s.EagerLoad {
 		return s.loadSeriesSet(ctx, s.Matchers)
 	}
@@ -168,6 +169,13 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	s.querier, err = s.Queryable.Querier(startTimestamp, endTimestamp)
 	if err != nil {
 		return err
+	}
+
+	// Add the series deduplicator to the context so downstream queriers can use it for
+	// memory tracking. This ensures consistent memory tracking regardless of whether
+	// EagerLoad is true or false.
+	if s.seriesDeduplicator != nil {
+		ctx = limiter.AddSeriesDeduplicatorToContext(ctx, s.seriesDeduplicator)
 	}
 
 	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)

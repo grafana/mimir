@@ -109,6 +109,14 @@ func (sd *seriesDeduplicator) seriesCount() int {
 
 type noopSeriesDeduplicator struct{}
 
-func (n noopSeriesDeduplicator) Deduplicate(newLabels labels.Labels, _ *MemoryConsumptionTracker) (labels.Labels, error) {
+func (n noopSeriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
+	// Even though this is a noop deduplicator (it doesn't deduplicate), we still need to track
+	// memory consumption for labels to ensure balanced tracking with MemoryTrackingSeriesSet,
+	// which decreases memory consumption when series are consumed.
+	if tracker != nil {
+		if err := tracker.IncreaseMemoryConsumptionForLabels(newLabels); err != nil {
+			return labels.EmptyLabels(), err
+		}
+	}
 	return newLabels, nil
 }
