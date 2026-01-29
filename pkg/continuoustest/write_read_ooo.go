@@ -44,7 +44,8 @@ type WriteReadOOOTest struct {
 	logger  log.Logger
 	metrics *TestMetrics
 
-	floatMetric MetricHistory
+	inOrderSamples    MetricHistory
+	outOfOrderSamples MetricHistory
 }
 
 func NewWriteReadOOOTest(cfg WriteReadOOOTestConfig, client MimirClient, logger log.Logger, reg prometheus.Registerer) *WriteReadOOOTest {
@@ -70,7 +71,7 @@ func (t *WriteReadOOOTest) Init(ctx context.Context, now time.Time) error {
 		return nil
 	}
 
-	err := t.recoverPast(ctx, now, oooFloatMetricName, querySumFloat, generateSineWaveValue, &t.floatMetric)
+	err := t.recoverPast(ctx, now, oooFloatMetricName, querySumFloat, generateSineWaveValue, &t.inOrderSamples, &t.outOfOrderSamples)
 	if err != nil {
 		return err
 	}
@@ -101,7 +102,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 	// We cannot use a label to differentiate between in-order and out-of-order samples, it needs to be the same actual series.
 
 	// First, write the in-order (minute-aligned) data.
-	for timestamp := t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.floatMetric); !timestamp.After(now); timestamp = t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.floatMetric) {
+	for timestamp := t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.inOrderSamples); !timestamp.After(now); timestamp = t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.inOrderSamples) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
 			errs.Add(err)
@@ -109,7 +110,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := t.writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, floatMetricMetadata, &t.floatMetric); err != nil {
+		if err := t.writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, floatMetricMetadata, &t.inOrderSamples); err != nil {
 			errs.Add(err)
 			return
 		}
@@ -124,7 +125,7 @@ func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval tim
 	return records.lastWrittenTimestamp.Add(interval)
 }
 
-func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, records *MetricHistory) error {
+func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, inOrderRecords, outOfOrderRecords *MetricHistory) error {
 	// We have two "series" embedded into one, aligned to different steps.
 	// First recover to the larger one, which represents the in-order samples.
 	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, inorderWriteInterval, metricName, querySum, generateValue, nil)
@@ -137,10 +138,10 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 		return nil
 	}
 
-	records.lastWrittenTimestamp = to
-	records.queryMinTime = from
-	records.queryMaxTime = to
-	level.Info(t.logger).Log("msg", "Successfully found previously written inorder samples time range and recovered writes and reads from there", "metric_name", metricName, "last_written_timestamp", records.lastWrittenTimestamp, "query_min_time", records.queryMinTime, "query_max_time", records.queryMaxTime)
+	inOrderRecords.lastWrittenTimestamp = to
+	inOrderRecords.queryMinTime = from
+	inOrderRecords.queryMaxTime = to
+	level.Info(t.logger).Log("msg", "Successfully found previously written inorder samples time range and recovered writes and reads from there", "metric_name", metricName, "last_written_timestamp", inOrderRecords.lastWrittenTimestamp, "query_min_time", inOrderRecords.queryMinTime, "query_max_time", inOrderRecords.queryMaxTime)
 
 	// Search a second time, but at a tighter step, to find how far back we've written the more dense, fully-formed series.
 	// Don't process the samples from the in-order time range, we care about the gaps.
@@ -157,6 +158,9 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 		return nil
 	}
 
+	outOfOrderRecords.lastWrittenTimestamp = to
+	outOfOrderRecords.queryMinTime = from
+	outOfOrderRecords.queryMaxTime = to
 	level.Info(t.logger).Log("msg", "Found time range for densely written samples", "from", from, "to", to)
 
 	return nil
