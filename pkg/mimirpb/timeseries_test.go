@@ -182,10 +182,16 @@ func TestDeepCopyTimeseries(t *testing.T) {
 					{Name: "exemplarLabel2", Value: "exemplarValue2"},
 				},
 			}},
+			CreatedTimestamp:          1234567890,
+			SkipUnmarshalingExemplars: true,
 		},
 	}
 	dst := PreallocTimeseries{}
 	dst = DeepCopyTimeseries(dst, src, true, true)
+
+	// Check that scalar properties are copied.
+	assert.Equal(t, src.TimeSeries.CreatedTimestamp, dst.TimeSeries.CreatedTimestamp)
+	assert.Equal(t, src.TimeSeries.SkipUnmarshalingExemplars, dst.TimeSeries.SkipUnmarshalingExemplars)
 
 	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
