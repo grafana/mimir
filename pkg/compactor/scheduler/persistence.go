@@ -265,7 +265,7 @@ func (jp *BboltJobPersister[V]) recover(bucket *bbolt.Bucket) ([]*Job[V], error)
 	for k, v := c.First(); k != nil; k, v = c.Next() {
 		job, err := jp.deserializer(v)
 		if err != nil {
-			// If we can't deserialize a value assume it is corrupt. We don't want it sticking aroud forever, so delete it.
+			// If we can't deserialize a value assume it is corrupt. We don't want it sticking around forever, so delete it.
 			level.Warn(jp.logger).Log("msg", "failed to deserialize job, deleting it", "bucket", string(jp.name), "key", string(k), "err", err)
 			if err := bucket.Delete(k); err != nil {
 				// Only returns an error if we're in a read-only transaction, which should never be the case.
