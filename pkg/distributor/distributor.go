@@ -3266,9 +3266,6 @@ respsLoop:
 	}
 
 	queryLimiter := mimir_limiter.QueryLimiterFromContextWithFallback(ctx)
-	if err != nil {
-		return nil, err
-	}
 
 	result := make([]labels.Labels, 0, len(metrics))
 	for _, m := range metrics {
