@@ -29,7 +29,7 @@ func init() {
 	cfgOOO.MaxQueryAge = 3 * 24 * time.Hour
 }
 
-func TestWriteReadOOOTest_Init(t *testing.T) {
+func TestWriteReadOOO_Init(t *testing.T) {
 	logger := log.NewNopLogger()
 	now := time.Unix(10*86400, 0)
 	expQuery := "sum(max_over_time(mimir_continuous_test_sine_wave_ooo_v2[1s]))"
@@ -186,6 +186,32 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Equal(t, now.Add(-2*time.Hour), test.inOrderSamples.queryMinTime)
 		require.Equal(t, now.Add(-30*time.Minute), test.inOrderSamples.queryMaxTime)
 		assertHistoryEmpty(t, test.outOfOrderSamples)
+	})
+
+	t.Run("fails if NumSeries is zero", func(t *testing.T) {
+		client := newMockClient()
+		badCfg := cfgOOO
+		badCfg.NumSeries = 0
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(badCfg, client, logger, reg)
+		err := test.Init(context.Background(), now)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "number of series")
+	})
+
+	t.Run("fails if we try to write samples beyond the OOO window", func(t *testing.T) {
+		client := newMockClient()
+		badCfg := cfgOOO
+		badCfg.MaxOOOLag = 3 * time.Hour // oooTestWriteMaxAge is 110 minutes
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(badCfg, client, logger, reg)
+		err := test.Init(context.Background(), now)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "max OOO lag")
 	})
 }
 

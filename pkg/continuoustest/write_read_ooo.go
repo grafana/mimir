@@ -3,6 +3,7 @@ package continuoustest
 import (
 	"context"
 	"flag"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -32,6 +33,16 @@ func (cfg *WriteReadOOOTestConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.NumSeries, "tests.write-read-ooo-test.num-series", 5000, "Number of series used for the test.")
 	f.DurationVar(&cfg.MaxOOOLag, "tests.write-read-ooo-test.max-ooo-lag", 1*time.Hour, "The maximum time in which the writing of a sample might be delayed. Must be smaller than the tenant's out-of-order time window or delayed writes will be rejected.")
 	f.DurationVar(&cfg.MaxQueryAge, "tests.write-read-ooo-test.max-query-age", 7*24*time.Hour, "How back in the past metrics can be queried at most.")
+}
+
+func (cfg *WriteReadOOOTestConfig) ValidateConfig() error {
+	if cfg.NumSeries <= 0 {
+		return fmt.Errorf("the number of series must be greater than 0")
+	}
+	if cfg.MaxOOOLag >= oooTestWriteMaxAge {
+		return fmt.Errorf("the max OOO lag (%s) must be less than the max write age and OOO window for the cell (%s)", cfg.MaxOOOLag, oooTestWriteMaxAge)
+	}
+	return nil
 }
 
 type WriteReadOOOTest struct {
@@ -64,6 +75,9 @@ func (t *WriteReadOOOTest) Name() string {
 
 // Init implements Test.
 func (t *WriteReadOOOTest) Init(ctx context.Context, now time.Time) error {
+	if err := t.cfg.ValidateConfig(); err != nil {
+		return err
+	}
 	if !t.cfg.Enabled {
 		return nil
 	}
