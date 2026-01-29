@@ -117,6 +117,7 @@
 * [ENHANCEMENT] MQE: Add experimental support for computing multiple aggregations over the same data without buffering. Enable with `-querier.mimir-query-engine.enable-multi-aggregation=true`. #14123 #14174
 * [ENHANCEMENT] Querier: Optimize querying store-gateways when many of them are in a LEAVING state. #14157
 * [ENHANCEMENT] Ingester: Check labels order and uniqueness on ingestion to protect against corruption. #14089
+* [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
 * [BUGFIX] Query-frontend: Fix issue where queries sometimes fail with `failed to receive query result stream message: rpc error: code = Canceled desc = context canceled` if remote execution is enabled. #13084
@@ -160,7 +161,7 @@
 * [BUGFIX] Ingester: Fix race condition during shutdown where TSDBs could be closed while appends are still in progress. #14094
 * [BUGFIX] Store-gateway: Fix blocks being incorrectly dropped during shutdown when the store-gateway is terminated while fetching an updated bucket index. #14113
 * [BUGFIX] Ingester: Defensive correctness fix for buffer reference counting in pkg/mimirpb. #14108
-* [BUGFIX] Ingester: Add timeouts to wait for instance state on startup and deferred shutdown of tasks on failure. #14134
+* [BUGFIX] Ingester: Add timeouts to wait for instance state on startup and deferred shutdown of tasks on failure. #14134, #14180
 * [BUGFIX] Distributor: Fix duplicate label validation bypass when label value exceeds length limit and is handled by Truncate or Drop strategy. #14131
 * [BUGFIX] Block-builder-scheduler: Fix bug where data could be skipped when partition is fully consumed at startup but later grows. #14136
 * [BUGFIX] Ingester: Create TSDB directory on startup #14112
