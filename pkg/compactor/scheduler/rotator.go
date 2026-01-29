@@ -4,9 +4,12 @@ package scheduler
 
 import (
 	"context"
+	"iter"
 	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
 	"go.uber.org/atomic"
 
@@ -26,12 +29,13 @@ const outsideRotation int = -1
 type Rotator struct {
 	services.Service
 
-	planTracker          *JobTracker[struct{}]
-	leaseDuration        time.Duration
-	leaseCheckInterval   time.Duration
-	maxLeases            int
-	metrics              *schedulerMetrics
-	rotationIndexCounter *atomic.Int32 // only increments, overflow is okay
+	planTracker                   *JobTracker[struct{}]
+	leaseDuration                 time.Duration
+	leaseCheckInterval            time.Duration
+	initialLeaseMaintenanceBuffer time.Duration
+	metrics                       *schedulerMetrics
+	rotationIndexCounter          *atomic.Int32 // only increments, overflow is okay
+	logger                        log.Logger
 
 	mtx            *sync.RWMutex
 	tenantStateMap map[string]*TenantRotationState
@@ -43,35 +47,75 @@ type TenantRotationState struct {
 	rotationIndex int
 }
 
-func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, maxLeases int, metrics *schedulerMetrics) *Rotator {
+func NewRotator(planTracker *JobTracker[struct{}], leaseDuration time.Duration, leaseCheckInterval time.Duration, metrics *schedulerMetrics, logger log.Logger) *Rotator {
 	r := &Rotator{
-		planTracker:          planTracker,
-		leaseDuration:        leaseDuration,
-		leaseCheckInterval:   leaseCheckInterval,
-		maxLeases:            maxLeases,
-		metrics:              metrics,
-		rotationIndexCounter: atomic.NewInt32(0),
-		mtx:                  &sync.RWMutex{},
-		tenantStateMap:       make(map[string]*TenantRotationState),
-		rotation:             make([]string, 0, 10), // initial size doesn't really matter
+		planTracker:                   planTracker,
+		leaseDuration:                 leaseDuration,
+		leaseCheckInterval:            leaseCheckInterval,
+		initialLeaseMaintenanceBuffer: leaseDuration * 2,
+		metrics:                       metrics,
+		rotationIndexCounter:          atomic.NewInt32(0),
+		mtx:                           &sync.RWMutex{},
+		tenantStateMap:                make(map[string]*TenantRotationState),
+		rotation:                      make([]string, 0, 10), // initial size doesn't really matter
+		logger:                        logger,
 	}
+
 	r.Service = services.NewTimerService(leaseCheckInterval, nil, r.iter, nil)
 	return r
 }
 
-func (r *Rotator) iter(_ context.Context) error {
-	r.LeaseMaintenance(r.leaseDuration)
+func (r *Rotator) iter(ctx context.Context) error {
+	r.LeaseMaintenance(ctx, r.leaseDuration)
 	return nil
 }
 
-func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *CompactionJob) bool) (*compactorschedulerpb.LeaseJobResponse, bool) {
+func (r *Rotator) Tenants() iter.Seq[string] {
+	return func(yield func(string) bool) {
+		r.mtx.RLock()
+		defer r.mtx.RUnlock()
+		for tenant := range r.tenantStateMap {
+			if !yield(tenant) {
+				return
+			}
+		}
+	}
+}
+
+// PrepareForShutdown empties out tenants and the rotation. This prevents further persist calls to the underlying state.
+func (r *Rotator) PrepareForShutdown() {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	r.tenantStateMap = make(map[string]*TenantRotationState)
+	r.rotation = []string{}
+}
+
+func (r *Rotator) RecoverFrom(m map[string]*JobTracker[*CompactionJob]) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	// Place recovered tenants that have pending work in the rotation
+	for tenant, tracker := range m {
+		rotationState := &TenantRotationState{
+			tracker:       tracker,
+			rotationIndex: outsideRotation,
+		}
+		r.tenantStateMap[tenant] = rotationState
+		if !tracker.isPendingEmpty() {
+			r.addToRotation(tenant, rotationState)
+		}
+	}
+}
+
+func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *CompactionJob) bool) (*compactorschedulerpb.LeaseJobResponse, bool, error) {
 	r.mtx.RLock()
 
 	length := len(r.rotation)
 	if length == 0 {
 		// avoid divide by zero
 		r.mtx.RUnlock()
-		return nil, false
+		return nil, false, nil
 	}
 
 	// Handle potential overflow of rotationIndexCounter
@@ -81,7 +125,11 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *Compacti
 	// but this may still encounter some due to canAccept or due to holding the read lock
 	for range length {
 		tenant := r.rotation[i]
-		k, job, epoch, transition := r.tenantStateMap[tenant].tracker.Lease(canAccept)
+		k, job, epoch, transition, err := r.tenantStateMap[tenant].tracker.Lease(canAccept)
+		if err != nil {
+			r.mtx.RUnlock()
+			return nil, false, err
+		}
 		if job != nil {
 			// must drop the read lock if acquiring the write lock in possiblyRemoveFromRotation
 			r.mtx.RUnlock()
@@ -101,7 +149,7 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *Compacti
 						Split:    job.isSplit,
 					},
 				},
-			}, true
+			}, true, nil
 		}
 		i += 1
 		if i == length {
@@ -110,7 +158,7 @@ func (r *Rotator) LeaseJob(ctx context.Context, canAccept func(string, *Compacti
 	}
 
 	r.mtx.RUnlock()
-	return nil, false
+	return nil, false, nil
 }
 
 func (r *Rotator) RenewJobLease(tenant string, key string, epoch int64) bool {
@@ -125,19 +173,23 @@ func (r *Rotator) RenewJobLease(tenant string, key string, epoch int64) bool {
 	return tenantState.tracker.RenewLease(key, epoch)
 }
 
-func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) bool {
+func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) (bool, error) {
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
 	if !ok {
 		r.mtx.RUnlock()
-		return false
+		return false, nil
 	}
 
-	canceled, transition := tenantState.tracker.CancelLease(key, epoch)
+	canceled, transition, err := tenantState.tracker.CancelLease(key, epoch)
+	if err != nil {
+		r.mtx.RUnlock()
+		return false, err
+	}
 	if !transition {
 		r.mtx.RUnlock()
-		return canceled
+		return canceled, nil
 	}
 
 	// Drop the read lock to acquire a write lock
@@ -147,7 +199,7 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) bool {
 
 	tenantState, ok = r.tenantStateMap[tenant]
 	if !ok {
-		return false
+		return canceled, nil
 	}
 
 	if tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
@@ -155,82 +207,92 @@ func (r *Rotator) CancelJobLease(tenant string, key string, epoch int64) bool {
 		r.rotation = append(r.rotation, tenant)
 	}
 
-	return canceled
+	return canceled, nil
 }
 
-func (r *Rotator) OfferJobs(tenant string, jobs []*Job[*CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) int {
+func (r *Rotator) OfferJobs(tenant string, jobs []*Job[*CompactionJob], shouldReplace func(*CompactionJob, *CompactionJob) bool) (int, error) {
 	if len(jobs) == 0 {
-		return 0
+		return 0, nil
 	}
 
-	r.mtx.RLock()
-
-	var added int
-	var transition bool
-	tenantState, ok := r.tenantStateMap[tenant]
-	if ok {
-		added, transition = tenantState.tracker.Offer(jobs, shouldReplace)
-		if !transition {
-			r.mtx.RUnlock()
-			return added
-		}
-	}
-
-	// Drop the read lock to prepare for acquiring a write lock
-	r.mtx.RUnlock()
-
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-
-	tenantState, ok = r.tenantStateMap[tenant]
-	if !ok {
-		tenantState = &TenantRotationState{
-			NewJobTracker[*CompactionJob](r.maxLeases, "compaction", r.metrics),
-			outsideRotation,
-		}
-	}
-
-	if transition {
-		// If we thought we should transition the tracker before make sure it still contains jobs
-		transition = !tenantState.tracker.isPendingEmpty()
-	} else {
-		// This branch is taken when the tenantState wasn't found when under the read lock
-		added, transition = tenantState.tracker.Offer(jobs, shouldReplace)
-	}
-
-	if transition && tenantState.rotationIndex == outsideRotation {
-		r.tenantStateMap[tenant] = tenantState
-		r.addToRotation(tenant, tenantState)
-	}
-	return added
-}
-
-func (r *Rotator) RemoveJob(tenant string, key string, epoch int64) bool {
 	r.mtx.RLock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
 	if !ok {
 		r.mtx.RUnlock()
-		return false
+		return 0, nil
 	}
-	removed, emptyAvailable := tenantState.tracker.Remove(key, epoch)
+	added, transition, err := tenantState.tracker.Offer(jobs, shouldReplace)
+	if err != nil {
+		r.mtx.RUnlock()
+		return 0, err
+	}
+
+	// Must still be holding the read lock to read rotation index
+	if transition && tenantState.rotationIndex == outsideRotation {
+		r.mtx.RUnlock() // drop read lock to acquire write lock
+		r.mtx.Lock()
+		// Double check still present, not in rotation, and there are pending jobs
+		if tenantState, ok := r.tenantStateMap[tenant]; ok && tenantState.rotationIndex == outsideRotation && !tenantState.tracker.isPendingEmpty() {
+			r.addToRotation(tenant, tenantState)
+		}
+		r.mtx.Unlock()
+		return added, nil
+	}
 
 	r.mtx.RUnlock()
+	return added, nil
+}
+
+func (r *Rotator) RemoveJob(tenant string, key string, epoch int64) (bool, error) {
+	r.mtx.RLock()
+
+	tenantState, ok := r.tenantStateMap[tenant]
+	if !ok {
+		r.mtx.RUnlock()
+		return false, nil
+	}
+
+	removed, emptyAvailable, err := tenantState.tracker.Remove(key, epoch)
+	r.mtx.RUnlock()
+	if err != nil {
+		return false, err
+	}
 
 	if emptyAvailable {
 		// This branch is unlikely. The lease would have had to have expired but we're honoring the completion anyway (because it's too late)
 		r.possiblyRemoveFromRotation(tenant)
 	}
-	return removed
+	return removed, nil
 }
 
-func (r *Rotator) RemoveTenant(tenant string) {
+// AddTenant adds the tenant to the rotator if the tenant did not already exist
+func (r *Rotator) AddTenant(tenant string, jobTracker *JobTracker[*CompactionJob]) {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	if _, ok := r.tenantStateMap[tenant]; ok {
+		return
+	}
+
+	rotationState := &TenantRotationState{
+		tracker:       jobTracker,
+		rotationIndex: outsideRotation,
+	}
+
+	r.tenantStateMap[tenant] = rotationState
+	if !jobTracker.isPendingEmpty() {
+		r.addToRotation(tenant, rotationState)
+	}
+}
+
+func (r *Rotator) RemoveTenant(tenant string) (*JobTracker[*CompactionJob], bool) {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
 	tenantState, ok := r.tenantStateMap[tenant]
 	if !ok {
-		return
+		return nil, false
 	}
 
 	// Note: don't care if there are active/pending jobs in this tenant.
@@ -238,24 +300,46 @@ func (r *Rotator) RemoveTenant(tenant string) {
 	// generating plan jobs that achieve nothing in that case.
 	if tenantState.rotationIndex != outsideRotation {
 		r.removeFromRotation(tenantState)
-		delete(r.tenantStateMap, tenant)
 	}
+	delete(r.tenantStateMap, tenant)
+	return tenantState.tracker, true
 }
 
-func (r *Rotator) LeaseMaintenance(leaseDuration time.Duration) {
-	r.planTracker.ExpireLeases(leaseDuration)
+func (r *Rotator) LeaseMaintenance(ctx context.Context, leaseDuration time.Duration) {
+	// We avoid having to serialize lease renewals by providing an initial buffer time before enforcing lease expiration
+	if r.initialLeaseMaintenanceBuffer != 0 {
+		select {
+		case <-time.After(r.initialLeaseMaintenanceBuffer):
+			r.initialLeaseMaintenanceBuffer = 0
+			break
+		case <-ctx.Done():
+			return
+		}
+	}
+
+	_, err := r.planTracker.ExpireLeases(leaseDuration)
+	if err != nil {
+		level.Warn(r.logger).Log("msg", "background lease expiration failed for planning job tracker", "err", err)
+	}
 
 	r.mtx.RLock()
 	addRotationFor := make([]string, 0, 10) // size is arbitrary
 	for tenant, tenantState := range r.tenantStateMap {
-		if tenantState.tracker.ExpireLeases(leaseDuration) {
+		if ctx.Err() != nil {
+			r.mtx.RUnlock()
+			return
+		}
+		transition, err := tenantState.tracker.ExpireLeases(leaseDuration)
+		if err != nil {
+			level.Warn(r.logger).Log("msg", "background lease expiration failed for tenant compaction job tracker", "tenant", tenant, "err", err)
+		} else if transition {
 			addRotationFor = append(addRotationFor, tenant)
 		}
 	}
 	r.mtx.RUnlock()
 
-	if len(addRotationFor) == 0 {
-		// No tenant needs to be moved into the rotation
+	if len(addRotationFor) == 0 || ctx.Err() != nil {
+		// No tenant needs to be moved into the rotation or we're shutting down and don't care
 		return
 	}
 

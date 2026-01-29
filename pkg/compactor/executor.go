@@ -135,7 +135,7 @@ func (e *schedulerExecutor) run(ctx context.Context, c *MultitenantCompactor) er
 	for {
 		// Clean up the compaction directory before leasing work if interval is configured.
 		if e.cfg.CompactionDirCleanupInterval > 0 {
-			if err := e.cleanupCompactionDir(e.logger, compactDir); err != nil {
+			if err := e.cleanupCompactionDir(compactDir); err != nil {
 				level.Warn(e.logger).Log("msg", "failed to cleanup compaction directory", "path", compactDir, "err", err)
 			}
 		}
@@ -192,7 +192,7 @@ func emptyCompactionDir(compactDir string) error {
 
 // cleanupCompactionDir cleans up the compaction directory if the configured
 // cleanup interval has elapsed since the last cleanup.
-func (e *schedulerExecutor) cleanupCompactionDir(logger log.Logger, compactDir string) error {
+func (e *schedulerExecutor) cleanupCompactionDir(compactDir string) error {
 	elapsed := time.Since(e.lastCleanupTime)
 	shouldCleanup := elapsed >= e.cfg.CompactionDirCleanupInterval
 
