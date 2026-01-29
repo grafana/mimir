@@ -117,8 +117,8 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 	}
 
 	// Now, fill in the gaps, lagging behind by some time - writing out of order.
-	stopAt := now.Add(-t.cfg.MaxOOOLag)
-	for timestamp := t.nextOutOfOrderWriteTimestamp(now, outOfOrderWriteInterval, &t.outOfOrderSamples); !timestamp.After(stopAt); timestamp = t.nextOutOfOrderWriteTimestamp(now, outOfOrderWriteInterval, &t.outOfOrderSamples) {
+	oooNow := now.Add(-t.cfg.MaxOOOLag)
+	for timestamp := t.nextOutOfOrderWriteTimestamp(oooNow, outOfOrderWriteInterval, &t.outOfOrderSamples); !timestamp.After(oooNow); timestamp = t.nextOutOfOrderWriteTimestamp(oooNow, outOfOrderWriteInterval, &t.outOfOrderSamples) {
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
 			errs.Add(err)
@@ -128,6 +128,11 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
 
 		level.Info(t.logger).Log("msg", "Dry run OOO sample write", "timestamp", timestamp, "numSeries", len(series))
+		t.outOfOrderSamples.lastWrittenTimestamp = timestamp
+		t.outOfOrderSamples.queryMaxTime = timestamp
+		if t.outOfOrderSamples.queryMinTime.IsZero() {
+			t.outOfOrderSamples.queryMinTime = timestamp
+		}
 	}
 
 }
