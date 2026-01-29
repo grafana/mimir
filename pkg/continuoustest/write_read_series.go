@@ -108,7 +108,7 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 }
 
 func (t *WriteReadSeriesTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
-	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, metricName, querySum, generateValue, generateSampleHistogram)
+	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, writeInterval, metricName, querySum, generateValue, generateSampleHistogram, nil)
 	if from.IsZero() || to.IsZero() {
 		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
