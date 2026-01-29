@@ -481,6 +481,15 @@
 * [CHANGE] If you configure multiple secondary backends and enable comparisons, query-tee reports comparison results of the preferred backend against each of the secondaries. #13022
 * [CHANGE] Add backend configuration options for request proportion sampling and time-based query filtering. #13037
 
+## 2.17.5
+
+### Grafana Mimir
+
+* [BUGFIX] Distributor: Calculate `WriteResponseStats` before validation and `PushWrappers`. This prevents clients using Remote-Write 2.0 from seeing a diff in written samples, histograms and exemplars. #12682 #14144
+* [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849 #14145
+* [BUGFIX] Distributor: Fix metric metadata of type Unknown being silently dropped from RW2 requests. #12461 #14150
+* [BUGFIX] Ingester: Query all ingesters when shuffle sharding is disabled. #14041
+
 ## 2.17.4
 
 ### Grafana Mimir
