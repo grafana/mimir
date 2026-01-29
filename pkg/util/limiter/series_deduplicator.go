@@ -67,8 +67,7 @@ func (sd *SeriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *M
 	return newLabels, nil
 }
 
-// SeriesCount returns the total number of unique series seen by this deduplicator.
-func (sd *SeriesDeduplicator) SeriesCount() int {
+func (sd *SeriesDeduplicator) seriesCount() int {
 	count := len(sd.uniqueSeries)
 	for _, conflicts := range sd.conflictSeries {
 		count += len(conflicts)
