@@ -224,6 +224,7 @@ func NewQuerierHandler(
 	metadataSupplier querier.MetadataSupplier,
 	engine promql.QueryEngine,
 	distributor Distributor,
+	blocksQueryable querier.ResourceAttributesBlocksQueryable,
 	metrics *querier.RequestMetrics,
 	reg prometheus.Registerer,
 	logger log.Logger,
@@ -326,7 +327,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(promRouter)))
 	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
-	router.Path(path.Join(promPrefix, "/resources")).Methods("GET").Handler(querier.NewResourceAttributesHandler(distributor, nil, querier.ResourceAttributesHandlerConfig{
+	router.Path(path.Join(promPrefix, "/resources")).Methods("GET").Handler(querier.NewResourceAttributesHandler(distributor, blocksQueryable, querier.ResourceAttributesHandlerConfig{
 		QueryStoreAfter:      querierCfg.QueryStoreAfter,
 		QueryIngestersWithin: limits.QueryIngestersWithin,
 	}))
