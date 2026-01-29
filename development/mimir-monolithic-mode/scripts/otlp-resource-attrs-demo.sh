@@ -4,7 +4,10 @@
 # OTLP Resource Attributes Persistence Demo for Grafana Mimir
 #
 # This demo showcases how Mimir persists OTel resource attributes from OTLP metrics
-# and makes them queryable via the /api/v1/resources endpoint.
+# and makes them queryable via the /api/v1/resources endpoint and info() function.
+#
+# This is a faithful port of the Prometheus demo at:
+# documentation/examples/otlp-resource-attributes/main.go
 #
 # Prerequisites:
 #   - Mimir running in monolithic mode (./compose-up.sh)
@@ -29,6 +32,7 @@ MAGENTA='\033[35m'
 MIMIR_URL="${MIMIR_URL:-http://localhost:8101}"
 OTLP_ENDPOINT="${MIMIR_URL}/otlp/v1/metrics"
 RESOURCES_ENDPOINT="${MIMIR_URL}/prometheus/api/v1/resources"
+QUERY_ENDPOINT="${MIMIR_URL}/prometheus/api/v1/query"
 FLUSH_ENDPOINT="${MIMIR_URL}/ingester/flush"
 
 echo -e "${BOLD}${CYAN}=== Grafana Mimir OTel Resource Attributes Persistence Demo ===${RESET}\n"
@@ -43,7 +47,7 @@ fi
 echo -e "${GREEN}Mimir is ready at ${MIMIR_URL}${RESET}\n"
 
 print_phase() {
-    echo -e "\n${BOLD}${MAGENTA}=== Phase $1: $2 ===${RESET}\n"
+    echo -e "\n${BOLD}${MAGENTA}--- Phase $1: $2 ---${RESET}\n"
 }
 
 # Function to send OTLP metrics
@@ -107,10 +111,55 @@ query_resources() {
     echo ""
 }
 
+# Function to execute PromQL instant query
+query_promql() {
+    local query="$1"
+    local time="$2"
+    local description="$3"
+
+    echo -e "${BOLD}${description}${RESET}"
+
+    # URL encode the query
+    encoded_query=$(printf '%s' "$query" | jq -sRr @uri)
+
+    if [ -n "$time" ]; then
+        response=$(curl -s "${QUERY_ENDPOINT}?query=${encoded_query}&time=${time}")
+    else
+        response=$(curl -s "${QUERY_ENDPOINT}?query=${encoded_query}")
+    fi
+
+    # Check if response is valid JSON
+    if ! echo "$response" | jq -e . > /dev/null 2>&1; then
+        echo -e "${RED}Invalid JSON response${RESET}"
+        echo "$response"
+        return 1
+    fi
+
+    # Check status
+    status=$(echo "$response" | jq -r '.status')
+    if [ "$status" != "success" ]; then
+        echo -e "${RED}Query failed: $(echo "$response" | jq -r '.error // "unknown error"')${RESET}"
+        return 1
+    fi
+
+    # Pretty print the result
+    echo "$response" | jq -C '.data.result[] | {metric: .metric, value: .value[1]}' 2>/dev/null || echo "$response" | jq -C '.data'
+
+    echo ""
+}
+
 # Get current timestamp in milliseconds
 now_ms() {
     echo $(($(date +%s) * 1000))
 }
+
+# Get current timestamp in seconds (for PromQL)
+now_sec() {
+    date +%s
+}
+
+# Store timestamps for later info() queries
+ORIGINAL_TIMESTAMP_SEC=$(now_sec)
 
 # === PHASE 1: Send OTLP metrics with resource attributes ===
 print_phase 1 "Sending OTLP metrics with resource attributes"
@@ -119,7 +168,8 @@ echo -e "${GRAY}Sending metrics from multiple services with diverse resource att
 
 TIMESTAMP=$(now_ms)
 
-# Resource 1: payment-service in production
+# Resource 1: payment-service in production (with entity_refs)
+# Entity refs define service entity + host entity with identifying/descriptive key assignments
 PAYLOAD1=$(cat <<EOF
 {
   "resourceMetrics": [{
@@ -131,6 +181,20 @@ PAYLOAD1=$(cat <<EOF
         {"key": "host.name", "value": {"stringValue": "prod-payment-1.example.com"}},
         {"key": "cloud.region", "value": {"stringValue": "us-west-2"}},
         {"key": "deployment.environment", "value": {"stringValue": "production"}}
+      ],
+      "entityRefs": [
+        {
+          "type": "service",
+          "schemaUrl": "https://opentelemetry.io/schemas/1.0.0",
+          "idKeys": ["service.name", "service.namespace", "service.instance.id"],
+          "descriptionKeys": ["deployment.environment"]
+        },
+        {
+          "type": "host",
+          "schemaUrl": "https://opentelemetry.io/schemas/1.0.0",
+          "idKeys": ["host.name"],
+          "descriptionKeys": ["cloud.region"]
+        }
       ]
     },
     "scopeMetrics": [{
@@ -195,7 +259,7 @@ EOF
 
 send_otlp_metrics "$PAYLOAD2" "order-service (production) - orders_processed_total"
 
-# Resource 3: payment-service in staging
+# Resource 3: payment-service in staging (different namespace)
 PAYLOAD3=$(cat <<EOF
 {
   "resourceMetrics": [{
@@ -235,6 +299,7 @@ EOF
 send_otlp_metrics "$PAYLOAD3" "payment-service (staging) - http_requests_total"
 
 echo -e "\n${GREEN}Sent 3 resource metrics via OTLP${RESET}"
+echo -e "${GRAY}Note: payment-service (production) includes entity_refs for service and host entities${RESET}"
 
 # === PHASE 2: Query resource attributes from TSDB head ===
 print_phase 2 "Querying resource attributes from TSDB head (in-memory)"
@@ -248,7 +313,7 @@ sleep 1
 query_resources '{__name__=~".+"}' "All resource attributes in head:"
 
 # === PHASE 3: Flush to blocks ===
-print_phase 3 "Flushing TSDB head to persist resource attributes to blocks"
+print_phase 3 "Compacting TSDB head to persist resource attributes to disk"
 
 echo -e "${GRAY}Triggering ingester flush to create blocks with series_metadata.parquet...${RESET}\n"
 
@@ -268,8 +333,8 @@ echo -e "${GRAY}Now querying will also include data from store-gateways (if bloc
 
 query_resources '{__name__=~".+"}' "Resource attributes (from both head and blocks):"
 
-# === PHASE 5: Simulate service migration ===
-print_phase 5 "Descriptive attributes changing over time (service migration)"
+# === PHASE 5: Demonstrate descriptive attributes changing over time ===
+print_phase 5 "Descriptive attributes changing over time"
 
 echo -e "${BOLD}Scenario:${RESET} payment-service is migrated to a new host in a different region."
 echo -e "The ${CYAN}identifying${RESET} attributes (service.name, service.namespace, service.instance.id) stay the same,"
@@ -279,8 +344,10 @@ echo -e "but the ${YELLOW}descriptive${RESET} attributes (host.name, cloud.regio
 sleep 2
 
 TIMESTAMP2=$(now_ms)
+MIGRATED_TIMESTAMP_SEC=$(now_sec)
 
 # Send metrics with changed descriptive attributes (same identifying attributes)
+# Also includes entity_refs with updated descriptive key assignments
 PAYLOAD_MIGRATED=$(cat <<EOF
 {
   "resourceMetrics": [{
@@ -293,6 +360,20 @@ PAYLOAD_MIGRATED=$(cat <<EOF
         {"key": "cloud.region", "value": {"stringValue": "eu-west-1"}},
         {"key": "deployment.environment", "value": {"stringValue": "production"}},
         {"key": "k8s.pod.name", "value": {"stringValue": "payment-7d4f8b9c5-xk2pq"}}
+      ],
+      "entityRefs": [
+        {
+          "type": "service",
+          "schemaUrl": "https://opentelemetry.io/schemas/1.0.0",
+          "idKeys": ["service.name", "service.namespace", "service.instance.id"],
+          "descriptionKeys": ["deployment.environment", "k8s.pod.name"]
+        },
+        {
+          "type": "host",
+          "schemaUrl": "https://opentelemetry.io/schemas/1.0.0",
+          "idKeys": ["host.name"],
+          "descriptionKeys": ["cloud.region"]
+        }
       ]
     },
     "scopeMetrics": [{
@@ -326,18 +407,49 @@ echo -e "  ${YELLOW}host.name${RESET}: prod-payment-1.example.com -> ${GREEN}pro
 echo -e "  ${YELLOW}cloud.region${RESET}: us-west-2 -> ${GREEN}eu-west-1${RESET}"
 echo -e "  ${YELLOW}k8s.pod.name${RESET}: (new) ${GREEN}payment-7d4f8b9c5-xk2pq${RESET}"
 
-# === PHASE 6: Show versioned resource attributes ===
-print_phase 6 "Querying versioned resource attributes"
-
-echo -e "${GRAY}Now querying will show version history with different MinTime/MaxTime ranges.${RESET}"
-echo -e "${GRAY}Each version captures when specific attribute values were active.${RESET}\n"
+# Show the version history
+echo -e "\n${BOLD}Version history for production/payment-service:${RESET}"
+echo -e "${GRAY}(Original version in block, new version in head)${RESET}\n"
 
 sleep 1
 
 query_resources '{service_name="payment-service",service_namespace="production"}' "production/payment-service resource attribute versions:"
 
+# === PHASE 6: Demonstrate info() function with time-varying attributes ===
+print_phase 6 "Querying with info() to include resource attributes"
+
+echo -e "The ${BOLD}info()${RESET} function enriches metrics with resource attributes at query time."
+echo -e "When descriptive attributes change over time, info() returns the values"
+echo -e "that were active at the requested timestamp.\n"
+
+QUERY='sum by (method, status, "cloud.region", "host.name") (info(http_requests_total{method="GET",status="200"}))'
+echo -e "${BOLD}Query:${RESET} ${QUERY}\n"
+
+# Query at original timestamp (before migration)
+echo -e "${BOLD}At timestamp BEFORE migration (${ORIGINAL_TIMESTAMP_SEC}):${RESET}"
+query_promql "$QUERY" "$ORIGINAL_TIMESTAMP_SEC" ""
+
+# Query at migrated timestamp (after migration)
+echo -e "${BOLD}At timestamp AFTER migration (${MIGRATED_TIMESTAMP_SEC}):${RESET}"
+query_promql "$QUERY" "$MIGRATED_TIMESTAMP_SEC" ""
+
+echo -e "${CYAN}This enables time-accurate correlation of metrics with OTel traces/logs,"
+echo -e "even when infrastructure changes occur during the query time range.${RESET}\n"
+
+# === PHASE 7: Show API response format ===
+print_phase 7 "API response format for /api/v1/resources"
+
+echo -e "${BOLD}API Response (/api/v1/resources):${RESET}"
+echo -e "${GRAY}Full response format showing labels, versions with identifying/descriptive attributes, and entities:${RESET}\n"
+
+# Query and show full response format
+encoded_match=$(printf '%s' '{service_name="payment-service"}' | jq -sRr @uri)
+curl -s "${RESOURCES_ENDPOINT}?match[]=${encoded_match}" | jq -C '.'
+
+echo ""
+
 # === Summary ===
-print_phase 7 "Summary"
+print_phase 8 "Summary"
 
 echo -e "${BOLD}This demo showed how Grafana Mimir persists OTel resource attributes:${RESET}"
 echo -e "  ${GREEN}1.${RESET} Resource attributes arrive via OTLP metrics (service.name, etc.)"
@@ -346,13 +458,15 @@ echo -e "  ${GREEN}3.${RESET} When blocks are flushed, attributes are persisted 
 echo -e "  ${GREEN}4.${RESET} ${CYAN}Identifying${RESET} attributes (service.name, etc.) remain constant for a series"
 echo -e "  ${GREEN}5.${RESET} ${YELLOW}Descriptive${RESET} attributes (host.name, cloud.region) can change over time"
 echo -e "  ${GREEN}6.${RESET} ${MAGENTA}Versioned storage${RESET} preserves attribute history with time ranges"
-echo -e "  ${GREEN}7.${RESET} Query both ingesters and store-gateways via /api/v1/resources"
+echo -e "  ${GREEN}7.${RESET} Each version tracks when specific attributes were active (MinTime/MaxTime)"
+echo -e "  ${GREEN}8.${RESET} The ${BOLD}info()${RESET} function enriches queries with time-appropriate attributes"
 echo ""
 echo -e "${CYAN}This enables correlation of Prometheus metrics with OTel traces/logs"
 echo -e "using the identifying resource attributes (service.name, etc.)."
 echo -e "The version history allows tracking infrastructure changes over time.${RESET}"
 echo ""
 echo -e "${BOLD}Endpoints used:${RESET}"
-echo -e "  ${GRAY}OTLP ingest:${RESET} ${OTLP_ENDPOINT}"
+echo -e "  ${GRAY}OTLP ingest:${RESET}  ${OTLP_ENDPOINT}"
 echo -e "  ${GRAY}Resource API:${RESET} ${RESOURCES_ENDPOINT}"
+echo -e "  ${GRAY}Query API:${RESET}    ${QUERY_ENDPOINT}"
 echo -e "  ${GRAY}Flush:${RESET}        ${FLUSH_ENDPOINT}"
