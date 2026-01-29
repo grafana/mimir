@@ -8,9 +8,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // findPreviouslyWrittenTimeRange finds the most recent time range for which an expected set of continuous-test series is well-formed.
