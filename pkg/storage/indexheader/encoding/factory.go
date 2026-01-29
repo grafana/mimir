@@ -68,7 +68,8 @@ type DecbufFactory interface {
 	Close() error
 }
 
-// FilePoolDecbufFactory creates new file-backed Decbuf instances for a specific index-header file.
+// FilePoolDecbufFactory creates new file-backed Decbuf instances
+// for a specific index-header file on local disk.
 type FilePoolDecbufFactory struct {
 	files *filePool
 }
