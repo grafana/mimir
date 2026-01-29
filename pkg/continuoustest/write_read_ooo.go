@@ -115,6 +115,21 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 			return
 		}
 	}
+
+	// Now, fill in the gaps, lagging behind by some time - writing out of order.
+	stopAt := now.Add(-t.cfg.MaxOOOLag)
+	for timestamp := t.nextOutOfOrderWriteTimestamp(now, outOfOrderWriteInterval, &t.outOfOrderSamples); !timestamp.After(stopAt); timestamp = t.nextOutOfOrderWriteTimestamp(now, outOfOrderWriteInterval, &t.outOfOrderSamples) {
+		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
+			// Context has been canceled, so we should interrupt.
+			errs.Add(err)
+			return
+		}
+
+		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
+
+		level.Info(t.logger).Log("msg", "Dry run OOO sample write", "timestamp", timestamp, "numSeries", len(series))
+	}
+
 }
 
 func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval time.Duration, records *MetricHistory) time.Time {
@@ -123,6 +138,23 @@ func (t *WriteReadOOOTest) nextInorderWriteTimestamp(now time.Time, interval tim
 	}
 
 	return records.lastWrittenTimestamp.Add(interval)
+}
+
+func (t *WriteReadOOOTest) nextOutOfOrderWriteTimestamp(now time.Time, interval time.Duration, records *MetricHistory) time.Time {
+	base := records.lastWrittenTimestamp.Add(interval)
+	if records.lastWrittenTimestamp.IsZero() {
+		base = alignTimestampToInterval(now, interval)
+	}
+
+	if t.isInOrderTimestamp(base) {
+		base = base.Add(interval)
+	}
+
+	return base
+}
+
+func (t *WriteReadOOOTest) isInOrderTimestamp(ts time.Time) bool {
+	return ts.Equal(alignTimestampToInterval(ts, inorderWriteInterval))
 }
 
 func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, inOrderRecords, outOfOrderRecords *MetricHistory) error {
@@ -144,11 +176,8 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 	level.Info(t.logger).Log("msg", "Successfully found previously written inorder samples time range and recovered writes and reads from there", "metric_name", metricName, "last_written_timestamp", inOrderRecords.lastWrittenTimestamp, "query_min_time", inOrderRecords.queryMinTime, "query_max_time", inOrderRecords.queryMaxTime)
 
 	// Search a second time, but at a tighter step, to find how far back we've written the more dense, fully-formed series.
-	// Don't process the samples from the in-order time range, we care about the gaps.
-	skipInorderTimestamps := func(ts time.Time) bool {
-		return ts.Equal(alignTimestampToInterval(ts, inorderWriteInterval))
-	}
-	from, to = t.findPreviouslyWrittenTimeRange(ctx, now, outOfOrderWriteInterval, metricName, querySum, generateValue, skipInorderTimestamps)
+	// Ignore the samples from the in-order time range, only look at the gaps.
+	from, to = t.findPreviouslyWrittenTimeRange(ctx, now, outOfOrderWriteInterval, metricName, querySum, generateValue, t.isInOrderTimestamp)
 	if from.IsZero() || to.IsZero() {
 		level.Info(t.logger).Log("msg", "No valid previously written OOO samples found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
