@@ -446,6 +446,7 @@
     extra_triggers=[],
     container_name='',
     extra_matchers='',
+    apply_weight_to_replicas=true,
   ):: self.newScaledObject(
     name, $._config.namespace, {
       local queryParameters = {
@@ -454,8 +455,8 @@
         extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
       },
 
-      min_replica_count: replicasWithWeight(min_replicas, weight),
-      max_replica_count: replicasWithWeight(max_replicas, weight),
+      min_replica_count: if apply_weight_to_replicas then replicasWithWeight(min_replicas, weight) else min_replicas,
+      max_replica_count: if apply_weight_to_replicas then replicasWithWeight(max_replicas, weight) else max_replicas,
 
       [if scale_down_period != null then 'scale_down_period']: scale_down_period,
 
@@ -765,7 +766,7 @@
   // Rulers
   //
 
-  newRulerScaledObject(name, extra_matchers='', weight=1)::
+  newRulerScaledObject(name, extra_matchers='', weight=1, apply_weight_to_replicas=true)::
     $.newResourceScaledObject(
       name=name,
       container_name='ruler',
@@ -780,6 +781,7 @@
       scale_down_period=600,
       extra_matchers=extra_matchers,
       weight=weight,
+      apply_weight_to_replicas=apply_weight_to_replicas,
     ),
 
   ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newRulerScaledObject('ruler'),

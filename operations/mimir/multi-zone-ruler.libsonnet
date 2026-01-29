@@ -126,6 +126,8 @@
   // When balanced autoscaling is enabled, all zones use aggregate metrics to ensure balanced replica counts.
   // The weight divides the aggregate metric by the number of zones so each zone scales to its fair share.
   // When disabled, each zone scales independently based on its own metrics.
+  // Note: For balanced autoscaling, the weight should only affect the scaling query, not the min/max replicas.
+  // The min/max replicas should remain at their configured per-zone values.
   local numZones = std.length($._config.multi_zone_availability_zones),
   local rulerZoneExtraMatchers(zone) =
     if $._config.multi_zone_ruler_balanced_autoscaling_enabled
@@ -135,8 +137,11 @@
     if $._config.multi_zone_ruler_balanced_autoscaling_enabled
     then 1.0 / numZones
     else 1,
+  // For balanced autoscaling, we want the weight to affect only the query (for fair share scaling),
+  // but NOT the min/max replicas (they should remain at their configured per-zone values).
+  local rulerZoneApplyWeightToReplicas = !$._config.multi_zone_ruler_balanced_autoscaling_enabled,
 
-  ruler_zone_a_scaled_object: if !isAutoscalingZoneAEnabled then null else $.newRulerScaledObject('ruler-zone-a', rulerZoneExtraMatchers('a'), rulerZoneWeight),
-  ruler_zone_b_scaled_object: if !isAutoscalingZoneBEnabled then null else $.newRulerScaledObject('ruler-zone-b', rulerZoneExtraMatchers('b'), rulerZoneWeight),
-  ruler_zone_c_scaled_object: if !isAutoscalingZoneCEnabled then null else $.newRulerScaledObject('ruler-zone-c', rulerZoneExtraMatchers('c'), rulerZoneWeight),
+  ruler_zone_a_scaled_object: if !isAutoscalingZoneAEnabled then null else $.newRulerScaledObject('ruler-zone-a', rulerZoneExtraMatchers('a'), rulerZoneWeight, rulerZoneApplyWeightToReplicas),
+  ruler_zone_b_scaled_object: if !isAutoscalingZoneBEnabled then null else $.newRulerScaledObject('ruler-zone-b', rulerZoneExtraMatchers('b'), rulerZoneWeight, rulerZoneApplyWeightToReplicas),
+  ruler_zone_c_scaled_object: if !isAutoscalingZoneCEnabled then null else $.newRulerScaledObject('ruler-zone-c', rulerZoneExtraMatchers('c'), rulerZoneWeight, rulerZoneApplyWeightToReplicas),
 }
