@@ -548,7 +548,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, err error) error {
+func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, job *Job, err error) error {
 	if ok, issue347Err := isIssue347Error(err); ok {
 		return repairIssue347(ctx, c.logger, c.bkt, c.sy.metrics.blocksMarkedForDeletion, issue347Err)
 	}
@@ -580,6 +580,44 @@ func (c *BucketCompactor) handleKnownCompactionErrors(ctx context.Context, err e
 			"UnhealthyBlock: marking unhealthy block as no compact to unblock compaction",
 			c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.CriticalNoCompactReason),
 		)
+	}
+
+	// Handle postings offset table size errors by marking all input blocks as no-compact.
+	// This error indicates the blocks have extremely high label cardinality and cannot be
+	// compacted together without exceeding the 4GB offset table size limit.
+	if errors.Is(err, index.ErrPostingsOffsetTableTooLarge) && c.skipUnhealthyBlocks {
+		blockIDs := job.IDs()
+		level.Warn(c.logger).Log(
+			"msg", "compaction failed due to postings offset table size limit; marking input blocks as no-compact",
+			"groupKey", job.Key(),
+			"block_count", len(blockIDs),
+			"blocks", fmt.Sprintf("%v", blockIDs),
+			"err", err,
+		)
+
+		allMarked := true
+		for _, blockID := range blockIDs {
+			markErr := block.MarkForNoCompact(
+				ctx,
+				c.logger,
+				c.bkt,
+				blockID,
+				block.PostingsOffsetTableTooLargeNoCompactReason,
+				"PostingsOffsetTableTooLarge: marking input block as no compact to unblock compaction",
+				c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason),
+			)
+			if markErr != nil {
+				level.Error(c.logger).Log(
+					"msg", "failed to mark block as no-compact after postings offset table size error",
+					"block", blockID,
+					"err", markErr,
+				)
+				allMarked = false
+			}
+		}
+		if allMarked {
+			return nil
+		}
 	}
 
 	// Unhandled, returning original err
@@ -1056,53 +1094,11 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 					// At this point the compaction has failed.
 					c.metrics.groupCompactionRunsFailed.Inc()
 
-					if handleErr := c.handleKnownCompactionErrors(workCtx, err); handleErr == nil {
+					if handleErr := c.handleKnownCompactionErrors(workCtx, g, err); handleErr == nil {
 						mtx.Lock()
 						finishedAllJobs = false
 						mtx.Unlock()
 						continue
-					}
-
-					// Handle postings offset table size errors by marking all input blocks as no-compact.
-					// This error indicates the blocks have extremely high label cardinality and cannot be
-					// compacted together without exceeding the 4GB offset table size limit.
-					if errors.Is(err, index.ErrPostingsOffsetTableTooLarge) && c.skipUnhealthyBlocks {
-						blockIDs := g.IDs()
-						level.Warn(c.logger).Log(
-							"msg", "compaction failed due to postings offset table size limit; marking input blocks as no-compact",
-							"groupKey", g.Key(),
-							"block_count", len(blockIDs),
-							"blocks", fmt.Sprintf("%v", blockIDs),
-							"err", err,
-						)
-
-						allMarked := true
-						for _, blockID := range blockIDs {
-							markErr := block.MarkForNoCompact(
-								ctx,
-								c.logger,
-								c.bkt,
-								blockID,
-								block.PostingsOffsetTableTooLargeNoCompactReason,
-								"PostingsOffsetTableTooLarge: marking input block as no compact to unblock compaction",
-								c.metrics.blocksMarkedForNoCompact.WithLabelValues(block.PostingsOffsetTableTooLargeNoCompactReason),
-							)
-							if markErr != nil {
-								level.Error(c.logger).Log(
-									"msg", "failed to mark block as no-compact after postings offset table size error",
-									"block", blockID,
-									"err", markErr,
-								)
-								allMarked = false
-							}
-						}
-
-						if allMarked {
-							mtx.Lock()
-							finishedAllJobs = false
-							mtx.Unlock()
-							continue
-						}
 					}
 
 					errChan <- fmt.Errorf("group %s: %w", g.Key(), err)

@@ -452,7 +452,7 @@ func (e *schedulerExecutor) executeCompactionJob(ctx context.Context, c *Multite
 		c.outOfSpace.Inc()
 	}
 
-	if handleErr := compactor.handleKnownCompactionErrors(ctx, err); handleErr == nil {
+	if handleErr := compactor.handleKnownCompactionErrors(ctx, job, err); handleErr == nil {
 		return compactorschedulerpb.ABANDON, err
 	}
 
