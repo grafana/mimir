@@ -188,6 +188,12 @@ func TestWriteReadOOO_Init(t *testing.T) {
 		assertHistoryEmpty(t, test.outOfOrderSamples)
 	})
 
+	t.Run("default config passes validation", func(t *testing.T) {
+		var defaultCfg WriteReadOOOTestConfig
+		flagext.DefaultValues(&defaultCfg)
+		require.NoError(t, defaultCfg.ValidateConfig())
+	})
+
 	t.Run("fails if NumSeries is zero", func(t *testing.T) {
 		client := newMockClient()
 		badCfg := cfgOOO
