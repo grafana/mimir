@@ -2007,7 +2007,7 @@ func (s *staticTenantLimits) AllByUserID() map[string]*validation.Limits {
 }
 
 // The following storage.Queryable, storage.Querier and storage.SeriesSet implementations
-// are used to create SeriesSet that will increase Labels memory consumption when being iterated.
+// are used to create SeriesSet that will increase Labels memory consumption when it is iterated.
 type increaseMemoryConsumptionLabelsQueryable struct {
 	inner storage.Queryable
 }
