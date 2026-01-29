@@ -87,7 +87,7 @@ func (i *Ingester) ResourceAttributes(request *client.ResourceAttributesRequest,
 		}
 
 		lbls := buf.Labels()
-		labelsHash := lbls.Hash()
+		labelsHash := labels.StableHash(lbls)
 
 		// Get versioned resource attributes for this series
 		versionedResource, found := metaReader.GetVersionedResource(labelsHash)

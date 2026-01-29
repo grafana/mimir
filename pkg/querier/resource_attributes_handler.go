@@ -147,7 +147,8 @@ func NewResourceAttributesHandler(d Distributor, blocksQueryable ResourceAttribu
 		if cfg.QueryIngestersWithin != nil {
 			queryIngestersWithin = cfg.QueryIngestersWithin(tenantID)
 		}
-		if ShouldQueryIngesters(queryIngestersWithin, now, endMs) {
+		shouldQueryIngesters := ShouldQueryIngesters(queryIngestersWithin, now, endMs)
+		if shouldQueryIngesters {
 			g.Go(func() error {
 				var err error
 				ingesterResults, err = d.ResourceAttributes(gCtx, startMs, endMs, allMatchers, limit)

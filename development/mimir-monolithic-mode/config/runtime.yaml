@@ -6,3 +6,6 @@ overrides:
     # This allows resource attributes from OTLP metrics to be stored per-series
     # and queried via /api/v1/resources endpoint.
     otel_persist_resource_attributes: true
+  demo:
+    otel_keep_identifying_resource_attributes: true
+    otel_persist_resource_attributes: true
