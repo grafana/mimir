@@ -151,6 +151,7 @@ func (t *WriteReadSeriesTest) Run(ctx context.Context, now time.Time) error {
 func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName, typeLabel string, metricMetadata []prompb.MetricMetadata, querySum querySumFunc, generateSeries generateSeriesFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) {
 	// Write series for each expected timestamp until now.
 	for timestamp := t.nextWriteTimestamp(now, records); !timestamp.After(now); timestamp = t.nextWriteTimestamp(now, records) {
+		logger := log.With(t.logger, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
 			errs.Add(err)
@@ -158,7 +159,7 @@ func (t *WriteReadSeriesTest) RunInner(ctx context.Context, now time.Time, write
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := writeSamples(ctx, typeLabel, timestamp, series, metricName, t.cfg.NumSeries, metricMetadata, records, t.client, t.metrics, t.logger); err != nil {
+		if err := writeSamples(ctx, typeLabel, timestamp, series, metricMetadata, records, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			break
 		}

@@ -99,6 +99,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 
 	// First, write the in-order (minute-aligned) data.
 	for timestamp := t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.inOrderSamples); !timestamp.After(now); timestamp = t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.inOrderSamples) {
+		logger := log.With(t.logger, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
 			errs.Add(err)
@@ -106,7 +107,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, t.cfg.NumSeries, floatMetricMetadata, &t.inOrderSamples, t.client, t.metrics, t.logger); err != nil {
+		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, floatMetricMetadata, &t.inOrderSamples, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			return
 		}
@@ -115,6 +116,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 	// Now, fill in the gaps, lagging behind by some time - writing out of order.
 	oooNow := now.Add(-t.cfg.MaxOOOLag)
 	for timestamp := t.nextOutOfOrderWriteTimestamp(oooNow, outOfOrderWriteInterval, &t.outOfOrderSamples); !timestamp.After(oooNow); timestamp = t.nextOutOfOrderWriteTimestamp(oooNow, outOfOrderWriteInterval, &t.outOfOrderSamples) {
+		logger := log.With(t.logger, "timestamp", timestamp.UnixMilli(), "num_series", t.cfg.NumSeries, "metric_name", metricName)
 		if err := writeLimiter.WaitN(ctx, t.cfg.NumSeries); err != nil {
 			// Context has been canceled, so we should interrupt.
 			errs.Add(err)
@@ -122,7 +124,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, metricName, t.cfg.NumSeries, floatMetricMetadata, &t.outOfOrderSamples, t.client, t.metrics, t.logger); err != nil {
+		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, floatMetricMetadata, &t.outOfOrderSamples, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			return
 		}

@@ -88,10 +88,10 @@ func findPreviouslyWrittenTimeRange(ctx context.Context, now time.Time, step tim
 	}
 }
 
-func writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metricName string, numSeries int, metadata []prompb.MetricMetadata, records *MetricHistory, client MimirClient, metrics *TestMetrics, logger log.Logger) error {
+func writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, series []prompb.TimeSeries, metadata []prompb.MetricMetadata, records *MetricHistory, client MimirClient, metrics *TestMetrics, logger log.Logger) error {
 	sp, ctx := spanlogger.New(ctx, logger, tracer, "writeSamples")
 	defer sp.Finish()
-	logger = log.With(sp, "timestamp", timestamp.UnixMilli(), "num_series", numSeries, "metric_name", metricName, "protocol", client.Protocol())
+	logger = log.With(sp, "protocol", client.Protocol())
 
 	start := time.Now()
 	statusCode, err := client.WriteSeries(ctx, series, metadata)
@@ -102,7 +102,7 @@ func writeSamples(ctx context.Context, typeLabel string, timestamp time.Time, se
 		metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to remote write series", "status_code", statusCode, "err", err)
 	} else {
-		level.Info(logger).Log("msg", "Remote write series succeeded", "timestamp", timestamp, "numSeries", len(series))
+		level.Info(logger).Log("msg", "Remote write series succeeded", "timestamp", timestamp)
 	}
 
 	// If the write request failed because of a 4xx error, retrying the request isn't expected to succeed.
