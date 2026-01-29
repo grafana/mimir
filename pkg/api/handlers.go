@@ -10,6 +10,7 @@ import (
 	"context"
 	"embed"
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"path"
@@ -348,7 +349,32 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 		"GetRoleFromMeta": func(meta []byte) string {
 			return memberlist.EncodedNodeMetadata(meta).Role().String()
 		},
+		"FormatBytes": formatBytes,
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
 	return memberlist.NewHTTPStatusHandler(kvs, templ)
+}
+
+func formatBytes(bytes int) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+	format := func(val float64) string {
+		if val == float64(int(val)) {
+			return fmt.Sprintf("%d", int(val))
+		}
+		return strings.TrimRight(fmt.Sprintf("%.2f", val), "0")
+	}
+	switch {
+	case bytes >= GB:
+		return format(float64(bytes)/GB) + " GB"
+	case bytes >= MB:
+		return format(float64(bytes)/MB) + " MB"
+	case bytes >= KB:
+		return format(float64(bytes)/KB) + " KB"
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
