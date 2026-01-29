@@ -93,16 +93,55 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Zero(t, oooHistory.queryMaxTime)
 	})
 
-	t.Run("previously written in-order and OOO samples found", func(t *testing.T) {
-		// client := newMockClient()
-		// TODO: Set up mocks.
-		//
-		// reg := prometheus.NewPedanticRegistry()
-		// test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
-		//
-		// require.NoError(t, test.Init(context.Background(), now))
-		//
-		// TODO: Implement assertions.
+	t.Run("in-order samples from [-3h, -30m] and OOO samples from [-3h, -1h30m]", func(t *testing.T) {
+		client := newMockClient()
+		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
+
+		inOrderData := model.Matrix{{
+			Values: generateFloatSamplesSum(now.Add(-3*time.Hour), now.Add(-30*time.Minute), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue),
+		}}
+
+		// Higher resolution query: we see 20s-aligned samples from [-3h, -1h30m] (dense period with OOO),
+		// followed by only minute-aligned samples from (-1h30m, -30m] (sparse period, no OOO).
+		// At 20s step, every 3rd tick aligns with a minute (:00, :20, :40, :00...).
+		oooDataDense := generateFloatSamplesSum(now.Add(-3*time.Hour), now.Add(-90*time.Minute), cfgOOO.NumSeries, outOfOrderWriteInterval, generateSineWaveValue)
+		oooDataSparse := generateFloatSamplesSum(now.Add(-90*time.Minute).Add(inorderWriteInterval), now.Add(-30*time.Minute), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue)
+		oooData := model.Matrix{{
+			Values: append(oooDataDense, oooDataSparse...),
+		}}
+
+		// First query: in-order samples at 1-minute step.
+		inOrderFrom := now.Add(-24 * time.Hour).Add(inorderWriteInterval)
+		inOrderTo := now
+		client.On("QueryRange", mock.Anything, expQuery, inOrderFrom, inOrderTo, inorderWriteInterval, mock.Anything).
+			Return(inOrderData, nil)
+
+		// Second query: OOO samples at 20-second step.
+		oooFrom := now.Add(-24 * time.Hour).Add(outOfOrderWriteInterval)
+		oooTo := now
+		client.On("QueryRange", mock.Anything, expQuery, oooFrom, oooTo, outOfOrderWriteInterval, mock.Anything).
+			Return(oooData, nil)
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+		err := test.Init(context.Background(), now)
+
+		require.NoError(t, err)
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+
+		// In-order samples should be recovered.
+		inOrderHistory := test.inOrderSamples
+		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-3*time.Hour), inOrderHistory.queryMinTime)
+		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.queryMaxTime)
+
+		// OOO samples exist from [-3h, -1h30m]. The sparse period (-1h30m, -30m] has only minute-aligned
+		// samples which are completely ignored by the skipTimestamp function.
+		// The last non-skipped sample is at -1h30m - 20s. The first non-skipped sample is at -3h + 20s.
+		oooHistory := test.outOfOrderSamples
+		require.Equal(t, now.Add(-90*time.Minute).Add(-20*time.Second), oooHistory.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-3*time.Hour).Add(20*time.Second), oooHistory.queryMinTime)
+		require.Equal(t, now.Add(-90*time.Minute).Add(-20*time.Second), oooHistory.queryMaxTime)
 	})
 
 	t.Run("previously written in-order data points are in the range [-2h, -1m]", func(t *testing.T) {

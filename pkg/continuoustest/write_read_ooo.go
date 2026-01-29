@@ -17,6 +17,7 @@ const (
 	oooFloatMetricName      = "mimir_continuous_sine_wave_ooo_v2"
 	inorderWriteInterval    = 1 * time.Minute
 	outOfOrderWriteInterval = 20 * time.Second
+	oooTestWriteMaxAge      = 110 * time.Minute
 )
 
 type WriteReadOOOTestConfig struct {
@@ -164,7 +165,7 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
 	}
-	if to.Before(now.Add(-writeMaxAge)) {
+	if to.Before(now.Add(-oooTestWriteMaxAge)) {
 		level.Info(t.logger).Log("msg", "Previously written samples time range found but latest written sample is too old to recover", "metric_name", metricName, "last_sample_timestamp", to)
 		return nil
 	}
@@ -181,7 +182,7 @@ func (t *WriteReadOOOTest) recoverPast(ctx context.Context, now time.Time, metri
 		level.Info(t.logger).Log("msg", "No valid previously written OOO samples found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
 	}
-	if to.Before(now.Add(-writeMaxAge)) {
+	if to.Before(now.Add(-oooTestWriteMaxAge)) {
 		level.Info(t.logger).Log("msg", "Previously written OOO samples time range found but latest written sample is too old to recover", "metric_name", metricName, "last_sample_timestamp", to)
 		return nil
 	}
