@@ -190,8 +190,8 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	dst = DeepCopyTimeseries(dst, src, true, true)
 
 	// Check that scalar properties are copied.
-	assert.Equal(t, src.TimeSeries.CreatedTimestamp, dst.TimeSeries.CreatedTimestamp)
-	assert.Equal(t, src.TimeSeries.SkipUnmarshalingExemplars, dst.TimeSeries.SkipUnmarshalingExemplars)
+	assert.Equal(t, src.CreatedTimestamp, dst.CreatedTimestamp)
+	assert.Equal(t, src.SkipUnmarshalingExemplars, dst.SkipUnmarshalingExemplars)
 
 	// Check that the values in src and dst are the same.
 	assert.Equal(t, src.TimeSeries, dst.TimeSeries)
