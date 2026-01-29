@@ -4,6 +4,7 @@ package continuoustest
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -168,27 +169,58 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Zero(t, oooHistory.queryMaxTime)
 	})
 
-	t.Run("the first query for in-order samples fails", func(t *testing.T) {
-		// client := newMockClient()
-		// TODO: Set up mocks.
-		//
-		// reg := prometheus.NewPedanticRegistry()
-		// test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
-		//
-		// require.NoError(t, test.Init(context.Background(), now))
-		//
-		// TODO: Implement assertions.
+	t.Run("if the first query for in-order samples fails, we start up as if there is no history", func(t *testing.T) {
+		client := newMockClient()
+		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
+		inOrderFrom := now.Add(-24 * time.Hour).Add(inorderWriteInterval)
+		inOrderTo := now
+		client.On("QueryRange", mock.Anything, expQuery, inOrderFrom, inOrderTo, inorderWriteInterval, mock.Anything).
+			Return(model.Matrix{}, errors.New("failed"))
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+		err := test.Init(context.Background(), now)
+
+		require.NoError(t, err)
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+		inOrderHistory := test.inOrderSamples
+		require.Zero(t, inOrderHistory.lastWrittenTimestamp)
+		require.Zero(t, inOrderHistory.queryMinTime)
+		require.Zero(t, inOrderHistory.queryMaxTime)
+		oooHistory := test.outOfOrderSamples
+		require.Zero(t, oooHistory.lastWrittenTimestamp)
+		require.Zero(t, oooHistory.queryMinTime)
+		require.Zero(t, oooHistory.queryMaxTime)
 	})
 
-	t.Run("the query for OOO samples fails after in-order samples are recovered", func(t *testing.T) {
-		// client := newMockClient()
-		// TODO: Set up mocks.
-		//
-		// reg := prometheus.NewPedanticRegistry()
-		// test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
-		//
-		// require.NoError(t, test.Init(context.Background(), now))
-		//
-		// TODO: Implement assertions.
+	t.Run("the query for OOO samples fails after in-order samples are recovered, we start up with no OOO history", func(t *testing.T) {
+		client := newMockClient()
+		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
+		existingData := model.Matrix{{
+			Values: generateFloatSamplesSum(now.Add(-2*time.Hour), now.Add(-30*time.Minute), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue),
+		}}
+		inOrderFrom := now.Add(-24 * time.Hour).Add(inorderWriteInterval)
+		inOrderTo := now
+		client.On("QueryRange", mock.Anything, expQuery, inOrderFrom, inOrderTo, inorderWriteInterval, mock.Anything).
+			Return(existingData, nil)
+		oooFrom := now.Add(-24 * time.Hour).Add(outOfOrderWriteInterval)
+		oooTo := now
+		client.On("QueryRange", mock.Anything, expQuery, oooFrom, oooTo, outOfOrderWriteInterval, mock.Anything).
+			Return(model.Matrix{}, errors.New("failed"))
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+		err := test.Init(context.Background(), now)
+
+		require.NoError(t, err)
+		client.AssertNumberOfCalls(t, "QueryRange", 2)
+		inOrderHistory := test.inOrderSamples
+		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.lastWrittenTimestamp)
+		require.Equal(t, now.Add(-2*time.Hour), inOrderHistory.queryMinTime)
+		require.Equal(t, now.Add(-30*time.Minute), inOrderHistory.queryMaxTime)
+		oooHistory := test.outOfOrderSamples
+		require.Zero(t, oooHistory.lastWrittenTimestamp)
+		require.Zero(t, oooHistory.queryMinTime)
+		require.Zero(t, oooHistory.queryMaxTime)
 	})
 }
