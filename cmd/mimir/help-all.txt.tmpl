@@ -853,6 +853,10 @@ Usage of ./cmd/mimir/mimir:
     	Maximum number of CPUs that can simultaneously processes WAL replay. If it is set to 0, then each TSDB is replayed with a concurrency equal to the number of CPU cores available on the machine.
   -blocks-storage.tsdb.wal-segment-size-bytes int
     	TSDB WAL segments files max size (bytes). (default 134217728)
+  -bucket-reader.enabled
+    	[experimental] Enable reading TSDB index-header sections from object storage instead of loading to and reading from local disk. (default true)
+  -bucket-reader.index-sections string
+    	[experimental] Index sections to read from object storage instead of local disk. Valid sections: all (default "all")
   -common.client-cluster-validation.label string
     	[experimental] Primary cluster validation label.
   -common.instrument-reference-leaks.before-reuse-period duration
