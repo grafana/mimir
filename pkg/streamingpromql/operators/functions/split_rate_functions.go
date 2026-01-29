@@ -33,9 +33,8 @@ func rateGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnn
 	if fCount > 0 && hCount > 0 {
 		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 		return RateIntermediate{
-			SampleCount:     0,
-			SplitRangeStart: step.RangeStart,
-			SplitRangeEnd:   step.RangeEnd,
+			SampleCount:      0,
+			ForceEmptyResult: true,
 		}, nil
 	}
 
@@ -48,9 +47,7 @@ func rateGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnn
 	}
 
 	return RateIntermediate{
-		SampleCount:     0,
-		SplitRangeStart: step.RangeStart,
-		SplitRangeEnd:   step.RangeEnd,
+		SampleCount: 0,
 	}, nil
 }
 
@@ -67,11 +64,9 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int, rangeStart, ran
 				TimestampMs: firstPoint.T,
 				Value:       firstPoint.F,
 			},
-			Delta:           0,
-			SampleCount:     1,
-			IsHistogram:     false,
-			SplitRangeStart: rangeStart,
-			SplitRangeEnd:   rangeEnd,
+			Delta:       0,
+			SampleCount: 1,
+			IsHistogram: false,
 		}, nil
 	}
 
@@ -86,11 +81,9 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int, rangeStart, ran
 			TimestampMs: lastPoint.T,
 			Value:       lastPoint.F,
 		},
-		Delta:           delta,
-		SampleCount:     int64(fCount),
-		IsHistogram:     false,
-		SplitRangeStart: rangeStart,
-		SplitRangeEnd:   rangeEnd,
+		Delta:       delta,
+		SampleCount: int64(fCount),
+		IsHistogram: false,
 	}, nil
 }
 
@@ -112,13 +105,21 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, rangeStart,
 			FirstHistogramCountBeforeReset: firstPoint.H.Count,
 			SampleCount:                    1,
 			IsHistogram:                    true,
-			SplitRangeStart:                rangeStart,
-			SplitRangeEnd:                  rangeEnd,
 		}, nil
 	}
 
 	firstPoint, lastPoint, delta, fpHistCount, err := calculateHistogramDelta(hHead, hTail, emitAnnotation)
 	if err != nil {
+		// Convert histogram errors to annotations and force empty result
+		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+		if err == nil {
+			// Error was converted to annotation (e.g., mixed exponential/custom buckets)
+			return RateIntermediate{
+				SampleCount:      0,
+				ForceEmptyResult: true,
+			}, nil
+		}
+		// Other errors still need to be returned
 		return RateIntermediate{}, err
 	}
 
@@ -136,8 +137,6 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, rangeStart,
 		FirstHistogramCountBeforeReset: fpHistCount,
 		SampleCount:                    int64(hCount),
 		IsHistogram:                    true,
-		SplitRangeStart:                rangeStart,
-		SplitRangeEnd:                  rangeEnd,
 	}, nil
 }
 
@@ -151,6 +150,13 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 	) (float64, bool, *histogram.FloatHistogram, error) {
 		if len(pieces) == 0 {
 			return 0, false, nil, nil
+		}
+
+		// Check if any split encountered an error condition that should force an empty result
+		for _, p := range pieces {
+			if p.ForceEmptyResult {
+				return 0, false, nil, nil
+			}
 		}
 
 		hasFloat := false
@@ -172,6 +178,14 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 
 		if hasHistogram {
 			h, err := rateCombineHistogram(pieces, rangeStart, rangeEnd, isRate, emitAnnotation)
+			if err != nil {
+				// Convert histogram errors to annotations
+				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
+				if err == nil {
+					// Error was converted to annotation, return empty result
+					return 0, false, nil, nil
+				}
+			}
 			return 0, false, h, err
 		}
 

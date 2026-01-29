@@ -649,6 +649,8 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 	require.NotEmpty(t, allTests, "expected to find test files")
 
 	splitIntervals := []time.Duration{
+		1 * time.Second,
+		10 * time.Second,
 		30 * time.Second,
 		5 * time.Minute,
 		2 * time.Hour,
@@ -689,6 +691,53 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 	}
 }
 
+// skipUnsupportedTests comments out test cases where the split implementation diverges from the Prometheus/non-split MQE implementations.
+func skipUnsupportedTests(t *testing.T, testContent string, testFile string) string {
+	var testCasesToSkip []string
+
+	switch testFile {
+	case "upstream/native_histograms.test":
+		// The split sum_over_time sometimes cannot detect conflicting counter reset warnings.
+		// See comments for functions.SplitSumOverTime.
+		testCasesToSkip = []string{
+			`eval instant at 14m histogram_count(sum_over_time(mixed[10m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 93`,
+
+			`eval instant at 11m histogram_count(sum_over_time(mixed[2m]))
+  expect warn msg:PromQL warning: conflicting counter resets during histogram aggregation
+  expect no_info
+  {} 21`,
+
+			`eval instant at 5m histogram_count(sum_over_time(reset{timing="late"}[5m]))
+    expect warn msg: PromQL warning: conflicting counter resets during histogram aggregation
+    {timing="late"} 7`,
+		}
+
+	default:
+		return testContent
+	}
+
+	modified := testContent
+	for i, testCase := range testCasesToSkip {
+		if !strings.Contains(modified, testCase) {
+			require.FailNow(t, "Failed to find expected test case in "+testFile,
+				"Could not find test case at index %d. The test file may have changed.\nLooking for:\n%s", i, testCase)
+		}
+
+		lines := strings.Split(testCase, "\n")
+		for j, line := range lines {
+			lines[j] = "# SKIPPED FOR QUERY SPLITTING: " + line
+		}
+		commented := strings.Join(lines, "\n")
+
+		modified = strings.Replace(modified, testCase, commented, 1)
+	}
+
+	return modified
+}
+
 func runTestFileWithSplitting(t *testing.T, testdataFS fs.FS, testFile string, innerEngine promql.QueryEngine, cacheBackend *testCacheBackend) (totalQueries, queriesWithSplit int) {
 	t.Helper()
 
@@ -718,7 +767,8 @@ func runTestFileWithSplitting(t *testing.T, testdataFS fs.FS, testFile string, i
 	b, err := io.ReadAll(f)
 	require.NoError(t, err)
 
-	testScript := string(b)
+	testScript := skipUnsupportedTests(t, string(b), testFile)
+
 	promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
 
 	return totalQueries, queriesWithSplit

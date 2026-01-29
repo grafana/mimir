@@ -83,21 +83,17 @@ func TestRateCombineFloat_WithEmptySplits(t *testing.T) {
 				TimestampMs: 2000,
 				Value:       110.0,
 			},
-			Delta:           10.0,
-			SampleCount:     5,
-			IsHistogram:     false,
-			SplitRangeStart: 0,
-			SplitRangeEnd:   3000,
+			Delta:       10.0,
+			SampleCount: 5,
+			IsHistogram: false,
 		},
 		// Split 1: empty (no samples)
 		{
-			FirstSample:     nil,
-			LastSample:      nil,
-			Delta:           0,
-			SampleCount:     0,
-			IsHistogram:     false,
-			SplitRangeStart: 3000,
-			SplitRangeEnd:   6000,
+			FirstSample: nil,
+			LastSample:  nil,
+			Delta:       0,
+			SampleCount: 0,
+			IsHistogram: false,
 		},
 		// Split 2: has samples
 		{
@@ -109,15 +105,13 @@ func TestRateCombineFloat_WithEmptySplits(t *testing.T) {
 				TimestampMs: 7000,
 				Value:       130.0,
 			},
-			Delta:           10.0,
-			SampleCount:     5,
-			IsHistogram:     false,
-			SplitRangeStart: 6000,
-			SplitRangeEnd:   9000,
+			Delta:       10.0,
+			SampleCount: 5,
+			IsHistogram: false,
 		},
 	}
 
-	result, hasResult, err := rateCombineFloat(splits, true)
+	result, hasResult, err := rateCombineFloat(splits, 0, 9000, true)
 	require.NoError(t, err)
 	require.True(t, hasResult)
 	require.NotZero(t, result)

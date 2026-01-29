@@ -15,6 +15,22 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
+// SplitSumOverTime configures the range vector splitting version of sum_over_time().
+// In Prometheus, sum_over_time() emits a warning when processing histograms with a mix of CounterReset and
+// NotCounterReset hints. This split implementation does not emit these warnings if the mix is between split ranges
+// (e.g.  one split range has only histograms with CounterReset hints, the other only NotCounterReset, when combining
+// the intermediate results, the implementation unable to detect there is a mix of hints across the split ranges).
+// This is because of the additional complexity to do the detection. The counter reset hint is sometimes calculated
+// dynamically by comparing the current histogram value to the previous histogram value, rather than just using the hint
+// values from storage. In order to properly detect counter resets across split boundaries, we would need to store the
+// first and last histogram in each split range within the intermediate result so we can calculate hints at the
+// boundaries (similar to how we store raw samples for rate()).
+// Additionally, currently counter reset detection works changes if there's a histogram_count() function wrapping the
+// sum_over_time() or not. To support this we would need to propagate this information to the split operator.
+// This annotation is only expected to be emitted in rare cases (sum_over_time() is generally expected to be used for
+// gauge histograms rather than counter histograms) and counter reset detection is still evolving
+// (see https://github.com/prometheus/prometheus/issues/15346), so we choose to be slightly inconsistent with the
+// Prometheus for now. The returned result is correct, it's just the warning annotation may occasionally be missing.
 var SplitSumOverTime = &RangeVectorSplittingMetadata{
 	OperatorFactory:       NewSplitOperatorFactory[SumOverTimeIntermediate](sumOverTimeGenerate, sumOverTimeCombine, SumOverTimeCodec, SumOverTime, FUNCTION_SUM_OVER_TIME),
 	RangeVectorChildIndex: 0,
@@ -76,7 +92,6 @@ func sumOverTimeGenerate(
 	return SumOverTimeIntermediate{}, nil
 }
 
-// TODO: handle counter reset collision warning
 func sumOverTimeCombine(
 	pieces []SumOverTimeIntermediate,
 	_ int64,
@@ -145,47 +160,26 @@ func (c sumOverTimeCodec) Unmarshal(bytes []byte) ([]SumOverTimeIntermediate, er
 
 var SumOverTimeCodec = sumOverTimeCodec{}
 
-type singleSampleCodec struct{}
-
-func (c singleSampleCodec) Marshal(results []SingleSampleIntermediate) ([]byte, error) {
-	listProto := &SingleSampleIntermediateList{Results: results}
-	listBytes, err := listProto.Marshal()
-	if err != nil {
-		return nil, errors.Wrap(err, "marshaling single sample list")
-	}
-	return listBytes, nil
-}
-
-func (c singleSampleCodec) Unmarshal(bytes []byte) ([]SingleSampleIntermediate, error) {
-	var listProto SingleSampleIntermediateList
-	if err := listProto.Unmarshal(bytes); err != nil {
-		return nil, errors.Wrap(err, "unmarshaling single sample list")
-	}
-	return listProto.Results, nil
-}
-
-var SingleSampleCodec = singleSampleCodec{}
-
 var SplitCountOverTime = &RangeVectorSplittingMetadata{
-	OperatorFactory: NewSplitOperatorFactory[SingleSampleIntermediate](
+	OperatorFactory: NewSplitOperatorFactory[CountOverTimeIntermediate](
 		countOverTimeGenerate,
 		countOverTimeCombine,
-		SingleSampleCodec,
+		CountOverTimeCodec,
 		CountOverTime,
 		FUNCTION_COUNT_OVER_TIME,
 	),
 	RangeVectorChildIndex: 0,
 }
 
-func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (SingleSampleIntermediate, error) {
+func countOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (CountOverTimeIntermediate, error) {
 	count, hasValue, _, err := countOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
 	if err != nil {
-		return SingleSampleIntermediate{}, err
+		return CountOverTimeIntermediate{}, err
 	}
-	return SingleSampleIntermediate{F: count, HasFloat: hasValue}, nil
+	return CountOverTimeIntermediate{F: count, HasFloat: hasValue}, nil
 }
 
-func countOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func countOverTimeCombine(pieces []CountOverTimeIntermediate, _ int64, _ int64, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	totalCount := 0.0
 	hasValue := false
 
@@ -199,11 +193,32 @@ func countOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, _
 	return totalCount, hasValue, nil, nil
 }
 
+type countOverTimeCodec struct{}
+
+func (c countOverTimeCodec) Marshal(results []CountOverTimeIntermediate) ([]byte, error) {
+	listProto := &CountOverTimeIntermediateList{Results: results}
+	listBytes, err := listProto.Marshal()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshaling count over time list")
+	}
+	return listBytes, nil
+}
+
+func (c countOverTimeCodec) Unmarshal(bytes []byte) ([]CountOverTimeIntermediate, error) {
+	var listProto CountOverTimeIntermediateList
+	if err := listProto.Unmarshal(bytes); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling count over time list")
+	}
+	return listProto.Results, nil
+}
+
+var CountOverTimeCodec = countOverTimeCodec{}
+
 var SplitMinOverTime = &RangeVectorSplittingMetadata{
-	OperatorFactory: NewSplitOperatorFactory[SingleSampleIntermediate](
+	OperatorFactory: NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 		minOverTimeGenerate,
 		minOverTimeCombine,
-		SingleSampleCodec,
+		MinMaxOverTimeCodec,
 		MinOverTime,
 		FUNCTION_MIN_OVER_TIME,
 	),
@@ -215,29 +230,27 @@ func minOverTimeGenerate(
 	_ []types.ScalarData,
 	emitAnnotation types.EmitAnnotationFunc,
 	_ *limiter.MemoryConsumptionTracker,
-) (SingleSampleIntermediate, error) {
-	f, hasFloat, h, err := minOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
+) (MinMaxOverTimeIntermediate, error) {
+	f, hasFloat, _, err := minOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
 	if err != nil {
-		return SingleSampleIntermediate{}, err
+		return MinMaxOverTimeIntermediate{}, err
 	}
 
-	result := SingleSampleIntermediate{
+	result := MinMaxOverTimeIntermediate{
 		F:        f,
 		HasFloat: hasFloat,
-	}
-
-	if h != nil {
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
-		result.H = &histProto
+		// minOverTime() always returns nil histogram, but we need to track if histograms were present
+		// so we can emit the proper annotation during combine
+		HasHistogram: step.Histograms.Any(),
 	}
 
 	return result, nil
 }
 
-func minOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func minOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+	minF := math.NaN()
 	hasFloat := false
 	hasHistogram := false
-	minF := math.NaN()
 
 	for _, p := range pieces {
 		if p.HasFloat {
@@ -246,50 +259,47 @@ func minOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, emi
 				minF = p.F
 			}
 		}
-		if p.H != nil {
+		if p.HasHistogram {
 			hasHistogram = true
 		}
 	}
 
 	if hasFloat && hasHistogram {
-		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
-		return 0, false, nil, nil
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
 	return minF, hasFloat, nil, nil
 }
 
 var SplitMaxOverTime = &RangeVectorSplittingMetadata{
-	OperatorFactory: NewSplitOperatorFactory[SingleSampleIntermediate](
+	OperatorFactory: NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 		maxOverTimeGenerate,
 		maxOverTimeCombine,
-		SingleSampleCodec,
+		MinMaxOverTimeCodec,
 		MaxOverTime,
 		FUNCTION_MAX_OVER_TIME,
 	),
 	RangeVectorChildIndex: 0,
 }
 
-func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (SingleSampleIntermediate, error) {
-	f, hasFloat, h, err := maxOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
+func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, error) {
+	f, hasFloat, _, err := maxOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
 	if err != nil {
-		return SingleSampleIntermediate{}, err
+		return MinMaxOverTimeIntermediate{}, err
 	}
 
-	result := SingleSampleIntermediate{
+	result := MinMaxOverTimeIntermediate{
 		F:        f,
 		HasFloat: hasFloat,
-	}
-
-	if h != nil {
-		histProto := mimirpb.FromFloatHistogramToHistogramProto(0, h)
-		result.H = &histProto
+		// maxOverTime() always returns nil histogram, but we need to track if histograms were present
+		// so we can emit the proper annotation during combine
+		HasHistogram: step.Histograms.Any(),
 	}
 
 	return result, nil
 }
 
-func maxOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
+func maxOverTimeCombine(pieces []MinMaxOverTimeIntermediate, _ int64, _ int64, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (float64, bool, *histogram.FloatHistogram, error) {
 	hasFloat := false
 	hasHistogram := false
 	maxF := math.NaN()
@@ -301,15 +311,36 @@ func maxOverTimeCombine(pieces []SingleSampleIntermediate, _ int64, _ int64, emi
 				maxF = p.F
 			}
 		}
-		if p.H != nil {
+		if p.HasHistogram {
 			hasHistogram = true
 		}
 	}
 
+	// Emit the same annotation that the non-split version emits when there are both floats and histograms
 	if hasFloat && hasHistogram {
-		emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
-		return 0, false, nil, nil
+		emitAnnotation(annotations.NewHistogramIgnoredInMixedRangeInfo)
 	}
 
 	return maxF, hasFloat, nil, nil
 }
+
+type minMaxOverTimeCodec struct{}
+
+func (c minMaxOverTimeCodec) Marshal(results []MinMaxOverTimeIntermediate) ([]byte, error) {
+	listProto := &MinMaxOverTimeIntermediateList{Results: results}
+	listBytes, err := listProto.Marshal()
+	if err != nil {
+		return nil, errors.Wrap(err, "marshaling min/max over time list")
+	}
+	return listBytes, nil
+}
+
+func (c minMaxOverTimeCodec) Unmarshal(bytes []byte) ([]MinMaxOverTimeIntermediate, error) {
+	var listProto MinMaxOverTimeIntermediateList
+	if err := listProto.Unmarshal(bytes); err != nil {
+		return nil, errors.Wrap(err, "unmarshaling min/max over time list")
+	}
+	return listProto.Results, nil
+}
+
+var MinMaxOverTimeCodec = minMaxOverTimeCodec{}
