@@ -304,7 +304,7 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 		return nil, errors.Errorf("BlocksStoreQueryable is not running: %v", s)
 	}
 
-	return &blocksStoreQuerier{
+	baseQuerier := &blocksStoreQuerier{
 		minT:                     mint,
 		maxT:                     maxt,
 		finder:                   q.finder,
@@ -316,7 +316,16 @@ func (q *BlocksStoreQueryable) Querier(mint, maxt int64) (storage.Querier, error
 		consistency:              q.consistency,
 		logger:                   q.logger,
 		queryStoreAfter:          q.queryStoreAfter,
-	}, nil
+	}
+
+	// Wrap with resource querier cache to support info() PromQL function
+	return NewResourceQuerierCache(
+		baseQuerier,
+		&blocksResourceFetcher{blocksQueryable: q},
+		mint,
+		maxt,
+		q.logger,
+	), nil
 }
 
 type blocksStoreQuerier struct {

@@ -69,14 +69,23 @@ type distributorQueryable struct {
 }
 
 func (d distributorQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
-	return &distributorQuerier{
+	baseQuerier := &distributorQuerier{
 		logger:       d.logger,
 		distributor:  d.distributor,
 		mint:         mint,
 		maxt:         maxt,
 		queryMetrics: d.queryMetrics,
 		cfgProvider:  d.cfgProvider,
-	}, nil
+	}
+
+	// Wrap with resource querier cache to support info() PromQL function
+	return NewResourceQuerierCache(
+		baseQuerier,
+		&distributorResourceFetcher{distributor: d.distributor},
+		mint,
+		maxt,
+		d.logger,
+	), nil
 }
 
 type distributorQuerier struct {
