@@ -280,7 +280,8 @@ func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Du
 	return time.Duration(math.MaxInt64)
 }
 
-// memoryTracking queryable will return querier that will return MemoryTrackingSeriesSet.
+// memoryTracking queryable will return querier that will return MemoryTrackingSeriesSet which will decrease
+// memory consumption as the series is iterated..
 type memoryTrackingQueryable struct {
 	inner storage.Queryable
 }
