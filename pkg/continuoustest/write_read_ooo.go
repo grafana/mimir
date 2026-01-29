@@ -108,9 +108,21 @@ func (t *WriteReadOOOTest) Run(ctx context.Context, now time.Time) error {
 }
 
 func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLimiter *rate.Limiter, errs *multierror.MultiError, metricName string, generateSeries generateSeriesFunc) {
-	// Samples aligned with the minute are written in-order.
-	// Samples at :20 and :40 past the minute are written out-of-order by approximatelyMaxOOOLag.
-	// We cannot use a label to differentiate between in-order and out-of-order samples, it needs to be the same actual series.
+	// Samples aligned with the minute (:00) are always written in-order, in realtime.
+	// Samples at :20 and :40 past the minute are written out-of-order, lagging behind by MaxOOOLag.
+	// These must be within the exact same series, or else the writes aren't considered truly OOO. We can't differentiate them by label.
+	//
+	// A given series should look like the following (assuming MaxOOOLag = 1h):
+	//
+	//       past                                        now - 1h                                  now
+	//         |                                            |                                       |
+	//         v                                            v                                       v
+	//         |-------- dense (every 20s) -----------------|--------- sparse (every 1m) ----------|
+	//
+	//         .        .        .        .        .        .       .        .        .        .  <- in-order (:00)
+	//            o  o     o  o     o  o     o  o     o  o                                        <- out-of-order(:20, :40)
+	//         :00:20:40:00:20:40:00:20:40:00:20:40:00:20:40:00      :00      :00      :00      :00
+	//
 
 	// First, write the in-order (minute-aligned) data.
 	for timestamp := t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.inOrderSamples); !timestamp.After(now); timestamp = t.nextInorderWriteTimestamp(now, inorderWriteInterval, &t.inOrderSamples) {
