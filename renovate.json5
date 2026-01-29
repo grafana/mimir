@@ -14,6 +14,16 @@
       ],
       datasourceTemplate: 'docker',
     },
+    {
+      customType: 'regex',
+      description: 'Update distroless image references in Makefile',
+      managerFilePatterns: ['Makefile'],
+      matchStrings: [
+        "(?<depName>gcr\\.io/distroless/[\\w-]+)@(?<currentDigest>sha256:[a-f0-9]+)",
+      ],
+      currentValueTemplate: 'latest',
+      datasourceTemplate: 'docker',
+    },
   ],
   baseBranchPatterns: [
     'main',
