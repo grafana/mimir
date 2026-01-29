@@ -3,11 +3,14 @@
 package limiter
 
 import (
+	"sync"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
 // SeriesDeduplicator is used to deduplicate series and track the unique series memory consumption.
 type SeriesDeduplicator struct {
+	uniqueSeriesMx sync.Mutex
 	uniqueSeries   map[uint64]labels.Labels
 	conflictSeries map[uint64][]labels.Labels
 
@@ -17,18 +20,22 @@ type SeriesDeduplicator struct {
 
 func NewSeriesDeduplicator() *SeriesDeduplicator {
 	return &SeriesDeduplicator{
-		uniqueSeries: make(map[uint64]labels.Labels),
-		hashFunc:     func(l labels.Labels) uint64 { return l.Hash() },
+		uniqueSeriesMx: sync.Mutex{},
+		uniqueSeries:   make(map[uint64]labels.Labels),
+		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
 	}
 }
 
 // Deduplicate checks if the given series has been seen before in this deduplicator's scope.
-// If it's a duplicate, it returns the previously seen labels .
+// If it's a duplicate, it returns the previously seen labels.
 // If it's new, it returns the input labels.
 //
 // This method handles hash collisions by checking label equality even when hashes match.
 func (sd *SeriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
 	fingerprint := sd.hashFunc(newLabels)
+
+	sd.uniqueSeriesMx.Lock()
+	defer sd.uniqueSeriesMx.Unlock()
 
 	// Check if we've seen this hash before
 	if existingLabels, foundDuplicate := sd.uniqueSeries[fingerprint]; !foundDuplicate {
@@ -68,6 +75,9 @@ func (sd *SeriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *M
 }
 
 func (sd *SeriesDeduplicator) seriesCount() int {
+	sd.uniqueSeriesMx.Lock()
+	defer sd.uniqueSeriesMx.Unlock()
+
 	count := len(sd.uniqueSeries)
 	for _, conflicts := range sd.conflictSeries {
 		count += len(conflicts)
