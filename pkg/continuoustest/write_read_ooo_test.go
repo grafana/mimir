@@ -140,16 +140,32 @@ func TestWriteReadOOOTest_Init(t *testing.T) {
 		require.Equal(t, now.Add(-30*time.Minute), oooHistory.queryMaxTime)
 	})
 
-	t.Run("the most recent previously written in-order sample is older than 1h ago", func(t *testing.T) {
-		// client := newMockClient()
-		// TODO: Set up mocks.
-		//
-		// reg := prometheus.NewPedanticRegistry()
-		// test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
-		//
-		// require.NoError(t, test.Init(context.Background(), now))
-		//
-		// TODO: Implement assertions.
+	t.Run("the most recent previously written in-order sample is older than maxOooWriteAge", func(t *testing.T) {
+		client := newMockClient()
+		expQuery := "sum(max_over_time(mimir_continuous_sine_wave_ooo_v2[1s]))"
+		existingData := model.Matrix{{
+			Values: generateFloatSamplesSum(now.Add(-4*time.Hour), now.Add(-3*time.Hour), cfgOOO.NumSeries, inorderWriteInterval, generateSineWaveValue),
+		}}
+
+		inOrderFrom := now.Add(-24 * time.Hour).Add(inorderWriteInterval)
+		inOrderTo := now
+		client.On("QueryRange", mock.Anything, expQuery, inOrderFrom, inOrderTo, inorderWriteInterval, mock.Anything).
+			Return(existingData, nil)
+
+		reg := prometheus.NewPedanticRegistry()
+		test := NewWriteReadOOOTest(cfgOOO, client, logger, reg)
+		err := test.Init(context.Background(), now)
+
+		require.NoError(t, err)
+		client.AssertNumberOfCalls(t, "QueryRange", 1)
+		inOrderHistory := test.inOrderSamples
+		require.Zero(t, inOrderHistory.lastWrittenTimestamp)
+		require.Zero(t, inOrderHistory.queryMinTime)
+		require.Zero(t, inOrderHistory.queryMaxTime)
+		oooHistory := test.outOfOrderSamples
+		require.Zero(t, oooHistory.lastWrittenTimestamp)
+		require.Zero(t, oooHistory.queryMinTime)
+		require.Zero(t, oooHistory.queryMaxTime)
 	})
 
 	t.Run("the most recent previously written OOO sample is older than 1h ago", func(t *testing.T) {
