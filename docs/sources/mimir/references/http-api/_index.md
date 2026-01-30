@@ -44,7 +44,7 @@ This document groups API endpoints by service. Note that the API endpoints are e
 | [Influx](#influx) | Distributor | `POST /api/v1/push/influx/write` |
 | [Tenants stats](#tenants-stats) | Distributor | `GET /distributor/all_user_stats` |
 | [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
-| [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
+| [Flush blocks](#flush-blocks) | Ingester | `GET,POST /ingester/flush` |
 | [Prepare for Shutdown](#prepare-for-shutdown) | Ingester | `GET,POST,DELETE /ingester/prepare-shutdown` |
 | [Shutdown](#shutdown) | Ingester | `POST /ingester/shutdown` |
 | [Prepare Partition Downscale](#prepare-partition-downscale) | Ingester | `GET,POST,DELETE /ingester/prepare-partition-downscale` |
@@ -382,7 +382,7 @@ This endpoint displays a web page with the current status of the HA tracker, inc
 
 The following endpoints relate to the [ingester](../architecture/components/ingester/).
 
-### Flush chunks / blocks
+### Flush blocks
 
 ```
 GET,POST /ingester/flush

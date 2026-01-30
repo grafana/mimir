@@ -12,12 +12,15 @@ import (
 )
 
 func finalize(ctx context.Context, resp RemoteExecutionResponse, annos *annotations.Annotations, queryStats *types.QueryStats) error {
-	newAnnos, remoteStats, err := resp.GetEvaluationInfo(ctx)
+	newAnnos, remoteStats, err := resp.Finalize(ctx)
 	if err != nil {
 		return err
 	}
 
-	annos.Merge(*newAnnos)
+	if newAnnos != nil {
+		annos.Merge(*newAnnos)
+	}
+
 	queryStats.IncrementSamples(int64(remoteStats.SamplesProcessed))
 
 	if localStats := stats.FromContext(ctx); localStats != nil {

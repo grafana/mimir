@@ -32,7 +32,7 @@ func (m *MatrixSelector) IsSplittable() bool {
 var _ planning.SplitNode = &MatrixSelector{}
 
 func (m *MatrixSelector) Describe() string {
-	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed)
+	return describeSelector(m.Matchers, m.Timestamp, m.Offset, &m.Range, m.SkipHistogramBuckets, m.Anchored, m.Smoothed, m.CounterAware, m.ProjectionLabels, m.ProjectionInclude)
 }
 
 // RangeVectorSplittingCacheKey returns the cache key for the matrix selector.
@@ -105,7 +105,8 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		m.Offset == otherMatrixSelector.Offset &&
 		m.Range == otherMatrixSelector.Range &&
 		m.Anchored == otherMatrixSelector.Anchored &&
-		m.Smoothed == otherMatrixSelector.Smoothed
+		m.Smoothed == otherMatrixSelector.Smoothed &&
+		m.CounterAware == otherMatrixSelector.CounterAware
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {
@@ -115,6 +116,13 @@ func (m *MatrixSelector) MergeHints(other planning.Node) error {
 	}
 
 	m.SkipHistogramBuckets = m.SkipHistogramBuckets && otherMatrixSelector.SkipHistogramBuckets
+	m.ProjectionInclude, m.ProjectionLabels = mergeProjectionLabels(
+		m.ProjectionInclude,
+		m.ProjectionLabels,
+		otherMatrixSelector.ProjectionInclude,
+		otherMatrixSelector.ProjectionLabels,
+	)
+
 	return nil
 }
 
@@ -145,13 +153,16 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 		MemoryConsumptionTracker: params.MemoryConsumptionTracker,
 		Anchored:                 m.Anchored,
 		Smoothed:                 m.Smoothed,
+		CounterAware:             m.CounterAware,
+		ProjectionInclude:        m.ProjectionInclude,
+		ProjectionLabels:         m.ProjectionLabels,
 	}
 
 	if m.Anchored || m.Smoothed {
 		selector.LookbackDelta = params.LookbackDelta
 	}
 
-	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats, m.Anchored, m.Smoothed)
+	o := selectors.NewRangeVectorSelector(selector, params.MemoryConsumptionTracker, params.QueryStats)
 
 	return planning.NewSingleUseOperatorFactory(o), nil
 }

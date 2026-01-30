@@ -569,7 +569,15 @@ func ReuseSliceOnly(ts []PreallocTimeseries) {
 // TimeseriesFromPool retrieves a pointer to a TimeSeries from a sync.Pool.
 // ReuseTimeseries should be called once done, unless ReuseSlice was called on the slice that contains this TimeSeries.
 func TimeseriesFromPool() *TimeSeries {
-	return timeSeriesPool.Get().(*TimeSeries)
+	ts := timeSeriesPool.Get().(*TimeSeries)
+
+	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
+	// which is indicative of a hard bug that we want to catch as soon as possible.
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
+		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
+	}
+
+	return ts
 }
 
 // ReuseTimeseries puts the timeseries back into a sync.Pool for reuse.
@@ -603,6 +611,7 @@ func ReuseTimeseries(ts *TimeSeries) {
 	}
 
 	ts.CreatedTimestamp = 0
+	ts.SkipUnmarshalingExemplars = false
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)

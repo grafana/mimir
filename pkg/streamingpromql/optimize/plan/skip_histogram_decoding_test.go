@@ -346,7 +346,7 @@ func TestSkipHistogramDecodingOptimizationPass(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)

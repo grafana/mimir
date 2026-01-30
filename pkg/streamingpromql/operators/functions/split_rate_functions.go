@@ -70,7 +70,8 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int, rangeStart, ran
 		}, nil
 	}
 
-	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail, false, false, promql.FPoint{}, false, promql.FPoint{})
+	// Reuse the logic from rate_increase.go
+	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail)
 
 	return RateIntermediate{
 		FirstSample: &mimirpb.Sample{

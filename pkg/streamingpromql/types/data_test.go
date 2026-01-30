@@ -334,23 +334,84 @@ func TestQueryTimeRange(t *testing.T) {
 	}
 }
 
-func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
+func TestRangeVectorStepData_SubStep(t *testing.T) {
 	memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
 	floats := NewFPointRingBuffer(memoryTracker)
 	histograms := NewHPointRingBuffer(memoryTracker)
 
+	// Add float points at T=110, 120, 130, 140, 150, 160, 170, 180, 190
+	for i := int64(110); i <= 190; i += 10 {
+		require.NoError(t, floats.Append(promql.FPoint{T: i, F: float64(i)}))
+	}
+
+	// Add histogram points at T=115, 135, 155, 175
+	for i := int64(115); i <= 175; i += 20 {
+		require.NoError(t, histograms.Append(promql.HPoint{T: i, H: &histogram.FloatHistogram{Count: float64(i)}}))
+	}
+
 	step := &RangeVectorStepData{
-		StepT:      150,
+		StepT:      200,
 		RangeStart: 100,
 		RangeEnd:   200,
 		Floats:     floats.ViewUntilSearchingBackwards(200, nil),
 		Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
 	}
 
+	t.Run("single substep", func(t *testing.T) {
+		substep, err := step.SubStep(120, 160, nil)
+		require.NoError(t, err)
+
+		require.Equal(t, int64(200), substep.StepT)
+		require.Equal(t, int64(120), substep.RangeStart)
+		require.Equal(t, int64(160), substep.RangeEnd)
+
+		// Verify floats: should have T=130, 140, 150, 160 (4 points)
+		require.Equal(t, 4, substep.Floats.Count())
+		require.Equal(t, int64(130), substep.Floats.First().T)
+		last, hasLast := substep.Floats.Last()
+		require.True(t, hasLast)
+		require.Equal(t, int64(160), last.T)
+
+		// Verify histograms: should have T=135, 155 (2 points)
+		require.Equal(t, 2, substep.Histograms.Count())
+		require.Equal(t, int64(135), substep.Histograms.First().T)
+		lastH, hasLastH := substep.Histograms.Last()
+		require.True(t, hasLastH)
+		require.Equal(t, int64(155), lastH.T)
+	})
+
+	t.Run("substep with no matching points", func(t *testing.T) {
+		substep, err := step.SubStep(195, 200, nil)
+		require.NoError(t, err)
+
+		require.Equal(t, int64(200), substep.StepT)
+		require.Equal(t, int64(195), substep.RangeStart)
+		require.Equal(t, int64(200), substep.RangeEnd)
+		require.Equal(t, 0, substep.Floats.Count())
+		require.Equal(t, 0, substep.Histograms.Count())
+	})
+
+	t.Run("substep spanning entire parent range", func(t *testing.T) {
+		// Create substep for entire parent range (100, 200]
+		substep, err := step.SubStep(100, 200, nil)
+		require.NoError(t, err)
+
+		// Should have all points
+		require.Equal(t, 9, substep.Floats.Count())
+		require.Equal(t, 4, substep.Histograms.Count())
+		require.Equal(t, int64(110), substep.Floats.First().T)
+		last, _ := substep.Floats.Last()
+		require.Equal(t, int64(190), last.T)
+	})
+}
+
+func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 	testCases := []struct {
 		name        string
 		rangeStart  int64
 		rangeEnd    int64
+		smoothed    bool
+		anchored    bool
 		expectedErr string
 	}{
 		{
@@ -363,7 +424,7 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 			name:        "rangeEnd after parent end",
 			rangeStart:  150,
 			rangeEnd:    250,
-			expectedErr: "substep start (250) is after parent step's end (200)",
+			expectedErr: "substep end (250) is after parent step's end (200)",
 		},
 		{
 			name:        "rangeStart equals end",
@@ -383,11 +444,39 @@ func TestRangeVectorStepData_SubStep_ErrorCases(t *testing.T) {
 			rangeEnd:    250,
 			expectedErr: "substep start (50) is before parent step's start (100)",
 		},
+		{
+			name:        "smoothed not supported",
+			rangeStart:  120,
+			rangeEnd:    150,
+			smoothed:    true,
+			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
+		},
+		{
+			name:        "anchored not supported",
+			rangeStart:  120,
+			rangeEnd:    150,
+			anchored:    true,
+			expectedErr: "substep not supported for range vectors with anchored or smoothed modifiers",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, err := step.SubStep(tc.rangeStart, tc.rangeEnd, SubStepHints{})
+			memoryTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
+			floats := NewFPointRingBuffer(memoryTracker)
+			histograms := NewHPointRingBuffer(memoryTracker)
+
+			step := &RangeVectorStepData{
+				StepT:      150,
+				RangeStart: 100,
+				RangeEnd:   200,
+				Smoothed:   tc.smoothed,
+				Anchored:   tc.anchored,
+				Floats:     floats.ViewUntilSearchingBackwards(200, nil),
+				Histograms: histograms.ViewUntilSearchingBackwards(200, nil),
+			}
+
+			_, err := step.SubStep(tc.rangeStart, tc.rangeEnd, nil)
 			require.EqualError(t, err, tc.expectedErr)
 		})
 	}

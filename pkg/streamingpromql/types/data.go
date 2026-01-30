@@ -6,6 +6,7 @@
 package types
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -162,61 +163,39 @@ type RangeVectorStepData struct {
 
 	// Smoothed is set to true when the smoothed modifier has been requested on a range query
 	Smoothed bool
-
-	// SmoothedBasisForHeadPoint and SmoothedBasisForTailPoint are set when a smoothed modifier has been applied to a range vector selector.
-	// They are derived points using samples from outside the range and can not be re-calculated from Floats.
-	// Either can be zero if there was no point within the lookback window immediately before or after the range, respectively.
-	//
-	// When the smoothed range is used by a rate/increase function the points on the range boundaries
-	// are calculated differently to accommodate counter arithmetic for the derived values spanning the boundary.
-	// To avoid needing to re-calculate these alternate points they are included here for the rate/increase function
-	// handler to substitute in.
-	SmoothedBasisForHeadPoint    promql.FPoint
-	SmoothedBasisForTailPoint    promql.FPoint
-	SmoothedBasisForHeadPointSet bool
-	SmoothedBasisForTailPointSet bool
 }
 
-type SubStepHints struct {
-	FloatHint     int
-	HistogramHint int
-}
+// SubStep returns a substep with the same StepT but filtered to range (rangeStart, rangeEnd].
+// If previousSubStep is provided, it will be reused to create the new substep. previousSubStep must be a previous
+// substep for the same parent step, and the next step is assumed to cover a later range (we only start searching from
+// after the samples of the previous subviews).
+func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, previousSubStep *RangeVectorStepData) (*RangeVectorStepData, error) {
+	if s.Anchored || s.Smoothed {
+		return nil, errors.New("substep not supported for range vectors with anchored or smoothed modifiers")
+	}
 
-// SubStep returns a new RangeVectorStepData with the same StepT but filtered samples for the specified time range.
-// This creates filtered views of the sample buffers without copying data.
-// The hints parameter is used to optimize consecutive SubStep calls - pass an empty SubStepHints{} for the first call, then reuse the returned hints.
-func (s *RangeVectorStepData) SubStep(rangeStart, rangeEnd int64, hints SubStepHints) (*RangeVectorStepData, SubStepHints, error) {
-	// Validate that the substep range is within the parent step's range
 	if rangeStart < s.RangeStart {
-		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
+		return nil, fmt.Errorf("substep start (%d) is before parent step's start (%d)", rangeStart, s.RangeStart)
 	}
 	if rangeEnd > s.RangeEnd {
-		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
+		return nil, fmt.Errorf("substep end (%d) is after parent step's end (%d)", rangeEnd, s.RangeEnd)
 	}
 	if rangeStart >= rangeEnd {
-		return nil, SubStepHints{}, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
+		return nil, fmt.Errorf("substep start (%d) must be less than end (%d)", rangeStart, rangeEnd)
 	}
 
-	newStep := &RangeVectorStepData{
-		StepT:      s.StepT,
-		RangeStart: rangeStart,
-		RangeEnd:   rangeEnd,
+	if previousSubStep == nil {
+		previousSubStep = &RangeVectorStepData{}
 	}
 
-	// Filter floats to only include points in the range (rangeStart, rangeEnd]
-	// s.Floats is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
-	floatSubview, floatEndIdx := s.Floats.SubView(rangeStart, rangeEnd, hints.FloatHint)
-	newStep.Floats = &floatSubview
+	previousSubStep.StepT = s.StepT
+	previousSubStep.RangeStart = rangeStart
+	previousSubStep.RangeEnd = rangeEnd
 
-	// Filter histograms to only include points in the range (rangeStart, rangeEnd]
-	// s.Histograms is assumed to be non-nil (steps from NextStepSamples always have non-nil views).
-	histogramSubview, histogramEndIdx := s.Histograms.SubView(rangeStart, rangeEnd, hints.HistogramHint)
-	newStep.Histograms = &histogramSubview
+	previousSubStep.Floats = s.Floats.SubView(rangeStart, rangeEnd, previousSubStep.Floats)
+	previousSubStep.Histograms = s.Histograms.SubView(rangeStart, rangeEnd, previousSubStep.Histograms)
 
-	return newStep, SubStepHints{
-		FloatHint:     floatEndIdx,
-		HistogramHint: histogramEndIdx,
-	}, nil
+	return previousSubStep, nil
 }
 
 type ScalarData struct {

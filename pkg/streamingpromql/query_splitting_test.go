@@ -407,7 +407,7 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	planner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), &NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(ts), false, &NoopPlanningObserver{})
 	require.NoError(t, err)
 	require.NotNil(t, plan)
 
@@ -793,7 +793,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	cacheBackend := newTestCacheBackend()
 	cacheFactory := cache.NewResultsCacheWithBackend(cacheBackend, registry, log.NewNopLogger())
 
-	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(registry), planner, cacheFactory)
+	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(registry), planner, cacheFactory)
 	require.NoError(t, err)
 
 	return engine, cacheBackend
@@ -810,7 +810,7 @@ func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 
-	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 
 	return backend, mimirEngine
@@ -999,7 +999,7 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 		}
 	}
 
-	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0), stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), queryPlanner, irCache)
 	require.NoError(t, err)
 	// Query at 12h with 7h range: (5h, 12h]
 	// Expected splits:

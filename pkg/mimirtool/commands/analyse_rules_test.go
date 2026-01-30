@@ -9,6 +9,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -57,12 +58,12 @@ func TestParseMetricsInRuleFile(t *testing.T) {
 	output := &analyze.MetricsInRuler{}
 	output.OverallMetrics = make(map[string]struct{})
 
-	nss, err := rules.ParseFiles("mimir", []string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation)
+	nss, err := rules.ParseFiles("mimir", []string{"testdata/prometheus_rules.yaml"}, model.UTF8Validation, log.NewNopLogger())
 	require.NoError(t, err)
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
-			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace)
+			err := analyze.ParseMetricsInRuleGroup(output, group, ns.Namespace, log.NewNopLogger())
 			require.NoError(t, err)
 		}
 	}

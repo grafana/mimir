@@ -320,7 +320,7 @@ func TestMergeIteratorSeek(t *testing.T) {
 		app, err := ch.Appender()
 		require.NoError(t, err)
 		for _, ts := range samples {
-			app.Append(ts, 1)
+			app.Append(0, ts, 1)
 		}
 
 		genericChunks = append(genericChunks, NewGenericChunk(samples[0], samples[len(samples)-1], func(reuse chunk.Iterator) chunk.Iterator {

@@ -14,6 +14,9 @@
 
     // Controls whether the multi (virtual) zone store-gateway should also be deployed multi-AZ.
     multi_zone_store_gateway_multi_az_enabled: $._config.multi_zone_read_path_multi_az_enabled,
+    multi_zone_store_gateway_zone_a_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+    multi_zone_store_gateway_zone_b_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
+    multi_zone_store_gateway_zone_c_multi_az_enabled: $._config.multi_zone_store_gateway_multi_az_enabled,
   },
 
   local container = $.core.v1.container,
@@ -23,10 +26,10 @@
   local servicePort = $.core.v1.servicePort,
   local podAntiAffinity = $.apps.v1.deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
 
-  local isMultiAZEnabled = $._config.multi_zone_store_gateway_multi_az_enabled,
-  local isZoneAEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isZoneBEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
-  local isZoneCEnabled = isMultiAZEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
+  local isMultiAZEnabled = $._config.multi_zone_store_gateway_zone_a_multi_az_enabled || $._config.multi_zone_store_gateway_zone_b_multi_az_enabled || $._config.multi_zone_store_gateway_zone_c_multi_az_enabled,
+  local isZoneAEnabled = $._config.multi_zone_store_gateway_zone_a_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isZoneBEnabled = $._config.multi_zone_store_gateway_zone_b_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isZoneCEnabled = $._config.multi_zone_store_gateway_zone_c_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
   assert !isMultiAZEnabled || $._config.multi_zone_store_gateway_enabled : 'store-gateway multi-AZ deployment requires store-gateway multi-zone to be enabled',
   assert !isMultiAZEnabled || $._config.multi_zone_memcached_enabled : 'store-gateway multi-AZ deployment requires memcached multi-zone to be enabled',
@@ -93,14 +96,14 @@
     )) +
     (if std.length(envmap) > 0 then container.withEnvMap(std.prune(envmap)) else {}),
 
-  newStoreGatewayZoneStatefulSet(zone, container, nodeAffinityMatchers=[])::
+  newStoreGatewayZoneStatefulSet(zone, container, nodeAffinityMatchers=[], rolloutGroup='store-gateway')::
     local name = 'store-gateway-zone-%s' % zone;
 
     $.newStoreGatewayStatefulSet(name, container, withAntiAffinity=false, nodeAffinityMatchers=nodeAffinityMatchers) +
-    statefulSet.mixin.metadata.withLabels({ 'rollout-group': 'store-gateway' }) +
+    statefulSet.mixin.metadata.withLabels({ 'rollout-group': rolloutGroup }) +
     statefulSet.mixin.metadata.withAnnotations({ 'rollout-max-unavailable': std.toString($._config.multi_zone_store_gateway_max_unavailable) }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': 'store-gateway' }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': 'store-gateway' }) +
+    statefulSet.mixin.spec.template.metadata.withLabels({ name: name, 'rollout-group': rolloutGroup }) +
+    statefulSet.mixin.spec.selector.withMatchLabels({ name: name, 'rollout-group': rolloutGroup }) +
     statefulSet.mixin.spec.updateStrategy.withType('OnDelete') +
     statefulSet.mixin.spec.withReplicas(std.ceil($._config.multi_zone_store_gateway_replicas / 3)) +
     if $._config.store_gateway_allow_multiple_replicas_on_same_node then {} else {
@@ -111,7 +114,7 @@
         podAntiAffinity.withRequiredDuringSchedulingIgnoredDuringExecution([
           podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.new() +
           podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.mixin.labelSelector.withMatchExpressions([
-            { key: 'rollout-group', operator: 'In', values: ['store-gateway'] },
+            { key: 'rollout-group', operator: 'In', values: [rolloutGroup] },
             { key: 'name', operator: 'NotIn', values: [name] },
           ]) +
           podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.withTopologyKey('kubernetes.io/hostname'),

@@ -233,8 +233,6 @@ func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 	// set explicitly to avoid reflection complexity in handling these
 	data.Floats = fpoints.ViewAll(nil)
 	data.Histograms = hpoints.ViewUntilSearchingBackwards(0, nil)
-	data.SmoothedBasisForHeadPoint = promql.FPoint{T: rand.Int64(), F: rand.Float64()}
-	data.SmoothedBasisForTailPoint = promql.FPoint{T: rand.Int64(), F: rand.Float64()}
 
 	v := reflect.ValueOf(data).Elem() // reflect on struct value
 	r := v.Type()                     // struct type
@@ -244,7 +242,7 @@ func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 		fieldType := r.Field(i)
 
 		// we have already poked in values for these
-		if fieldType.Name == "Floats" || fieldType.Name == "Histograms" || fieldType.Name == "SmoothedBasisForHeadPoint" || fieldType.Name == "SmoothedBasisForTailPoint" {
+		if fieldType.Name == "Floats" || fieldType.Name == "Histograms" {
 			continue
 		}
 
@@ -258,7 +256,7 @@ func TestRangeVectorOperator_StepDataStructure(t *testing.T) {
 		}
 	}
 
-	clonedStepData, err := cloneStepData(data, memoryConsumptionTracker)
+	clonedStepData, err := cloneStepData(data)
 
 	require.NoError(t, err)
 	require.Equal(t, data, clonedStepData.stepData)
@@ -273,32 +271,15 @@ func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {
 				Anchored: true,
 			},
 		},
-		"smoothed - no smoothed points": {
+		"smoothed": {
 			stepData: types.RangeVectorStepData{
 				Smoothed: true,
 			},
 		},
-		"smoothed - smoothed head": {
+		"not anchored or smoothed": {
 			stepData: types.RangeVectorStepData{
-				Smoothed:                     true,
-				SmoothedBasisForHeadPointSet: true,
-				SmoothedBasisForHeadPoint:    promql.FPoint{T: 10, F: 50.5},
-			},
-		},
-		"smoothed - smoothed tail": {
-			stepData: types.RangeVectorStepData{
-				Smoothed:                     true,
-				SmoothedBasisForTailPointSet: true,
-				SmoothedBasisForTailPoint:    promql.FPoint{T: 20, F: 30.5},
-			},
-		},
-		"smoothed - smoothed head and tail": {
-			stepData: types.RangeVectorStepData{
-				Smoothed:                     true,
-				SmoothedBasisForHeadPointSet: true,
-				SmoothedBasisForTailPointSet: true,
-				SmoothedBasisForHeadPoint:    promql.FPoint{T: 10, F: 50.5},
-				SmoothedBasisForTailPoint:    promql.FPoint{T: 20, F: 30.5},
+				Anchored: false,
+				Smoothed: false,
 			},
 		},
 	}
@@ -309,15 +290,11 @@ func TestRangeVectorOperator_Cloning_SmoothedAnchored(t *testing.T) {
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(ctx, 0, nil, "")
 			tc.stepData.Floats = types.NewFPointRingBuffer(memoryConsumptionTracker).ViewAll(nil)
 			tc.stepData.Histograms = types.NewHPointRingBuffer(memoryConsumptionTracker).ViewUntilSearchingBackwards(0, nil)
-			clonedStepData, err := cloneStepData(&tc.stepData, memoryConsumptionTracker)
+			clonedStepData, err := cloneStepData(&tc.stepData)
 			require.NoError(t, err)
 
 			require.Equal(t, tc.stepData.Smoothed, clonedStepData.stepData.Smoothed)
 			require.Equal(t, tc.stepData.Anchored, clonedStepData.stepData.Anchored)
-			require.Equal(t, tc.stepData.SmoothedBasisForHeadPointSet, clonedStepData.stepData.SmoothedBasisForHeadPointSet)
-			require.Equal(t, tc.stepData.SmoothedBasisForTailPointSet, clonedStepData.stepData.SmoothedBasisForTailPointSet)
-			require.Equal(t, tc.stepData.SmoothedBasisForHeadPoint, clonedStepData.stepData.SmoothedBasisForHeadPoint)
-			require.Equal(t, tc.stepData.SmoothedBasisForTailPoint, clonedStepData.stepData.SmoothedBasisForTailPoint)
 		})
 	}
 
@@ -592,6 +569,10 @@ func (t *testRangeVectorOperator) Prepare(_ context.Context, _ *types.PreparePar
 	return nil
 }
 
+func (t *testRangeVectorOperator) AfterPrepare(_ context.Context) error {
+	return nil
+}
+
 func (t *testRangeVectorOperator) Finalize(_ context.Context) error {
 	t.finalized = true
 	return nil
@@ -626,6 +607,10 @@ type failingRangeVectorOperator struct {
 	histogramsView *types.HPointRingBufferView
 
 	seriesRead int
+}
+
+func (o *failingRangeVectorOperator) AfterPrepare(ctx context.Context) error {
+	return nil
 }
 
 func (o *failingRangeVectorOperator) SeriesMetadata(_ context.Context, _ types.Matchers) ([]types.SeriesMetadata, error) {

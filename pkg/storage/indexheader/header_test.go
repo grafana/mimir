@@ -49,7 +49,7 @@ var implementations = []struct {
 				return NewStreamBinaryReader(ctx, log.NewNopLogger(), nil, dir, id, 32, NewStreamBinaryReaderMetrics(nil), Config{})
 			}
 
-			br, err := NewLazyBinaryReader(ctx, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
+			br, err := NewLazyBinaryReader(ctx, Config{}, readerFactory, log.NewNopLogger(), nil, dir, id, NewLazyBinaryReaderMetrics(nil), nil, gate.NewNoop())
 			require.NoError(t, err)
 			requireCleanup(t, br.Close)
 			return br
@@ -89,25 +89,11 @@ func TestReadersComparedToIndexHeader(t *testing.T) {
 	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, idIndexV2.String()), nil)
 	require.NoError(t, err)
 
-	metaIndexV1, err := block.ReadMetaFromDir("./testdata/index_format_v1")
-	require.NoError(t, err)
-	test.Copy(t, "./testdata/index_format_v1", filepath.Join(tmpDir, metaIndexV1.ULID.String()))
-
-	_, err = block.InjectThanosMeta(log.NewNopLogger(), filepath.Join(tmpDir, metaIndexV1.ULID.String()), block.ThanosMeta{
-		Labels: labels.FromStrings("ext1", "1").Map(),
-		Source: block.TestSource,
-	}, &metaIndexV1.BlockMeta)
-
-	require.NoError(t, err)
-	_, err = block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(tmpDir, metaIndexV1.ULID.String()), nil)
-	require.NoError(t, err)
-
 	for _, testBlock := range []struct {
 		version string
 		id      ulid.ULID
 	}{
 		{version: "v2", id: idIndexV2},
-		{version: "v1", id: metaIndexV1.ULID},
 	} {
 		t.Run(testBlock.version, func(t *testing.T) {
 			id := testBlock.id
@@ -241,8 +227,8 @@ func Test_DownsampleSparseIndexHeader(t *testing.T) {
 			// label names are equal between original and downsampled sparse index-headers
 			require.ElementsMatch(t, downsampleLabelNames, origLabelNames)
 
-			origIdxpbTbl := br1.postingsOffsetTable.NewSparsePostingOffsetTable()
-			downsampleIdxpbTbl := br2.postingsOffsetTable.NewSparsePostingOffsetTable()
+			origIdxpbTbl := br1.postingsOffsetTable.ToSparsePostingOffsetTable()
+			downsampleIdxpbTbl := br2.postingsOffsetTable.ToSparsePostingOffsetTable()
 
 			for name, vals := range origIdxpbTbl.Postings {
 				downsampledOffsets := downsampleIdxpbTbl.Postings[name].Offsets
@@ -290,7 +276,7 @@ func compareIndexToHeaderPostings(t *testing.T, indexByteSlice index.ByteSlice, 
 	})
 	require.NoError(t, err)
 
-	tbl := sbr.postingsOffsetTable.NewSparsePostingOffsetTable()
+	tbl := sbr.postingsOffsetTable.ToSparsePostingOffsetTable()
 
 	expLabelNames, err := ir.LabelNames(context.Background())
 	require.NoError(t, err)
@@ -429,7 +415,7 @@ func prepareIndexV2Block(t testing.TB, tmpDir string, bkt objstore.Bucket) *bloc
 }
 
 func TestReadersLabelValuesOffsets(t *testing.T) {
-	tests, blockID, blockDir := labelValuesTestCases(test.NewTB(t))
+	tests, blockID, blockDir, _ := labelValuesTestCases(test.NewTB(t))
 	for _, impl := range implementations {
 		t.Run(impl.name, func(t *testing.T) {
 			r := impl.factory(t, context.Background(), blockDir, blockID)
@@ -487,7 +473,7 @@ type labelValuesTestCase struct {
 	expected int
 }
 
-func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, blockID ulid.ULID, bucketDir string) {
+func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, blockID ulid.ULID, bucketDir string, bkt objstore.Bucket) {
 	const testLabelCount = 32
 	const testSeriesCount = 512
 
@@ -580,7 +566,7 @@ func labelValuesTestCases(t test.TB) (tests map[string][]labelValuesTestCase, bl
 		)
 	}
 
-	return tests, id, tmpDir
+	return tests, id, tmpDir, bkt
 }
 
 func BenchmarkBinaryWrite(t *testing.B) {

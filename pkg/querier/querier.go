@@ -48,7 +48,10 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var tracer = otel.Tracer("pkg/querier")
+var (
+	tracer                              = otel.Tracer("pkg/querier")
+	errConflictEnableDelayedNameRemoval = errors.New("conflicting settings for EnableDelayedNameRemoval")
+)
 
 // Config contains the configuration require to create a querier
 type Config struct {
@@ -181,7 +184,17 @@ func ShouldQueryBlockStore(queryStoreAfter time.Duration, now time.Time, queryMi
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, queryables []TimeRangeQueryable, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker, planner *streamingpromql.QueryPlanner) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
+func New(
+	cfg Config,
+	limits *validation.Overrides,
+	distributor Distributor,
+	queryables []TimeRangeQueryable,
+	reg prometheus.Registerer,
+	logger log.Logger,
+	tracker *activitytracker.ActivityTracker,
+	planner *streamingpromql.QueryPlanner,
+	limitsProvider streamingpromql.QueryLimitsProvider,
+) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, promql.QueryEngine, *streamingpromql.Engine, error) {
 	queryMetrics := stats.NewQueryMetrics(reg)
 
 	queryables = append(queryables, TimeRangeQueryable{
@@ -222,7 +235,6 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, quer
 	case PrometheusEngine:
 		eng = limiter.NewUnlimitedMemoryTrackerPromQLEngine(promql.NewEngine(opts))
 	case MimirEngine:
-		limitsProvider := NewTenantQueryLimitsProvider(limits)
 		var err error
 		streamingEngine, err = streamingpromql.NewEngine(mqeOpts, limitsProvider, queryMetrics, planner)
 		if err != nil {
@@ -871,6 +883,28 @@ func (p *TenantQueryLimitsProvider) GetMaxEstimatedMemoryConsumptionPerQuery(ctx
 	}
 
 	return totalLimit, nil
+}
+
+func (p *TenantQueryLimitsProvider) GetEnableDelayedNameRemoval(ctx context.Context) (bool, error) {
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	hasEnabled := false
+	hasDisabled := false
+	for _, tenantID := range tenantIDs {
+		if p.limits.EnableDelayedNameRemoval(tenantID) {
+			hasEnabled = true
+		} else {
+			hasDisabled = true
+		}
+	}
+	if hasEnabled && hasDisabled {
+		return false, fmt.Errorf("%w for tenants: %v", errConflictEnableDelayedNameRemoval, tenantIDs)
+	}
+
+	return hasEnabled, nil
 }
 
 type RequestMetrics struct {

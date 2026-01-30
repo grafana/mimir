@@ -163,6 +163,15 @@ func (m *FunctionOverRangeVectorSplit[T]) Prepare(ctx context.Context, params *t
 	return nil
 }
 
+func (m *FunctionOverRangeVectorSplit[T]) AfterPrepare(ctx context.Context) error {
+	for _, split := range m.splits {
+		if err := split.AfterPrepare(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // createSplits creates splits for the given time range, checking for cache entries and merging contiguous uncached
 // split ranges to create uncached splits.
 // Uses pre-computed split ranges from the optimization pass.
@@ -484,6 +493,7 @@ func (m *FunctionOverRangeVectorSplit[T]) Close() {
 
 type Split[T any] interface {
 	Prepare(ctx context.Context, params *types.PrepareParams) error
+	AfterPrepare(ctx context.Context) error
 	// SeriesMetadata returns the metadata for the split. It is expected to only be called once. The caller is expected
 	// to put the metadata slice and metadata back in the pool.
 	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
@@ -528,6 +538,10 @@ func NewCachedSplit[T any](
 }
 
 func (p *CachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
+	return nil
+}
+
+func (p *CachedSplit[T]) AfterPrepare(ctx context.Context) error {
 	return nil
 }
 
@@ -624,6 +638,10 @@ func (p *UncachedSplit[T]) Prepare(ctx context.Context, params *types.PreparePar
 	return p.operator.Prepare(ctx, params)
 }
 
+func (p *UncachedSplit[T]) AfterPrepare(ctx context.Context) error {
+	return p.operator.AfterPrepare(ctx)
+}
+
 func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	seriesMetadata, err := p.operator.SeriesMetadata(ctx, matchers)
 	if err != nil {
@@ -659,13 +677,14 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 		return nil, err
 	}
 	results := make([]T, len(p.ranges))
-	hints := types.SubStepHints{}
+	var previousSubStep *types.RangeVectorStepData
 	for rangeIdx, splitRange := range p.ranges {
 		var rangeStep *types.RangeVectorStepData
-		rangeStep, hints, err = step.SubStep(splitRange.Start, splitRange.End, hints)
+		rangeStep, err = step.SubStep(splitRange.Start, splitRange.End, previousSubStep)
 		if err != nil {
 			return nil, err
 		}
+		previousSubStep = rangeStep
 
 		capturingEmitAnnotation := func(generator types.AnnotationGenerator) {
 			p.emitAndCaptureAnnotation(rangeIdx, generator)

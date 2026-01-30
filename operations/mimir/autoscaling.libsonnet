@@ -442,6 +442,7 @@
     with_ready_trigger=false,
     with_memory_trigger=true,
     weight=1,
+    query_weight=null,  // If null, defaults to weight. Use to apply different weights to queries vs replicas.
     scale_down_period=null,
     extra_triggers=[],
     container_name='',
@@ -453,6 +454,7 @@
         namespace: $._config.namespace,
         extra_matchers: if extra_matchers == '' then '' else ',%s' % extra_matchers,
       },
+      local effectiveQueryWeight = if query_weight != null then query_weight else weight,
 
       min_replica_count: replicasWithWeight(min_replicas, weight),
       max_replica_count: replicasWithWeight(max_replicas, weight),
@@ -464,7 +466,7 @@
           metric_name: '%s%s_cpu_hpa_%s' %
                        ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-          query: queryWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, weight),
+          query: queryWithWeight(cpuHPAQuery(with_ready_trigger) % queryParameters, effectiveQueryWeight),
 
           // Threshold is expected to be a string
           threshold: std.toString(std.floor(cpuToMilliCPUInt(cpu_requests) * cpu_target_utilization)),
@@ -477,7 +479,7 @@
                metric_name: '%s%s_memory_hpa_%s' %
                             ([if with_cortex_prefix then 'cortex_' else ''] + [std.strReplace(name, '-', '_'), $._config.namespace]),
 
-               query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, weight),
+               query: queryWithWeight(memoryHPAQuery(with_ready_trigger) % queryParameters, effectiveQueryWeight),
 
                // Threshold is expected to be a string
                threshold: std.toString(std.floor($.util.siToBytes(memory_requests) * memory_target_utilization)),
@@ -504,7 +506,7 @@
                      changes(kube_pod_container_status_restarts_total{container="%(container)s",namespace="%(namespace)s"%(extra_matchers)s}[15m]) > 0
                    )
                  ) or vector(0)
-               ||| % queryParameters, weight),
+               ||| % queryParameters, effectiveQueryWeight),
                threshold: '1',
                metric_type: 'Value',
                // Disable ignoring null values to ensure the trigger properly pauses when metrics are unavailable
@@ -765,7 +767,7 @@
   // Rulers
   //
 
-  newRulerScaledObject(name, extra_matchers='')::
+  newRulerScaledObject(name, extra_matchers='', query_weight=1)::
     $.newResourceScaledObject(
       name=name,
       container_name='ruler',
@@ -779,6 +781,7 @@
       // down of the ruler. As a result, we have made the decision to set the scale down period to 600 seconds.
       scale_down_period=600,
       extra_matchers=extra_matchers,
+      query_weight=query_weight,
     ),
 
   ruler_scaled_object: if !$._config.autoscaling_ruler_enabled then null else $.newRulerScaledObject('ruler'),

@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -44,6 +44,9 @@ var ExperimentalDurationExpr bool
 
 // EnableExtendedRangeSelectors is a flag to enable experimental extended range selectors.
 var EnableExtendedRangeSelectors bool
+
+// EnableBinopFillModifiers is a flag to enable experimental fill modifiers for binary operators.
+var EnableBinopFillModifiers bool
 
 type Parser interface {
 	ParseExpr() (Expr, error)
@@ -413,12 +416,17 @@ func (p *parser) InjectItem(typ ItemType) {
 	p.injecting = true
 }
 
-func (*parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
+func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
 
 	ret.LHS = lhs.(Expr)
 	ret.RHS = rhs.(Expr)
 	ret.Op = op.Typ
+
+	if !EnableBinopFillModifiers && (ret.VectorMatching.FillValues.LHS != nil || ret.VectorMatching.FillValues.RHS != nil) {
+		p.addParseErrf(ret.PositionRange(), "binop fill modifiers are experimental and not enabled")
+		return ret
+	}
 
 	return ret
 }
@@ -770,6 +778,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			if len(n.VectorMatching.MatchingLabels) > 0 {
 				p.addParseErrf(n.PositionRange(), "vector matching only allowed between instant vectors")
 			}
+			if n.VectorMatching.FillValues.LHS != nil || n.VectorMatching.FillValues.RHS != nil {
+				p.addParseErrf(n.PositionRange(), "filling in missing series only allowed between instant vectors")
+			}
 			n.VectorMatching = nil
 		case n.Op.IsSetOperator(): // Both operands are Vectors.
 			if n.VectorMatching.Card == CardOneToMany || n.VectorMatching.Card == CardManyToOne {
@@ -777,6 +788,9 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 			}
 			if n.VectorMatching.Card != CardManyToMany {
 				p.addParseErrf(n.PositionRange(), "set operations must always be many-to-many")
+			}
+			if n.VectorMatching.FillValues.LHS != nil || n.VectorMatching.FillValues.RHS != nil {
+				p.addParseErrf(n.PositionRange(), "filling in missing series not allowed for set operators")
 			}
 		}
 

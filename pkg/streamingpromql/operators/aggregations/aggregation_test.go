@@ -28,7 +28,7 @@ import (
 // pkg/streamingpromql/testdata.
 //
 // The output sorting behaviour is impossible to test through these scripts, so we instead test it here.
-func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
+func TestAggregator_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	testCases := map[string]struct {
 		inputSeries               []labels.Labels
 		grouping                  []string
@@ -87,22 +87,17 @@ func TestAggregation_ReturnsGroupsFinishedFirstEarliest(t *testing.T) {
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
 			memoryConsumptionTracker := limiter.NewMemoryConsumptionTracker(context.Background(), 0, nil, "")
-			aggregator := &Aggregation{
-				Inner:                    &operators.TestOperator{Series: testCase.inputSeries, MemoryConsumptionTracker: memoryConsumptionTracker},
-				Grouping:                 testCase.grouping,
-				metricNames:              &operators.MetricNames{},
-				aggregationGroupFactory:  func() AggregationGroup { return &SumAggregationGroup{} },
-				MemoryConsumptionTracker: memoryConsumptionTracker,
-			}
+			aggregator, err := NewAggregator(parser.SUM, testCase.grouping, false, memoryConsumptionTracker, annotations.New(), types.NewInstantQueryTimeRange(time.Now()), posrange.PositionRange{})
+			require.NoError(t, err)
 
-			outputSeries, err := aggregator.SeriesMetadata(context.Background(), nil)
+			outputSeries, err := aggregator.ComputeGroups(testutils.LabelsToSeriesMetadata(testCase.inputSeries))
 			require.NoError(t, err)
 			require.Equal(t, testutils.LabelsToSeriesMetadata(testCase.expectedOutputSeriesOrder), outputSeries)
 		})
 	}
 }
 
-func TestAggregation_GroupLabelling(t *testing.T) {
+func TestAggregator_GroupLabelling(t *testing.T) {
 	testCases := map[string]struct {
 		grouping                    []string
 		without                     bool
@@ -246,7 +241,7 @@ func TestAggregation_GroupLabelling(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			aggregator, err := NewAggregation(nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), testCase.grouping, testCase.without, parser.SUM, nil, nil, posrange.PositionRange{})
+			aggregator, err := NewAggregator(parser.SUM, testCase.grouping, testCase.without, nil, nil, types.NewInstantQueryTimeRange(timestamp.Time(0)), posrange.PositionRange{})
 			require.NoError(t, err)
 			bytesFunc := aggregator.groupLabelsBytesFunc()
 			labelsFunc := aggregator.groupLabelsFunc()

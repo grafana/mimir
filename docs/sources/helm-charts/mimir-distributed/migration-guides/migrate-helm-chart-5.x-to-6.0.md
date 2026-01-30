@@ -27,13 +27,26 @@ If your values file contains a top-level `nginx` section, you must migrate to th
 
 Follow the [Migrate to unified proxy deployment](https://grafana.com/docs/helm-charts/mimir-distributed/v5.8.x/migration-guides/migrate-to-unified-proxy-deployment/) guide to complete this migration.
 
-### Install rollout-operator CRDs (if using rollout-operator)
+### Account for the rollout-operator
+
+If your deployment uses the rollout-operator, you must ensure that the required CustomResourceDefinitions (CRDs) are installed. If you don't use the rollout-operator, you must explicitly disable it in your values file to avoid unnecessary components and issues with subsequent rollouts.
+
+#### Install CRDs if using the rollout-operator
 
 If you're using the rollout-operator, install the CRDs from the rollout-operator chart:
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/replica-templates-custom-resource-definition.yaml
 kubectl apply -f https://raw.githubusercontent.com/grafana/helm-charts/main/charts/rollout-operator/crds/zone-aware-pod-disruption-budget-custom-resource-definition.yaml
+```
+
+#### Disable the rollout-operator if not in use
+
+If you don't use the rollout-operator, disable it in your values file to prevent the installation of related webhooks which will interfere with subsequent rollouts:
+
+```yaml
+rollout_operator:
+  enabled: false
 ```
 
 ### Choose your ingest storage strategy
@@ -82,3 +95,36 @@ After completing the prerequisites and choosing your ingest storage strategy, up
 ```bash
 helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE>
 ```
+
+## Troubleshooting
+
+Follow this guidance to recover from common issues with the rollout operator during migration.
+
+### Rollout operator misconfiguration
+
+If you don't install the rollout operator CustomResourceDefinitions (CRDs) and don't disable the rollout operator, your deployment enters an error state.
+
+If you intend to use the rollout-operator, install the CRDs as described above.
+
+If you intend to disable the rollout-operator, follow these steps:
+
+1. Disable the rollout-operator in your values file.
+
+   ```yaml
+   rollout-operator:
+     enabled: false
+   ```
+
+2. Delete the rollout-operator validating and mutating webhook configurations.
+
+   ```bash
+   kubectl delete validatingwebhookconfiguration no-downscale-<NAMESPACE>
+   kubectl delete validatingwebhookconfiguration pod-eviction-<NAMESPACE>
+   kubectl delete mutatingwebhookconfigurations prepare-downscale-<NAMESPACE>
+   ```
+
+3. Re-apply the updated configuration
+
+   ```bash
+   helm upgrade <RELEASE_NAME> grafana/mimir-distributed --version 6.0.2 -f <VALUES_FILE> --reset-values
+   ```

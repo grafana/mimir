@@ -71,14 +71,13 @@ var (
 
 func newSchedulerProcessor(cfg Config, httpHandler RequestHandler, protobufHandler ProtobufRequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {
 	p := &schedulerProcessor{
-		log:              log,
-		httpHandler:      httpHandler,
-		protobufHandler:  protobufHandler,
-		streamResponse:   streamResponse,
-		maxMessageSize:   cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
-		querierID:        cfg.QuerierID,
-		grpcConfig:       cfg.QueryFrontendGRPCClientConfig.Config,
-		streamingEnabled: cfg.ResponseStreamingEnabled,
+		log:             log,
+		httpHandler:     httpHandler,
+		protobufHandler: protobufHandler,
+		streamResponse:  streamResponse,
+		maxMessageSize:  cfg.QueryFrontendGRPCClientConfig.MaxSendMsgSize,
+		querierID:       cfg.QuerierID,
+		grpcConfig:      cfg.QueryFrontendGRPCClientConfig.Config,
 
 		schedulerClientFactory: func(conn *grpc.ClientConn) schedulerpb.SchedulerForQuerierClient {
 			return schedulerpb.NewSchedulerForQuerierClient(conn)
@@ -120,14 +119,13 @@ type frontendResponseStreamer func(
 
 // Handles incoming queries from query-scheduler.
 type schedulerProcessor struct {
-	log              log.Logger
-	httpHandler      RequestHandler
-	protobufHandler  ProtobufRequestHandler
-	streamResponse   frontendResponseStreamer
-	grpcConfig       grpcclient.Config
-	maxMessageSize   int
-	querierID        string
-	streamingEnabled bool
+	log             log.Logger
+	httpHandler     RequestHandler
+	protobufHandler ProtobufRequestHandler
+	streamResponse  frontendResponseStreamer
+	grpcConfig      grpcclient.Config
+	maxMessageSize  int
+	querierID       string
 
 	frontendPool                  *client.Pool
 	frontendClientRequestDuration *prometheus.HistogramVec
@@ -368,7 +366,7 @@ func (sp *schedulerProcessor) runHttpRequest(ctx context.Context, logger log.Log
 
 	var hasStreamHeader bool
 	response.Headers, hasStreamHeader = removeStreamingHeader(response.Headers)
-	shouldStream := hasStreamHeader && sp.streamingEnabled && len(response.Body) > responseStreamingBodyChunkSizeBytes
+	shouldStream := hasStreamHeader && len(response.Body) > responseStreamingBodyChunkSizeBytes
 
 	// Protect against not-yet-exited querier handler goroutines that could
 	// still be incrementing stats when sent for marshaling below.

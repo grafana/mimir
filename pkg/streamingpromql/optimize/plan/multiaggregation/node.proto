@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+
+package multiaggregation;
+
+import "github.com/grafana/mimir/pkg/streamingpromql/planning/core/core.proto";
+import "gogoproto/gogo.proto";
+
+option (gogoproto.equal_all) = false;
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.messagename_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+message MultiAggregationGroupDetails {}
+
+message MultiAggregationInstanceDetails {
+  // Why do this, and not just use AggregateExpressionDetails?
+  // This gives us more flexibility to change how multi-aggregations work in the future.
+  core.AggregateExpressionDetails aggregation = 1;
+}

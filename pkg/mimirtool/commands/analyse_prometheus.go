@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
@@ -23,7 +25,6 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	log "github.com/sirupsen/logrus"
 
 	"github.com/grafana/mimir/pkg/mimirtool/analyze"
 	"github.com/grafana/mimir/pkg/mimirtool/client"
@@ -42,6 +43,8 @@ type PrometheusAnalyzeCommand struct {
 	rulerMetricsFile   string
 	outputFile         string
 	concurrency        int
+
+	logger log.Logger
 }
 
 func (cmd *PrometheusAnalyzeCommand) run(_ *kingpin.ParseContext) error {
@@ -55,7 +58,7 @@ func (cmd *PrometheusAnalyzeCommand) run(_ *kingpin.ParseContext) error {
 		return err
 	}
 
-	metricsInPrometheus, err := IdentifyMetricsInPrometheus(metricsUsed, v1api, cmd.concurrency, cmd.readTimeout)
+	metricsInPrometheus, err := IdentifyMetricsInPrometheus(metricsUsed, v1api, cmd.concurrency, cmd.readTimeout, cmd.logger)
 	if err != nil {
 		return err
 	}
@@ -122,7 +125,7 @@ func (cmd *PrometheusAnalyzeCommand) newAPI() (v1.API, error) {
 	return v1.NewAPI(client), nil
 }
 
-func queryMetricNames(api v1.API, readTimeout time.Duration) (model.LabelValues, error) {
+func queryMetricNames(api v1.API, readTimeout time.Duration, logger log.Logger) (model.LabelValues, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 	defer cancel()
 
@@ -136,12 +139,12 @@ func queryMetricNames(api v1.API, readTimeout time.Duration) (model.LabelValues,
 		return nil, errors.Wrap(err, "error querying for metric names")
 	}
 
-	log.Infof("Found %d metric names", len(metricNames))
+	level.Info(logger).Log("msg", "found metric names", "count", len(metricNames))
 	return metricNames, nil
 }
 
 // AnalyzePrometheus analyze prometheus through the given provided API and return the list metrics used in it.
-func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.LabelValue) bool, jobConcurrency int, readTimeout time.Duration) (AnalyzeResult, error) {
+func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.LabelValue) bool, jobConcurrency int, readTimeout time.Duration, logger log.Logger) (AnalyzeResult, error) {
 	var (
 		stats        = make(stats)
 		metricErrors []string
@@ -167,7 +170,7 @@ func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.La
 		})
 		if err != nil {
 			errStr := fmt.Sprintf("skipped %s analysis because failed to run query %v: %s", metric, query, err.Error())
-			log.Warnln(errStr)
+			level.Warn(logger).Log("msg", errStr)
 			mutex.Lock()
 			metricErrors = append(metricErrors, errStr)
 			mutex.Unlock()
@@ -176,7 +179,7 @@ func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.La
 
 		vec, ok := result.(model.Vector)
 		if !ok || len(vec) == 0 {
-			log.Debugln("no active metrics found for", metric, 0)
+			level.Debug(logger).Log("msg", "no active metrics found for", "metric", metric)
 			return nil
 		}
 
@@ -194,7 +197,7 @@ func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.La
 			mutex.Unlock()
 		}
 
-		log.Debugln("metric", metric, vec[0].Value)
+		level.Debug(logger).Log("msg", "metric", "metric", metric, "value", vec[0].Value)
 		return nil
 	})
 	if err != nil {
@@ -209,32 +212,32 @@ func AnalyzePrometheus(api v1.API, metrics model.LabelValues, skip func(model.La
 }
 
 // IdentifyMetricsInPrometheus analyze prometheus metrics against metrics used metricsUsed and metricNames. It returns stats about used/unused timeseries.
-func IdentifyMetricsInPrometheus(metricsUsed model.LabelValues, v1api v1.API, jobConcurrency int, readTimeout time.Duration) (analyze.MetricsInPrometheus, error) {
-	log.Debugln("Starting to analyze metrics in use")
+func IdentifyMetricsInPrometheus(metricsUsed model.LabelValues, v1api v1.API, jobConcurrency int, readTimeout time.Duration, logger log.Logger) (analyze.MetricsInPrometheus, error) {
+	level.Debug(logger).Log("msg", "starting to analyze metrics in use")
 	var metricsInPrometheus analyze.MetricsInPrometheus
 
-	inUseMetricsAnalysisResult, err := AnalyzePrometheus(v1api, metricsUsed, func(model.LabelValue) bool { return false }, jobConcurrency, readTimeout)
+	inUseMetricsAnalysisResult, err := AnalyzePrometheus(v1api, metricsUsed, func(model.LabelValue) bool { return false }, jobConcurrency, readTimeout, logger)
 	if err != nil {
 		return metricsInPrometheus, err
 	}
-	log.Infof("%d active series are being used in dashboards", inUseMetricsAnalysisResult.cardinality)
+	level.Info(logger).Log("msg", "active series are being used in dashboards", "count", inUseMetricsAnalysisResult.cardinality)
 
-	log.Debugln("Starting to analyze metrics not in use")
-	metricNames, err := queryMetricNames(v1api, readTimeout)
+	level.Debug(logger).Log("msg", "starting to analyze metrics not in use")
+	metricNames, err := queryMetricNames(v1api, readTimeout, logger)
 	if err != nil {
 		return metricsInPrometheus, err
 	}
 	metricsNotInUseResult, err := AnalyzePrometheus(v1api, metricNames, func(metric model.LabelValue) bool {
 		return inUseMetricsAnalysisResult.stats[metric].totalCount > 0
-	}, jobConcurrency, readTimeout)
+	}, jobConcurrency, readTimeout, logger)
 	if err != nil {
 		return metricsInPrometheus, err
 	}
-	log.Infof("%d active series are NOT being used in dashboards", metricsNotInUseResult.cardinality)
+	level.Info(logger).Log("msg", "active series are NOT being used in dashboards", "count", metricsNotInUseResult.cardinality)
 
 	metricsInPrometheus = result(inUseMetricsAnalysisResult, metricsNotInUseResult)
-	log.Infof("%d in use active series metric count", len(metricsInPrometheus.InUseMetricCounts))
-	log.Infof("%d not in use active series metric count", len(metricsInPrometheus.AdditionalMetricCounts))
+	level.Info(logger).Log("msg", "in use active series metric count", "count", len(metricsInPrometheus.InUseMetricCounts))
+	level.Info(logger).Log("msg", "not in use active series metric count", "count", len(metricsInPrometheus.AdditionalMetricCounts))
 
 	return metricsInPrometheus, nil
 }

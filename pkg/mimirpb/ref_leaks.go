@@ -11,6 +11,8 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/mem"
 )
@@ -37,7 +39,7 @@ func (c InstrumentRefLeaksConfig) Validate() error {
 	return nil
 }
 
-func (c InstrumentRefLeaksConfig) tracker() refLeaksTracker {
+func (c InstrumentRefLeaksConfig) tracker(reg prometheus.Registerer) refLeaksTracker {
 	if c.Percentage <= 0 {
 		return refLeaksTracker{}
 	}
@@ -49,6 +51,16 @@ func (c InstrumentRefLeaksConfig) tracker() refLeaksTracker {
 	if t.maxInflightInstrumentedBytes == 0 {
 		t.maxInflightInstrumentedBytes = math.MaxUint64
 	}
+
+	t.inflightInstrumentedBytesMetric = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "mimir_reference_leaks_inflight_instrumented_bytes",
+		Help: "Total bytes of buffers instrumented for reference leak detection.",
+	})
+	t.instrumentedBuffersTotalMetric = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "mimir_reference_leaks_instrumented_buffers_total",
+		Help: "Total number of buffers instrumented for reference leak detection.",
+	})
+
 	return t
 }
 
@@ -59,6 +71,9 @@ type refLeaksTracker struct {
 
 	unmarshaledWithBufferRefCount atomic.Uint64
 	inflightInstrumentedBytes     atomic.Uint64
+
+	inflightInstrumentedBytesMetric prometheus.Gauge
+	instrumentedBuffersTotalMetric  prometheus.Counter
 }
 
 func (t *refLeaksTracker) maybeInstrumentRefLeaks(data mem.BufferSlice) mem.Buffer {
@@ -75,6 +90,9 @@ func (t *refLeaksTracker) maybeInstrumentRefLeaks(data mem.BufferSlice) mem.Buff
 		return nil
 	}
 
+	t.instrumentedBuffersTotalMetric.Inc()
+	t.inflightInstrumentedBytesMetric.Set(float64(inflight))
+
 	// Allocate separate pages for this buffer. We'll detect ref leaks by
 	// munmaping the pages on Free, after which trying to access them will
 	// segfault.
@@ -86,9 +104,9 @@ func (t *refLeaksTracker) maybeInstrumentRefLeaks(data mem.BufferSlice) mem.Buff
 	data.CopyTo(b)
 	buf := mem.NewBuffer(&b, nil)
 	instrumentedBuf := &instrumentLeaksBuf{
-		Buffer:                    buf,
-		waitBeforeReuse:           t.waitBeforeReuse,
-		inflightInstrumentedBytes: &t.inflightInstrumentedBytes,
+		Buffer:          buf,
+		waitBeforeReuse: t.waitBeforeReuse,
+		tracker:         t,
 	}
 	instrumentedBuf.refCount.Inc()
 	return instrumentedBuf
@@ -96,9 +114,9 @@ func (t *refLeaksTracker) maybeInstrumentRefLeaks(data mem.BufferSlice) mem.Buff
 
 type instrumentLeaksBuf struct {
 	mem.Buffer
-	refCount                  atomic.Int64
-	waitBeforeReuse           time.Duration
-	inflightInstrumentedBytes *atomic.Uint64
+	refCount        atomic.Int64
+	waitBeforeReuse time.Duration
+	tracker         *refLeaksTracker
 }
 
 func (b *instrumentLeaksBuf) Ref() {
@@ -121,22 +139,22 @@ func (b *instrumentLeaksBuf) Free() {
 				panic(fmt.Errorf("mprotect: %w", err))
 			}
 			select {
-			case unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse), inflightInstrumentedBytes: b.inflightInstrumentedBytes}:
+			case unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse), tracker: b.tracker}:
 				return
 			default:
 				// Queue is full, munmap right away.
 			}
 		}
-		unmap(allPages, b.inflightInstrumentedBytes)
+		b.tracker.unmap(allPages)
 	case refCount < 0:
 		panic("instrumentLeaksBuf reference count below zero")
 	}
 }
 
 type unmapTask struct {
-	buf                       []byte
-	at                        time.Time
-	inflightInstrumentedBytes *atomic.Uint64
+	buf     []byte
+	at      time.Time
+	tracker *refLeaksTracker
 }
 
 var unmapQueue chan unmapTask
@@ -152,13 +170,15 @@ var startFreeingInstrumentedBuffers = sync.OnceFunc(func() {
 	go func() {
 		for t := range unmapQueue {
 			time.Sleep(time.Until(t.at))
-			unmap(t.buf, t.inflightInstrumentedBytes)
+			t.tracker.unmap(t.buf)
 		}
 	}()
 })
 
-func unmap(buf []byte, inflightInstrumentedBytes *atomic.Uint64) {
-	inflightInstrumentedBytes.Sub(uint64(len(buf)))
+func (t *refLeaksTracker) unmap(buf []byte) {
+	newInflight := t.inflightInstrumentedBytes.Sub(uint64(len(buf)))
+	t.inflightInstrumentedBytesMetric.Set(float64(newInflight))
+
 	err := syscall.Munmap(buf)
 	if err != nil {
 		panic(fmt.Errorf("munmap: %w", err))

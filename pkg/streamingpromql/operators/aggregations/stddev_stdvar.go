@@ -35,7 +35,7 @@ type StddevStdvarAggregationGroup struct {
 	groupSeriesCounts []float64
 }
 
-func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint) error {
+func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, emitAnnotation types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
 	// Native histograms are ignored for stddev and stdvar.
 	if len(data.Histograms) > 0 {
 		emitAnnotation(func(_ string, expressionPosition posrange.PositionRange) error {
@@ -79,7 +79,6 @@ func (g *StddevStdvarAggregationGroup) AccumulateSeries(data types.InstantVector
 		g.floats[idx] += delta * (p.F - g.floatMeans[idx])
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 

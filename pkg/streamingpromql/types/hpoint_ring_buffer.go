@@ -68,7 +68,7 @@ func (b *HPointRingBuffer) Append(p promql.HPoint) error {
 // The returned view is no longer valid if this buffer is modified (eg. a point is added, or the buffer is reset or closed).
 func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
 	if existing == nil {
-		existing = &HPointRingBufferView{buffer: b, offset: 0}
+		existing = &HPointRingBufferView{buffer: b}
 	}
 
 	size := 0
@@ -86,7 +86,7 @@ func (b *HPointRingBuffer) ViewUntilSearchingForwards(maxT int64, existing *HPoi
 // is preferred over ViewUntilSearchingForwards if it is expected that only a few of the points will have timestamp greater than maxT.
 func (b *HPointRingBuffer) ViewUntilSearchingBackwards(maxT int64, existing *HPointRingBufferView) *HPointRingBufferView {
 	if existing == nil {
-		existing = &HPointRingBufferView{buffer: b, offset: 0}
+		existing = &HPointRingBufferView{buffer: b}
 	}
 
 	nextPositionToCheck := b.size - 1
@@ -229,17 +229,17 @@ func (v HPointRingBufferView) UnsafePoints() (head []promql.HPoint, tail []promq
 		return nil, nil
 	}
 
-	startIdx := (v.buffer.firstIndex + v.offset) & v.buffer.pointsIndexMask
-	endOfHeadSegment := startIdx + v.size
+	startIndex := (v.buffer.firstIndex + v.offset) & v.buffer.pointsIndexMask
+	endOfHeadSegment := startIndex + v.size
 
 	if endOfHeadSegment > len(v.buffer.points) {
 		// Need to wrap around.
 		endOfTailSegment := endOfHeadSegment - len(v.buffer.points)
 		endOfHeadSegment = len(v.buffer.points)
-		return v.buffer.points[startIdx:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
+		return v.buffer.points[startIndex:endOfHeadSegment], v.buffer.points[0:endOfTailSegment]
 	}
 
-	return v.buffer.points[startIdx:endOfHeadSegment], nil
+	return v.buffer.points[startIndex:endOfHeadSegment], nil
 }
 
 // CopyPoints returns a single slice of the points in this buffer view.
@@ -283,7 +283,7 @@ func (v HPointRingBufferView) CopyPoints() ([]promql.HPoint, error) {
 // ForEach calls f for each point in this buffer view.
 func (v HPointRingBufferView) ForEach(f func(p promql.HPoint)) {
 	for i := 0; i < v.size; i++ {
-		f(v.buffer.pointAt(v.offset + i))
+		f(v.PointAt(i))
 	}
 }
 
@@ -294,7 +294,7 @@ func (v HPointRingBufferView) First() promql.HPoint {
 		panic("Can't get first element of empty buffer")
 	}
 
-	return v.buffer.pointAt(v.offset)
+	return v.PointAt(0)
 }
 
 // Last returns the last point in this ring buffer view.
@@ -304,7 +304,7 @@ func (v HPointRingBufferView) Last() (promql.HPoint, bool) {
 		return promql.HPoint{}, false
 	}
 
-	return v.buffer.pointAt(v.offset + v.size - 1), true
+	return v.PointAt(v.size - 1), true
 }
 
 // Count returns the number of points in this ring buffer view.
@@ -315,9 +315,16 @@ func (v HPointRingBufferView) Count() int {
 // EquivalentFloatSampleCount returns the equivalent number of float samples in this ring buffer view.
 func (v HPointRingBufferView) EquivalentFloatSampleCount() int64 {
 	count := int64(0)
-	for i := 0; i < v.size; i++ {
-		count += EquivalentFloatSampleCount(v.buffer.pointAt(v.offset + i).H)
+	head, tail := v.UnsafePoints()
+
+	for _, p := range head {
+		count += EquivalentFloatSampleCount(p.H)
 	}
+
+	for _, p := range tail {
+		count += EquivalentFloatSampleCount(p.H)
+	}
+
 	return count
 }
 
@@ -356,50 +363,58 @@ func (v HPointRingBufferView) Clone() (*HPointRingBufferView, *HPointRingBuffer,
 
 	view := &HPointRingBufferView{
 		buffer: buffer,
-		offset: 0,
 		size:   v.size,
 	}
 
 	return view, buffer, nil
 }
 
-// SubView returns a new view that is a subset of this view, containing only points with timestamps in the range (minT, maxT].
-// The startHint parameter provides a hint about where to start searching for the minT boundary (pass 0 for the first call).
-// This is particularly useful when creating consecutive subviews where the next subview's start is at or after the previous subview's end.
-// The returned view shares the same underlying buffer and is no longer valid if the buffer is modified.
-// Returns the new subview and the ending index (relative to the parent view) which should be passed as startHint for the next SubView call.
-func (v HPointRingBufferView) SubView(minT int64, maxT int64, startHint int) (HPointRingBufferView, int) {
+// SubView returns a view with only points in range (minT, maxT].
+// If previousSubView is provided, it will be reused to create the new subview. previousSubView must be a previous
+// subview for the same parent view and the next subview is assumed to cover a later range (we only start searching from
+// after the samples of the previous subview).
+func (v *HPointRingBufferView) SubView(minT int64, maxT int64, previousSubView *HPointRingBufferView) *HPointRingBufferView {
 	if v.size == 0 {
-		return HPointRingBufferView{buffer: v.buffer, offset: v.offset, size: 0}, 0
+		if previousSubView == nil {
+			return &HPointRingBufferView{}
+		}
+		previousSubView.offset = v.offset
+		previousSubView.size = 0
+		return previousSubView
 	}
 
-	if startHint < 0 {
-		startHint = 0
-	}
-	if startHint >= v.size {
-		// All points have already been consumed
-		return HPointRingBufferView{buffer: v.buffer, offset: v.offset + v.size, size: 0}, v.size
+	var startIdx int
+	if previousSubView == nil {
+		startIdx = v.offset
+		previousSubView = &HPointRingBufferView{buffer: v.buffer}
+	} else {
+		startIdx = previousSubView.offset + previousSubView.size
 	}
 
-	parentIdx := startHint
-	for parentIdx < v.size && v.PointAt(parentIdx).T <= minT {
+	endIdx := v.offset + v.size
+	if startIdx >= endIdx {
+		previousSubView.offset = endIdx
+		previousSubView.size = 0
+		return previousSubView
+	}
+
+	// Find start idx for subview
+	parentIdx := startIdx
+	// PointAt expects relative index for parent view so we subtract the parent offset
+	for parentIdx < endIdx && v.PointAt(parentIdx-v.offset).T <= minT {
 		parentIdx++
 	}
-	offset := parentIdx
+	previousSubView.offset = parentIdx
 
+	// Find size for subview
 	size := 0
-	for parentIdx < v.size && v.PointAt(parentIdx).T <= maxT {
+	for parentIdx < endIdx && v.PointAt(parentIdx-v.offset).T <= maxT {
 		size++
 		parentIdx++
 	}
 
-	endIdx := offset + size
-
-	return HPointRingBufferView{
-		buffer: v.buffer,
-		offset: v.offset + offset,
-		size:   size,
-	}, endIdx
+	previousSubView.size = size
+	return previousSubView
 }
 
 // These hooks exist so we can override them during unit tests.

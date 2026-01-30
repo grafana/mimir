@@ -261,7 +261,7 @@ func (p *LimitingBucketedPool[S, E]) Put(s *S, tracker *limiter.MemoryConsumptio
 
 // AppendToSlice appends items to a slice retrieved from the pool and tracks any slice capacity growth.
 // If the capacity is insufficient, it gets a new slice from the pool and returns the old one.
-// The caller is expected to do the memory tracking for the new items appended to the slice.
+// On error, the input slice s is returned to the pool and should not continue to be used.
 func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryConsumptionTracker, items ...E) (S, error) {
 	requiredLen := len(s) + len(items)
 
@@ -271,15 +271,17 @@ func (p *LimitingBucketedPool[S, E]) AppendToSlice(s S, tracker *limiter.MemoryC
 
 	newSlice, err := p.Get(requiredLen, tracker)
 	if err != nil {
+		p.Put(&s, tracker)
 		return nil, err
 	}
 
 	newSlice = newSlice[:len(s)]
 	copy(newSlice, s)
 
-	// Clear the old slice before returning to pool as the elements are reused in new slice. onPutHooks shouldn't be
-	// used for reducing the memory for the elements.
-	s = s[:0]
+	// The elements have been copied to the new slice but are still present in the old slice and could be inadvertently
+	// mutated (e.g. places that use slices of FloatHistogram instances reuse those instances if they're in the slice).
+	// Therefore the old slice needs to be cleared.
+	clear(s)
 	p.Put(&s, tracker)
 
 	return append(newSlice, items...), nil

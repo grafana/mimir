@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -45,7 +46,7 @@ func TestRuleCommand_executeChanges(t *testing.T) {
 			client.On("CreateRuleGroup", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 			client.On("DeleteRuleGroup", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 
-			cmd := &RuleCommand{cli: client}
+			cmd := &RuleCommand{cli: client, logger: log.NewNopLogger()}
 			err := cmd.executeChanges(context.Background(), changes, concurrencyLimit)
 			require.NoError(t, err)
 
@@ -200,7 +201,7 @@ func TestRuleCommand_checkRules(t *testing.T) {
 
 			{
 				// Test.
-				cmd := &RuleCommand{Strict: tc.strict, RuleFilesList: []string{file}, Backend: rules.MimirBackend}
+				cmd := &RuleCommand{Strict: tc.strict, RuleFilesList: []string{file}, Backend: rules.MimirBackend, logger: log.NewNopLogger()}
 				err := cmd.checkRules(nil)
 				if tc.shouldFail {
 					require.Error(t, err)
@@ -227,7 +228,7 @@ func TestRuleSaveToFile_NamespaceRuleGroup(t *testing.T) {
 			},
 		}}
 		tempDir := t.TempDir()
-		err := saveNamespaceRuleGroup(namespace, rule1, tempDir)
+		err := saveNamespaceRuleGroup(namespace, rule1, tempDir, log.NewNopLogger())
 		assert.NoError(t, err)
 	})
 	t.Run("Successful save with a modified namespace", func(t *testing.T) {
@@ -245,7 +246,7 @@ func TestRuleSaveToFile_NamespaceRuleGroup(t *testing.T) {
 		}}
 
 		tempDir := t.TempDir()
-		err := saveNamespaceRuleGroup(namespace, rule1, tempDir)
+		err := saveNamespaceRuleGroup(namespace, rule1, tempDir, log.NewNopLogger())
 		assert.NoError(t, err)
 
 		assert.NoFileExists(t, filepath.Join(tempDir, "a/b/c.yaml"))
@@ -272,7 +273,7 @@ groups:
 			},
 		}}
 		tempDir := t.TempDir()
-		err := saveNamespaceRuleGroup(namespace, rule1, tempDir)
+		err := saveNamespaceRuleGroup(namespace, rule1, tempDir, log.NewNopLogger())
 		assert.NoError(t, err)
 		savedFile := filepath.Join(tempDir, fmt.Sprintf("%s.yaml", namespace))
 		content, err := os.ReadFile(savedFile)

@@ -13,7 +13,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
+	"github.com/grafana/mimir/pkg/util/limiter"
 )
+
+var errShouldNotCallProduceDirectly = errors.New("should not call Produce() directly on RemoteExecutionGroupOperatorFactory: call ProduceForNode() instead")
 
 func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
@@ -257,30 +260,40 @@ func (c *RemoteExecutionConsumer) MinimumRequiredPlanVersion() planning.QueryPla
 	return planning.QueryPlanVersionZero
 }
 
-type RemoteExecutionConsumerMaterializer struct {
-	executor RemoteExecutor
+type RemoteExecutionGroupMaterializer struct {
+	groupEvaluatorFactory GroupEvaluatorFactory
 }
 
-func NewRemoteExecutionConsumerMaterializer(executor RemoteExecutor) *RemoteExecutionConsumerMaterializer {
-	return &RemoteExecutionConsumerMaterializer{executor: executor}
+type GroupEvaluatorFactory func(eagerLoad bool, queryParameters *planning.QueryParameters, memoryConsumptionTracker *limiter.MemoryConsumptionTracker) GroupEvaluator
+
+func NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory GroupEvaluatorFactory) planning.NodeMaterializer {
+	return &RemoteExecutionGroupMaterializer{groupEvaluatorFactory: groupEvaluatorFactory}
 }
 
-var _ planning.NodeMaterializer = &RemoteExecutionConsumerMaterializer{}
-
-func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
-	// For the time being, we assume all groups have a single node (the one that corresponds to this consumer).
-	// Once we implement support in query-frontends for evaluating multiple nodes in a single request, this will change.
-
-	c, ok := n.(*RemoteExecutionConsumer)
+func (m *RemoteExecutionGroupMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
+	g, ok := n.(*RemoteExecutionGroup)
 	if !ok {
-		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)
+		return nil, fmt.Errorf("expected node of type RemoteExecutionGroup, got %T", n)
 	}
 
-	if len(c.Group.Nodes) != 1 {
-		return nil, fmt.Errorf("attempted to materialize node of type RemoteExecutionConsumer in a group with %d nodes", len(c.Group.Nodes))
+	evaluator := m.groupEvaluatorFactory(g.EagerLoad, params.QueryParameters, params.MemoryConsumptionTracker)
+	return &RemoteExecutionGroupOperatorFactory{GroupEvaluator: evaluator}, nil
+}
+
+type RemoteExecutionGroupOperatorFactory struct {
+	GroupEvaluator GroupEvaluator
+}
+
+func (f *RemoteExecutionGroupOperatorFactory) Produce() (types.Operator, error) {
+	return nil, errShouldNotCallProduceDirectly
+}
+
+func (f *RemoteExecutionGroupOperatorFactory) ProduceOperatorForConsumingNode(c *RemoteExecutionConsumer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (types.Operator, error) {
+	if c.NodeIndex >= uint64(len(c.Group.Nodes)) {
+		return nil, fmt.Errorf("tried to produce an operator for a RemoteExecutionConsumer with node index %v, but the RemoteExecutionGroup only has %v children", c.NodeIndex, len(c.Group.Nodes))
 	}
 
-	node := c.Group.Nodes[0]
+	node := c.Group.Nodes[c.NodeIndex]
 	expressionPosition, err := node.ExpressionPosition()
 	if err != nil {
 		return nil, err
@@ -293,45 +306,67 @@ func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, mater
 
 	switch resultType {
 	case parser.ValueTypeScalar:
-		return planning.NewSingleUseOperatorFactory(&ScalarRemoteExec{
-			QueryParameters:          params.QueryParameters,
-			Node:                     node,
-			TimeRange:                timeRange,
-			RemoteExecutor:           m.executor,
-			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-			Annotations:              params.Annotations,
-			QueryStats:               params.QueryStats,
-			EagerLoad:                c.Group.EagerLoad,
-			expressionPosition:       expressionPosition,
-		}), nil
+		return &ScalarRemoteExec{
+			Node:               node,
+			TimeRange:          timeRange,
+			GroupEvaluator:     f.GroupEvaluator,
+			Annotations:        params.Annotations,
+			QueryStats:         params.QueryStats,
+			expressionPosition: expressionPosition,
+		}, nil
 
 	case parser.ValueTypeVector:
-		return planning.NewSingleUseOperatorFactory(&InstantVectorRemoteExec{
-			QueryParameters:          params.QueryParameters,
-			Node:                     node,
-			TimeRange:                timeRange,
-			RemoteExecutor:           m.executor,
-			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-			Annotations:              params.Annotations,
-			QueryStats:               params.QueryStats,
-			EagerLoad:                c.Group.EagerLoad,
-			expressionPosition:       expressionPosition,
-		}), nil
+		return &InstantVectorRemoteExec{
+			Node:               node,
+			TimeRange:          timeRange,
+			GroupEvaluator:     f.GroupEvaluator,
+			Annotations:        params.Annotations,
+			QueryStats:         params.QueryStats,
+			expressionPosition: expressionPosition,
+		}, nil
 
 	case parser.ValueTypeMatrix:
-		return planning.NewSingleUseOperatorFactory(&RangeVectorRemoteExec{
-			QueryParameters:          params.QueryParameters,
-			Node:                     node,
-			TimeRange:                timeRange,
-			RemoteExecutor:           m.executor,
-			MemoryConsumptionTracker: params.MemoryConsumptionTracker,
-			Annotations:              params.Annotations,
-			QueryStats:               params.QueryStats,
-			EagerLoad:                c.Group.EagerLoad,
-			expressionPosition:       expressionPosition,
-		}), nil
+		return &RangeVectorRemoteExec{
+			Node:               node,
+			TimeRange:          timeRange,
+			GroupEvaluator:     f.GroupEvaluator,
+			Annotations:        params.Annotations,
+			QueryStats:         params.QueryStats,
+			expressionPosition: expressionPosition,
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unsupported child result type for RemoteExecutionGroup: got %v", resultType)
 	}
+}
+
+type RemoteExecutionConsumerMaterializer struct {
+}
+
+func NewRemoteExecutionConsumerMaterializer() planning.NodeMaterializer {
+	return &RemoteExecutionConsumerMaterializer{}
+}
+
+func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
+	c, ok := n.(*RemoteExecutionConsumer)
+	if !ok {
+		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)
+	}
+
+	f, err := materializer.FactoryForNode(c.Group, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	groupFactory, ok := f.(*RemoteExecutionGroupOperatorFactory)
+	if !ok {
+		return nil, fmt.Errorf("expected factory of type RemoteExecutionGroupOperatorFactory, got %T", f)
+	}
+
+	o, err := groupFactory.ProduceOperatorForConsumingNode(c, timeRange, params)
+	if err != nil {
+		return nil, err
+	}
+
+	return planning.NewSingleUseOperatorFactory(o), nil
 }

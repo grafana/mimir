@@ -234,6 +234,7 @@ func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(co
 	for retries.Ongoing() {
 		userIDs, err := u.ownedUsers(ctx)
 		if err != nil {
+			lastErr = fmt.Errorf("list owned users: %w", err)
 			retries.Wait()
 			continue
 		}

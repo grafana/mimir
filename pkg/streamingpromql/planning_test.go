@@ -100,14 +100,38 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
-		"vector selector with '@ 0'": {
+		"vector selector with '@ 0' instant query": {
 			expr:      `some_metric @ 0`,
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  0,
+				Version:   0,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
+						Details: marshalDetails(&core.VectorSelectorDetails{
+							Matchers: []*core.LabelMatcher{
+								{Type: 0, Name: "__name__", Value: "some_metric"},
+							},
+							Timestamp:          timestampOf(0),
+							ExpressionPosition: core.PositionRange{Start: 0, End: 15},
+						}),
+						Type:        "VectorSelector",
+						Description: `{__name__="some_metric"} @ 0 (1970-01-01T00:00:00Z)`,
+					},
+				},
+			},
+		},
+		"vector selector with '@ 0' range query": {
+			expr:      `some_metric @ 0`,
+			timeRange: rangeQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: rangeQueryEncodedTimeRange,
 				RootNode:  1,
-				Version:   planning.QueryPlanV1,
+				Version:   1,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -663,12 +687,53 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
-		"binary expression with two scalars": {
+		"binary expression with two scalars instant query": {
 			expr:      `2 + 3`,
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
+				RootNode:  2,
+				Version:   0,
+				Nodes: []*planning.EncodedNode{
+					{
+						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value:              2,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 1},
+						}),
+						Type:        "NumberLiteral",
+						Description: `2`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_NUMBER_LITERAL,
+						Details: marshalDetails(&core.NumberLiteralDetails{
+							Value:              3,
+							ExpressionPosition: core.PositionRange{Start: 4, End: 5},
+						}),
+						Type:        "NumberLiteral",
+						Description: `3`,
+					},
+					{
+						NodeType: planning.NODE_TYPE_BINARY_EXPRESSION,
+						Details: marshalDetails(&core.BinaryExpressionDetails{
+							Op:                 core.BINARY_ADD,
+							ExpressionPosition: core.PositionRange{Start: 0, End: 5},
+						}),
+						Type:           "BinaryExpression",
+						Children:       []int64{0, 1},
+						Description:    `LHS + RHS`,
+						ChildrenLabels: []string{"LHS", "RHS"},
+					},
+				},
+			},
+		},
+		"binary expression with two scalars range query": {
+			expr:      `2 + 3`,
+			timeRange: rangeQuery,
+
+			expectedPlan: &planning.EncodedQueryPlan{
+				TimeRange: rangeQueryEncodedTimeRange,
 				RootNode:  3,
 				Version:   planning.QueryPlanV1,
 				Nodes: []*planning.EncodedNode{
@@ -1106,14 +1171,14 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				},
 			},
 		},
-		"subquery with '@'": {
+		"subquery with '@' instant query": {
 			expr:      `(some_metric)[1m:1s] @ 0`,
 			timeRange: instantQuery,
 
 			expectedPlan: &planning.EncodedQueryPlan{
 				TimeRange: instantQueryEncodedTimeRange,
-				RootNode:  2,
-				Version:   1,
+				RootNode:  1,
+				Version:   0,
 				Nodes: []*planning.EncodedNode{
 					{
 						NodeType: planning.NODE_TYPE_VECTOR_SELECTOR,
@@ -1137,14 +1202,6 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 						Type:           "Subquery",
 						Children:       []int64{0},
 						Description:    `[1m0s:1s] @ 0 (1970-01-01T00:00:00Z)`,
-						ChildrenLabels: []string{""},
-					},
-					{
-						NodeType:       planning.NODE_TYPE_STEP_INVARIANT_EXPRESSION,
-						Details:        marshalDetails(&core.StepInvariantExpressionDetails{}),
-						Type:           "StepInvariantExpression",
-						Children:       []int64{1},
-						Description:    ``,
 						ChildrenLabels: []string{""},
 					},
 				},
@@ -1436,11 +1493,10 @@ func TestPlanCreationEncodingAndDecoding(t *testing.T) {
 				return (23 * time.Second).Milliseconds()
 			}
 			opts.CommonOpts.Reg = reg
-			opts.CommonOpts.EnableDelayedNameRemoval = testCase.enableDelayedNameRemoval
 			planner, err := NewQueryPlannerWithoutOptimizationPasses(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 
-			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, NoopPlanningObserver{})
+			originalPlan, err := planner.NewQueryPlan(ctx, testCase.expr, testCase.timeRange, testCase.enableDelayedNameRemoval, NoopPlanningObserver{})
 			require.NoError(t, err)
 
 			requireHistogramCounts(t, reg, "cortex_mimir_query_engine_plan_stage_latency_seconds", `
@@ -1480,7 +1536,7 @@ func TestToEncodedPlan_SpecificNodesRequested(t *testing.T) {
 
 	expr := `topk(5, foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	aggregationNode := plan.Root.(*core.AggregateExpression)
@@ -1502,7 +1558,7 @@ func TestToEncodedPlan_SameNodeProvidedMultipleTimes(t *testing.T) {
 
 	expr := `sum(foo)`
 	ctx := context.Background()
-	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	encoded, nodes, err := plan.ToEncodedPlan(false, true, plan.Root, plan.Root)
@@ -1520,7 +1576,7 @@ func TestPlanCreation_OptimisationPassGeneratesPlanWithHigherVersionThanAllowed(
 
 	planner.RegisterQueryPlanOptimizationPass(&optimizationPassThatGeneratesHigherVersionPlanThanAllowed{})
 
-	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), NoopPlanningObserver{})
+	plan, err := planner.NewQueryPlan(context.Background(), "foo", types.NewInstantQueryTimeRange(time.Now()), false, NoopPlanningObserver{})
 	require.EqualError(t, err, "maximum supported query plan version is 12, but generated plan version is 13 - this is a bug")
 	require.Nil(t, plan)
 }
@@ -1691,7 +1747,7 @@ func TestDeduplicateAndMergePlanning(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, observer)
+			p, err := planner.NewQueryPlan(ctx, testCase.expr, timeRange, false, observer)
 			require.NoError(t, err)
 			actual := p.String()
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
@@ -1727,7 +1783,7 @@ func BenchmarkPlanEncodingAndDecoding(b *testing.B) {
 
 	for _, expr := range testCases {
 		b.Run(expr, func(b *testing.B) {
-			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), NoopPlanningObserver{})
+			plan, err := planner.NewQueryPlan(ctx, expr, types.NewInstantQueryTimeRange(timestamp.Time(0)), false, NoopPlanningObserver{})
 			require.NoError(b, err)
 
 			b.Run("encode", func(b *testing.B) {
@@ -1781,7 +1837,7 @@ func TestQueryPlanner_ActivityTracking(t *testing.T) {
 
 	expr := "test"
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
-	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, NoopPlanningObserver{})
+	_, err = planner.NewQueryPlan(context.Background(), expr, timeRange, false, NoopPlanningObserver{})
 	require.NoError(t, err)
 
 	expectedPlanningActivities := []trackedQuery{

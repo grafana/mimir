@@ -37,7 +37,7 @@ func (g *CountGroupAggregationGroup) groupAccumulatePoint(idx int64) {
 	g.values[idx] = 1
 }
 
-func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ types.EmitAnnotationFunc, _ uint) error {
+func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSeriesData, timeRange types.QueryTimeRange, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, _ types.EmitAnnotationFunc, _ uint, mutatingDataAllowed bool) error {
 	if (len(data.Floats) > 0 || len(data.Histograms) > 0) && g.values == nil {
 		var err error
 		// First series with values for this group, populate it.
@@ -56,7 +56,6 @@ func (g *CountGroupAggregationGroup) AccumulateSeries(data types.InstantVectorSe
 		g.accumulatePoint(timeRange.PointIndex(p.T))
 	}
 
-	types.PutInstantVectorSeriesData(data, memoryConsumptionTracker)
 	return nil
 }
 

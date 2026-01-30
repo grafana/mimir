@@ -175,10 +175,6 @@ api:
 # The ingester block configures the ingester.
 [ingester: <ingester>]
 
-# The flusher block configures the WAL flusher target, used to manually run
-# one-time flushes when scaling down ingesters.
-[flusher: <flusher>]
-
 # The limits block configures default and per-tenant limits imposed by
 # components.
 [limits: <limits>]
@@ -1898,11 +1894,6 @@ store_gateway_client:
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 
-# (experimental) Enable the experimental Prometheus feature for delayed name
-# removal.
-# CLI flag: -querier.enable-delayed-name-removal
-[enable_delayed_name_removal: <boolean> | default = false]
-
 mimir_query_engine:
   # (experimental) Enable pruning query expressions that are toggled off with
   # constants.
@@ -1934,12 +1925,22 @@ mimir_query_engine:
   # the query plan when it can be proven that each input series produces a
   # unique output series.
   # CLI flag: -querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge
-  [enable_eliminate_deduplicate_and_merge: <boolean> | default = false]
+  [enable_eliminate_deduplicate_and_merge: <boolean> | default = true]
 
   # (experimental) Enable eliminating duplicate or redundant matchers that are
   # part of selector expressions.
   # CLI flag: -querier.mimir-query-engine.enable-reduce-matchers
   [enable_reduce_matchers: <boolean> | default = true]
+
+  # (experimental) Enable projection pushdown to only fetch labels required for
+  # the query from storage.
+  # CLI flag: -querier.mimir-query-engine.enable-projection-pushdown
+  [enable_projection_pushdown: <boolean> | default = false]
+
+  # (experimental) Enable computing multiple aggregations over the same data
+  # without buffering. Requires common subexpression elimination to be enabled.
+  # CLI flag: -querier.mimir-query-engine.enable-multi-aggregation
+  [enable_multi_aggregation: <boolean> | default = true]
 
 ring:
   # The key-value store used to share the hash ring across multiple instances.
@@ -3240,17 +3241,6 @@ local:
   [path: <string> | default = ""]
 ```
 
-### flusher
-
-The `flusher` block configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
-
-```yaml
-# (advanced) Stop after flush has finished. If false, process will keep running,
-# doing nothing.
-# CLI flag: -flusher.exit-after-flush
-[exit_after_flush: <boolean> | default = true]
-```
-
 ### ingester_client
 
 The `ingester_client` block configures how the distributors connect to the ingesters.
@@ -3590,12 +3580,6 @@ grpc_client_config:
 # query-scheduler.
 # The CLI flags prefix for this block configuration is: querier.scheduler-client
 [query_scheduler_grpc_client_config: <grpc_client>]
-
-# (experimental) Enables streaming of responses from querier to query-frontend
-# for response types that support it (currently only `active_series` responses
-# do).
-# CLI flag: -querier.response-streaming-enabled
-[response_streaming_enabled: <boolean> | default = true]
 ```
 
 ### etcd
@@ -4378,6 +4362,12 @@ The `limits` block configures default and per-tenant limits imposed by component
 # means all queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 13h]
+
+# (experimental) Enable the experimental Prometheus feature for delayed name
+# removal within MQE, which only works if remote execution and running sharding
+# within MQE is enabled.
+# CLI flag: -querier.enable-delayed-name-removal
+[enable_delayed_name_removal: <boolean> | default = false]
 
 # Limit the total query time range (end - start time). This limit is enforced in
 # the query-frontend on the received instant, range or remote read query.
@@ -5514,6 +5504,19 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-header.verify-on-load
     [verify_on_load: <boolean> | default = false]
 
+    bucket_reader:
+      # (experimental) Enable reading TSDB index-header sections from object
+      # storage. When enabled, the configured
+      # -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
+      # are not downloaded to local disk.
+      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.enabled
+      [enabled: <boolean> | default = false]
+
+      # (experimental) Index sections to read from object storage instead of
+      # local disk. Valid sections: all
+      # CLI flag: -blocks-storage.bucket-store.index-header.bucket-reader.index-sections
+      [index_sections: <string> | default = "all"]
+
   # (advanced) This option controls how many series to fetch per batch. The
   # batch size must be greater than 0.
   # CLI flag: -blocks-storage.bucket-store.batch-series-size
@@ -6094,6 +6097,13 @@ sharding_ring:
   # querier and ruler when running in microservices mode.
   # CLI flag: -store-gateway.sharding-ring.zone-awareness-enabled
   [zone_awareness_enabled: <boolean> | default = false]
+
+  # (advanced) Comma-separated list of zones to exclude from the ring. Instances
+  # in excluded zones will be filtered out from the ring. This option needs be
+  # set both on the store-gateway, querier and ruler when running in
+  # microservices mode.
+  # CLI flag: -store-gateway.sharding-ring.excluded-zones
+  [excluded_zones: <string> | default = ""]
 
   # (advanced) Minimum time to wait for ring stability at startup, if set to
   # positive value.

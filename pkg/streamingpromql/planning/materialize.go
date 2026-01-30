@@ -33,20 +33,19 @@ func NewMaterializer(params *OperatorParameters, nodeMaterializers map[NodeType]
 	}
 }
 
-func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTimeRange) (types.Operator, error) {
-	return m.ConvertNodeToOperatorWithSubRange(node, timeRange, RangeParams{IsSet: false})
+func (m *Materializer) FactoryForNode(node Node, timeRange types.QueryTimeRange) (OperatorFactory, error) {
+	return m.FactoryForNodeWithSubRange(node, timeRange, RangeParams{IsSet: false})
 }
 
-// ConvertNodeToOperatorWithSubRange will call materialize with the selected subrange.
-// Use util.None() to indicate no override, or util.Some() to override with specific values.
-func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange types.QueryTimeRange, overrideTimeParams RangeParams) (types.Operator, error) {
+// FactoryForNodeWithSubRange returns a factory for the given node with optional sub-range parameters.
+func (m *Materializer) FactoryForNodeWithSubRange(node Node, timeRange types.QueryTimeRange, overrideTimeParams RangeParams) (OperatorFactory, error) {
 	key := OperatorFactoryKey{
 		node:               node,
 		timeRange:          timeRange,
 		overrideTimeParams: overrideTimeParams,
 	}
 	if f, ok := m.operatorFactories[key]; ok {
-		return f.Produce()
+		return f, nil
 	}
 
 	nm, ok := m.nodeMaterializers[node.NodeType()]
@@ -60,6 +59,20 @@ func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange ty
 	}
 
 	m.operatorFactories[key] = f
+
+	return f, nil
+}
+
+func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTimeRange) (types.Operator, error) {
+	return m.ConvertNodeToOperatorWithSubRange(node, timeRange, RangeParams{IsSet: false})
+}
+
+// ConvertNodeToOperatorWithSubRange will call materialize with the selected subrange.
+func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange types.QueryTimeRange, overrideTimeParams RangeParams) (types.Operator, error) {
+	f, err := m.FactoryForNodeWithSubRange(node, timeRange, overrideTimeParams)
+	if err != nil {
+		return nil, err
+	}
 
 	return f.Produce()
 }

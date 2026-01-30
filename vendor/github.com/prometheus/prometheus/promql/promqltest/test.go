@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -113,6 +113,39 @@ func NewTestEngineWithOpts(tb testing.TB, opts promql.EngineOpts) *promql.Engine
 	return ng
 }
 
+// GetBuiltInExprs returns all the eval statement expressions from the built-in test files.
+func GetBuiltInExprs() ([]string, error) {
+	files, err := fs.Glob(testsFs, "*/*.test")
+	if err != nil {
+		return nil, err
+	}
+
+	var exprs []string
+	for _, fn := range files {
+		content, err := fs.ReadFile(testsFs, fn)
+		if err != nil {
+			return nil, err
+		}
+
+		// Create a minimal test struct just for parsing
+		testInstance := &test{
+			cmds: []testCommand{},
+		}
+		if err := testInstance.parse(string(content)); err != nil {
+			return nil, err
+		}
+
+		// Extract expressions from eval commands
+		for _, cmd := range testInstance.cmds {
+			if evalCmd, ok := cmd.(*evalCmd); ok {
+				exprs = append(exprs, evalCmd.expr)
+			}
+		}
+	}
+
+	return exprs, nil
+}
+
 // RunBuiltinTests runs an acceptance test suite against the provided engine.
 func RunBuiltinTests(t TBRun, engine promql.QueryEngine) {
 	RunBuiltinTestsWithStorage(t, engine, newTestStorage)
@@ -124,10 +157,12 @@ func RunBuiltinTestsWithStorage(t TBRun, engine promql.QueryEngine, newStorage f
 		parser.EnableExperimentalFunctions = false
 		parser.ExperimentalDurationExpr = false
 		parser.EnableExtendedRangeSelectors = false
+		parser.EnableBinopFillModifiers = false
 	})
 	parser.EnableExperimentalFunctions = true
 	parser.ExperimentalDurationExpr = true
 	parser.EnableExtendedRangeSelectors = true
+	parser.EnableBinopFillModifiers = true
 
 	files, err := fs.Glob(testsFs, "*/*.test")
 	require.NoError(t, err)

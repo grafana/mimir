@@ -124,7 +124,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 	// Initialize the last consumed offset metric to -1 to signal no offset has been consumed yet (0 is a valid offset).
 	r.metrics.lastConsumedOffset.WithLabelValues(strconv.Itoa(int(partitionID))).Set(-1)
 
-	r.Service = services.NewBasicService(r.start, r.run, r.stop)
+	r.Service = services.NewBasicService(r.start, r.run, r.stop).WithName("partition-reader")
 	return r, nil
 }
 
@@ -972,7 +972,7 @@ func newPartitionCommitter(kafkaCfg KafkaConfig, admClient AdmClient, partitionI
 			ConstLabels: prometheus.Labels{"partition": strconv.Itoa(int(partitionID))},
 		}),
 	}
-	c.Service = services.NewBasicService(nil, c.run, c.stop)
+	c.Service = services.NewBasicService(nil, c.run, c.stop).WithName("partition-reader-offset-commiter")
 
 	// Initialise the last committed offset metric to -1 to signal no offset has been committed yet (0 is a valid offset).
 	c.lastCommittedOffset.Set(-1)
@@ -1179,7 +1179,7 @@ func NewReaderMetrics(reg prometheus.Registerer, metricsSource ReaderMetricsSour
 	m.Service = services.NewTimerService(100*time.Millisecond, nil, func(context.Context) error {
 		m.estimatedBytesPerRecord.Observe(float64(metricsSource.EstimatedBytesPerRecord()))
 		return nil
-	}, nil)
+	}, nil).WithName("ingest-storage-partition-reader-metrics")
 	return m
 }
 
