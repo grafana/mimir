@@ -105,7 +105,18 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node,
 		return nil, eliminatedAny, nil
 	}
 
-	if ok, err := canEliminateDeduplicateAndMerge(deduplicateAndMerge.Inner, delayedNameRemoval); err != nil {
+	var (
+		ok  bool
+		err error
+	)
+
+	if delayedNameRemoval {
+		ok, err = canEliminateDeduplicateAndMergeDelayedNameRemoval(deduplicateAndMerge.Inner)
+	} else {
+		ok, err = canEliminateDeduplicateAndMerge(deduplicateAndMerge.Inner)
+	}
+
+	if err != nil {
 		return nil, false, err
 	} else if ok {
 		return deduplicateAndMerge.Inner, true, nil
@@ -114,35 +125,56 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node,
 	return nil, eliminatedAny, nil
 }
 
-func canEliminateDeduplicateAndMerge(node planning.Node, delayedNameRemoval bool) (bool, error) {
+func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) (bool, error) {
 	switch node := node.(type) {
-	case *core.VectorSelector:
-		return hasExactNameMatcher(node.Matchers) || delayedNameRemoval, nil
-	case *core.MatrixSelector:
-		return hasExactNameMatcher(node.Matchers) || delayedNameRemoval, nil
 	case *core.FunctionCall:
 		if isLabelReplaceOrJoinFunction(node) {
 			return false, nil
 		}
 
 		for _, child := range node.Args {
-			if ok, err := canEliminateDeduplicateAndMerge(child, delayedNameRemoval); err != nil {
+			if ok, err := canEliminateDeduplicateAndMergeDelayedNameRemoval(child); err != nil {
 				return false, err
 			} else if !ok {
 				return false, nil
 			}
 		}
 
-		return isNameUniqueForFunction(node) || delayedNameRemoval, nil
-	case *core.UnaryExpression:
-		return canEliminateDeduplicateAndMerge(node.Inner, delayedNameRemoval)
-	case *core.DeduplicateAndMerge, *core.AggregateExpression:
 		return true, nil
 	case *core.DropName:
-		// TODO: Need a function with logic specific to this case
-		return isNameUniqueForDropName(node), nil
+		return isNameUnique(node, isNameUniqueForDropNamePath), nil
+	default:
+		return true, nil
+	}
+
+}
+
+func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
+	switch node := node.(type) {
+	case *core.VectorSelector:
+		return hasExactNameMatcher(node.Matchers), nil
+	case *core.MatrixSelector:
+		return hasExactNameMatcher(node.Matchers), nil
+	case *core.FunctionCall:
+		if isLabelReplaceOrJoinFunction(node) {
+			return false, nil
+		}
+
+		for _, child := range node.Args {
+			if ok, err := canEliminateDeduplicateAndMerge(child); err != nil {
+				return false, err
+			} else if !ok {
+				return false, nil
+			}
+		}
+
+		return isNameUnique(node, isNameUniqueForFunctionPath), nil
+	case *core.UnaryExpression:
+		return canEliminateDeduplicateAndMerge(node.Inner)
+	case *core.DeduplicateAndMerge, *core.AggregateExpression:
+		return true, nil
 	case *core.BinaryExpression:
-		if node.Op == core.BINARY_LOR && !delayedNameRemoval {
+		if node.Op == core.BINARY_LOR {
 			return false, nil
 		}
 
@@ -178,23 +210,26 @@ func hasExactNameMatcher(matchers []*core.LabelMatcher) bool {
 	return false
 }
 
-func isNameUniqueForDropName(n *core.DropName) bool {
+type ExaminePath func(dedupeNeeded int, path []planning.Node) bool
+
+func isNameUnique(n planning.Node, examine ExaminePath) bool {
 	unique := false
 
 	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
 		switch e := node.(type) {
 		case *core.VectorSelector:
-			if hasExactNameMatcher(e.Matchers) {
-				unique = isNameUniqueForDropNamePath(0, path)
-			} else {
-				unique = isNameUniqueForDropNamePath(1, path)
+			var dedupeNeeded int
+			if !hasExactNameMatcher(e.Matchers) {
+				dedupeNeeded = 1
 			}
+
+			unique = examine(dedupeNeeded, path)
 		case *core.MatrixSelector:
-			if hasExactNameMatcher(e.Matchers) {
-				unique = isNameUniqueForDropNamePath(0, path)
-			} else {
-				unique = isNameUniqueForDropNamePath(1, path)
+			var dedupeNeeded int
+			if !hasExactNameMatcher(e.Matchers) {
+				dedupeNeeded = 1
 			}
+			unique = examine(dedupeNeeded, path)
 		}
 
 		return nil
@@ -203,74 +238,49 @@ func isNameUniqueForDropName(n *core.DropName) bool {
 	return unique
 }
 
-func isNameUniqueForFunction(n *core.FunctionCall) bool {
-	unique := false
-
-	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
-		switch e := node.(type) {
-		case *core.VectorSelector:
-			if hasExactNameMatcher(e.Matchers) {
-				unique = isNameUniqueForFunctionPath(0, path)
-			} else {
-				unique = isNameUniqueForFunctionPath(1, path)
-			}
-		case *core.MatrixSelector:
-			if hasExactNameMatcher(e.Matchers) {
-				unique = isNameUniqueForFunctionPath(0, path)
-			} else {
-				unique = isNameUniqueForFunctionPath(1, path)
-			}
-		}
-
-		return nil
-	}))
-
-	return unique
-}
-
-func isNameUniqueForFunctionPath(needed int, path []planning.Node) bool {
+func isNameUniqueForFunctionPath(dedupeNeeded int, path []planning.Node) bool {
 	firstLabelManip := true
 
 	for i := len(path) - 1; i >= 0; i-- {
 		switch e := path[i].(type) {
 		case *core.FunctionCall:
 			if isLabelReplaceOrJoinFunction(e) {
-				// TODO: WTF
+				// TODO: this is terrible
 				if firstLabelManip {
 					firstLabelManip = false
-					needed += 2
+					dedupeNeeded += 2
 				} else {
-					needed++
+					dedupeNeeded++
 				}
 			}
 
 		case *core.BinaryExpression:
 			if e.Op == core.BINARY_LOR {
-				needed++
+				dedupeNeeded++
 			}
 		case *core.DeduplicateAndMerge:
-			needed--
+			dedupeNeeded--
 		}
 	}
 
-	return needed <= 0
+	return dedupeNeeded <= 0
 }
 
-func isNameUniqueForDropNamePath(needed int, path []planning.Node) bool {
+func isNameUniqueForDropNamePath(dedupeNeeded int, path []planning.Node) bool {
 	for i := len(path) - 1; i >= 0; i-- {
 		switch e := path[i].(type) {
 		case *core.FunctionCall:
 			if isLabelReplaceOrJoinFunction(e) {
-				needed++
+				dedupeNeeded++
 			}
 		case *core.BinaryExpression:
-			needed++
+			dedupeNeeded++
 		case *core.DeduplicateAndMerge:
-			needed--
+			dedupeNeeded--
 		}
 	}
 
-	return needed <= 0
+	return dedupeNeeded <= 0
 }
 
 func isLabelReplaceOrJoinFunction(node planning.Node) bool {
