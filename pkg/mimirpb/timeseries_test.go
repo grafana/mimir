@@ -424,6 +424,7 @@ func assertNoZeroFieldsDeep(t *testing.T, val reflect.Value, path string) {
 			assertNoZeroFieldsDeep(t, field, fieldPath)
 		}
 	case reflect.Slice:
+		assert.NotZero(t, val.Len())
 		for i := 0; i < val.Len(); i++ {
 			elem := val.Index(i)
 			elemPath := fmt.Sprintf("%s[%d]", path, i)
