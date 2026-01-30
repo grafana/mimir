@@ -30,6 +30,7 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/multiaggregation"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/metrics"
@@ -109,6 +110,18 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	if opts.EnableProjectionPushdown {
 		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
 		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
+	}
+
+	// Run range vector splitting pass before CSE.
+	if opts.RangeVectorSplitting.Enabled {
+		splitInterval := opts.RangeVectorSplitting.SplitInterval
+		if splitInterval <= 0 {
+			splitInterval = 2 * time.Hour
+		}
+		planner.RegisterQueryPlanOptimizationPass(rangevectorsplitting.NewOptimizationPass(splitInterval, opts.Limits, time.Now, opts.CommonOpts.Reg, opts.Logger))
+		if opts.Logger != nil {
+			opts.Logger.Log("msg", "range vector splitting optimization pass enabled", "split_interval", splitInterval)
+		}
 	}
 
 	if opts.EnableCommonSubexpressionElimination {

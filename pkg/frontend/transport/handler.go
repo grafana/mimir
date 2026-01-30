@@ -365,6 +365,7 @@ func (f *Handler) reportQueryStats(
 		shardedQueries, stats.LoadShardedQueries(),
 		splitQueries, stats.LoadSplitQueries(),
 		"spun_off_subqueries", stats.LoadSpunOffSubqueries(),
+		"split_range_vectors", stats.LoadSplitRangeVectors(),
 		estimatedSeriesCount, stats.LoadEstimatedSeriesCount(),
 		queueTimeSeconds, stats.LoadQueueTime().Seconds(),
 		encodeTimeSeconds, stats.LoadEncodeTime().Seconds(),

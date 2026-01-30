@@ -270,7 +270,7 @@ func NewRemoteExecutionGroupMaterializer(groupEvaluatorFactory GroupEvaluatorFac
 	return &RemoteExecutionGroupMaterializer{groupEvaluatorFactory: groupEvaluatorFactory}
 }
 
-func (m *RemoteExecutionGroupMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionGroupMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
 	g, ok := n.(*RemoteExecutionGroup)
 	if !ok {
 		return nil, fmt.Errorf("expected node of type RemoteExecutionGroup, got %T", n)
@@ -347,7 +347,7 @@ func NewRemoteExecutionConsumerMaterializer() planning.NodeMaterializer {
 	return &RemoteExecutionConsumerMaterializer{}
 }
 
-func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+func (m *RemoteExecutionConsumerMaterializer) Materialize(n planning.Node, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters, _ planning.RangeParams) (planning.OperatorFactory, error) {
 	c, ok := n.(*RemoteExecutionConsumer)
 	if !ok {
 		return nil, fmt.Errorf("expected node of type RemoteExecutionConsumer, got %T", n)
