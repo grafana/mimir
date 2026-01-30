@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/gogo/protobuf/proto"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1046,6 +1047,24 @@ func (resp *PrometheusResponseWithFinalizer) Close() {
 
 func (resp *PrometheusResponseWithFinalizer) GetPrometheusResponse() (*PrometheusResponse, bool) {
 	return resp.PrometheusResponse, true
+}
+
+func (resp *PrometheusResponse) Clone() *PrometheusResponse {
+	respClone := &PrometheusResponse{
+		Status:    resp.Status,
+		Data:      resp.Data,
+		ErrorType: resp.ErrorType,
+		Error:     resp.Error,
+		Headers:   make([]*PrometheusHeader, len(resp.Headers)),
+		Warnings:  make([]string, len(resp.Warnings)),
+		Infos:     make([]string, len(resp.Infos)),
+	}
+	copy(respClone.Warnings, resp.Warnings)
+	copy(respClone.Infos, resp.Infos)
+	for i, header := range resp.Headers {
+		respClone.Headers[i] = proto.Clone(header).(*PrometheusHeader)
+	}
+	return respClone
 }
 
 // EncodeCachedHTTPResponse encodes the input http.Response into CachedHTTPResponse.
