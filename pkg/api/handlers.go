@@ -10,7 +10,6 @@ import (
 	"context"
 	"embed"
 	"errors"
-	"fmt"
 	"html/template"
 	"net/http"
 	"path"
@@ -18,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dustin/go-humanize"
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -356,25 +356,5 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 }
 
 func formatBytes(bytes int) string {
-	const (
-		KB = 1024
-		MB = KB * 1024
-		GB = MB * 1024
-	)
-	format := func(val float64) string {
-		if val == float64(int(val)) {
-			return fmt.Sprintf("%d", int(val))
-		}
-		return strings.TrimRight(fmt.Sprintf("%.2f", val), "0")
-	}
-	switch {
-	case bytes >= GB:
-		return format(float64(bytes)/GB) + " GB"
-	case bytes >= MB:
-		return format(float64(bytes)/MB) + " MB"
-	case bytes >= KB:
-		return format(float64(bytes)/KB) + " KB"
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
+	return humanize.IBytes(uint64(bytes))
 }
