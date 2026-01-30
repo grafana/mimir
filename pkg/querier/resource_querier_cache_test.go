@@ -8,13 +8,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/prometheus/prometheus/model/labels"
 )
 
 // noopQuerier is a minimal implementation of storage.Querier for testing.

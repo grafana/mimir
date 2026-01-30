@@ -3,9 +3,6 @@
 package otlpappender
 
 import (
-	"go.opentelemetry.io/collector/pdata/pcommon"
-	"go.opentelemetry.io/collector/pdata/xpdata/entity"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -13,6 +10,8 @@ import (
 	"github.com/prometheus/prometheus/model/metadata"
 	otlpappender "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
 	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )

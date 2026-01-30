@@ -29,10 +29,10 @@ import (
 	"github.com/grafana/dskit/runutil"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid/v2"
+	"github.com/parquet-go/parquet-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/parquet-go/parquet-go"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
@@ -1736,10 +1736,10 @@ func parseResourceAttributesParquet(data []byte) (map[uint64][]*storepb.Resource
 
 	// Define the row type to read - must match the parquet schema
 	type parquetRow struct {
-		Namespace        string                          `parquet:"namespace"`
-		LabelsHash       uint64                          `parquet:"labels_hash"`
-		MinTime          int64                           `parquet:"mint,optional"`
-		MaxTime          int64                           `parquet:"maxt,optional"`
+		Namespace        string                                `parquet:"namespace"`
+		LabelsHash       uint64                                `parquet:"labels_hash"`
+		MinTime          int64                                 `parquet:"mint,optional"`
+		MaxTime          int64                                 `parquet:"maxt,optional"`
 		IdentifyingAttrs []seriesmetadata.EntityAttributeEntry `parquet:"identifying_attrs,list,optional"`
 		DescriptiveAttrs []seriesmetadata.EntityAttributeEntry `parquet:"descriptive_attrs,list,optional"`
 		Entities         []seriesmetadata.EntityRow            `parquet:"entities,list,optional"`
