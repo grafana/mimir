@@ -21,6 +21,13 @@ const (
 	oooTestWriteMaxAge      = 110 * time.Minute
 )
 
+var oooMetricMetadata = []prompb.MetricMetadata{{
+	Type:             prompb.MetricMetadata_GAUGE,
+	MetricFamilyName: oooFloatMetricName,
+	Help:             "A neverending sine wave. Samples aligned with the minute (:00) are written in-order, in realtime. Samples at :20 and :40 past the minute are written out-of-order, lagging behind.",
+	Unit:             "u",
+}}
+
 type WriteReadOOOTestConfig struct {
 	Enabled     bool
 	NumSeries   int
@@ -134,7 +141,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, floatMetricMetadata, &t.inOrderSamples, t.client, t.metrics, logger); err != nil {
+		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, oooMetricMetadata, &t.inOrderSamples, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			return
 		}
@@ -151,7 +158,7 @@ func (t *WriteReadOOOTest) RunInner(ctx context.Context, now time.Time, writeLim
 		}
 
 		series := generateSeries(metricName, timestamp, t.cfg.NumSeries, prompb.Label{Name: "protocol", Value: t.client.Protocol()})
-		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, floatMetricMetadata, &t.outOfOrderSamples, t.client, t.metrics, logger); err != nil {
+		if err := writeSamples(ctx, floatTypeLabel, timestamp, series, oooMetricMetadata, &t.outOfOrderSamples, t.client, t.metrics, logger); err != nil {
 			errs.Add(err)
 			return
 		}
