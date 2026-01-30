@@ -3817,10 +3817,11 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.cluster-label-verification-disabled
 [cluster_label_verification_disabled: <boolean> | default = false]
 
-# Other cluster members to join. Can be specified multiple times. It can be an
-# IP, hostname or an entry specified in the DNS Service Discovery format.
+# Other cluster members to join. Can be specified multiple times or as a
+# comma-separated list. It can be an IP, hostname or an entry specified in the
+# DNS Service Discovery format.
 # CLI flag: -memberlist.join
-[join_members: <list of strings> | default = []]
+[join_members: <list of strings> | default = ]
 
 # (advanced) Min backoff duration to join other cluster members.
 # CLI flag: -memberlist.min-join-backoff
@@ -3855,6 +3856,13 @@ The `memberlist` block configures the Gossip memberlist.
 # rejoin is not needed.
 # CLI flag: -memberlist.rejoin-interval
 [rejoin_interval: <duration> | default = 0s]
+
+# (experimental) Seed nodes to use for periodic rejoin. Takes precedence over
+# -memberlist.join for rejoining. If not specified, -memberlist.join is used.
+# Can be specified multiple times or as a comma-separated list. Supports IP,
+# hostname, or DNS Service Discovery format.
+# CLI flag: -memberlist.rejoin-seed-nodes
+[rejoin_seed_nodes: <list of strings> | default = ]
 
 # (advanced) How long to keep LEFT ingesters in the ring.
 # CLI flag: -memberlist.left-ingesters-timeout
