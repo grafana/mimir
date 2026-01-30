@@ -550,8 +550,7 @@ func New(cfg Config, limits *validation.Overrides, ingestersRing ring.ReadRing, 
 		profilingIngester := NewIngesterProfilingWrapper(i)
 
 		// The offset file is always stored in the TSDB directory alongside the ingester's data.
-		// The filename includes the partition ID to make it clear which partition this offset belongs to.
-		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, fmt.Sprintf("kafka-partition-%d-offset", i.ingestPartitionID))
+		offsetFilePath := filepath.Join(cfg.BlocksStorageConfig.TSDB.Dir, "kafka-offset")
 
 		i.ingestReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, i.ingestPartitionID, cfg.IngesterRing.InstanceID, offsetFilePath, profilingIngester, log.With(logger, "component", "ingest_reader"), registerer)
 		if err != nil {

@@ -192,7 +192,7 @@ The following features are currently experimental:
   - Index lookup planning comparison to validate planning correctness
     - `-blocks-storage.tsdb.index-lookup-planning-enabled`
     - `-blocks-storage.tsdb.index-lookup-planning-comparison-portion`
-  - File based Kafka consumer group offset tracking enforcement
+  - File-based Kafka consumer group offset tracking enforcement
     - `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`
 - Querier
   - Max concurrency for tenant federated queries (`-tenant-federation.max-concurrent`)
