@@ -207,7 +207,7 @@ To configure gRPC compression, use the following CLI flags or their YAML equival
 For each tenant, Mimir opens and maintains a TSDB in memory. If you have a significant number of tenants, the memory overhead might become prohibitive.
 To reduce the associated overhead, consider the following:
 
-- Reduce `-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes`, default `4MB`. For example, try `1MB` or `128KB`.
+- Reduce `-blocks-storage.tsdb.head-chunks-write-buffer-size-bytes`, default `4194304` (4 MB). For example, try `1048576` (1 MB) or `131072` (128 KB).
 - Reduce `-blocks-storage.tsdb.stripe-size`, default `16384`. For example, try `256`, or even `64`.
 - Configure [shuffle sharding](https://grafana.com/docs/mimir/latest/configure/configure-shuffle-sharding/)
 
