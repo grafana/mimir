@@ -5,10 +5,12 @@ package ingester
 import (
 	"fmt"
 
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/tenant"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -71,7 +73,19 @@ func (i *Ingester) ResourceAttributes(request *client.ResourceAttributesRequest,
 	count := int64(0)
 	limit := request.GetLimit()
 
+	// Debug: count total resources in metadata reader
+	totalResources := uint64(0)
+	if err := metaReader.IterVersionedResources(func(_ uint64, _ *seriesmetadata.VersionedResource) error {
+		totalResources++
+		return nil
+	}); err != nil {
+		level.Error(i.logger).Log("msg", "error counting resources", "err", err)
+	}
+	level.Info(i.logger).Log("msg", "ResourceAttributes query", "user", userID, "totalResourcesInHead", totalResources)
+
+	seriesCount := 0
 	for postings.Next() {
+		seriesCount++
 		if limit > 0 && count >= limit {
 			break
 		}

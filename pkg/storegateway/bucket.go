@@ -1684,7 +1684,7 @@ func (s *BucketStore) blockResourceAttributes(ctx context.Context, b *bucketBloc
 		}
 
 		lbls, _ := seriesSet.At()
-		labelsHash := lbls.Hash()
+		labelsHash := labels.StableHash(lbls)
 
 		versions, ok := resourcesByHash[labelsHash]
 		if !ok || len(versions) == 0 {

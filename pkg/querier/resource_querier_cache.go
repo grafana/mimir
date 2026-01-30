@@ -8,9 +8,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -43,6 +45,11 @@ type resourceQuerierCache struct {
 
 	// Logger for debugging
 	logger log.Logger
+
+	// Stored context from Select() for use in GetResourceAt()
+	// This is needed because the ResourceQuerier interface doesn't pass context
+	storedCtx   context.Context
+	storedCtxMu sync.Mutex
 
 	// Cache state
 	cache            map[uint64]*seriesmetadata.VersionedResource
@@ -78,7 +85,16 @@ func (q *resourceQuerierCache) GetResourceAt(labelsHash uint64, timestamp int64)
 		return nil, false
 	}
 
-	if err := q.ensureCacheInitialized(context.Background()); err != nil {
+	// Use stored context from Select() call, fall back to Background if not available
+	q.storedCtxMu.Lock()
+	ctx := q.storedCtx
+	q.storedCtxMu.Unlock()
+	if ctx == nil {
+		level.Debug(q.logger).Log("msg", "GetResourceAt: no stored context available")
+		ctx = context.Background()
+	}
+
+	if err := q.ensureCacheInitialized(ctx); err != nil {
 		// Log warning but don't fail the query - graceful degradation
 		level.Warn(q.logger).Log("msg", "failed to initialize resource cache", "err", err)
 		return nil, false
@@ -90,10 +106,7 @@ func (q *resourceQuerierCache) GetResourceAt(labelsHash uint64, timestamp int64)
 	}
 
 	rv := vr.VersionAt(timestamp)
-	if rv == nil {
-		return nil, false
-	}
-	return rv, true
+	return rv, rv != nil
 }
 
 // IterUniqueAttributeNames implements storage.ResourceQuerier.
@@ -103,7 +116,15 @@ func (q *resourceQuerierCache) IterUniqueAttributeNames(fn func(name string)) er
 		return nil
 	}
 
-	if err := q.ensureCacheInitialized(context.Background()); err != nil {
+	// Use stored context from Select() call, fall back to Background if not available
+	q.storedCtxMu.Lock()
+	ctx := q.storedCtx
+	q.storedCtxMu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := q.ensureCacheInitialized(ctx); err != nil {
 		return err
 	}
 
@@ -166,6 +187,42 @@ func (q *resourceQuerierCache) initializeCache(ctx context.Context) error {
 	return nil
 }
 
+// Select implements storage.Querier and captures the context for later use in GetResourceAt.
+func (q *resourceQuerierCache) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	// Store the context for later use in GetResourceAt
+	q.storedCtxMu.Lock()
+	if q.storedCtx == nil {
+		q.storedCtx = ctx
+	}
+	q.storedCtxMu.Unlock()
+
+	return q.Querier.Select(ctx, sortSeries, hints, matchers...)
+}
+
+// LabelValues implements storage.Querier and captures the context for later use.
+func (q *resourceQuerierCache) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	// Store the context for later use in GetResourceAt
+	q.storedCtxMu.Lock()
+	if q.storedCtx == nil {
+		q.storedCtx = ctx
+	}
+	q.storedCtxMu.Unlock()
+
+	return q.Querier.LabelValues(ctx, name, hints, matchers...)
+}
+
+// LabelNames implements storage.Querier and captures the context for later use.
+func (q *resourceQuerierCache) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	// Store the context for later use in GetResourceAt
+	q.storedCtxMu.Lock()
+	if q.storedCtx == nil {
+		q.storedCtx = ctx
+	}
+	q.storedCtxMu.Unlock()
+
+	return q.Querier.LabelNames(ctx, hints, matchers...)
+}
+
 // Close releases resources.
 func (q *resourceQuerierCache) Close() error {
 	return q.Querier.Close()
@@ -178,7 +235,9 @@ type distributorResourceFetcher struct {
 
 // FetchResourceAttributes fetches resource attributes from ingesters via the distributor.
 func (f *distributorResourceFetcher) FetchResourceAttributes(ctx context.Context, minT, maxT int64) ([]*ResourceAttributesData, error) {
-	results, err := f.distributor.ResourceAttributes(ctx, minT, maxT, nil, 0)
+	// Use a matcher that matches all series (required for getPostings to return results)
+	allSeriesMatcher, _ := labels.NewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "")
+	results, err := f.distributor.ResourceAttributes(ctx, minT, maxT, []*labels.Matcher{allSeriesMatcher}, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +261,9 @@ type blocksResourceFetcher struct {
 
 // FetchResourceAttributes fetches resource attributes from store-gateways.
 func (f *blocksResourceFetcher) FetchResourceAttributes(ctx context.Context, minT, maxT int64) ([]*ResourceAttributesData, error) {
-	results, err := f.blocksQueryable.ResourceAttributes(ctx, minT, maxT, nil, 0)
+	// Use a matcher that matches all series (required for getPostings to return results)
+	allSeriesMatcher, _ := labels.NewMatcher(labels.MatchNotEqual, model.MetricNameLabel, "")
+	results, err := f.blocksQueryable.ResourceAttributes(ctx, minT, maxT, []*labels.Matcher{allSeriesMatcher}, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +281,9 @@ func (f *blocksResourceFetcher) FetchResourceAttributes(ctx context.Context, min
 }
 
 // convertIngesterLabelsToHash converts ingester labels to a hash.
+// Uses StableHash to match the hash used when storing resource attributes in the ingester.
 func convertIngesterLabelsToHash(lbls []mimirpb.LabelAdapter) uint64 {
-	return mimirpb.FromLabelAdaptersToLabels(lbls).Hash()
+	return labels.StableHash(mimirpb.FromLabelAdaptersToLabels(lbls))
 }
 
 // convertIngesterVersions converts ingester version data to seriesmetadata.ResourceVersion.
@@ -253,8 +315,9 @@ func convertIngesterVersions(versions []*ingester_client.ResourceVersionData) []
 }
 
 // convertStoreLabelsToHash converts store-gateway labels (map) to a hash.
+// Uses StableHash to match the hash used when storing resource attributes.
 func convertStoreLabelsToHash(lbls map[string]string) uint64 {
-	return labels.FromMap(lbls).Hash()
+	return labels.StableHash(labels.FromMap(lbls))
 }
 
 // convertStoreVersions converts store-gateway version data to seriesmetadata.ResourceVersion.

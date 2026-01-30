@@ -3264,7 +3264,7 @@ func (r *resourceAttributesResponse) add(items []*ingester_client.SeriesResource
 
 	for _, item := range items {
 		lbls := mimirpb.FromLabelAdaptersToLabels(item.Labels)
-		lblHash := lbls.Hash()
+		lblHash := labels.StableHash(lbls)
 
 		if existing, ok := r.series[lblHash]; !ok {
 			// First time seeing this series, store it with a deep copy of labels

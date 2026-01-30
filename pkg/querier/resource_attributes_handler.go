@@ -136,7 +136,13 @@ func NewResourceAttributesHandler(d Distributor, blocksQueryable ResourceAttribu
 		}
 
 		now := time.Now()
+		nowMs := now.UnixMilli()
 		var allSeries []*SeriesResourceAttributesData
+
+		// Default endMs to now if not specified
+		if endMs == 0 {
+			endMs = nowMs
+		}
 
 		// Query both ingesters and store-gateways in parallel
 		g, gCtx := errgroup.WithContext(ctx)
