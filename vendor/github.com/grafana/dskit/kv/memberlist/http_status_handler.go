@@ -26,8 +26,8 @@ type StatusPageData struct {
 	Memberlist                *memberlist.Memberlist
 	SortedMembers             []*memberlist.Node
 	Store                     map[string]ValueDesc
-	StoreSizes                map[string]int // key -> encoded size in bytes
-	TotalStoreSize            int            // sum of all sizes
+	StoreSizes                map[string]int
+	TotalStoreSize            int
 	MessageHistoryBufferBytes int
 	SentMessages              []Message
 	ReceivedMessages          []Message
