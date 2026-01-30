@@ -742,9 +742,10 @@ local filename = 'mimir-tenants.json';
         )
       )
       .addPanel(
-        $.timeseriesPanel('Alerts tracked by limiter') +
+        local title = 'Alerts tracked by limiter';
+        $.timeseriesPanel(title) +
         $.panelDescription(
-          'Alerts tracked by limiter',
+          title,
           |||
             Number of alerts currently tracked by the alerts limiter per tenant.
             This value is averaged across alertmanager replicas.
@@ -759,9 +760,10 @@ local filename = 'mimir-tenants.json';
         { fieldConfig+: { defaults+: { unit: 'short' } } }
       )
       .addPanel(
-        $.timeseriesPanel('Alerts size tracked by limiter') +
+        local title = 'Alerts size tracked by limiter';
+        $.timeseriesPanel(title) +
         $.panelDescription(
-          'Alerts size tracked by limiter',
+          title,
           |||
             Total size in bytes of alerts currently tracked by the alerts limiter per tenant.
             The size includes labels, annotations, and generator URL of each alert.
