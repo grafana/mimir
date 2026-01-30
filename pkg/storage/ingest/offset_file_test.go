@@ -3,6 +3,7 @@
 package ingest
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,13 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testPartitionID = 1
+
 func TestOffsetFile_ReadWrite(t *testing.T) {
 	// Create a temporary directory for testing
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "partition-1.offset")
 
 	logger := log.NewNopLogger()
-	offsetFile := newOffsetFile(filePath, logger)
+	offsetFile := newOffsetFile(filePath, testPartitionID, logger)
 
 	// Test reading from non-existent file
 	offset, exists := offsetFile.Read()
@@ -53,7 +56,7 @@ func TestOffsetFile_WriteCreatesDirectory(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "nested", "path", "partition-1.offset")
 
 	logger := log.NewNopLogger()
-	offsetFile := newOffsetFile(filePath, logger)
+	offsetFile := newOffsetFile(filePath, testPartitionID, logger)
 
 	// Write should create all parent directories
 	err := offsetFile.Write(1)
@@ -70,13 +73,63 @@ func TestOffsetFile_ReadInvalidContent(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "invalid.offset")
 
 	logger := log.NewNopLogger()
-	offsetFile := newOffsetFile(filePath, logger)
+	offsetFile := newOffsetFile(filePath, testPartitionID, logger)
 
-	// Write invalid content to the file
-	err := os.WriteFile(filePath, []byte("not-a-number"), 0644)
+	// Write invalid JSON to the file
+	err := os.WriteFile(filePath, []byte("not-valid-json"), 0644)
 	require.NoError(t, err)
 
 	// Reading should return false and 0
+	offset, exists := offsetFile.Read()
+	assert.False(t, exists)
+	assert.Equal(t, int64(0), offset)
+}
+
+func TestOffsetFile_ReadEmptyFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "empty.offset")
+
+	logger := log.NewNopLogger()
+	offsetFile := newOffsetFile(filePath, testPartitionID, logger)
+
+	// Write empty file (unmarshal yields Version=0, which is not a valid version)
+	err := os.WriteFile(filePath, []byte{}, 0644)
+	require.NoError(t, err)
+
+	offset, exists := offsetFile.Read()
+	assert.False(t, exists)
+	assert.Equal(t, int64(0), offset)
+}
+
+func TestOffsetFile_ReadWrongPartitionID(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "partition.offset")
+
+	logger := log.NewNopLogger()
+	// Create file for partition 1
+	writer := newOffsetFile(filePath, 1, logger)
+	require.NoError(t, writer.Write(42))
+
+	// Read with different partition ID
+	reader := newOffsetFile(filePath, 2, logger)
+	offset, exists := reader.Read()
+	assert.False(t, exists)
+	assert.Equal(t, int64(0), offset)
+}
+
+func TestOffsetFile_ReadWrongVersion(t *testing.T) {
+	tmpDir := t.TempDir()
+	filePath := filepath.Join(tmpDir, "version.offset")
+
+	logger := log.NewNopLogger()
+	offsetFile := newOffsetFile(filePath, testPartitionID, logger)
+
+	// Write valid structure but with unknown version
+	data := offsetFileData{Version: 2, PartitionID: testPartitionID, Offset: 0}
+	jsonBytes, err := json.Marshal(data)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filePath, jsonBytes, 0644))
+
 	offset, exists := offsetFile.Read()
 	assert.False(t, exists)
 	assert.Equal(t, int64(0), offset)
@@ -86,7 +139,7 @@ func TestOffsetFile_NilWhenEmpty(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	// Creating with empty path should return nil
-	offsetFile := newOffsetFile("", logger)
+	offsetFile := newOffsetFile("", testPartitionID, logger)
 	assert.Nil(t, offsetFile)
 
 	// Operations on nil should be safe
@@ -103,7 +156,7 @@ func TestOffsetFile_AtomicWrite(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "atomic.offset")
 
 	logger := log.NewNopLogger()
-	offsetFile := newOffsetFile(filePath, logger)
+	offsetFile := newOffsetFile(filePath, testPartitionID, logger)
 
 	// Write initial offset
 	err := offsetFile.Write(100)
@@ -125,7 +178,7 @@ func TestOffsetFile_Concurrent(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "concurrent.offset")
 
 	logger := log.NewNopLogger()
-	offsetFile := newOffsetFile(filePath, logger)
+	offsetFile := newOffsetFile(filePath, testPartitionID, logger)
 
 	// Write and read concurrently (the mutex should protect against races)
 	done := make(chan bool)
