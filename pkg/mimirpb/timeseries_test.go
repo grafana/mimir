@@ -430,10 +430,8 @@ func assertNoZeroFieldsDeep(t *testing.T, val reflect.Value, path string) {
 			elemPath := fmt.Sprintf("%s[%d]", path, i)
 			// Check that slice elements are non-zero (including scalar elements).
 			assert.False(t, elem.IsZero(), "fixture element %s should be non-zero to detect if it's not copied", elemPath)
-			// For slice elements that are structs, also check their fields recursively.
-			if elem.Kind() == reflect.Struct {
-				assertNoZeroFieldsDeep(t, elem, elemPath)
-			}
+			// Recursively check all elements, letting the type-specific cases handle each appropriately.
+			assertNoZeroFieldsDeep(t, elem, elemPath)
 		}
 	case reflect.Ptr, reflect.Interface:
 		if !val.IsNil() {
