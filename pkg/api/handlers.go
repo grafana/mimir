@@ -349,12 +349,10 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 		"GetRoleFromMeta": func(meta []byte) string {
 			return memberlist.EncodedNodeMetadata(meta).Role().String()
 		},
-		"FormatBytes": formatBytes,
+		"FormatBytes": func(bytes int) string {
+			return humanize.IBytes(uint64(bytes))
+		},
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))
 	return memberlist.NewHTTPStatusHandler(kvs, templ)
-}
-
-func formatBytes(bytes int) string {
-	return humanize.IBytes(uint64(bytes))
 }
