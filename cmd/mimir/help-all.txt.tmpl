@@ -1315,6 +1315,8 @@ Usage of ./cmd/mimir/mimir:
     	Whether to enable automatic suffixes to names of metrics ingested through OTLP.
   -distributor.otel-native-delta-ingestion
     	[experimental] Whether to enable native ingestion of delta OTLP metrics, which will store the raw delta sample values without conversion. If disabled, delta metrics will be rejected. Delta support is in an early stage of development. The ingestion and querying process is likely to change over time.
+  -distributor.otel-persist-resource-attributes
+    	[experimental] Whether to persist OTel resource attributes per time series as metadata in Prometheus TSDB blocks. Resource attributes are stored in series_metadata.parquet files within blocks and can be queried via the /api/v1/resource_attributes endpoint.
   -distributor.otel-promote-resource-attributes comma-separated-list-of-strings
     	[experimental] Optionally specify OTel resource attributes to promote to labels.
   -distributor.otel-promote-scope-metadata

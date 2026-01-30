@@ -27,6 +27,7 @@ When Mimir receives metrics via OTLP, each resource contains attributes that des
 ### Running the Demo
 
 1. Start Mimir:
+
    ```bash
    cd development/mimir-monolithic-mode
    ./compose-up.sh
@@ -59,6 +60,7 @@ The demo requires `otel_persist_resource_attributes: true` to be set in the runt
 The demo uses these OTel resource attributes:
 
 **Identifying Attributes** (constant for a series, used for correlation):
+
 - `service.name` - The logical name of the service
 - `service.namespace` - The namespace/environment
 - `service.instance.id` - Unique instance identifier
@@ -66,6 +68,7 @@ The demo uses these OTel resource attributes:
 These attributes uniquely identify the resource and remain constant throughout the lifetime of a series. They enable correlation with traces and logs.
 
 **Descriptive Attributes** (can change over time):
+
 - `host.name` - Hostname of the service (can change during migration)
 - `cloud.region` - Cloud provider region (can change during migration)
 - `deployment.environment` - Deployment environment
@@ -124,16 +127,19 @@ OTLP Metrics                 TSDB Head              Parquet Block
 ### API Reference
 
 Query resource attributes:
+
 ```bash
 curl 'http://localhost:8101/prometheus/api/v1/resources?match[]={__name__=~".+"}'
 ```
 
 Query with info() function:
+
 ```bash
 curl 'http://localhost:8101/prometheus/api/v1/query?query=info(http_requests_total)&time=1234567890'
 ```
 
 Send OTLP metrics with entity_refs:
+
 ```bash
 curl -X POST 'http://localhost:8101/otlp/v1/metrics' \
   -H 'Content-Type: application/json' \
