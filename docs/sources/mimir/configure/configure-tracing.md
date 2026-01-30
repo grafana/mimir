@@ -13,7 +13,7 @@ weight: 270
 
 Distributed tracing is a valuable tool for troubleshooting the behavior of Grafana Mimir in production.
 
-Grafana Mimir supports distributed tracing using [OpenTelemetry](https://opentelemetry.io/docs/languages/go/getting-started/) and provides backward compatibility with [Jaeger](https://www.jaegertracing.io/) configuration.
+Grafana Mimir supports distributed tracing using [OpenTelemetry](https://opentelemetry.io/docs/concepts/signals/traces/) and provides backward compatibility with [Jaeger](https://www.jaegertracing.io/) configuration.
 
 Mimir automatically detects which tracing configuration method to use based on the environment variables you set:
 
