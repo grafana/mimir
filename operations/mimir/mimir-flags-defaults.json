@@ -1299,6 +1299,7 @@
   "memberlist.max-join-backoff": 60000000000,
   "memberlist.max-join-retries": 10,
   "memberlist.rejoin-interval": 0,
+  "memberlist.rejoin-seed-nodes": [],
   "memberlist.left-ingesters-timeout": 300000000000,
   "memberlist.obsolete-entries-timeout": 30000000000,
   "memberlist.leave-timeout": 20000000000,
