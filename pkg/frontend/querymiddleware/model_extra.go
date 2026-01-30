@@ -1049,6 +1049,8 @@ func (resp *PrometheusResponseWithFinalizer) GetPrometheusResponse() (*Prometheu
 	return resp.PrometheusResponse, true
 }
 
+// create a semi clone
+// Data field points to the original response field
 func (resp *PrometheusResponse) Clone() *PrometheusResponse {
 	respClone := &PrometheusResponse{
 		Status:    resp.Status,

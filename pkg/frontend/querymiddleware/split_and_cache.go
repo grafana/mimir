@@ -639,6 +639,7 @@ func (s *splitAndCacheMiddleware) doRequest(ctx context.Context, tenantIDs []str
 		if !ok {
 			return nil, fmt.Errorf("Expected Prometheus Response")
 		}
+		//create a response copy from original for each request 
 		responseCopy := promRes.Clone()
 		return responseCopy, nil
 	}
