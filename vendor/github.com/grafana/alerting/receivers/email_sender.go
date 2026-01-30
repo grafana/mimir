@@ -36,6 +36,11 @@ type EmailSenderConfig struct {
 	StartTLSPolicy string
 	StaticHeaders  map[string]string
 	SentBy         string
+	// UseBCC indicates whether to send emails using BCC
+	// instead of the TO field when SingleEmail is false.
+	// If both UseBCC and SingleEmail are true, UseBCC is ignored
+	// and recipients are placed in the TO field.
+	UseBCC bool
 }
 
 type defaultEmailSender struct {
@@ -171,7 +176,7 @@ func (s *defaultEmailSender) Send(messages ...*Message) (int, error) {
 // expandMsg expands the message to a list of messages, one for each recipient
 // if SingleEmail is false, otherwise it returns a single message.
 func (s *defaultEmailSender) expandMsg(msg *Message) []*gomail.Message {
-	if msg.SingleEmail {
+	if msg.SingleEmail || s.cfg.UseBCC {
 		return []*gomail.Message{s.buildEmail(msg)}
 	}
 
@@ -245,7 +250,11 @@ func (s *defaultEmailSender) buildEmail(msg *Message) *gomail.Message {
 		m.SetHeader(h, val)
 	}
 	m.SetHeader("From", msg.From)
-	m.SetHeader("To", msg.To...)
+	if s.cfg.UseBCC && !msg.SingleEmail {
+		m.SetHeader("Bcc", msg.To...)
+	} else {
+		m.SetHeader("To", msg.To...)
+	}
 	m.SetHeader("Subject", msg.Subject)
 
 	// Add embedded files.

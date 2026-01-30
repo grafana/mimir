@@ -239,7 +239,7 @@ func BuildPrometheusReceiverIntegrations(
 				errs.Add(err)
 				return
 			}
-			tmpl = t
+			tmpl = t.Template
 		})
 		add = func(name string, i int, rs notify.ResolvedSender, f func(l log.Logger) (notify.Notifier, error)) {
 			initOnce()
