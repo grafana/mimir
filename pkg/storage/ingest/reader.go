@@ -768,11 +768,11 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 				if err != nil {
 					return 0, -1, err
 				}
-				if exists {
-					lastConsumedOffset := offset - 1
-					level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, starting from retention period", "retention_period", r.tsdbRetentionPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
-					return offset, lastConsumedOffset, nil
-				}
+			if exists {
+				lastConsumedOffset = offset - 1
+				level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, starting from retention period", "retention_period", r.tsdbRetentionPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
+				return offset, lastConsumedOffset, nil
+			}
 			}
 			level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing and retention resolution failed, will replay from partition start", "consumer_group", r.consumerGroup)
 		} else {
@@ -851,8 +851,11 @@ func (r *PartitionReader) fetchPartitionStartOffset(ctx context.Context, cl *kgo
 		return 0, false, fmt.Errorf("unable to list partition start offset: %w", err)
 	}
 	offsetRes, exists := offsets.Lookup(r.kafkaCfg.Topic, r.partitionID)
-	if !exists || offsetRes.Err != nil {
+	if !exists {
 		return 0, false, nil
+	}
+	if offsetRes.Err != nil {
+		return 0, false, offsetRes.Err
 	}
 	return offsetRes.Offset, true, nil
 }
