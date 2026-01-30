@@ -423,7 +423,7 @@ func assertNoZeroFieldsDeep(t *testing.T, val reflect.Value, path string) {
 			// Recursively check nested structs and slices.
 			assertNoZeroFieldsDeep(t, field, fieldPath)
 		}
-	case reflect.Slice:
+	case reflect.Slice, reflect.Array:
 		assert.NotZero(t, val.Len())
 		for i := 0; i < val.Len(); i++ {
 			elem := val.Index(i)
