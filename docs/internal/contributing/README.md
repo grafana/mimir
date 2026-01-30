@@ -130,6 +130,8 @@ For more detail on style and organisation of the documentation, refer to the ded
 
 Note: if you attempt to view pages on GitHub, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
 
+Please see dedicated [instructions for documentation authoring][documentation-authoring.md] for more information on the Docs toolkit.
+
 ## Errors catalog
 
 We document the common user-visible errors so it is easy for the user to search for how to address those errors when they see them.
