@@ -77,12 +77,9 @@ func TestUnsupportedPromQLFeatures(t *testing.T) {
 	parser.EnableBinopFillModifiers = true
 	defer func() { parser.EnableBinopFillModifiers = binOpFillModifierEnabled }()
 
-	parser.Functions["info"].Experimental = false
-
 	// The goal of this is not to list every conceivable expression that is unsupported, but to cover all the
 	// different cases and make sure we produce a reasonable error message when these cases are encountered.
 	unsupportedExpressions := map[string]string{
-		"info(metric{})": "'info' function",
 		"left_vector + fill_right(0) right_vector": "'fill' modifier",
 		"left_vector + fill(0) right_vector":       "'fill' modifier",
 		"left_vector + fill_left(0) right_vector":  "'fill' modifier",
