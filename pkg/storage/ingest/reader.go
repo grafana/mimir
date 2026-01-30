@@ -842,8 +842,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context, cl *kgo.
 // fetchPartitionStartOffset returns the earliest available offset for the partition (partition start).
 // Used to validate that a file-stored offset still exists when the ingester was lagging or retention compacted the log.
 func (r *PartitionReader) fetchPartitionStartOffset(ctx context.Context, cl *kgo.Client) (offset int64, exists bool, _ error) {
-	// Kafka ListOffsets with timestamp -2 means "earliest" (partition start).
-	offsets, err := kadm.NewClient(cl).ListOffsetsAfterMilli(ctx, -2, r.kafkaCfg.Topic)
+	offsets, err := kadm.NewClient(cl).ListStartOffsets(ctx, r.kafkaCfg.Topic)
 	if errors.Is(err, kerr.UnknownTopicOrPartition) {
 		return 0, false, nil
 	}
