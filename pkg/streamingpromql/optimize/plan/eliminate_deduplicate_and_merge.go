@@ -133,13 +133,14 @@ func canEliminateDeduplicateAndMerge(node planning.Node, delayedNameRemoval bool
 			}
 		}
 
-		return isNameLabelDropped(node), nil
+		return isNameUniqueForFunction(node) || delayedNameRemoval, nil
 	case *core.UnaryExpression:
 		return canEliminateDeduplicateAndMerge(node.Inner, delayedNameRemoval)
 	case *core.DeduplicateAndMerge, *core.AggregateExpression:
 		return true, nil
 	case *core.DropName:
-		return false, nil
+		// TODO: Need a function with logic specific to this case
+		return isNameUniqueForDropName(node), nil
 	case *core.BinaryExpression:
 		if node.Op == core.BINARY_LOR && !delayedNameRemoval {
 			return false, nil
@@ -177,39 +178,99 @@ func hasExactNameMatcher(matchers []*core.LabelMatcher) bool {
 	return false
 }
 
-// isNameLabelDropped returns false if the children of n contain operations that manipulate
-// labels which can potentially re-introduce the __name__ label without any subsequent operations
-// that drop __name__, true otherwise.
-func isNameLabelDropped(n planning.Node) bool {
-	dropped := true
+func isNameUniqueForDropName(n *core.DropName) bool {
+	unique := false
+
 	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
-
-		state := 0
-		// label_replace and label_join functions can potentially re-introduce __name__ labels
-		// after they have been dropped by an inner function (like `rate(...)`). If we see one
-		// of these functions, we check the path between it and our root node, `n`, to ensure
-		// that the label_replace function has a corresponding DeduplicateAndMerge node and there
-		// is at least one more that indicates the path contains a function that drops __name__.
-		if isLabelReplaceOrJoinFunction(node) {
-			state = 2
-
-			for i := len(path) - 1; i >= 0; i-- {
-				if path[i].NodeType() == planning.NODE_TYPE_DEDUPLICATE_AND_MERGE {
-					state--
-				} else if isLabelReplaceOrJoinFunction(path[i]) {
-					state++
-				}
+		switch e := node.(type) {
+		case *core.VectorSelector:
+			if hasExactNameMatcher(e.Matchers) {
+				unique = isNameUniqueForDropNamePath(0, path)
+			} else {
+				unique = isNameUniqueForDropNamePath(1, path)
 			}
-		}
-
-		if state > 0 {
-			dropped = false
+		case *core.MatrixSelector:
+			if hasExactNameMatcher(e.Matchers) {
+				unique = isNameUniqueForDropNamePath(0, path)
+			} else {
+				unique = isNameUniqueForDropNamePath(1, path)
+			}
 		}
 
 		return nil
 	}))
 
-	return dropped
+	return unique
+}
+
+func isNameUniqueForFunction(n *core.FunctionCall) bool {
+	unique := false
+
+	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
+		switch e := node.(type) {
+		case *core.VectorSelector:
+			if hasExactNameMatcher(e.Matchers) {
+				unique = isNameUniqueForFunctionPath(0, path)
+			} else {
+				unique = isNameUniqueForFunctionPath(1, path)
+			}
+		case *core.MatrixSelector:
+			if hasExactNameMatcher(e.Matchers) {
+				unique = isNameUniqueForFunctionPath(0, path)
+			} else {
+				unique = isNameUniqueForFunctionPath(1, path)
+			}
+		}
+
+		return nil
+	}))
+
+	return unique
+}
+
+func isNameUniqueForFunctionPath(needed int, path []planning.Node) bool {
+	firstLabelManip := true
+
+	for i := len(path) - 1; i >= 0; i-- {
+		switch e := path[i].(type) {
+		case *core.FunctionCall:
+			if isLabelReplaceOrJoinFunction(e) {
+				// TODO: WTF
+				if firstLabelManip {
+					firstLabelManip = false
+					needed += 2
+				} else {
+					needed++
+				}
+			}
+
+		case *core.BinaryExpression:
+			if e.Op == core.BINARY_LOR {
+				needed++
+			}
+		case *core.DeduplicateAndMerge:
+			needed--
+		}
+	}
+
+	return needed <= 0
+}
+
+func isNameUniqueForDropNamePath(needed int, path []planning.Node) bool {
+	for i := len(path) - 1; i >= 0; i-- {
+		switch e := path[i].(type) {
+		case *core.FunctionCall:
+			if isLabelReplaceOrJoinFunction(e) {
+				needed++
+			}
+		case *core.BinaryExpression:
+			needed++
+		case *core.DeduplicateAndMerge:
+			needed--
+		}
+	}
+
+	return needed <= 0
 }
 
 func isLabelReplaceOrJoinFunction(node planning.Node) bool {
