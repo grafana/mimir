@@ -61,6 +61,7 @@ type Selector struct {
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
 	if s.EagerLoad {
 		return s.loadSeriesSet(ctx, s.Matchers)
 	}
