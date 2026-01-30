@@ -345,6 +345,63 @@ func TestDeepCopyTimeseriesExemplars(t *testing.T) {
 	assert.Less(t, cap(*dst1.yoloSlice), cap(*dst2.yoloSlice))
 }
 
+// TestDeepCopyTimeseriesCopiesAllFields uses reflection to ensure that all fields
+// of TimeSeries are copied by DeepCopyTimeseries. This test will fail if a new field
+// is added to TimeSeries but not copied, preventing future oversights.
+func TestDeepCopyTimeseriesCopiesAllFields(t *testing.T) {
+	// Create a fixture with all fields set to non-zero values.
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "label1", Value: "value1"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 2},
+			},
+			Exemplars: []Exemplar{
+				{Value: 1, TimestampMs: 2, Labels: []LabelAdapter{{Name: "e1", Value: "v1"}}},
+			},
+			Histograms: []Histogram{
+				{
+					Count:         &Histogram_CountInt{CountInt: 10},
+					Sum:           1.0,
+					ZeroCount:     &Histogram_ZeroCountInt{ZeroCountInt: 2},
+					ZeroThreshold: 0.01,
+					Timestamp:     100,
+				},
+			},
+			CreatedTimestamp:          1234567890,
+			SkipUnmarshalingExemplars: true,
+		},
+	}
+
+	// Use reflection to verify that all fields in the source TimeSeries are non-zero.
+	// This ensures our fixture is complete and can detect if a field isn't copied.
+	srcVal := reflect.ValueOf(src.TimeSeries).Elem()
+	srcType := srcVal.Type()
+	for i := 0; i < srcVal.NumField(); i++ {
+		field := srcVal.Field(i)
+		fieldName := srcType.Field(i).Name
+		assert.False(t, field.IsZero(), "fixture field %s should be non-zero to detect if it's not copied", fieldName)
+	}
+
+	// Deep copy with keepHistograms=true and keepExemplars=true to copy all fields.
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, true, true)
+
+	// Use reflection to verify that all fields were copied correctly.
+	dstVal := reflect.ValueOf(dst.TimeSeries).Elem()
+	for i := 0; i < srcVal.NumField(); i++ {
+		srcField := srcVal.Field(i)
+		dstField := dstVal.Field(i)
+		fieldName := srcType.Field(i).Name
+
+		// For deep equality, we use reflect.DeepEqual which handles slices, pointers, etc.
+		assert.True(t, reflect.DeepEqual(srcField.Interface(), dstField.Interface()),
+			"field %s was not copied correctly: src=%v, dst=%v", fieldName, srcField.Interface(), dstField.Interface())
+	}
+}
+
 func TestPreallocTimeseries_Unmarshal(t *testing.T) {
 	defer func() {
 		TimeseriesUnmarshalCachingEnabled = true
