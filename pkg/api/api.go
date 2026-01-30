@@ -547,4 +547,21 @@ func (a *API) RegisterMemberlistKV(kvs *memberlist.KVInitService) {
 
 func (a *API) RegisterBlockBuilderScheduler(s bbschedulerpb.BlockBuilderSchedulerServer) {
 	bbschedulerpb.RegisterBlockBuilderSchedulerServer(a.server.GRPC, s)
+
+	// Cast to the concrete type to access HTTP handlers
+	if scheduler, ok := s.(interface {
+		StatusHandler(http.ResponseWriter, *http.Request)
+		JobsHandler(http.ResponseWriter, *http.Request)
+		PartitionsHandler(http.ResponseWriter, *http.Request)
+	}); ok {
+		a.indexPage.AddLinks(defaultWeight, "Block-builder-scheduler", []IndexPageLink{
+			{Desc: "Status", Path: "/block-builder-scheduler/status"},
+			{Desc: "Jobs", Path: "/block-builder-scheduler/jobs"},
+			{Desc: "Partitions", Path: "/block-builder-scheduler/partitions"},
+		})
+
+		a.RegisterRoute("/block-builder-scheduler/status", http.HandlerFunc(scheduler.StatusHandler), false, true, "GET")
+		a.RegisterRoute("/block-builder-scheduler/jobs", http.HandlerFunc(scheduler.JobsHandler), false, true, "GET")
+		a.RegisterRoute("/block-builder-scheduler/partitions", http.HandlerFunc(scheduler.PartitionsHandler), false, true, "GET")
+	}
 }
