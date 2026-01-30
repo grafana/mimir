@@ -1347,7 +1347,6 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 
 			// Run the request.
 			actualRes, err := mw.Do(ctx, testData.req)
-			fmt.Println(err)
 			require.NoError(t, err)
 
 			expectedResponse := mkAPIResponse(testData.req.GetStart(), testData.req.GetEnd(), testData.req.GetStep())
