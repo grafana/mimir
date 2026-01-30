@@ -79,6 +79,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/noauth"
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/propagation"
+	"github.com/grafana/mimir/pkg/util/refleaks"
 	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/grafana/mimir/pkg/util/validation/exporter"
 	"github.com/grafana/mimir/pkg/vault"
@@ -792,13 +793,13 @@ func inheritFlags(log log.Logger, orig flagext.RegisteredFlagsTracker, dest flag
 type CommonConfig struct {
 	Storage                 bucket.StorageBackendConfig         `yaml:"storage"`
 	ClientClusterValidation clusterutil.ClusterValidationConfig `yaml:"client_cluster_validation" category:"experimental"`
-	InstrumentRefLeaks      mimirpb.InstrumentRefLeaksConfig    `yaml:"instrument_ref_leaks" category:"experimental"`
+	InstrumentRefLeaks      refleaks.InstrumentConfig           `yaml:"instrument_ref_leaks" category:"experimental"`
 }
 
 type CommonConfigInheritance struct {
 	Storage                  map[string]*bucket.StorageBackendConfig
 	ClientClusterValidation  map[string]*clusterutil.ClusterValidationConfig
-	InstrumentRefLeaksConfig map[string]*mimirpb.InstrumentRefLeaksConfig
+	InstrumentRefLeaksConfig map[string]*refleaks.InstrumentConfig
 }
 
 // RegisterFlags registers flag.
@@ -918,13 +919,11 @@ func New(cfg Config, reg prometheus.Registerer) (*Mimir, error) {
 
 	setUpGoRuntimeMetrics(cfg, reg)
 
-	mimirpb.CustomCodecConfig{
-		InstrumentRefLeaksConfig: mimirpb.InstrumentRefLeaksConfig{
-			Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
-			BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
-			MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
-		},
-	}.RegisterGlobally(reg)
+	mimirpb.RegisterCodecGlobally(refleaks.InstrumentConfig{
+		Percentage:                   cfg.Common.InstrumentRefLeaks.Percentage,
+		BeforeReusePeriod:            cfg.Common.InstrumentRefLeaks.BeforeReusePeriod,
+		MaxInflightInstrumentedBytes: cfg.Common.InstrumentRefLeaks.MaxInflightInstrumentedBytes,
+	}.Tracker(reg))
 
 	if cfg.TenantFederation.Enabled && cfg.Ruler.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("ruler.tenant-federation")

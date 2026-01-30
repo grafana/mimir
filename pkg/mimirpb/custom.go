@@ -6,49 +6,30 @@ import (
 	"bytes"
 	"fmt"
 	"math"
-	"syscall"
-	"testing"
 	"unsafe"
 
 	gogoproto "github.com/gogo/protobuf/proto"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"google.golang.org/grpc/encoding"
 	"google.golang.org/grpc/encoding/proto"
 	"google.golang.org/grpc/mem"
 	protobufproto "google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/protoadapt"
-)
 
-type CustomCodecConfig struct {
-	InstrumentRefLeaksConfig
-}
+	"github.com/grafana/mimir/pkg/util/refleaks"
+)
 
 var baseCodecV2Name = encoding.GetCodecV2(proto.Name).Name()
 
-func (cfg CustomCodecConfig) codec(reg prometheus.Registerer) *codecV2 {
-	return &codecV2{refLeaksTracker: cfg.tracker(reg)}
-}
-
 var globalCodec encoding.CodecV2
 
-func (cfg CustomCodecConfig) RegisterGlobally(reg prometheus.Registerer) {
-	cfg.maybeStartFreeingInstrumentedBuffers()
-	globalCodec = cfg.codec(reg)
+func RegisterCodecGlobally(tracker *refleaks.Tracker) {
+	globalCodec = &codecV2{refLeaksTracker: tracker}
 	encoding.RegisterCodecV2(globalCodec)
 }
 
 func init() {
-	config := CustomCodecConfig{}
-	var reg prometheus.Registerer
-	if testing.Testing() {
-		// Instrument all buffers when testing.
-		config.Percentage = 100
-		config.BeforeReusePeriod = 0
-		config.MaxInflightInstrumentedBytes = 0
-		reg = prometheus.NewRegistry()
-	}
-	config.RegisterGlobally(reg)
+	RegisterCodecGlobally(refleaks.GlobalTracker)
 }
 
 // codecV2 customizes gRPC marshalling and unmarshalling.
@@ -56,7 +37,7 @@ func init() {
 // We customize unmarshalling in order to use an optimized path when possible,
 // and to retain the unmarshalling buffer when necessary.
 type codecV2 struct {
-	refLeaksTracker
+	refLeaksTracker *refleaks.Tracker
 }
 
 var _ encoding.CodecV2 = &codecV2{}
@@ -150,8 +131,6 @@ func Unmarshal(data []byte, v gogoproto.Unmarshaler) error {
 	return globalCodec.Unmarshal(mem.BufferSlice{mem.SliceBuffer(data)}, v)
 }
 
-var pageSize = syscall.Getpagesize()
-
 // Unmarshal customizes gRPC unmarshalling.
 // If v implements MessageWithBufferRef, its SetBuffer method is called with the unmarshalling buffer and the buffer's reference count gets incremented.
 // The latter means that v's FreeBuffer method should be called when v is no longer used.
@@ -160,7 +139,10 @@ func (c *codecV2) Unmarshal(data mem.BufferSlice, v any) error {
 
 	var buf mem.Buffer
 	if isBufferHolder {
-		buf = c.maybeInstrumentRefLeaks(data)
+		var bufData []byte
+		bufData, buf, _ = refleaks.MaybeInstrument[byte](c.refLeaksTracker, data.Len(), data.Len())
+		data.CopyTo(bufData)
+		// buf.ReadOnlyData() == bufData, so we don't keep bufData around
 	}
 
 	if buf == nil {
