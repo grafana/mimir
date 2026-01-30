@@ -117,6 +117,7 @@
 * [ENHANCEMENT] MQE: Add experimental support for computing multiple aggregations over the same data without buffering. Enable with `-querier.mimir-query-engine.enable-multi-aggregation=true`. #14123 #14174
 * [ENHANCEMENT] Querier: Optimize querying store-gateways when many of them are in a LEAVING state. #14157
 * [ENHANCEMENT] Memberlist: Add "Size" column to "KV Store" table in the memberlist web page. #14200
+* [ENHANCEMENT] Ingester: Add experimental file based Kafka consumer group offset tracking via flag `ingest-storage.kafka.consumer-group-offset-commit-file-enforced`. #14110
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
