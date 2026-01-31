@@ -11,13 +11,176 @@
 # - Instead of flushing ingesters, we wait for the block builder to process Kafka data
 #
 # Prerequisites:
-#   - Mimir running with ingest storage (./compose-up.sh)
 #   - curl and jq installed
+#   - Either: Mimir running with ingest storage (./compose-up.sh)
+#   - Or: Use --start-stack to automatically start the stack
 #
 # Usage:
-#   ./scripts/otlp-resource-attrs-demo.sh
+#   ./scripts/otlp-resource-attrs-demo.sh [--start-stack] [--stop-stack]
+#
+# Options:
+#   --start-stack   Start the docker-compose stack before running the demo
+#   --stop-stack    Stop the docker-compose stack after the demo completes
+#   --help, -h      Show this help message
 
 set -e
+
+# Script directory for locating compose scripts
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Flags
+START_STACK=false
+STOP_STACK=false
+
+show_usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+OTLP Resource Attributes Persistence Demo for Grafana Mimir (Ingest Storage)
+
+Options:
+  --start-stack   Start the docker-compose stack before running the demo
+  --stop-stack    Stop the docker-compose stack after the demo completes
+  --help, -h      Show this help message
+
+Examples:
+  # Run demo with stack already running
+  $(basename "$0")
+
+  # Fully automated: start stack, run demo, stop stack
+  $(basename "$0") --start-stack --stop-stack
+
+  # Start stack, run demo, leave stack running for exploration
+  $(basename "$0") --start-stack
+EOF
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --start-stack)
+            START_STACK=true
+            shift
+            ;;
+        --stop-stack)
+            STOP_STACK=true
+            shift
+            ;;
+        --help|-h)
+            show_usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
+
+# Wait for a service to be ready
+wait_for_service() {
+    local url=$1
+    local service_name=$2
+    local max_attempts=60
+    local attempt=0
+
+    echo -e "Waiting for ${service_name} to be ready..."
+    while [ $attempt -lt $max_attempts ]; do
+        if curl -s "$url" > /dev/null 2>&1; then
+            echo -e "${service_name} is ready."
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        printf "\r  Attempt %d/%d..." "$attempt" "$max_attempts"
+        sleep 2
+    done
+    echo ""
+    echo "Error: ${service_name} did not become ready within $((max_attempts * 2)) seconds"
+    return 1
+}
+
+start_stack() {
+    echo "Starting docker-compose stack..."
+    cd "${COMPOSE_DIR}"
+
+    # Start the main stack (detached)
+    ./compose-up.sh -d
+
+    # Wait for distributor to be ready (indicates core services are up)
+    echo ""
+    wait_for_service "http://localhost:8000/ready" "Distributor"
+
+    # Wait for ingesters to be ready (needed for Kafka partition ownership)
+    echo ""
+    wait_for_service "http://localhost:8002/ready" "Ingester zone-a"
+    echo ""
+    wait_for_service "http://localhost:8003/ready" "Ingester zone-b"
+
+    # Start nginx separately (handles case where grafana port 3000 conflicts)
+    # Using --no-deps to avoid issues with grafana dependency
+    echo ""
+    echo "Starting nginx gateway..."
+    docker compose up -d --no-deps nginx
+
+    # Wait for nginx to be ready
+    echo ""
+    wait_for_service "http://localhost:8080/" "Nginx gateway"
+
+    # Wait for OTLP endpoint to be ready (distributor behind nginx)
+    echo ""
+    wait_for_service "http://localhost:8080/distributor/ready" "OTLP endpoint"
+
+    # Wait for OTLP ingestion to actually work (ingesters need to claim Kafka partitions)
+    echo ""
+    echo "Waiting for OTLP ingestion to be ready..."
+    local otlp_ready=false
+    local otlp_attempts=0
+    local otlp_max_attempts=30
+    while [ "$otlp_ready" = false ] && [ $otlp_attempts -lt $otlp_max_attempts ]; do
+        # Send a test metric and check for 200 response
+        local test_response
+        test_response=$(curl -s -w "%{http_code}" -o /dev/null -X POST "http://localhost:8080/otlp/v1/metrics" \
+            -H "Content-Type: application/json" \
+            -H "X-Scope-OrgID: anonymous" \
+            -d '{"resourceMetrics":[{"resource":{"attributes":[{"key":"service.name","value":{"stringValue":"startup-test"}}]},"scopeMetrics":[{"metrics":[{"name":"startup_test","sum":{"dataPoints":[{"asDouble":1,"timeUnixNano":"1234567890000000000"}],"aggregationTemporality":2,"isMonotonic":true}}]}]}]}')
+        if [ "$test_response" = "200" ]; then
+            otlp_ready=true
+        else
+            otlp_attempts=$((otlp_attempts + 1))
+            printf "\r  Attempt %d/%d (HTTP %s)..." "$otlp_attempts" "$otlp_max_attempts" "$test_response"
+            sleep 2
+        fi
+    done
+    if [ "$otlp_ready" = false ]; then
+        echo ""
+        echo "Warning: OTLP endpoint may not be fully ready"
+    else
+        echo "OTLP ingestion is ready."
+    fi
+
+    echo ""
+    echo "Stack is ready!"
+    echo ""
+}
+
+stop_stack() {
+    echo ""
+    echo "Stopping docker-compose stack..."
+    cd "${COMPOSE_DIR}"
+    ./compose-down.sh
+}
+
+# Register cleanup trap if --stop-stack is set
+if [ "$STOP_STACK" = true ]; then
+    trap stop_stack EXIT
+fi
+
+# Start stack if requested
+if [ "$START_STACK" = true ]; then
+    start_stack
+fi
 
 # ANSI color codes
 BOLD='\033[1m'
@@ -67,7 +230,7 @@ send_otlp_metrics() {
         echo -e "${GREEN}Sent: ${description}${RESET}"
     else
         echo -e "${RED}Failed to send metrics (HTTP ${http_code}): ${description}${RESET}"
-        echo "$response" | head -n -1
+        echo "$response" | sed '$d'
         return 1
     fi
 }
