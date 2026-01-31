@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 const alertmanagerAPIPath = "/api/v1/alerts"

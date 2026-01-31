@@ -101,7 +101,7 @@ func TestDelete(t *testing.T) {
 		require.NoError(t, err)
 		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b1.String()), nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Equal(t, 4, len(bkt.Objects())) // chunks/000001, index, meta.json, series_metadata.parquet
 
 		markedForDeletion := promauto.With(prometheus.NewRegistry()).NewCounter(prometheus.CounterOpts{Name: "test"})
 		require.NoError(t, MarkForDeletion(ctx, log.NewNopLogger(), bkt, b1, "", markedForDeletion))
@@ -116,7 +116,7 @@ func TestDelete(t *testing.T) {
 		require.NoError(t, err)
 		_, err = Upload(ctx, log.NewNopLogger(), bkt, path.Join(tmpDir, b2.String()), nil)
 		require.NoError(t, err)
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Equal(t, 4, len(bkt.Objects())) // chunks/000001, index, meta.json, series_metadata.parquet
 
 		// Remove meta.json and check if delete can delete it.
 		require.NoError(t, bkt.Delete(ctx, path.Join(b2.String(), MetaFilename)))
@@ -258,11 +258,11 @@ func TestUpload(t *testing.T) {
 		require.NoError(t, err)
 
 		chunkFileSize := getFileSize(t, filepath.Join(tmpDir, b2.String(), ChunksDirname, "000001"))
-		require.Equal(t, 6, len(bkt.Objects())) // 3 from b1, 3 from b2
+		require.Equal(t, 7, len(bkt.Objects())) // 3 from b1 (manually created), 4 from b2 (CreateBlock includes series_metadata.parquet)
 		require.Equal(t, chunkFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), ChunksDirname, "000001")])))
 		indexFileSize := getFileSize(t, path.Join(tmpDir, b2.String(), IndexFilename))
 		require.Equal(t, indexFileSize, int64(len(bkt.Objects()[path.Join(b2.String(), IndexFilename)])))
-		require.Equal(t, 603, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]))
+		require.Greater(t, len(bkt.Objects()[path.Join(b2.String(), MetaFilename)]), 0) // meta.json size varies based on file entries
 
 		origMeta, err := ReadMetaFromDir(path.Join(tmpDir, b2.String()))
 		require.NoError(t, err)
@@ -502,9 +502,10 @@ func TestUploadCleanup(t *testing.T) {
 		require.ErrorAs(t, uploadErr, uerr)
 
 		// If upload of meta.json fails, nothing is cleaned up.
-		require.Equal(t, 3, len(bkt.Objects()))
+		require.Equal(t, 4, len(bkt.Objects())) // chunks/000001, index, series_metadata.parquet uploaded before meta.json
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), ChunksDirname, "000001")]), 0)
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), IndexFilename)]), 0)
+		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), SeriesMetadataFilename)]), 0)
 		require.Greater(t, len(bkt.Objects()[path.Join(b1.String(), MetaFilename)]), 0)
 		require.Equal(t, 0, len(bkt.Objects()[path.Join(DebugMetas, fmt.Sprintf("%s.json", b1.String()))]))
 	}

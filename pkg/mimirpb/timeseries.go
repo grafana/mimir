@@ -573,7 +573,7 @@ func TimeseriesFromPool() *TimeSeries {
 
 	// Panic if the pool returns a TimeSeries that wasn't properly cleaned,
 	// which is indicative of a hard bug that we want to catch as soon as possible.
-	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars {
+	if len(ts.Labels) > 0 || len(ts.Samples) > 0 || len(ts.Histograms) > 0 || len(ts.Exemplars) > 0 || ts.CreatedTimestamp != 0 || ts.SkipUnmarshalingExemplars || ts.ResourceAttributes != nil {
 		panic("pool returned dirty TimeSeries: this indicates a bug where ReuseTimeseries was called on a TimeSeries still in use")
 	}
 
@@ -612,6 +612,7 @@ func ReuseTimeseries(ts *TimeSeries) {
 
 	ts.CreatedTimestamp = 0
 	ts.SkipUnmarshalingExemplars = false
+	ts.ResourceAttributes = nil
 
 	ClearExemplars(ts)
 	timeSeriesPool.Put(ts)
@@ -726,6 +727,76 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 		}
 	} else {
 		dstTs.Exemplars = dstTs.Exemplars[:0]
+	}
+
+	// Copy the resource attributes.
+	if srcTs.ResourceAttributes != nil {
+		dstTs.ResourceAttributes = DeepCopyResourceAttributes(srcTs.ResourceAttributes)
+	} else {
+		dstTs.ResourceAttributes = nil
+	}
+
+	return dst
+}
+
+// DeepCopyResourceAttributes creates a deep copy of ResourceAttributes.
+func DeepCopyResourceAttributes(src *ResourceAttributes) *ResourceAttributes {
+	if src == nil {
+		return nil
+	}
+
+	dst := &ResourceAttributes{
+		Timestamp: src.Timestamp,
+	}
+
+	// Copy identifying attributes.
+	if len(src.Identifying) > 0 {
+		dst.Identifying = make([]ResourceAttributeEntry, len(src.Identifying))
+		for i, e := range src.Identifying {
+			dst.Identifying[i] = ResourceAttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
+	}
+
+	// Copy descriptive attributes.
+	if len(src.Descriptive) > 0 {
+		dst.Descriptive = make([]ResourceAttributeEntry, len(src.Descriptive))
+		for i, e := range src.Descriptive {
+			dst.Descriptive[i] = ResourceAttributeEntry{
+				Key:   strings.Clone(e.Key),
+				Value: strings.Clone(e.Value),
+			}
+		}
+	}
+
+	// Copy entities.
+	if len(src.Entities) > 0 {
+		dst.Entities = make([]ResourceEntity, len(src.Entities))
+		for i, e := range src.Entities {
+			dst.Entities[i] = ResourceEntity{
+				Type: strings.Clone(e.Type),
+			}
+			if len(e.ID) > 0 {
+				dst.Entities[i].ID = make([]ResourceAttributeEntry, len(e.ID))
+				for j, attr := range e.ID {
+					dst.Entities[i].ID[j] = ResourceAttributeEntry{
+						Key:   strings.Clone(attr.Key),
+						Value: strings.Clone(attr.Value),
+					}
+				}
+			}
+			if len(e.Description) > 0 {
+				dst.Entities[i].Description = make([]ResourceAttributeEntry, len(e.Description))
+				for j, attr := range e.Description {
+					dst.Entities[i].Description[j] = ResourceAttributeEntry{
+						Key:   strings.Clone(attr.Key),
+						Value: strings.Clone(attr.Value),
+					}
+				}
+			}
+		}
 	}
 
 	return dst

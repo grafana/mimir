@@ -16,7 +16,7 @@ import (
 
 	"github.com/alecthomas/chroma/v2/quick"
 	"github.com/mitchellh/colorstring"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules"
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"

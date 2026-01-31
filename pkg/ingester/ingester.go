@@ -1764,6 +1764,18 @@ func (i *Ingester) pushSamplesToAppender(
 			activeSeries.UpdateSeries(nonCopiedLabels, ref, startAppend, numNativeHistogramBuckets, isOTLP, idx)
 		}
 
+		// Update resource attributes if the timeseries has any (from OTLP ingestion).
+		// This is best-effort: we log a warning but don't fail the request if it fails.
+		if ts.ResourceAttributes != nil && len(ts.ResourceAttributes.Identifying) > 0 && ref != 0 {
+			identifying := entriesToMap(ts.ResourceAttributes.Identifying)
+			descriptive := entriesToMap(ts.ResourceAttributes.Descriptive)
+			entities := convertResourceEntities(ts.ResourceAttributes.Entities)
+
+			if _, err := app.UpdateResource(ref, copiedLabels, identifying, descriptive, entities, ts.ResourceAttributes.Timestamp); err != nil {
+				level.Warn(i.logger).Log("msg", "failed to update resource attributes", "err", err)
+			}
+		}
+
 		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
@@ -1827,6 +1839,34 @@ func (i *Ingester) pushSamplesToAppender(
 		}
 	}
 	return nil
+}
+
+// entriesToMap converts a slice of ResourceAttributeEntry to a map.
+func entriesToMap(entries []mimirpb.ResourceAttributeEntry) map[string]string {
+	if len(entries) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Key] = e.Value
+	}
+	return m
+}
+
+// convertResourceEntities converts ResourceEntity slice to storage.EntityData slice.
+func convertResourceEntities(entities []mimirpb.ResourceEntity) []storage.EntityData {
+	if len(entities) == 0 {
+		return nil
+	}
+	result := make([]storage.EntityData, len(entities))
+	for i, e := range entities {
+		result[i] = storage.EntityData{
+			Type:        e.Type,
+			ID:          entriesToMap(e.ID),
+			Description: entriesToMap(e.Description),
+		}
+	}
+	return result
 }
 
 // StartReadRequest implements ingesterReceiver and is called by a gRPC tap Handle when a request is first received to

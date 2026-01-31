@@ -246,6 +246,17 @@ func (b *TSDBBuilder) PushToStorageAndReleaseRequest(ctx context.Context, req *m
 			}
 		}
 
+		// Update resource attributes if the timeseries has any (from OTLP ingestion).
+		if ts.ResourceAttributes != nil && len(ts.ResourceAttributes.Identifying) > 0 && ref != 0 {
+			identifying := entriesToMap(ts.ResourceAttributes.Identifying)
+			descriptive := entriesToMap(ts.ResourceAttributes.Descriptive)
+			entities := convertResourceEntities(ts.ResourceAttributes.Entities)
+
+			if _, err := app.UpdateResource(ref, copiedLabels, identifying, descriptive, entities, ts.ResourceAttributes.Timestamp); err != nil {
+				level.Warn(b.logger).Log("msg", "failed to update resource attributes", "tenant", tenantID, "err", err)
+			}
+		}
+
 		// Exemplars and metadata are not persisted in the block. So we skip them.
 	}
 
@@ -465,6 +476,7 @@ func (b *TSDBBuilder) Close() error {
 type extendedAppender interface {
 	storage.Appender
 	storage.GetRef
+	UpdateResource(ref storage.SeriesRef, l labels.Labels, identifying, descriptive map[string]string, entities []storage.EntityData, t int64) (storage.SeriesRef, error)
 }
 
 type userTSDB struct {
@@ -510,4 +522,30 @@ func (u *userTSDB) compactEverything(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func entriesToMap(entries []mimirpb.ResourceAttributeEntry) map[string]string {
+	if len(entries) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(entries))
+	for _, e := range entries {
+		m[e.Key] = e.Value
+	}
+	return m
+}
+
+func convertResourceEntities(entities []mimirpb.ResourceEntity) []storage.EntityData {
+	if len(entities) == 0 {
+		return nil
+	}
+	result := make([]storage.EntityData, len(entities))
+	for i, e := range entities {
+		result[i] = storage.EntityData{
+			Type:        e.Type,
+			ID:          entriesToMap(e.ID),
+			Description: entriesToMap(e.Description),
+		}
+	}
+	return result
 }

@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/tracing"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"

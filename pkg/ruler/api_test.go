@@ -31,8 +31,8 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/api/googleapi"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	mimirtest "github.com/grafana/mimir/pkg/util/test"

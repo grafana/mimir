@@ -27,8 +27,8 @@ import (
 	"github.com/pierrec/lz4/v4"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.yaml.in/yaml/v3"
 	"google.golang.org/grpc/codes"
-	"gopkg.in/yaml.v3"
 )
 
 // IsRequestBodyTooLarge returns true if the error is "http: request body too large".

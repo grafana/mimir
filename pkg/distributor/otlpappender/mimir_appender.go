@@ -9,6 +9,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	otlpappender "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+	"github.com/prometheus/prometheus/tsdb/seriesmetadata"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/xpdata/entity"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -27,6 +30,8 @@ const defaultIntervalForStartTimestamps = int64(300_000)
 type MimirAppender struct {
 	EnableCreatedTimestampZeroIngestion        bool
 	ValidIntervalCreatedTimestampZeroIngestion int64
+	// PersistResourceAttributes enables storing OTel resource attributes per series.
+	PersistResourceAttributes bool
 
 	series   []mimirpb.PreallocTimeseries
 	metadata []*mimirpb.MetricMetadata
@@ -39,6 +44,11 @@ type MimirAppender struct {
 	// This is needed to not send metadata duplicates all the time.
 	// We could get rid of this if we switched to RW2 all the way through.
 	metricFamilies map[string]metadata.Metadata
+
+	// Resource context from OTLP - set via SetResourceContext.
+	resourceIdentifying []mimirpb.ResourceAttributeEntry
+	resourceDescriptive []mimirpb.ResourceAttributeEntry
+	resourceEntities    []mimirpb.ResourceEntity
 }
 
 func NewCombinedAppender() *MimirAppender {
@@ -70,7 +80,7 @@ func (c *MimirAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpappend
 	hash, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls)
 
 	if !seenSeries || c.ctRequiresNewSeries(idx.idx, ct) {
-		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
+		c.createNewSeries(&idx, collisionIdx, hash, ls, ct, t)
 	}
 
 	if h != nil {
@@ -141,10 +151,25 @@ func (c *MimirAppender) processLabelsAndMetadata(ls labels.Labels) (hash uint64,
 	return
 }
 
-func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64) {
+func (c *MimirAppender) createNewSeries(idx *labelsIdx, collisionIdx int, hash uint64, ls labels.Labels, ct int64, t int64) {
 	ts := mimirpb.TimeseriesFromPool()
 	ts.Labels = mimirpb.FromLabelsToLabelAdapters(ls)
 	ts.CreatedTimestamp = ct
+
+	// Attach resource attributes if enabled and we have any.
+	// Skip target_info series since it's synthesized from resource attributes.
+	if c.PersistResourceAttributes && len(c.resourceIdentifying) > 0 {
+		metricName := ls.Get(model.MetricNameLabel)
+		if metricName != "target_info" {
+			ts.ResourceAttributes = &mimirpb.ResourceAttributes{
+				Identifying: c.resourceIdentifying,
+				Descriptive: c.resourceDescriptive,
+				Entities:    c.resourceEntities,
+				Timestamp:   t,
+			}
+		}
+	}
+
 	c.series = append(c.series, mimirpb.PreallocTimeseries{TimeSeries: ts})
 	idx.idx = len(c.series) - 1
 
@@ -199,4 +224,82 @@ func metricTypeToMimirType(mt model.MetricType) mimirpb.MetricMetadata_MetricTyp
 	default:
 		return mimirpb.UNKNOWN
 	}
+}
+
+// SetResourceContext sets the current OTel resource context.
+// Entity refs and attributes are extracted from the resource and used
+// to persist entity information for each series appended until
+// the context is changed or cleared.
+func (c *MimirAppender) SetResourceContext(resource pcommon.Resource) {
+	attrs := resource.Attributes()
+	if attrs.Len() == 0 {
+		c.resourceIdentifying = nil
+		c.resourceDescriptive = nil
+		c.resourceEntities = nil
+		return
+	}
+
+	// Split attributes into identifying and descriptive.
+	var identifying, descriptive []mimirpb.ResourceAttributeEntry
+	attrs.Range(func(key string, value pcommon.Value) bool {
+		entry := mimirpb.ResourceAttributeEntry{Key: key, Value: value.AsString()}
+		if seriesmetadata.IsIdentifyingAttribute(key) {
+			identifying = append(identifying, entry)
+		} else {
+			descriptive = append(descriptive, entry)
+		}
+		return true
+	})
+	c.resourceIdentifying = identifying
+	c.resourceDescriptive = descriptive
+
+	// Extract entities from entity_refs.
+	c.resourceEntities = extractResourceEntities(resource, attrs)
+}
+
+// extractResourceEntities extracts entities from OTLP entity_refs.
+// Returns nil if no entity_refs are present.
+func extractResourceEntities(resource pcommon.Resource, attrs pcommon.Map) []mimirpb.ResourceEntity {
+	entityRefs := entity.ResourceEntityRefs(resource)
+
+	if entityRefs.Len() == 0 {
+		return nil
+	}
+
+	entities := make([]mimirpb.ResourceEntity, 0, entityRefs.Len())
+	for i := 0; i < entityRefs.Len(); i++ {
+		ref := entityRefs.At(i)
+		entityType := ref.Type()
+		if entityType == "" {
+			entityType = seriesmetadata.EntityTypeResource
+		}
+
+		// Extract identifying attributes by looking up the id_keys in the attributes map.
+		idKeys := ref.IdKeys()
+		var id []mimirpb.ResourceAttributeEntry
+		for j := 0; j < idKeys.Len(); j++ {
+			key := idKeys.At(j)
+			if val, ok := attrs.Get(key); ok {
+				id = append(id, mimirpb.ResourceAttributeEntry{Key: key, Value: val.AsString()})
+			}
+		}
+
+		// Extract descriptive attributes by looking up the description_keys in the attributes map.
+		descKeys := ref.DescriptionKeys()
+		var desc []mimirpb.ResourceAttributeEntry
+		for j := 0; j < descKeys.Len(); j++ {
+			key := descKeys.At(j)
+			if val, ok := attrs.Get(key); ok {
+				desc = append(desc, mimirpb.ResourceAttributeEntry{Key: key, Value: val.AsString()})
+			}
+		}
+
+		entities = append(entities, mimirpb.ResourceEntity{
+			Type:        entityType,
+			ID:          id,
+			Description: desc,
+		})
+	}
+
+	return entities
 }

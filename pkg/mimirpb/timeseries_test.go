@@ -89,6 +89,7 @@ func TestTimeseriesFromPool(t *testing.T) {
 		{"exemplars", &TimeSeries{Exemplars: []Exemplar{{Value: 1, TimestampMs: 2}}}},
 		{"CreatedTimestamp", &TimeSeries{CreatedTimestamp: 1234567890}},
 		{"SkipUnmarshalingExemplars", &TimeSeries{SkipUnmarshalingExemplars: true}},
+		{"ResourceAttributes", &TimeSeries{ResourceAttributes: &ResourceAttributes{Timestamp: 1234567890}}},
 	}
 	for _, tc := range dirtyPoolTests {
 		t.Run("panics if pool returns dirty TimeSeries with "+tc.name, func(t *testing.T) {
@@ -308,6 +309,83 @@ func TestDeepCopyTimeseries(t *testing.T) {
 	assert.NotNil(t, dst.Exemplars)
 	assert.Len(t, dst.Exemplars, 0)
 	assert.Len(t, dst.Histograms, 0)
+}
+
+func TestDeepCopyTimeseriesResourceAttributes(t *testing.T) {
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "test_metric"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+			},
+			ResourceAttributes: &ResourceAttributes{
+				Identifying: []ResourceAttributeEntry{
+					{Key: "service.name", Value: "test-service"},
+					{Key: "service.namespace", Value: "test-ns"},
+				},
+				Descriptive: []ResourceAttributeEntry{
+					{Key: "host.name", Value: "test-host"},
+				},
+				Entities: []ResourceEntity{
+					{
+						Type: "service",
+						ID: []ResourceAttributeEntry{
+							{Key: "service.name", Value: "test-service"},
+						},
+						Description: []ResourceAttributeEntry{
+							{Key: "service.version", Value: "1.0.0"},
+						},
+					},
+				},
+				Timestamp: 1234567890,
+			},
+		},
+	}
+
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, false, false)
+
+	// Check that resource attributes are deeply copied.
+	require.NotNil(t, dst.ResourceAttributes)
+	assert.Equal(t, src.ResourceAttributes.Timestamp, dst.ResourceAttributes.Timestamp)
+	assert.Equal(t, src.ResourceAttributes.Identifying, dst.ResourceAttributes.Identifying)
+	assert.Equal(t, src.ResourceAttributes.Descriptive, dst.ResourceAttributes.Descriptive)
+	assert.Equal(t, src.ResourceAttributes.Entities, dst.ResourceAttributes.Entities)
+
+	// Check that the pointers are different (deep copy).
+	assert.NotSame(t, src.ResourceAttributes, dst.ResourceAttributes)
+	if len(src.ResourceAttributes.Identifying) > 0 {
+		assert.NotSame(t, &src.ResourceAttributes.Identifying[0], &dst.ResourceAttributes.Identifying[0])
+	}
+	if len(src.ResourceAttributes.Entities) > 0 {
+		assert.NotSame(t, &src.ResourceAttributes.Entities[0], &dst.ResourceAttributes.Entities[0])
+	}
+
+	// Verify modifying src doesn't affect dst.
+	src.ResourceAttributes.Timestamp = 9999999999
+	assert.NotEqual(t, src.ResourceAttributes.Timestamp, dst.ResourceAttributes.Timestamp)
+}
+
+func TestDeepCopyTimeseriesNilResourceAttributes(t *testing.T) {
+	src := PreallocTimeseries{
+		TimeSeries: &TimeSeries{
+			Labels: []LabelAdapter{
+				{Name: "__name__", Value: "test_metric"},
+			},
+			Samples: []Sample{
+				{Value: 1, TimestampMs: 1000},
+			},
+			ResourceAttributes: nil,
+		},
+	}
+
+	dst := PreallocTimeseries{}
+	dst = DeepCopyTimeseries(dst, src, false, false)
+
+	// Check that nil resource attributes remain nil.
+	assert.Nil(t, dst.ResourceAttributes)
 }
 
 func TestDeepCopyTimeseriesExemplars(t *testing.T) {

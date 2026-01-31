@@ -35,6 +35,9 @@ store_gateway:
       consul:
         host: consul:8500
 
+querier:
+  query_store_after: 0s  # Query store-gateway for all time ranges (default 12h)
+
 blocks_storage:
   backend: s3
 
@@ -46,6 +49,7 @@ blocks_storage:
 
   bucket_store:
     sync_dir: /data/mimir-tsdb-querier
+    sync_interval: 1m  # Faster sync for demo/development (default is 15m)
 
   s3:
     endpoint:          minio:9000
@@ -75,6 +79,7 @@ limits:
   native_histograms_ingestion_enabled: true
   max_global_exemplars_per_user: 100000
   otel_metric_suffixes_enabled: true
+  otel_persist_resource_attributes: true
 
 runtime_config:
   file: ./config/runtime.yaml
