@@ -30,19 +30,21 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-// FunctionOverRangeVectorSplit performs range vector function calculation with intermediate result caching.
+// FunctionOverRangeVectorSplit performs range vector function calculation with range splitting and intermediate result
+// caching.
 // T is the type of intermediate result produced by the function's generate step.
 type FunctionOverRangeVectorSplit[T any] struct {
-	MemoryConsumptionTracker    *limiter.MemoryConsumptionTracker
-	FuncId                      Function
-	FuncDef                     FunctionOverRangeVectorDefinition
-	Annotations                 *annotations.Annotations
-	metricNames                 *operators.MetricNames
-	timeRange                   types.QueryTimeRange
-	enableDelayedNameRemoval    bool
-	expressionPosition          posrange.PositionRange // Function's expression position (e.g., rate(foo[5m]))
-	innerNodeExpressionPosition posrange.PositionRange // Inner node's expression position (e.g., foo[5m]) - used for annotations
+	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
+	FuncId                   Function
+	FuncDef                  FunctionOverRangeVectorDefinition
+	Annotations              *annotations.Annotations
 
+	metricNames                 *operators.MetricNames
+	enableDelayedNameRemoval    bool
+	expressionPosition          posrange.PositionRange
+	innerNodeExpressionPosition posrange.PositionRange
+
+	emitAnnotationFunc   types.EmitAnnotationFunc
 	seriesValidationFunc RangeVectorSeriesValidationFunction
 
 	cache *cache.Cache[T]
@@ -120,7 +122,6 @@ func NewSplittingFunctionOverRangeVector[T any](
 		MemoryConsumptionTracker:    memoryConsumptionTracker,
 		expressionPosition:          expressionPosition,
 		innerNodeExpressionPosition: innerNodeExpressionPosition,
-		timeRange:                   timeRange,
 		enableDelayedNameRemoval:    enableDelayedNameRemoval,
 		logger:                      logger,
 		cacheStats:                  &cache.CacheStats{},
@@ -133,6 +134,8 @@ func NewSplittingFunctionOverRangeVector[T any](
 	if funcDef.NeedsSeriesNamesForAnnotations {
 		o.metricNames = &operators.MetricNames{}
 	}
+
+	o.emitAnnotationFunc = o.emitAnnotation // This is an optimisation to avoid creating the EmitAnnotationFunc instance on every usage.
 
 	return o, nil
 }
@@ -172,17 +175,12 @@ func (m *FunctionOverRangeVectorSplit[T]) AfterPrepare(ctx context.Context) erro
 	return nil
 }
 
-// createSplits creates splits for the given time range, checking for cache entries and merging contiguous uncached
-// split ranges to create uncached splits.
-// Uses pre-computed split ranges from the optimization pass.
 func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]Split[T], error) {
 	var splits []Split[T]
 	var currentUncachedStart int64
 	var currentUncachedRanges []Range
 
-	// Iterate through the pre-computed ranges
 	for _, splitRange := range m.splitRanges {
-		// For cacheable (aligned) ranges, check the cache
 		if splitRange.Cacheable {
 			metadata, annotations, results, found, err := m.cache.Get(ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
 			if err != nil {
@@ -190,8 +188,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 			}
 
 			if found {
-				// Found in cache - finalize any pending uncached ranges, then add cached split
-				if currentUncachedRanges != nil {
+				if len(currentUncachedRanges) >= 1 {
 					lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
 					operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
 					if err != nil {
@@ -212,8 +209,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 			}
 		}
 
-		// Not found in cache or not cacheable - add to current uncached ranges
-		if currentUncachedRanges == nil {
+		if len(currentUncachedRanges) == 0 {
 			currentUncachedStart = splitRange.Start
 			currentUncachedRanges = []Range{splitRange}
 		} else {
@@ -221,8 +217,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 		}
 	}
 
-	// Flush any remaining uncached ranges
-	if currentUncachedRanges != nil {
+	if len(currentUncachedRanges) >= 1 {
 		lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
 		operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
 		if err != nil {
@@ -248,8 +243,8 @@ func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start 
 
 		Range: subRange,
 		// The offset and timestamp are cleared
-		Offset:    0,
-		Timestamp: nil,
+		Offset:       0,
+		HasTimestamp: false,
 	}
 
 	splitTimeRange := types.NewInstantQueryTimeRange(promts.Time(end))
@@ -276,6 +271,7 @@ func (m *FunctionOverRangeVectorSplit[T]) SeriesMetadata(ctx context.Context, ma
 	defer func() {
 		m.seriesMetadataEnd = time.Now()
 	}()
+
 	var err error
 	var metadata []types.SeriesMetadata
 	metadata, m.seriesToSplits, err = m.mergeSplitsMetadata(ctx, matchers)
@@ -375,12 +371,10 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 		pieces = append(pieces, results...)
 	}
 
-	// Pass the full range boundaries from all pre-computed split ranges.
-	// This ensures correct extrapolation even if some splits have no data.
 	rangeStart := m.splitRanges[0].Start
 	rangeEnd := m.splitRanges[len(m.splitRanges)-1].End
 
-	f, hasFloat, h, err := m.combineFunc(pieces, rangeStart, rangeEnd, m.emitAnnotation, m.MemoryConsumptionTracker)
+	f, hasFloat, h, err := m.combineFunc(pieces, nil, rangeStart, rangeEnd, m.emitAnnotationFunc, m.MemoryConsumptionTracker)
 	if err != nil {
 		return types.InstantVectorSeriesData{}, err
 	}
@@ -406,7 +400,7 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 
 	// Validation after single step, won't work for range queries if we supported them for splitting.
 	if m.seriesValidationFunc != nil {
-		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotation)
+		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotationFunc)
 	}
 
 	if m.currentSeriesIdx == len(m.seriesToSplits)-1 {
@@ -510,8 +504,6 @@ type SplitSeries struct {
 }
 
 type CachedSplit[T any] struct {
-
-	// TODO: add memory tracking for these
 	metadata    []mimirpb.Metric
 	annotations []cache.Annotation
 	results     []T
@@ -597,11 +589,9 @@ type UncachedSplit[T any] struct {
 	parent *FunctionOverRangeVectorSplit[T]
 
 	// Data to cache
-	// TODO: add memory tracking for these
 	rangeResults [][]T
 	// Annotations are put into a map for deduping
-	// TODO: just use annotation as key
-	rangeAnnotations []map[string]cache.Annotation
+	rangeAnnotations []map[cache.Annotation]struct{}
 	metadata         []mimirpb.Metric
 
 	finalized    bool
@@ -619,9 +609,9 @@ func NewUncachedSplit[T any](
 	parent *FunctionOverRangeVectorSplit[T],
 ) (*UncachedSplit[T], error) {
 	rangeResults := make([][]T, len(ranges))
-	rangeAnnotations := make([]map[string]cache.Annotation, len(ranges))
+	rangeAnnotations := make([]map[cache.Annotation]struct{}, len(ranges))
 	for i := range ranges {
-		rangeAnnotations[i] = make(map[string]cache.Annotation)
+		rangeAnnotations[i] = make(map[cache.Annotation]struct{})
 	}
 
 	return &UncachedSplit[T]{
@@ -662,9 +652,6 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 }
 
 func (p *UncachedSplit[T]) GetResultsAt(ctx context.Context, idx int) ([]T, error) {
-	if p.resultGetter == nil {
-		return nil, fmt.Errorf("resultGetter not initialized - SeriesMetadata may have failed")
-	}
 	return p.resultGetter.GetResultsAtIdx(ctx, idx)
 }
 
@@ -690,7 +677,7 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 			p.emitAndCaptureAnnotation(rangeIdx, generator)
 		}
 
-		result, err := p.parent.generateFunc(rangeStep, []types.ScalarData{}, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
+		result, err := p.parent.generateFunc(rangeStep, nil, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
 		if err != nil {
 			return nil, err
 		}
@@ -706,26 +693,25 @@ func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, generator type
 	annotationErr := generator(metricName, p.parent.innerNodeExpressionPosition)
 	p.parent.Annotations.Add(annotationErr)
 
-	annotationsMap := p.rangeAnnotations[rangeIdx]
+	var annotationType cache.AnnotationType
+	var messageWithoutPrefix string
+
+	// Strip the sentinel error prefix so we can re-wrap it cleanly on replay
 	errMsg := annotationErr.Error()
-	if _, exists := annotationsMap[errMsg]; !exists {
-		var annotationType cache.AnnotationType
-		var messageWithoutPrefix string
-
-		// Strip the sentinel error prefix so we can re-wrap it cleanly on replay
-		if errors.Is(annotationErr, annotations.PromQLInfo) {
-			annotationType = cache.INFO
-			messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLInfo.Error()+": ")
-		} else {
-			annotationType = cache.WARNING
-			messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLWarning.Error()+": ")
-		}
-
-		annotationsMap[errMsg] = cache.Annotation{
-			Type:    annotationType,
-			Message: messageWithoutPrefix,
-		}
+	if errors.Is(annotationErr, annotations.PromQLInfo) {
+		annotationType = cache.INFO
+		messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLInfo.Error()+": ")
+	} else {
+		annotationType = cache.WARNING
+		messageWithoutPrefix, _ = strings.CutPrefix(errMsg, annotations.PromQLWarning.Error()+": ")
 	}
+
+	annotation := cache.Annotation{
+		Type:    annotationType,
+		Message: messageWithoutPrefix,
+	}
+
+	p.rangeAnnotations[rangeIdx][annotation] = struct{}{}
 }
 
 func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
@@ -740,7 +726,7 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 
 		annotationsMap := p.rangeAnnotations[rangeIdx]
 		annotations := make([]cache.Annotation, 0, len(annotationsMap))
-		for _, ann := range annotationsMap {
+		for ann := range annotationsMap {
 			annotations = append(annotations, ann)
 		}
 
@@ -802,7 +788,7 @@ func (p *ResultGetter[T]) GetResultsAtIdx(ctx context.Context, splitSeriesIdx in
 	}
 
 	// buffer series results before the requested series
-	for ; p.nextSeriesIdx < splitSeriesIdx; {
+	for p.nextSeriesIdx < splitSeriesIdx {
 		results, err := p.nextSeriesFunc(ctx)
 		if err != nil {
 			return nil, err

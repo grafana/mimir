@@ -13,18 +13,15 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// Generic function types for type-safe splittable function implementations
-
 // Range represents a time range within a query split.
-// Start is exclusive (points with timestamp > Start are included).
-// End is inclusive (points with timestamp <= End are included).
+// Start is exclusive, End is inclusive.
 type Range struct {
 	Start     int64
 	End       int64
 	Cacheable bool
 }
 
-// SplitGenerateFunc generates an intermediate result for a single time range split.
+// SplitGenerateFunc generates an intermediate result for a single split range.
 type SplitGenerateFunc[T any] func(
 	step *types.RangeVectorStepData,
 	scalarArgsData []types.ScalarData,
@@ -32,11 +29,12 @@ type SplitGenerateFunc[T any] func(
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 ) (T, error)
 
-// SplitCombineFunc combines intermediate results from multiple time range splits.
-// Histograms within the input pieces must not be modified in place. These histograms can share references with
+// SplitCombineFunc combines intermediate results from multiple split ranges.
+// Histograms within the input ranges must not be modified in place. These histograms can share references with
 // histogram protos that are waiting to be cached.
 type SplitCombineFunc[T any] func(
-	pieces []T,
+	ranges []T,
+	scalarArgsData []types.ScalarData,
 	rangeStart int64,
 	rangeEnd int64,
 	emitAnnotation types.EmitAnnotationFunc,

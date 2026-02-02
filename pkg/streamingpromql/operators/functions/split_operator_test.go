@@ -19,7 +19,6 @@ func TestResultGetter_OutOfOrderAccess(t *testing.T) {
 	nextSeriesFunc := func(ctx context.Context) ([]string, error) {
 		callCount++
 		if callCount > totalSeries {
-			// Simulate the "no more metadata to pop" panic
 			return nil, types.EOS
 		}
 		return []string{string(rune('A' + callCount - 1))}, nil

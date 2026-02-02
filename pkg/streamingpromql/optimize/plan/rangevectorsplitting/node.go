@@ -129,8 +129,8 @@ func (s *SplitFunctionCall) ExpressionPosition() (posrange.PositionRange, error)
 }
 
 func (s *SplitFunctionCall) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
-	// Query splitting with intermediate result caching requires QueryPlanV5
-	return planning.QueryPlanV5
+	// Query splitting with intermediate result caching requires QueryPlanV6
+	return planning.QueryPlanV6
 }
 
 type Materializer struct {
@@ -172,13 +172,17 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		}
 	}
 
+	if s.Inner.ChildCount() != 1 {
+		return nil, fmt.Errorf("expected exactly 1 child for range vector splitting function %s, got %d", innerFunctionCall.Function.PromQLName(), s.Inner.ChildCount())
+	}
+
 	expressionPos, err := innerFunctionCall.ExpressionPosition()
 	if err != nil {
 		return nil, err
 	}
 
-	splitOp, err := f.RangeVectorSplitting.OperatorFactory(
-		s.Inner.Child(f.RangeVectorSplitting.RangeVectorChildIndex),
+	splitOp, err := f.RangeVectorSplitting(
+		s.Inner.Child(0),
 		materializer,
 		timeRange,
 		ranges,

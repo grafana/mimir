@@ -17,9 +17,6 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.sizer_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-// Protobuf messages for splittable range vector functions.
-// These messages are used to serialize intermediate results for caching during query splitting.
-
 message SumOverTimeIntermediate {
   double sumF = 1;
   bool hasFloat = 2;
@@ -29,16 +26,6 @@ message SumOverTimeIntermediate {
 
 message SumOverTimeIntermediateList {
   repeated SumOverTimeIntermediate results = 1 [(gogoproto.nullable) = false];
-}
-
-message SingleSampleIntermediate {
-  double f = 1;
-  cortexpb.Histogram h = 2;
-  bool hasFloat = 3;
-}
-
-message SingleSampleIntermediateList {
-  repeated SingleSampleIntermediate results = 1 [(gogoproto.nullable) = false];
 }
 
 message CountOverTimeIntermediate {

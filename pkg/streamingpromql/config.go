@@ -81,7 +81,6 @@ func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	o.RangeVectorSplitting.RegisterFlags(f)
 }
 
-// RegisterFlags registers flags for query splitting configuration.
 func (c *RangeVectorSplittingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&c.Enabled, "querier.mimir-query-engine.range-vector-splitting.enabled", false, "Enable splitting function over range vectors queries into smaller blocks for caching.")
 	f.DurationVar(&c.SplitInterval, "querier.mimir-query-engine.range-vector-splitting.split-interval", 2*time.Hour, "Time interval used for splitting function over range vectors queries into cacheable blocks.")

@@ -299,9 +299,10 @@ func TestCalculateInnerTimeRange(t *testing.T) {
 			name:     "5h range with @ 7h evaluated at 8h",
 			evalTime: 8 * hourInMs,
 			timeParams: planning.RangeParams{
-				IsSet:     true,
-				Timestamp: func() *time.Time { t := time.UnixMilli(7 * hourInMs); return &t }(),
-				Range:     5 * time.Hour,
+				IsSet:        true,
+				HasTimestamp: true,
+				Timestamp:    time.UnixMilli(7 * hourInMs),
+				Range:        5 * time.Hour,
 			},
 			expectedStart: 2 * hourInMs,
 			expectedEnd:   7 * hourInMs,

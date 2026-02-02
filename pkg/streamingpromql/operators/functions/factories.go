@@ -558,19 +558,14 @@ type FunctionMetadata struct {
 	OperatorFactory FunctionOperatorFactory
 	ReturnType      parser.ValueType
 
-	RangeVectorSplitting *RangeVectorSplittingMetadata
-}
-
-type RangeVectorSplittingMetadata struct {
-	OperatorFactory       SplitOperatorFactory
-	RangeVectorChildIndex int // Index of the child node containing the range vector to split
+	RangeVectorSplitting SplitOperatorFactory
 }
 
 func RegisterFunction(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory) error {
 	return RegisterFunctionWithSplitFactory(function, name, returnType, factory, nil)
 }
 
-func RegisterFunctionWithSplitFactory(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory, splittingMetadata *RangeVectorSplittingMetadata) error {
+func RegisterFunctionWithSplitFactory(function Function, name string, returnType parser.ValueType, factory FunctionOperatorFactory, splittingFactory SplitOperatorFactory) error {
 	if _, exists := RegisteredFunctions[function]; exists {
 		return fmt.Errorf("function with ID %d has already been registered", function)
 	}
@@ -583,7 +578,7 @@ func RegisterFunctionWithSplitFactory(function Function, name string, returnType
 		Name:                 name,
 		ReturnType:           returnType,
 		OperatorFactory:      factory,
-		RangeVectorSplitting: splittingMetadata,
+		RangeVectorSplitting: splittingFactory,
 	}
 
 	promQLNamesToFunctions[name] = function

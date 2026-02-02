@@ -64,10 +64,10 @@ func NewCacheFactory(cfg Config, logger log.Logger, reg prometheus.Registerer) (
 	)
 
 	logger.Log("msg", "intermediate results cache initialized", "backend", cfg.Backend)
-	return NewResultsCacheWithBackend(backend, reg, logger), nil
+	return NewCacheFactoryWithBackend(backend, reg, logger), nil
 }
 
-func NewResultsCacheWithBackend(backend Backend, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
+func NewCacheFactoryWithBackend(backend Backend, reg prometheus.Registerer, logger log.Logger) *CacheFactory {
 	return &CacheFactory{
 		backend: backend,
 		metrics: newCacheMetrics(reg),

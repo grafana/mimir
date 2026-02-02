@@ -40,7 +40,9 @@ func (m *MatrixSelector) Describe() string {
 // the range can share cache entries.
 // The offset and @ modifiers are not part of the cache key as they are adjusted for when calculating split ranges.
 // TODO: when subquery splitting is supported, the logic will have to change - if the matrix selector is not the root
-//  inner node, the range plus the offset and @ modifiers will have to be retained.
+//
+//	inner node, the range plus the offset and @ modifiers will have to be retained.
+//
 // TODO: investigate codegen to keep the cache key up to date when new fields are added to the node.
 func (m *MatrixSelector) RangeVectorSplittingCacheKey() string {
 	builder := &strings.Builder{}
@@ -136,7 +138,11 @@ func MaterializeMatrixSelector(m *MatrixSelector, _ *planning.Materializer, time
 	selectorOffset := m.Offset.Milliseconds()
 	if overrideTimeParams.IsSet {
 		selectorOffset = overrideTimeParams.Offset.Milliseconds()
-		selectorTs = overrideTimeParams.Timestamp
+		if overrideTimeParams.HasTimestamp {
+			selectorTs = &overrideTimeParams.Timestamp
+		} else {
+			selectorTs = nil
+		}
 		selectorRange = overrideTimeParams.Range
 	}
 
@@ -196,10 +202,14 @@ func (m *MatrixSelector) GetRange() time.Duration {
 }
 
 func (m *MatrixSelector) GetRangeParams() planning.RangeParams {
-	return planning.RangeParams{
-		IsSet:     true,
-		Range:     m.Range,
-		Offset:    m.Offset,
-		Timestamp: m.Timestamp,
+	params := planning.RangeParams{
+		IsSet:  true,
+		Range:  m.Range,
+		Offset: m.Offset,
 	}
+	if m.Timestamp != nil {
+		params.HasTimestamp = true
+		params.Timestamp = *m.Timestamp
+	}
+	return params
 }

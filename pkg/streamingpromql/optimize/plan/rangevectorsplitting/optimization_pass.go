@@ -32,8 +32,6 @@ func (e *errNotApplied) Error() string {
 	return e.reason
 }
 
-// OptimizationPass identifies range vector function calls that can benefit from splitting
-// their computation into fixed-interval blocks for intermediate result caching.
 type OptimizationPass struct {
 	splitInterval time.Duration
 	limits        limitsProvider
@@ -78,7 +76,7 @@ func (o *OptimizationPass) TestOnlySetTimeNow(timeNow func() time.Time) {
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
-	if maximumSupportedQueryPlanVersion < planning.QueryPlanV5 {
+	if maximumSupportedQueryPlanVersion < planning.QueryPlanV6 {
 		return plan, nil
 	}
 
@@ -171,7 +169,11 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 		return nil, &errNotApplied{reason: "unsupported_function"}
 	}
 
-	inner, ok := functionCall.Child(f.RangeVectorSplitting.RangeVectorChildIndex).(planning.SplitNode)
+	if functionCall.ChildCount() != 1 {
+		return nil, errors.New("function child count is not 1")
+	}
+
+	inner, ok := functionCall.Child(0).(planning.SplitNode)
 	if !ok || !inner.IsSplittable() {
 		return nil, &errNotApplied{reason: "unsupported_inner_node"}
 	}
@@ -229,7 +231,7 @@ func (o *OptimizationPass) trySplitFunction(functionCall *core.FunctionCall, tim
 
 func calculateInnerTimeRange(evalTime int64, timeParams planning.RangeParams) (startTs, endTs int64) {
 	endTs = evalTime
-	if timeParams.Timestamp != nil {
+	if timeParams.HasTimestamp {
 		endTs = timeParams.Timestamp.UnixMilli()
 	}
 

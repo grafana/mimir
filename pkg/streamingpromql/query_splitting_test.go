@@ -634,7 +634,7 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 
 func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
@@ -940,7 +940,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	require.NoError(t, err)
 
 	cacheBackend := newTestCacheBackend()
-	cacheFactory := cache.NewResultsCacheWithBackend(cacheBackend, registry, log.NewNopLogger())
+	cacheFactory := cache.NewCacheFactoryWithBackend(cacheBackend, registry, log.NewNopLogger())
 
 	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(registry), planner, cacheFactory)
 	require.NoError(t, err)
@@ -950,7 +950,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 
 func setupEngineAndCache(t *testing.T) (*testCacheBackend, promql.QueryEngine) {
 	backend := newTestCacheBackend()
-	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
+	irCache := cache.NewCacheFactoryWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
 
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true

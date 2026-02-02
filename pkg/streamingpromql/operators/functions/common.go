@@ -137,8 +137,8 @@ type FunctionOverRangeVectorDefinition struct {
 	// FIXME: we might need something more flexible in the future (eg. to accommodate other argument positions), but this is good enough for now.
 	UseFirstArgumentPositionForAnnotations bool
 
-	// SplitOperatorFactory defines how to create a splittable operator for intermediate result caching.
-	// If nil, the function does not support query splitting.
+	// SplitOperatorFactory defines how to create an operator for range vector splitting.
+	// If nil, the function does not support range vector splitting.
 	SplitOperatorFactory SplitOperatorFactory
 }
 

@@ -13,15 +13,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 )
 
-var SplitRate = &RangeVectorSplittingMetadata{
-	OperatorFactory:       NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(true), RateCodec, Rate, FUNCTION_RATE),
-	RangeVectorChildIndex: 0,
-}
+var SplitRate = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(true), RateCodec, Rate, FUNCTION_RATE)
 
-var SplitIncrease = &RangeVectorSplittingMetadata{
-	OperatorFactory:       NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, Increase, FUNCTION_INCREASE),
-	RangeVectorChildIndex: 0,
-}
+var SplitIncrease = NewSplitOperatorFactory[RateIntermediate](rateGenerate, rateCombine(false), RateCodec, Increase, FUNCTION_INCREASE)
 
 func rateGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (RateIntermediate, error) {
 	fHead, fTail := step.Floats.UnsafePoints()
@@ -144,6 +138,7 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, rangeStart,
 func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 	return func(
 		pieces []RateIntermediate,
+		_ []types.ScalarData,
 		rangeStart int64,
 		rangeEnd int64,
 		emitAnnotation types.EmitAnnotationFunc,
