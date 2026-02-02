@@ -4,7 +4,6 @@ package ast
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
@@ -98,31 +97,8 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node)) {
 
 	fn(node)
 
-	switch n := node.(type) {
-	case *parser.AggregateExpr:
-		c.apply(n.Expr, fn)
-		c.apply(n.Param, fn)
-	case *parser.BinaryExpr:
-		c.apply(n.LHS, fn)
-		c.apply(n.RHS, fn)
-	case *parser.Call:
-		for _, arg := range n.Args {
-			c.apply(arg, fn)
-		}
-	case *parser.MatrixSelector:
-		c.apply(n.VectorSelector, fn)
-	case *parser.SubqueryExpr:
-		c.apply(n.Expr, fn)
-	case *parser.ParenExpr:
-		c.apply(n.Expr, fn)
-	case *parser.UnaryExpr:
-		c.apply(n.Expr, fn)
-	case *parser.StepInvariantExpr:
-		c.apply(n.Expr, fn)
-	case *parser.VectorSelector, *parser.NumberLiteral, *parser.StringLiteral:
-		// no children to traverse
-	default:
-		panic(fmt.Sprintf("unknown expression type: %T", n))
+	for child := range parser.ChildrenIter(node) {
+		c.apply(child, fn)
 	}
 }
 

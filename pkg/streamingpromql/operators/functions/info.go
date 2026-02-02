@@ -38,12 +38,12 @@ type InfoFunction struct {
 	timeRange          types.QueryTimeRange
 	expressionPosition posrange.PositionRange
 
-	// dedicated buffer and scratch builder for sigFunction
+	// dedicated buffer and scratch builder for signature
 	sigBuf []byte
 	sigLb  labels.ScratchBuilder
-	// timestamp:(signature:array of labels)
+	// timestamp:(signature:array of info series labels)
 	sigTimestamps map[int64]map[string][]labels.Labels
-	// signature:(label sets hash:array of labels)
+	// signature:(label sets hash:array of info series labels)
 	labelSets map[string]map[string][]labels.Labels
 	// inner series index - (info series label sets hash: index for ordering)
 	labelSetsOrder []map[string]int
@@ -123,13 +123,12 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 	}
 
 	var matchers types.Matchers
-	skipQueryingInfo := false
 
-	createMatcher := func(labelName string, values map[string]struct{}) {
+	for _, labelName := range identifyingLabels {
+		values := identifyingLabelValues[labelName]
 		switch len(values) {
 		case 0:
-			skipQueryingInfo = true
-			return
+			return nil, true
 		case 1:
 			for value := range values {
 				matchers = append(matchers, types.Matcher{
@@ -153,19 +152,12 @@ func (f *InfoFunction) generateInfoMatchers(innerMetadata []types.SeriesMetadata
 		}
 	}
 
-	for _, labelName := range identifyingLabels {
-		createMatcher(labelName, identifyingLabelValues[labelName])
-		if skipQueryingInfo {
-			return nil, true
-		}
-	}
-
 	return matchers, false
 }
 
-// sigFunction generates signature from labels without metric name
+// signature generates signature from labels without metric name
 // Ensure this is only called after initializing f.sigBuf and f.sigLb
-func (f *InfoFunction) sigFunction(lset labels.Labels) []byte {
+func (f *InfoFunction) signature(lset labels.Labels) []byte {
 	// Signature is only the identifying labels without metric names.
 	f.sigLb.Reset()
 	lset.MatchLabels(true, identifyingLabels...).Range(func(l labels.Label) {
@@ -176,19 +168,19 @@ func (f *InfoFunction) sigFunction(lset labels.Labels) []byte {
 }
 
 func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMetadata []types.SeriesMetadata) error {
-	// Initialize dedicated buffer and scratch builder for sigFunction,
+	// Initialize dedicated buffer and scratch builder for signature,
 	// since this is also called later when the local buf and lb would be out of scope.
 	f.sigBuf = make([]byte, 0, 1024)
 	f.sigLb = labels.NewScratchBuilder(0)
 
 	// metric name:(timestamp:(labels-only signature:labels + timestamp))
 	sigTimestampsByMetric := make(map[string]map[int64]map[string]labelsTime)
-	f.sigTimestamps = make(map[int64]map[string][]labels.Labels)
+	f.sigTimestamps = make(map[int64]map[string][]labels.Labels, f.timeRange.StepCount)
 	f.labelSets = make(map[string]map[string][]labels.Labels)
 
 	for _, metadata := range infoMetadata {
 		metricName := metadata.Labels.Get(model.MetricNameLabel)
-		sig := f.sigFunction(metadata.Labels)
+		sig := f.signature(metadata.Labels)
 
 		// Read all samples for this info series.
 		d, err := f.Info.NextSeries(ctx)
@@ -353,7 +345,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 			continue
 		}
 
-		sig := f.sigFunction(innerSeries.Labels)
+		sig := f.signature(innerSeries.Labels)
 		f.innerSig[i] = string(sig)
 		labelSetsMap, exists := f.labelSets[string(sig)]
 		// If this inner series doesn't match the identifying labels of any info series, pass

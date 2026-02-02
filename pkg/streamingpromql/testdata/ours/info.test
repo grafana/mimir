@@ -128,6 +128,7 @@ load 1m
   target_info{instance="a", job="1", data="warning"} _ 1 _
 
 eval_fail range from 0m to 2m step 1m info(metric_total)
+  expected_fail_regexp found duplicate series for info metric
 
 clear
 
@@ -137,6 +138,7 @@ load 1m
   target_info{job="foo", instance="1", env="test"} 1 1 1
 
 eval_fail range from 0m to 2m step 1m info(my_metric)
+  expected_fail_message vector cannot contain metrics with the same labelset
 
 clear
 
@@ -146,3 +148,14 @@ load 1m
   target_info{job="foo", instance="1", env="test"} 1 1 1
 
 eval_fail range from 0m to 2m step 1m info(my_metric)
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+clear
+
+load 5m
+    abc_metric{instance="a", job="1", label="value"} 0 1 2
+    abc_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
+
+# Multiple positive __name__ matchers.
+eval range from 0m to 10m step 5m info(abc_metric, {__name__=~".*abc.*", __name__=~".*info.*"})
+    abc_metric{instance="a", job="1", label="value", data="info", another_data="another info"} 0 1 2

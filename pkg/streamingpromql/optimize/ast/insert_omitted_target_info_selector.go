@@ -18,47 +18,44 @@ func (h *InsertOmittedTargetInfoSelector) Name() string {
 }
 
 func (h *InsertOmittedTargetInfoSelector) Apply(_ context.Context, root parser.Expr) (parser.Expr, error) {
-	var inspectionError error
-	parser.Inspect(root, func(node parser.Node, _ []parser.Node) error {
-		switch expr := node.(type) {
-		case *parser.Call:
-			if expr.Func.Name == "info" {
-				switch length := len(expr.Args); length {
-				case 1:
-					infoExpr, err := parser.ParseExpr("target_info")
-					if err != nil {
-						inspectionError = fmt.Errorf("failed to parse target_info expression: %v", err)
-						return inspectionError
-					}
-					expr.Args = append(expr.Args, infoExpr)
-				case 2:
-					dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
-					if !ok {
-						inspectionError = fmt.Errorf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1])
-						return inspectionError
-					}
-					hasMetricNameMatcher := false
-					for _, m := range dataLabelMatchersExpr.LabelMatchers {
-						if m.Name == model.MetricNameLabel {
-							hasMetricNameMatcher = true
-							break
-						}
-					}
-					if !hasMetricNameMatcher {
-						dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "target_info"))
-					}
-				default:
-					inspectionError = fmt.Errorf("expected 'info' function to have exactly 2 arguments, got %d", length)
-					return inspectionError
-				}
+	if err := parser.Walk(h, root, nil); err != nil {
+		return nil, err
+	}
+	return root, nil
+}
+
+func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Node) (parser.Visitor, error) {
+	expr, isCall := node.(*parser.Call)
+	if !isCall {
+		return h, nil
+	}
+	if expr.Func.Name != "info" {
+		return h, nil
+	}
+	switch length := len(expr.Args); length {
+	case 1:
+		infoExpr, err := parser.ParseExpr("target_info")
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse target_info expression: %v", err)
+		}
+		expr.Args = append(expr.Args, infoExpr)
+	case 2:
+		dataLabelMatchersExpr, ok := expr.Args[1].(*parser.VectorSelector)
+		if !ok {
+			return nil, fmt.Errorf("expected second argument to 'info' function to be a VectorSelector, got %T", expr.Args[1])
+		}
+		hasMetricNameMatcher := false
+		for _, m := range dataLabelMatchersExpr.LabelMatchers {
+			if m.Name == model.MetricNameLabel {
+				hasMetricNameMatcher = true
+				break
 			}
 		}
-		return nil
-	})
-
-	if inspectionError != nil {
-		return nil, inspectionError
+		if !hasMetricNameMatcher {
+			dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "target_info"))
+		}
+	default:
+		return nil, fmt.Errorf("expected 'info' function to have exactly 2 arguments, got %d", length)
 	}
-
-	return root, nil
+	return h, nil
 }
