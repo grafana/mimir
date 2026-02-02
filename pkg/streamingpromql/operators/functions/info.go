@@ -321,7 +321,8 @@ func matchersMatch(matchers []*labels.Matcher, value string) bool {
 // combineSeriesMetadata combines inner series metadata with info series labels.
 func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Store user-specified label matchers in a map for easy retrieval.
-	dataLabelMatchersMap := make(map[string]*labels.Matcher)
+	// Use a slice to support multiple matchers for the same label name (intersection semantics).
+	dataLabelMatchersMap := make(map[string][]*labels.Matcher)
 	for _, m := range dataLabelMatchers {
 		if m.Name == model.MetricNameLabel {
 			continue
@@ -330,7 +331,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 		if err != nil {
 			return nil, err
 		}
-		dataLabelMatchersMap[m.Name] = matcher
+		dataLabelMatchersMap[m.Name] = append(dataLabelMatchersMap[m.Name], matcher)
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -426,7 +427,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 }
 
 // combineLabels combines inner series labels with info series label sets.
-func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string]*labels.Matcher) ([]labels.Labels, []string) {
+func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string][]*labels.Matcher) ([]labels.Labels, []string) {
 	newLabelSets := make([]labels.Labels, 0, len(labelSetsMap))
 	labelSetsOrder := make([]string, 0, len(labelSetsMap))
 	savedLabels := make(map[string]struct{})
@@ -450,8 +451,10 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 				}
 
 				// If user specified certain label matchers, ignore labels that don't match.
+				// All matchers for this label must match (intersection semantics).
 				if len(dataLabelMatchersMap) > 0 {
-					if matcher, ok := dataLabelMatchersMap[l.Name]; !ok || !matcher.Matches(l.Value) {
+					matchers, ok := dataLabelMatchersMap[l.Name]
+					if !ok || !matchersMatch(matchers, l.Value) {
 						return
 					}
 				}
@@ -463,9 +466,14 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 
 		shouldSkip := false
 		// If user specified certain label matchers but no labels matched, skip this series.
-		for _, m := range dataLabelMatchersMap {
-			if _, saved := savedLabels[m.Name]; !saved && !m.Matches("") {
-				shouldSkip = true
+		for _, matchers := range dataLabelMatchersMap {
+			for _, m := range matchers {
+				if _, saved := savedLabels[m.Name]; !saved && !m.Matches("") {
+					shouldSkip = true
+					break
+				}
+			}
+			if shouldSkip {
 				break
 			}
 		}
