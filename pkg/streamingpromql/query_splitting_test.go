@@ -16,6 +16,7 @@ import (
 	"github.com/go-kit/log"
 	dskitcache "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -27,7 +28,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -632,46 +632,226 @@ func TestQuerySplitting_With3hRangeAndOffset_NoCacheableRanges(t *testing.T) {
 	verifyCacheStats(t, testCache, 0, 0, 0)
 }
 
-func TestQuerySplitting_TestFiles(t *testing.T) {
-	testdataFS := os.DirFS("./testdata")
+func TestQuerySplitting_WithOOOWindow(t *testing.T) {
+	backend := newTestCacheBackend()
+	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
 
-	oursTests, err := fs.Glob(testdataFS, "ours/*.test")
-	require.NoError(t, err)
-
-	oursOnlyTests, err := fs.Glob(testdataFS, "ours-only/*.test")
-	require.NoError(t, err)
-
-	upstreamTests, err := fs.Glob(testdataFS, "upstream/*.test")
-	require.NoError(t, err)
-
-	allTests := append(oursTests, oursOnlyTests...)
-	allTests = append(allTests, upstreamTests...)
-	require.NotEmpty(t, allTests, "expected to find test files")
-
-	splitIntervals := []time.Duration{
-		1 * time.Second,
-		10 * time.Second,
-		30 * time.Second,
-		5 * time.Minute,
-		2 * time.Hour,
+	opts := NewTestEngineOpts()
+	opts.RangeVectorSplitting.Enabled = true
+	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
+	opts.Limits = &mockOutOfOrderTimeWindowProvider{
+		oooWindow: 3 * time.Hour,
 	}
 
-	for _, splitInterval := range splitIntervals {
+	baseT := timestamp.Time(0)
+	fixedNow := baseT.Add(12 * time.Hour)
+
+	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
+	require.NoError(t, err)
+
+	for _, pass := range queryPlanner.planOptimizationPasses {
+		if qsPass, ok := pass.(*rangevectorsplitting.OptimizationPass); ok {
+			qsPass.TestOnlySetTimeNow(func() time.Time { return fixedNow })
+			break
+		}
+	}
+
+	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), queryPlanner, irCache)
+	require.NoError(t, err)
+	// Query at 12h with 7h range: (5h, 12h]
+	// Expected splits:
+	// - Head: (5h, 6h-1ms]
+	// - Block: (6h-1ms, 8h-1ms] - cacheable (before OOO)
+	// - Tail: (8h-1ms, 12h] - non-cacheable (in OOO window)
+
+	oooWindowMs := int64(2 * time.Hour / time.Millisecond)
+	storage := teststorage.New(t, oooWindowMs)
+	t.Cleanup(func() { require.NoError(t, storage.Close()) })
+
+	ctx := context.Background()
+	app := storage.Appender(ctx)
+	// Load in-order samples from 0h to 12h (every 10 minutes) for initial query
+	for i := 0; i <= 72; i++ {
+		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
+		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), ts, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	expr := "sum_over_time(test_metric[7h])"
+	ts := fixedNow
+
+	// First query: should cache the cacheable blocks, but not the OOO range
+	result1, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.NoError(t, result1.Err)
+	require.Len(t, result1.Value.(promql.Vector), 1)
+	// Expected: sum of values from 5h (exclusive) to 10h (inclusive)
+	// Samples at 5h10m (31) to 12h (72) = 42 samples
+	// Sum = 31+32+...+60 = (31+72)*42/2 = 2163
+	require.Equal(t, 2163.0, result1.Value.(promql.Vector)[0].F)
+
+	verifyCacheStats(t, backend, 1, 0, 1)
+	require.Equal(t, []storageQueryRange{
+		{mint: 5*hourInMs + 1, maxt: 12 * hourInMs},
+	}, ranges1)
+
+	app = storage.Appender(ctx)
+	// Add OOO sample at 9h
+	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"),
+		timestamp.FromTime(baseT.Add(10*time.Hour).Add(1*time.Minute)), 200.0)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	result2, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.NoError(t, result2.Err)
+	require.Len(t, result2.Value.(promql.Vector), 1)
+	require.Equal(t, 2363.0, result2.Value.(promql.Vector)[0].F)
+
+	verifyCacheStats(t, backend, 2, 1, 1)
+	require.Equal(t, []storageQueryRange{
+		{mint: 5*hourInMs + 1, maxt: 6*hourInMs - 1},
+		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
+	}, ranges2)
+
+	result3, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
+	require.NoError(t, result3.Err)
+	require.Equal(t, result2, result3)
+
+	verifyCacheStats(t, backend, 3, 2, 1)
+	require.Equal(t, ranges2, ranges3)
+}
+
+type mockOutOfOrderTimeWindowProvider struct {
+	oooWindow time.Duration
+}
+
+func (m *mockOutOfOrderTimeWindowProvider) OutOfOrderTimeWindow(userID string) time.Duration {
+	return m.oooWindow
+}
+
+var querySplittingTestSplitIntervals = []time.Duration{
+	1 * time.Second,
+	10 * time.Second,
+	30 * time.Second,
+	5 * time.Minute,
+	2 * time.Hour,
+}
+
+// TestQuerySplitting_UpstreamTestCases runs upstream Prometheus test cases with query splitting enabled.
+// This is analogous to TestUpstreamTestCases but with query splitting.
+func TestQuerySplitting_UpstreamTestCases(t *testing.T) {
+	testdataFS := os.DirFS("./testdata")
+	testFiles, err := fs.Glob(testdataFS, "upstream/*.test")
+	require.NoError(t, err)
+
+	for _, splitInterval := range querySplittingTestSplitIntervals {
 		splitInterval := splitInterval
 		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
 			totalQueries := 0
 			queriesWithSplit := 0
 
 			registry := prometheus.NewRegistry()
-			engine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, false)
+			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, true, false)
+
+			engine := &testSplittingEngine{
+				engine: innerEngine,
+				orgID:  "test-user",
+				onQueryExec: func(splitQueriesCount uint32) {
+					totalQueries++
+					if splitQueriesCount > 0 {
+						queriesWithSplit++
+					}
+				},
+			}
+
+			for _, testFile := range testFiles {
+				t.Run(testFile, func(t *testing.T) {
+					f, err := testdataFS.Open(testFile)
+					require.NoError(t, err)
+					defer f.Close()
+
+					b, err := io.ReadAll(f)
+					require.NoError(t, err)
+
+					testScript := skipUnsupportedTests(t, string(b), testFile)
+
+					newStorage := func(t testutil.T) storage.Storage {
+						base := promqltest.LoadedStorage(t, "")
+						return &storageWithCloseCallback{
+							Storage: base,
+							onClose: cacheBackend.Reset,
+						}
+					}
+
+					promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
+				})
+			}
+
+			t.Logf("Total queries executed: %d", totalQueries)
+			t.Logf("Queries with splitting applied: %d", queriesWithSplit)
+		})
+	}
+}
+
+// TestQuerySplitting_OurTestCases runs Mimir's test cases with query splitting enabled.
+// This is analogous to TestOurTestCases but with query splitting.
+func TestQuerySplitting_OurTestCases(t *testing.T) {
+	testdataFS := os.DirFS("./testdata")
+	oursTests, err := fs.Glob(testdataFS, "ours/*.test")
+	require.NoError(t, err)
+
+	oursOnlyTests, err := fs.Glob(testdataFS, "ours-only/*.test")
+	require.NoError(t, err)
+
+	allTests := append(oursTests, oursOnlyTests...)
+	require.NotEmpty(t, allTests, "expected to find test files")
+
+	for _, splitInterval := range querySplittingTestSplitIntervals {
+		t.Run(fmt.Sprintf("split_interval_%v", splitInterval), func(t *testing.T) {
+			totalQueries := 0
+			queriesWithSplit := 0
+
+			registry := prometheus.NewRegistry()
+			innerEngine, cacheBackend := createSplittingEngineWithCache(t, registry, splitInterval, false, true)
 
 			registryDelayed := prometheus.NewRegistry()
-			engineDelayed, cacheBackendDelayed := createSplittingEngineWithCache(t, registryDelayed, splitInterval, true)
+			innerEngineDelayed, cacheBackendDelayed := createSplittingEngineWithCache(t, registryDelayed, splitInterval, true, true)
+
+			engine := &testSplittingEngine{
+				engine: innerEngine,
+				orgID:  "test-user",
+				onQueryExec: func(splitQueriesCount uint32) {
+					totalQueries++
+					if splitQueriesCount > 0 {
+						queriesWithSplit++
+					}
+				},
+			}
+
+			engineDelayed := &testSplittingEngine{
+				engine: innerEngineDelayed,
+				orgID:  "test-user",
+				onQueryExec: func(splitQueriesCount uint32) {
+					totalQueries++
+					if splitQueriesCount > 0 {
+						queriesWithSplit++
+					}
+				},
+			}
 
 			for _, testFile := range allTests {
 				t.Run(testFile, func(t *testing.T) {
-					enableDelayedNameRemoval := strings.Contains(testFile, "name_label_dropping")
+					f, err := testdataFS.Open(testFile)
+					require.NoError(t, err)
+					defer f.Close()
 
+					b, err := io.ReadAll(f)
+					require.NoError(t, err)
+
+					testScript := skipUnsupportedTests(t, string(b), testFile)
+
+					// Switch to delayed name removal engine if the test file requires it
+					enableDelayedNameRemoval := strings.Contains(testFile, "name_label_dropping") || strings.Contains(testFile, "delayed_name_removal_enabled")
 					selectedEngine := engine
 					selectedCache := cacheBackend
 					if enableDelayedNameRemoval {
@@ -679,9 +859,15 @@ func TestQuerySplitting_TestFiles(t *testing.T) {
 						selectedCache = cacheBackendDelayed
 					}
 
-					total, withSplit := runTestFileWithSplitting(t, testdataFS, testFile, selectedEngine, selectedCache)
-					totalQueries += total
-					queriesWithSplit += withSplit
+					newStorage := func(t testutil.T) storage.Storage {
+						base := promqltest.LoadedStorage(t, "")
+						return &storageWithCloseCallback{
+							Storage: base,
+							onClose: selectedCache.Reset,
+						}
+					}
+
+					promqltest.RunTestWithStorage(t, testScript, selectedEngine, newStorage)
 				})
 			}
 
@@ -738,43 +924,7 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 	return modified
 }
 
-func runTestFileWithSplitting(t *testing.T, testdataFS fs.FS, testFile string, innerEngine promql.QueryEngine, cacheBackend *testCacheBackend) (totalQueries, queriesWithSplit int) {
-	t.Helper()
-
-	engine := &testSplittingEngine{
-		engine: innerEngine,
-		orgID:  "test-user",
-		onQueryExec: func(splitQueriesCount uint32) {
-			totalQueries++
-			if splitQueriesCount > 0 {
-				queriesWithSplit++
-			}
-		},
-	}
-
-	newStorage := func(t testutil.T) storage.Storage {
-		base := promqltest.LoadedStorage(t, "")
-		return &storageWithCloseCallback{
-			Storage: base,
-			onClose: cacheBackend.Reset,
-		}
-	}
-
-	f, err := testdataFS.Open(testFile)
-	require.NoError(t, err)
-	defer f.Close()
-
-	b, err := io.ReadAll(f)
-	require.NoError(t, err)
-
-	testScript := skipUnsupportedTests(t, string(b), testFile)
-
-	promqltest.RunTestWithStorage(t, testScript, engine, newStorage)
-
-	return totalQueries, queriesWithSplit
-}
-
-func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool) (promql.QueryEngine, *testCacheBackend) {
+func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {
 	t.Helper()
 
 	opts := NewTestEngineOpts()
@@ -782,8 +932,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	opts.RangeVectorSplitting.SplitInterval = splitInterval
 	opts.CommonOpts.Reg = registry
 	opts.CommonOpts.EnableDelayedNameRemoval = enableDelayedNameRemoval
-	if enableDelayedNameRemoval {
-		// Disable the optimization pass, since it requires delayed name removal to be enabled.
+	if !enableEliminateDeduplicateAndMerge {
 		opts.EnableEliminateDeduplicateAndMerge = false
 	}
 
@@ -793,7 +942,7 @@ func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry,
 	cacheBackend := newTestCacheBackend()
 	cacheFactory := cache.NewResultsCacheWithBackend(cacheBackend, registry, log.NewNopLogger())
 
-	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(registry), planner, cacheFactory)
+	engine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, enableDelayedNameRemoval), stats.NewQueryMetrics(registry), planner, cacheFactory)
 	require.NoError(t, err)
 
 	return engine, cacheBackend
@@ -973,101 +1122,4 @@ func (q *testSplittingQuery) Exec(ctx context.Context) *promql.Result {
 	}
 
 	return result
-}
-
-func TestQuerySplitting_WithOOOWindow(t *testing.T) {
-	backend := newTestCacheBackend()
-	irCache := cache.NewResultsCacheWithBackend(backend, prometheus.NewRegistry(), log.NewNopLogger())
-
-	opts := NewTestEngineOpts()
-	opts.RangeVectorSplitting.Enabled = true
-	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
-	opts.Limits = &mockOutOfOrderTimeWindowProvider{
-		oooWindow: 3 * time.Hour,
-	}
-
-	baseT := timestamp.Time(0)
-	fixedNow := baseT.Add(12 * time.Hour)
-
-	queryPlanner, err := NewQueryPlanner(opts, NewMaximumSupportedVersionQueryPlanVersionProvider())
-	require.NoError(t, err)
-
-	for _, pass := range queryPlanner.planOptimizationPasses {
-		if qsPass, ok := pass.(*rangevectorsplitting.OptimizationPass); ok {
-			qsPass.TestOnlySetTimeNow(func() time.Time { return fixedNow })
-			break
-		}
-	}
-
-	mimirEngine, err := newEngineWithCache(opts, NewStaticQueryLimitsProvider(0, false), stats.NewQueryMetrics(nil), queryPlanner, irCache)
-	require.NoError(t, err)
-	// Query at 12h with 7h range: (5h, 12h]
-	// Expected splits:
-	// - Head: (5h, 6h-1ms]
-	// - Block: (6h-1ms, 8h-1ms] - cacheable (before OOO)
-	// - Tail: (8h-1ms, 12h] - non-cacheable (in OOO window)
-
-	oooWindowMs := int64(2 * time.Hour / time.Millisecond)
-	storage := teststorage.New(t, oooWindowMs)
-	t.Cleanup(func() { require.NoError(t, storage.Close()) })
-
-	ctx := context.Background()
-	app := storage.Appender(ctx)
-	// Load in-order samples from 0h to 12h (every 10 minutes) for initial query
-	for i := 0; i <= 72; i++ {
-		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
-		_, err := app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"), ts, float64(i))
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
-
-	expr := "sum_over_time(test_metric[7h])"
-	ts := fixedNow
-
-	// First query: should cache the cacheable blocks, but not the OOO range
-	result1, ranges1 := executeQuery(t, mimirEngine, storage, expr, ts)
-	require.NoError(t, result1.Err)
-	require.Len(t, result1.Value.(promql.Vector), 1)
-	// Expected: sum of values from 5h (exclusive) to 10h (inclusive)
-	// Samples at 5h10m (31) to 12h (72) = 42 samples
-	// Sum = 31+32+...+60 = (31+72)*42/2 = 2163
-	require.Equal(t, 2163.0, result1.Value.(promql.Vector)[0].F)
-
-	verifyCacheStats(t, backend, 1, 0, 1)
-	require.Equal(t, []storageQueryRange{
-		{mint: 5*hourInMs + 1, maxt: 12 * hourInMs},
-	}, ranges1)
-
-	app = storage.Appender(ctx)
-	// Add OOO sample at 9h
-	_, err = app.Append(0, labels.FromStrings("__name__", "test_metric", "env", "prod"),
-		timestamp.FromTime(baseT.Add(10*time.Hour).Add(1*time.Minute)), 200.0)
-	require.NoError(t, err)
-	require.NoError(t, app.Commit())
-
-	result2, ranges2 := executeQuery(t, mimirEngine, storage, expr, ts)
-	require.NoError(t, result2.Err)
-	require.Len(t, result2.Value.(promql.Vector), 1)
-	require.Equal(t, 2363.0, result2.Value.(promql.Vector)[0].F)
-
-	verifyCacheStats(t, backend, 2, 1, 1)
-	require.Equal(t, []storageQueryRange{
-		{mint: 5*hourInMs + 1, maxt: 6*hourInMs - 1},
-		{mint: 8 * hourInMs, maxt: 12 * hourInMs},
-	}, ranges2)
-
-	result3, ranges3 := executeQuery(t, mimirEngine, storage, expr, ts)
-	require.NoError(t, result3.Err)
-	require.Equal(t, result2, result3)
-
-	verifyCacheStats(t, backend, 3, 2, 1)
-	require.Equal(t, ranges2, ranges3)
-}
-
-type mockOutOfOrderTimeWindowProvider struct {
-	oooWindow time.Duration
-}
-
-func (m *mockOutOfOrderTimeWindowProvider) OutOfOrderTimeWindow(userID string) time.Duration {
-	return m.oooWindow
 }
