@@ -321,12 +321,16 @@ func matchersMatch(matchers []*labels.Matcher, value string) bool {
 // combineSeriesMetadata combines inner series metadata with info series labels.
 func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadata, ignoreSeries map[int]struct{}, dataLabelMatchers types.Matchers) ([]types.SeriesMetadata, error) {
 	// Store user-specified label matchers in a map for easy retrieval.
-	dataLabelMatchersMap := make(map[string]struct{})
+	dataLabelMatchersMap := make(map[string]*labels.Matcher)
 	for _, m := range dataLabelMatchers {
 		if m.Name == model.MetricNameLabel {
 			continue
 		}
-		dataLabelMatchersMap[m.Name] = struct{}{}
+		matcher, err := m.ToPrometheusType()
+		if err != nil {
+			return nil, err
+		}
+		dataLabelMatchersMap[m.Name] = matcher
 	}
 
 	lb := labels.NewBuilder(labels.EmptyLabels())
@@ -422,7 +426,7 @@ func (f *InfoFunction) combineSeriesMetadata(innerMetadata []types.SeriesMetadat
 }
 
 // combineLabels combines inner series labels with info series label sets.
-func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string]struct{}) ([]labels.Labels, []string) {
+func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSetsMap map[string][]labels.Labels, dataLabelMatchersMap map[string]*labels.Matcher) ([]labels.Labels, []string) {
 	newLabelSets := make([]labels.Labels, 0, len(labelSetsMap))
 	labelSetsOrder := make([]string, 0, len(labelSetsMap))
 	savedLabels := make(map[string]struct{})
@@ -447,7 +451,7 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 
 				// If user specified certain label matchers, ignore labels that don't match.
 				if len(dataLabelMatchersMap) > 0 {
-					if _, exists := dataLabelMatchersMap[l.Name]; !exists {
+					if matcher, ok := dataLabelMatchersMap[l.Name]; !ok || !matcher.Matches(l.Value) {
 						return
 					}
 				}
@@ -459,8 +463,8 @@ func combineLabels(lb *labels.Builder, innerSeries types.SeriesMetadata, labelSe
 
 		shouldSkip := false
 		// If user specified certain label matchers but no labels matched, skip this series.
-		for name := range dataLabelMatchersMap {
-			if _, saved := savedLabels[name]; !saved {
+		for _, m := range dataLabelMatchersMap {
+			if _, saved := savedLabels[m.Name]; !saved && !m.Matches("") {
 				shouldSkip = true
 				break
 			}
