@@ -50,6 +50,31 @@ Because monolithic mode requires scaling all Grafana Mimir components together, 
 
 Microservices mode deploys each component in separate processes, enabling independent scaling and creating granular failure domains. Microservices mode is recommended for production environments.
 
+{{< admonition type="note" >}}
+Even though the read path (query-frontend, querier, store-gateway) runs separately from the write path (distributor, ingester), a healthy ring is typically required for successful queries. If the write components (distributor or ingester) are unavailable or unhealthy, the ring health check may fail, causing read queries to fail. Complete isolation of read vs. write availability requires careful configuration of ring settings and failure tolerance.
+{{< /admonition >}}
+
+```mermaid
+flowchart TD
+    subgraph Read_Path
+        Q[Querier]
+    end
+    
+    subgraph Write_Path
+        I[Ingester]
+    end
+    
+    subgraph Shared_State
+        R{Hash Ring}
+    end
+    
+    I -- Heartbeat --> R
+    Q -- 1. Check Health --> R
+    Q -- 2. Read Data --> I
+    
+    R -.->|Unhealthy if Write Path Down| Q
+```
+
 The following diagrams show how Mimir works in microservices mode using ingest storage and classic architectures. For more information about the two supported architectures in Grafana Mimir, refer to [Grafana Mimir architecture](https://grafana.com/docs/mimir/<MIMIR_VERSION>/get-started/about-grafana-mimir-architecture/).
 
 Ingest storage architecture:
