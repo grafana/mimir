@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/distributor"
@@ -31,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/util/limiter"
@@ -132,7 +134,7 @@ func TestBothEnginesReturnSameResultsForBenchmarkQueries(t *testing.T) {
 			end := time.Unix(int64(NumIntervals*intervalSeconds), 0)
 
 			prometheusResult, prometheusClose := c.Run(ctx, t, start, end, interval, prometheusEngine, q)
-			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, q)
+			mimirResult, mimirClose := c.Run(ctx, t, start, end, interval, mimirEngine, &memoryTrackingQueryable{q})
 
 			testutils.RequireEqualResults(t, c.Expr, prometheusResult, mimirResult, false)
 
@@ -154,7 +156,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := user.InjectOrgID(context.Background(), UserID)
-	query, err := mimirEngine.NewRangeQuery(ctx, q, nil, "a_1", time.Unix(0, 0), time.Unix(int64((NumIntervals-1)*intervalSeconds), 0), interval)
+	query, err := mimirEngine.NewRangeQuery(ctx, &memoryTrackingQueryable{q}, nil, "a_1", time.Unix(0, 0), time.Unix(int64((NumIntervals-1)*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
@@ -180,7 +182,7 @@ func TestBenchmarkSetup(t *testing.T) {
 	require.Equal(t, expectedPoints, series.Floats)
 
 	// Check native histograms are set up correctly
-	query, err = mimirEngine.NewRangeQuery(ctx, q, nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
+	query, err = mimirEngine.NewRangeQuery(ctx, &memoryTrackingQueryable{q}, nil, "nh_1", time.Unix(0, 0), time.Unix(int64(15*intervalSeconds), 0), interval)
 	require.NoError(t, err)
 
 	t.Cleanup(query.Close)
@@ -276,4 +278,44 @@ type alwaysQueryIngestersConfigProvider struct{}
 
 func (a alwaysQueryIngestersConfigProvider) QueryIngestersWithin(string) time.Duration {
 	return time.Duration(math.MaxInt64)
+}
+
+type memoryTrackingQueryable struct {
+	inner storage.Queryable
+}
+
+func (w *memoryTrackingQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
+	q, err := w.inner.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &memoryTrackingQuerier{inner: q}, nil
+}
+
+type memoryTrackingQuerier struct {
+	inner storage.Querier
+}
+
+func (w *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	memoryTracker, err := limiter.MemoryConsumptionTrackerFromContext(ctx)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	deduplicator := limiter.NewSeriesDeduplicator()
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, deduplicator)
+
+	return series.NewMemoryTrackingSeriesSet(w.inner.Select(ctx, sortSeries, hints, matchers...), memoryTracker)
+}
+
+func (w *memoryTrackingQuerier) LabelValues(ctx context.Context, name string, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return w.inner.LabelValues(ctx, name, hints, matchers...)
+}
+
+func (w *memoryTrackingQuerier) LabelNames(ctx context.Context, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
+	return w.inner.LabelNames(ctx, hints, matchers...)
+}
+
+func (w *memoryTrackingQuerier) Close() error {
+	return w.inner.Close()
 }
