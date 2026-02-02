@@ -315,6 +315,7 @@ func NewQuerierHandler(
 	// The middleware must be added here in querier instead of in query-frontend so that the context will be initialized with the memory consumption tracker
 	// to be used in upstream Queryables or Queriers.
 	unlimitedMemoryTrackerMiddleware := limiter.UnlimitedMemoryTrackerMiddleware{}
+	seriesDeduplicatorMiddleware := limiter.SeriesDeduplicatorMiddleware{}
 
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
@@ -324,7 +325,7 @@ func NewQuerierHandler(
 	router.Path(path.Join(promPrefix, "/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
-	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(promRouter)))
+	router.Path(path.Join(promPrefix, "/series")).Methods("GET", "POST", "DELETE").Handler(seriesQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(seriesDeduplicatorMiddleware.Wrap(promRouter))))
 	router.Path(path.Join(promPrefix, "/metadata")).Methods("GET").Handler(metadataQueryStats.Wrap(querier.NewMetadataHandler(metadataSupplier)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_names")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelNamesCardinalityHandler(distributor, limits)))
 	router.Path(path.Join(promPrefix, "/cardinality/label_values")).Methods("GET", "POST").Handler(cardinalityQueryStats.Wrap(querier.LabelValuesCardinalityHandler(distributor, limits)))
