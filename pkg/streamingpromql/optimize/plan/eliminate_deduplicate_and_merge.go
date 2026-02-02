@@ -5,7 +5,6 @@ package plan
 import (
 	"context"
 
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
@@ -13,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
@@ -153,6 +153,8 @@ func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
 		}
 
 		return areSeriesUniqueFunctionCall(node), nil
+	case *core.Subquery:
+		return canEliminateDeduplicateAndMerge(node.Inner)
 	case *core.UnaryExpression:
 		return canEliminateDeduplicateAndMerge(node.Inner)
 	case *core.DeduplicateAndMerge, *core.AggregateExpression:

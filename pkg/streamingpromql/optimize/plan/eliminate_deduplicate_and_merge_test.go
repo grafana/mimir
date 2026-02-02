@@ -170,6 +170,41 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 			nodesEliminatedWithoutDelayedNameRemoval: 2,
 			nodesEliminatedWithDelayedNameRemoval:    2,
 		},
+		"function over subquery with exact name matcher": {
+			expr: `max_over_time(foo[5m:1m])`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- FunctionCall: max_over_time(...)
+					- Subquery: [5m0s:1m0s]
+						- VectorSelector: {__name__="foo"}
+			`,
+			expectedPlanWithDelayedNameRemoval: `
+				- DropName
+					- FunctionCall: max_over_time(...)
+						- Subquery: [5m0s:1m0s]
+							- VectorSelector: {__name__="foo"}
+			`,
+			nodesEliminatedWithoutDelayedNameRemoval: 1,
+			nodesEliminatedWithDelayedNameRemoval:    1,
+		},
+		"function over subquery without exact name matcher": {
+			expr: `max_over_time({job="test"}[5m:1m])`,
+			expectedPlanWithoutDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- FunctionCall: max_over_time(...)
+						- Subquery: [5m0s:1m0s]
+							- VectorSelector: {job="test"}
+			`,
+			expectedPlanWithDelayedNameRemoval: `
+				- DeduplicateAndMerge
+					- DropName
+						- FunctionCall: max_over_time(...)
+							- Subquery: [5m0s:1m0s]
+								- VectorSelector: {job="test"}
+			`,
+			nodesEliminatedWithoutDelayedNameRemoval: 0,
+			nodesEliminatedWithDelayedNameRemoval:    0,
+		},
+
 		"unary negation with exact name matcher": {
 			// DeduplicateAndMerge is eliminated in both plans, exact name matcher guarantees unique series.
 			expr: `-foo`,
