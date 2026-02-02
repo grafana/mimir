@@ -56,7 +56,26 @@ Ingest storage architecture:
 
 <div align="center">
 
-![Ingest storage architecture diagram](/media/docs/mimir/ingest-storage-overview.png)
+```mermaid
+flowchart LR
+    subgraph Write_Path ["Write Path"]
+        Dist[Distributor]
+    end
+
+    subgraph Event_Bus ["Event Bus"]
+        Kafka{Apache Kafka}
+    end
+
+    subgraph Read_Path ["Read Path"]
+        Ing[Ingester]
+        Store[(Long-term Storage)]
+    end
+
+    Dist -- "Writes Samples (Push)" --> Kafka
+    Kafka -- "Consumes Samples (Pull)" --> Ing
+    Ing -- "Uploads Blocks" --> Store
+```
+*Ingest storage architecture diagram*
 
 </div>
 
