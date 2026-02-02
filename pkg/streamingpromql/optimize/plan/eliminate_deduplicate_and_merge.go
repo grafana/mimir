@@ -17,21 +17,6 @@ import (
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 )
 
-type selectorType int
-
-const (
-	notSelector selectorType = iota
-	selectorWithoutExactName
-	selectorWithExactName
-)
-
-type dedupNodeInfo struct {
-	node       *core.DeduplicateAndMerge
-	parent     planning.Node
-	childIndex int // childIndex is the index of a node in its parent's children array.
-	keep       bool
-}
-
 // EliminateDeduplicateAndMergeOptimizationPass removes redundant DeduplicateAndMerge nodes from the plan.
 // DeduplicateAndMerge by default are wrapped around operations which manipulate labels (name-dropping functions, some binary operations, etc) and therefore could produce duplicate series.
 // These nodes are unnecessary if it can be proven that each input series produces a unique output series.
@@ -142,11 +127,10 @@ func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) (bool
 
 		return true, nil
 	case *core.DropName:
-		return isNameUnique(node, isNameUniqueForDropNamePath), nil
+		return areSeriesUniqueDropName(node), nil
 	default:
 		return true, nil
 	}
-
 }
 
 func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
@@ -168,7 +152,7 @@ func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
 			}
 		}
 
-		return isNameUnique(node, isNameUniqueForFunctionPath), nil
+		return areSeriesUniqueFunctionCall(node), nil
 	case *core.UnaryExpression:
 		return canEliminateDeduplicateAndMerge(node.Inner)
 	case *core.DeduplicateAndMerge, *core.AggregateExpression:
@@ -200,19 +184,62 @@ func canEliminateDeduplicateAndMerge(node planning.Node) (bool, error) {
 	}
 }
 
-func hasExactNameMatcher(matchers []*core.LabelMatcher) bool {
-	for _, matcher := range matchers {
-		if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual {
-			return true
+// areSeriesUniqueFunctionCall returns true if the operations between the provided function
+// call and any contained selectors are guaranteed to be unique and hence don't need any
+// additional DeduplicateAndMerge nodes, false otherwise.
+func areSeriesUniqueFunctionCall(node *core.FunctionCall) bool {
+	return walkToSelectors(node, func(dedupeNeeded int, path []planning.Node) bool {
+		for i := len(path) - 1; i >= 0; i-- {
+			switch e := path[i].(type) {
+			case *core.FunctionCall:
+				if isLabelReplaceOrJoinFunction(e) {
+					// If series are currently unique and we see a call to label_replace or
+					// label_join, we need _two_ subsequent DeduplicateAndMerge nodes in the
+					// query plan. One that ensures that results from the function are unique
+					// since it modifies labels and one that ensures results are unique after
+					// the __name__ label is dropped.
+					if dedupeNeeded == 0 {
+						dedupeNeeded += 2
+					} else {
+						dedupeNeeded++
+					}
+				}
+			case *core.BinaryExpression:
+				if e.Op == core.BINARY_LOR {
+					dedupeNeeded++
+				}
+			case *core.DeduplicateAndMerge:
+				dedupeNeeded--
+			}
 		}
-	}
 
-	return false
+		return dedupeNeeded <= 0
+	})
 }
 
-type ExaminePath func(dedupeNeeded int, path []planning.Node) bool
+// areSeriesUniqueDropName returns true if the operations between the DropName operator and any
+// contained selectors are guaranteed to be unique and hence don't need any additional
+// DeduplicateAndMerge nodes, false otherwise.
+func areSeriesUniqueDropName(node *core.DropName) bool {
+	return walkToSelectors(node, func(dedupeNeeded int, path []planning.Node) bool {
+		for i := len(path) - 1; i >= 0; i-- {
+			switch e := path[i].(type) {
+			case *core.FunctionCall:
+				if isLabelReplaceOrJoinFunction(e) {
+					dedupeNeeded++
+				}
+			case *core.BinaryExpression:
+				dedupeNeeded++
+			case *core.DeduplicateAndMerge:
+				dedupeNeeded--
+			}
+		}
 
-func isNameUnique(n planning.Node, examine ExaminePath) bool {
+		return dedupeNeeded <= 0
+	})
+}
+
+func walkToSelectors(n planning.Node, examine func(dedupeNeeded int, path []planning.Node) bool) bool {
 	unique := false
 
 	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
@@ -229,6 +256,7 @@ func isNameUnique(n planning.Node, examine ExaminePath) bool {
 			if !hasExactNameMatcher(e.Matchers) {
 				dedupeNeeded = 1
 			}
+
 			unique = examine(dedupeNeeded, path)
 		}
 
@@ -238,55 +266,20 @@ func isNameUnique(n planning.Node, examine ExaminePath) bool {
 	return unique
 }
 
-func isNameUniqueForFunctionPath(dedupeNeeded int, path []planning.Node) bool {
-	firstLabelManip := true
-
-	for i := len(path) - 1; i >= 0; i-- {
-		switch e := path[i].(type) {
-		case *core.FunctionCall:
-			if isLabelReplaceOrJoinFunction(e) {
-				// TODO: this is terrible
-				if firstLabelManip {
-					firstLabelManip = false
-					dedupeNeeded += 2
-				} else {
-					dedupeNeeded++
-				}
-			}
-
-		case *core.BinaryExpression:
-			if e.Op == core.BINARY_LOR {
-				dedupeNeeded++
-			}
-		case *core.DeduplicateAndMerge:
-			dedupeNeeded--
-		}
-	}
-
-	return dedupeNeeded <= 0
-}
-
-func isNameUniqueForDropNamePath(dedupeNeeded int, path []planning.Node) bool {
-	for i := len(path) - 1; i >= 0; i-- {
-		switch e := path[i].(type) {
-		case *core.FunctionCall:
-			if isLabelReplaceOrJoinFunction(e) {
-				dedupeNeeded++
-			}
-		case *core.BinaryExpression:
-			dedupeNeeded++
-		case *core.DeduplicateAndMerge:
-			dedupeNeeded--
-		}
-	}
-
-	return dedupeNeeded <= 0
-}
-
 func isLabelReplaceOrJoinFunction(node planning.Node) bool {
 	if funcNode, isFunctionCall := node.(*core.FunctionCall); isFunctionCall {
 		fn := funcNode.Function
 		return fn == functions.FUNCTION_LABEL_REPLACE || fn == functions.FUNCTION_LABEL_JOIN
 	}
+	return false
+}
+
+func hasExactNameMatcher(matchers []*core.LabelMatcher) bool {
+	for _, matcher := range matchers {
+		if matcher.Name == model.MetricNameLabel && matcher.Type == labels.MatchEqual {
+			return true
+		}
+	}
+
 	return false
 }
