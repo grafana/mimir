@@ -5,7 +5,8 @@ package functions
 import (
 	"context"
 	"fmt"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -257,23 +258,27 @@ func (f *InfoFunction) processSamplesFromInfoSeries(ctx context.Context, infoMet
 
 // makeLabelSetsHash creates a hash string to identify a unique set of label sets.
 func makeLabelSetsHash(labelSets []labels.Labels) string {
-	if len(labelSets) == 0 {
+	length := len(labelSets)
+	if length == 0 {
 		return "inner"
 	}
 
-	hashArr := make([]uint64, 0, len(labelSets))
-	for _, labels := range labelSets {
-		hashArr = append(hashArr, labels.Hash())
+	hashArr := make([]uint64, length)
+	for i, labels := range labelSets {
+		hashArr[i] = labels.Hash()
 	}
 
-	sort.Slice(hashArr, func(i, j int) bool { return hashArr[i] < hashArr[j] })
+	slices.Sort(hashArr)
 
-	hashStrArr := make([]string, 0, len(hashArr))
-	for _, h := range hashArr {
-		hashStrArr = append(hashStrArr, fmt.Sprintf("%d", h))
+	b := make([]byte, 0, length*17-1)
+	for idx, h := range hashArr {
+		if idx > 0 {
+			b = append(b, ',')
+		}
+		b = strconv.AppendUint(b, h, 16)
 	}
 
-	return strings.Join(hashStrArr, ",")
+	return string(b)
 }
 
 // identifyIgnoreSeries marks inner series that are info metrics and are to be ignored.
