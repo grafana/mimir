@@ -165,10 +165,10 @@ clear
 load 1m
   test_metric{instance="a", job="1", env="prod"} 1 2 3
   test_metric{instance="b", job="2", env="dev"} 4 5 6
-  target_info{instance="a", job="1", category="web", priority="high"} 1 1 1
+  target_info{instance="a", job="1", category="web", priority="high"} 2 2 2
   target_info{instance="b", job="2", category="api", priority="low"} 1 1 1
   target_info{instance="a", job="1", category="database", priority="medium"} 1 1 1
-  target_info{instance="b", job="2", category="cache", priority="high"} 1 1 1
+  target_info{instance="b", job="2", category="cache", priority="high"} 2 2 2
 
 # Multiple data matchers with the same label name but different values - no intersection, should return no results
 eval range from 0m to 2m step 1m info(test_metric, {category="web", category="api"})
