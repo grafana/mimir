@@ -320,8 +320,8 @@ func NewQuerierHandler(
 	// TODO(gotjosh): This custom handler is temporary until we're able to vendor the changes in:
 	// https://github.com/prometheus/prometheus/pull/7125/files
 	router.Path(path.Join(promPrefix, "/read")).Methods("POST").Handler(remoteReadStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(querier.RemoteReadHandler(queryable, logger, querierCfg))))
-	router.Path(path.Join(promPrefix, "/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(promRouter))
-	router.Path(path.Join(promPrefix, "/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(promRouter))
+	router.Path(path.Join(promPrefix, "/query")).Methods("GET", "POST").Handler(instantQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(promRouter)))
+	router.Path(path.Join(promPrefix, "/query_range")).Methods("GET", "POST").Handler(rangeQueryStats.Wrap(unlimitedMemoryTrackerMiddleware.Wrap(promRouter)))
 	router.Path(path.Join(promPrefix, "/query_exemplars")).Methods("GET", "POST").Handler(exemplarsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/labels")).Methods("GET", "POST").Handler(labelsQueryStats.Wrap(promRouter))
 	router.Path(path.Join(promPrefix, "/label/{name}/values")).Methods("GET").Handler(labelsQueryStats.Wrap(promRouter))
