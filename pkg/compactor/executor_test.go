@@ -139,7 +139,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
 						Key:  &compactorschedulerpb.JobKey{Id: "compaction-job"},
-						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1.Bytes()}}, JobType: compactorschedulerpb.COMPACTION},
+						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1.Bytes()}}, JobType: compactorschedulerpb.JOB_TYPE_COMPACTION},
 					}, nil
 				}
 				mock.UpdateJobFunc = func(_ context.Context, in *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -147,14 +147,14 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				}
 			},
 			setupBucket:         func(bkt objstore.Bucket) {},
-			expectedFinalStatus: compactorschedulerpb.ABANDON,
+			expectedFinalStatus: compactorschedulerpb.UPDATE_TYPE_ABANDON,
 		},
 		"successful_planning_job_no_status_update": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
 						Key:  &compactorschedulerpb.JobKey{Id: "planning-job"},
-						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.PLANNING},
+						Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.JOB_TYPE_PLANNING},
 					}, nil
 				}
 				mock.UpdatePlanJobFunc = func(_ context.Context, in *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -165,7 +165,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				}
 			},
 			setupBucket:         func(bkt objstore.Bucket) {},
-			expectedFinalStatus: compactorschedulerpb.IN_PROGRESS,
+			expectedFinalStatus: compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS,
 		},
 	}
 
@@ -190,7 +190,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
-			if tc.expectedFinalStatus == compactorschedulerpb.ABANDON {
+			if tc.expectedFinalStatus == compactorschedulerpb.UPDATE_TYPE_ABANDON {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
@@ -200,11 +200,11 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			// Wait for job status goroutine to send the final status
 			time.Sleep(100 * time.Millisecond)
 
-			if tc.expectedFinalStatus == compactorschedulerpb.IN_PROGRESS {
+			if tc.expectedFinalStatus == compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS {
 				// Planning job: should only have initial IN_PROGRESS update, no final status
 				require.True(t, mockSchedulerClient.ReceivedPlannedRequest(), "planning jobs should send PlannedJobs message")
-				assert.Equal(t, compactorschedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetFirstUpdate().String(), "planning jobs should only send IN_PROGRESS status")
-				assert.Equal(t, compactorschedulerpb.IN_PROGRESS.String(), mockSchedulerClient.GetLastUpdate().String(), "planning jobs should not send final status update")
+				assert.Equal(t, compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS.String(), mockSchedulerClient.GetFirstUpdate().String(), "planning jobs should only send IN_PROGRESS status")
+				assert.Equal(t, compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS.String(), mockSchedulerClient.GetLastUpdate().String(), "planning jobs should not send final status update")
 			} else {
 				// Compaction job: should have at least one status update
 				require.GreaterOrEqual(t, mockSchedulerClient.GetUpdateJobCallCount(), 1, "compaction jobs should have at least one status update")
@@ -241,7 +241,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
 							Job:     &compactorschedulerpb.CompactionJob{Split: true, BlockIds: IDs},
-							JobType: compactorschedulerpb.COMPACTION,
+							JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 						},
 					}
 					return resp, nil
@@ -261,7 +261,7 @@ func TestSchedulerExecutor_BackoffBehavior(t *testing.T) {
 						Spec: &compactorschedulerpb.JobSpec{
 							Tenant:  "user-1",
 							Job:     &compactorschedulerpb.CompactionJob{Split: false, BlockIds: [][]byte{}}, // Empty BlockIds = planning
-							JobType: compactorschedulerpb.PLANNING,
+							JobType: compactorschedulerpb.JOB_TYPE_PLANNING,
 						},
 					}
 					return resp, nil
@@ -408,7 +408,7 @@ func TestSchedulerExecutor_PlannedJobsRetryBehavior(t *testing.T) {
 		LeaseJobFunc: func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 			return &compactorschedulerpb.LeaseJobResponse{
 				Key:  &compactorschedulerpb.JobKey{Id: "test-tenant"},
-				Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.PLANNING},
+				Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{}, JobType: compactorschedulerpb.JOB_TYPE_PLANNING},
 			}, nil
 		},
 		UpdatePlanJobFunc: func(_ context.Context, _ *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -454,7 +454,7 @@ func TestSchedulerExecutor_NoGoRoutineLeak(t *testing.T) {
 		LeaseJobFunc: func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 			return &compactorschedulerpb.LeaseJobResponse{
 				Key:  &compactorschedulerpb.JobKey{Id: "compaction-job"},
-				Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1.Bytes()}}, JobType: compactorschedulerpb.COMPACTION},
+				Spec: &compactorschedulerpb.JobSpec{Tenant: "test-tenant", Job: &compactorschedulerpb.CompactionJob{BlockIds: [][]byte{testBlockID1.Bytes()}}, JobType: compactorschedulerpb.JOB_TYPE_COMPACTION},
 			}, nil
 		},
 		UpdateJobFunc: func(_ context.Context, in *compactorschedulerpb.UpdateCompactionJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -524,7 +524,7 @@ func TestSchedulerExecutor_JobCancellationOn_NotFoundResponse(t *testing.T) {
 
 	// Test the startJobStatusUpdater directly
 	jobKey := &compactorschedulerpb.JobKey{Id: "test-job"}
-	jobSpec := &compactorschedulerpb.JobSpec{Tenant: "test-tenant", JobType: compactorschedulerpb.COMPACTION}
+	jobSpec := &compactorschedulerpb.JobSpec{Tenant: "test-tenant", JobType: compactorschedulerpb.JOB_TYPE_COMPACTION}
 
 	// New mock compactor w. minimal metrics for testing
 	mockCompactor := &MultitenantCompactor{
@@ -553,9 +553,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 			spec: &compactorschedulerpb.JobSpec{
 				Tenant:  "test-tenant",
 				Job:     nil,
-				JobType: compactorschedulerpb.COMPACTION,
+				JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			},
-			expectedStatus: compactorschedulerpb.ABANDON,
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_ABANDON,
 		},
 		"empty_block_ids_returns_abandon": {
 			spec: &compactorschedulerpb.JobSpec{
@@ -564,9 +564,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 					BlockIds: [][]byte{},
 					Split:    false,
 				},
-				JobType: compactorschedulerpb.COMPACTION,
+				JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			},
-			expectedStatus: compactorschedulerpb.ABANDON,
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_ABANDON,
 		},
 		"invalid_block_id_returns_abandon": {
 			spec: &compactorschedulerpb.JobSpec{
@@ -575,9 +575,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 					BlockIds: [][]byte{[]byte("invalid")},
 					Split:    false,
 				},
-				JobType: compactorschedulerpb.COMPACTION,
+				JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			},
-			expectedStatus: compactorschedulerpb.ABANDON,
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_ABANDON,
 		},
 		"multiple_blocks_with_one_invalid_returns_abandon": {
 			spec: &compactorschedulerpb.JobSpec{
@@ -589,9 +589,9 @@ func TestSchedulerExecutor_ExecuteCompactionJob_InvalidInput(t *testing.T) {
 					},
 					Split: false,
 				},
-				JobType: compactorschedulerpb.COMPACTION,
+				JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			},
-			expectedStatus: compactorschedulerpb.ABANDON,
+			expectedStatus: compactorschedulerpb.UPDATE_TYPE_ABANDON,
 		},
 	}
 
@@ -639,7 +639,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				}
 			},
 			split:                   false,
-			expectedStatus:          compactorschedulerpb.COMPLETE,
+			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
 			expectNewBlocksCount:    1,
 			expectUncompactedBlocks: 0,
 			expectError:             false,
@@ -655,7 +655,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				}
 			},
 			split:                   false,
-			expectedStatus:          compactorschedulerpb.COMPLETE,
+			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
 			expectNewBlocksCount:    1,
 			expectUncompactedBlocks: 0,
 		},
@@ -671,7 +671,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				}
 			},
 			split:                   false,
-			expectedStatus:          compactorschedulerpb.COMPLETE,
+			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
 			expectNewBlocksCount:    1,
 			expectUncompactedBlocks: 1,
 		},
@@ -685,7 +685,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				}
 			},
 			split:                   true,
-			expectedStatus:          compactorschedulerpb.COMPLETE,
+			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_COMPLETE,
 			expectNewBlocksCount:    splitShards,
 			expectUncompactedBlocks: 0,
 		},
@@ -700,7 +700,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				}
 			},
 			split:                   false,
-			expectedStatus:          compactorschedulerpb.ABANDON,
+			expectedStatus:          compactorschedulerpb.UPDATE_TYPE_ABANDON,
 			expectNewBlocksCount:    0,
 			expectUncompactedBlocks: 1,
 			expectError:             true,
@@ -744,7 +744,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 					BlockIds: blockIDBytes,
 					Split:    tc.split,
 				},
-				JobType: compactorschedulerpb.COMPACTION,
+				JobType: compactorschedulerpb.JOB_TYPE_COMPACTION,
 			}
 
 			key := &compactorschedulerpb.JobKey{Id: "test-job-id"}

@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/benbjohnson/clock"
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
 
+	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -28,25 +29,19 @@ func setupBboltManager(t *testing.T) *BboltJobPersistenceManager {
 	return mgr
 }
 
-func newTestCompactionJob(id string) *Job[*CompactionJob] {
-	job := &Job[*CompactionJob]{
-		id:           id,
-		value:        &CompactionJob{blocks: nil, isSplit: false},
-		creationTime: time.Now(),
-		numLeases:    0,
-		epoch:        123,
-	}
+func newTestCompactionJob(id string) TrackedJob {
+	job := NewTrackedCompactionJob(
+		id,
+		&CompactionJob{blocks: nil, isSplit: false},
+		1,
+		time.Now(),
+		clock.New(),
+	)
 	return job
 }
 
-func newTestPlanJob(id string) *Job[struct{}] {
-	job := &Job[struct{}]{
-		id:           id,
-		value:        struct{}{},
-		creationTime: time.Now(),
-		numLeases:    1,
-		epoch:        345,
-	}
+func newTestPlanJob() TrackedJob {
+	job := NewTrackedPlanJob(time.Now(), clock.New())
 	return job
 }
 
@@ -96,39 +91,20 @@ func TestJobPersistenceManagerFactory(t *testing.T) {
 	}
 }
 
-func TestBboltJobPersistenceManager_InitializePlanning(t *testing.T) {
-	mgr := setupBboltManager(t)
-	t.Cleanup(func() {
-		require.NoError(t, mgr.Close())
-	})
-
-	// Initialize planning
-	persister, err := mgr.InitializePlanning()
-	require.NoError(t, err)
-	require.NotNil(t, persister)
-
-	// Verify the bucket was created
-	err = mgr.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte("planning"))
-		require.NotNil(t, bucket)
-		return nil
-	})
-	require.NoError(t, err)
-}
-
 func TestBboltJobPersistenceManager_InitializeTenant(t *testing.T) {
 	mgr := setupBboltManager(t)
 	t.Cleanup(func() {
 		require.NoError(t, mgr.Close())
 	})
 
-	persister, err := mgr.InitializeTenant("tenant1")
+	tenant := "tenant"
+	persister, err := mgr.InitializeTenant(tenant)
 	require.NoError(t, err)
 	require.NotNil(t, persister)
 
-	// Verify the bucket was created with a prefix
+	// Verify the bucket was created
 	err = mgr.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket([]byte("utenant1"))
+		bucket := tx.Bucket([]byte(tenant))
 		require.NotNil(t, bucket)
 		return nil
 	})
@@ -150,14 +126,10 @@ func TestBboltJobPersistenceManager_DeleteTenant(t *testing.T) {
 
 	// Verify the bucket was deleted
 	err = mgr.db.View(func(tx *bbolt.Tx) error {
-		bucket := tx.Bucket(mgr.tenantName(tenant))
+		bucket := tx.Bucket([]byte(tenant))
 		require.Nil(t, bucket)
 		return nil
 	})
-	require.NoError(t, err)
-
-	// Deleting a tenant that does not exist should not error
-	err = mgr.DeleteTenant("missing")
 	require.NoError(t, err)
 }
 
@@ -169,13 +141,12 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 
 	allowlist := util.NewAllowList(nil, nil)
 	metrics := newSchedulerMetrics(prometheus.NewPedanticRegistry())
-	planTracker := NewJobTracker(&NopJobPersister[struct{}]{}, InfiniteLeases, "plan", metrics)
-	compactionTrackerFactory := func(persister JobPersister[*CompactionJob]) *JobTracker[*CompactionJob] {
-		return NewJobTracker(persister, InfiniteLeases, "compaction", metrics)
+	jobTrackerFactory := func(tenant string, persister JobPersister) *JobTracker {
+		return NewJobTracker(persister, tenant, infiniteLeases, metrics.trackerMetricsForTenant(tenant))
 	}
 
 	// Empty recovery should succeed
-	ctm, err := mgr.RecoverAll(allowlist, planTracker, compactionTrackerFactory)
+	ctm, err := mgr.RecoverAll(allowlist, jobTrackerFactory)
 	require.NoError(t, err)
 	require.Empty(t, ctm)
 
@@ -183,130 +154,113 @@ func TestBboltJobPersistenceManager_RecoverAll(t *testing.T) {
 	require.NoError(t, err)
 	err = tenantPersister.WriteJob(newTestCompactionJob("id"))
 	require.NoError(t, err)
-
-	planPersister, err := mgr.InitializePlanning()
-	require.NoError(t, err)
-	err = planPersister.WriteJob(newTestPlanJob("bar"))
+	err = tenantPersister.WriteJob(newTestPlanJob())
 	require.NoError(t, err)
 
-	// Before recovery the plan tracker should be empty
-	require.Empty(t, planTracker.allJobs)
-	ctm, err = mgr.RecoverAll(allowlist, planTracker, compactionTrackerFactory)
+	ctm, err = mgr.RecoverAll(allowlist, jobTrackerFactory)
 	require.NoError(t, err)
-
 	require.Len(t, ctm, 1)
 	require.Contains(t, ctm, "foo")
-	require.Len(t, ctm["foo"].allJobs, 1)
-	require.Contains(t, ctm["foo"].allJobs, "id")
 
-	require.Len(t, planTracker.allJobs, 1)
-	require.Contains(t, planTracker.allJobs, "bar")
+	jobTracker := ctm["foo"]
+	require.Len(t, jobTracker.incompleteJobs, 2)
+	require.Contains(t, jobTracker.incompleteJobs, "id")
+	require.Contains(t, jobTracker.incompleteJobs, planJobId)
 }
 
 func TestBboltJobPersister_WriteReadDelete(t *testing.T) {
+	// TODO: Clean up
 	mgr := setupBboltManager(t)
 	t.Cleanup(func() {
 		require.NoError(t, mgr.Close())
 	})
 
-	t.Run("compaction job", func(t *testing.T) {
-		persister, err := mgr.InitializeTenant("tenant")
-		require.NoError(t, err)
+	persister, err := mgr.InitializeTenant("tenant")
+	require.NoError(t, err)
 
-		now := time.Now()
-		written := &Job[*CompactionJob]{
-			id:                "job1",
-			value:             &CompactionJob{blocks: testBlockIDs, isSplit: true},
-			creationTime:      now,
-			leaseCreationTime: now.Add(10 * time.Second),
-			numLeases:         1,
-			epoch:             234,
-		}
+	now := time.Now()
+	writtenCompactionJob := &TrackedCompactionJob{
+		baseTrackedJob: baseTrackedJob{
+			id:           "job1",
+			creationTime: now,
+			statusTime:   now.Add(10 * time.Second),
+			numLeases:    1,
+			epoch:        234,
+		},
+		value: &CompactionJob{blocks: testBlockIDs, isSplit: true},
+		order: 1,
+	}
 
-		err = persister.WriteJob(written)
-		require.NoError(t, err)
+	err = persister.WriteJob(writtenCompactionJob)
+	require.NoError(t, err)
 
-		// Read it back
-		var jobs []*Job[*CompactionJob]
-		p := persister.(*BboltJobPersister[*CompactionJob])
-		readJobs := func() error {
-			return p.db.View(func(tx *bbolt.Tx) error {
-				b := tx.Bucket(p.name)
-				if b == nil {
-					return errors.New("bucket should not be missing")
-				}
-				jobs, err = p.recover(b)
-				return err
-			})
-		}
-		err = readJobs()
+	// Read it back
+	var jobs []TrackedJob
+	readJobs := func() error {
+		return mgr.db.View(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte("tenant"))
+			if b == nil {
+				return errors.New("bucket should not be missing")
+			}
+			jobs = jobsFromTenantBucket("tenant", b, mgr.logger)
+			return nil
+		})
+	}
 
-		require.NoError(t, err)
-		require.Len(t, jobs, 1)
-		readJob := jobs[0]
+	err = readJobs()
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
 
-		require.Equal(t, written.id, readJob.id)
-		require.Equal(t, written.value.blocks, readJob.value.blocks)
-		require.Equal(t, written.value.isSplit, readJob.value.isSplit)
-		require.Equal(t, written.creationTime.Unix(), readJob.creationTime.Unix())
-		require.Equal(t, written.leaseCreationTime.Unix(), readJob.leaseCreationTime.Unix())
-		require.Equal(t, written.numLeases, readJob.numLeases)
-		require.Equal(t, written.epoch, readJob.epoch)
+	readJob := jobs[0].(*TrackedCompactionJob)
+	require.Equal(t, writtenCompactionJob.id, readJob.id)
+	require.Equal(t, writtenCompactionJob.creationTime.Unix(), readJob.creationTime.Unix())
+	require.Equal(t, writtenCompactionJob.status, readJob.status)
+	require.Equal(t, writtenCompactionJob.statusTime.Unix(), readJob.statusTime.Unix())
+	require.Equal(t, writtenCompactionJob.numLeases, readJob.numLeases)
+	require.Equal(t, writtenCompactionJob.epoch, readJob.epoch)
 
-		err = persister.DeleteJob(written)
-		require.NoError(t, err)
+	require.Equal(t, writtenCompactionJob.value.blocks, readJob.value.blocks)
+	require.Equal(t, writtenCompactionJob.value.isSplit, readJob.value.isSplit)
 
-		err = readJobs()
-		require.NoError(t, err)
-		require.Empty(t, jobs)
-	})
+	require.Equal(t, writtenCompactionJob.order, readJob.order)
 
-	t.Run("plan job", func(t *testing.T) {
-		persister, err := mgr.InitializePlanning()
-		require.NoError(t, err)
+	// Delete it, then expect it to be gone
+	err = persister.DeleteJob(writtenCompactionJob)
+	require.NoError(t, err)
+	err = readJobs()
+	require.NoError(t, err)
+	require.Empty(t, jobs)
 
-		now := time.Now()
-		written := &Job[struct{}]{
-			id:                "job1",
-			value:             struct{}{},
-			creationTime:      now,
-			leaseCreationTime: now.Add(10 * time.Second),
-			numLeases:         1,
-			epoch:             234,
-		}
+	writtenPlanJob := &TrackedPlanJob{
+		baseTrackedJob: baseTrackedJob{
+			id:           planJobId,
+			creationTime: now,
+			status:       compactorschedulerpb.STORED_JOB_STATUS_LEASED,
+			statusTime:   now.Add(10 * time.Second),
+			numLeases:    1,
+			epoch:        234,
+		},
+	}
 
-		err = persister.WriteJob(written)
-		require.NoError(t, err)
-		p := persister.(*BboltJobPersister[struct{}])
-		var jobs []*Job[struct{}]
-		// Read it back
-		readJobs := func() error {
-			return mgr.db.View(func(tx *bbolt.Tx) error {
-				b := tx.Bucket([]byte("planning"))
-				if b == nil {
-					return errors.New("bucket should not be missing")
-				}
-				jobs, err = p.recover(b)
-				return err
-			})
-		}
-		err = readJobs()
-		require.NoError(t, err)
-		require.Len(t, jobs, 1)
-		readJob := jobs[0]
+	err = persister.WriteJob(writtenPlanJob)
+	require.NoError(t, err)
 
-		// Compare
-		assert.Equal(t, written.id, readJob.id)
-		assert.Equal(t, written.creationTime.Unix(), readJob.creationTime.Unix())
-		assert.Equal(t, written.leaseCreationTime.Unix(), readJob.leaseCreationTime.Unix())
-		assert.Equal(t, written.numLeases, readJob.numLeases)
-		assert.Equal(t, written.epoch, readJob.epoch)
+	err = readJobs()
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
 
-		err = persister.DeleteJob(written)
-		require.NoError(t, err)
+	readPlanJob := jobs[0].(*TrackedPlanJob)
 
-		err = readJobs()
-		require.NoError(t, err)
-		require.Empty(t, jobs)
-	})
+	require.Equal(t, writtenPlanJob.id, readPlanJob.id)
+	require.Equal(t, writtenPlanJob.creationTime.Unix(), readPlanJob.creationTime.Unix())
+	require.Equal(t, writtenPlanJob.status, readPlanJob.status)
+	require.Equal(t, writtenPlanJob.statusTime.Unix(), readPlanJob.statusTime.Unix())
+	require.Equal(t, writtenPlanJob.numLeases, readPlanJob.numLeases)
+	require.Equal(t, writtenPlanJob.epoch, readPlanJob.epoch)
+
+	err = persister.DeleteJob(writtenPlanJob)
+	require.NoError(t, err)
+	err = readJobs()
+	require.NoError(t, err)
+	require.Empty(t, jobs)
 }

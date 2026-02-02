@@ -7,7 +7,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/benbjohnson/clock"
@@ -87,7 +86,6 @@ type Scheduler struct {
 	allowList          *util.AllowList
 	jpm                JobPersistenceManager
 	rotator            *Rotator
-	planTracker        *JobTracker[struct{}]
 	subservicesManager *services.Manager
 	metrics            *schedulerMetrics
 	logger             log.Logger
@@ -109,24 +107,15 @@ func NewCompactorScheduler(
 		return nil, err
 	}
 
-	// TODO: Creates file on init, not ideal
-	pjp, err := jpm.InitializePlanning()
-	if err != nil {
-		return nil, err
-	}
-
-	planTracker := NewJobTracker(pjp, InfiniteLeases, "planning", metrics)
-
 	scheduler := &Scheduler{
-		running:     atomic.NewBool(false),
-		cfg:         cfg,
-		allowList:   allowList,
-		jpm:         jpm,
-		rotator:     NewRotator(planTracker, cfg.leaseDuration, cfg.leaseCheckInterval, metrics, logger),
-		planTracker: planTracker,
-		metrics:     metrics,
-		logger:      logger,
-		clock:       clock.New(),
+		running:   atomic.NewBool(false),
+		cfg:       cfg,
+		allowList: allowList,
+		jpm:       jpm,
+		rotator:   NewRotator(cfg.leaseDuration, cfg.leaseCheckInterval, metrics, logger),
+		metrics:   metrics,
+		logger:    logger,
+		clock:     clock.New(),
 	}
 
 	// TODO: This will need to be moved for testing
@@ -139,7 +128,6 @@ func NewCompactorScheduler(
 		cfg,
 		allowList,
 		scheduler.rotator,
-		scheduler.planTracker,
 		bkt,
 		jpm,
 		metrics,
@@ -159,12 +147,12 @@ func NewCompactorScheduler(
 
 }
 
-func (s *Scheduler) createCompactionTracker(jp JobPersister[*CompactionJob]) *JobTracker[*CompactionJob] {
-	return NewJobTracker(jp, s.cfg.maxLeases, "compaction", s.metrics)
+func (s *Scheduler) createJobTracker(tenant string, jp JobPersister) *JobTracker {
+	return NewJobTracker(jp, tenant, s.cfg.maxLeases, s.metrics.trackerMetricsForTenant(tenant))
 }
 
 func (s *Scheduler) start(ctx context.Context) error {
-	compactionTrackers, err := s.jpm.RecoverAll(s.allowList, s.planTracker, s.createCompactionTracker)
+	compactionTrackers, err := s.jpm.RecoverAll(s.allowList, s.createJobTracker)
 	if err != nil {
 		return fmt.Errorf("failed recovering state: %w", err)
 	}
@@ -194,10 +182,9 @@ func (s *Scheduler) stop(_ error) error {
 	errs.Add(services.StopManagerAndAwaitStopped(context.Background(), s.subservicesManager))
 
 	// Prepare for shutdown by making sure no more persist operations are possible.
-	// Since each of these takes a write lock, we know after they return all subsequent calls will see an empty state.
+	// We know after the rotator is cleared all subsequent calls will see an empty state.
 	// The only cases to still handle then are lease update requests, since "not found" is interpreted as the lease being invalid.
 	s.rotator.PrepareForShutdown()
-	s.planTracker.PrepareForShutdown()
 
 	// Since it is now shielded from further persist calls, close the persistence manager
 	if err := s.jpm.Close(); err != nil {
@@ -213,39 +200,13 @@ func (s *Scheduler) isRunning() bool {
 }
 
 func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
-	// Plan jobs are checked first
-	tenant, _, epoch, ok, err := s.planTracker.Lease(func(tenant string, _ struct{}) bool {
-		// TODO: Using req.WorkerId, can this worker plan for this tenant?
-		// Calculating this under a write lock is likely undesirable, the list of known tenants is in the planSpawner too
-		return true
-	})
+	response, ok, err := s.rotator.LeaseJob(ctx)
 	if err != nil {
-		level.Error(s.logger).Log("msg", "failed leasing plan job", "err", err)
-		return nil, failedTo("lease plan job")
+		level.Error(s.logger).Log("msg", "failed leasing job", "err", err)
+		return nil, failedTo("lease job")
 	}
 	if ok {
-		level.Info(s.logger).Log("msg", "leasing plan job", "tenant", tenant, "epoch", epoch, "worker", req.WorkerId)
-		return &compactorschedulerpb.LeaseJobResponse{
-			Key: &compactorschedulerpb.JobKey{
-				Id:    tenant,
-				Epoch: epoch,
-			},
-			Spec: &compactorschedulerpb.JobSpec{
-				JobType: compactorschedulerpb.PLANNING,
-			},
-		}, nil
-	}
-
-	// There were no pending plan jobs, check for compaction jobs
-	response, ok, err := s.rotator.LeaseJob(ctx, func(_ string, _ *CompactionJob) bool {
-		return true
-	})
-	if err != nil {
-		level.Error(s.logger).Log("msg", "failed leasing compaction job", "err", err)
-		return nil, failedTo("lease compaction job")
-	}
-	if ok {
-		level.Info(s.logger).Log("msg", "leasing compaction job", "tenant", response.Spec.Tenant, "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
+		level.Info(s.logger).Log("msg", "leasing job", "tenant", response.Spec.Tenant, "id", response.Key.Id, "epoch", response.Key.Epoch, "worker", req.WorkerId)
 		return response, nil
 	}
 
@@ -255,40 +216,33 @@ func (s *Scheduler) LeaseJob(ctx context.Context, req *compactorschedulerpb.Leas
 
 func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.PlannedJobsRequest) (*compactorschedulerpb.PlannedJobsResponse, error) {
 	if !s.isRunning() {
-		// This check is required to prevent requests from seeing empty state before startup, but then running when checking to transform not found errors.
+		// This check is required to prevent requests from seeing empty state before startup
 		return nil, notRunning()
-	}
-
-	// This serves as an epoch check. We want to make sure the plan job is a match but not remove it yet in case we fail while accepting the results
-	if !s.planTracker.RenewLease(req.Key.Id, req.Key.Epoch) {
-		if !s.isRunning() {
-			// This request may have erroneously seen empty state mid-shutdown. Transform it to an unavailable error to preserve state in the worker.
-			return nil, notRunning()
-		}
-
-		return nil, status.Error(codes.NotFound, "plan job was not found")
 	}
 
 	level.Info(s.logger).Log("msg", "received plan results", "tenant", req.Key.Id, "epoch", req.Key.Epoch, "job_count", len(req.Jobs))
 
 	now := s.clock.Now()
-	jobs := make([]*Job[*CompactionJob], 0, len(req.Jobs))
-	for _, job := range req.Jobs {
-		jobs = append(jobs, NewJob(
+	jobs := make([]TrackedJob, 0, len(req.Jobs))
+	for i, job := range req.Jobs {
+		if len(job.Id) == reservedJobIdLen {
+			// This is never expected to actually happen. We reserve single character keys for internal use.
+			level.Warn(s.logger).Log("msg", "ignoring planned job with an internally reserved ID length", "id", job.Id)
+			continue
+		}
+		jobs = append(jobs, NewTrackedCompactionJob(
 			job.Id,
 			&CompactionJob{
 				blocks:  job.Job.BlockIds,
 				isSplit: job.Job.Split,
 			},
+			uint32(i), // technically this casting could truncate, but that's an unrealistic case
 			now,
 			s.clock,
 		))
 	}
 
-	added, err := s.rotator.OfferJobs(req.Key.Id, jobs, func(previous *CompactionJob, new *CompactionJob) bool {
-		// Replace an existing job with the same ID if it has differs in type of compaction or has different blocks
-		return previous.isSplit != new.isSplit || !slices.EqualFunc(previous.blocks, new.blocks, slices.Equal)
-	})
+	added, err := s.rotator.OfferJobs(req.Key.Id, jobs, req.Key.Epoch)
 	if err != nil {
 		level.Error(s.logger).Log("msg", "failed offering result of plan job", "err", err)
 		return nil, failedTo("offering results")
@@ -298,12 +252,7 @@ func (s *Scheduler) PlannedJobs(ctx context.Context, req *compactorschedulerpb.P
 		return nil, notRunning()
 	}
 
-	_, _, err = s.planTracker.Remove(req.Key.Id, req.Key.Epoch)
-	if err != nil {
-		level.Warn(s.logger).Log("msg", "failed removing plan job, returning success to the worker anyway since results were already accepted", "err", err)
-	}
 	return &compactorschedulerpb.PlannedJobsResponse{}, nil
-
 }
 
 func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb.UpdatePlanJobRequest) (*compactorschedulerpb.UpdateJobResponse, error) {
@@ -314,28 +263,29 @@ func (s *Scheduler) UpdatePlanJob(ctx context.Context, req *compactorschedulerpb
 
 	level.Info(s.logger).Log("msg", "received plan job lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 	switch req.Update {
-	case compactorschedulerpb.IN_PROGRESS:
-		if s.planTracker.RenewLease(req.Key.Id, req.Key.Epoch) {
+	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
+		if s.rotator.RenewJobLease(req.Key.Id, req.Key.Id, req.Key.Epoch) {
 			return ok()
 		}
-	case compactorschedulerpb.COMPLETE:
-		fallthrough
-	case compactorschedulerpb.ABANDON:
-		removed, _, err := s.planTracker.Remove(req.Key.Id, req.Key.Epoch)
+	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
+		removed, err := s.rotator.RemoveJob(req.Key.Id, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
-			return nil, failedTo("remove plan job")
+			return nil, failedTo("remove job")
 		}
 		if removed {
 			return ok()
 		}
-	case compactorschedulerpb.REASSIGN:
-		canceled, _, err := s.planTracker.CancelLease(req.Key.Id, req.Key.Epoch)
+	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
+		canceled, err := s.rotator.CancelJobLease(req.Key.Id, req.Key.Id, req.Key.Epoch)
 		if err != nil {
-			return nil, failedTo("cancel lease")
+			return nil, failedTo("cancel job lease")
 		}
 		if canceled {
 			return ok()
 		}
+	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
+		// Plan jobs do not send a complete. They instead call PlannedJobs.
+		fallthrough
 	default:
 		return nil, status.Error(codes.InvalidArgument, "unrecognized update type")
 	}
@@ -358,21 +308,27 @@ func (s *Scheduler) UpdateCompactionJob(ctx context.Context, req *compactorsched
 	level.Info(s.logger).Log("msg", "received compaction lease update request", "update_type", compactorschedulerpb.UpdateType_name[int32(req.Update)], "id", req.Key.Id, "epoch", req.Key.Epoch)
 
 	switch req.Update {
-	case compactorschedulerpb.IN_PROGRESS:
+	case compactorschedulerpb.UPDATE_TYPE_IN_PROGRESS:
 		if s.rotator.RenewJobLease(req.Tenant, req.Key.Id, req.Key.Epoch) {
 			return ok()
 		}
-	case compactorschedulerpb.COMPLETE:
-		fallthrough
-	case compactorschedulerpb.ABANDON:
-		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch)
+	case compactorschedulerpb.UPDATE_TYPE_COMPLETE:
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, true)
+		if err != nil {
+			return nil, failedTo("complete job")
+		}
+		if removed {
+			return ok()
+		}
+	case compactorschedulerpb.UPDATE_TYPE_ABANDON:
+		removed, err := s.rotator.RemoveJob(req.Tenant, req.Key.Id, req.Key.Epoch, false)
 		if err != nil {
 			return nil, failedTo("remove job")
 		}
 		if removed {
 			return ok()
 		}
-	case compactorschedulerpb.REASSIGN:
+	case compactorschedulerpb.UPDATE_TYPE_REASSIGN:
 		canceled, err := s.rotator.CancelJobLease(req.Tenant, req.Key.Id, req.Key.Epoch)
 		if err != nil {
 			return nil, failedTo("cancel job lease")
