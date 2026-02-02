@@ -88,62 +88,46 @@ type Tracker struct {
 // with [InstrumentConfig.BeforeReusePeriod]) has passed, the underlying raw
 // memory will be unaccessible, and trying to access it will cause a segfault.
 func MaybeInstrument[T any](t *Tracker, len, cap int) (_ []T, _ mem.Buffer, instrumented bool) {
-	should := t != nil && cap > 0 && t.instrumentOneIn > 0 && t.unmarshaledWithBufferRefCount.Add(1)%t.instrumentOneIn == 0
-	if !should {
+	var r reserver
+	MakeSlice[T](&r, len, cap)
+
+	if cap <= 0 || !t.shouldInstrument(r.pageAlignedSize()) {
 		return nil, nil, false
 	}
 
-	var zero T
-	typeSize := int(unsafe.Sizeof(zero))
-	bytesCap := cap * typeSize
-	pageAlignedCap := roundUpToMultiple(bytesCap, pageSize)
-
-	inflight := t.inflightInstrumentedBytes.Add(uint64(pageAlignedCap))
-	if inflight > t.maxInflightInstrumentedBytes {
-		t.inflightInstrumentedBytes.Sub(uint64(pageAlignedCap))
-		return nil, nil, false
-	}
-
-	t.InstrumentedBuffersTotalMetric.Inc()
-	t.InflightInstrumentedBytesMetric.Set(float64(inflight))
-
-	// Allocate separate pages for this buffer. We'll detect ref leaks by
-	// munmaping the pages on Free, after which trying to access them will
-	// segfault.
-	b, err := syscall.Mmap(-1, 0, pageAlignedCap, syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_PRIVATE|syscall.MAP_ANON)
-	if err != nil {
-		panic(fmt.Errorf("mmap: %w", err))
-	}
-
-	// Restrict the raw bytes slice to the size we actually need, without the
-	// page-aligning padding. Otherwise, calling instrumentedBuf.ReaOnlyData()
-	// will return uninitialized memory.
-	b = b[:bytesCap:bytesCap]
-
-	// []byte (bytesCap, bytesCap) -> []T (len, cap)
-	bp := unsafe.Pointer(unsafe.SliceData(b))
-	sp := (*T)(bp)
-	s := unsafe.Slice(sp, cap)
-	s = s[:len]
+	alloc, b := r.allocator()
+	s := MakeSlice[T](alloc, len, cap)
 
 	buf := mem.NewBuffer(&b, nil)
 	instrumentedBuf := &instrumentLeaksBuf{
-		Buffer:          buf,
-		waitBeforeReuse: t.waitBeforeReuse,
-		tracker:         t,
+		Buffer:  buf,
+		tracker: t,
 	}
 	instrumentedBuf.refCount.Inc()
 
 	return s, instrumentedBuf, true
 }
 
-var pageSize = syscall.Getpagesize()
+func (t *Tracker) shouldInstrument(pageAlignedSize int) bool {
+	if t == nil || t.instrumentOneIn <= 0 || t.unmarshaledWithBufferRefCount.Add(1)%t.instrumentOneIn != 0 {
+		return false
+	}
+
+	inflight := t.inflightInstrumentedBytes.Add(uint64(pageAlignedSize))
+	if inflight > t.maxInflightInstrumentedBytes {
+		t.inflightInstrumentedBytes.Sub(uint64(pageAlignedSize))
+		return false
+	}
+
+	t.InstrumentedBuffersTotalMetric.Inc()
+	t.InflightInstrumentedBytesMetric.Set(float64(inflight))
+	return true
+}
 
 type instrumentLeaksBuf struct {
 	mem.Buffer
-	refCount        atomic.Int64
-	waitBeforeReuse time.Duration
-	tracker         *Tracker
+	refCount atomic.Int64
+	tracker  *Tracker
 }
 
 func (b *instrumentLeaksBuf) Ref() {
@@ -158,25 +142,29 @@ func (b *instrumentLeaksBuf) Free() {
 	switch {
 	case refCount == 0:
 		buf := b.ReadOnlyData()
-		ptr := unsafe.SliceData(buf)
-		allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
-		if b.waitBeforeReuse > 0 {
-			err := syscall.Mprotect(allPages, syscall.PROT_NONE)
-			if err != nil {
-				panic(fmt.Errorf("mprotect: %w", err))
-			}
-			select {
-			case b.tracker.unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(b.waitBeforeReuse), tracker: b.tracker}:
-				b.tracker.maybeStartFreeingInstrumentedBuffers()
-				return
-			default:
-				// Queue is full, munmap right away.
-			}
-		}
-		b.tracker.unmap(allPages)
+		b.tracker.free(buf)
 	case refCount < 0:
 		panic("instrumentLeaksBuf reference count below zero")
 	}
+}
+
+func (t *Tracker) free(buf []byte) {
+	ptr := unsafe.SliceData(buf)
+	allPages := unsafe.Slice(ptr, roundUpToMultiple(len(buf), pageSize))
+	if t.waitBeforeReuse > 0 {
+		err := syscall.Mprotect(allPages, syscall.PROT_NONE)
+		if err != nil {
+			panic(fmt.Errorf("mprotect: %w", err))
+		}
+		select {
+		case t.unmapQueue <- unmapTask{buf: allPages, at: time.Now().Add(t.waitBeforeReuse), tracker: t}:
+			t.maybeStartFreeingInstrumentedBuffers()
+			return
+		default:
+			// Queue is full, munmap right away.
+		}
+	}
+	t.unmap(allPages)
 }
 
 type unmapTask struct {
