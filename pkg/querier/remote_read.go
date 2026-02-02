@@ -27,6 +27,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -107,7 +108,9 @@ func remoteReadSamples(
 		}
 		closers[idx] = querier
 
-		seriesSet := querier.Select(ctx, false, hints, matchers...)
+		// Add SeriesDeduplicator to context to ensure proper memory tracking
+		queryCtx := limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
+		seriesSet := querier.Select(queryCtx, false, hints, matchers...)
 
 		// We can over-read when querying, but we don't need to return samples
 		// outside the queried range, so can filter them out.
@@ -180,7 +183,9 @@ func remoteReadStreamedXORChunks(
 		// The streaming API has to provide the series sorted.
 		// Use the original ctx instead of jobCtx because ForEachJob cancels jobCtx before returning,
 		// but we need the SeriesSet to remain valid for streaming later.
-		seriesSet := querier.Select(ctx, true, hints, matchers...)
+		// Add SeriesDeduplicator to context to ensure proper memory tracking
+		queryCtx := limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
+		seriesSet := querier.Select(queryCtx, true, hints, matchers...)
 		results[idx] = queryResult{series: seriesSet, querier: querier}
 		return nil
 	}
