@@ -53,15 +53,16 @@ type Selector struct {
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	querier   storage.Querier
-	seriesSet storage.SeriesSet
-	series    *seriesList
+	deduplicator limiter.SeriesDeduplicator
+	querier      storage.Querier
+	seriesSet    storage.SeriesSet
+	series       *seriesList
 
 	seriesIdx int
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
-	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
+	s.deduplicator = limiter.NewSeriesDeduplicator()
 	if s.EagerLoad {
 		return s.loadSeriesSet(ctx, s.Matchers)
 	}
@@ -169,6 +170,8 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	if err != nil {
 		return err
 	}
+
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, s.deduplicator)
 
 	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)
 	return nil
