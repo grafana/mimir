@@ -126,8 +126,10 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 			return storage.ErrSeriesSet(err)
 		}
 
+		deduplicator := limiter.SeriesDeduplicatorFromContextWithFallback(ctx)
+
 		for _, m := range ms {
-			err := memoryTracker.IncreaseMemoryConsumptionForLabels(m)
+			_, err := deduplicator.Deduplicate(m, memoryTracker)
 			if err != nil {
 				return storage.ErrSeriesSet(err)
 			}
