@@ -369,6 +369,11 @@ replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus 
 // merged upstream yet for years and we don't expect to change anytime soon.
 replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
 
+// go.yaml.in/yaml/v3
+// + https://github.com/go-yaml/yaml/pull/691
+// + https://github.com/go-yaml/yaml/pull/876
+replace go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87
+
 // gopkg.in/yaml.v3
 // + https://github.com/go-yaml/yaml/pull/691
 // + https://github.com/go-yaml/yaml/pull/876
