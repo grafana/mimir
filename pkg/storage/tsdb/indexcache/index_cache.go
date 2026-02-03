@@ -12,10 +12,8 @@ import (
 	"strings"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/cache"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -91,30 +89,4 @@ func (cfg *InMemoryIndexCacheConfig) Validate() error {
 		cfg.MaxItemSizeBytes = cfg.MaxCacheSizeBytes
 	}
 	return nil
-}
-
-// NewIndexCache creates a new index cache based on the input configuration.
-func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
-	switch cfg.Backend {
-	case BackendInMemory:
-		return NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
-	case BackendMemcached:
-		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
-	default:
-		return nil, errUnsupportedIndexCacheBackend
-	}
-}
-
-func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
-	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
-	if err != nil {
-		return nil, errors.Wrap(err, "create index cache memcached client")
-	}
-
-	c, err := NewRemoteIndexCache(logger, client, registerer)
-	if err != nil {
-		return nil, errors.Wrap(err, "create memcached-based index cache")
-	}
-
-	return NewTracingIndexCache(c, logger), nil
 }
