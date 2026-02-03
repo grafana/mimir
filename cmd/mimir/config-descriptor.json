@@ -18263,6 +18263,17 @@
         },
         {
           "kind": "field",
+          "name": "abort_if_cluster_fast_join_fails_min_nodes",
+          "required": false,
+          "desc": "Minimum number of seed nodes that must be successfully joined during fast-join for it to succeed. Only applies when -memberlist.abort-if-fast-join-fails is enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "memberlist.abort-if-fast-join-fails-min-nodes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "abort_if_cluster_join_fails",
           "required": false,
           "desc": "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.",
