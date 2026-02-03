@@ -242,7 +242,7 @@ func areSeriesUniqueDropName(node *core.DropName) bool {
 }
 
 func walkToSelectors(n planning.Node, examine func(dedupeNeeded int, path []planning.Node) bool) bool {
-	unique := false
+	unique := true
 
 	_ = optimize.Walk(n, optimize.VisitorFunc(func(node planning.Node, path []planning.Node) error {
 		switch e := node.(type) {
@@ -252,14 +252,14 @@ func walkToSelectors(n planning.Node, examine func(dedupeNeeded int, path []plan
 				dedupeNeeded = 1
 			}
 
-			unique = examine(dedupeNeeded, path)
+			unique = unique && examine(dedupeNeeded, path)
 		case *core.MatrixSelector:
 			var dedupeNeeded int
 			if !hasExactNameMatcher(e.Matchers) {
 				dedupeNeeded = 1
 			}
 
-			unique = examine(dedupeNeeded, path)
+			unique = unique && examine(dedupeNeeded, path)
 		}
 
 		return nil
