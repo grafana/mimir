@@ -75,7 +75,7 @@ func (cfg *IndexCacheConfig) Validate() error {
 
 type InMemoryIndexCacheConfig struct {
 	MaxCacheSizeBytes uint64 `yaml:"max_size_bytes"`
-	MaxItemSizeBytes  uint64
+	MaxItemSizeBytes  uint64 `yaml:"-"`
 }
 
 func (cfg *InMemoryIndexCacheConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
