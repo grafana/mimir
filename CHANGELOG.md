@@ -167,6 +167,7 @@
 * [BUGFIX] Distributor: Fix duplicate label validation bypass when label value exceeds length limit and is handled by Truncate or Drop strategy. #14131
 * [BUGFIX] Block-builder-scheduler: Fix bug where data could be skipped when partition is fully consumed at startup but later grows. #14136
 * [BUGFIX] Ingester: Create TSDB directory on startup #14112
+* [BUGFIX] Update to Go v1.25.6 to address [CVE-2025-61726](https://pkg.go.dev/vuln/GO-2026-4341). #14231
 
 ### Mixin
 
