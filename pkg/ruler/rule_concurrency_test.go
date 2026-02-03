@@ -20,8 +20,8 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/sync/semaphore"
-	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/util/validation"
 )

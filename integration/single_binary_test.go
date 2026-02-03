@@ -78,7 +78,7 @@ func TestMimirShouldStartInSingleBinaryModeWithAllMemcachedConfigured(t *testing
 }
 
 // TestMimirCanParseIntZeroAsZeroDuration checks that integer 0 can be used as zero duration in the yaml configuration.
-// When parsing config using gopkg.in/yaml.v3 this means that it should include this change: https://github.com/go-yaml/yaml/pull/876
+// When parsing config using go.yaml.in/yaml/v3 this means that it should include this change: https://github.com/go-yaml/yaml/pull/876
 // It is written as an acceptance test to ensure that software that vendors this (i.e., GEM) will also run this test.
 func TestMimirCanParseIntZeroAsZeroDuration(t *testing.T) {
 	s, err := e2e.NewScenario(networkName)
