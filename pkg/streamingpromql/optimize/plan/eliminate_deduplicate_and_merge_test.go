@@ -222,7 +222,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 								- RHS: VectorSelector: {__name__="foo"}
 			`,
 			nodesEliminatedWithoutDelayedNameRemoval: 0,
-			nodesEliminatedWithDelayedNameRemoval: 0,
+			nodesEliminatedWithDelayedNameRemoval:    0,
 		},
 		"function call with two exact name matchers": {
 			expr: `abs(foo + bar)`,
@@ -241,7 +241,7 @@ func TestEliminateDeduplicateAndMergeOptimizationPassPlan(t *testing.T) {
 								- RHS: VectorSelector: {__name__="bar"}
 			`,
 			nodesEliminatedWithoutDelayedNameRemoval: 1,
-			nodesEliminatedWithDelayedNameRemoval: 0,
+			nodesEliminatedWithDelayedNameRemoval:    0,
 		},
 		"unary negation with exact name matcher": {
 			// DeduplicateAndMerge is eliminated in both plans, exact name matcher guarantees unique series.
