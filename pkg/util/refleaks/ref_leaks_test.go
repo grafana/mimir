@@ -34,14 +34,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 
 	buf.Free() // leakingRef becomes a leak here
 
-	var recovered any
-	func() {
-		defer func() {
-			recovered = recover()
-		}()
-		t.Log(*leakingRef) // Just forcing a read on leakingRef here
-	}()
-	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
+	requireAccessPanics(t, func() any { return *leakingRef })
 
 	require.Equal(t, 1.0, testutil.ToFloat64(GlobalTracker.InstrumentedBuffersTotalMetric))
 	require.Zero(t, testutil.ToFloat64(GlobalTracker.InflightInstrumentedBytesMetric))
@@ -55,4 +48,16 @@ func TestInstrumentRefLeaks(t *testing.T) {
 
 	require.Equal(t, 2.0, testutil.ToFloat64(GlobalTracker.InstrumentedBuffersTotalMetric))
 	require.Zero(t, testutil.ToFloat64(GlobalTracker.InflightInstrumentedBytesMetric))
+}
+
+func requireAccessPanics(t *testing.T, access func() any) {
+	t.Helper()
+	var recovered any
+	func() {
+		defer func() {
+			recovered = recover()
+		}()
+		t.Log(access()) // Force a read
+	}()
+	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
 }
