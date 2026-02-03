@@ -48,7 +48,7 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	c.attempts.Inc()
 
 	matchersReduced := false
-	parser.Inspect(root, func(node parser.Node, _ []parser.Node) error {
+	c.apply(root, func(node parser.Node) {
 		switch expr := node.(type) {
 		case *parser.VectorSelector:
 			retained, dropped := reduceMatchers(expr.LabelMatchers)
@@ -75,7 +75,6 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 				)
 			}
 		}
-		return nil
 	})
 
 	if matchersReduced {
@@ -83,6 +82,24 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	}
 
 	return root, nil
+}
+
+func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node)) {
+	if node == nil {
+		return
+	}
+
+	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
+		// Only reduce matchers for the first argument of info(), not the second.
+		c.apply(call.Args[0], fn)
+		return
+	}
+
+	fn(node)
+
+	for child := range parser.ChildrenIter(node) {
+		c.apply(child, fn)
+	}
 }
 
 func reduceMatchers(existing []*labels.Matcher) (retained []*labels.Matcher, dropped []*labels.Matcher) {

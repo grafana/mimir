@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -122,6 +123,9 @@ func (e *OptimizationPass) accumulatePath(soFar path) []path {
 	paths := make([]path, 0, childCount)
 
 	for childIdx := range childCount {
+		if e.ShouldSkipChild(node, childIdx) {
+			continue
+		}
 		path := soFar.Clone()
 		path = path.Append(node.Child(childIdx), childIdx, childTimeRange)
 		childPaths := e.accumulatePath(path)
@@ -129,6 +133,23 @@ func (e *OptimizationPass) accumulatePath(soFar path) []path {
 	}
 
 	return paths
+}
+
+// ShouldSkipChild determines if a child node should be skipped during common subexpression elimination.
+// Currently this is only used to skip the 2nd argument to info function calls, as we don't want to
+// deduplicate these as we need the matchers calculated by the info function at evaluation time to be
+// applied, and these are ignored by the Duplicate operator.
+func (e *OptimizationPass) ShouldSkipChild(node planning.Node, childIdx int) bool {
+	functionCall, ok := node.(*core.FunctionCall)
+	if !ok {
+		return false
+	}
+
+	if functionCall.Function == functions.FUNCTION_INFO && childIdx == 1 {
+		return true
+	}
+
+	return false
 }
 
 func (e *OptimizationPass) groupAndApplyDeduplication(paths []path, offset int) (int, error) {
