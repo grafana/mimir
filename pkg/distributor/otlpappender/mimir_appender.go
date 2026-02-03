@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
-	otlpappender "github.com/prometheus/prometheus/storage/remote/otlptranslator/prometheusremotewrite"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -56,15 +56,15 @@ func (c *MimirAppender) GetResult() ([]mimirpb.PreallocTimeseries, []*mimirpb.Me
 	return c.series, c.metadata
 }
 
-func (c *MimirAppender) AppendSample(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, es []exemplar.Exemplar) error {
-	return c.appendFloatOrHistogram(ls, meta, ct, t, v, nil, es)
+func (c *MimirAppender) AppendSample(ls labels.Labels, opts storage.AOptions, ct, t int64, v float64) error {
+	return c.appendFloatOrHistogram(ls, opts, ct, t, v, nil, nil)
 }
 
-func (c *MimirAppender) AppendHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, h *histogram.Histogram, es []exemplar.Exemplar) error {
-	return c.appendFloatOrHistogram(ls, meta, ct, t, 0, h, es)
+func (c *MimirAppender) AppendHistogram(ls labels.Labels, opts storage.AOptions, ct, t int64, h *histogram.Histogram) error {
+	return c.appendFloatOrHistogram(ls, opts, ct, t, 0, h, nil)
 }
 
-func (c *MimirAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpappender.Metadata, ct, t int64, v float64, h *histogram.Histogram, es []exemplar.Exemplar) error {
+func (c *MimirAppender) appendFloatOrHistogram(ls labels.Labels, opts storage.AOptions, ct, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) error {
 	ct = c.recalcCreatedTimestamp(t, ct)
 
 	hash, idx, collisionIdx, seenSeries := c.processLabelsAndMetadata(ls)
@@ -73,14 +73,32 @@ func (c *MimirAppender) appendFloatOrHistogram(ls labels.Labels, meta otlpappend
 		c.createNewSeries(&idx, collisionIdx, hash, ls, ct)
 	}
 
-	if h != nil {
+	switch {
+	case h != nil:
 		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromHistogramToHistogramProto(t, h))
-	} else {
+	case fh != nil:
+		c.series[idx.idx].Histograms = append(c.series[idx.idx].Histograms, mimirpb.FromFloatHistogramToHistogramProto(t, fh))
+	default:
 		c.series[idx.idx].Samples = append(c.series[idx.idx].Samples, mimirpb.Sample{TimestampMs: t, Value: v})
 	}
-	c.appendExemplars(idx.idx, es)
-	c.appendMetadata(meta.MetricFamilyName, meta.Metadata)
+	c.appendExemplars(idx.idx, opts.Exemplars)
+	c.appendMetadata(opts.MetricFamilyName, opts.Metadata)
 
+	return nil
+}
+
+// Append implements storage.AppenderV2.
+func (c *MimirAppender) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram, opts storage.AOptions) (storage.SeriesRef, error) {
+	return 0, c.appendFloatOrHistogram(ls, opts, st, t, v, h, fh)
+}
+
+// Commit implements storage.AppenderTransaction (part of AppenderV2).
+func (c *MimirAppender) Commit() error {
+	return nil
+}
+
+// Rollback implements storage.AppenderTransaction (part of AppenderV2).
+func (c *MimirAppender) Rollback() error {
 	return nil
 }
 
