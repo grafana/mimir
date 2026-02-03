@@ -91,7 +91,7 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node, bool), isI
 
 	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
 		// Only reduce matchers for the first argument of info(), not the second.
-		c.apply(call.Args[0], fn, isInfoDataSelector)
+		c.apply(call.Args[0], fn, false)
 		c.apply(call.Args[1], fn, true)
 		return
 	}
@@ -99,7 +99,7 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node, bool), isI
 	fn(node, isInfoDataSelector)
 
 	for child := range parser.ChildrenIter(node) {
-		c.apply(child, fn, isInfoDataSelector)
+		c.apply(child, fn, false)
 	}
 }
 
