@@ -91,7 +91,9 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node, bool), isI
 
 	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
 		// Only reduce matchers for the first argument of info(), not the second.
-		c.apply(call.Args[0], fn, isInfoDataSelector)
+		// The first argument is always a regular series selector (isInfoDataSelector=false),
+		// while the second argument is the info data selector (isInfoDataSelector=true).
+		c.apply(call.Args[0], fn, false)
 		c.apply(call.Args[1], fn, true)
 		return
 	}
