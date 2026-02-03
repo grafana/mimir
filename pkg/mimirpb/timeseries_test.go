@@ -16,9 +16,12 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/util/refleaks"
 )
 
 func TestLabelAdapter_Marshal(t *testing.T) {
@@ -60,6 +63,13 @@ func TestPreallocTimeseriesSliceFromPool(t *testing.T) {
 }
 
 func TestTimeseriesFromPool(t *testing.T) {
+	// Disable ref leaks instrumentation since it bypasses the pools.
+	prevTracker := refleaks.GlobalTracker
+	t.Cleanup(func() { RegisterCodecGlobally(prevTracker) })
+	reg := prometheus.NewRegistry()
+	tracker := refleaks.InstrumentConfig{Percentage: 0}.Tracker(reg)
+	RegisterCodecGlobally(tracker)
+
 	t.Run("new instance is provided when not available to reuse", func(t *testing.T) {
 		first := TimeseriesFromPool()
 		second := TimeseriesFromPool()

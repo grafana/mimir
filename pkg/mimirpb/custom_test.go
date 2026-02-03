@@ -10,11 +10,13 @@ import (
 	"runtime/debug"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/util/refleaks"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -348,7 +350,13 @@ func TestAddSourceBufferHolder_AfterFreeBuffer(t *testing.T) {
 	assert.Nil(t, destReq.sourceBufferHolders)
 }
 
-func TestInstrumentRefLeaks(t *testing.T) {
+func TestInstrumentRefLeaks_Buffer(t *testing.T) {
+	prevTracker := refleaks.GlobalTracker
+	t.Cleanup(func() { RegisterCodecGlobally(prevTracker) })
+	reg := prometheus.NewRegistry()
+	tracker := refleaks.InstrumentConfig{Percentage: 100}.Tracker(reg)
+	RegisterCodecGlobally(tracker)
+
 	prev := debug.SetPanicOnFault(true)
 	defer debug.SetPanicOnFault(prev)
 
@@ -374,15 +382,17 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	err = reqDirect.Unmarshal(buf)
 	require.NoError(t, err)
 	require.Equal(t, reqDirect.Timeseries, req.Timeseries)
+	ReuseSlice(reqDirect.Timeseries)
 
-	tracker := globalCodec.(*codecV2).refLeaksTracker
-	require.Equal(t, 1.0, testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric))
+	instrumentedCount := testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric)
+	require.NotZero(t, instrumentedCount)
 	require.NotZero(t, testutil.ToFloat64(tracker.InflightInstrumentedBytesMetric))
 
 	// Label names are UnsafeMutableStrings pointing to buf. They shouldn't outlive
 	// the call to req.FreeBuffer.
 	leakingLabelName = req.Timeseries[0].Labels[0].Name
 
+	ReuseSlice(req.Timeseries)
 	req.FreeBuffer() // leakingLabelName becomes a leak here
 
 	var recovered any
@@ -394,7 +404,7 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	}()
 	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
 
-	require.Equal(t, 1.0, testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric))
+	require.Equal(t, instrumentedCount, testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric))
 	require.Zero(t, testutil.ToFloat64(tracker.InflightInstrumentedBytesMetric))
 
 	// Check that a leak-free buffer is measured as instrumented.
@@ -402,11 +412,63 @@ func TestInstrumentRefLeaks(t *testing.T) {
 	err = Unmarshal(buf, &req2)
 	require.NoError(t, err)
 
-	require.Equal(t, 2.0, testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric))
+	newInstrumentedCount := testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric)
+	require.Greater(t, newInstrumentedCount, instrumentedCount)
 	require.NotZero(t, testutil.ToFloat64(tracker.InflightInstrumentedBytesMetric))
 
+	ReuseSlice(req2.Timeseries)
 	req2.FreeBuffer()
 
-	require.Equal(t, 2.0, testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric))
+	require.Equal(t, newInstrumentedCount, testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric))
 	require.Zero(t, testutil.ToFloat64(tracker.InflightInstrumentedBytesMetric))
+}
+
+func TestInstrumentRefLeaks_Timeseries(t *testing.T) {
+	prevTracker := refleaks.GlobalTracker
+	t.Cleanup(func() { RegisterCodecGlobally(prevTracker) })
+	reg := prometheus.NewRegistry()
+	tracker := refleaks.InstrumentConfig{Percentage: 100}.Tracker(reg)
+	RegisterCodecGlobally(tracker)
+
+	prev := debug.SetPanicOnFault(true)
+	defer debug.SetPanicOnFault(prev)
+
+	src := WriteRequest{Timeseries: []PreallocTimeseries{{TimeSeries: &TimeSeries{
+		Labels:  []UnsafeMutableLabel{{Name: "labelName", Value: "labelValue"}},
+		Samples: []Sample{{TimestampMs: 1234, Value: 1337}},
+	}}}}
+	buf, err := src.Marshal()
+	require.NoError(t, err)
+
+	var req WriteRequest
+	err = Unmarshal(buf, &req)
+	require.NoError(t, err)
+	defer req.FreeBuffer()
+
+	instrumentedCount := testutil.ToFloat64(tracker.InstrumentedBuffersTotalMetric)
+	require.NotZero(t, instrumentedCount)
+	require.NotZero(t, testutil.ToFloat64(tracker.InflightInstrumentedBytesMetric))
+
+	leakingLabels := req.Timeseries[0].Labels
+	leakingSamples := req.Timeseries[0].Samples
+
+	ReuseSlice(req.Timeseries)
+
+	var recovered any
+	func() {
+		defer func() {
+			recovered = recover()
+		}()
+		t.Log(leakingLabels) // Just forcing a read on leakingTS here
+	}()
+	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
+
+	recovered = nil
+	func() {
+		defer func() {
+			recovered = recover()
+		}()
+		t.Log(leakingSamples) // Just forcing a read on leakingTS here
+	}()
+	require.Equal(t, fmt.Sprint(recovered), "runtime error: invalid memory address or nil pointer dereference")
 }

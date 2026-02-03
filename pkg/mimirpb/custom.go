@@ -26,6 +26,7 @@ var globalCodec encoding.CodecV2
 func RegisterCodecGlobally(tracker *refleaks.Tracker) {
 	globalCodec = &codecV2{refLeaksTracker: tracker}
 	encoding.RegisterCodecV2(globalCodec)
+	initPools(tracker)
 }
 
 func init() {

@@ -11,11 +11,11 @@ import (
 	"io"
 	"slices"
 	"strings"
-	"sync"
 	"unsafe"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/zeropool"
+
+	"github.com/grafana/mimir/pkg/util/refleaks"
 )
 
 const (
@@ -27,35 +27,41 @@ const (
 	maxPreallocatedHistogramsPerSeries = 100
 	minPreallocatedExemplarsPerSeries  = 1
 	maxPreallocatedExemplarsPerSeries  = 10
+
+	// The initial cap of 200 is an arbitrary number which has been chosen because the default
+	// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
+	// 200 should be enough to back all the strings of one TimeSeries in many cases.
+	minPreallocatedYoloSliceBytes = 200
 )
 
 var (
-	preallocTimeseriesSlicePool = zeropool.New(func() []PreallocTimeseries {
-		return make([]PreallocTimeseries, 0, minPreallocatedTimeseries)
-	})
+	preallocTimeseriesSlicePool refleaks.ZeroPool[[]PreallocTimeseries]
 
-	timeSeriesPool = sync.Pool{
-		New: func() interface{} {
-			return &TimeSeries{
-				Labels:     make([]LabelAdapter, 0, minPreallocatedLabels),
-				Samples:    make([]Sample, 0, minPreallocatedSamplesPerSeries),
-				Exemplars:  make([]Exemplar, 0, minPreallocatedExemplarsPerSeries),
-				Histograms: nil,
-			}
-		},
-	}
+	timeSeriesPool refleaks.SyncPool
 
 	// yoloSlicePool is a pool of byte slices which are used to back the yoloStrings of this package.
-	yoloSlicePool = sync.Pool{
-		New: func() interface{} {
-			// The initial cap of 200 is an arbitrary number which has been chosen because the default
-			// of 0 is guaranteed to be insufficient, so any number greater than 0 would be better.
-			// 200 should be enough to back all the strings of one TimeSeries in many cases.
-			val := make([]byte, 0, 200)
-			return &val
-		},
-	}
+	yoloSlicePool refleaks.SyncPool
 )
+
+func initPools(tracker *refleaks.Tracker) {
+	preallocTimeseriesSlicePool = refleaks.NewInstrumentedZeroPool(tracker, func(a refleaks.Allocator) []PreallocTimeseries {
+		return refleaks.MakeSlice[PreallocTimeseries](a, 0, minPreallocatedTimeseries)
+	})
+
+	timeSeriesPool = refleaks.NewInstrumentedSyncPool(tracker, func(a refleaks.Allocator) any {
+		return &TimeSeries{
+			Labels:     refleaks.MakeSlice[LabelAdapter](a, 0, minPreallocatedLabels),
+			Samples:    refleaks.MakeSlice[Sample](a, 0, minPreallocatedSamplesPerSeries),
+			Exemplars:  refleaks.MakeSlice[Exemplar](a, 0, minPreallocatedExemplarsPerSeries),
+			Histograms: nil,
+		}
+	})
+
+	yoloSlicePool = refleaks.NewInstrumentedSyncPool(tracker, func(a refleaks.Allocator) any {
+		val := refleaks.MakeSlice[byte](a, 0, minPreallocatedYoloSliceBytes)
+		return &val
+	})
+}
 
 // PreallocWriteRequest is a WriteRequest which preallocs slices on Unmarshal.
 type PreallocWriteRequest struct {
