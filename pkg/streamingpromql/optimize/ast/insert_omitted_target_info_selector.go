@@ -55,7 +55,7 @@ func (h *InsertOmittedTargetInfoSelector) Visit(node parser.Node, _ []parser.Nod
 			dataLabelMatchersExpr.LabelMatchers = append(dataLabelMatchersExpr.LabelMatchers, labels.MustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "target_info"))
 		}
 	default:
-		return nil, fmt.Errorf("expected 'info' function to have exactly 2 arguments, got %d", length)
+		return nil, fmt.Errorf("expected 'info' function to have 1 or 2 arguments, got %d", length)
 	}
 	return h, nil
 }
