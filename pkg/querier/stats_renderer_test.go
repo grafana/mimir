@@ -110,6 +110,7 @@ func TestStatsRenderer(t *testing.T) {
 		false,
 		nil,
 		nil,
+		v1.OpenAPIOptions{},
 	)
 	promRouter := route.New().WithPrefix("/api/v1")
 
