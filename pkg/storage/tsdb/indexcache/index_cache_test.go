@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package tsdb
+package indexcache
 
 import (
 	"testing"
@@ -41,7 +41,7 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				cfg := IndexCacheConfig{}
 				flagext.DefaultValues(&cfg)
 
-				cfg.Backend = IndexCacheBackendMemcached
+				cfg.Backend = BackendMemcached
 
 				return cfg
 			}(),
@@ -52,7 +52,7 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				cfg := IndexCacheConfig{}
 				flagext.DefaultValues(&cfg)
 
-				cfg.Backend = IndexCacheBackendMemcached
+				cfg.Backend = BackendMemcached
 				cfg.Memcached.Addresses = []string{"dns+localhost:11211"}
 
 				return cfg
@@ -63,7 +63,7 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 				cfg := IndexCacheConfig{}
 				flagext.DefaultValues(&cfg)
 
-				cfg.Backend = IndexCacheBackendInMemory
+				cfg.Backend = BackendInMemory
 
 				return cfg
 			}(),

@@ -26,53 +26,13 @@ import (
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
-func TestNewInMemoryIndexCache(t *testing.T) {
-	// Should return error on invalid YAML config.
-	conf := []byte("invalid")
-	cache, err := NewInMemoryIndexCache(log.NewNopLogger(), nil, conf)
-	assert.Error(t, err)
-	assert.Equal(t, (*InMemoryIndexCache)(nil), cache)
-
-	// Should instance an in-memory index cache with default config
-	// on empty YAML config.
-	conf = []byte{}
-	cache, err = NewInMemoryIndexCache(log.NewNopLogger(), nil, conf)
-	assert.NoError(t, err)
-	assert.Equal(t, uint64(DefaultInMemoryIndexCacheConfig.MaxSize), cache.maxSizeBytes)
-	assert.Equal(t, uint64(DefaultInMemoryIndexCacheConfig.MaxItemSize), cache.maxItemSizeBytes)
-
-	// Should instance an in-memory index cache with specified YAML config.s with units.
-	conf = []byte(`
-max_size: 1MB
-max_item_size: 2KB
-`)
-	cache, err = NewInMemoryIndexCache(log.NewNopLogger(), nil, conf)
-	assert.NoError(t, err)
-	assert.Equal(t, uint64(1024*1024), cache.maxSizeBytes)
-	assert.Equal(t, uint64(2*1024), cache.maxItemSizeBytes)
-
-	// Should instance an in-memory index cache with specified YAML config.s with units.
-	conf = []byte(`
-max_size: 2KB
-max_item_size: 1MB
-`)
-	cache, err = NewInMemoryIndexCache(log.NewNopLogger(), nil, conf)
-	assert.Error(t, err)
-	assert.Equal(t, (*InMemoryIndexCache)(nil), cache)
-	// assert.Equal(t, uint64(1024*1024), cache.maxSizeBytes)
-	// assert.Equal(t, uint64(2*1024), cache.maxItemSizeBytes)
-
-	// assert.Equal(t, uint64(1024*1024), cache.maxItemSizeBytes)
-	// assert.Equal(t, uint64(2*1024), cache.maxSizeBytes)
-}
-
 func TestInMemoryIndexCache_AvoidsDeadlock(t *testing.T) {
 	user := "tenant"
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(log.NewNopLogger(), metrics, InMemoryIndexCacheConfig{
-		MaxItemSize: sliceHeaderSize + 5,
-		MaxSize:     sliceHeaderSize + 5,
-	})
+	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
+		MaxItemSizeBytes:  sliceHeaderSize + 5,
+		MaxCacheSizeBytes: sliceHeaderSize + 5,
+	}, metrics, log.NewNopLogger())
 	assert.NoError(t, err)
 
 	l, err := simplelru.NewLRU(math.MaxInt64, func(key cacheKey, val []byte) {
@@ -119,10 +79,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 	})
 
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(log.NewSyncLogger(errorLogger), metrics, InMemoryIndexCacheConfig{
-		MaxItemSize: maxSize,
-		MaxSize:     maxSize,
-	})
+	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
+		MaxItemSizeBytes:  maxSize,
+		MaxCacheSizeBytes: maxSize,
+	}, metrics, log.NewSyncLogger(errorLogger))
 	assert.NoError(t, err)
 
 	user := "tenant"
@@ -245,10 +205,10 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 func TestInMemoryIndexCache_MaxNumberOfItemsHit(t *testing.T) {
 	user := "tenant"
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(log.NewNopLogger(), metrics, InMemoryIndexCacheConfig{
-		MaxItemSize: 2*sliceHeaderSize + 10,
-		MaxSize:     2*sliceHeaderSize + 10,
-	})
+	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
+		MaxItemSizeBytes:  2*sliceHeaderSize + 10,
+		MaxCacheSizeBytes: 2*sliceHeaderSize + 10,
+	}, metrics, log.NewNopLogger())
 	assert.NoError(t, err)
 
 	l, err := simplelru.NewLRU(2, cache.onEvict)
@@ -279,10 +239,10 @@ func TestInMemoryIndexCache_MaxNumberOfItemsHit(t *testing.T) {
 func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {
 	user := "tenant"
 	metrics := prometheus.NewRegistry()
-	cache, err := NewInMemoryIndexCacheWithConfig(log.NewNopLogger(), metrics, InMemoryIndexCacheConfig{
-		MaxItemSize: 2*sliceHeaderSize + 5,
-		MaxSize:     2*sliceHeaderSize + 5,
-	})
+	cache, err := NewInMemoryIndexCacheWithConfig(InMemoryIndexCacheConfig{
+		MaxItemSizeBytes:  2*sliceHeaderSize + 5,
+		MaxCacheSizeBytes: 2*sliceHeaderSize + 5,
+	}, metrics, log.NewNopLogger())
 	assert.NoError(t, err)
 
 	id := ulid.MustNew(0, nil)
