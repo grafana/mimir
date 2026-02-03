@@ -54,6 +54,7 @@ const (
 	ReduceNativeHistogramOverMaxBucketsFlag   = "validation.reduce-native-histogram-over-max-buckets"
 	CreationGracePeriodFlag                   = "validation.create-grace-period"
 	PastGracePeriodFlag                       = "validation.past-grace-period"
+	MaxUsageGroupsCardinalityFlag             = "validation.max-active-series-additional-custom-trackers-cardinality"
 	MaxPartialQueryLengthFlag                 = "querier.max-partial-query-length"
 	MaxSeriesQueryLimitFlag                   = "querier.max-series-query-limit"
 	MaxLabelNamesLimitFlag                    = "querier.max-label-names-limit"
@@ -182,9 +183,10 @@ type Limits struct {
 	NativeHistogramsIngestionEnabled bool `yaml:"native_histograms_ingestion_enabled" json:"native_histograms_ingestion_enabled" category:"experimental"`
 
 	// Active series custom trackers
-	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
-	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
-	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
+	ActiveSeriesBaseCustomTrackersConfig               asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
+	ActiveSeriesAdditionalCustomTrackersConfig         asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
+	activeSeriesMergedCustomTrackersConfig             *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
+	MaxActiveSeriesAdditionalCustomTrackersCardinality int                                           `yaml:"max_active_series_additional_custom_trackers_cardinality" json:"max_active_series_additional_custom_trackers_cardinality" category:"experimental"`
 
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window"`
@@ -398,6 +400,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 2000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
+	f.IntVar(&l.MaxActiveSeriesAdditionalCustomTrackersCardinality, MaxUsageGroupsCardinalityFlag, 200, "Maximum number of additional custom trackers (usage groups) for active series that can be configured per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
@@ -692,6 +695,11 @@ func (l *Limits) Validate() error {
 
 	if l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
 		return fmt.Errorf("early_head_compaction_min_estimated_series_reduction_percentage must be between 0 and 100")
+	}
+
+	// Validate additional custom tracker config doesn't exceed the limit.
+	if err := l.ActiveSeriesAdditionalCustomTrackersConfig.ValidateCardinality(l.MaxActiveSeriesAdditionalCustomTrackersCardinality); err != nil {
+		return fmt.Errorf("active_series_additional_custom_trackers validation failed: %w", err)
 	}
 
 	return nil
@@ -1129,6 +1137,10 @@ func (o *Overrides) CostAttributionCooldown(userID string) time.Duration {
 
 func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 	return o.getOverridesForUser(userID).MaxCostAttributionCardinality
+}
+
+func (o *Overrides) MaxActiveSeriesAdditionalCustomTrackersCardinality(userID string) int {
+	return o.getOverridesForUser(userID).MaxActiveSeriesAdditionalCustomTrackersCardinality
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
