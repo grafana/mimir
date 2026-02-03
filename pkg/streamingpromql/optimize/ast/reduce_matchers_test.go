@@ -134,9 +134,9 @@ func TestReduceMatchers_Apply_ComplexQueries(t *testing.T) {
 			expectedQuery: `max_over_time(rate(test_series{foo="bar"}[5m])[1d:5m])`,
 		},
 		{
-			name:          "keep .* matchers for 2nd argument to info function",
-			inputQuery:    `info(test_series{foo="bar",foo="bar",data=~".+",yet_another_data=~".*"}, {__name__="test_info",foo="bar",foo="bar",data=~".+",yet_another_data=~".*"})`,
-			expectedQuery: `info(test_series{foo="bar",data=~".+"}, {__name__="test_info",foo="bar",data=~".+",yet_another_data=~".*"})`,
+			name:          "keep .* matchers but reduce the rest for 2nd argument to info function",
+			inputQuery:    `info(test_series{foo="bar",foo="bar",foo2="bar",foo2!="baz",foo3="bar",foo3=~".*bar.*",data=~".+",yet_another_data=~".*"}, {__name__="test_info",foo="bar",foo="bar",foo2="bar",foo2!="baz",foo3="bar",foo3=~".*bar.*",data=~".+",yet_another_data=~".*"})`,
+			expectedQuery: `info(test_series{foo="bar",foo2="bar",foo3="bar",data=~".+"}, {__name__="test_info",foo="bar",foo2="bar",foo3="bar",data=~".+",yet_another_data=~".*"})`,
 		},
 	}
 
