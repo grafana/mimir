@@ -126,6 +126,10 @@ type IndexCache interface {
 func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
 	switch cfg.Backend {
 	case BackendInMemory:
+		// Validate sets defaults for fields not exposed as flags (e.g., MaxItemSizeBytes).
+		if err := cfg.InMemory.Validate(); err != nil {
+			return nil, err
+		}
 		return NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
 	case BackendMemcached:
 		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
