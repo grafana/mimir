@@ -18,7 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
-	yaml "gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 const (

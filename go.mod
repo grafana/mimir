@@ -94,6 +94,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.39.0
 	go.opentelemetry.io/proto/otlp v1.9.0
 	go.uber.org/multierr v1.11.0
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/term v0.39.0
 	google.golang.org/api v0.260.0
 	google.golang.org/protobuf v1.36.11
@@ -226,7 +227,6 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.15.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.39.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.3 // indirect
 	golang.org/x/tools/godoc v0.1.0-deprecated // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect

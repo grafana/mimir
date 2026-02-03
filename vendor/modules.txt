@@ -2309,6 +2309,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 sigs.k8s.io/yaml
 # github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260203033542-0d05c9113f4a
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
+# go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87
 # gopkg.in/yaml.v3 => github.com/colega/go-yaml-yaml v0.0.0-20220720105220-255a8d16d094
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71
 # github.com/munnerz/goautoneg => github.com/grafana/goautoneg v0.0.0-20240607115440-f335c04c58ce
@@ -2316,4 +2317,3 @@ sigs.k8s.io/yaml
 # github.com/opentracing-contrib/go-grpc => github.com/charleskorn/go-grpc v0.0.0-20231024023642-e9298576254f
 # github.com/prometheus/alertmanager => github.com/grafana/prometheus-alertmanager v0.25.1-0.20250911094103-5456b6e45604
 # github.com/prometheus/otlptranslator => github.com/grafana/mimir-otlptranslator v0.0.0-20251017074411-ea1e8f863e1d
-# go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87
