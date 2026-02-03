@@ -35,7 +35,7 @@ import (
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
+	QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (client.CombinedQueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
 	LabelNames(ctx context.Context, from model.Time, to model.Time, hints *storage.LabelHints, matchers ...*labels.Matcher) ([]string, error)
@@ -127,11 +127,11 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return series.LabelsToSeriesSet(ms)
 	}
 
-	return series.NewMemoryTrackingSeriesSet(q.streamingSelect(ctx, minT, maxT, matchers), memoryTracker)
+	return series.NewMemoryTrackingSeriesSet(q.streamingSelect(ctx, minT, maxT, sp.ProjectionInclude, sp.ProjectionLabels, matchers), memoryTracker)
 }
 
-func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
-	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), matchers...)
+func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, projectionInclude bool, projectionLabels []string, matchers []*labels.Matcher) storage.SeriesSet {
+	results, err := q.distributor.QueryStream(ctx, q.queryMetrics, model.Time(minT), model.Time(maxT), projectionInclude, projectionLabels, matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
