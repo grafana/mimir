@@ -99,7 +99,7 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node, bool), isI
 	fn(node, isInfoDataSelector)
 
 	for child := range parser.ChildrenIter(node) {
-		c.apply(child, fn, false)
+		c.apply(child, fn, isInfoDataSelector)
 	}
 }
 
