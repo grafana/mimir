@@ -46,11 +46,11 @@ verifyAndConstructNamespaceSelection() {
 
   if [ -n "${NAMESPACES}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${NAMESPACES:+ --namespaces=\"${NAMESPACES}\"}"
+    NAMESPACES_SELECTION="${NAMESPACES:+ --namespaces=${NAMESPACES}}"
   fi
   if [ -n "${NAMESPACES_REGEX}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${NAMESPACES_REGEX:+ --namespaces-regex=\"${NAMESPACES_REGEX}\"}"
+    NAMESPACES_SELECTION="${NAMESPACES_REGEX:+ --namespaces-regex=${NAMESPACES_REGEX}}"
   fi
   if [ -n "${IGNORED_NAMESPACES}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
@@ -58,7 +58,7 @@ verifyAndConstructNamespaceSelection() {
   fi
   if [ -n "${IGNORED_NAMESPACES_REGEX}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${IGNORED_NAMESPACES_REGEX:+ --ignored-namespaces-regex=\"${IGNORED_NAMESPACES_REGEX}\"}"
+    NAMESPACES_SELECTION="${IGNORED_NAMESPACES_REGEX:+ --ignored-namespaces-regex=${IGNORED_NAMESPACES_REGEX}}"
   fi
 
   if [ "${NAMESPACE_SELECTIONS_COUNT}" -gt 1 ]; then
@@ -71,17 +71,21 @@ case "${ACTION}" in
   "$SYNC_CMD")
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
-    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
-    # shellcheck disable=SC2086
-    OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION "$@")
+    if [ -n "$NAMESPACES_SELECTION" ]; then
+      OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" "$NAMESPACES_SELECTION" "$@")
+    else
+      OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" "$@")
+    fi
     STATUS=$?
     ;;
   "$DIFF_CMD")
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
-    # Don't quote $NAMESPACES_SELECTION since we don't want an empty string when it's not set
-    # shellcheck disable=SC2086
-    OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" $NAMESPACES_SELECTION --disable-color "$@")
+    if [ -n "$NAMESPACES_SELECTION" ]; then
+      OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" "$NAMESPACES_SELECTION" --disable-color "$@")
+    else
+      OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" --disable-color "$@")
+    fi
     STATUS=$?
     ;;
   "$LINT_CMD")
