@@ -48,10 +48,10 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	c.attempts.Inc()
 
 	matchersReduced := false
-	c.apply(root, func(node parser.Node) {
+	c.apply(root, func(node parser.Node, keepWildcardsForInfoDataSelector bool) {
 		switch expr := node.(type) {
 		case *parser.VectorSelector:
-			retained, dropped := reduceMatchers(expr.LabelMatchers)
+			retained, dropped := reduceMatchers(expr.LabelMatchers, keepWildcardsForInfoDataSelector)
 
 			if len(dropped) > 0 {
 				expr.LabelMatchers = retained
@@ -63,7 +63,7 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 				)
 			}
 		case *parser.MatrixSelector:
-			retained, dropped := reduceMatchers(expr.VectorSelector.(*parser.VectorSelector).LabelMatchers)
+			retained, dropped := reduceMatchers(expr.VectorSelector.(*parser.VectorSelector).LabelMatchers, keepWildcardsForInfoDataSelector)
 
 			if len(dropped) > 0 {
 				expr.VectorSelector.(*parser.VectorSelector).LabelMatchers = retained
@@ -75,7 +75,7 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 				)
 			}
 		}
-	})
+	}, false)
 
 	if matchersReduced {
 		c.success.Inc()
@@ -84,31 +84,36 @@ func (c *ReduceMatchers) Apply(ctx context.Context, root parser.Expr) (parser.Ex
 	return root, nil
 }
 
-func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node)) {
+func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node, bool), keepWildcardsForInfoDataSelector bool) {
 	if node == nil {
 		return
 	}
 
 	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
 		// Only reduce matchers for the first argument of info(), not the second.
-		c.apply(call.Args[0], fn)
+		c.apply(call.Args[0], fn, false)
+		// The InsertOmittedTargetInfoSelector AST pass ensures there are always 2 arguments.
+		// Check len(Args) == 2 for safety in case the pass doesn't run (e.g., in tests).
+		if len(call.Args) == 2 {
+			c.apply(call.Args[1], fn, true)
+		}
 		return
 	}
 
-	fn(node)
+	fn(node, keepWildcardsForInfoDataSelector)
 
 	for child := range parser.ChildrenIter(node) {
-		c.apply(child, fn)
+		c.apply(child, fn, false)
 	}
 }
 
-func reduceMatchers(existing []*labels.Matcher) (retained []*labels.Matcher, dropped []*labels.Matcher) {
+func reduceMatchers(existing []*labels.Matcher, keepWildcardsForInfoDataSelector bool) (retained []*labels.Matcher, dropped []*labels.Matcher) {
 	// If there's only one matcher, we can't reduce anything.
 	if len(existing) <= 1 {
 		return existing, nil
 	}
 
-	allowedMatchers := setReduceMatchers(existing)
+	allowedMatchers := setReduceMatchers(existing, keepWildcardsForInfoDataSelector)
 	// Rebuild a list of retained and dropped matchers. The dropped matchers are used for
 	// logging purposes to record all matchers have been removed from the query.
 	return buildOutMatchers(existing, allowedMatchers)
@@ -165,7 +170,7 @@ func buildOutMatchers(inMatchers []*labels.Matcher, allowedOutMatchers []*labels
 //   - not-equals matchers are dropped if they match any equals matcher value,
 //     or if any not-regex matchers also exclude the not-equals matcher value.
 //   - regex and not-regex matchers are dropped if they match any equals matcher value.
-func setReduceMatchers(ms []*labels.Matcher) []*labels.Matcher {
+func setReduceMatchers(ms []*labels.Matcher, keepWildcardsForInfoDataSelector bool) []*labels.Matcher {
 	// Group matchers by their label names so we can evaluate each label name independently
 	matchersByName := make(map[string][]*labels.Matcher)
 	for _, m := range ms {
@@ -184,9 +189,9 @@ func setReduceMatchers(ms []*labels.Matcher) []*labels.Matcher {
 		if len(equalsMatchers) > 1 {
 			continue
 		}
-		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType, labels.MatchRegexp)...)
+		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType, labels.MatchRegexp, keepWildcardsForInfoDataSelector)...)
 		outMatchers = append(outMatchers, filterNotEqualsMatchers(matchersByType)...)
-		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType, labels.MatchNotRegexp)...)
+		outMatchers = append(outMatchers, filterRegexMatchers(matchersByType, labels.MatchNotRegexp, false)...)
 	}
 	return outMatchers
 }
@@ -235,14 +240,14 @@ func matcherMatchesAnyValues(matcher *labels.Matcher, matchers []*labels.Matcher
 
 // filterRegexMatchers returns a subset of regex matchers which would actually reduce the result set size for either positive or negative regex matchers.
 // A regex matcher is dropped if:
-//   - it is a positive regex matcher and matches all values (foo=~".*")
+//   - it is a positive regex matcher and matches all values (foo=~".*") AND keepWildcardsForInfoDataSelector is false
 //   - it matches any equals matches, since the equals matcher will match a strict subset of values that the regex matcher would.
 //
 // Examples:
 //   - {foo=~".*bar.*", foo="bar"}, foo=~".*bar.*" is dropped because foo="bar" is a subset of foo=~".*bar.*"
 //   - {foo!~".*bar.*", foo="bar"}, foo!~".*bar.*" is not dropped because it covers a different set of values than foo="bar"
 //   - {foo!~".*baz.*", foo="bar"}, foo!~".*baz.*" is dropped because foo="bar" is a subset of foo!~".*baz.*"
-func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher, regexType labels.MatchType) []*labels.Matcher {
+func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher, regexType labels.MatchType, keepWildcardsForInfoDataSelector bool) []*labels.Matcher {
 	var matchers []*labels.Matcher
 	switch regexType {
 	case labels.MatchRegexp:
@@ -255,8 +260,8 @@ func filterRegexMatchers(mf map[labels.MatchType][]*labels.Matcher, regexType la
 	}
 	outMatchers := make([]*labels.Matcher, 0, len(matchers))
 	for _, m := range matchers {
-		// Always drop wildcard matchers
-		if m.Type == labels.MatchRegexp && m.Value == ".*" {
+		// Always drop wildcard matchers if they are not in an info data selector.
+		if !keepWildcardsForInfoDataSelector && m.Type == labels.MatchRegexp && m.Value == ".*" {
 			continue
 		}
 		// If m matches any equals matcher, that equals matcher is a subset of the regex,
