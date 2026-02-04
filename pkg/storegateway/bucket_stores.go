@@ -31,6 +31,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
@@ -65,6 +66,8 @@ type BucketStores struct {
 
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
+
+	indexHeaderCache index.PostingsOffsetTableCache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache

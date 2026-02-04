@@ -3,23 +3,200 @@
 package index
 
 import (
-	"context"
+	"sync"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	lru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/oklog/ulid/v2"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/index"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
+const maxInt = int(^uint(0) >> 1)
+const (
+	stringHeaderSize = 8
+	sliceHeaderSize  = 16
+)
+
+var ulidSize = uint64(len(ulid.ULID{}))
+
+// InMemoryCacheKey defines behavior required for in-memory cache implementations.
+// InMemoryCacheKey implementations do not need to pre-hash keys.
+// Hashing & potential collision is handled internally by lru.LRU caches or other map-based types.
+type InMemoryCacheKey interface {
+	// Size represents the footprint of the cache key in memory
+	// to track cache size and check whether eviction is required to add a new entry.
+	Size() uint64
+}
+
+type InMemoryPostingsOffsetCacheKey struct {
+	userID string
+	block  ulid.ULID
+	label  labels.Label
+}
+
+// Key implements CacheKey, specific to InMemoryCacheKey where it does not need to be pre-hashed.
+func (k InMemoryPostingsOffsetCacheKey) Key() InMemoryPostingsOffsetCacheKey {
+	return k
+}
+
+// Size implements InMemoryCacheKey
+func (k InMemoryPostingsOffsetCacheKey) Size() uint64 {
+	return stringSize(k.userID) + ulidSize + stringSize(k.label.Name) + stringSize(k.label.Value)
+}
+
 type InMemoryPostingsOffsetTableCache struct {
+	maxCacheSizeBytes uint64
+	maxItemSizeBytes  uint64
+
+	valCodec PostingsOffsetCacheCodec
+
+	mtx     sync.Mutex
+	lru     *lru.LRU[InMemoryCacheKey, []byte]
+	curSize uint64
+
+	logger log.Logger
 }
 
-func (i InMemoryPostingsOffsetTableCache) StorePostingsOffset(userID string, blockID ulid.ULID, k labels.Label, v index.Range, ttl time.Duration) {
-	//TODO implement me
-	panic("implement me")
+func NewInMemoryPostingsOffsetTableCacheWithConfig(
+	config indexcache.InMemoryIndexCacheConfig,
+	logger log.Logger,
+) (*InMemoryPostingsOffsetTableCache, error) {
+	if config.MaxItemSizeBytes > config.MaxCacheSizeBytes {
+		return nil, errors.Errorf("max item size (%v) cannot be bigger than overall cache size (%v)", config.MaxItemSizeBytes, config.MaxCacheSizeBytes)
+	}
+
+	c := &InMemoryPostingsOffsetTableCache{
+		maxCacheSizeBytes: config.MaxCacheSizeBytes,
+		maxItemSizeBytes:  config.MaxItemSizeBytes,
+		valCodec:          BigEndianPostingsOffsetCodec{},
+		logger:            logger,
+	}
+
+	l, err := lru.NewLRU[InMemoryCacheKey, []byte](maxInt, c.onEvict)
+	if err != nil {
+		return nil, err
+	}
+	c.lru = l
+
+	level.Info(logger).Log(
+		"msg", "created in-memory index cache",
+		"maxItemSizeBytes", c.maxItemSizeBytes,
+		"maxSizeBytes", c.maxCacheSizeBytes,
+		"maxItems", "maxInt",
+	)
+	return c, nil
 }
 
-func (i InMemoryPostingsOffsetTableCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, k labels.Label) (index.Range, bool) {
-	//TODO implement me
-	panic("implement me")
+func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration) {
+	key := InMemoryPostingsOffsetCacheKey{userID, blockID, lbl}
+	c.set(key, rng)
+}
+
+func (c *InMemoryPostingsOffsetTableCache) get(key InMemoryPostingsOffsetCacheKey) (index.Range, bool) {
+	k := key.Key()
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	v, ok := c.lru.Get(k)
+	if !ok {
+		return index.Range{}, false
+	}
+
+	rng, err := c.valCodec.Decode(v)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cache value to index.Range",
+			"key", k,
+			"value", v,
+		)
+		c.lru.Remove(k)
+		return index.Range{}, false
+	}
+
+	return rng, true
+}
+
+func (c *InMemoryPostingsOffsetTableCache) set(key InMemoryCacheKey, rng index.Range) {
+	v := c.valCodec.Encode(rng)
+	size := sliceSize(v)
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	if _, ok := c.lru.Get(key); ok {
+		return
+	}
+
+	if !c.ensureFits(size) {
+		return
+	}
+
+	c.lru.Add(key, v)
+	c.curSize = size
+	return
+}
+
+//func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration) {
+//var key K
+//key := any(InMemoryPostingsOffsetCacheKey{userID, blockID, lbl}).(K)
+//c.set(key, rng)
+//}
+
+//func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, k labels.Label) (index.Range, bool) {
+//     //TODO implement me
+//     panic("implement me")
+//}
+
+// ensureFits tries to make sure that the passed slice will fit into the LRU cache.
+// Returns true if it will fit.
+func (c *InMemoryPostingsOffsetTableCache) ensureFits(size uint64) bool {
+	if size > c.maxItemSizeBytes {
+		level.Debug(c.logger).Log(
+			"msg", "item bigger than maxItemSizeBytes. Ignoring...",
+			"maxItemSizeBytes", c.maxItemSizeBytes,
+			"maxSizeBytes", c.maxCacheSizeBytes,
+			"curSize", c.curSize,
+			"itemSize", size,
+		)
+		return false
+	}
+
+	for c.curSize > c.maxCacheSizeBytes {
+		if _, _, ok := c.lru.RemoveOldest(); !ok {
+			level.Error(c.logger).Log(
+				"msg", "LRU has nothing more to evict, but we still cannot allocate the item. Resetting cache.",
+				"maxItemSizeBytes", c.maxItemSizeBytes,
+				"maxSizeBytes", c.maxCacheSizeBytes,
+				"curSize", c.curSize,
+				"itemSize", size,
+			)
+			c.reset()
+		}
+	}
+	return true
+}
+
+func (c *InMemoryPostingsOffsetTableCache) reset() {
+	c.lru.Purge()
+	c.curSize = 0
+}
+
+func (c *InMemoryPostingsOffsetTableCache) onEvict(_ InMemoryCacheKey, v []byte) {
+	entrySize := sliceSize(v)
+	c.curSize -= entrySize
+}
+
+func stringSize(s string) uint64 {
+	return stringHeaderSize + uint64(len(s))
+}
+
+func sliceSize(b []byte) uint64 {
+	return sliceHeaderSize + uint64(len(b))
 }
