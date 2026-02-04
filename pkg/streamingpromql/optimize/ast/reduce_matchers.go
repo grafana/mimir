@@ -92,7 +92,11 @@ func (c *ReduceMatchers) apply(node parser.Node, fn func(parser.Node, bool), kee
 	if call, ok := node.(*parser.Call); ok && call.Func.Name == "info" {
 		// Only reduce matchers for the first argument of info(), not the second.
 		c.apply(call.Args[0], fn, false)
-		c.apply(call.Args[1], fn, true)
+		// The InsertOmittedTargetInfoSelector AST pass ensures there are always 2 arguments.
+		// Check len(Args) == 2 for safety in case the pass doesn't run (e.g., in tests).
+		if len(call.Args) == 2 {
+			c.apply(call.Args[1], fn, true)
+		}
 		return
 	}
 
