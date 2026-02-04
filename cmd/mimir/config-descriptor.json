@@ -2509,28 +2509,6 @@
             },
             {
               "kind": "field",
-              "name": "enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries",
-              "required": false,
-              "desc": "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_skipping_histogram_decoding",
-              "required": false,
-              "desc": "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
               "name": "enable_narrow_binary_selectors",
               "required": false,
               "desc": "Enable generating selectors for one side of a binary expression based on results from the other side.",
