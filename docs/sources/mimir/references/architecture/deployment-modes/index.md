@@ -51,7 +51,7 @@ Because monolithic mode requires scaling all Grafana Mimir components together, 
 Microservices mode deploys each component in separate processes, enabling independent scaling and creating granular failure domains. Microservices mode is recommended for production environments.
 
 {{< admonition type="note" >}}
-Even though the read path (query-frontend, querier, store-gateway) runs separately from the write path (distributor, ingester), a healthy ring is typically required for successful queries. If the write components (distributor or ingester) are unavailable or unhealthy, the ring health check may fail, causing read queries to fail. Complete isolation of read vs. write availability requires careful configuration of ring settings and failure tolerance.
+Even though the read path (query-frontend, querier, and store-gateway) runs separately from the write path (distributor and ingester), a healthy ring is typically required for successful queries. If the write components (distributor or ingester) are unavailable or unhealthy, the ring health check may fail, causing read queries to fail. Complete isolation of read versus write availability requires careful configuration of ring settings and failure tolerance.
 {{< /admonition >}}
 
 ```mermaid
