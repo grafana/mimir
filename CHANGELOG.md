@@ -279,6 +279,7 @@
 * [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303
 * [BUGFIX] mimir-tool: do not fail on `$latency_metrics` dashboard variable, documented for native histograms migrations. #13526
 * [BUGFIX] kafkatool: Fix `kafkatool dump print` to support RW2 records. #13848
+* [BUGFIX] mimir-tool-action: Fix special character handling in NAMESPACES input #<PR>
 
 ### Query-tee
 
