@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	lru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
@@ -20,15 +19,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
-
-var DefaultInMemoryIndexCacheConfig = InMemoryIndexCacheConfig{
-	MaxSize:     250 * 1024 * 1024,
-	MaxItemSize: 125 * 1024 * 1024,
-}
 
 const maxInt = int(^uint(0) >> 1)
 
@@ -42,10 +35,10 @@ var ulidSize = uint64(len(ulid.ULID{}))
 type InMemoryIndexCache struct {
 	mtx sync.Mutex
 
-	logger           log.Logger
-	lru              *lru.LRU[cacheKey, []byte]
-	maxSizeBytes     uint64
-	maxItemSizeBytes uint64
+	logger            log.Logger
+	lru               *lru.LRU[cacheKey, []byte]
+	maxCacheSizeBytes uint64
+	maxItemSizeBytes  uint64
 
 	curSize uint64
 
@@ -59,46 +52,17 @@ type InMemoryIndexCache struct {
 	overflow         *prometheus.CounterVec
 }
 
-// InMemoryIndexCacheConfig holds the in-memory index cache config.
-type InMemoryIndexCacheConfig struct {
-	// MaxSize represents overall maximum number of bytes cache can contain.
-	MaxSize flagext.Bytes `yaml:"max_size"`
-	// MaxItemSize represents maximum size of single item.
-	MaxItemSize flagext.Bytes `yaml:"max_item_size"`
-}
-
-// parseInMemoryIndexCacheConfig unmarshals a buffer into a InMemoryIndexCacheConfig with default values.
-func parseInMemoryIndexCacheConfig(conf []byte) (InMemoryIndexCacheConfig, error) {
-	config := DefaultInMemoryIndexCacheConfig
-	if err := yaml.Unmarshal(conf, &config); err != nil {
-		return InMemoryIndexCacheConfig{}, err
-	}
-
-	return config, nil
-}
-
-// NewInMemoryIndexCache creates a new thread-safe LRU cache for index entries and ensures the total cache
-// size approximately does not exceed maxBytes.
-func NewInMemoryIndexCache(logger log.Logger, reg prometheus.Registerer, conf []byte) (*InMemoryIndexCache, error) {
-	config, err := parseInMemoryIndexCacheConfig(conf)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewInMemoryIndexCacheWithConfig(logger, reg, config)
-}
-
 // NewInMemoryIndexCacheWithConfig creates a new thread-safe LRU cache for index entries and ensures the total cache
 // size approximately does not exceed maxBytes.
-func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registerer, config InMemoryIndexCacheConfig) (*InMemoryIndexCache, error) {
-	if config.MaxItemSize > config.MaxSize {
-		return nil, errors.Errorf("max item size (%v) cannot be bigger than overall cache size (%v)", config.MaxItemSize, config.MaxSize)
+func NewInMemoryIndexCacheWithConfig(config InMemoryIndexCacheConfig, reg prometheus.Registerer, logger log.Logger) (*InMemoryIndexCache, error) {
+	if config.MaxItemSizeBytes > config.MaxCacheSizeBytes {
+		return nil, errors.Errorf("max item size (%v) cannot be bigger than overall cache size (%v)", config.MaxItemSizeBytes, config.MaxCacheSizeBytes)
 	}
 
 	c := &InMemoryIndexCache{
-		logger:           logger,
-		maxSizeBytes:     uint64(config.MaxSize),
-		maxItemSizeBytes: uint64(config.MaxItemSize),
+		logger:            logger,
+		maxCacheSizeBytes: config.MaxCacheSizeBytes,
+		maxItemSizeBytes:  config.MaxItemSizeBytes,
 	}
 
 	c.evicted = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -153,7 +117,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Name: "thanos_store_index_cache_max_size_bytes",
 		Help: "Maximum number of bytes to be held in the index cache.",
 	}, func() float64 {
-		return float64(c.maxSizeBytes)
+		return float64(c.maxCacheSizeBytes)
 	})
 	_ = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_max_item_size_bytes",
@@ -173,7 +137,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	level.Info(logger).Log(
 		"msg", "created in-memory index cache",
 		"maxItemSizeBytes", c.maxItemSizeBytes,
-		"maxSizeBytes", c.maxSizeBytes,
+		"maxSizeBytes", c.maxCacheSizeBytes,
 		"maxItems", "maxInt",
 	)
 	return c, nil
@@ -242,7 +206,7 @@ func (c *InMemoryIndexCache) ensureFits(size uint64, typ string) bool {
 		level.Debug(c.logger).Log(
 			"msg", "item bigger than maxItemSizeBytes. Ignoring..",
 			"maxItemSizeBytes", c.maxItemSizeBytes,
-			"maxSizeBytes", c.maxSizeBytes,
+			"maxSizeBytes", c.maxCacheSizeBytes,
 			"curSize", c.curSize,
 			"itemSize", size,
 			"cacheType", typ,
@@ -250,12 +214,12 @@ func (c *InMemoryIndexCache) ensureFits(size uint64, typ string) bool {
 		return false
 	}
 
-	for c.curSize+size > c.maxSizeBytes {
+	for c.curSize+size > c.maxCacheSizeBytes {
 		if _, _, ok := c.lru.RemoveOldest(); !ok {
 			level.Error(c.logger).Log(
 				"msg", "LRU has nothing more to evict, but we still cannot allocate the item. Resetting cache.",
 				"maxItemSizeBytes", c.maxItemSizeBytes,
-				"maxSizeBytes", c.maxSizeBytes,
+				"maxSizeBytes", c.maxCacheSizeBytes,
 				"curSize", c.curSize,
 				"itemSize", size,
 				"cacheType", typ,

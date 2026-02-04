@@ -13,7 +13,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/cache"
 	"github.com/oklog/ulid/v2"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -117,6 +120,32 @@ type IndexCache interface {
 	StoreLabelValues(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelValues fetches the result of a LabelValues() call.
 	FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
+}
+
+// NewIndexCache creates a new index cache based on the input configuration.
+func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
+	switch cfg.Backend {
+	case BackendInMemory:
+		return NewInMemoryIndexCacheWithConfig(cfg.InMemory, registerer, logger)
+	case BackendMemcached:
+		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
+	default:
+		return nil, errUnsupportedIndexCacheBackend
+	}
+}
+
+func newMemcachedIndexCache(cfg cache.MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (IndexCache, error) {
+	client, err := cache.NewMemcachedClientWithConfig(logger, "index-cache", cfg, prometheus.WrapRegistererWithPrefix("thanos_", registerer))
+	if err != nil {
+		return nil, errors.Wrap(err, "create index cache memcached client")
+	}
+
+	c, err := NewRemoteIndexCache(logger, client, registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "create memcached-based index cache")
+	}
+
+	return NewTracingIndexCache(c, logger), nil
 }
 
 // BlockTTL determines an appropriate TTL for cache entries related to a particular block
