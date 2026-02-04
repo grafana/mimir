@@ -8464,7 +8464,8 @@
               "fieldValue": null,
               "fieldDefaultValue": false,
               "fieldFlag": "ingest-storage.kafka.consumer-group-offset-commit-file-enforced",
-              "fieldType": "boolean"
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",

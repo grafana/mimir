@@ -72,7 +72,7 @@ type PartitionReader struct {
 	partitionID                           int32
 	consumerGroup                         string
 	concurrentFetchersMinBytesMaxWaitTime time.Duration
-	tsdbRetentionPeriod                   time.Duration
+	maxReplayPeriod                       time.Duration
 
 	// client and fetcher are both start after PartitionReader creation. Fetcher could also be
 	// replaced during PartitionReader lifetime. To avoid concurrency issues with functions
@@ -110,6 +110,9 @@ func NewPartitionReaderForPusher(kafkaCfg KafkaConfig, partitionID int32, instan
 }
 
 func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID string, offsetFilePath string, consumer consumerFactory, notifier PreCommitNotifier, logger log.Logger, reg prometheus.Registerer) (*PartitionReader, error) {
+	if offsetFilePath == "" {
+		return nil, fmt.Errorf("offset file path must be specified")
+	}
 	r := &PartitionReader{
 		kafkaCfg:                              kafkaCfg,
 		partitionID:                           partitionID,
@@ -117,7 +120,7 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
 		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
-		tsdbRetentionPeriod:                   kafkaCfg.TSDBRetentionPeriod,
+		maxReplayPeriod:                       kafkaCfg.MaxReplayPeriod,
 		highestConsumedTimestampBeforePartitionEnd: atomic.NewTime(time.Time{}),
 		notifier:   notifier,
 		logger:     log.With(logger, "partition", partitionID),
@@ -741,12 +744,12 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 				return 0, -1, err
 			}
 			if exists {
-				lastConsumedOffset = offset - 1
+				lastConsumedOffset = offset - 1 // Offset before the one we'll start the consumption from
 				level.Info(r.logger).Log("msg", "starting consumption from timestamp", "timestamp", ts.UnixMilli(), "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 				return offset, lastConsumedOffset, nil
 			}
 		} else if r.kafkaCfg.ConsumerGroupOffsetCommitFileEnforced {
-			// File-based offset enforcement: use file offset only if it still exists.
+			// File-based offset enforcement: use file offset only if it exists.
 			if fileOffset, exists := r.offsetFile.Read(); exists {
 				partitionStart, startExists, err := r.fetchPartitionStartOffset(ctx, cl)
 				if err != nil {
@@ -758,23 +761,22 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 					level.Info(r.logger).Log("msg", "starting consumption from file-stored offset (enforcement enabled)", "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 					return offset, lastConsumedOffset, nil
 				}
-				// File offset no longer exists (ingester was lagging or retention compacted); fall through to retention or partition start.
-				level.Warn(r.logger).Log("msg", "file-stored offset no longer exists in disk (lag or retention), resolving from retention or partition start", "file_offset", fileOffset, "partition_start", partitionStart, "consumer_group", r.consumerGroup)
+				// File offset no longer exists (ingester was lagging or retention compacted); fall through to max replay period or partition start.
+				level.Warn(r.logger).Log("msg", "file-stored offset no longer exists for partition, resolving from max replay period or partition start", "file_offset", fileOffset, "partition_start", partitionStart, "consumer_group", r.consumerGroup)
 			}
-			// No file or file offset stale: try retention, then partition start.
-			if r.tsdbRetentionPeriod > 0 {
-				ts := time.Now().Add(-r.tsdbRetentionPeriod)
+			// No file or file offset stale: try maximum replay period, then partition start.
+			if r.maxReplayPeriod > 0 {
+				ts := time.Now().Add(-r.maxReplayPeriod)
 				offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
 				if err != nil {
 					return 0, -1, err
 				}
 				if exists {
 					lastConsumedOffset = offset - 1
-					level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, starting from retention period", "retention_period", r.tsdbRetentionPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
+					level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, replaying from max period", "max_replay_period", r.maxReplayPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 					return offset, lastConsumedOffset, nil
 				}
 			}
-			level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing and retention resolution failed, will replay from partition start", "consumer_group", r.consumerGroup)
 		} else {
 			// No file enforcement: use Kafka consumer group offset.
 			offset, exists, err := r.fetchLastCommittedOffset(ctx, cl)
@@ -783,14 +785,14 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 			}
 			if exists {
 				lastConsumedOffset = offset
-				offset = lastConsumedOffset + 1
+				offset = lastConsumedOffset + 1 // We'll start consuming from the next offset after the last consumed.
 				level.Info(r.logger).Log("msg", "starting consumption from last consumed offset", "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
 				return offset, lastConsumedOffset, nil
 			}
 		}
 
 		offset = kafkaOffsetStart
-		level.Info(r.logger).Log("msg", "starting consumption from partition start because no offset has been found", "start_offset", offset, "consumer_group", r.consumerGroup)
+		level.Warn(r.logger).Log("msg", "starting consumption from partition start because no offset has been found", "start_offset", offset, "consumer_group", r.consumerGroup)
 		return offset, -1, nil
 	}
 
@@ -842,8 +844,7 @@ func (r *PartitionReader) fetchLastCommittedOffset(ctx context.Context, cl *kgo.
 // fetchPartitionStartOffset returns the earliest available offset for the partition (partition start).
 // Used to validate that a file-stored offset still exists when the ingester was lagging or retention compacted the log.
 func (r *PartitionReader) fetchPartitionStartOffset(ctx context.Context, cl *kgo.Client) (offset int64, exists bool, _ error) {
-	// Kafka ListOffsets with timestamp -2 means "earliest" (partition start).
-	offsets, err := kadm.NewClient(cl).ListOffsetsAfterMilli(ctx, -2, r.kafkaCfg.Topic)
+	offsets, err := kadm.NewClient(cl).ListStartOffsets(ctx, r.kafkaCfg.Topic)
 	if errors.Is(err, kerr.UnknownTopicOrPartition) {
 		return 0, false, nil
 	}
@@ -1077,10 +1078,7 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 		r.commitRequestsLatency.Observe(time.Since(startTime).Seconds())
 		if returnErr != nil {
 			level.Error(r.logger).Log("msg", "failed to commit last consumed offset", "err", returnErr, "offset", offset)
-			// Only increment commit failures for Kafka commit failures so monitoring can distinguish Kafka vs file I/O issues.
-			if !errors.Is(returnErr, errOffsetFileWrite) {
-				r.commitFailuresTotal.Inc()
-			}
+			r.commitFailuresTotal.Inc()
 		}
 	}()
 
@@ -1089,29 +1087,24 @@ func (r *partitionCommitter) commit(ctx context.Context, offset int64) (returnEr
 	toCommit.AddOffset(r.kafkaCfg.Topic, r.partitionID, offset, -1)
 
 	committed, kafkaErr := r.admClient.CommitOffsets(ctx, r.consumerGroup, toCommit)
-	fileErr := r.offsetFile.Write(offset) // Attempt file write regardless of Kafka result so both are tried
+	fileErr := r.offsetFile.Write(offset)
 
-	if kafkaErr != nil {
-		if fileErr != nil {
-			level.Error(r.logger).Log("msg", "failed to write offset to file", "err", fileErr, "offset", offset)
-		}
-		return kafkaErr
+	merr := multierror.New()
+	merr.Add(kafkaErr)
+	if committed != nil && !committed.Ok() {
+		merr.Add(committed.Error())
 	}
-	if !committed.Ok() {
-		if fileErr != nil {
-			level.Error(r.logger).Log("msg", "failed to write offset to file", "err", fileErr, "offset", offset)
-		}
-		return committed.Error()
+	if fileErr != nil {
+		merr.Add(fmt.Errorf("%w: %w", errOffsetFileWrite, fileErr))
+	}
+
+	if err := merr.Err(); err != nil {
+		return err
 	}
 
 	committedOffset, _ := committed.Lookup(r.kafkaCfg.Topic, r.partitionID)
 	r.lastCommittedOffset.Set(float64(committedOffset.At))
-	level.Debug(r.logger).Log("msg", "last commit offset successfully committed to Kafka", "offset", committedOffset.At)
-
-	if fileErr != nil {
-		level.Error(r.logger).Log("msg", "failed to write offset to file", "err", fileErr, "offset", committedOffset.At)
-		return fmt.Errorf("%w: %w", errOffsetFileWrite, fileErr)
-	}
+	level.Debug(r.logger).Log("msg", "last consumed offset committed to Kafka and file", "offset", committedOffset.At)
 
 	return nil
 }

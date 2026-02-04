@@ -87,6 +87,13 @@ func TestPartitionReader(t *testing.T) {
 	assert.Equal(t, 2, ParseRecordVersion(records[3]))
 }
 
+func TestPartitionReader_RequiresOffsetFilePath(t *testing.T) {
+	cfg := defaultReaderTestConfig(t, "", "test", 1, nil)
+	_, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "offset file path must be specified")
+}
+
 func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	const (
 		topicName    = "test"
@@ -97,7 +104,7 @@ func TestPartitionReader_ShouldHonorConfiguredFetchMaxWait(t *testing.T) {
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
 	cfg.kafka.FetchMaxWait = fetchMaxWait
 
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 	require.Equal(t, fetchMaxWait, reader.concurrentFetchersMinBytesMaxWaitTime)
 }
@@ -109,7 +116,7 @@ func TestPartitionReader_logFetchErrors(t *testing.T) {
 	)
 
 	cfg := defaultReaderTestConfig(t, "", topicName, partitionID, nil)
-	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", "", cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
+	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, &NoOpPreCommitNotifier{}, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 
 	reader.logFetchErrors(kgo.Fetches{
@@ -2676,7 +2683,7 @@ func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
 		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
 			withConsumeFromPositionAtStartup(consumeFromLastOffset),
 			withFileBasedOffsetEnforcement(true),
-			withTSDBRetentionPeriod(1*time.Hour),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
 			withTargetAndMaxConsumerLagAtStartup(0, 0),
 		)
 
@@ -2694,7 +2701,7 @@ func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
 		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
 			withConsumeFromPositionAtStartup(consumeFromLastOffset),
 			withFileBasedOffsetEnforcement(true),
-			withTSDBRetentionPeriod(0),
+			withReplayFromDurationWhenFileOffsetMissing(0),
 			withTargetAndMaxConsumerLagAtStartup(0, 0),
 		)
 
@@ -2717,7 +2724,7 @@ func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
 		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
 			withConsumeFromPositionAtStartup(consumeFromLastOffset),
 			withFileBasedOffsetEnforcement(true),
-			withTSDBRetentionPeriod(1*time.Hour),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
 			withTargetAndMaxConsumerLagAtStartup(0, 0),
 			withOffsetFilePath(offsetFilePath),
 		)
@@ -2758,7 +2765,7 @@ func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
 		reader := createReader(t, clusterAddr, topicName, partitionID, consumer,
 			withConsumeFromPositionAtStartup(consumeFromLastOffset),
 			withFileBasedOffsetEnforcement(true),
-			withTSDBRetentionPeriod(1*time.Hour),
+			withReplayFromDurationWhenFileOffsetMissing(1*time.Hour),
 			withTargetAndMaxConsumerLagAtStartup(0, 0),
 			withOffsetFilePath(offsetFilePath),
 		)
@@ -2925,8 +2932,9 @@ func TestPartitionCommitter(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
 
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, nil, logger, reg)
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, offsetFile, logger, reg)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), committer))
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), committer))
@@ -2992,7 +3000,8 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, nil, log.NewNopLogger(), reg)
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, offsetFile, log.NewNopLogger(), reg)
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 
@@ -3032,7 +3041,8 @@ func TestPartitionCommitter_commit(t *testing.T) {
 
 		adm := kadm.NewClient(client)
 		reg := prometheus.NewPedanticRegistry()
-		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, nil, log.NewNopLogger(), reg)
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
+		committer := newPartitionCommitter(cfg, adm, partitionID, consumerGroup, &NoOpPreCommitNotifier{}, offsetFile, log.NewNopLogger(), reg)
 
 		require.Error(t, committer.commit(context.Background(), 123))
 
@@ -3054,7 +3064,7 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			"cortex_ingest_storage_reader_last_committed_offset"))
 	})
 
-	t.Run("should not increment commitFailuresTotal when Kafka commit succeeds but file write fails", func(t *testing.T) {
+	t.Run("should increment commitFailuresTotal when Kafka commit succeeds but file write fails", func(t *testing.T) {
 		t.Parallel()
 
 		_, clusterAddr := testkafka.CreateCluster(t, partitionID+1, topicName)
@@ -3081,11 +3091,11 @@ func TestPartitionCommitter_commit(t *testing.T) {
 		assert.NoError(t, promtest.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_ingest_storage_reader_last_committed_offset The last consumed offset successfully committed by the partition reader. Set to -1 if not offset has been committed yet.
 			# TYPE cortex_ingest_storage_reader_last_committed_offset gauge
-			cortex_ingest_storage_reader_last_committed_offset{partition="1"} 123
+			cortex_ingest_storage_reader_last_committed_offset{partition="1"} -1
 
 			# HELP cortex_ingest_storage_reader_offset_commit_failures_total Total number of failed requests to commit the last consumed offset.
 			# TYPE cortex_ingest_storage_reader_offset_commit_failures_total counter
-			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 0
+			cortex_ingest_storage_reader_offset_commit_failures_total{partition="1"} 1
 
 			# HELP cortex_ingest_storage_reader_offset_commit_requests_total Total number of requests issued to commit the last consumed offset (includes both successful and failed requests).
 			# TYPE cortex_ingest_storage_reader_offset_commit_requests_total counter
@@ -3119,7 +3129,8 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			},
 		}
 
-		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, offsetFile, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 	})
@@ -3148,7 +3159,8 @@ func TestPartitionCommitter_commit(t *testing.T) {
 			},
 		}
 
-		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, nil, log.NewNopLogger(), prometheus.NewPedanticRegistry())
+		offsetFile := newOffsetFile(filepath.Join(t.TempDir(), "offset.json"), partitionID, log.NewNopLogger())
+		committer := newPartitionCommitter(cfg, mockAdmin, partitionID, consumerGroup, notifier, offsetFile, log.NewNopLogger(), prometheus.NewPedanticRegistry())
 
 		require.NoError(t, committer.commit(context.Background(), 123))
 	})
@@ -3230,14 +3242,14 @@ func produceRandomRecord(ctx context.Context, t *testing.T, writeClient *kgo.Cli
 }
 
 type readerTestCfg struct {
-	kafka               KafkaConfig
-	partitionID         int32
-	consumer            consumerFactory
-	registry            *prometheus.Registry
-	logger              log.Logger
-	preCommitNotifier   PreCommitNotifier
-	tsdbRetentionPeriod time.Duration
-	offsetFilePath      string
+	kafka                                   KafkaConfig
+	partitionID                             int32
+	consumer                                consumerFactory
+	registry                                *prometheus.Registry
+	logger                                  log.Logger
+	preCommitNotifier                       PreCommitNotifier
+	replayFromDurationWhenFileOffsetMissing time.Duration
+	offsetFilePath                          string
 }
 
 type readerTestCfgOpt func(cfg *readerTestCfg)
@@ -3316,9 +3328,9 @@ func withFileBasedOffsetEnforcement(enabled bool) readerTestCfgOpt {
 	}
 }
 
-func withTSDBRetentionPeriod(period time.Duration) readerTestCfgOpt {
+func withReplayFromDurationWhenFileOffsetMissing(period time.Duration) readerTestCfgOpt {
 	return func(cfg *readerTestCfg) {
-		cfg.tsdbRetentionPeriod = period
+		cfg.replayFromDurationWhenFileOffsetMissing = period
 	}
 }
 
@@ -3332,10 +3344,11 @@ var testingLogger = mimirtest.NewTestingLogger(nil)
 
 func defaultReaderTestConfig(t *testing.T, addr string, topicName string, partitionID int32, consumer RecordConsumer) *readerTestCfg {
 	return &readerTestCfg{
-		registry:    prometheus.NewPedanticRegistry(),
-		logger:      testingLogger.WithT(t),
-		kafka:       createTestKafkaConfig(addr, topicName),
-		partitionID: partitionID,
+		registry:       prometheus.NewPedanticRegistry(),
+		logger:         testingLogger.WithT(t),
+		kafka:          createTestKafkaConfig(addr, topicName),
+		partitionID:    partitionID,
+		offsetFilePath: filepath.Join(t.TempDir(), "offset.json"),
 		consumer: consumerFactoryFunc(func() RecordConsumer {
 			return consumer
 		}),
@@ -3365,7 +3378,7 @@ func createReader(t *testing.T, addr string, topicName string, partitionID int32
 		notifier = &NoOpPreCommitNotifier{}
 	}
 
-	cfg.kafka.TSDBRetentionPeriod = cfg.tsdbRetentionPeriod
+	cfg.kafka.MaxReplayPeriod = cfg.replayFromDurationWhenFileOffsetMissing
 	reader, err := newPartitionReader(cfg.kafka, cfg.partitionID, "test-group", cfg.offsetFilePath, cfg.consumer, notifier, cfg.logger, cfg.registry)
 	require.NoError(t, err)
 

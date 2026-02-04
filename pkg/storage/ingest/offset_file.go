@@ -34,12 +34,8 @@ type offsetFile struct {
 	mu          sync.Mutex
 }
 
-// newOffsetFile creates a new offsetFile. Returns nil if filePath is empty.
+// newOffsetFile creates a new offsetFile. filePath must be non-empty.
 func newOffsetFile(filePath string, partitionID int32, logger log.Logger) *offsetFile {
-	if filePath == "" {
-		return nil
-	}
-
 	return &offsetFile{
 		filePath:    filePath,
 		partitionID: partitionID,
@@ -51,30 +47,25 @@ func newOffsetFile(filePath string, partitionID int32, logger log.Logger) *offse
 // Returns the offset and true if the file exists, contains valid data, and the partition ID matches.
 // Returns 0 and false if the file doesn't exist, contains invalid data, or the partition ID does not match.
 func (f *offsetFile) Read() (int64, bool) {
-	if f == nil {
-		return 0, false
-	}
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	data, err := os.ReadFile(f.filePath)
 	if os.IsNotExist(err) {
-		level.Info(f.logger).Log("msg", "offset file does not exist, will replay entire backlog", "file", f.filePath)
 		return 0, false
 	}
 	if err != nil {
-		level.Error(f.logger).Log("msg", "failed to read offset file, will replay entire backlog", "file", f.filePath, "err", err)
+		level.Error(f.logger).Log("msg", "failed to read offset file", "file", f.filePath, "err", err)
 		return 0, false
 	}
 
 	var parsed offsetFileData
 	if err := json.Unmarshal(data, &parsed); err != nil {
-		level.Error(f.logger).Log("msg", "failed to parse offset file, will replay entire backlog", "file", f.filePath, "err", err)
+		level.Error(f.logger).Log("msg", "failed to parse offset file", "file", f.filePath, "err", err)
 		return 0, false
 	}
 	if parsed.Version != offsetFileVersion {
-		level.Error(f.logger).Log("msg", "offset file has unknown version, will replay entire backlog", "file", f.filePath, "version", parsed.Version)
+		level.Error(f.logger).Log("msg", "offset file has unknown version", "file", f.filePath, "version", parsed.Version)
 		return 0, false
 	}
 	if parsed.PartitionID != f.partitionID {
@@ -88,10 +79,6 @@ func (f *offsetFile) Read() (int64, bool) {
 
 // Write writes the offset to the file atomically.
 func (f *offsetFile) Write(offset int64) error {
-	if f == nil {
-		return nil
-	}
-
 	f.mu.Lock()
 	defer f.mu.Unlock()
 

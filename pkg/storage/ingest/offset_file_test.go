@@ -135,22 +135,6 @@ func TestOffsetFile_ReadWrongVersion(t *testing.T) {
 	assert.Equal(t, int64(0), offset)
 }
 
-func TestOffsetFile_NilWhenEmpty(t *testing.T) {
-	logger := log.NewNopLogger()
-
-	// Creating with empty path should return nil
-	offsetFile := newOffsetFile("", testPartitionID, logger)
-	assert.Nil(t, offsetFile)
-
-	// Operations on nil should be safe
-	offset, exists := offsetFile.Read()
-	assert.False(t, exists)
-	assert.Equal(t, int64(0), offset)
-
-	err := offsetFile.Write(123)
-	assert.NoError(t, err)
-}
-
 func TestOffsetFile_AtomicWrite(t *testing.T) {
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "atomic.offset")

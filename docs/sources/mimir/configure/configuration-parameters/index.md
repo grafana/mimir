@@ -5075,10 +5075,10 @@ kafka:
   # CLI flag: -ingest-storage.kafka.consumer-group-offset-commit-interval
   [consumer_group_offset_commit_interval: <duration> | default = 1s]
 
-  # When true, the file-based offset stored in the TSDB directory is enforced at
-  # startup, taking precedence over Kafka consumer group offset. When false,
-  # offsets are still written to the file (in the TSDB directory) but the Kafka
-  # consumer group offset is used at startup.
+  # (experimental) When true, the file-based offset stored in the TSDB directory
+  # is enforced at startup, taking precedence over Kafka consumer group offset.
+  # When false, offsets are still written to the file (in the TSDB directory)
+  # but the Kafka consumer group offset is used at startup.
   # CLI flag: -ingest-storage.kafka.consumer-group-offset-commit-file-enforced
   [consumer_group_offset_commit_file_enforced: <boolean> | default = false]
 

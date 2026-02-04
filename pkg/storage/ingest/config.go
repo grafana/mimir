@@ -96,7 +96,7 @@ type KafkaConfig struct {
 
 	ConsumerGroup                         string        `yaml:"consumer_group"`
 	ConsumerGroupOffsetCommitInterval     time.Duration `yaml:"consumer_group_offset_commit_interval"`
-	ConsumerGroupOffsetCommitFileEnforced bool          `yaml:"consumer_group_offset_commit_file_enforced"`
+	ConsumerGroupOffsetCommitFileEnforced bool          `yaml:"consumer_group_offset_commit_file_enforced" category:"experimental"`
 
 	LastProducedOffsetPollInterval time.Duration `yaml:"last_produced_offset_poll_interval"`
 	LastProducedOffsetRetryTimeout time.Duration `yaml:"last_produced_offset_retry_timeout"`
@@ -106,10 +106,9 @@ type KafkaConfig struct {
 	TargetConsumerLagAtStartup    time.Duration `yaml:"target_consumer_lag_at_startup"`
 	MaxConsumerLagAtStartup       time.Duration `yaml:"max_consumer_lag_at_startup"`
 
-	// TSDBRetentionPeriod is used as a fallback to determine the Kafka offset to start consuming from
-	// when file-based offset enforcement is enabled but no offset file exists. This should match the
-	// TSDB retention period configured in the ingester.
-	TSDBRetentionPeriod time.Duration `yaml:"-"`
+	// MaxReplayPeriod is used when file-based offset enforcement is enabled but no offset file exists. It specifies
+	//how far back to replay data; typically set to the TSDB retention period.
+	MaxReplayPeriod time.Duration `yaml:"-"`
 
 	AutoCreateTopicEnabled           bool `yaml:"auto_create_topic_enabled"`
 	AutoCreateTopicDefaultPartitions int  `yaml:"auto_create_topic_default_partitions"`
