@@ -13,6 +13,7 @@ local statefulset = k.apps.v1.statefulSet;
     enable_pvc_auto_deletion_for_ingesters: false,
   },
 
+  // PVC auto-deletion.
   local store_gateway_pvc_auto_deletion = if !$._config.enable_pvc_auto_deletion_for_store_gateways then {} else
     statefulset.spec.persistentVolumeClaimRetentionPolicy.withWhenScaled('Delete'),
 
@@ -26,6 +27,8 @@ local statefulset = k.apps.v1.statefulSet;
   store_gateway_zone_a_statefulset: overrideSuperIfExists('store_gateway_zone_a_statefulset', store_gateway_pvc_auto_deletion),
   store_gateway_zone_b_statefulset: overrideSuperIfExists('store_gateway_zone_b_statefulset', store_gateway_pvc_auto_deletion),
   store_gateway_zone_c_statefulset: overrideSuperIfExists('store_gateway_zone_c_statefulset', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_a_backup_statefulset: overrideSuperIfExists('store_gateway_zone_a_backup_statefulset', store_gateway_pvc_auto_deletion),
+  store_gateway_zone_b_backup_statefulset: overrideSuperIfExists('store_gateway_zone_b_backup_statefulset', store_gateway_pvc_auto_deletion),
 
   compactor_statefulset: overrideSuperIfExists('compactor_statefulset', compactor_pvc_auto_deletion),
 
