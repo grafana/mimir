@@ -38,7 +38,11 @@ message CachedSeries {
   string cacheKey = 1;
   int64 start = 2;
   int64 end = 3;
-  repeated cortexpb.Metric series = 4 [(gogoproto.nullable) = false];
+  bytes series_metadata = 4;
   bytes results = 5;
   repeated Annotation annotations = 6 [(gogoproto.nullable) = false];
+}
+
+message CachedSeriesMetadata {
+  repeated cortexpb.Metric series = 1 [(gogoproto.nullable) = false];
 }

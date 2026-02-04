@@ -591,8 +591,9 @@ type UncachedSplit[T any] struct {
 	// Data to cache
 	rangeResults [][]T
 	// Annotations are put into a map for deduping
-	rangeAnnotations []map[cache.Annotation]struct{}
-	metadata         []mimirpb.Metric
+	rangeAnnotations    []map[cache.Annotation]struct{}
+	serializedMetadata  []byte
+	seriesMetadataCount int
 
 	finalized    bool
 	resultGetter *ResultGetter[T]
@@ -638,13 +639,22 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 		return nil, err
 	}
 
-	// Convert to protobuf model for later use in caching.
-	p.metadata = make([]mimirpb.Metric, len(seriesMetadata))
+	// Defensively serialize series metadata now for later caching. The label adapters created below share
+	// string memory with the returned seriesMetadata; serializing copies all bytes into an independent buffer
+	// so we don't retain references into memory owned by the caller.
+	toCache := cache.CachedSeriesMetadata{
+		Series: make([]mimirpb.Metric, len(seriesMetadata)),
+	}
 	for i, sm := range seriesMetadata {
-		p.metadata[i] = mimirpb.Metric{
+		toCache.Series[i] = mimirpb.Metric{
 			Labels: mimirpb.FromLabelsToLabelAdapters(sm.Labels),
 		}
 	}
+	p.serializedMetadata, err = toCache.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("marshaling series metadata for cache: %w", err)
+	}
+	p.seriesMetadataCount = len(seriesMetadata)
 
 	p.resultGetter = NewResultGetter(p.NextSeries)
 
@@ -738,7 +748,8 @@ func (p *UncachedSplit[T]) Finalize(ctx context.Context) error {
 			p.parent.innerCacheKey,
 			splitRange.Start,
 			splitRange.End,
-			p.metadata,
+			p.serializedMetadata,
+			p.seriesMetadataCount,
 			annotations,
 			results,
 			p.parent.cacheStats,

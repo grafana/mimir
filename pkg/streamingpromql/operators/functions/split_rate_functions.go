@@ -33,11 +33,11 @@ func rateGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnn
 	}
 
 	if fCount > 0 {
-		return rateGenerateFloat(fHead, fTail, fCount, step.RangeStart, step.RangeEnd)
+		return rateGenerateFloat(fHead, fTail, fCount)
 	}
 
 	if hCount > 0 {
-		return rateGenerateHistogram(hHead, hTail, hCount, step.RangeStart, step.RangeEnd, emitAnnotation)
+		return rateGenerateHistogram(hHead, hTail, hCount, emitAnnotation)
 	}
 
 	return RateIntermediate{
@@ -45,7 +45,7 @@ func rateGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnn
 	}, nil
 }
 
-func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int, rangeStart, rangeEnd int64) (RateIntermediate, error) {
+func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int) (RateIntermediate, error) {
 	firstPoint := fHead[0]
 
 	if fCount == 1 {
@@ -64,7 +64,6 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int, rangeStart, ran
 		}, nil
 	}
 
-	// Reuse the logic from rate_increase.go
 	firstPoint, lastPoint, delta := calculateFloatDelta(fHead, fTail)
 
 	return RateIntermediate{
@@ -82,7 +81,7 @@ func rateGenerateFloat(fHead, fTail []promql.FPoint, fCount int, rangeStart, ran
 	}, nil
 }
 
-func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, rangeStart, rangeEnd int64, emitAnnotation types.EmitAnnotationFunc) (RateIntermediate, error) {
+func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, emitAnnotation types.EmitAnnotationFunc) (RateIntermediate, error) {
 	firstPoint := hHead[0]
 
 	if firstPoint.H.CounterResetHint == histogram.GaugeType {

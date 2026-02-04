@@ -144,17 +144,23 @@ func (c *Cache[T]) Get(
 		return nil, nil, nil, false, nil
 	}
 
+	var cachedSeriesMetadata CachedSeriesMetadata
+	if err := cachedSeriesMetadata.Unmarshal(cached.SeriesMetadata); err != nil {
+		level.Warn(c.logger).Log("msg", "failed to decode cached series metadata", "hashed_cache_key", hashedKey, "cache_key", cacheKey, "err", err)
+		return nil, nil, nil, false, nil
+	}
+
 	c.metrics.cacheHits.Inc()
 	level.Debug(c.logger).Log("msg", "cache hit", "tenant", tenant, "function", function, "innerKey", innerKey, "start", start, "end", end)
 
-	stats.AddReadEntryStat(len(cached.Series), len(data))
+	stats.AddReadEntryStat(len(cachedSeriesMetadata.Series), len(data))
 
 	results, err = c.codec.Unmarshal(cached.Results)
 	if err != nil {
 		return nil, nil, nil, false, fmt.Errorf("unmarshaling cached results: %w", err)
 	}
 
-	return cached.Series, cached.Annotations, results, true, nil
+	return cachedSeriesMetadata.Series, cached.Annotations, results, true, nil
 }
 
 func (c *Cache[T]) Set(
@@ -162,7 +168,8 @@ func (c *Cache[T]) Set(
 	function int32,
 	innerKey string,
 	start, end int64,
-	seriesProtos []mimirpb.Metric,
+	serializedSeries []byte,
+	seriesCount int,
 	annotations []Annotation,
 	results []T,
 	stats *CacheStats,
@@ -174,20 +181,18 @@ func (c *Cache[T]) Set(
 
 	cacheKey := generateCacheKey(tenant, function, innerKey, start, end)
 
-	// No conversion needed - use protobuf directly
 	resultBytes, err := c.codec.Marshal(results)
 	if err != nil {
 		return fmt.Errorf("marshaling results: %w", err)
 	}
 
-	// Build CachedSeries protobuf
 	cached := &CachedSeries{
-		CacheKey:    cacheKey,
-		Start:       start,
-		End:         end,
-		Series:      seriesProtos,
-		Annotations: annotations,
-		Results:     resultBytes,
+		CacheKey:         cacheKey,
+		Start:            start,
+		End:              end,
+		SeriesMetadata: serializedSeries,
+		Annotations:      annotations,
+		Results:          resultBytes,
 	}
 
 	data, err := cached.Marshal()
@@ -198,9 +203,9 @@ func (c *Cache[T]) Set(
 	hashedKey := cacheHashKey(cacheKey)
 	c.backend.SetMultiAsync(map[string][]byte{hashedKey: data}, defaultTTL)
 
-	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", len(seriesProtos), "entry_size", len(data))
+	level.Debug(c.logger).Log("msg", "cache entry written", "cache_key", cacheKey, "series_count", seriesCount, "entry_size", len(data))
 
-	stats.AddWriteEntryStat(len(seriesProtos), len(data))
+	stats.AddWriteEntryStat(seriesCount, len(data))
 
 	return nil
 }
