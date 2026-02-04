@@ -13,9 +13,34 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
+//type CacheKey[K comparable] interface{
+//	Key() K
+//}
+
+//// InMemoryCacheKey defines behavior required for in-memory cache implementations.
+//// InMemoryCacheKey implementations do not need to pre-hash keys.
+//// Hashing & potential collision is handled internally by lru.LRU caches or other map-based types.
+//type InMemoryCacheKey[T comparable] interface {
+//	Key() T
+//
+//	// Size represents the footprint of the cache key in memory
+//	// to track cache size and check whether eviction is required to add a new entry.
+//	Size() uint64
+//}
+
+//type InMemoryPostingsOffsetCacheKeyFunc func(userID string, blockID ulid.ULID, l labels.Label) InMemoryCacheKey
+
+// RemoteCacheKey defines behavior required for remote (memcached, etc.) cache implementations.
+// RemoteCacheKey implementations MUST pre-hash keys in a manner which avoids collision.
+type RemoteCacheKey interface {
+	Key() string
+}
+
+type RemotePostingsOffsetCacheKeyFunc func(userID string, blockID ulid.ULID, l labels.Label) RemoteCacheKey
+
 type PostingsOffsetTableCache interface {
-	StorePostingsOffset(userID string, blockID ulid.ULID, k labels.Label, v index.Range, ttl time.Duration)
-	FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, k labels.Label) (index.Range, bool)
+	StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, v index.Range, ttl time.Duration)
+	FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool)
 }
 
 // PostingsOffsetCacheCodec provides encoding and decoding for PostingsOffsetTableCache values.
@@ -30,8 +55,7 @@ type PostingsOffsetCacheCodec interface {
 	Decode([]byte) (index.Range, error)
 }
 
-type BigEndianPostingsOffsetCodec struct {
-}
+type BigEndianPostingsOffsetCodec struct{}
 
 func (c BigEndianPostingsOffsetCodec) Encode(rng index.Range) []byte {
 	buf := make([]byte, 0, 2*binary.MaxVarintLen64)
