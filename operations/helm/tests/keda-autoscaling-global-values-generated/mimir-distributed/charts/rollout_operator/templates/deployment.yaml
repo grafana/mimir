@@ -6,10 +6,10 @@ metadata:
   name: keda-autoscaling-global-values-rollout-operator
   namespace: "citestns"
   labels:
-    helm.sh/chart: rollout-operator-0.40.0
+    helm.sh/chart: rollout-operator-0.41.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: keda-autoscaling-global-values
-    app.kubernetes.io/version: "v0.33.0"
+    app.kubernetes.io/version: "v0.34.0"
     app.kubernetes.io/managed-by: Helm
 spec:
   replicas: 1
@@ -46,7 +46,7 @@ spec:
               drop:
               - ALL
             readOnlyRootFilesystem: true
-          image: docker.io/grafana/rollout-operator:v0.33.0
+          image: docker.io/grafana/rollout-operator:v0.34.0
           imagePullPolicy: IfNotPresent
           args:
           - -kubernetes.namespace=citestns
