@@ -127,7 +127,14 @@ func (q *distributorQuerier) Select(ctx context.Context, _ bool, sp *storage.Sel
 		return series.LabelsToSeriesSet(ms)
 	}
 
-	return series.NewMemoryTrackingSeriesSet(q.streamingSelect(ctx, minT, maxT, sp.ProjectionInclude, sp.ProjectionLabels, matchers), memoryTracker)
+	var projectionInclude bool
+	var projectionLabels []string
+	if sp != nil {
+		projectionInclude = sp.ProjectionInclude
+		projectionLabels = sp.ProjectionLabels
+	}
+
+	return series.NewMemoryTrackingSeriesSet(q.streamingSelect(ctx, minT, maxT, projectionInclude, projectionLabels, matchers), memoryTracker)
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, projectionInclude bool, projectionLabels []string, matchers []*labels.Matcher) storage.SeriesSet {
