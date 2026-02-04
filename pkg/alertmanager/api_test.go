@@ -976,8 +976,7 @@ func TestMultitenantAlertmanager_DeleteUserConfig(t *testing.T) {
 func TestAMConfigListUserConfig(t *testing.T) {
 	testCases := map[string]*UserConfig{
 		"user1": {
-			AlertmanagerConfig: `
-global:
+			AlertmanagerConfig: `global:
   resolve_timeout: 5m
 route:
   receiver: route1
@@ -994,8 +993,7 @@ receivers:
 `,
 		},
 		"user2": {
-			AlertmanagerConfig: `
-global:
+			AlertmanagerConfig: `global:
   resolve_timeout: 5m
 route:
   receiver: route1

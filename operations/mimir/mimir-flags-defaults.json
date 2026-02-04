@@ -1298,6 +1298,7 @@
   "memberlist.min-join-backoff": 1000000000,
   "memberlist.max-join-backoff": 60000000000,
   "memberlist.max-join-retries": 10,
+  "memberlist.abort-if-fast-join-fails-min-nodes": 1,
   "memberlist.rejoin-interval": 0,
   "memberlist.rejoin-seed-nodes": [],
   "memberlist.left-ingesters-timeout": 300000000000,

@@ -3842,6 +3842,12 @@ The `memberlist` block configures the Gossip memberlist.
 # CLI flag: -memberlist.abort-if-fast-join-fails
 [abort_if_cluster_fast_join_fails: <boolean> | default = false]
 
+# (advanced) Minimum number of seed nodes that must be successfully joined
+# during fast-join for it to succeed. Only applies when
+# -memberlist.abort-if-fast-join-fails is enabled.
+# CLI flag: -memberlist.abort-if-fast-join-fails-min-nodes
+[abort_if_cluster_fast_join_fails_min_nodes: <int> | default = 1]
+
 # Abort if this node fails to join memberlist cluster at startup. When enabled,
 # it's not guaranteed that other services are started only after the cluster
 # state has been successfully updated; use 'abort-if-fast-join-fails' instead.
