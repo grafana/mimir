@@ -575,7 +575,7 @@ func (m *multiRangeDownloaderManager) handleCloseCmd(ctx context.Context, cmd *m
 }
 
 func (m *multiRangeDownloaderManager) handleWaitCmd(ctx context.Context, cmd *mrdWaitCmd) {
-	if len(m.pendingRanges) == 0 {
+	if len(m.pendingRanges) == 0 && m.unsentRequests.Len() == 0 {
 		close(cmd.doneC)
 	} else {
 		m.waiters = append(m.waiters, cmd.doneC)
@@ -659,6 +659,9 @@ func (m *multiRangeDownloaderManager) ensureSession(ctx context.Context) error {
 			return err
 		}
 		m.currentSession = session
+
+		// Clear any stale unsent requests from the failed session before adding retry requests.
+		m.unsentRequests.Clear()
 
 		var rangesToResend []*storagepb.ReadRange
 		for _, req := range m.pendingRanges {
@@ -939,6 +942,7 @@ func newRequestQueue() *requestQueue {
 func (q *requestQueue) PushBack(r *storagepb.BidiReadObjectRequest)  { q.l.PushBack(r) }
 func (q *requestQueue) PushFront(r *storagepb.BidiReadObjectRequest) { q.l.PushFront(r) }
 func (q *requestQueue) Len() int                                     { return q.l.Len() }
+func (q *requestQueue) Clear()                                       { q.l.Init() }
 
 func (q *requestQueue) Front() *storagepb.BidiReadObjectRequest {
 	if f := q.l.Front(); f != nil {
