@@ -6,10 +6,11 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 )
 
 // SortLabelsAndMatchers is an optimization pass that ensures that all label names and matchers are sorted.
@@ -54,13 +55,5 @@ func (s *SortLabelsAndMatchers) Apply(_ context.Context, expr parser.Expr) (pars
 }
 
 func compareMatchers(a, b *labels.Matcher) int {
-	if a.Name != b.Name {
-		return strings.Compare(a.Name, b.Name)
-	}
-
-	if a.Type != b.Type {
-		return int(a.Type - b.Type)
-	}
-
-	return strings.Compare(a.Value, b.Value)
+	return optimize.CompareMatchers(a.Name, b.Name, a.Type, b.Type, a.Value, b.Value)
 }
