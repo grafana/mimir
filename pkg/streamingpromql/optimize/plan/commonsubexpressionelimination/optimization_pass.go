@@ -39,10 +39,11 @@ type OptimizationPass struct {
 	subsetSelectorsEliminated    prometheus.Counter
 	selectorsInspected           prometheus.Counter
 
-	logger log.Logger
+	subsetSelectorEliminationEnabled bool
+	logger                           log.Logger
 }
 
-func NewOptimizationPass(reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(subsetSelectorEliminationEnabled bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	selectorsEliminated := promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated_total",
 		Help: "Number of selectors eliminated by the common subexpression elimination optimization pass.",
@@ -59,7 +60,9 @@ func NewOptimizationPass(reg prometheus.Registerer, logger log.Logger) *Optimiza
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected_total",
 			Help: "Number of selectors inspected by the common subexpression elimination optimization pass, before elimination.",
 		}),
-		logger: logger,
+
+		subsetSelectorEliminationEnabled: subsetSelectorEliminationEnabled,
+		logger:                           logger,
 	}
 }
 
