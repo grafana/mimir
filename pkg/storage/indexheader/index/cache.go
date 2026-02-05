@@ -28,7 +28,7 @@ import (
 //	Size() uint64
 //}
 
-//type InMemoryPostingsOffsetCacheKeyFunc func(userID string, blockID ulid.ULID, l labels.Label) InMemoryCacheKey
+//type InMemoryPostingsOffsetCacheKeyFunc func(tenantID string, blockID ulid.ULID, l labels.Label) InMemoryCacheKey
 
 // RemoteCacheKey defines behavior required for remote (memcached, etc.) cache implementations.
 // RemoteCacheKey implementations MUST pre-hash keys in a manner which avoids collision.
