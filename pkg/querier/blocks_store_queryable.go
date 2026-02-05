@@ -824,6 +824,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 				projectionLabels  []string
 			)
 			if sp != nil {
+				// See: https://github.com/prometheus/prometheus/pull/8050
+				// TODO(goutham): we should ideally be passing the hints down to the storage layer
+				// and let the TSDB return us data with no chunks as in prometheus#8050.
+				// But this is an acceptable workaround for now.
 				skipChunks = sp.Func == "series"
 				projectionInclude = sp.ProjectionInclude
 				projectionLabels = sp.ProjectionLabels

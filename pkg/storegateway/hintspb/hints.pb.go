@@ -27,16 +27,16 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type SeriesRequestHints struct {
-	/// block_matchers is a list of label matchers that are evaluated against each single block's
-	/// labels to filter which blocks get queried. If the list is empty, no per-block filtering
-	/// is applied.
+	// block_matchers is a list of label matchers that are evaluated against each single block's
+	// labels to filter which blocks get queried. If the list is empty, no per-block filtering
+	// is applied.
 	BlockMatchers []storepb.LabelMatcher `protobuf:"bytes,1,rep,name=block_matchers,json=blockMatchers,proto3" json:"block_matchers"`
-	/// projection_include indicates if label projection hints are including only specific labels
-	/// or excluding them. The combination of default values of projection_include (false) and
+	// projection_include indicates if label projection hints are including only specific labels
+	// or excluding them. The combination of default values of projection_include (false) and
 	// projection_labels (empty) disables use of projections.
 	ProjectionInclude bool `protobuf:"varint,2,opt,name=projection_include,json=projectionInclude,proto3" json:"projection_include,omitempty"`
-	/// projection_labels is the set of labels required (projection_include = true) or not required
-	/// (projection_include = false) to satisfy a query. The combination of default values of
+	// projection_labels is the set of labels required (projection_include = true) or not required
+	// (projection_include = false) to satisfy a query. The combination of default values of
 	// projection_include (false) and projection_labels (empty) disables use of projections.
 	ProjectionLabels []string `protobuf:"bytes,3,rep,name=projection_labels,json=projectionLabels,proto3" json:"projection_labels,omitempty"`
 }
@@ -74,7 +74,7 @@ func (m *SeriesRequestHints) XXX_DiscardUnknown() {
 var xxx_messageInfo_SeriesRequestHints proto.InternalMessageInfo
 
 type SeriesResponseHints struct {
-	/// queried_blocks is the list of blocks that have been queried.
+	// queried_blocks is the list of blocks that have been queried.
 	QueriedBlocks []Block `protobuf:"bytes,1,rep,name=queried_blocks,json=queriedBlocks,proto3" json:"queried_blocks"`
 }
 
@@ -147,9 +147,9 @@ func (m *Block) XXX_DiscardUnknown() {
 var xxx_messageInfo_Block proto.InternalMessageInfo
 
 type LabelNamesRequestHints struct {
-	/// block_matchers is a list of label matchers that are evaluated against each single block's
-	/// labels to filter which blocks get queried. If the list is empty, no per-block filtering
-	/// is applied.
+	// block_matchers is a list of label matchers that are evaluated against each single block's
+	// labels to filter which blocks get queried. If the list is empty, no per-block filtering
+	// is applied.
 	BlockMatchers []storepb.LabelMatcher `protobuf:"bytes,1,rep,name=block_matchers,json=blockMatchers,proto3" json:"block_matchers"`
 }
 
@@ -186,7 +186,7 @@ func (m *LabelNamesRequestHints) XXX_DiscardUnknown() {
 var xxx_messageInfo_LabelNamesRequestHints proto.InternalMessageInfo
 
 type LabelNamesResponseHints struct {
-	/// queried_blocks is the list of blocks that have been queried.
+	// queried_blocks is the list of blocks that have been queried.
 	QueriedBlocks []Block `protobuf:"bytes,1,rep,name=queried_blocks,json=queriedBlocks,proto3" json:"queried_blocks"`
 }
 
@@ -223,9 +223,9 @@ func (m *LabelNamesResponseHints) XXX_DiscardUnknown() {
 var xxx_messageInfo_LabelNamesResponseHints proto.InternalMessageInfo
 
 type LabelValuesRequestHints struct {
-	/// block_matchers is a list of label matchers that are evaluated against each single block's
-	/// labels to filter which blocks get queried. If the list is empty, no per-block filtering
-	/// is applied.
+	// block_matchers is a list of label matchers that are evaluated against each single block's
+	// labels to filter which blocks get queried. If the list is empty, no per-block filtering
+	// is applied.
 	BlockMatchers []storepb.LabelMatcher `protobuf:"bytes,1,rep,name=block_matchers,json=blockMatchers,proto3" json:"block_matchers"`
 }
 
@@ -262,7 +262,7 @@ func (m *LabelValuesRequestHints) XXX_DiscardUnknown() {
 var xxx_messageInfo_LabelValuesRequestHints proto.InternalMessageInfo
 
 type LabelValuesResponseHints struct {
-	/// queried_blocks is the list of blocks that have been queried.
+	// queried_blocks is the list of blocks that have been queried.
 	QueriedBlocks []Block `protobuf:"bytes,1,rep,name=queried_blocks,json=queriedBlocks,proto3" json:"queried_blocks"`
 }
 

@@ -19,24 +19,24 @@ option (gogoproto.sizer_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 message SeriesRequestHints {
-  /// block_matchers is a list of label matchers that are evaluated against each single block's
-  /// labels to filter which blocks get queried. If the list is empty, no per-block filtering
-  /// is applied.
+  // block_matchers is a list of label matchers that are evaluated against each single block's
+  // labels to filter which blocks get queried. If the list is empty, no per-block filtering
+  // is applied.
   repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
 
-  /// projection_include indicates if label projection hints are including only specific labels
-  /// or excluding them. The combination of default values of projection_include (false) and
+  // projection_include indicates if label projection hints are including only specific labels
+  // or excluding them. The combination of default values of projection_include (false) and
   // projection_labels (empty) disables use of projections.
   bool projection_include = 2;
 
-  /// projection_labels is the set of labels required (projection_include = true) or not required
-  /// (projection_include = false) to satisfy a query. The combination of default values of
+  // projection_labels is the set of labels required (projection_include = true) or not required
+  // (projection_include = false) to satisfy a query. The combination of default values of
   // projection_include (false) and projection_labels (empty) disables use of projections.
   repeated string projection_labels = 3;
 }
 
 message SeriesResponseHints {
-  /// queried_blocks is the list of blocks that have been queried.
+  // queried_blocks is the list of blocks that have been queried.
   repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
 
@@ -45,25 +45,25 @@ message Block {
 }
 
 message LabelNamesRequestHints {
-  /// block_matchers is a list of label matchers that are evaluated against each single block's
-  /// labels to filter which blocks get queried. If the list is empty, no per-block filtering
-  /// is applied.
+  // block_matchers is a list of label matchers that are evaluated against each single block's
+  // labels to filter which blocks get queried. If the list is empty, no per-block filtering
+  // is applied.
   repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelNamesResponseHints {
-  /// queried_blocks is the list of blocks that have been queried.
+  // queried_blocks is the list of blocks that have been queried.
   repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelValuesRequestHints {
-  /// block_matchers is a list of label matchers that are evaluated against each single block's
-  /// labels to filter which blocks get queried. If the list is empty, no per-block filtering
-  /// is applied.
+  // block_matchers is a list of label matchers that are evaluated against each single block's
+  // labels to filter which blocks get queried. If the list is empty, no per-block filtering
+  // is applied.
   repeated thanos.LabelMatcher block_matchers = 1 [(gogoproto.nullable) = false];
 }
 
 message LabelValuesResponseHints {
-  /// queried_blocks is the list of blocks that have been queried.
+  // queried_blocks is the list of blocks that have been queried.
   repeated Block queried_blocks = 1 [(gogoproto.nullable) = false];
 }
