@@ -699,6 +699,313 @@ func TestOptimizationPass(t *testing.T) {
 			expectedDuplicateSelectorsEliminated: 0,
 			expectedSelectorsInspected:           2,
 		},
+		"subset vector selectors": {
+			expr: `some_metric + some_metric{env="bar"}`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: DuplicateFilter: {env="bar"}
+						- ref#1 Duplicate ...
+			`,
+		},
+		"subset vector selector with broader selector repeated": {
+			expr: `some_metric + some_metric{env="bar"} * some_metric`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- ref#2 Duplicate
+							- VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS * RHS 
+						- LHS: DuplicateFilter: {env="bar"}
+								- ref#2 Duplicate ...
+						- RHS: ref#2 Duplicate ...
+			`,
+		},
+		"subset vector selector with narrower selector repeated": {
+			expr: `some_metric + some_metric{env="bar"} * some_metric{env="bar"}`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS * RHS 
+						- LHS: ref#2 Duplicate
+							- DuplicateFilter: {env="bar"}
+								- ref#1 Duplicate ...
+						- RHS: ref#2 Duplicate ...
+			`,
+		},
+		"subset vector selector with multiple narrower selectors": {
+			expr: `some_metric + some_metric{env="bar"} * some_metric{env="foo"}`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+							- VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS * RHS 
+						- LHS: DuplicateFilter: {env="bar"}
+							- ref#1 Duplicate ...
+						- RHS: DuplicateFilter: {env="foo"}
+							- ref#1 Duplicate ...
+			`,
+		},
+		"subset matrix selectors": {
+			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: count_over_time(...)
+							- ref#1 Duplicate
+								- MatrixSelector: {__name__="some_metric"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: sum_over_time(...)
+							- DuplicateFilter: {env="bar"}
+								- ref#1 Duplicate ...
+			`,
+		},
+		"subset matrix selector with broader selector repeated": {
+			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m]) * max_over_time(some_metric[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: count_over_time(...)
+							- ref#1 Duplicate
+								- MatrixSelector: {__name__="some_metric"}[5m0s]
+					- RHS: BinaryExpression: LHS * RHS
+						- LHS: DeduplicateAndMerge
+							- FunctionCall: sum_over_time(...)
+								- DuplicateFilter: {env="bar"}
+									- ref#2 Duplicate ...
+						- RHS: DeduplicateAndMerge
+							- FunctionCall: max_over_time(...)
+								- ref#2 Duplicate ...
+			`,
+		},
+		"subset matrix selector with narrower selector repeated": {
+			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m]) * max_over_time(some_metric{env="bar"}[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: count_over_time(...)
+							- ref#1 Duplicate
+								- MatrixSelector: {__name__="some_metric"}[5m0s]
+					- RHS: BinaryExpression: LHS * RHS
+						- LHS: DeduplicateAndMerge
+							- FunctionCall: sum_over_time(...)
+								- DuplicateFilter: {env="bar"}
+									- ref#2 Duplicate ...
+						- RHS: DeduplicateAndMerge
+							- FunctionCall: max_over_time(...)
+								- DuplicateFilter: {env="bar"}
+									- ref#2 Duplicate ...
+			`,
+		},
+		"subset matrix selector with multiple narrower selectors": {
+			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m]) * max_over_time(some_metric{env="foo"}[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: ref#1 Duplicate
+							- MatrixSelector: {__name__="some_metric"}[5m0s]
+					- RHS: BinaryExpression: LHS * RHS 
+						- LHS: DuplicateFilter: {env="bar"}
+							- ref#1 Duplicate ...
+						- RHS: DuplicateFilter: {env="foo"}
+							- ref#1 Duplicate ...
+			`,
+		},
+		"subset selector, broader one is vector selector": {
+			expr:            `some_metric + sum_over_time(some_metric{env="bar"}[5m])`,
+			expectUnchanged: true,
+		},
+		"subset selector, broader one is matrix selector": {
+			expr:            `some_metric{env="bar"} + sum_over_time(some_metric[5m])`,
+			expectUnchanged: true,
+		},
+		"subset selectors wrapped in function ordinarily safe to run before filtering": {
+			expr: `rate(foo{status="success"}[5m]) / rate(foo[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DeduplicateAndMerge
+						- DuplicateFilter: {status="success"}
+							- ref#1 Duplicate
+								- FunctionCall: rate(...)
+									- param 0: MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- ref#1 Duplicate ...
+			`,
+		},
+		"subset selectors wrapped in function never safe to run before filtering": {
+			expr: `absent(foo{status="success"}) + absent(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: FunctionCall: absent(...) with labels {status="success"}
+						- DuplicateFilter: {status="success"}
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="foo"}
+					- RHS: FunctionCall: absent(...)
+						- ref#1 Duplicate ...
+			`,
+		},
+		"subset selectors wrapped in function ordinarily safe to run before filtering, but filter is on __name__": {
+			expr: `rate({__name__=~"foo.*",__name__!="foo_2"}[5m]) / rate({__name__=~"foo.*"}[5m])`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- DuplicateFilter: {__name__!="foo_2"}
+								- ref#1 Duplicate
+									- param 0: MatrixSelector: {__name__=~"foo.*"}[5m0s]
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: rate(...)
+							- ref#1 Duplicate ...
+			`,
+		},
+		"subset selectors wrapped in aggregation": {
+			expr: `sum(foo{status="success"}) / sum(foo)`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: AggregateExpression: sum
+						- DuplicateFilter: {status="success"}
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="foo"}
+					- RHS: AggregateExpression: sum
+						- ref#1 Duplicate ...
+			`,
+		},
+		"subset selectors wrapped in aggregation and function ordinarily safe to run before filtering": {
+			expr: `sum(rate(foo{status="success"}[5m])) / sum(rate(foo[5m]))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: AggregateExpression: sum
+						- DeduplicateAndMerge
+							- DuplicateFilter: {status="success"}
+								- ref#1 Duplicate
+									- FunctionCall: rate(...)
+										- MatrixSelector: {__name__="foo"}[5m0s]
+					- RHS: AggregateExpression: sum
+						- DeduplicateAndMerge
+							- ref#1 Duplicate ...
+			`,
+		},
+		"subset selectors where broader selector can be further deduplicated": {
+			expr: `abs(max(foo)) / (abs(max(foo{env="prod"})) + abs(max(foo)))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: ref#1 Duplicate
+						- DeduplicateAndMerge
+							- FunctionCall: abs(...)
+								- AggregateExpression: max
+									- ref#2 Duplicate
+										- VectorSelector: {__name__="foo"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: DeduplicateAndMerge
+							- FunctionCall: abs(...)
+								- AggregateExpression: max
+									- DuplicateFilter: {env="prod"}
+										- ref#2 Duplicate ...
+						- RHS: ref#1 Duplicate ...
+			`,
+		},
+		"subset selectors where narrower selector can be further deduplicated": {
+			expr: `abs(max(foo{env="prod"})) / (abs(max(foo{env="prod"})) + abs(max(foo)))`,
+			expectedPlan: `
+				- BinaryExpression: LHS / RHS
+					- LHS: ref#1 Duplicate
+						- DeduplicateAndMerge
+							- FunctionCall: abs(...)
+								- AggregateExpression: max
+									- DuplicateFilter: {env="prod"}
+										- ref#2 Duplicate
+											- VectorSelector: {__name__="foo"}
+					- RHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate ...
+						- RHS: DeduplicateAndMerge
+							- FunctionCall: abs(...)
+								- AggregateExpression: max
+									- ref#2 Duplicate ...
+			`,
+		},
+		"multiple subsets of same selector, broadest selector last": {
+			expr: `foo{env="bar"} + foo{env="baz"} + foo`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: DuplicateFilter: {env="bar"}
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="foo"}
+						- RHS: DuplicateFilter: {env="baz"}
+							- ref#1 Duplicate ...
+					- RHS: ref#1 Duplicate ...
+			`,
+		},
+		"multiple subsets of same selector, broadest selector first": {
+			expr: `foo + foo{env="baz"} + foo{env="bar"}`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: ref#1 Duplicate
+							- VectorSelector: {__name__="foo"}
+						- RHS: DuplicateFilter: {env="baz"}
+							- ref#1 Duplicate ...
+					- RHS: DuplicateFilter: {env="bar"}
+						- ref#1 Duplicate ...
+			`,
+		},
+		"multiple subsets of same selector, broadest selector neither first nor last": {
+			expr: `foo{env="baz"} + foo + foo{env="bar"}`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: DuplicateFilter: {env="baz"}
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="foo"}
+						- RHS: ref#1 Duplicate ...
+					- RHS: DuplicateFilter: {env="bar"}
+						- ref#1 Duplicate ...
+			`,
+		},
+		"duplicated expressions containing subset selector children and other siblings, other siblings are the same": {
+			expr: `topk(5, foo) + topk(5, foo{env="bar"}) + topk(5, foo) + topk(5, foo{env="bar"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: BinaryExpression: LHS + RHS
+							- LHS: ref#1 Duplicate
+								- AggregateExpression: topk
+									- expression: ref#2 Duplicate
+										- VectorSelector: {__name__="foo"}
+									- parameter: NumberLiteral: 5
+							- RHS: ref#3 Duplicate
+								- AggregateExpression: topk
+									- expression: DuplicateFilter: {env="bar"}
+										- ref#2 Duplicate ...
+									- parameter: NumberLiteral: 5
+						- RHS: ref#1 Duplicate ...
+					- RHS: ref#3 Duplicate ...
+			`,
+		},
+		"duplicated expressions containing subset selector children and other siblings, other siblings are not the same": {
+			expr: `topk(5, foo) + topk(5, foo{env="bar"}) + topk(3, foo) + topk(3, foo{env="bar"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS + RHS
+					- LHS: BinaryExpression: LHS + RHS
+						- LHS: BinaryExpression: LHS + RHS
+							- LHS: AggregateExpression: topk
+								- expression: ref#1 Duplicate
+									- VectorSelector: {__name__="foo"}
+								- parameter: NumberLiteral: 5
+							- RHS: AggregateExpression: topk
+								- expression: DuplicateFilter: {env="bar"}
+									- ref#1 Duplicate ...
+								- parameter: NumberLiteral: 5
+						- RHS: AggregateExpression: topk
+							- expression: ref#1 Duplicate ...
+							- parameter: NumberLiteral: 3
+					- RHS: AggregateExpression: topk
+						- expression: DuplicateFilter: {env="bar"}
+							- ref#1 Duplicate ...
+						- parameter: NumberLiteral: 3
+			`,
+		},
 	}
 
 	ctx := context.Background()
@@ -1119,6 +1426,18 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 				{Name: "g", Type: labels.MatchEqual, Value: "6"},
 				{Name: "h", Type: labels.MatchEqual, Value: "7"},
 			},
+		},
+
+		// FIXME: it'd be nice to support this case, but this is currently not supported.
+		"second selector is subset of first when considering regex, narrower selector uses regex": {
+			firstSelector:  `{a=~"(a|b|c)"}`,
+			secondSelector: `{a=~"(a|b)"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"second selector is subset of first when considering regex, narrower selector uses exact matcher": {
+			firstSelector:  `{a=~"(a|b|c)"}`,
+			secondSelector: `{a="a"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
 		},
 	}
 
