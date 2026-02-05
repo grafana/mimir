@@ -492,7 +492,7 @@ func TestCustomTrackersConfig_Validate(t *testing.T) {
 			},
 			length:        -1,
 			expectError:   true,
-			errorContains: "invalid number of custom trackers: -1",
+			errorContains: "invalid max custom trackers limit: -1",
 		},
 		"empty config with limit": {
 			config:      map[string]string{},
