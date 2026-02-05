@@ -96,7 +96,7 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node,
 	)
 
 	if delayedNameRemoval {
-		ok, err = canEliminateDeduplicateAndMergeDelayedNameRemoval(deduplicateAndMerge.Inner)
+		ok = canEliminateDeduplicateAndMergeDelayedNameRemoval(deduplicateAndMerge.Inner)
 	} else {
 		ok, err = canEliminateDeduplicateAndMerge(deduplicateAndMerge.Inner)
 	}
@@ -110,26 +110,24 @@ func (e *EliminateDeduplicateAndMergeOptimizationPass) apply(node planning.Node,
 	return nil, eliminatedAny, nil
 }
 
-func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) (bool, error) {
+func canEliminateDeduplicateAndMergeDelayedNameRemoval(node planning.Node) bool {
 	switch node := node.(type) {
 	case *core.FunctionCall:
 		if isLabelReplaceOrJoinFunction(node) {
-			return false, nil
+			return false
 		}
 
 		for _, child := range node.Args {
-			if ok, err := canEliminateDeduplicateAndMergeDelayedNameRemoval(child); err != nil {
-				return false, err
-			} else if !ok {
-				return false, nil
+			if !canEliminateDeduplicateAndMergeDelayedNameRemoval(child) {
+				return false
 			}
 		}
 
-		return true, nil
+		return true
 	case *core.DropName:
-		return areSeriesUniqueDropName(node), nil
+		return areSeriesUniqueDropName(node)
 	default:
-		return true, nil
+		return true
 	}
 }
 
