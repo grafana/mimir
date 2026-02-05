@@ -40684,7 +40684,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "sum by (user) (cortex_alertmanager_alerts{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"})",
@@ -40769,7 +40769,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 3,
                       "targets": [
                          {
                             "expr": "(\nsum(rate(cortex_alertmanager_notifications_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"}[$__rate_interval]))\n-\non() (sum(rate(cortex_alertmanager_notifications_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) or on () vector(0))\n) > 0\n",
@@ -40823,7 +40823,7 @@ data:
                             "sort": "none"
                          }
                       },
-                      "span": 4,
+                      "span": 2,
                       "targets": [
                          {
                             "expr": "(\nsum(rate(cortex_alertmanager_notifications_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) by(integration)\n-\n(sum(rate(cortex_alertmanager_notifications_failed_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) by(integration) or\n (sum(rate(cortex_alertmanager_notifications_total{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"}[$__rate_interval])) by(integration) * 0)\n)) > 0\n",
@@ -40839,6 +40839,104 @@ data:
                          }
                       ],
                       "title": "NPS by integration",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Alerts tracked by limiter\nNumber of alerts currently tracked by the alerts limiter per tenant.\nThis value is averaged across alertmanager replicas.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "short"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 35,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 2,
+                      "targets": [
+                         {
+                            "expr": "avg(cortex_alertmanager_alerts_limiter_current_alerts{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "alerts",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Alerts tracked by limiter",
+                      "type": "timeseries"
+                   },
+                   {
+                      "datasource": "$datasource",
+                      "description": "### Alerts size tracked by limiter\nTotal size in bytes of alerts currently tracked by the alerts limiter per tenant.\nThe size includes labels, annotations, and generator URL of each alert.\nThis value is averaged across alertmanager replicas.\n\n",
+                      "fieldConfig": {
+                         "defaults": {
+                            "custom": {
+                               "drawStyle": "line",
+                               "fillOpacity": 1,
+                               "lineWidth": 1,
+                               "pointSize": 5,
+                               "showPoints": "never",
+                               "spanNulls": false,
+                               "stacking": {
+                                  "group": "A",
+                                  "mode": "none"
+                               }
+                            },
+                            "min": 0,
+                            "thresholds": {
+                               "mode": "absolute",
+                               "steps": [ ]
+                            },
+                            "unit": "bytes"
+                         },
+                         "overrides": [ ]
+                      },
+                      "id": 36,
+                      "links": [ ],
+                      "options": {
+                         "legend": {
+                            "showLegend": true
+                         },
+                         "tooltip": {
+                            "mode": "multi",
+                            "sort": "none"
+                         }
+                      },
+                      "span": 2,
+                      "targets": [
+                         {
+                            "expr": "avg(cortex_alertmanager_alerts_limiter_current_alerts_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((alertmanager|cortex|mimir))\", user=\"$user\"})",
+                            "format": "time_series",
+                            "legendFormat": "size",
+                            "legendLink": null
+                         }
+                      ],
+                      "title": "Alerts size tracked by limiter",
                       "type": "timeseries"
                    }
                 ],
@@ -40878,7 +40976,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 35,
+                      "id": 37,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40927,7 +41025,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 36,
+                      "id": 38,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -40975,7 +41073,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 37,
+                      "id": 39,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41047,7 +41145,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 38,
+                      "id": 40,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41096,7 +41194,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 39,
+                      "id": 41,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41144,7 +41242,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 40,
+                      "id": 42,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41217,7 +41315,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 41,
+                      "id": 43,
                       "links": [ ],
                       "options": {
                          "legend": {
@@ -41266,7 +41364,7 @@ data:
                          },
                          "overrides": [ ]
                       },
-                      "id": 42,
+                      "id": 44,
                       "links": [ ],
                       "options": {
                          "legend": {

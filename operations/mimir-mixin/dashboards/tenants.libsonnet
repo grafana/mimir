@@ -692,6 +692,7 @@ local filename = 'mimir-tenants.json';
 
     .addRow(
       $.row('Alertmanager')
+      .justifyPanels()  // Make sure panels use all width even if 12 columns are not divisible by the number of panels.
       .addPanel(
         $.timeseriesPanel('Alerts') +
         $.queryPanel(
@@ -739,6 +740,43 @@ local filename = 'mimir-tenants.json';
           ],
           ['success - {{ integration }}', 'failed - {{ integration }}']
         )
+      )
+      .addPanel(
+        local title = 'Alerts tracked by limiter';
+        $.timeseriesPanel(title) +
+        $.panelDescription(
+          title,
+          |||
+            Number of alerts currently tracked by the alerts limiter per tenant.
+            This value is averaged across alertmanager replicas.
+          |||
+        ) +
+        $.queryPanel(
+          'avg(cortex_alertmanager_alerts_limiter_current_alerts{%(job)s, user="$user"})' % {
+            job: $.jobMatcher($._config.job_names.alertmanager),
+          },
+          'alerts'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'short' } } }
+      )
+      .addPanel(
+        local title = 'Alerts size tracked by limiter';
+        $.timeseriesPanel(title) +
+        $.panelDescription(
+          title,
+          |||
+            Total size in bytes of alerts currently tracked by the alerts limiter per tenant.
+            The size includes labels, annotations, and generator URL of each alert.
+            This value is averaged across alertmanager replicas.
+          |||
+        ) +
+        $.queryPanel(
+          'avg(cortex_alertmanager_alerts_limiter_current_alerts_size_bytes{%(job)s, user="$user"})' % {
+            job: $.jobMatcher($._config.job_names.alertmanager),
+          },
+          'size'
+        ) +
+        { fieldConfig+: { defaults+: { unit: 'bytes' } } },
       )
     )
 
