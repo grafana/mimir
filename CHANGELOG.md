@@ -4,7 +4,7 @@
 
 ### Grafana Mimir
 
-* [BUGFIX] Update to Go v1.25.6 to address [CVE-2025-61726](https://pkg.go.dev/vuln/GO-2026-4341). #14231
+* [BUGFIX] Update to Go v1.25.6 to address [CVE-2025-61726](https://pkg.go.dev/vuln/GO-2026-4341). #14231 #14251
 * [CHANGE] Ruler: Add path traversal checks when parsing namespaces and groups, which prevents namespace and group name from containing non-local paths. #14246
 
 ## 2.17.5
