@@ -682,6 +682,10 @@ func DeepCopyTimeseries(dst, src PreallocTimeseries, keepHistograms, keepExempla
 	// Copy the time series labels by using the prepared buffer.
 	dstTs.Labels, buf = copyToYoloLabels(buf, dstTs.Labels, srcTs.Labels)
 
+	// Copy scalar properties.
+	dstTs.CreatedTimestamp = srcTs.CreatedTimestamp
+	dstTs.SkipUnmarshalingExemplars = srcTs.SkipUnmarshalingExemplars
+
 	// Copy the samples.
 	if cap(dstTs.Samples) < len(srcTs.Samples) {
 		dstTs.Samples = make([]Sample, len(srcTs.Samples))

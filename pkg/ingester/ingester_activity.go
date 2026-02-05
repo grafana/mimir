@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/tracing"
@@ -283,6 +284,14 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 		sb.WriteString(",")
 	}
 	sb.WriteString("},")
+
+	sb.WriteString("ProjectionInclude:")
+	sb.WriteString(strconv.FormatBool(req.ProjectionInclude))
+	sb.WriteString(",")
+
+	sb.WriteString("ProjectionLabels:[")
+	sb.WriteString(strings.Join(req.ProjectionLabels, " "))
+	sb.WriteString("],")
 
 	b = b[:0]
 	sb.WriteString("StreamingChunksBatchSize:")

@@ -7,10 +7,10 @@ metadata:
   labels:
     grafana.com/inject-rollout-operator-ca: "true"
     grafana.com/namespace: "citestns"
-    helm.sh/chart: rollout-operator-0.40.0
+    helm.sh/chart: rollout-operator-0.41.0
     app.kubernetes.io/name: rollout-operator
     app.kubernetes.io/instance: test-requests-and-limits-values
-    app.kubernetes.io/version: "v0.33.0"
+    app.kubernetes.io/version: "v0.34.0"
     app.kubernetes.io/managed-by: Helm
 webhooks:
   - name: prepare-downscale-citestns.grafana.com

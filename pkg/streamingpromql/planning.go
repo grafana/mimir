@@ -83,14 +83,18 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	// we introduce query-frontend-specific optimization passes like sharding and splitting for two reasons:
 	//  1. We want to avoid a circular dependency between this package and the query-frontend package where most of the logic for these optimization passes lives.
 	//  2. We don't want to register these optimization passes in queriers.
-	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{}) // We expect this to be the first to simplify the logic for the rest of the optimization passes.
+	planner.RegisterASTOptimizationPass(&ast.InsertOmittedTargetInfoSelector{}) // We apply this first so that all other optimization passes can safely assume that info functions have exactly 2 arguments.
+	planner.RegisterASTOptimizationPass(&ast.CollapseConstants{})               // We expect this to be applied early to simplify the logic for the rest of the optimization passes.
+
 	if opts.EnablePruneToggles {
 		planner.RegisterASTOptimizationPass(ast.NewPruneToggles(opts.CommonOpts.Reg)) // Do this next to ensure that toggled off expressions are removed before the other optimization passes are applied.
 	}
+
 	// NOTE: This optimization pass MUST run before SortLabelsAndMatchers since it does not preserve the order of matchers.
 	if opts.EnableReduceMatchers {
 		planner.RegisterASTOptimizationPass(ast.NewReduceMatchers(opts.CommonOpts.Reg, opts.Logger))
 	}
+
 	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{}) // This is a prerequisite for other optimization passes such as common subexpression elimination.
 	// After query sharding is moved here, we want to move propagate matchers and reorder histogram aggregation here as well before query sharding.
 
@@ -101,10 +105,8 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewEliminateDeduplicateAndMergeOptimizationPass(opts.CommonOpts.Reg))
 	}
 
-	if opts.EnableSkippingHistogramDecoding {
-		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
-		planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
-	}
+	// This optimization pass must be registered before common subexpression elimination, if that is enabled.
+	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 
 	if opts.EnableProjectionPushdown {
 		// This optimization pass must be registered before common subexpression elimination, if that is enabled.
@@ -112,7 +114,7 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 	}
 
 	if opts.EnableCommonSubexpressionElimination {
-		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, opts.CommonOpts.Reg, opts.Logger))
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
 
 	if opts.EnableMultiAggregation {
@@ -609,6 +611,17 @@ func (p *QueryPlanner) nodeFromExpr(expr parser.Expr, timeRange types.QueryTimeR
 			vectorSelector, ok := args[0].(*core.VectorSelector)
 			if ok {
 				vectorSelector.ReturnSampleTimestamps = true
+			}
+		case functions.FUNCTION_INFO:
+			// The InsertOmittedTargetInfoSelector AST pass ensures there are always 2 arguments.
+			// Check len(args) == 2 for safety in case the pass doesn't run (e.g., in tests).
+			if len(args) == 2 {
+				vectorSelector, ok := args[1].(*core.VectorSelector)
+				if !ok {
+					return nil, fmt.Errorf("expected second argument of info() to be a VectorSelector, got %T", args[1])
+				}
+				// Override float values to reflect original timestamps.
+				vectorSelector.ReturnSampleTimestampsPreserveHistograms = true
 			}
 		}
 

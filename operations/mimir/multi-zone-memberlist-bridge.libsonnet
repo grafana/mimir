@@ -34,6 +34,15 @@
   memberlist_bridge_ports:: $.util.defaultPorts,
   memberlist_bridge_node_affinity_matchers:: [],
 
+  memberlist_bridge_container::
+    container.new('memberlist-bridge', $._images.memberlist_bridge)
+    + container.withPorts($.memberlist_bridge_ports)
+    + container.withArgs($.util.mapToFlags($.memberlist_bridge_args))
+    + $.tracing_env_mixin
+    + $.util.readinessProbe
+    + $.util.resourcesRequests('0.25', '1Gi')
+    + $.util.resourcesLimits(null, '2Gi'),
+
   memberlist_bridge_args::
     $._config.commonConfig
     + $._config.usageStatsConfig
@@ -107,13 +116,8 @@
     $.newMimirPdb('memberlist-bridge-zone-c'),
 
   newMemberlistBridgeZoneContainer(zone, args, extraEnvVarMap={})::
-    container.new('memberlist-bridge', $._images.memberlist_bridge)
-    + container.withPorts($.memberlist_bridge_ports)
+    $.memberlist_bridge_container
     + container.withArgs($.util.mapToFlags(args))
-    + $.tracing_env_mixin
-    + $.util.readinessProbe
-    + $.util.resourcesRequests('0.25', '1Gi')
-    + $.util.resourcesLimits(null, '2Gi')
     + (if std.length(extraEnvVarMap) > 0 then container.withEnvMixin(std.prune(extraEnvVarMap)) else {}),
 
   newMemberlistBridgeZoneDeployment(zone, container, nodeAffinityMatchers=[])::

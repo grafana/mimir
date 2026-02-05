@@ -80,17 +80,31 @@ func newReaderPool(logger log.Logger, indexHeaderConfig Config, lazyLoadingGate 
 // NewBinaryReader creates and returns a new binary reader. If the pool has been configured
 // with lazy reader enabled, this function will return a lazy reader. The returned lazy reader
 // is tracked by the pool and automatically closed once the idle timeout expires.
-func (p *ReaderPool) NewBinaryReader(ctx context.Context, logger log.Logger, bkt objstore.InstrumentedBucketReader, dir string, id ulid.ULID, postingOffsetsInMemSampling int, cfg Config) (Reader, error) {
+func (p *ReaderPool) NewBinaryReader(
+	ctx context.Context,
+	logger log.Logger,
+	bkt objstore.InstrumentedBucketReader,
+	dir string,
+	id ulid.ULID,
+	postingOffsetsInMemSampling int,
+	cfg Config,
+) (Reader, error) {
 	var readerFactory func() (Reader, error)
 	var reader Reader
 	var err error
 
-	readerFactory = func() (Reader, error) {
-		return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+	if cfg.BucketReader.Enabled {
+		readerFactory = func() (Reader, error) {
+			return NewBucketBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, cfg)
+		}
+	} else {
+		readerFactory = func() (Reader, error) {
+			return NewStreamBinaryReader(ctx, logger, bkt, dir, id, postingOffsetsInMemSampling, p.metrics.streamReader, cfg)
+		}
 	}
 
 	if p.lazyReaderEnabled {
-		reader, err = NewLazyBinaryReader(ctx, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
+		reader, err = NewLazyBinaryReader(ctx, cfg, readerFactory, logger, bkt, dir, id, p.metrics.lazyReader, p.onLazyReaderClosed, p.lazyLoadingGate)
 	} else {
 		reader, err = readerFactory()
 	}

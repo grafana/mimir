@@ -214,6 +214,18 @@ func pushTestData(ing *ingester.Ingester, metricSizes []int) error {
 				metrics = append(metrics, labels.FromStrings("__name__", nativeHistogramName, "l", strconv.Itoa(i)))
 			}
 		}
+
+		// Used only for info() tests
+		infoNameSparse := "info_sparse_" + strconv.Itoa(size)
+		infoNameDense := "info_dense_" + strconv.Itoa(size)
+		targetInfoName := "target_info_" + strconv.Itoa(size)
+		perTargetMetricCount := int(math.Ceil(float64(size) / 10))
+		for i := 0; i < size; i++ {
+			targetGroup := fmt.Sprintf("%d", i%perTargetMetricCount)
+			metrics = append(metrics, labels.FromStrings("__name__", infoNameSparse, "l", strconv.Itoa(i), "instance", strconv.Itoa(i), "job", strconv.Itoa(i)))
+			metrics = append(metrics, labels.FromStrings("__name__", infoNameDense, "l", strconv.Itoa(i), "instance", targetGroup, "job", targetGroup))
+			metrics = append(metrics, labels.FromStrings("__name__", targetInfoName, "version", strconv.Itoa(i), "instance", strconv.Itoa(i), "job", strconv.Itoa(i)))
+		}
 	}
 
 	ctx := user.InjectOrgID(context.Background(), UserID)

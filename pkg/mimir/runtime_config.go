@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/prometheus/client_golang/prometheus"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/ingester"

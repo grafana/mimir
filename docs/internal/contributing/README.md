@@ -125,10 +125,12 @@ Some (but maybe not all) specific critical areas are:
 
 ## Documentation
 
-The Grafana Mimir documentation and the Helm chart _documentation_ for Mimir and GEM are compiled and published to [https://grafana.com/docs/mimir/latest/](https://grafana.com/docs/mimir/latest/) and [https://grafana.com/docs/helm-charts/mimir-distributed/latest/](https://grafana.com/docs/helm-charts/mimir-distributed/latest/). Run `make docs` to build and serve the documentation locally.
+The Grafana Mimir documentation and the Helm chart documentation for Mimir and GEM are compiled and published to [https://grafana.com/docs/mimir/latest/](https://grafana.com/docs/mimir/latest/) and [https://grafana.com/docs/helm-charts/mimir-distributed/latest/](https://grafana.com/docs/helm-charts/mimir-distributed/latest/). Run `make docs` to build and serve the documentation locally.
 For more detail on style and organisation of the documentation, refer to the dedicated page "[How to write documentation](how-to-write-documentation.md)".
 
 Note: if you attempt to view pages on GitHub, it's likely that you might find broken links or pages. That is expected and should not be addressed unless it is causing issues with the site that occur as part of the build.
+
+Please see dedicated [instructions for documentation authoring](documentation-authoring.md) for more information on the Docs toolkit.
 
 ## Errors catalog
 

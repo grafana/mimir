@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/dustin/go-humanize"
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/grafana/dskit/kv/memberlist"
@@ -274,6 +275,7 @@ func NewQuerierHandler(
 		appendMetadata,
 		nil,
 		nil,
+		v1.OpenAPIOptions{},
 	)
 
 	api.InstallCodec(protobufCodec{})
@@ -347,6 +349,9 @@ func memberlistStatusHandler(kvs *memberlist.KVInitService) http.Handler {
 		},
 		"GetRoleFromMeta": func(meta []byte) string {
 			return memberlist.EncodedNodeMetadata(meta).Role().String()
+		},
+		"FormatBytes": func(bytes int) string {
+			return humanize.IBytes(uint64(bytes))
 		},
 	})
 	template.Must(templ.Parse(memberlistStatusPageHTML))

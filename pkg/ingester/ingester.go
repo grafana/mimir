@@ -33,6 +33,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/tenant"
+	"github.com/grafana/dskit/timeutil"
 	"github.com/oklog/ulid/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -3209,7 +3210,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 	// After the first interval, we want the compaction to run at a specified interval for the zone if we have multiple zones,
 	// before we switch to running the compaction at the standard configured `HeadCompactionInterval`.
 	// If the criteria to have staggered compactions are not met, standardInterval and i.cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval are the same.
-	stopTicker, tickerChan := util.NewVariableTicker(firstInterval, standardInterval)
+	stopTicker, tickerChan := timeutil.NewVariableTicker(firstInterval, standardInterval)
 	defer func() {
 		// We call stopTicker() from an anonymous function because the stopTicker()
 		// reference may change during the lifetime of compactionServiceRunning().
@@ -3242,7 +3243,7 @@ func (i *Ingester) compactionServiceRunning(ctx context.Context) error {
 				stopTicker()
 
 				standardInterval = newStandardInterval
-				stopTicker, tickerChan = util.NewVariableTicker(newFirstInterval, newStandardInterval)
+				stopTicker, tickerChan = timeutil.NewVariableTicker(newFirstInterval, newStandardInterval)
 			}
 
 		case req := <-i.forceCompactTrigger:
