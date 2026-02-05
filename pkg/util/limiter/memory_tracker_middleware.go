@@ -6,14 +6,16 @@ import (
 	"net/http"
 )
 
-// UnlimitedMemoryTrackerMiddleware adds an unlimited MemoryConsumptionTracker which will not
-// enforce memory limit to the request context.
+// UnlimitedMemoryTrackerMiddleware adds the following to the context: 1) an unlimited MemoryConsumptionTracker which will not
+// enforce memory limit to the request context and 2) SeriesDeduplicator which will deduplicate series
+// from queriers and increase memory consumption for the labels.
 type UnlimitedMemoryTrackerMiddleware struct{}
 
 // Wrap implements middleware.Interface.
 func (m UnlimitedMemoryTrackerMiddleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := ContextWithNewUnlimitedMemoryConsumptionTracker(r.Context())
+		ctx = AddSeriesDeduplicatorToContext(ctx, NewSeriesDeduplicator())
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
