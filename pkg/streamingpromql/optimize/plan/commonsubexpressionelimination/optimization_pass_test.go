@@ -713,7 +713,7 @@ func TestOptimizationPass(t *testing.T) {
 			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsWithOptimizationPass, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
 
 			var timeRange types.QueryTimeRange
 
@@ -921,7 +921,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(nil, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -984,7 +984,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 	reg := prometheus.NewPedanticRegistry()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(b, err)
-	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(reg, opts.Logger))
+	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, reg, opts.Logger))
 
 	timeRange := types.NewInstantQueryTimeRange(time.Now())
 
@@ -1002,7 +1002,7 @@ func BenchmarkOptimizationPass(b *testing.B) {
 }
 
 func TestShouldSkipChild(t *testing.T) {
-	pass := commonsubexpressionelimination.NewOptimizationPass(nil, nil)
+	pass := commonsubexpressionelimination.NewOptimizationPass(true, nil, nil)
 
 	// Test info function - should skip only 2nd children
 	infoFunctionCall := &core.FunctionCall{
