@@ -178,6 +178,14 @@ type sharedSelectorGroup struct {
 	filters [][]*core.LabelMatcher
 }
 
+func (g *sharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher {
+	if g.filters == nil {
+		return nil
+	}
+
+	return g.filters[pathIdx]
+}
+
 // groupPaths returns paths grouped by the node at offset from the leaf.
 // offset 0 means group by the leaf, offset 1 means group by the leaf node's parent etc.
 // Paths that don't match any other paths are not returned.
@@ -250,13 +258,13 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 
 	// We only want to deduplicate instant vectors, or range vectors in an instant query.
 	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
-		skipLongerExpressions, err = e.introduceDuplicateNode(group.paths, duplicatePathLength)
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
 		// query.
 		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
 		// subquery.
-		skipLongerExpressions, err = e.introduceDuplicateNode(group.paths, duplicatePathLength-1)
+		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
 	} else {
 		// Duplicated range vector selector in a range query, but the function that encloses each instance isn't the same (or isn't the same on all paths).
 		pathsEliminated = 0
@@ -294,14 +302,16 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 
 // introduceDuplicateNode introduces a Duplicate node for each path in the group and returns false.
 // If a Duplicate node already exists at the expected location, then introduceDuplicateNode does not introduce a new node and returns true.
-func (e *OptimizationPass) introduceDuplicateNode(group []path, duplicatePathLength int) (skipLongerExpressions bool, err error) {
+func (e *OptimizationPass) introduceDuplicateNode(group sharedSelectorGroup, duplicatePathLength int) (skipLongerExpressions bool, err error) {
 	// Check that we haven't already applied deduplication here because we found this subexpression earlier.
 	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
 	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
 	// when searching from the "b" selectors.
-	firstPath := group[0]
+	firstPath := group.paths[0]
 	parentOfDuplicate, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
 	expectedDuplicatedExpression := parentOfDuplicate.Child(firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength - 1)) // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
+
+	// TODO: will need to check for DuplicateFilter here - add test cases for this
 	if isDuplicateNode(expectedDuplicatedExpression) {
 		return true, nil
 	}
@@ -311,9 +321,18 @@ func (e *OptimizationPass) introduceDuplicateNode(group []path, duplicatePathLen
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
 
-	for _, path := range group {
+	for pathIdx, path := range group.paths {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
-		err := parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), duplicate)
+		var newChild planning.Node = duplicate
+
+		if filters := group.getFilterForPath(pathIdx); len(filters) > 0 {
+			newChild = &DuplicateFilter{
+				Inner:                  duplicate,
+				DuplicateFilterDetails: &DuplicateFilterDetails{Filters: filters},
+			}
+		}
+
+		err := parentOfDuplicate.ReplaceChild(path.ChildIndexAtOffsetFromLeaf(duplicatedExpressionOffset), newChild)
 		if err != nil {
 			return false, err
 		}
