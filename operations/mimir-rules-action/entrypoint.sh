@@ -43,6 +43,8 @@ fi
 # If more than one selection is made, exit with an error.
 verifyAndConstructNamespaceSelection() {
   NAMESPACE_SELECTIONS_COUNT=0
+  NAMESPACES_SELECTION=""
+  NAMESPACES_VALUE=""
 
   if [ -n "${NAMESPACES}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
