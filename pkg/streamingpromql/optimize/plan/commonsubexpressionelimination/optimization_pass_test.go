@@ -1084,6 +1084,43 @@ func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
 			secondSelector: `{bar="abc", baz="qux"}`,
 			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
 		},
+		"second selector is subset of first, first matcher is different": {
+			firstSelector:  `{b="1", d="3"}`,
+			secondSelector: `{a="0", b="1", d="3"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "0"},
+			},
+		},
+		"second selector is subset of first, middle matcher is different": {
+			firstSelector:  `{b="1", d="3"}`,
+			secondSelector: `{b="1", c="2", d="3"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "c", Type: labels.MatchEqual, Value: "2"},
+			},
+		},
+		"second selector is subset of first, last matcher is different": {
+			firstSelector:  `{b="1", d="3"}`,
+			secondSelector: `{b="1", d="3", e="4"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "e", Type: labels.MatchEqual, Value: "4"},
+			},
+		},
+		"second selector is subset of first, multiple additional matchers": {
+			firstSelector:  `{c="2", f="5"}`,
+			secondSelector: `{a="0", "b"="1", c="2", d="3", e="4", f="5", g="6", h="7"}`,
+			expectedResult: commonsubexpressionelimination.SubsetSelectors,
+			expectedSubsetMatchers: []*core.LabelMatcher{
+				{Name: "a", Type: labels.MatchEqual, Value: "0"},
+				{Name: "b", Type: labels.MatchEqual, Value: "1"},
+				{Name: "d", Type: labels.MatchEqual, Value: "3"},
+				{Name: "e", Type: labels.MatchEqual, Value: "4"},
+				{Name: "g", Type: labels.MatchEqual, Value: "6"},
+				{Name: "h", Type: labels.MatchEqual, Value: "7"},
+			},
+		},
 	}
 
 	for name, testCase := range testCases {
