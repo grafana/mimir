@@ -1139,10 +1139,6 @@ func (o *Overrides) MaxCostAttributionCardinality(userID string) int {
 	return o.getOverridesForUser(userID).MaxCostAttributionCardinality
 }
 
-func (o *Overrides) MaxActiveSeriesAdditionalCustomTrackersCardinality(userID string) int {
-	return o.getOverridesForUser(userID).MaxActiveSeriesAdditionalCustomTrackers
-}
-
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
 func (o *Overrides) IngestionTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionTenantShardSize
