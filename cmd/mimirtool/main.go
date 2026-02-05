@@ -27,6 +27,7 @@ var (
 	configCommand         commands.ConfigCommand
 	loadgenCommand        commands.LoadgenCommand
 	logConfig             commands.LoggerConfig
+	partitionRingCommand  commands.PartitionRingCommand
 	promQLCommand         commands.PromQLCommand
 	pushGateway           commands.PushGatewayConfig
 	remoteReadCommand     commands.RemoteReadCommand
@@ -54,6 +55,7 @@ func main() {
 	bucketValidateCommand.Register(app, envVars, &logConfig)
 	configCommand.Register(app, envVars)
 	loadgenCommand.Register(app, envVars, &logConfig, prometheus.DefaultRegisterer)
+	partitionRingCommand.Register(app, envVars, &logConfig)
 	promQLCommand.Register(app, envVars)
 	pushGateway.Register(app, envVars, &logConfig)
 	remoteReadCommand.Register(app, envVars, &logConfig)
