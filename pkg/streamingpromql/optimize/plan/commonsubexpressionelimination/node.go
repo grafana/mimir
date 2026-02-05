@@ -4,6 +4,8 @@ package commonsubexpressionelimination
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -11,12 +13,16 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
 func init() {
 	planning.RegisterNodeFactory(func() planning.Node {
 		return &Duplicate{DuplicateDetails: &DuplicateDetails{}}
+	})
+	planning.RegisterNodeFactory(func() planning.Node {
+		return &DuplicateFilter{DuplicateFilterDetails: &DuplicateFilterDetails{}}
 	})
 }
 
@@ -137,4 +143,97 @@ type RangeVectorDuplicationConsumerOperatorFactory struct {
 
 func (d *RangeVectorDuplicationConsumerOperatorFactory) Produce() (types.Operator, error) {
 	return d.Buffer.AddConsumer(), nil
+}
+
+type DuplicateFilter struct {
+	*DuplicateFilterDetails
+	Inner *Duplicate
+}
+
+func (f *DuplicateFilter) Details() proto.Message {
+	return f.DuplicateFilterDetails
+}
+
+func (f *DuplicateFilter) NodeType() planning.NodeType {
+	return planning.NODE_TYPE_DUPLICATE_FILTER
+}
+
+func (f *DuplicateFilter) Child(idx int) planning.Node {
+	if idx != 0 {
+		panic(fmt.Sprintf("node of type DuplicateFilter supports 1 child, but attempted to get child at index %d", idx))
+	}
+
+	return f.Inner
+}
+
+func (f *DuplicateFilter) ChildCount() int {
+	return 1
+}
+
+func (f *DuplicateFilter) SetChildren(children []planning.Node) error {
+	if len(children) != 1 {
+		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but got %d", len(children))
+	}
+
+	return f.ReplaceChild(0, children[0])
+}
+
+func (f *DuplicateFilter) ReplaceChild(idx int, node planning.Node) error {
+	if idx != 0 {
+		return fmt.Errorf("node of type DuplicateFilter supports 1 child, but attempted to replace child at index %d", idx)
+	}
+
+	duplicate, ok := node.(*Duplicate)
+
+	if !ok {
+		return fmt.Errorf("node of type DuplicateFilter only supports Duplicate nodes as child, got %T", node)
+	}
+
+	f.Inner = duplicate
+
+	return nil
+}
+
+func (f *DuplicateFilter) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
+	otherFilter, ok := other.(*DuplicateFilter)
+
+	return ok && slices.EqualFunc(f.Filters, otherFilter.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
+		return a.Equal(b)
+	})
+}
+
+func (f *DuplicateFilter) MergeHints(_ planning.Node) error {
+	// Nothing to do.
+	return nil
+}
+
+func (f *DuplicateFilter) Describe() string {
+	builder := &strings.Builder{}
+	core.FormatMatchers(builder, f.Filters)
+
+	return builder.String()
+}
+
+func (f *DuplicateFilter) ChildrenLabels() []string {
+	return []string{""}
+}
+
+func (f *DuplicateFilter) ChildrenTimeRange(parentTimeRange types.QueryTimeRange) types.QueryTimeRange {
+	return parentTimeRange
+}
+
+func (f *DuplicateFilter) ResultType() (parser.ValueType, error) {
+	return f.Inner.ResultType()
+}
+
+func (f *DuplicateFilter) QueriedTimeRange(queryTimeRange types.QueryTimeRange, lookbackDelta time.Duration) (planning.QueriedTimeRange, error) {
+	return f.Inner.QueriedTimeRange(queryTimeRange, lookbackDelta)
+}
+
+func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
+	return f.Inner.ExpressionPosition()
+}
+
+func (f *DuplicateFilter) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	return planning.QueryPlanV6
 }

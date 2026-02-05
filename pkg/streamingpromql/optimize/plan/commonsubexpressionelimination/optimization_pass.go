@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -480,11 +479,11 @@ const (
 // SelectorsAreDuplicateOrSubset returns ExactDuplicateSelectors if first and second are the same,
 // SubsetSelectors if second is a subset of first, or NotDuplicateOrSubset otherwise.
 //
-// The matchers in first and second must be sorted in the order produced by optimize.CompareMatchers.
+// The matchers in first and second must be sorted in the order produced by core.CompareMatchers.
 func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (SelectorRelationship, []*core.LabelMatcher) {
 	if len(first) == len(second) {
 		same := slices.EqualFunc(first, second, func(a, b *core.LabelMatcher) bool {
-			return a.Name == b.Name && a.Type == b.Type && a.Value == b.Value
+			return a.Equal(b)
 		})
 
 		if same {
@@ -506,7 +505,7 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 
 		for nextSecondIdx < len(second) {
 			secondMatcher := second[nextSecondIdx]
-			comparisonResult := optimize.CompareMatchers(firstMatcher.Name, secondMatcher.Name, firstMatcher.Type, secondMatcher.Type, firstMatcher.Value, secondMatcher.Value)
+			comparisonResult := core.CompareMatchers(firstMatcher.Name, secondMatcher.Name, firstMatcher.Type, secondMatcher.Type, firstMatcher.Value, secondMatcher.Value)
 
 			if comparisonResult == 0 {
 				// Same matcher in both selectors.
