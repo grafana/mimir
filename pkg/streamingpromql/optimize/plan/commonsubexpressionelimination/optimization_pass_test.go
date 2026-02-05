@@ -36,13 +36,14 @@ func TestOptimizationPass(t *testing.T) {
 	parser.EnableExperimentalFunctions = true
 
 	testCases := map[string]struct {
-		expr                        string
-		rangeQuery                  bool
-		expectedPlan                string
-		expectUnchanged             bool
-		expectedDuplicateNodes      int // Check that we don't do unnecessary work introducing a duplicate node multiple times when starting from different selectors (eg. when handling (a+b) + (a+b)).
-		expectedSelectorsEliminated int
-		expectedSelectorsInspected  int
+		expr                                 string
+		rangeQuery                           bool
+		expectedPlan                         string
+		expectUnchanged                      bool
+		expectedDuplicateNodes               int // Check that we don't do unnecessary work introducing a duplicate node multiple times when starting from different selectors (eg. when handling (a+b) + (a+b)).
+		expectedDuplicateSelectorsEliminated int
+		expectedSubsetSelectorsEliminated    int
+		expectedSelectorsInspected           int
 	}{
 		"single vector selector": {
 			expr:                       `foo`,
@@ -76,9 +77,9 @@ func TestOptimizationPass(t *testing.T) {
 						- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"vector selector duplicated twice with other selector": {
 			expr: `foo + foo + bar`,
@@ -90,9 +91,9 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: ref#1 Duplicate ...
 					- RHS: VectorSelector: {__name__="bar"}
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  3,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           3,
 		},
 		"vector selector duplicated three times": {
 			expr: `foo + foo + foo`,
@@ -104,9 +105,9 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: ref#1 Duplicate ...
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  3,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           3,
 		},
 		"vector selector duplicated many times": {
 			expr: `foo + foo + foo + bar + foo`,
@@ -122,9 +123,9 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: VectorSelector: {__name__="bar"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 3,
-			expectedSelectorsInspected:  5,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 3,
+			expectedSelectorsInspected:           5,
 		},
 		"duplicated vector selector with different aggregations": {
 			expr: `max(foo) - min(foo)`,
@@ -136,9 +137,9 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: min
 						- ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicated vector selector with same aggregations": {
 			expr: `max(foo) + max(foo)`,
@@ -149,9 +150,9 @@ func TestOptimizationPass(t *testing.T) {
 							- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"multiple levels of duplication: vector selector and aggregation": {
 			expr: `a + sum(a) + sum(a)`,
@@ -165,9 +166,9 @@ func TestOptimizationPass(t *testing.T) {
 								- ref#1 Duplicate ...
 					- RHS: ref#2 Duplicate ...
 			`,
-			expectedDuplicateNodes:      2,
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  3,
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           3,
 		},
 		"multiple levels of duplication: vector selector and binary operation": {
 			expr: `(a - a) + (a - a)`,
@@ -180,9 +181,9 @@ func TestOptimizationPass(t *testing.T) {
 							- RHS: ref#1 Duplicate ...
 					- RHS: ref#2 Duplicate ...
 			`,
-			expectedDuplicateNodes:      2,
-			expectedSelectorsEliminated: 3,
-			expectedSelectorsInspected:  4,
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 3,
+			expectedSelectorsInspected:           4,
 		},
 		"multiple levels of duplication: multiple vector selectors and binary operation": {
 			expr: `(a - a) + (a - a) + (a * b) + (a * b)`,
@@ -202,9 +203,9 @@ func TestOptimizationPass(t *testing.T) {
 								- RHS: VectorSelector: {__name__="b"}
 					- RHS: ref#3 Duplicate ...
 			`,
-			expectedDuplicateNodes:      3,
-			expectedSelectorsEliminated: 6, // 5 instances of 'a', and one instance of 'b'
-			expectedSelectorsInspected:  8,
+			expectedDuplicateNodes:               3,
+			expectedDuplicateSelectorsEliminated: 6, // 5 instances of 'a', and one instance of 'b'
+			expectedSelectorsInspected:           8,
 		},
 		"duplicated binary operation with different vector selectors": {
 			expr: `(a - b) + (a - b)`,
@@ -216,9 +217,9 @@ func TestOptimizationPass(t *testing.T) {
 							- RHS: VectorSelector: {__name__="b"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  4,
+			expectedDuplicateNodes:               1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           4,
 		},
 		"duplicated binary operation with different matrix selectors": {
 			expr: `(rate(a[5m]) - rate(b[5m])) + (rate(a[5m]) - rate(b[5m]))`,
@@ -234,9 +235,9 @@ func TestOptimizationPass(t *testing.T) {
 									- MatrixSelector: {__name__="b"}[5m0s]
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  4,
+			expectedDuplicateNodes:               1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           4,
 		},
 		"same selector used for both vector and matrix selector": {
 			expr:                       `foo + rate(foo[5m])`,
@@ -256,9 +257,9 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: increase(...)
 							- ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate matrix selectors with different outer function in range query": {
 			// We do not want to deduplicate matrix selectors in range queries.
@@ -282,10 +283,10 @@ func TestOptimizationPass(t *testing.T) {
 								- ref#1 Duplicate ...
 					- RHS: ref#2 Duplicate ...
 			`,
-			rangeQuery:                  false,
-			expectedDuplicateNodes:      2,
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  3,
+			rangeQuery:                           false,
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           3,
 		},
 		"duplicate matrix selectors, some with different outer function in range query": {
 			// We do not want to deduplicate matrix selectors themselves in range queries, but do want to deduplicate duplicate functions over matrix selectors.
@@ -302,10 +303,10 @@ func TestOptimizationPass(t *testing.T) {
 								- MatrixSelector: {__name__="foo"}[5m0s]
 					- RHS: ref#1 Duplicate ...
 			`,
-			rangeQuery:                  true,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1, // We only eliminate one 'foo' selector in the duplicate rate(...) expression.
-			expectedSelectorsInspected:  3,
+			rangeQuery:                           true,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1, // We only eliminate one 'foo' selector in the duplicate rate(...) expression.
+			expectedSelectorsInspected:           3,
 		},
 		"duplicate matrix selectors with same outer function": {
 			expr: `rate(foo[5m]) + rate(foo[5m])`,
@@ -317,9 +318,9 @@ func TestOptimizationPass(t *testing.T) {
 								- MatrixSelector: {__name__="foo"}[5m0s]
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate subqueries with different outer function in instant query": {
 			expr: `rate(foo[5m:]) + increase(foo[5m:])`,
@@ -334,10 +335,10 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: increase(...)
 							- ref#1 Duplicate ...
 			`,
-			rangeQuery:                  false,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			rangeQuery:                           false,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate subqueries with different outer function in range query": {
 			// We do not want to deduplicate subqueries directly in range queries, but do want to deduplicate their contents if they are the same.
@@ -354,10 +355,10 @@ func TestOptimizationPass(t *testing.T) {
 							- Subquery: [5m0s:1m0s]
 								- ref#1 Duplicate ...
 			`,
-			rangeQuery:                  true,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			rangeQuery:                           true,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate subqueries with different outer function and multiple child selectors in instant query": {
 			expr: `rate((a - b)[5m:]) + increase((a - b)[5m:])`,
@@ -374,10 +375,10 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: increase(...)
 							- ref#1 Duplicate ...
 			`,
-			rangeQuery:                  false,
-			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  4,
+			rangeQuery:                           false,
+			expectedDuplicateNodes:               1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           4,
 		},
 		"duplicate subqueries with different outer function and multiple child selectors in range query": {
 			expr: `rate((a - b)[5m:]) + increase((a - b)[5m:])`,
@@ -395,10 +396,10 @@ func TestOptimizationPass(t *testing.T) {
 							- Subquery: [5m0s:1m0s]
 								- ref#1 Duplicate ...
 			`,
-			rangeQuery:                  true,
-			expectedDuplicateNodes:      1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  4,
+			rangeQuery:                           true,
+			expectedDuplicateNodes:               1, // This test ensures that we don't do unnecessary work when traversing up from both the a and b selectors.
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           4,
 		},
 		"duplicate subqueries with same outer function": {
 			expr: `rate(foo[5m:]) + rate(foo[5m:])`,
@@ -411,9 +412,9 @@ func TestOptimizationPass(t *testing.T) {
 									- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate nested subqueries": {
 			expr: `max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(foo[5m:])[10m:])`,
@@ -429,9 +430,9 @@ func TestOptimizationPass(t *testing.T) {
 												- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate subqueries with different ranges": {
 			expr:                       `max_over_time(rate(foo[5m:])[10m:]) + max_over_time(rate(foo[5m:])[7m:])`,
@@ -448,9 +449,9 @@ func TestOptimizationPass(t *testing.T) {
 								- VectorSelector: {__name__="foo"}, return sample timestamps
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate selectors, one with timestamp()": {
 			expr:                       `timestamp(foo) + foo`,
@@ -469,9 +470,9 @@ func TestOptimizationPass(t *testing.T) {
 										- VectorSelector: {__name__="foo"}
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate operation with different children": {
 			expr: `topk(3, foo) + topk(5, foo)`,
@@ -485,9 +486,9 @@ func TestOptimizationPass(t *testing.T) {
 						- expression: ref#1 Duplicate ...
 						- parameter: NumberLiteral: 5
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate expression with multiple children": {
 			expr: `topk(5, foo) + topk(5, foo)`,
@@ -499,9 +500,9 @@ func TestOptimizationPass(t *testing.T) {
 							- parameter: NumberLiteral: 5
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate expression where 'skip histogram decoding' applies to one expression": {
 			expr: `histogram_count(some_metric) * histogram_quantile(0.5, some_metric)`,
@@ -516,9 +517,9 @@ func TestOptimizationPass(t *testing.T) {
 							- param 0: NumberLiteral: 0.5
 							- param 1: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate expression where 'skip histogram decoding' applies to both expressions": {
 			expr: `histogram_count(some_metric) * histogram_sum(some_metric)`,
@@ -532,9 +533,9 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: histogram_sum(...)
 							- ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate expression with nested functions calls, where inner and outer functions are same": {
 			expr: `clamp_min(rate(foo[5m]), 1) + clamp_min(rate(foo[5m]), 1)`,
@@ -549,9 +550,9 @@ func TestOptimizationPass(t *testing.T) {
 								- param 1: NumberLiteral: 1
 					- RHS: ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate expression with nested functions calls, where only inner functions are same": {
 			expr: `clamp_min(rate(foo[5m]), 1) + clamp_max(rate(foo[5m]), 1)`,
@@ -569,9 +570,9 @@ func TestOptimizationPass(t *testing.T) {
 							- param 0: ref#1 Duplicate ...
 							- param 1: NumberLiteral: 1
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate expression with duplicate aggregation over a duplicate function call": {
 			expr: `max(rate(foo[5m])) + min(rate(foo[5m]))`,
@@ -585,9 +586,9 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: min
 						- ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"duplicate expression with different aggregation over a duplicate function call": {
 			expr: `max(rate(foo[5m])) + min(rate(foo[5m]))`,
@@ -601,9 +602,9 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: min
 						- ref#1 Duplicate ...
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           2,
 		},
 		"equivalent expressions that differ in the number of children but are otherwise duplicated (first side with fewer arguments)": {
 			// This test ensures that we don't incorrectly deduplicate the __sharded_concat__ calls.
@@ -620,9 +621,9 @@ func TestOptimizationPass(t *testing.T) {
 						- param 1: ref#2 Duplicate ...
 						- param 2: VectorSelector: {__name__="baz"}
 			`,
-			expectedDuplicateNodes:      2,
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  5,
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           5,
 		},
 		"equivalent expressions that differ in the number of children but are otherwise duplicated (first side with more arguments)": {
 			// This test ensures that we don't incorrectly deduplicate the __sharded_concat__ calls.
@@ -639,9 +640,9 @@ func TestOptimizationPass(t *testing.T) {
 						- param 0: ref#1 Duplicate ...
 						- param 1: ref#2 Duplicate ...
 			`,
-			expectedDuplicateNodes:      2,
-			expectedSelectorsEliminated: 2,
-			expectedSelectorsInspected:  5,
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 2,
+			expectedSelectorsInspected:           5,
 		},
 		// In this case the foo[5m] smoothed provides step data with both a collection of points but also the alternate smoothed head and tail points.
 		// delta() will use the returned points, but rate() will substitute in the smoothed head/tail points to its calculation.
@@ -659,9 +660,9 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: rate(...)
 							- MatrixSelector: {__name__="foo"}[5m0s] smoothed counter aware
 			`,
-			expectedDuplicateNodes:      0,
-			expectedSelectorsEliminated: 0,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               0,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSelectorsInspected:           2,
 		},
 		// These tests verify that CSE optimization correctly skips the 2nd argument to info function,
 		// allowing only the 1st argument to be deduplicated.
@@ -677,9 +678,9 @@ func TestOptimizationPass(t *testing.T) {
 						- param 0: ref#1 Duplicate ...
 						- param 1: VectorSelector: {k8s_cluster_name="cluster1"}, return sample timestamps preserving histograms
 			`,
-			expectedDuplicateNodes:      1,
-			expectedSelectorsEliminated: 1,
-			expectedSelectorsInspected:  3,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSelectorsInspected:           3,
 		},
 		"info function called twice with same 2nd argument but different 1st arguments": {
 			expr: `info(foo, {k8s_cluster_name="cluster1"}) + info(bar, {k8s_cluster_name="cluster1"})`,
@@ -692,9 +693,9 @@ func TestOptimizationPass(t *testing.T) {
 						- param 0: VectorSelector: {__name__="bar"}
 						- param 1: VectorSelector: {k8s_cluster_name="cluster1"}, return sample timestamps preserving histograms
 			`,
-			expectedDuplicateNodes:      0,
-			expectedSelectorsEliminated: 0,
-			expectedSelectorsInspected:  2,
+			expectedDuplicateNodes:               0,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSelectorsInspected:           2,
 		},
 	}
 
@@ -736,7 +737,7 @@ func TestOptimizationPass(t *testing.T) {
 			// Type assertion since we need a Gatherer need to verify the metrics emitted by the optimization pass.
 			reg := optsWithOptimizationPass.CommonOpts.Reg.(*prometheus.Registry)
 			requireDuplicateNodeCount(t, reg, testCase.expectedDuplicateNodes)
-			requireSelectorCounts(t, reg, testCase.expectedSelectorsInspected, testCase.expectedSelectorsEliminated)
+			requireSelectorCounts(t, reg, testCase.expectedSelectorsInspected, testCase.expectedDuplicateSelectorsEliminated, testCase.expectedSubsetSelectorsEliminated)
 		})
 	}
 }
@@ -752,7 +753,7 @@ func requireDuplicateNodeCount(t *testing.T, g prometheus.Gatherer, expected int
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), metricName))
 }
 
-func requireSelectorCounts(t *testing.T, g prometheus.Gatherer, expectedInspected int, expectedEliminated int) {
+func requireSelectorCounts(t *testing.T, g prometheus.Gatherer, expectedInspected int, expectedDuplicatesEliminated int, expectedSubsetsEliminated int) {
 	const inspectedMetricName = "cortex_mimir_query_engine_common_subexpression_elimination_selectors_inspected_total"
 	const eliminatedMetricName = "cortex_mimir_query_engine_common_subexpression_elimination_selectors_eliminated_total"
 
@@ -761,8 +762,9 @@ func requireSelectorCounts(t *testing.T, g prometheus.Gatherer, expectedInspecte
 %[1]v %[2]v
 # HELP %[3]v Number of selectors eliminated by the common subexpression elimination optimization pass.
 # TYPE %[3]v counter
-%[3]v %v
-`, inspectedMetricName, expectedInspected, eliminatedMetricName, expectedEliminated)
+%[3]v{reason="duplicate"} %[4]v
+%[3]v{reason="subset"} %[5]v
+`, inspectedMetricName, expectedInspected, eliminatedMetricName, expectedDuplicatesEliminated, expectedSubsetsEliminated)
 
 	require.NoError(t, testutil.GatherAndCompare(g, strings.NewReader(expectedMetrics), inspectedMetricName, eliminatedMetricName))
 }
