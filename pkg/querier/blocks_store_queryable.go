@@ -818,13 +818,22 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			defer clientSpanLog.Finish()
 			clientSpanLog.SetTag("store_gateway_address", c.RemoteAddress())
 
-			// See: https://github.com/prometheus/prometheus/pull/8050
-			// TODO(goutham): we should ideally be passing the hints down to the storage layer
-			// and let the TSDB return us data with no chunks as in prometheus#8050.
-			// But this is an acceptable workaround for now.
-			skipChunks := sp != nil && sp.Func == "series"
+			var (
+				skipChunks        bool
+				projectionInclude bool
+				projectionLabels  []string
+			)
+			if sp != nil {
+				// See: https://github.com/prometheus/prometheus/pull/8050
+				// TODO(goutham): we should ideally be passing the hints down to the storage layer
+				// and let the TSDB return us data with no chunks as in prometheus#8050.
+				// But this is an acceptable workaround for now.
+				skipChunks = sp.Func == "series"
+				projectionInclude = sp.ProjectionInclude
+				projectionLabels = sp.ProjectionLabels
+			}
 
-			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, blockIDs, q.streamingChunksBatchSize)
+			req, err := createSeriesRequest(minT, maxT, matchers, skipChunks, projectionInclude, projectionLabels, blockIDs, q.streamingChunksBatchSize)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create series request")
 			}
@@ -1233,7 +1242,7 @@ func grpcContextWithBucketStoreRequestMeta(ctx context.Context, tenantID string,
 	)
 }
 
-func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
+func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skipChunks bool, projectionInclude bool, projectionLabels []string, blockIDs []ulid.ULID, streamingBatchSize uint64) (*storepb.SeriesRequest, error) {
 	// Selectively query only specific blocks.
 	hints := &hintspb.SeriesRequestHints{
 		BlockMatchers: []storepb.LabelMatcher{
@@ -1243,6 +1252,8 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 				Value: strings.Join(convertULIDsToString(blockIDs), "|"),
 			},
 		},
+		ProjectionInclude: projectionInclude,
+		ProjectionLabels:  projectionLabels,
 	}
 
 	anyHints, err := types.MarshalAny(hints)
