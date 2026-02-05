@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -477,7 +478,7 @@ const (
 )
 
 // SelectorsAreDuplicateOrSubset returns ExactDuplicateSelectors if first and second are the same,
-// SubsetSelectors if second is a subset of the first, or NotDuplicateOrSubset otherwise.
+// SubsetSelectors if second is a subset of first, or NotDuplicateOrSubset otherwise.
 //
 // The matchers in first and second must be sorted in the order produced by optimize.CompareMatchers.
 func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (SelectorRelationship, []*core.LabelMatcher) {
@@ -493,5 +494,51 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 		return NotDuplicateOrSubset, nil
 	}
 
-	return NotDuplicateOrSubset, nil
+	if len(first) > len(second) {
+		return NotDuplicateOrSubset, nil
+	}
+
+	nextSecondIdx := 0
+	var subsetMatchers []*core.LabelMatcher // We deliberately don't pre-allocate this to avoid allocating if second isn't a subset of first, which is expected to be common.
+
+	for _, firstMatcher := range first {
+		foundMatch := false
+
+		for nextSecondIdx < len(second) {
+			secondMatcher := second[nextSecondIdx]
+			comparisonResult := optimize.CompareMatchers(firstMatcher.Name, secondMatcher.Name, firstMatcher.Type, secondMatcher.Type, firstMatcher.Value, secondMatcher.Value)
+
+			if comparisonResult == 0 {
+				// Same matcher in both selectors.
+				nextSecondIdx++
+				foundMatch = true
+				break
+			} else if comparisonResult < 0 {
+				// First matcher sorts before second matcher, so it can't appear in second,
+				// so second is not a subset of first.
+				return NotDuplicateOrSubset, nil
+			}
+
+			// Second matcher sorts before first matcher, so it can't appear in first,
+			// so it could be a subset matcher.
+			if subsetMatchers == nil {
+				// First time we've seen a possible subset matcher, allocate the slice now.
+				subsetMatchers = make([]*core.LabelMatcher, 0, len(second)-len(first))
+			}
+
+			subsetMatchers = append(subsetMatchers, secondMatcher)
+			nextSecondIdx++
+		}
+
+		if !foundMatch {
+			// First matcher doesn't appear in second, so second is not a subset of first.
+			return NotDuplicateOrSubset, nil
+		}
+	}
+
+	// If there are any matchers in second that sort after the last matcher in first, then they are all
+	// subset matchers, so add them to the list.
+	subsetMatchers = append(subsetMatchers, second[nextSecondIdx:]...)
+
+	return SubsetSelectors, subsetMatchers
 }
