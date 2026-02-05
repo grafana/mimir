@@ -26,31 +26,6 @@ const (
 
 var ulidSize = uint64(len(ulid.ULID{}))
 
-// InMemoryCacheKey defines behavior required for in-memory cache implementations.
-// InMemoryCacheKey implementations do not need to pre-hash keys.
-// Hashing & potential collision is handled internally by lru.LRU caches or other map-based types.
-type InMemoryCacheKey interface {
-	// Size represents the footprint of the cache key in memory
-	// to track cache size and check whether eviction is required to add a new entry.
-	Size() uint64
-}
-
-type InMemoryPostingsOffsetCacheKey struct {
-	tenantID string
-	blockID  ulid.ULID
-	lbl      labels.Label
-}
-
-// Key implements CacheKey, specific to InMemoryCacheKey where it does not need to be pre-hashed.
-func (k InMemoryPostingsOffsetCacheKey) Key() InMemoryPostingsOffsetCacheKey {
-	return k
-}
-
-// Size implements InMemoryCacheKey
-func (k InMemoryPostingsOffsetCacheKey) Size() uint64 {
-	return stringSize(k.tenantID) + ulidSize + stringSize(k.lbl.Name) + stringSize(k.lbl.Value)
-}
-
 type InMemoryPostingsOffsetTableCache struct {
 	maxCacheSizeBytes uint64
 	maxItemSizeBytes  uint64
@@ -95,12 +70,12 @@ func NewInMemoryPostingsOffsetTableCacheWithConfig(
 }
 
 func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration) {
-	key := InMemoryPostingsOffsetCacheKey{tenantID, blockID, lbl}
+	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
 	c.set(key, rng)
 }
 
 func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(_ context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
-	key := InMemoryPostingsOffsetCacheKey{tenantID, blockID, lbl}
+	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
 	return c.get(key)
 }
 
@@ -167,26 +142,6 @@ func (c *InMemoryPostingsOffsetTableCache) set(key InMemoryCacheKey, rng index.R
 
 	c.lru.Add(key, val)
 	c.curSize += valSize
-	return
-}
-
-// ensureFits tries to make sure that the passed slice will fit into the LRU cache.
-// Returns true if it will fit.
-func (c *InMemoryPostingsOffsetTableCache) ensureFits(size uint64) bool {
-
-	for c.curSize > c.maxCacheSizeBytes {
-		if _, _, ok := c.lru.RemoveOldest(); !ok {
-			level.Error(c.logger).Log(
-				"msg", "LRU has nothing more to evict, but we still cannot allocate the item. Resetting cache.",
-				"maxItemSizeBytes", c.maxItemSizeBytes,
-				"maxSizeBytes", c.maxCacheSizeBytes,
-				"curSize", c.curSize,
-				"itemSize", size,
-			)
-			c.reset()
-		}
-	}
-	return true
 }
 
 func (c *InMemoryPostingsOffsetTableCache) reset() {
