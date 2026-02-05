@@ -703,16 +703,16 @@ func TestOptimizationPass(t *testing.T) {
 
 	for name, testCase := range testCases {
 		t.Run(name, func(t *testing.T) {
-			opts1 := streamingpromql.NewTestEngineOpts()
-			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts1, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			optsWithoutOptimizationPass := streamingpromql.NewTestEngineOpts()
+			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsWithoutOptimizationPass, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
-			opts2 := streamingpromql.NewTestEngineOpts()
-			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts2, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
+			optsWithOptimizationPass := streamingpromql.NewTestEngineOpts()
+			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsWithOptimizationPass, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
-			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts2.CommonOpts.Reg, opts2.Logger))
+			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
 
 			var timeRange types.QueryTimeRange
 
@@ -734,7 +734,7 @@ func TestOptimizationPass(t *testing.T) {
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 
 			// Type assertion since we need a Gatherer need to verify the metrics emitted by the optimization pass.
-			reg := opts2.CommonOpts.Reg.(*prometheus.Registry)
+			reg := optsWithOptimizationPass.CommonOpts.Reg.(*prometheus.Registry)
 			requireDuplicateNodeCount(t, reg, testCase.expectedDuplicateNodes)
 			requireSelectorCounts(t, reg, testCase.expectedSelectorsInspected, testCase.expectedSelectorsEliminated)
 		})
