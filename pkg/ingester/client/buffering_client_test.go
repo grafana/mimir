@@ -112,8 +112,11 @@ func TestWriteRequestBufferingClient_PushWithCancelContext(t *testing.T) {
 
 	var requestsToSend []*mimirpb.WriteRequest
 	for i := 0; i < 100; i++ {
-		requestsToSend = append(requestsToSend, createRequest("test", 100+10*i))
+		name := fmt.Sprintf("test%d", i)
+		requestsToSend = append(requestsToSend, createRequest(name, 100+10*i))
 	}
+	require.Equal(t, "__name__", requestsToSend[0].Timeseries[0].Labels[0].Name)
+	require.Equal(t, "test0", requestsToSend[0].Timeseries[0].Labels[0].Value)
 
 	pool := &pool2.TrackedPool{Parent: &sync.Pool{}}
 	slabPool := pool2.NewFastReleasingSlabPool[byte](pool, 512*1024)
