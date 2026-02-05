@@ -22,6 +22,7 @@ import (
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/commonsubexpressionelimination"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/testutils"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -1104,11 +1105,13 @@ func TestOptimizationPass(t *testing.T) {
 			optsWithoutOptimizationPass := streamingpromql.NewTestEngineOpts()
 			plannerWithoutOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsWithoutOptimizationPass, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
+			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 			plannerWithoutOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 
 			optsWithOptimizationPass := streamingpromql.NewTestEngineOpts()
 			plannerWithOptimizationPass, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(optsWithOptimizationPass, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 			require.NoError(t, err)
+			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 			plannerWithOptimizationPass.RegisterASTOptimizationPass(&ast.CollapseConstants{})
 			plannerWithOptimizationPass.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, optsWithOptimizationPass.CommonOpts.Reg, optsWithOptimizationPass.Logger))
 
@@ -1317,6 +1320,7 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 	opts := streamingpromql.NewTestEngineOpts()
 	planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewMaximumSupportedVersionQueryPlanVersionProvider())
 	require.NoError(t, err)
+	planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
 	planner.RegisterQueryPlanOptimizationPass(plan.NewSkipHistogramDecodingOptimizationPass())
 	planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(true, nil, opts.Logger))
 
@@ -1329,6 +1333,56 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 			require.Equal(t, testutils.TrimIndent(testCase.expectedPlan), actual)
 		})
 	}
+}
+
+func TestOptimizationPass_SubsetSelectorEliminationDisabled(t *testing.T) {
+	runTest := func(t *testing.T, expr string, enabled bool, maxSupportedQueryPlanVersion planning.QueryPlanVersion, expectedPlan string) {
+		ctx := context.Background()
+		timeRange := types.NewInstantQueryTimeRange(time.Now())
+		observer := streamingpromql.NoopPlanningObserver{}
+
+		opts := streamingpromql.NewTestEngineOpts()
+		planner, err := streamingpromql.NewQueryPlannerWithoutOptimizationPasses(opts, streamingpromql.NewStaticQueryPlanVersionProvider(maxSupportedQueryPlanVersion))
+		require.NoError(t, err)
+		planner.RegisterASTOptimizationPass(&ast.SortLabelsAndMatchers{})
+		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(enabled, nil, opts.Logger))
+
+		plan, err := planner.NewQueryPlan(ctx, expr, timeRange, false, observer)
+		require.NoError(t, err)
+		require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
+	}
+
+	expr := `foo + foo{env="bar"}`
+
+	expectedPlanWithoutSSE := `
+		- BinaryExpression: LHS + RHS
+			- LHS: VectorSelector: {__name__="foo"}
+			- RHS: VectorSelector: {__name__="foo", env="bar"}
+	`
+
+	expectedPlanWithSSE := `
+		- BinaryExpression: LHS + RHS
+			- LHS: ref#1 Duplicate
+				- VectorSelector: {__name__="foo"}
+			- RHS: DuplicateFilter: {env="bar"}
+				- ref#1 Duplicate ...
+	`
+
+	t.Run("feature enabled, querier supports SSE", func(t *testing.T) {
+		runTest(t, expr, true, planning.QueryPlanV6, expectedPlanWithSSE)
+	})
+
+	t.Run("feature disabled, querier supports SSE", func(t *testing.T) {
+		runTest(t, expr, false, planning.QueryPlanV6, expectedPlanWithoutSSE)
+	})
+
+	t.Run("feature enabled, querier does not support SSE", func(t *testing.T) {
+		runTest(t, expr, true, planning.QueryPlanV5, expectedPlanWithoutSSE)
+	})
+
+	t.Run("feature disabled, querier does not support SSE", func(t *testing.T) {
+		runTest(t, expr, false, planning.QueryPlanV5, expectedPlanWithoutSSE)
+	})
 }
 
 func BenchmarkOptimizationPass(b *testing.B) {
