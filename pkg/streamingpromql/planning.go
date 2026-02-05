@@ -113,6 +113,10 @@ func NewQueryPlanner(opts EngineOpts, versionProvider QueryPlanVersionProvider) 
 		planner.RegisterQueryPlanOptimizationPass(plan.NewProjectionPushdownOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
 
+	if opts.EnableSubsetSelectorElimination && !opts.EnableCommonSubexpressionElimination {
+		return nil, errors.New("cannot enable subset selector elimination without common subexpression elimination")
+	}
+
 	if opts.EnableCommonSubexpressionElimination {
 		planner.RegisterQueryPlanOptimizationPass(commonsubexpressionelimination.NewOptimizationPass(opts.CommonOpts.Reg, opts.Logger))
 	}
