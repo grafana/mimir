@@ -109,7 +109,7 @@
 * [ENHANCEMENT] Compactor: If compaction fails because the result block would have a postings offsets table larger than the 4GB limit, mark input blocks for no-compaction to avoid blocking future compactor runs. #13876
 * [ENHANCEMENT] Query-frontend: add support for `range()` duration expression. #13931
 * [ENHANCEMENT] Add experimental flag `common.instrument-reference-leaks-percentage` to leaked references to gRPC buffers. #13609 #14083
-* [ENHANCEMENT] Querier: Add experimental flag `-querier.mimir-query-engine.enable-projection-pushdown` to enable an MQE optimization pass for reducing data transfered between queriers and the storage layer. #14006 #14132
+* [ENHANCEMENT] Querier: Add experimental flag `-querier.mimir-query-engine.enable-projection-pushdown` to enable an MQE optimization pass for reducing data transferred between queriers and the storage layer. #14006 #14132 #14239
 * [ENHANCEMENT] MQE: Default to enabling the "eliminate deduplicate and merge" optimization pass via `-querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge`. #14172
 * [ENHANCEMENT] Ingester: Reduce likelihood of ingestion being paused while idle TSDB compaction is in progress. #13978
 * [ENHANCEMENT] Ingester: Extend `cortex_ingester_tsdb_forced_compactions_in_progress` metric to report a value of 1 when there's an idle or forced TSDB head compaction in progress. #13979
