@@ -708,6 +708,10 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: DuplicateFilter: {env="bar"}
 						- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
 		},
 		"subset vector selector with broader selector repeated": {
 			expr: `some_metric + some_metric{env="bar"} * some_metric`,
@@ -721,6 +725,10 @@ func TestOptimizationPass(t *testing.T) {
 								- ref#2 Duplicate ...
 						- RHS: ref#2 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           3,
 		},
 		"subset vector selector with narrower selector repeated": {
 			expr: `some_metric + some_metric{env="bar"} * some_metric{env="bar"}`,
@@ -734,6 +742,10 @@ func TestOptimizationPass(t *testing.T) {
 								- ref#1 Duplicate ...
 						- RHS: ref#2 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"subset vector selector with multiple narrower selectors": {
 			expr: `some_metric + some_metric{env="bar"} * some_metric{env="foo"}`,
@@ -747,6 +759,10 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: DuplicateFilter: {env="foo"}
 							- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"subset matrix selectors": {
 			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m])`,
@@ -761,6 +777,10 @@ func TestOptimizationPass(t *testing.T) {
 							- DuplicateFilter: {env="bar"}
 								- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
 		},
 		"subset matrix selector with broader selector repeated": {
 			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m]) * max_over_time(some_metric[5m])`,
@@ -779,6 +799,10 @@ func TestOptimizationPass(t *testing.T) {
 							- FunctionCall: max_over_time(...)
 								- ref#2 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           3,
 		},
 		"subset matrix selector with narrower selector repeated": {
 			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m]) * max_over_time(some_metric{env="bar"}[5m])`,
@@ -798,6 +822,10 @@ func TestOptimizationPass(t *testing.T) {
 								- DuplicateFilter: {env="bar"}
 									- ref#2 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"subset matrix selector with multiple narrower selectors": {
 			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m]) * max_over_time(some_metric{env="foo"}[5m])`,
@@ -811,14 +839,26 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: DuplicateFilter: {env="foo"}
 							- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"subset selector, broader one is vector selector": {
-			expr:            `some_metric + sum_over_time(some_metric{env="bar"}[5m])`,
-			expectUnchanged: true,
+			expr:                                 `some_metric + sum_over_time(some_metric{env="bar"}[5m])`,
+			expectUnchanged:                      true,
+			expectedDuplicateNodes:               0,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    0,
+			expectedSelectorsInspected:           2,
 		},
 		"subset selector, broader one is matrix selector": {
-			expr:            `some_metric{env="bar"} + sum_over_time(some_metric[5m])`,
-			expectUnchanged: true,
+			expr:                                 `some_metric{env="bar"} + sum_over_time(some_metric[5m])`,
+			expectUnchanged:                      true,
+			expectedDuplicateNodes:               0,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    0,
+			expectedSelectorsInspected:           2,
 		},
 		"subset selectors wrapped in function ordinarily safe to run before filtering": {
 			expr: `rate(foo{status="success"}[5m]) / rate(foo[5m])`,
@@ -832,6 +872,10 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: DeduplicateAndMerge
 						- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
 		},
 		"subset selectors wrapped in function never safe to run before filtering": {
 			expr: `absent(foo{status="success"}) + absent(foo)`,
@@ -844,6 +888,10 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: FunctionCall: absent(...)
 						- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
 		},
 		"subset selectors wrapped in function ordinarily safe to run before filtering, but filter is on __name__": {
 			expr: `rate({__name__=~"foo.*",__name__!="foo_2"}[5m]) / rate({__name__=~"foo.*"}[5m])`,
@@ -858,6 +906,10 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: rate(...)
 							- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
 		},
 		"subset selectors wrapped in aggregation": {
 			expr: `sum(foo{status="success"}) / sum(foo)`,
@@ -870,6 +922,10 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: AggregateExpression: sum
 						- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
 		},
 		"subset selectors wrapped in aggregation and function ordinarily safe to run before filtering": {
 			expr: `sum(rate(foo{status="success"}[5m])) / sum(rate(foo[5m]))`,
@@ -885,6 +941,10 @@ func TestOptimizationPass(t *testing.T) {
 						- DeduplicateAndMerge
 							- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           2,
 		},
 		"subset selectors where broader selector can be further deduplicated": {
 			expr: `abs(max(foo)) / (abs(max(foo{env="prod"})) + abs(max(foo)))`,
@@ -904,6 +964,10 @@ func TestOptimizationPass(t *testing.T) {
 										- ref#2 Duplicate ...
 						- RHS: ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    1,
+			expectedSelectorsInspected:           3,
 		},
 		"subset selectors where narrower selector can be further deduplicated": {
 			expr: `abs(max(foo{env="prod"})) / (abs(max(foo{env="prod"})) + abs(max(foo)))`,
@@ -923,6 +987,10 @@ func TestOptimizationPass(t *testing.T) {
 								- AggregateExpression: max
 									- ref#2 Duplicate ...
 			`,
+			expectedDuplicateNodes:               2,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"multiple subsets of same selector, broadest selector last": {
 			expr: `foo{env="bar"} + foo{env="baz"} + foo`,
@@ -936,6 +1004,10 @@ func TestOptimizationPass(t *testing.T) {
 							- ref#1 Duplicate ...
 					- RHS: ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"multiple subsets of same selector, broadest selector first": {
 			expr: `foo + foo{env="baz"} + foo{env="bar"}`,
@@ -949,6 +1021,10 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: DuplicateFilter: {env="bar"}
 						- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"multiple subsets of same selector, broadest selector neither first nor last": {
 			expr: `foo{env="baz"} + foo + foo{env="bar"}`,
@@ -962,6 +1038,10 @@ func TestOptimizationPass(t *testing.T) {
 					- RHS: DuplicateFilter: {env="bar"}
 						- ref#1 Duplicate ...
 			`,
+			expectedDuplicateNodes:               1,
+			expectedDuplicateSelectorsEliminated: 0,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           3,
 		},
 		"duplicated expressions containing subset selector children and other siblings, other siblings are the same": {
 			expr: `topk(5, foo) + topk(5, foo{env="bar"}) + topk(5, foo) + topk(5, foo{env="bar"})`,
@@ -982,6 +1062,10 @@ func TestOptimizationPass(t *testing.T) {
 						- RHS: ref#1 Duplicate ...
 					- RHS: ref#3 Duplicate ...
 			`,
+			expectedDuplicateNodes:               3,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           4,
 		},
 		"duplicated expressions containing subset selector children and other siblings, other siblings are not the same": {
 			expr: `topk(5, foo) + topk(5, foo{env="bar"}) + topk(3, foo) + topk(3, foo{env="bar"})`,
@@ -1005,6 +1089,10 @@ func TestOptimizationPass(t *testing.T) {
 							- ref#1 Duplicate ...
 						- parameter: NumberLiteral: 3
 			`,
+			expectedDuplicateNodes:               3,
+			expectedDuplicateSelectorsEliminated: 1,
+			expectedSubsetSelectorsEliminated:    2,
+			expectedSelectorsInspected:           4,
 		},
 	}
 
