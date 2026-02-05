@@ -500,6 +500,7 @@ type discardedMetrics struct {
 	perUserSeriesLimit     *prometheus.CounterVec
 	perMetricSeriesLimit   *prometheus.CounterVec
 	invalidNativeHistogram *prometheus.CounterVec
+	labelsNotSorted        *prometheus.CounterVec
 }
 
 func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
@@ -512,6 +513,7 @@ func newDiscardedMetrics(r prometheus.Registerer) *discardedMetrics {
 		perUserSeriesLimit:     validation.DiscardedSamplesCounter(r, reasonPerUserSeriesLimit),
 		perMetricSeriesLimit:   validation.DiscardedSamplesCounter(r, reasonPerMetricSeriesLimit),
 		invalidNativeHistogram: validation.DiscardedSamplesCounter(r, reasonInvalidNativeHistogram),
+		labelsNotSorted:        validation.DiscardedSamplesCounter(r, reasonLabelsNotSorted),
 	}
 }
 
@@ -524,6 +526,7 @@ func (m *discardedMetrics) DeletePartialMatch(filter prometheus.Labels) {
 	m.perUserSeriesLimit.DeletePartialMatch(filter)
 	m.perMetricSeriesLimit.DeletePartialMatch(filter)
 	m.invalidNativeHistogram.DeletePartialMatch(filter)
+	m.labelsNotSorted.DeletePartialMatch(filter)
 }
 
 func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
@@ -535,6 +538,7 @@ func (m *discardedMetrics) DeleteLabelValues(userID string, group string) {
 	m.perUserSeriesLimit.DeleteLabelValues(userID, group)
 	m.perMetricSeriesLimit.DeleteLabelValues(userID, group)
 	m.invalidNativeHistogram.DeleteLabelValues(userID, group)
+	m.labelsNotSorted.DeleteLabelValues(userID, group)
 }
 
 // TSDB metrics collector. Each tenant has its own registry, that TSDB code uses.

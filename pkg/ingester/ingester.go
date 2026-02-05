@@ -121,6 +121,7 @@ const (
 	reasonPerUserSeriesLimit     = "per_user_series_limit"
 	reasonPerMetricSeriesLimit   = "per_metric_series_limit"
 	reasonInvalidNativeHistogram = "invalid-native-histogram"
+	reasonLabelsNotSorted        = "labels-not-sorted"
 
 	replicationFactorStatsName             = "ingester_replication_factor"
 	ringStoreStatsName                     = "ingester_ring_store"
@@ -1086,6 +1087,7 @@ type pushStats struct {
 	perUserSeriesLimitCount     int
 	perMetricSeriesLimitCount   int
 	invalidNativeHistogramCount int
+	labelsNotSortedCount        int
 }
 
 type ctxKey int
@@ -1413,6 +1415,13 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 
 				return true
 			},
+			func(labels []mimirpb.LabelAdapter) {
+				stats.labelsNotSortedCount++
+				cast.IncrementDiscardedSamples(labels, 1, reasonLabelsNotSorted, startAppend)
+				updateFirstPartial(i.errorSamplers.labelsNotSorted, func() softError {
+					return newLabelsNotSortedError(labels)
+				})
+			},
 		)
 	)
 
@@ -1519,6 +1528,9 @@ func (i *Ingester) updateMetricsFromPushStats(userID string, group string, stats
 	if stats.invalidNativeHistogramCount > 0 {
 		discarded.invalidNativeHistogram.WithLabelValues(userID, group).Add(float64(stats.invalidNativeHistogramCount))
 	}
+	if stats.labelsNotSortedCount > 0 {
+		discarded.labelsNotSorted.WithLabelValues(userID, group).Add(float64(stats.labelsNotSortedCount))
+	}
 	if stats.succeededSamplesCount > 0 {
 		i.ingestionRate.Add(int64(stats.succeededSamplesCount))
 
@@ -1565,9 +1577,6 @@ func (i *Ingester) pushSamplesToAppender(
 	defer idx.Close()
 
 	for _, ts := range timeseries {
-		// The labels must be sorted (in our case, it's guaranteed a write request
-		// has sorted labels once hit the ingester).
-
 		// Fast path in case we only have samples and they are all out of bound
 		// and out-of-order support is not enabled.
 		// TODO(jesus.vazquez) If we had too many old samples we might want to
@@ -1616,6 +1625,19 @@ func (i *Ingester) pushSamplesToAppender(
 		// Look up a reference for this series. The hash passed should be the output of Labels.Hash()
 		// and NOT the stable hashing because we use the stable hashing in ingesters only for query sharding.
 		ref, copiedLabels := app.GetRef(nonCopiedLabels, hash)
+
+		// The labels must be sorted. This is defensive programming; the distributor
+		// sorts labels before forwarding to ingesters.
+		if ref == 0 && !mimirpb.AreLabelNamesSortedAndUnique(ts.Labels) {
+			for _, sample := range ts.Samples {
+				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, sample.TimestampMs, ts.Labels)
+			}
+			for _, h := range ts.Histograms {
+				errProcessor.ProcessErr(globalerror.SeriesLabelsNotSorted, h.Timestamp, ts.Labels)
+			}
+			stats.failedExemplarsCount += len(ts.Exemplars)
+			continue
+		}
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := stats.succeededSamplesCount
