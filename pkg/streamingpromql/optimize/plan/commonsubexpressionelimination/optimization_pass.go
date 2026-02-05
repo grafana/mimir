@@ -467,3 +467,31 @@ func equivalentNodes(a, b planning.Node) bool {
 
 	return true
 }
+
+type SelectorRelationship int
+
+const (
+	NotDuplicateOrSubset SelectorRelationship = iota
+	ExactDuplicateSelectors
+	SubsetSelectors
+)
+
+// SelectorsAreDuplicateOrSubset returns ExactDuplicateSelectors if first and second are the same,
+// SubsetSelectors if second is a subset of the first, or NotDuplicateOrSubset otherwise.
+//
+// The matchers in first and second must be sorted in the order produced by optimize.CompareMatchers.
+func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (SelectorRelationship, []*core.LabelMatcher) {
+	if len(first) == len(second) {
+		same := slices.EqualFunc(first, second, func(a, b *core.LabelMatcher) bool {
+			return a.Name == b.Name && a.Type == b.Type && a.Value == b.Value
+		})
+
+		if same {
+			return ExactDuplicateSelectors, nil
+		}
+
+		return NotDuplicateOrSubset, nil
+	}
+
+	return NotDuplicateOrSubset, nil
+}

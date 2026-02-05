@@ -5,17 +5,20 @@ package commonsubexpressionelimination_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
+	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
@@ -1027,4 +1030,101 @@ func TestShouldSkipChild(t *testing.T) {
 	// Test non-function node - should not skip any children
 	nonFunctionNode := &core.VectorSelector{}
 	require.False(t, pass.ShouldSkipChild(nonFunctionNode, 0), "non-function node children should not be skipped")
+}
+
+func TestSelectorsAreDuplicateOrSubset(t *testing.T) {
+	testCases := map[string]struct {
+		firstSelector          string
+		secondSelector         string
+		expectedResult         commonsubexpressionelimination.SelectorRelationship
+		expectedSubsetMatchers []*core.LabelMatcher
+	}{
+		"empty matchers": {
+			firstSelector:  `{}`,
+			secondSelector: `{}`,
+			expectedResult: commonsubexpressionelimination.ExactDuplicateSelectors,
+		},
+		"duplicate selectors, single matcher": {
+			firstSelector:  `{foo="bar"}`,
+			secondSelector: `{foo="bar"}`,
+			expectedResult: commonsubexpressionelimination.ExactDuplicateSelectors,
+		},
+		"duplicate selectors, multiple matchers": {
+			firstSelector:  `{foo="bar", baz="qux"}`,
+			secondSelector: `{foo="bar", baz="qux"}`,
+			expectedResult: commonsubexpressionelimination.ExactDuplicateSelectors,
+		},
+		"different selectors, one matcher with different label value": {
+			firstSelector:  `{foo="bar"}`,
+			secondSelector: `{foo="baz"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"different selectors, one matcher with different label name": {
+			firstSelector:  `{foo="bar"}`,
+			secondSelector: `{baz="bar"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"different selectors, one matcher with different match type": {
+			firstSelector:  `{foo="bar"}`,
+			secondSelector: `{foo!="bar"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"different selectors, one matcher completely different": {
+			firstSelector:  `{foo="bar"}`,
+			secondSelector: `{baz!="qux"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"different selectors, some matchers the same, some not": {
+			firstSelector:  `{foo="bar", baz="qux"}`,
+			secondSelector: `{foo="bar", baz="bar"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+		"different selectors, different number of matchers": {
+			firstSelector:  `{foo="bar"}`,
+			secondSelector: `{bar="abc", baz="qux"}`,
+			expectedResult: commonsubexpressionelimination.NotDuplicateOrSubset,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			switch testCase.expectedResult {
+			case commonsubexpressionelimination.ExactDuplicateSelectors, commonsubexpressionelimination.NotDuplicateOrSubset:
+				require.Empty(t, testCase.expectedSubsetMatchers, "invalid test case: must have no subset matchers when not subset selectors")
+			case commonsubexpressionelimination.SubsetSelectors:
+				require.NotEmpty(t, testCase.expectedSubsetMatchers, "invalid test case: must have subset matchers for subset selectors")
+			}
+
+			first := parseSelector(t, testCase.firstSelector)
+			second := parseSelector(t, testCase.secondSelector)
+
+			result, subsetMatchers := commonsubexpressionelimination.SelectorsAreDuplicateOrSubset(first, second)
+			require.Equal(t, testCase.expectedResult, result)
+			require.Equal(t, testCase.expectedSubsetMatchers, subsetMatchers)
+
+			switch testCase.expectedResult {
+			case commonsubexpressionelimination.ExactDuplicateSelectors, commonsubexpressionelimination.NotDuplicateOrSubset:
+				// Check that the order doesn't matter.
+				result, subsetMatchers := commonsubexpressionelimination.SelectorsAreDuplicateOrSubset(second, first)
+				require.Equal(t, testCase.expectedResult, result)
+				require.Empty(t, subsetMatchers)
+			case commonsubexpressionelimination.SubsetSelectors:
+				// Running the same call with the arguments in the other order should return no match.
+				result, subsetMatchers := commonsubexpressionelimination.SelectorsAreDuplicateOrSubset(second, first)
+				require.Equal(t, commonsubexpressionelimination.NotDuplicateOrSubset, result)
+				require.Empty(t, subsetMatchers)
+			}
+		})
+	}
+}
+
+func parseSelector(t *testing.T, selector string) []*core.LabelMatcher {
+	matchers, err := parser.ParseMetricSelector(selector)
+	require.NoError(t, err)
+
+	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
+		return optimize.CompareMatchers(a.Name, b.Name, a.Type, b.Type, a.Value, b.Value)
+	})
+
+	return core.LabelMatchersFromPrometheusType(matchers)
 }
