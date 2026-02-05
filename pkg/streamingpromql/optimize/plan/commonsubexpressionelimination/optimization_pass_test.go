@@ -18,7 +18,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/streamingpromql"
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
-	"github.com/grafana/mimir/pkg/streamingpromql/optimize"
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/ast"
 	_ "github.com/grafana/mimir/pkg/streamingpromql/optimize/ast/sharding" // Imported for side effects: registering the __sharded_concat__ function with the parser.
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan"
@@ -1160,7 +1159,7 @@ func parseSelector(t *testing.T, selector string) []*core.LabelMatcher {
 	require.NoError(t, err)
 
 	slices.SortFunc(matchers, func(a, b *labels.Matcher) int {
-		return optimize.CompareMatchers(a.Name, b.Name, a.Type, b.Type, a.Value, b.Value)
+		return core.CompareMatchers(a.Name, b.Name, a.Type, b.Type, a.Value, b.Value)
 	})
 
 	return core.LabelMatchersFromPrometheusType(matchers)

@@ -5,6 +5,7 @@ syntax = "proto3";
 package commonsubexpressionelimination;
 
 import "gogoproto/gogo.proto";
+import "github.com/grafana/mimir/pkg/streamingpromql/planning/core/core.proto";
 
 option (gogoproto.equal_all) = false;
 option (gogoproto.marshaler_all) = true;
@@ -13,4 +14,8 @@ option (gogoproto.unmarshaler_all) = true;
 
 message DuplicateDetails {
   // No fields yet.
+}
+
+message DuplicateFilterDetails {
+  repeated core.LabelMatcher filters = 1;
 }

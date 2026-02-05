@@ -132,9 +132,7 @@ func LabelMatchersToOperatorType(matchers []*LabelMatcher) types.Matchers {
 }
 
 func matchersEqual(a, b *LabelMatcher) bool {
-	return a.Type == b.Type &&
-		a.Name == b.Name &&
-		a.Value == b.Value
+	return a.Equal(b)
 }
 
 // LabelMatchersStringer generates a human-readable version of multiple LabelMatchers
