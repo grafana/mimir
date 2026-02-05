@@ -50,7 +50,7 @@ func SeriesDeduplicatorFromContextWithFallback(ctx context.Context) SeriesDedupl
 
 // Deduplicate checks if the given series has been seen before in this deduplicator's scope.
 // If it's a duplicate, it returns the previously seen labels.
-// If it's new, it returns the input labels.
+// If it's new, it returns the passed newLabels.
 //
 // This method handles hash collisions by checking label equality even when hashes match.
 func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
@@ -59,14 +59,13 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 	sd.uniqueSeriesMx.Lock()
 	defer sd.uniqueSeriesMx.Unlock()
 
-	// Check if we've seen this hash before
+	// Check if we've seen this hash before.
 	if existingLabels, found := sd.uniqueSeries[fingerprint]; !found {
-		// newLabels is seen for the first time hence we track the series limit and its labels memory consumption.
+		// See newLabels for the first time. Track the series limit and its labels memory consumption.
 		sd.uniqueSeries[fingerprint] = newLabels
 		return sd.trackNewLabels(newLabels, tracker)
 	} else if labels.Equal(existingLabels, newLabels) {
-		// newLabels is seen before, deduplicate it by returning existingLabels.
-		// No need to increase memory consumption.
+		// Already see newLabels before. Deduplicate it by returning existingLabels. No need to increase memory consumption.
 		return existingLabels, nil
 	}
 
@@ -77,13 +76,13 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 	}
 	hashConflictLabels := sd.conflictSeries[fingerprint]
 	for _, existingConflictedLabels := range hashConflictLabels {
-		// newLabels is seen before in conflictSeries map, hence just return the existingConflictedLabels.
+		// See newLabels before in conflictSeries map, hence just return the existingConflictedLabels.
 		// No need to increase memory consumption.
 		if labels.Equal(existingConflictedLabels, newLabels) {
 			return existingConflictedLabels, nil
 		}
 	}
-	// Despite there was a hash conflict, newLabels is actually seen for the first time hence we track the series limit and its labels memory consumption.
+	// Despite there was a hash conflict, we see newLabels for the first time. Track the series limit and its labels memory consumption.
 	sd.conflictSeries[fingerprint] = append(hashConflictLabels, newLabels)
 	return sd.trackNewLabels(newLabels, tracker)
 }
