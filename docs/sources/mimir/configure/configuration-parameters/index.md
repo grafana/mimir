@@ -4227,11 +4227,11 @@ The `limits` block configures default and per-tenant limits imposed by component
 #       prod: '{namespace=~"prod-.*"}'
 [active_series_additional_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
-# (experimental) Maximum number of additional custom trackers (usage groups) for
-# active series that can be configured per tenant. This limit only applies to
-# additional custom trackers. Set to 0 to disable the limit.
-# CLI flag: -validation.max-active-series-additional-custom-trackers-cardinality
-[max_active_series_additional_custom_trackers_cardinality: <int> | default = 200]
+# (experimental) Maximum number of additional custom trackers for active series
+# that you can configure per tenant. This limit only applies to additional
+# custom trackers. Set to 0 to disable the limit.
+# CLI flag: -validation.max-active-series-additional-custom-trackers
+[max_active_series_additional_custom_trackers: <int> | default = 200]
 
 # Non-zero value enables out-of-order support for most recent samples that are
 # within the time window in relation to the TSDB's maximum time, i.e., within

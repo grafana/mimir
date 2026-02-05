@@ -1921,7 +1921,7 @@ func TestLimits_ValidateMaxUsageGroupsCardinality(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.MaxActiveSeriesAdditionalCustomTrackersCardinality = 5
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 5
 				additionalConfig := map[string]string{
 					"tracker1": `{foo="bar"}`,
 					"tracker2": `{baz="qux"}`,
@@ -1938,7 +1938,7 @@ func TestLimits_ValidateMaxUsageGroupsCardinality(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.MaxActiveSeriesAdditionalCustomTrackersCardinality = 2
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
 				additionalConfig := map[string]string{
 					"tracker1": `{foo="bar"}`,
 					"tracker2": `{baz="qux"}`,
@@ -1957,7 +1957,7 @@ func TestLimits_ValidateMaxUsageGroupsCardinality(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.MaxActiveSeriesAdditionalCustomTrackersCardinality = 2
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
 				baseConfig := map[string]string{
 					"tracker1": `{foo="bar"}`,
 					"tracker2": `{baz="qux"}`,
@@ -1977,7 +1977,7 @@ func TestLimits_ValidateMaxUsageGroupsCardinality(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.MaxActiveSeriesAdditionalCustomTrackersCardinality = 2
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
 				baseConfig := map[string]string{
 					"tracker1": `{foo="bar"}`,
 					"tracker2": `{baz="qux"}`,
@@ -2003,7 +2003,7 @@ func TestLimits_ValidateMaxUsageGroupsCardinality(t *testing.T) {
 			cfg: func() Limits {
 				cfg := Limits{}
 				flagext.DefaultValues(&cfg)
-				cfg.MaxActiveSeriesAdditionalCustomTrackersCardinality = 0
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 0
 				additionalConfig := map[string]string{
 					"tracker1":  `{foo="bar"}`,
 					"tracker2":  `{baz="qux"}`,
