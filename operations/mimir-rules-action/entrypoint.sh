@@ -46,19 +46,23 @@ verifyAndConstructNamespaceSelection() {
 
   if [ -n "${NAMESPACES}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${NAMESPACES:+ --namespaces=${NAMESPACES}}"
+    NAMESPACES_SELECTION="--namespaces="
+    NAMESPACES_VALUE="${NAMESPACES}"
   fi
   if [ -n "${NAMESPACES_REGEX}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${NAMESPACES_REGEX:+ --namespaces-regex=${NAMESPACES_REGEX}}"
+    NAMESPACES_SELECTION="--namespaces-regex="
+    NAMESPACES_VALUE="${NAMESPACES_REGEX}"
   fi
   if [ -n "${IGNORED_NAMESPACES}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${IGNORED_NAMESPACES:+ --ignored-namespaces=\"${IGNORED_NAMESPACES}\"}"
+    NAMESPACES_SELECTION="--ignored-namespaces="
+    NAMESPACES_VALUE="${IGNORED_NAMESPACES}"
   fi
   if [ -n "${IGNORED_NAMESPACES_REGEX}" ]; then
     NAMESPACE_SELECTIONS_COUNT=$((NAMESPACE_SELECTIONS_COUNT + 1))
-    NAMESPACES_SELECTION="${IGNORED_NAMESPACES_REGEX:+ --ignored-namespaces-regex=${IGNORED_NAMESPACES_REGEX}}"
+    NAMESPACES_SELECTION="--ignored-namespaces-regex="
+    NAMESPACES_VALUE="${IGNORED_NAMESPACES_REGEX}"
   fi
 
   if [ "${NAMESPACE_SELECTIONS_COUNT}" -gt 1 ]; then
@@ -72,7 +76,7 @@ case "${ACTION}" in
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
     if [ -n "$NAMESPACES_SELECTION" ]; then
-      OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" "$NAMESPACES_SELECTION" "$@")
+      OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" "$NAMESPACES_SELECTION""$NAMESPACES_VALUE" "$@")
     else
       OUTPUT=$(/bin/mimirtool rules sync --rule-dirs="${RULES_DIR}" "$@")
     fi
@@ -82,7 +86,7 @@ case "${ACTION}" in
     verifyTenantAndAddress
     verifyAndConstructNamespaceSelection
     if [ -n "$NAMESPACES_SELECTION" ]; then
-      OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" "$NAMESPACES_SELECTION" --disable-color "$@")
+      OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" "$NAMESPACES_SELECTION""$NAMESPACES_VALUE" --disable-color "$@")
     else
       OUTPUT=$(/bin/mimirtool rules diff --rule-dirs="${RULES_DIR}" --disable-color "$@")
     fi
