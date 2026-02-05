@@ -10,7 +10,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/clusterutil"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/storage/bucket"

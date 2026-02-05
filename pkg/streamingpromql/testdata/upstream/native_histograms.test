@@ -1288,7 +1288,7 @@ eval instant at 12m sum_over_time(nhcb_metric[13m])
 eval instant at 12m avg_over_time(nhcb_metric[13m])
   expect no_warn
   expect info msg: PromQL info: mismatched custom buckets were reconciled during aggregation
-  {} {{schema:-53 count:1 sum:1 custom_values:[5] counter_reset_hint:gauge buckets:[1]}}
+  {} {{schema:-53 count:1 sum:1 custom_values:[5] buckets:[1]}}
 
 eval instant at 12m last_over_time(nhcb_metric[13m])
   expect no_warn
@@ -1570,7 +1570,7 @@ clear
 load 5m
   metric{id="1"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
   metric{id="2"} {{schema:0 sum:4 count:4 buckets:[1 2 1]}}x10
-
+  
 # Unary minus turns counters into gauges.
 eval instant at 5m -metric
   expect no_warn
@@ -1786,7 +1786,7 @@ clear
 
 load 1m
     reset{timing="late"} {{schema:0 sum:1 count:0 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}}
-    reset{timing="early"} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}
+    reset{timing="early"} {{schema:0 sum:1 count:3 buckets:[1 1 1]}}  {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:2 buckets:[1 1 1]}} {{schema:0 sum:1 count:3 buckets:[1 1 1]}} 
 
 # Trigger an annotation about conflicting counter resets by going through the
 # HistogramStatsIterator, which creates counter reset hints on the fly.

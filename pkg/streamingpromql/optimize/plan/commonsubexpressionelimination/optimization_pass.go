@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -33,8 +34,6 @@ import (
 // RangeVectorDuplicationConsumer is created for each consumer of the common subexpression.
 
 type OptimizationPass struct {
-	enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool
-
 	duplicationNodesIntroduced prometheus.Counter
 	selectorsEliminated        prometheus.Counter
 	selectorsInspected         prometheus.Counter
@@ -42,9 +41,8 @@ type OptimizationPass struct {
 	logger log.Logger
 }
 
-func NewOptimizationPass(enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries bool, reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
+func NewOptimizationPass(reg prometheus.Registerer, logger log.Logger) *OptimizationPass {
 	return &OptimizationPass{
-		enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries: enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries,
 		duplicationNodesIntroduced: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_mimir_query_engine_common_subexpression_elimination_duplication_nodes_introduced_total",
 			Help: "Number of duplication nodes introduced by the common subexpression elimination optimization pass.",
@@ -122,6 +120,9 @@ func (e *OptimizationPass) accumulatePath(soFar path) []path {
 	paths := make([]path, 0, childCount)
 
 	for childIdx := range childCount {
+		if e.ShouldSkipChild(node, childIdx) {
+			continue
+		}
 		path := soFar.Clone()
 		path = path.Append(node.Child(childIdx), childIdx, childTimeRange)
 		childPaths := e.accumulatePath(path)
@@ -129,6 +130,23 @@ func (e *OptimizationPass) accumulatePath(soFar path) []path {
 	}
 
 	return paths
+}
+
+// ShouldSkipChild determines if a child node should be skipped during common subexpression elimination.
+// Currently this is only used to skip the 2nd argument to info function calls, as we don't want to
+// deduplicate these as we need the matchers calculated by the info function at evaluation time to be
+// applied, and these are ignored by the Duplicate operator.
+func (e *OptimizationPass) ShouldSkipChild(node planning.Node, childIdx int) bool {
+	functionCall, ok := node.(*core.FunctionCall)
+	if !ok {
+		return false
+	}
+
+	if functionCall.Function == functions.FUNCTION_INFO && childIdx == 1 {
+		return true
+	}
+
+	return false
 }
 
 func (e *OptimizationPass) groupAndApplyDeduplication(paths []path, offset int) (int, error) {
@@ -219,7 +237,7 @@ func (e *OptimizationPass) applyDeduplication(group []path, offset int) (int, er
 	pathsEliminated := len(group) - 1
 
 	// We only want to deduplicate instant vectors, or range vectors in an instant query.
-	if resultType == parser.ValueTypeVector || (e.enableEliminatingDuplicateRangeVectorExpressionsInInstantQueries && resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
+	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant

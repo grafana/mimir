@@ -1,0 +1,151 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+load 1m
+  metric_total{instance="a", job="1", env="1"} 0 1 2
+  metric_total{instance="a", job="1", env="2"} 0 2 4
+  target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
+  metric_info{instance="a", job="1", env="3", data2="warning", another_data2="another warning"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric_total{env=~"."})
+  metric_total{instance="a", job="1", env="1", data="info", another_data="another info"} 0 1 2
+  metric_total{instance="a", job="1", env="2", data="info", another_data="another info"} 0 2 4
+
+eval range from 0m to 2m step 1m info(metric_total, {env=~"."})
+
+eval range from 0m to 2m step 1m info(metric_total, {data=~".+"})
+  metric_total{instance="a", job="1", env="1", data="info"} 0 1 2
+  metric_total{instance="a", job="1", env="2", data="info"} 0 2 4
+
+eval range from 0m to 2m step 1m info(metric_total{env=~"."}, {__name__="metric_info"})
+  metric_total{instance="a", job="1", env="1", data2="warning", another_data2="another warning"} 0 1 2
+  metric_total{instance="a", job="1", env="2", data2="warning", another_data2="another warning"} 0 2 4
+
+eval range from 0m to 2m step 1m info(metric_total{env=~"."}, {__name__=~".+_info"})
+  metric_total{instance="a", job="1", env="1", data="info", another_data="another info", data2="warning", another_data2="another warning"} 0 1 2
+  metric_total{instance="a", job="1", env="2", data="info", another_data="another info", data2="warning", another_data2="another warning"} 0 2 4
+
+# Ensure that info function works even when not at top level.
+eval range from 0m to 2m step 1m 1 + info(metric_total{env=~"."})
+  {instance="a", job="1", env="1", data="info", another_data="another info"} 1 2 3
+  {instance="a", job="1", env="2", data="info", another_data="another info"} 1 3 5
+
+eval range from 0m to 2m step 1m 1 + info(metric_total, {data=~".+"})
+  {instance="a", job="1", env="1", data="info"} 1 2 3
+  {instance="a", job="1", env="2", data="info"} 1 3 5
+
+eval range from 0m to 2m step 1m info(metric_total{env=~"."} + 1)
+  {instance="a", job="1", env="1", data="info", another_data="another info"} 1 2 3
+  {instance="a", job="1", env="2", data="info", another_data="another info"} 1 3 5
+
+clear
+
+load 1m
+  metric{instance="a", job="1", label="value"} 0 1 2
+  metric{instance="b", job="2", label="value"} 3 4 5
+  target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
+  target_info{instance="b", job="2", data="info", another_data="another info", yet_another_data="a"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric, {yet_another_data=~".*"})
+  metric{instance="a", job="1", label="value"} 0 1 2
+  metric{instance="b", job="2", label="value", yet_another_data="a"} 3 4 5
+
+eval range from 0m to 2m step 1m info(metric, {yet_another_data=~".+"})
+  metric{instance="b", job="2", label="value", yet_another_data="a"} 3 4 5
+
+eval range from 0m to 2m step 1m info(metric, {data=~".+", yet_another_data=~".*"})
+  metric{data="info", instance="a", job="1", label="value"} 0 1 2
+  metric{data="info", instance="b", job="2", label="value", yet_another_data="a"} 3 4 5
+
+eval range from 0m to 2m step 1m info(metric, {data=~".+", yet_another_data=~".+"})
+  metric{data="info", instance="b", job="2", label="value", yet_another_data="a"} 3 4 5
+
+clear
+
+load 1m
+  metric{instance="a", job="1", label="value"} 0 1 2
+  target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 _
+  target_info{instance="a", job="1", data="info2", another_data="another info2"} _ _ 1
+
+eval range from 0m to 2m step 1m info(metric)
+  metric{data="info", instance="a", job="1", label="value", another_data="another info"} 0 1 _
+  metric{data="info2", instance="a", job="1", label="value", another_data="another info2"} _ _ 2
+
+clear
+
+load 1m
+  metric{instance="a", job="1", label="value"} 0 1 2
+  target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 _
+
+eval range from 0m to 2m step 1m info(metric)
+  metric{data="info", instance="a", job="1", label="value", another_data="another info"} 0 1 2
+
+clear
+
+load 5m
+  metric{instance="a", job="1", label="value"} 0 1 2
+  target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 _
+
+eval range from 0m to 10m step 5m info(metric)
+  metric{data="info", instance="a", job="1", label="value", another_data="another info"} 0 1 _
+  metric{instance="a", job="1", label="value"} _ _ 2
+
+clear
+
+load 1m
+  metric_total{instance="a", job="1", env="1"} 0 1 2
+  metric_total{instance="a", job="1", env="2"} 0 2 4
+  target_info{instance="a", job="1", data="info"} 1 _ 1
+  target_info{instance="a", job="1", data="warning"} _ 1 _
+  metric_info{instance="a", job="1", data2="info"} 1 1 _
+  metric_info{instance="a", job="1", data2="warning"} _ _ 1
+  target_info{instance="a", job="2", data="info"} 1 _ 1
+  target_info{instance="a", job="2", data="warning"} _ 1 _
+  metric_info{instance="a", job="2", data2="info"} 1 1 _
+  metric_info{instance="a", job="2", data2="warning"} _ _ 1
+
+eval range from 0m to 2m step 1m info(metric_total{env=~"."}, {__name__=~".+_info"})
+  metric_total{instance="a", job="1", env="1", data="info", data2="info"} 0 _ _
+  metric_total{instance="a", job="1", env="1", data="info", data2="warning"} _ _ 2
+  metric_total{instance="a", job="1", env="1", data="warning", data2="info"} _ 1 _
+  metric_total{instance="a", job="1", env="2", data="info", data2="info"} 0 _ _
+  metric_total{instance="a", job="1", env="2", data="info", data2="warning"} _ _ 4
+  metric_total{instance="a", job="1", env="2", data="warning", data2="info"} _ 2 _
+
+clear
+
+load 1m
+  metric{instance="a", job="1", label="value"} {{schema:1 sum:3 count:22 buckets:[5 10 7]}} {{schema:1 sum:5 count:23 buckets:[5 10 7]}} {{schema:1 sum:7 count:24 buckets:[5 10 7]}}
+  target_info{instance="a", job="1", data="info", another_data="another info"} 1 1 1
+
+eval range from 0m to 2m step 1m info(metric)
+  metric{data="info", instance="a", job="1", label="value", another_data="another info"} {{schema:1 sum:3 count:22 buckets:[5 10 7]}} {{schema:1 sum:5 count:23 buckets:[5 10 7]}} {{schema:1 sum:7 count:24 buckets:[5 10 7]}}
+
+clear
+
+load 1m
+  metric_total{instance="a", job="1", env="1"} 0 1 2
+  target_info{instance="a", job="1", data="info"} 1 1 1
+  target_info{instance="a", job="1", data="warning"} _ 1 _
+
+eval_fail range from 0m to 2m step 1m info(metric_total)
+  expected_fail_regexp found duplicate series for info metric
+
+clear
+
+load 1m
+  my_metric{job="foo", instance="1", env="test"} 1 2 3
+  my_metric{job="foo", instance="1"} 4 5 6
+  target_info{job="foo", instance="1", env="test"} 1 1 1
+
+eval_fail range from 0m to 2m step 1m info(my_metric)
+  expected_fail_message vector cannot contain metrics with the same labelset
+
+clear
+
+load 1m
+  my_metric{job="foo", instance="1", env="test"} 1 2 3
+  my_metric{job="foo", instance="1"} 1 2 3
+  target_info{job="foo", instance="1", env="test"} 1 1 1
+
+eval_fail range from 0m to 2m step 1m info(my_metric)
+  expected_fail_message vector cannot contain metrics with the same labelset

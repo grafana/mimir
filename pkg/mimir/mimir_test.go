@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -102,9 +103,9 @@ func TestMimir(t *testing.T) {
 				},
 			},
 			BucketStore: tsdb.BucketStoreConfig{
-				IndexCache: tsdb.IndexCacheConfig{
+				IndexCache: indexcache.IndexCacheConfig{
 					BackendConfig: cache.BackendConfig{
-						Backend: tsdb.IndexCacheBackendInMemory,
+						Backend: indexcache.BackendInMemory,
 					},
 				},
 			},

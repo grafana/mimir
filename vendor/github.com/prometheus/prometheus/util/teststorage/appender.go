@@ -21,15 +21,20 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // Sample represents test, combined sample for mocking storage.AppenderV2.
@@ -91,6 +96,88 @@ func (s Sample) Equals(other Sample) bool {
 		slices.EqualFunc(s.ES, other.ES, exemplar.Exemplar.Equals)
 }
 
+// IsStale returns whether the sample represents a stale sample, according to
+// https://prometheus.io/docs/specs/native_histograms/#staleness-markers.
+func (s Sample) IsStale() bool {
+	switch {
+	case s.FH != nil:
+		return value.IsStaleNaN(s.FH.Sum)
+	case s.H != nil:
+		return value.IsStaleNaN(s.H.Sum)
+	default:
+		return value.IsStaleNaN(s.V)
+	}
+}
+
+var sampleComparer = cmp.Comparer(func(a, b Sample) bool {
+	return a.Equals(b)
+})
+
+// RequireEqual is a special require equal that correctly compare Prometheus structures.
+//
+// In comparison to testutil.RequireEqual, this function adds special logic for comparing []Samples.
+//
+// It also ignores ordering between consecutive stale samples to avoid false
+// negatives due to map iteration order in staleness tracking.
+func RequireEqual(t testing.TB, expected, got []Sample, msgAndArgs ...any) {
+	opts := []cmp.Option{sampleComparer}
+	expected = reorderExpectedForStaleness(expected, got)
+	testutil.RequireEqualWithOptions(t, expected, got, opts, msgAndArgs...)
+}
+
+// RequireNotEqual is the negation of RequireEqual.
+func RequireNotEqual(t testing.TB, expected, got []Sample, msgAndArgs ...any) {
+	t.Helper()
+
+	opts := []cmp.Option{cmp.Comparer(labels.Equal), sampleComparer}
+	expected = reorderExpectedForStaleness(expected, got)
+	if !cmp.Equal(expected, got, opts...) {
+		return
+	}
+	require.Fail(t, fmt.Sprintf("Equal, but expected not: \n"+
+		"a: %s\n"+
+		"b: %s", expected, got), msgAndArgs...)
+}
+
+func reorderExpectedForStaleness(expected, got []Sample) []Sample {
+	if len(expected) != len(got) || !includeStaleNaNs(expected) {
+		return expected
+	}
+	result := make([]Sample, len(expected))
+	copy(result, expected)
+
+	// Try to reorder only consecutive stale samples to avoid false negatives
+	// due to map iteration order in staleness tracking.
+	for i := range result {
+		if !result[i].IsStale() {
+			continue
+		}
+		if result[i].Equals(got[i]) {
+			continue
+		}
+		for j := i + 1; j < len(result); j++ {
+			if !result[j].IsStale() {
+				break
+			}
+			if result[j].Equals(got[i]) {
+				// Swap.
+				result[i], result[j] = result[j], result[i]
+				break
+			}
+		}
+	}
+	return result
+}
+
+func includeStaleNaNs(s []Sample) bool {
+	for _, e := range s {
+		if e.IsStale() {
+			return true
+		}
+	}
+	return false
+}
+
 // Appendable is a storage.Appendable mock.
 // It allows recording all samples that were added through the appender and injecting errors.
 // Appendable will panic if more than one Appender is open.
@@ -108,8 +195,7 @@ type Appendable struct {
 	rolledbackSamples []Sample
 
 	// Optional chain (Appender will collect samples, then run next).
-	next   storage.Appendable
-	nextV2 storage.AppendableV2
+	next compatAppendable
 }
 
 // NewAppendable returns mock Appendable.
@@ -117,15 +203,14 @@ func NewAppendable() *Appendable {
 	return &Appendable{}
 }
 
-// Then chains another appender from the provided Appendable for the Appender calls.
-func (a *Appendable) Then(appendable storage.Appendable) *Appendable {
-	a.next = appendable
-	return a
+type compatAppendable interface {
+	storage.Appendable
+	storage.AppendableV2
 }
 
-// ThenV2 chains another appenderV2 from the provided AppendableV2 for the AppenderV2 calls.
-func (a *Appendable) ThenV2(appendable storage.AppendableV2) *Appendable {
-	a.nextV2 = appendable
+// Then chains another appender from the provided Appendable for the Appender calls.
+func (a *Appendable) Then(appendable compatAppendable) *Appendable {
+	a.next = appendable
 	return a
 }
 
@@ -289,13 +374,12 @@ func (a *Appendable) Appender(ctx context.Context) storage.Appender {
 	ret := &appender{baseAppender: baseAppender{a: a}}
 	if a.openAppenders.Inc() > 1 {
 		ret.err = errors.New("teststorage.Appendable.Appender() concurrent use is not supported; attempted opening new Appender() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
+		return ret
 	}
 
 	if a.next != nil {
 		app := a.next.Appender(ctx)
 		ret.next, ret.nextTr = app, app
-	} else if a.nextV2 != nil {
-		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.Appender() invoked with .ThenV2 but no .Then was supplied; likely bug"))
 	}
 	return ret
 }
@@ -332,7 +416,8 @@ func computeOrCheckRef(ref storage.SeriesRef, ls labels.Labels) (storage.SeriesR
 	}
 
 	if storage.SeriesRef(h) != ref {
-		// Check for buggy ref while we at it.
+		// Check for buggy ref while we are at it. This only makes sense for cases without .Then*, because further appendable
+		// might have a different ref computation logic e.g. TSDB uses atomic increments.
 		return 0, errors.New("teststorage.appender: found input ref not matching labels; potential bug in Appendable usage")
 	}
 	return ref, nil
@@ -442,13 +527,12 @@ func (a *Appendable) AppenderV2(ctx context.Context) storage.AppenderV2 {
 	ret := &appenderV2{baseAppender: baseAppender{a: a}}
 	if a.openAppenders.Inc() > 1 {
 		ret.err = errors.New("teststorage.Appendable.AppenderV2() concurrent use is not supported; attempted opening new AppenderV2() without Commit/Rollback of the previous one. Extend the implementation if concurrent mock is needed")
+		return ret
 	}
 
-	if a.nextV2 != nil {
-		app := a.nextV2.AppenderV2(ctx)
+	if a.next != nil {
+		app := a.next.AppenderV2(ctx)
 		ret.next, ret.nextTr = app, app
-	} else if a.next != nil {
-		ret.err = errors.Join(ret.err, errors.New("teststorage.Appendable.AppenderV2() invoked with .Then but no .ThenV2 was supplied; likely bug"))
 	}
 	return ret
 }
@@ -499,12 +583,13 @@ func (a *appenderV2) Append(ref storage.SeriesRef, ls labels.Labels, st, t int64
 	if a.next != nil {
 		ref, err = a.next.Append(ref, ls, st, t, v, h, fh, opts)
 		if err != nil {
+			return 0, err
+		}
+	} else {
+		ref, err = computeOrCheckRef(ref, ls)
+		if err != nil {
 			return ref, err
 		}
-	}
-	ref, err = computeOrCheckRef(ref, ls)
-	if err != nil {
-		return ref, err
 	}
 	return ref, partialErr
 }

@@ -23,10 +23,11 @@ import (
 )
 
 type InstantVectorSelector struct {
-	Selector                 *Selector
-	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
-	Stats                    *types.QueryStats
-	ReturnSampleTimestamps   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps
+	Selector                                 *Selector
+	MemoryConsumptionTracker                 *limiter.MemoryConsumptionTracker
+	Stats                                    *types.QueryStats
+	ReturnSampleTimestamps                   bool // true if this operator is wrapped directly in the timestamp() function and so should return the underlying sample timestamps.
+	ReturnSampleTimestampsPreserveHistograms bool // Used for info() function to preserve histograms in info metrics while making the floats reflect timestamps.
 
 	chunkIterator    chunkenc.Iterator
 	memoizedIterator *storage.MemoizedSeriesIterator
@@ -34,12 +35,13 @@ type InstantVectorSelector struct {
 
 var _ types.InstantVectorOperator = &InstantVectorSelector{}
 
-func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps bool) *InstantVectorSelector {
+func NewInstantVectorSelector(selector *Selector, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, stats *types.QueryStats, returnSampleTimestamps, returnSampleTimestampsPreserveHistograms bool) *InstantVectorSelector {
 	return &InstantVectorSelector{
-		Selector:                 selector,
-		Stats:                    stats,
-		MemoryConsumptionTracker: memoryConsumptionTracker,
-		ReturnSampleTimestamps:   returnSampleTimestamps,
+		Selector:                                 selector,
+		Stats:                                    stats,
+		MemoryConsumptionTracker:                 memoryConsumptionTracker,
+		ReturnSampleTimestamps:                   returnSampleTimestamps,
+		ReturnSampleTimestampsPreserveHistograms: returnSampleTimestampsPreserveHistograms,
 	}
 }
 
@@ -147,7 +149,7 @@ func (v *InstantVectorSelector) NextSeries(ctx context.Context) (types.InstantVe
 			continue
 		}
 
-		if v.ReturnSampleTimestamps {
+		if v.ReturnSampleTimestamps || (v.ReturnSampleTimestampsPreserveHistograms && h == nil) {
 			f = float64(t) / 1000
 			h = nil
 		}

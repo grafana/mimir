@@ -275,6 +275,7 @@ func NewQuerierHandler(
 		appendMetadata,
 		nil,
 		nil,
+		v1.OpenAPIOptions{},
 	)
 
 	api.InstallCodec(protobufCodec{})

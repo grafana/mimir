@@ -1905,17 +1905,6 @@ mimir_query_engine:
   # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination
   [enable_common_subexpression_elimination: <boolean> | default = true]
 
-  # (experimental) Enable common subexpression elimination for range vector
-  # expressions when evaluating instant queries. This has no effect if common
-  # subexpression elimination is disabled.
-  # CLI flag: -querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries
-  [enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries: <boolean> | default = true]
-
-  # (experimental) Enable skipping decoding native histograms when evaluating
-  # queries that do not require full histograms.
-  # CLI flag: -querier.mimir-query-engine.enable-skipping-histogram-decoding
-  [enable_skipping_histogram_decoding: <boolean> | default = true]
-
   # (experimental) Enable generating selectors for one side of a binary
   # expression based on results from the other side.
   # CLI flag: -querier.mimir-query-engine.enable-narrow-binary-selectors
@@ -3841,6 +3830,12 @@ The `memberlist` block configures the Gossip memberlist.
 # they're started.
 # CLI flag: -memberlist.abort-if-fast-join-fails
 [abort_if_cluster_fast_join_fails: <boolean> | default = false]
+
+# (advanced) Minimum number of seed nodes that must be successfully joined
+# during fast-join for it to succeed. Only applies when
+# -memberlist.abort-if-fast-join-fails is enabled.
+# CLI flag: -memberlist.abort-if-fast-join-fails-min-nodes
+[abort_if_cluster_fast_join_fails_min_nodes: <int> | default = 1]
 
 # Abort if this node fails to join memberlist cluster at startup. When enabled,
 # it's not guaranteed that other services are started only after the cluster
