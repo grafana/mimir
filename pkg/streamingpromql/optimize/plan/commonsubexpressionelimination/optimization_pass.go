@@ -173,12 +173,17 @@ func (e *OptimizationPass) groupAndApplyDeduplication(paths []path, offset int) 
 	return totalPathsEliminated, nil
 }
 
+type sharedSelectorGroup struct {
+	paths   []path
+	filters [][]*core.LabelMatcher
+}
+
 // groupPaths returns paths grouped by the node at offset from the leaf.
 // offset 0 means group by the leaf, offset 1 means group by the leaf node's parent etc.
 // Paths that don't match any other paths are not returned.
-func (e *OptimizationPass) groupPaths(paths []path, offset int) [][]path {
+func (e *OptimizationPass) groupPaths(paths []path, offset int) []sharedSelectorGroup {
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
-	groups := make([][]path, 0)
+	groups := make([]sharedSelectorGroup, 0)
 
 	// FIXME: is there a better way to do this? This is currently O(n!) in the worst case (where n is the number of paths)
 	for pathIdx, p := range paths {
@@ -188,7 +193,7 @@ func (e *OptimizationPass) groupPaths(paths []path, offset int) [][]path {
 
 		alreadyGrouped[pathIdx] = true
 		leaf, leafTimeRange := p.NodeAtOffsetFromLeaf(offset)
-		var group []path
+		group := sharedSelectorGroup{}
 
 		for otherPathOffset, otherPath := range paths[pathIdx+1:] {
 			otherPathIdx := otherPathOffset + pathIdx + 1
@@ -210,16 +215,16 @@ func (e *OptimizationPass) groupPaths(paths []path, offset int) [][]path {
 				continue
 			}
 
-			if group == nil {
-				group = make([]path, 0, 2)
-				group = append(group, p)
+			if group.paths == nil {
+				group.paths = make([]path, 0, 2)
+				group.paths = append(group.paths, p)
 			}
 
-			group = append(group, otherPath)
+			group.paths = append(group.paths, otherPath)
 			alreadyGrouped[otherPathIdx] = true
 		}
 
-		if group != nil {
+		if group.paths != nil {
 			groups = append(groups, group)
 		}
 	}
@@ -229,10 +234,10 @@ func (e *OptimizationPass) groupPaths(paths []path, offset int) [][]path {
 
 // applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
-func (e *OptimizationPass) applyDeduplication(group []path, offset int) (int, error) {
-	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1)
+func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset int) (int, error) {
+	duplicatePathLength := e.findCommonSubexpressionLength(group.paths, offset+1)
 
-	firstPath := group[0]
+	firstPath := group.paths[0]
 	duplicatedExpression, timeRange := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	resultType, err := duplicatedExpression.ResultType()
 
@@ -241,17 +246,17 @@ func (e *OptimizationPass) applyDeduplication(group []path, offset int) (int, er
 	}
 
 	var skipLongerExpressions bool
-	pathsEliminated := len(group) - 1
+	pathsEliminated := len(group.paths) - 1
 
 	// We only want to deduplicate instant vectors, or range vectors in an instant query.
 	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
-		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength)
+		skipLongerExpressions, err = e.introduceDuplicateNode(group.paths, duplicatePathLength)
 	} else if _, isSubquery := duplicatedExpression.(*core.Subquery); isSubquery {
 		// We've identified a subquery is duplicated (but not the function that encloses it), and the parent is not an instant
 		// query.
 		// We don't want to deduplicate the subquery itself, but we do want to deduplicate the inner expression of the
 		// subquery.
-		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
+		skipLongerExpressions, err = e.introduceDuplicateNode(group.paths, duplicatePathLength-1)
 	} else {
 		// Duplicated range vector selector in a range query, but the function that encloses each instance isn't the same (or isn't the same on all paths).
 		pathsEliminated = 0
@@ -265,7 +270,7 @@ func (e *OptimizationPass) applyDeduplication(group []path, offset int) (int, er
 		return pathsEliminated, nil
 	}
 
-	if len(group) <= 2 {
+	if len(group.paths) <= 2 {
 		// Can't possibly have any more common subexpressions. We're done.
 		return pathsEliminated, nil
 	}
@@ -276,7 +281,7 @@ func (e *OptimizationPass) applyDeduplication(group []path, offset int) (int, er
 	// This applies even if we just saw a common subexpression that returned something other than an instant vector
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
-	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(group, duplicatePathLength); err != nil {
+	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(group.paths, duplicatePathLength); err != nil {
 		return 0, err
 	} else if pathsEliminated == 0 {
 		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector),
