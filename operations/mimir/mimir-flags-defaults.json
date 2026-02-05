@@ -171,6 +171,7 @@
   "querier.lookback-delta": 300000000000,
   "querier.mimir-query-engine.enable-prune-toggles": true,
   "querier.mimir-query-engine.enable-common-subexpression-elimination": true,
+  "querier.mimir-query-engine.enable-subset-selector-elimination": true,
   "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge": true,
   "querier.mimir-query-engine.enable-reduce-matchers": true,
   "querier.mimir-query-engine.enable-multi-aggregation": true,

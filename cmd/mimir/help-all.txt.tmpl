@@ -2179,6 +2179,8 @@ Usage of ./cmd/mimir/mimir:
     	[experimental] Enable pruning query expressions that are toggled off with constants. (default true)
   -querier.mimir-query-engine.enable-reduce-matchers
     	[experimental] Enable eliminating duplicate or redundant matchers that are part of selector expressions. (default true)
+  -querier.mimir-query-engine.enable-subset-selector-elimination
+    	[experimental] Enable subset selector elimination when evaluating queries. (default true)
   -querier.minimize-ingester-requests
     	If true, when querying ingesters, only the minimum required ingesters required to reach quorum will be queried initially, with other ingesters queried only if needed due to failures from the initial set of ingesters. Enabling this option reduces resource consumption for the happy path at the cost of increased latency for the unhappy path. (default true)
   -querier.minimize-ingester-requests-hedging-delay duration
