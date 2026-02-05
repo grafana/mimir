@@ -5950,7 +5950,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		distributorCfg.DistributorRing.Common.InstanceID = strconv.Itoa(i)
 		distributorCfg.DistributorRing.Common.KVStore.Mock = kvStore
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
-		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
+		distributorCfg.ShuffleShardingEnabled = true
+		distributorCfg.IngestersLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 		distributorCfg.IngestStorageConfig = ingestCfg
 
