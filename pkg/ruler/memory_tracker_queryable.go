@@ -13,7 +13,7 @@ import (
 )
 
 // NewUnlimitedMemoryTrackerQueryable wraps a storage.Queryable to inject an unlimited MemoryConsumptionTracker
-// into the context.
+// and SeriesDeduplicator into the context.
 func NewUnlimitedMemoryTrackerQueryable(inner storage.Queryable) storage.Queryable {
 	return &unlimitedMemoryTrackerQueryable{inner: inner}
 }
@@ -39,6 +39,7 @@ type unlimitedMemoryTrackerQuerier struct {
 
 func (q *unlimitedMemoryTrackerQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 
