@@ -62,12 +62,16 @@ func (m *MatrixSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 
 	return ok &&
 		slices.EqualFunc(m.Matchers, otherMatrixSelector.Matchers, matchersEqual) &&
-		((m.Timestamp == nil && otherMatrixSelector.Timestamp == nil) || (m.Timestamp != nil && otherMatrixSelector.Timestamp != nil && m.Timestamp.Equal(*otherMatrixSelector.Timestamp))) &&
-		m.Offset == otherMatrixSelector.Offset &&
-		m.Range == otherMatrixSelector.Range &&
-		m.Anchored == otherMatrixSelector.Anchored &&
-		m.Smoothed == otherMatrixSelector.Smoothed &&
-		m.CounterAware == otherMatrixSelector.CounterAware
+		m.EquivalentToIgnoringMatchersAndHints(otherMatrixSelector)
+}
+
+func (m *MatrixSelector) EquivalentToIgnoringMatchersAndHints(other *MatrixSelector) bool {
+	return ((m.Timestamp == nil && other.Timestamp == nil) || (m.Timestamp != nil && other.Timestamp != nil && m.Timestamp.Equal(*other.Timestamp))) &&
+		m.Offset == other.Offset &&
+		m.Range == other.Range &&
+		m.Anchored == other.Anchored &&
+		m.Smoothed == other.Smoothed &&
+		m.CounterAware == other.CounterAware
 }
 
 func (m *MatrixSelector) MergeHints(other planning.Node) error {
