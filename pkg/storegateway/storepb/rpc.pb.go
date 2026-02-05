@@ -35,8 +35,11 @@ type SeriesRequest struct {
 	SkipChunks bool `protobuf:"varint,8,opt,name=skip_chunks,json=skipChunks,proto3" json:"skip_chunks,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information.
 	// The content of this field and whether it's supported depends on the
-	// implementation of a specific store.
+	// implementation of a specific store. Deprecated, use request_hints instead.
 	Hints *types.Any `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
+	// Additional information from the read path that the store can use to more efficiently
+	// return series.
+	RequestHints *SeriesRequestHints `protobuf:"bytes,14,opt,name=request_hints,json=requestHints,proto3" json:"request_hints,omitempty"`
 	// If streaming_chunks_batch_size=0, the response must only contain one 'series' at a time
 	// with the series labels and chunks data sent together.
 	// If streaming_chunks_batch_size > 0
@@ -83,6 +86,53 @@ func (m *SeriesRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_SeriesRequest proto.InternalMessageInfo
 
+type SeriesRequestHints struct {
+	// block_matchers is a list of label matchers that are evaluated against each single block's
+	// labels to filter which blocks get queried. If the list is empty, no per-block filtering
+	// is applied.
+	BlockMatchers []LabelMatcher `protobuf:"bytes,1,rep,name=block_matchers,json=blockMatchers,proto3" json:"block_matchers"`
+	// projection_include indicates if label projection hints are including only specific labels
+	// or excluding them. The combination of default values of projection_include (false) and
+	// projection_labels (empty) disables use of projections.
+	ProjectionInclude bool `protobuf:"varint,2,opt,name=projection_include,json=projectionInclude,proto3" json:"projection_include,omitempty"`
+	// projection_labels is the set of labels required (projection_include = true) or not required
+	// (projection_include = false) to satisfy a query. The combination of default values of
+	// projection_include (false) and projection_labels (empty) disables use of projections.
+	ProjectionLabels []string `protobuf:"bytes,3,rep,name=projection_labels,json=projectionLabels,proto3" json:"projection_labels,omitempty"`
+}
+
+func (m *SeriesRequestHints) Reset()      { *m = SeriesRequestHints{} }
+func (*SeriesRequestHints) ProtoMessage() {}
+func (*SeriesRequestHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{1}
+}
+func (m *SeriesRequestHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SeriesRequestHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SeriesRequestHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SeriesRequestHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SeriesRequestHints.Merge(m, src)
+}
+func (m *SeriesRequestHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *SeriesRequestHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_SeriesRequestHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SeriesRequestHints proto.InternalMessageInfo
+
 type Stats struct {
 	// This is the sum of all fetched index bytes (postings + series) for a series request.
 	FetchedIndexBytes uint64 `protobuf:"varint,1,opt,name=fetched_index_bytes,json=fetchedIndexBytes,proto3" json:"fetched_index_bytes,omitempty"`
@@ -91,7 +141,7 @@ type Stats struct {
 func (m *Stats) Reset()      { *m = Stats{} }
 func (*Stats) ProtoMessage() {}
 func (*Stats) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{1}
+	return fileDescriptor_77a6da22d6a3feb1, []int{2}
 }
 func (m *Stats) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -131,13 +181,14 @@ type SeriesResponse struct {
 	//	*SeriesResponse_StreamingSeries
 	//	*SeriesResponse_StreamingChunks
 	//	*SeriesResponse_StreamingChunksEstimate
+	//	*SeriesResponse_ResponseHints
 	Result isSeriesResponse_Result `protobuf_oneof:"result"`
 }
 
 func (m *SeriesResponse) Reset()      { *m = SeriesResponse{} }
 func (*SeriesResponse) ProtoMessage() {}
 func (*SeriesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{2}
+	return fileDescriptor_77a6da22d6a3feb1, []int{3}
 }
 func (m *SeriesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -191,6 +242,9 @@ type SeriesResponse_StreamingChunks struct {
 type SeriesResponse_StreamingChunksEstimate struct {
 	StreamingChunksEstimate *StreamingChunksEstimate `protobuf:"bytes,7,opt,name=streaming_chunks_estimate,json=streamingChunksEstimate,proto3,oneof" json:"streaming_chunks_estimate,omitempty"`
 }
+type SeriesResponse_ResponseHints struct {
+	ResponseHints *SeriesResponseHints `protobuf:"bytes,8,opt,name=response_hints,json=responseHints,proto3,oneof" json:"response_hints,omitempty"`
+}
 
 func (*SeriesResponse_Warning) isSeriesResponse_Result()                 {}
 func (*SeriesResponse_Hints) isSeriesResponse_Result()                   {}
@@ -198,6 +252,7 @@ func (*SeriesResponse_Stats) isSeriesResponse_Result()                   {}
 func (*SeriesResponse_StreamingSeries) isSeriesResponse_Result()         {}
 func (*SeriesResponse_StreamingChunks) isSeriesResponse_Result()         {}
 func (*SeriesResponse_StreamingChunksEstimate) isSeriesResponse_Result() {}
+func (*SeriesResponse_ResponseHints) isSeriesResponse_Result()           {}
 
 func (m *SeriesResponse) GetResult() isSeriesResponse_Result {
 	if m != nil {
@@ -248,6 +303,13 @@ func (m *SeriesResponse) GetStreamingChunksEstimate() *StreamingChunksEstimate {
 	return nil
 }
 
+func (m *SeriesResponse) GetResponseHints() *SeriesResponseHints {
+	if x, ok := m.GetResult().(*SeriesResponse_ResponseHints); ok {
+		return x.ResponseHints
+	}
+	return nil
+}
+
 // XXX_OneofWrappers is for the internal use of the proto package.
 func (*SeriesResponse) XXX_OneofWrappers() []interface{} {
 	return []interface{}{
@@ -257,24 +319,99 @@ func (*SeriesResponse) XXX_OneofWrappers() []interface{} {
 		(*SeriesResponse_StreamingSeries)(nil),
 		(*SeriesResponse_StreamingChunks)(nil),
 		(*SeriesResponse_StreamingChunksEstimate)(nil),
+		(*SeriesResponse_ResponseHints)(nil),
 	}
 }
+
+type SeriesResponseHints struct {
+	// queried_blocks is the list of blocks that have been queried.
+	QueriedBlocks []Block `protobuf:"bytes,1,rep,name=queried_blocks,json=queriedBlocks,proto3" json:"queried_blocks"`
+}
+
+func (m *SeriesResponseHints) Reset()      { *m = SeriesResponseHints{} }
+func (*SeriesResponseHints) ProtoMessage() {}
+func (*SeriesResponseHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{4}
+}
+func (m *SeriesResponseHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SeriesResponseHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SeriesResponseHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SeriesResponseHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SeriesResponseHints.Merge(m, src)
+}
+func (m *SeriesResponseHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *SeriesResponseHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_SeriesResponseHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SeriesResponseHints proto.InternalMessageInfo
+
+type Block struct {
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+}
+
+func (m *Block) Reset()      { *m = Block{} }
+func (*Block) ProtoMessage() {}
+func (*Block) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{5}
+}
+func (m *Block) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *Block) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_Block.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *Block) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Block.Merge(m, src)
+}
+func (m *Block) XXX_Size() int {
+	return m.Size()
+}
+func (m *Block) XXX_DiscardUnknown() {
+	xxx_messageInfo_Block.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_Block proto.InternalMessageInfo
 
 type LabelNamesRequest struct {
 	Start int64 `protobuf:"varint,3,opt,name=start,proto3" json:"start,omitempty"`
 	End   int64 `protobuf:"varint,4,opt,name=end,proto3" json:"end,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information.
 	// The content of this field and whether it's supported depends on the
-	// implementation of a specific store.
-	Hints    *types.Any     `protobuf:"bytes,5,opt,name=hints,proto3" json:"hints,omitempty"`
-	Matchers []LabelMatcher `protobuf:"bytes,6,rep,name=matchers,proto3" json:"matchers"`
-	Limit    int64          `protobuf:"varint,7,opt,name=limit,proto3" json:"limit,omitempty"`
+	// implementation of a specific store. Deprecated, use request_hints instead.
+	Hints        *types.Any              `protobuf:"bytes,5,opt,name=hints,proto3" json:"hints,omitempty"`
+	Matchers     []LabelMatcher          `protobuf:"bytes,6,rep,name=matchers,proto3" json:"matchers"`
+	Limit        int64                   `protobuf:"varint,7,opt,name=limit,proto3" json:"limit,omitempty"`
+	RequestHints *LabelNamesRequestHints `protobuf:"bytes,8,opt,name=request_hints,json=requestHints,proto3" json:"request_hints,omitempty"`
 }
 
 func (m *LabelNamesRequest) Reset()      { *m = LabelNamesRequest{} }
 func (*LabelNamesRequest) ProtoMessage() {}
 func (*LabelNamesRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{3}
+	return fileDescriptor_77a6da22d6a3feb1, []int{6}
 }
 func (m *LabelNamesRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -303,19 +440,59 @@ func (m *LabelNamesRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_LabelNamesRequest proto.InternalMessageInfo
 
+type LabelNamesRequestHints struct {
+	// block_matchers is a list of label matchers that are evaluated against each single block's
+	// labels to filter which blocks get queried. If the list is empty, no per-block filtering
+	// is applied.
+	BlockMatchers []LabelMatcher `protobuf:"bytes,1,rep,name=block_matchers,json=blockMatchers,proto3" json:"block_matchers"`
+}
+
+func (m *LabelNamesRequestHints) Reset()      { *m = LabelNamesRequestHints{} }
+func (*LabelNamesRequestHints) ProtoMessage() {}
+func (*LabelNamesRequestHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{7}
+}
+func (m *LabelNamesRequestHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LabelNamesRequestHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LabelNamesRequestHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *LabelNamesRequestHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LabelNamesRequestHints.Merge(m, src)
+}
+func (m *LabelNamesRequestHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *LabelNamesRequestHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_LabelNamesRequestHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LabelNamesRequestHints proto.InternalMessageInfo
+
 type LabelNamesResponse struct {
 	Names    []string `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
 	Warnings []string `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
-	/// hints is an opaque data structure that can be used to carry additional information from
-	/// the store. The content of this field and whether it's supported depends on the
-	/// implementation of a specific store.
-	Hints *types.Any `protobuf:"bytes,3,opt,name=hints,proto3" json:"hints,omitempty"`
+	// hints is an opaque data structure that can be used to carry additional information from
+	// the store. The content of this field and whether it's supported depends on the
+	// implementation of a specific store. Deprecated, use response_hints instead.
+	Hints         *types.Any               `protobuf:"bytes,3,opt,name=hints,proto3" json:"hints,omitempty"`
+	ResponseHints *LabelNamesResponseHints `protobuf:"bytes,4,opt,name=response_hints,json=responseHints,proto3" json:"response_hints,omitempty"`
 }
 
 func (m *LabelNamesResponse) Reset()      { *m = LabelNamesResponse{} }
 func (*LabelNamesResponse) ProtoMessage() {}
 func (*LabelNamesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{4}
+	return fileDescriptor_77a6da22d6a3feb1, []int{8}
 }
 func (m *LabelNamesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -344,22 +521,60 @@ func (m *LabelNamesResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_LabelNamesResponse proto.InternalMessageInfo
 
+type LabelNamesResponseHints struct {
+	// queried_blocks is the list of blocks that have been queried.
+	QueriedBlocks []Block `protobuf:"bytes,1,rep,name=queried_blocks,json=queriedBlocks,proto3" json:"queried_blocks"`
+}
+
+func (m *LabelNamesResponseHints) Reset()      { *m = LabelNamesResponseHints{} }
+func (*LabelNamesResponseHints) ProtoMessage() {}
+func (*LabelNamesResponseHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{9}
+}
+func (m *LabelNamesResponseHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LabelNamesResponseHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LabelNamesResponseHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *LabelNamesResponseHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LabelNamesResponseHints.Merge(m, src)
+}
+func (m *LabelNamesResponseHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *LabelNamesResponseHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_LabelNamesResponseHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LabelNamesResponseHints proto.InternalMessageInfo
+
 type LabelValuesRequest struct {
 	Label string `protobuf:"bytes,1,opt,name=label,proto3" json:"label,omitempty"`
 	Start int64  `protobuf:"varint,4,opt,name=start,proto3" json:"start,omitempty"`
 	End   int64  `protobuf:"varint,5,opt,name=end,proto3" json:"end,omitempty"`
 	// hints is an opaque data structure that can be used to carry additional information.
 	// The content of this field and whether it's supported depends on the
-	// implementation of a specific store.
-	Hints    *types.Any     `protobuf:"bytes,6,opt,name=hints,proto3" json:"hints,omitempty"`
-	Matchers []LabelMatcher `protobuf:"bytes,7,rep,name=matchers,proto3" json:"matchers"`
-	Limit    int64          `protobuf:"varint,8,opt,name=limit,proto3" json:"limit,omitempty"`
+	// implementation of a specific store. Deprecated, use request_hints instead.
+	Hints        *types.Any               `protobuf:"bytes,6,opt,name=hints,proto3" json:"hints,omitempty"`
+	Matchers     []LabelMatcher           `protobuf:"bytes,7,rep,name=matchers,proto3" json:"matchers"`
+	Limit        int64                    `protobuf:"varint,8,opt,name=limit,proto3" json:"limit,omitempty"`
+	RequestHints *LabelValuesRequestHints `protobuf:"bytes,9,opt,name=request_hints,json=requestHints,proto3" json:"request_hints,omitempty"`
 }
 
 func (m *LabelValuesRequest) Reset()      { *m = LabelValuesRequest{} }
 func (*LabelValuesRequest) ProtoMessage() {}
 func (*LabelValuesRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{5}
+	return fileDescriptor_77a6da22d6a3feb1, []int{10}
 }
 func (m *LabelValuesRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -388,19 +603,59 @@ func (m *LabelValuesRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_LabelValuesRequest proto.InternalMessageInfo
 
+type LabelValuesRequestHints struct {
+	// block_matchers is a list of label matchers that are evaluated against each single block's
+	// labels to filter which blocks get queried. If the list is empty, no per-block filtering
+	// is applied.
+	BlockMatchers []LabelMatcher `protobuf:"bytes,1,rep,name=block_matchers,json=blockMatchers,proto3" json:"block_matchers"`
+}
+
+func (m *LabelValuesRequestHints) Reset()      { *m = LabelValuesRequestHints{} }
+func (*LabelValuesRequestHints) ProtoMessage() {}
+func (*LabelValuesRequestHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{11}
+}
+func (m *LabelValuesRequestHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LabelValuesRequestHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LabelValuesRequestHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *LabelValuesRequestHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LabelValuesRequestHints.Merge(m, src)
+}
+func (m *LabelValuesRequestHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *LabelValuesRequestHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_LabelValuesRequestHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LabelValuesRequestHints proto.InternalMessageInfo
+
 type LabelValuesResponse struct {
 	Values   []string `protobuf:"bytes,1,rep,name=values,proto3" json:"values,omitempty"`
 	Warnings []string `protobuf:"bytes,2,rep,name=warnings,proto3" json:"warnings,omitempty"`
-	/// hints is an opaque data structure that can be used to carry additional information from
-	/// the store. The content of this field and whether it's supported depends on the
-	/// implementation of a specific store.
-	Hints *types.Any `protobuf:"bytes,3,opt,name=hints,proto3" json:"hints,omitempty"`
+	// hints is an opaque data structure that can be used to carry additional information from
+	// the store. The content of this field and whether it's supported depends on the
+	// implementation of a specific store. Deprecated, use response_hints instead.
+	Hints         *types.Any                `protobuf:"bytes,3,opt,name=hints,proto3" json:"hints,omitempty"`
+	ResponseHints *LabelValuesResponseHints `protobuf:"bytes,4,opt,name=response_hints,json=responseHints,proto3" json:"response_hints,omitempty"`
 }
 
 func (m *LabelValuesResponse) Reset()      { *m = LabelValuesResponse{} }
 func (*LabelValuesResponse) ProtoMessage() {}
 func (*LabelValuesResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{6}
+	return fileDescriptor_77a6da22d6a3feb1, []int{12}
 }
 func (m *LabelValuesResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -429,66 +684,126 @@ func (m *LabelValuesResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_LabelValuesResponse proto.InternalMessageInfo
 
+type LabelValuesResponseHints struct {
+	// queried_blocks is the list of blocks that have been queried.
+	QueriedBlocks []Block `protobuf:"bytes,1,rep,name=queried_blocks,json=queriedBlocks,proto3" json:"queried_blocks"`
+}
+
+func (m *LabelValuesResponseHints) Reset()      { *m = LabelValuesResponseHints{} }
+func (*LabelValuesResponseHints) ProtoMessage() {}
+func (*LabelValuesResponseHints) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{13}
+}
+func (m *LabelValuesResponseHints) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *LabelValuesResponseHints) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_LabelValuesResponseHints.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *LabelValuesResponseHints) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LabelValuesResponseHints.Merge(m, src)
+}
+func (m *LabelValuesResponseHints) XXX_Size() int {
+	return m.Size()
+}
+func (m *LabelValuesResponseHints) XXX_DiscardUnknown() {
+	xxx_messageInfo_LabelValuesResponseHints.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_LabelValuesResponseHints proto.InternalMessageInfo
+
 func init() {
 	proto.RegisterType((*SeriesRequest)(nil), "thanos.SeriesRequest")
+	proto.RegisterType((*SeriesRequestHints)(nil), "thanos.SeriesRequestHints")
 	proto.RegisterType((*Stats)(nil), "thanos.Stats")
 	proto.RegisterType((*SeriesResponse)(nil), "thanos.SeriesResponse")
+	proto.RegisterType((*SeriesResponseHints)(nil), "thanos.SeriesResponseHints")
+	proto.RegisterType((*Block)(nil), "thanos.Block")
 	proto.RegisterType((*LabelNamesRequest)(nil), "thanos.LabelNamesRequest")
+	proto.RegisterType((*LabelNamesRequestHints)(nil), "thanos.LabelNamesRequestHints")
 	proto.RegisterType((*LabelNamesResponse)(nil), "thanos.LabelNamesResponse")
+	proto.RegisterType((*LabelNamesResponseHints)(nil), "thanos.LabelNamesResponseHints")
 	proto.RegisterType((*LabelValuesRequest)(nil), "thanos.LabelValuesRequest")
+	proto.RegisterType((*LabelValuesRequestHints)(nil), "thanos.LabelValuesRequestHints")
 	proto.RegisterType((*LabelValuesResponse)(nil), "thanos.LabelValuesResponse")
+	proto.RegisterType((*LabelValuesResponseHints)(nil), "thanos.LabelValuesResponseHints")
 }
 
 func init() { proto.RegisterFile("rpc.proto", fileDescriptor_77a6da22d6a3feb1) }
 
 var fileDescriptor_77a6da22d6a3feb1 = []byte{
-	// 727 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x93, 0x41, 0x6f, 0xd3, 0x4a,
-	0x10, 0xc7, 0xbd, 0xf1, 0xda, 0xd9, 0x6c, 0x9a, 0x3e, 0xd7, 0x8d, 0xde, 0x73, 0xf3, 0x90, 0x1b,
-	0x45, 0x42, 0x8a, 0x10, 0x4a, 0x25, 0x90, 0xe0, 0xc4, 0xa1, 0x41, 0x48, 0xa9, 0x05, 0x1c, 0xb6,
-	0x88, 0x03, 0x12, 0x8a, 0x9c, 0x66, 0x9b, 0xac, 0x1a, 0xdb, 0xc1, 0xbb, 0x81, 0xa6, 0x27, 0x4e,
-	0x9c, 0xf9, 0x18, 0x7c, 0x05, 0x8e, 0xdc, 0x7a, 0xec, 0xb1, 0x27, 0x44, 0xdc, 0x0b, 0xc7, 0x7e,
-	0x04, 0xe4, 0xdd, 0x4d, 0xd3, 0x88, 0x56, 0x55, 0x11, 0x37, 0xcf, 0xfc, 0xc7, 0xb3, 0xf3, 0xff,
-	0xed, 0x2c, 0x2e, 0xa5, 0xe3, 0xbd, 0xd6, 0x38, 0x4d, 0x44, 0xe2, 0xda, 0x62, 0x18, 0xc6, 0x09,
-	0xaf, 0x55, 0x07, 0xc9, 0x20, 0x91, 0xa9, 0xad, 0xfc, 0x4b, 0xa9, 0xb5, 0x8d, 0x41, 0x92, 0x0c,
-	0x46, 0x74, 0x4b, 0x46, 0xbd, 0xc9, 0xfe, 0x56, 0x18, 0x4f, 0xb5, 0x54, 0x16, 0xd3, 0x31, 0xe5,
-	0x2a, 0x68, 0x7c, 0x2d, 0xe0, 0xca, 0x2e, 0x4d, 0x19, 0xe5, 0x84, 0xbe, 0x9b, 0x50, 0x2e, 0xdc,
-	0x0d, 0x8c, 0x22, 0x16, 0x77, 0x05, 0x8b, 0xa8, 0x07, 0xea, 0xa0, 0x69, 0x92, 0x62, 0xc4, 0xe2,
-	0x57, 0x2c, 0xa2, 0x52, 0x0a, 0x0f, 0x95, 0x54, 0xd0, 0x52, 0x78, 0x28, 0xa5, 0x47, 0xb9, 0x24,
-	0xf6, 0x86, 0x34, 0xe5, 0x9e, 0x59, 0x37, 0x9b, 0xe5, 0x07, 0xd5, 0x96, 0x1a, 0xb0, 0xf5, 0x3c,
-	0xec, 0xd1, 0xd1, 0x0b, 0x25, 0xb6, 0xe1, 0xf1, 0xf7, 0x4d, 0x83, 0x5c, 0xd4, 0xba, 0x9b, 0xb8,
-	0xcc, 0x0f, 0xd8, 0xb8, 0xbb, 0x37, 0x9c, 0xc4, 0x07, 0xdc, 0x43, 0x75, 0xd0, 0x44, 0x04, 0xe7,
-	0xa9, 0xa7, 0x32, 0xe3, 0xde, 0xc3, 0xd6, 0x90, 0xc5, 0x82, 0x7b, 0xa5, 0x3a, 0x90, 0x5d, 0x95,
-	0xb1, 0xd6, 0xdc, 0x58, 0x6b, 0x3b, 0x9e, 0x12, 0x55, 0xe2, 0x3e, 0xc1, 0xff, 0x73, 0x91, 0xd2,
-	0x30, 0x62, 0xf1, 0x40, 0x77, 0xec, 0xf6, 0xf2, 0x93, 0xba, 0x9c, 0x1d, 0x51, 0xaf, 0x5f, 0x07,
-	0x4d, 0x48, 0xbc, 0x8b, 0x12, 0x75, 0x42, 0x3b, 0x2f, 0xd8, 0x65, 0x47, 0x34, 0x80, 0x08, 0x3a,
-	0x56, 0x00, 0x91, 0xe5, 0xd8, 0x01, 0x44, 0xb6, 0x53, 0x0c, 0x20, 0x2a, 0x3a, 0x28, 0x80, 0x08,
-	0x3b, 0xe5, 0x00, 0xa2, 0xb2, 0xb3, 0x12, 0x40, 0xb4, 0xe2, 0x54, 0x02, 0x88, 0x2a, 0xce, 0x6a,
-	0xe3, 0x31, 0xb6, 0x76, 0x45, 0x28, 0xb8, 0xdb, 0xc2, 0xeb, 0xfb, 0x34, 0x37, 0xd4, 0xef, 0xb2,
-	0xb8, 0x4f, 0x0f, 0xbb, 0xbd, 0xa9, 0xa0, 0x5c, 0xd2, 0x83, 0x64, 0x4d, 0x4b, 0x3b, 0xb9, 0xd2,
-	0xce, 0x85, 0xc6, 0x27, 0x13, 0xaf, 0xce, 0xa1, 0xf3, 0x71, 0x12, 0x73, 0xea, 0xd6, 0x70, 0xf1,
-	0x43, 0x98, 0xc6, 0x2c, 0x1e, 0x48, 0xb2, 0xa5, 0x8e, 0x41, 0xe6, 0x09, 0xf7, 0xfe, 0x1c, 0x81,
-	0x79, 0x3d, 0x82, 0x8e, 0x31, 0x87, 0x70, 0x17, 0x5b, 0x3c, 0x9f, 0xca, 0x83, 0xb2, 0xba, 0x32,
-	0xbf, 0x06, 0x39, 0x6a, 0x5e, 0x26, 0x55, 0x77, 0x07, 0x3b, 0x0b, 0x56, 0x5c, 0x0e, 0xe3, 0x59,
-	0xf2, 0x8f, 0x3b, 0x8b, 0x3f, 0xb4, 0xae, 0x66, 0x95, 0xa0, 0x3a, 0x06, 0xf9, 0x87, 0x2f, 0xe7,
-	0x97, 0x5b, 0xe9, 0x8b, 0xb4, 0xaf, 0x69, 0x75, 0x89, 0xf9, 0x52, 0x2b, 0x7d, 0xdb, 0x6f, 0xf1,
-	0xc6, 0x6f, 0x37, 0x48, 0xb9, 0x60, 0x51, 0x28, 0xa8, 0x57, 0x94, 0x3d, 0x37, 0xaf, 0xe9, 0xf9,
-	0x4c, 0x97, 0x75, 0x0c, 0xf2, 0x1f, 0xbf, 0x5a, 0x6a, 0x23, 0x6c, 0xa7, 0x94, 0x4f, 0x46, 0x22,
-	0x80, 0x08, 0x38, 0x85, 0xc6, 0x37, 0x80, 0xd7, 0xe4, 0x7a, 0xbe, 0x0c, 0xa3, 0xc5, 0x0b, 0xa8,
-	0x4a, 0x82, 0xa9, 0x90, 0xbc, 0x4d, 0xa2, 0x02, 0xd7, 0xc1, 0x26, 0x8d, 0xfb, 0x92, 0xaa, 0x49,
-	0xf2, 0xcf, 0xc5, 0x6a, 0x5a, 0x37, 0xaf, 0xe6, 0xe5, 0xf7, 0x61, 0xdf, 0xe2, 0x7d, 0x54, 0xb1,
-	0x35, 0x62, 0x11, 0x13, 0xd2, 0xbc, 0x49, 0x54, 0xa0, 0xa6, 0x0f, 0x20, 0x2a, 0x38, 0x66, 0x23,
-	0xc5, 0xee, 0x65, 0x0b, 0x7a, 0x9f, 0xaa, 0xd8, 0x8a, 0xf3, 0x84, 0x07, 0xea, 0x66, 0xb3, 0x44,
-	0x54, 0xe0, 0xd6, 0x30, 0xd2, 0x4b, 0xc5, 0xbd, 0x82, 0x14, 0x2e, 0xe2, 0x85, 0x1b, 0xf3, 0x46,
-	0x37, 0x8d, 0x53, 0xa0, 0x0f, 0x7d, 0x1d, 0x8e, 0x26, 0x4b, 0xe0, 0x46, 0x79, 0x56, 0x6e, 0x7e,
-	0x89, 0xa8, 0x60, 0x81, 0x13, 0x5e, 0x81, 0xd3, 0xba, 0x02, 0xa7, 0x7d, 0x3b, 0x9c, 0xc5, 0x3f,
-	0xc1, 0x89, 0x96, 0x71, 0x16, 0x1c, 0x33, 0x80, 0xc8, 0x74, 0x60, 0x63, 0x82, 0xd7, 0x97, 0x9c,
-	0x69, 0x9e, 0xff, 0x62, 0xfb, 0xbd, 0xcc, 0x68, 0xa0, 0x3a, 0xfa, 0x5b, 0x44, 0xdb, 0xdb, 0xc7,
-	0x33, 0xdf, 0x38, 0x99, 0xf9, 0xc6, 0xe9, 0xcc, 0x37, 0xce, 0x67, 0x3e, 0xf8, 0x98, 0xf9, 0xe0,
-	0x4b, 0xe6, 0x83, 0xe3, 0xcc, 0x07, 0x27, 0x99, 0x0f, 0x7e, 0x64, 0x3e, 0xf8, 0x99, 0xf9, 0xc6,
-	0x79, 0xe6, 0x83, 0xcf, 0x67, 0xbe, 0x71, 0x72, 0xe6, 0x1b, 0xa7, 0x67, 0xbe, 0xf1, 0xa6, 0xc8,
-	0x45, 0x92, 0xd2, 0x71, 0xaf, 0x67, 0xcb, 0xbe, 0x0f, 0x7f, 0x05, 0x00, 0x00, 0xff, 0xff, 0x0b,
-	0xd8, 0xa3, 0x37, 0x24, 0x06, 0x00, 0x00,
+	// 981 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xac, 0x94, 0xbf, 0x6f, 0x23, 0x45,
+	0x14, 0xc7, 0xf7, 0xc7, 0xac, 0x3d, 0x1e, 0xc7, 0x66, 0x33, 0xb1, 0x2e, 0x1b, 0x1f, 0xda, 0x58,
+	0x2b, 0x21, 0x45, 0xfc, 0x70, 0x24, 0x90, 0x40, 0x42, 0x42, 0x28, 0xbe, 0x03, 0x9c, 0x15, 0x87,
+	0xc4, 0x04, 0xae, 0xe0, 0x87, 0x56, 0x6b, 0x7b, 0xce, 0x19, 0x62, 0xef, 0xfa, 0x76, 0xd6, 0x90,
+	0x5c, 0x45, 0x45, 0xcd, 0x5f, 0x40, 0x4d, 0x4f, 0x47, 0x41, 0x9d, 0x82, 0x22, 0xe5, 0x55, 0x88,
+	0x38, 0x0d, 0xe5, 0xd5, 0x54, 0x68, 0x67, 0xc6, 0x3f, 0x36, 0xb6, 0x89, 0xee, 0x2e, 0xdd, 0xbe,
+	0xf7, 0x7d, 0xf3, 0xf6, 0xcd, 0x7b, 0x9f, 0x79, 0xa8, 0x94, 0x8c, 0xba, 0xcd, 0x51, 0x12, 0xa7,
+	0x31, 0x2e, 0xa4, 0xc7, 0x61, 0x14, 0xf3, 0x7a, 0xad, 0x1f, 0xf7, 0x63, 0xe1, 0xda, 0xcf, 0xbe,
+	0xa4, 0x5a, 0xdf, 0xe9, 0xc7, 0x71, 0x7f, 0x40, 0xf7, 0x85, 0xd5, 0x19, 0x3f, 0xda, 0x0f, 0xa3,
+	0x33, 0x25, 0x95, 0xd3, 0xb3, 0x11, 0xe5, 0xd2, 0xf0, 0xfe, 0x35, 0x50, 0xe5, 0x88, 0x26, 0x8c,
+	0x72, 0x42, 0x1f, 0x8f, 0x29, 0x4f, 0xf1, 0x0e, 0x82, 0x43, 0x16, 0x05, 0x29, 0x1b, 0x52, 0x47,
+	0x6f, 0xe8, 0x7b, 0x26, 0x29, 0x0e, 0x59, 0xf4, 0x05, 0x1b, 0x52, 0x21, 0x85, 0xa7, 0x52, 0x32,
+	0x94, 0x14, 0x9e, 0x0a, 0xe9, 0xdd, 0x4c, 0x4a, 0xbb, 0xc7, 0x34, 0xe1, 0x8e, 0xd9, 0x30, 0xf7,
+	0xca, 0x6f, 0xd7, 0x9a, 0xb2, 0xc0, 0xe6, 0xa7, 0x61, 0x87, 0x0e, 0x1e, 0x48, 0xb1, 0x05, 0xce,
+	0xff, 0xda, 0xd5, 0xc8, 0x2c, 0x16, 0xef, 0xa2, 0x32, 0x3f, 0x61, 0xa3, 0xa0, 0x7b, 0x3c, 0x8e,
+	0x4e, 0xb8, 0x03, 0x1b, 0xfa, 0x1e, 0x24, 0x28, 0x73, 0xdd, 0x13, 0x1e, 0xfc, 0x3a, 0xb2, 0x8e,
+	0x59, 0x94, 0x72, 0xa7, 0xd4, 0xd0, 0x45, 0x56, 0x79, 0xb1, 0xe6, 0xf4, 0x62, 0xcd, 0x83, 0xe8,
+	0x8c, 0xc8, 0x10, 0xfc, 0x21, 0xaa, 0x24, 0xf2, 0x16, 0x81, 0x3c, 0x53, 0x15, 0x67, 0xea, 0xd3,
+	0x4a, 0x72, 0x17, 0x6d, 0x67, 0x11, 0x64, 0x23, 0x59, 0xb0, 0xf0, 0x07, 0xe8, 0x2e, 0x4f, 0x13,
+	0x1a, 0x0e, 0x59, 0xd4, 0x57, 0x25, 0x05, 0x9d, 0xac, 0xd4, 0x80, 0xb3, 0x27, 0xd4, 0xe9, 0x35,
+	0xf4, 0x3d, 0x40, 0x9c, 0x59, 0x88, 0x2c, 0xb1, 0x95, 0x05, 0x1c, 0xb1, 0x27, 0xd4, 0x07, 0x10,
+	0xd8, 0x96, 0x0f, 0xa0, 0x65, 0x17, 0x7c, 0x00, 0x0b, 0x76, 0xd1, 0x07, 0xb0, 0x68, 0x43, 0x1f,
+	0x40, 0x64, 0x97, 0x7d, 0x00, 0xcb, 0xf6, 0x86, 0x0f, 0xe0, 0x86, 0x5d, 0xf1, 0x01, 0xac, 0xd8,
+	0x55, 0xef, 0x37, 0x1d, 0xe1, 0xe5, 0x9a, 0xf0, 0x01, 0xaa, 0x76, 0x06, 0x71, 0xf7, 0x24, 0x98,
+	0x75, 0x54, 0xbf, 0xb1, 0xa3, 0x15, 0x71, 0xe2, 0xc1, 0xb4, 0xad, 0x6f, 0x21, 0x3c, 0x4a, 0xe2,
+	0xef, 0x68, 0x37, 0x65, 0x71, 0x14, 0xb0, 0xa8, 0x3b, 0x18, 0xf7, 0xe4, 0xcc, 0x20, 0xd9, 0x9c,
+	0x2b, 0x87, 0x52, 0xc0, 0x6f, 0xa0, 0x05, 0x67, 0x30, 0xc8, 0xd2, 0xcb, 0x31, 0x96, 0x88, 0x3d,
+	0x17, 0xc4, 0x6f, 0xb9, 0xf7, 0x1e, 0xb2, 0x8e, 0xd2, 0x30, 0xe5, 0xb8, 0x89, 0xb6, 0x1e, 0xd1,
+	0xec, 0x87, 0xbd, 0x80, 0x45, 0x3d, 0x7a, 0x1a, 0x74, 0xce, 0x52, 0xca, 0x05, 0x34, 0x80, 0x6c,
+	0x2a, 0xe9, 0x30, 0x53, 0x5a, 0x99, 0xe0, 0xfd, 0x69, 0xa2, 0xea, 0xf4, 0xba, 0x7c, 0x14, 0x47,
+	0x9c, 0xe2, 0x3a, 0x2a, 0xfe, 0x10, 0x26, 0x11, 0x8b, 0xfa, 0xa2, 0xb8, 0x52, 0x5b, 0x23, 0x53,
+	0x07, 0x7e, 0x73, 0x3a, 0x79, 0x73, 0xfd, 0xe4, 0xdb, 0xda, 0x74, 0xf6, 0xaf, 0x21, 0x8b, 0x67,
+	0x55, 0x39, 0x40, 0x44, 0x57, 0x66, 0x33, 0xcf, 0x9c, 0x59, 0x98, 0x50, 0xf1, 0x21, 0xb2, 0xe7,
+	0x13, 0xe6, 0xa2, 0x18, 0xc7, 0x12, 0x27, 0x5e, 0x9d, 0x9f, 0x50, 0xba, 0xac, 0x55, 0x8c, 0xb7,
+	0xad, 0x91, 0x57, 0x78, 0xde, 0x9f, 0x4f, 0xa5, 0xf8, 0x2d, 0xac, 0x49, 0xb5, 0x40, 0x4a, 0x2e,
+	0x95, 0x82, 0xfc, 0x5b, 0xb4, 0xb3, 0xc4, 0x1d, 0xe5, 0x29, 0x1b, 0x86, 0x29, 0x75, 0x8a, 0x22,
+	0xe7, 0xee, 0x9a, 0x9c, 0x1f, 0xa9, 0xb0, 0xb6, 0x46, 0xb6, 0xf9, 0x6a, 0x09, 0xdf, 0x47, 0xd5,
+	0x44, 0x75, 0x5c, 0x3d, 0x0c, 0x28, 0x72, 0xde, 0xbd, 0xfe, 0x30, 0x64, 0x8c, 0xa0, 0xb0, 0xad,
+	0x91, 0x4a, 0xb2, 0xe8, 0x68, 0x41, 0x54, 0x48, 0x28, 0x1f, 0x0f, 0x52, 0x1f, 0x40, 0xdd, 0x36,
+	0xbc, 0xcf, 0xd1, 0xd6, 0x8a, 0x73, 0xf8, 0x7d, 0x54, 0x7d, 0x3c, 0xce, 0xfc, 0xbd, 0x40, 0x30,
+	0x39, 0xa5, 0x77, 0x36, 0x91, 0x56, 0xe6, 0x9d, 0x62, 0xab, 0x42, 0x85, 0x8f, 0x7b, 0xdb, 0xc8,
+	0x12, 0x5f, 0xb8, 0x8a, 0x0c, 0xd6, 0x13, 0x24, 0x95, 0x88, 0xc1, 0x7a, 0xde, 0x4f, 0x06, 0xda,
+	0x14, 0xf8, 0x7d, 0x16, 0x0e, 0xe7, 0xab, 0xaa, 0x26, 0x66, 0x9e, 0xa4, 0x82, 0x10, 0x93, 0x48,
+	0x03, 0xdb, 0xc8, 0xa4, 0x51, 0x4f, 0x70, 0x60, 0x92, 0xec, 0x73, 0xbe, 0x43, 0xac, 0x9b, 0x77,
+	0xc8, 0xe2, 0x22, 0x2b, 0x3c, 0xc7, 0x22, 0xab, 0x21, 0x6b, 0xc0, 0x86, 0x2c, 0x15, 0xe3, 0x32,
+	0x89, 0x34, 0xf0, 0xbd, 0xeb, 0x1b, 0x49, 0x36, 0xde, 0xcd, 0xa5, 0x5c, 0xbc, 0xd3, 0x8a, 0xad,
+	0x24, 0xdb, 0xed, 0x03, 0x68, 0xd8, 0xa6, 0xf7, 0x35, 0xba, 0xb3, 0xfa, 0xcc, 0x2d, 0x6c, 0x0d,
+	0xef, 0x77, 0x1d, 0xe1, 0xc5, 0xec, 0xea, 0x91, 0xd6, 0x90, 0x15, 0x65, 0x0e, 0x91, 0xb0, 0x44,
+	0xa4, 0x81, 0xeb, 0x08, 0xaa, 0x97, 0xca, 0x1d, 0x43, 0x08, 0x33, 0x7b, 0xde, 0x70, 0xf3, 0xe6,
+	0x86, 0x7f, 0xbc, 0x04, 0x27, 0xc8, 0x03, 0xbf, 0x5c, 0x91, 0x6c, 0x52, 0x1e, 0x4f, 0xef, 0x4b,
+	0xb4, 0xbd, 0x26, 0xf2, 0xa5, 0x90, 0xfc, 0xc5, 0x50, 0x3d, 0x79, 0x18, 0x0e, 0xc6, 0x39, 0xf4,
+	0xc4, 0x9a, 0x54, 0x8c, 0x4a, 0x63, 0x0e, 0x24, 0x58, 0x01, 0xa4, 0xb5, 0x02, 0xc8, 0xc2, 0xf3,
+	0x01, 0x59, 0x7c, 0x11, 0x20, 0xe1, 0x22, 0x90, 0xf7, 0xaf, 0x03, 0x59, 0x5a, 0xd1, 0xec, 0xdc,
+	0x55, 0x57, 0x13, 0x69, 0xd8, 0xa6, 0x0f, 0xa0, 0x69, 0x03, 0xef, 0x1b, 0xd5, 0xf7, 0xe5, 0x43,
+	0xb7, 0x81, 0xe4, 0x1f, 0x3a, 0xda, 0xca, 0xa5, 0x57, 0x4c, 0xde, 0x41, 0x85, 0xef, 0x85, 0x47,
+	0x41, 0xa9, 0xac, 0x5b, 0xa3, 0xf2, 0x93, 0x35, 0x54, 0x36, 0x56, 0x36, 0xea, 0x7f, 0xb0, 0x7c,
+	0x88, 0x9c, 0x75, 0xa1, 0x2f, 0xc3, 0x65, 0xeb, 0xe0, 0xfc, 0xd2, 0xd5, 0x2e, 0x2e, 0x5d, 0xed,
+	0xe9, 0xa5, 0xab, 0x3d, 0xbb, 0x74, 0xf5, 0x1f, 0x27, 0xae, 0xfe, 0xeb, 0xc4, 0xd5, 0xcf, 0x27,
+	0xae, 0x7e, 0x31, 0x71, 0xf5, 0xbf, 0x27, 0xae, 0xfe, 0xcf, 0xc4, 0xd5, 0x9e, 0x4d, 0x5c, 0xfd,
+	0xe7, 0x2b, 0x57, 0xbb, 0xb8, 0x72, 0xb5, 0xa7, 0x57, 0xae, 0xf6, 0x55, 0x91, 0xa7, 0x71, 0x42,
+	0x47, 0x9d, 0x4e, 0x41, 0x5c, 0xfc, 0x9d, 0xff, 0x02, 0x00, 0x00, 0xff, 0xff, 0xb4, 0x5d, 0xf1,
+	0xb9, 0x55, 0x0a, 0x00, 0x00,
 }
 
 func (this *SeriesRequest) Equal(that interface{}) bool {
@@ -530,8 +845,51 @@ func (this *SeriesRequest) Equal(that interface{}) bool {
 	if !this.Hints.Equal(that1.Hints) {
 		return false
 	}
+	if !this.RequestHints.Equal(that1.RequestHints) {
+		return false
+	}
 	if this.StreamingChunksBatchSize != that1.StreamingChunksBatchSize {
 		return false
+	}
+	return true
+}
+func (this *SeriesRequestHints) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SeriesRequestHints)
+	if !ok {
+		that2, ok := that.(SeriesRequestHints)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.BlockMatchers) != len(that1.BlockMatchers) {
+		return false
+	}
+	for i := range this.BlockMatchers {
+		if !this.BlockMatchers[i].Equal(&that1.BlockMatchers[i]) {
+			return false
+		}
+	}
+	if this.ProjectionInclude != that1.ProjectionInclude {
+		return false
+	}
+	if len(this.ProjectionLabels) != len(that1.ProjectionLabels) {
+		return false
+	}
+	for i := range this.ProjectionLabels {
+		if this.ProjectionLabels[i] != that1.ProjectionLabels[i] {
+			return false
+		}
 	}
 	return true
 }
@@ -733,6 +1091,83 @@ func (this *SeriesResponse_StreamingChunksEstimate) Equal(that interface{}) bool
 	}
 	return true
 }
+func (this *SeriesResponse_ResponseHints) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SeriesResponse_ResponseHints)
+	if !ok {
+		that2, ok := that.(SeriesResponse_ResponseHints)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if !this.ResponseHints.Equal(that1.ResponseHints) {
+		return false
+	}
+	return true
+}
+func (this *SeriesResponseHints) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*SeriesResponseHints)
+	if !ok {
+		that2, ok := that.(SeriesResponseHints)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.QueriedBlocks) != len(that1.QueriedBlocks) {
+		return false
+	}
+	for i := range this.QueriedBlocks {
+		if !this.QueriedBlocks[i].Equal(&that1.QueriedBlocks[i]) {
+			return false
+		}
+	}
+	return true
+}
+func (this *Block) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*Block)
+	if !ok {
+		that2, ok := that.(Block)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if this.Id != that1.Id {
+		return false
+	}
+	return true
+}
 func (this *LabelNamesRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
@@ -771,6 +1206,38 @@ func (this *LabelNamesRequest) Equal(that interface{}) bool {
 	}
 	if this.Limit != that1.Limit {
 		return false
+	}
+	if !this.RequestHints.Equal(that1.RequestHints) {
+		return false
+	}
+	return true
+}
+func (this *LabelNamesRequestHints) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LabelNamesRequestHints)
+	if !ok {
+		that2, ok := that.(LabelNamesRequestHints)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.BlockMatchers) != len(that1.BlockMatchers) {
+		return false
+	}
+	for i := range this.BlockMatchers {
+		if !this.BlockMatchers[i].Equal(&that1.BlockMatchers[i]) {
+			return false
+		}
 	}
 	return true
 }
@@ -811,6 +1278,38 @@ func (this *LabelNamesResponse) Equal(that interface{}) bool {
 	}
 	if !this.Hints.Equal(that1.Hints) {
 		return false
+	}
+	if !this.ResponseHints.Equal(that1.ResponseHints) {
+		return false
+	}
+	return true
+}
+func (this *LabelNamesResponseHints) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LabelNamesResponseHints)
+	if !ok {
+		that2, ok := that.(LabelNamesResponseHints)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.QueriedBlocks) != len(that1.QueriedBlocks) {
+		return false
+	}
+	for i := range this.QueriedBlocks {
+		if !this.QueriedBlocks[i].Equal(&that1.QueriedBlocks[i]) {
+			return false
+		}
 	}
 	return true
 }
@@ -856,6 +1355,38 @@ func (this *LabelValuesRequest) Equal(that interface{}) bool {
 	if this.Limit != that1.Limit {
 		return false
 	}
+	if !this.RequestHints.Equal(that1.RequestHints) {
+		return false
+	}
+	return true
+}
+func (this *LabelValuesRequestHints) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LabelValuesRequestHints)
+	if !ok {
+		that2, ok := that.(LabelValuesRequestHints)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.BlockMatchers) != len(that1.BlockMatchers) {
+		return false
+	}
+	for i := range this.BlockMatchers {
+		if !this.BlockMatchers[i].Equal(&that1.BlockMatchers[i]) {
+			return false
+		}
+	}
 	return true
 }
 func (this *LabelValuesResponse) Equal(that interface{}) bool {
@@ -896,13 +1427,45 @@ func (this *LabelValuesResponse) Equal(that interface{}) bool {
 	if !this.Hints.Equal(that1.Hints) {
 		return false
 	}
+	if !this.ResponseHints.Equal(that1.ResponseHints) {
+		return false
+	}
+	return true
+}
+func (this *LabelValuesResponseHints) Equal(that interface{}) bool {
+	if that == nil {
+		return this == nil
+	}
+
+	that1, ok := that.(*LabelValuesResponseHints)
+	if !ok {
+		that2, ok := that.(LabelValuesResponseHints)
+		if ok {
+			that1 = &that2
+		} else {
+			return false
+		}
+	}
+	if that1 == nil {
+		return this == nil
+	} else if this == nil {
+		return false
+	}
+	if len(this.QueriedBlocks) != len(that1.QueriedBlocks) {
+		return false
+	}
+	for i := range this.QueriedBlocks {
+		if !this.QueriedBlocks[i].Equal(&that1.QueriedBlocks[i]) {
+			return false
+		}
+	}
 	return true
 }
 func (this *SeriesRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 11)
 	s = append(s, "&storepb.SeriesRequest{")
 	s = append(s, "MinTime: "+fmt.Sprintf("%#v", this.MinTime)+",\n")
 	s = append(s, "MaxTime: "+fmt.Sprintf("%#v", this.MaxTime)+",\n")
@@ -917,7 +1480,28 @@ func (this *SeriesRequest) GoString() string {
 	if this.Hints != nil {
 		s = append(s, "Hints: "+fmt.Sprintf("%#v", this.Hints)+",\n")
 	}
+	if this.RequestHints != nil {
+		s = append(s, "RequestHints: "+fmt.Sprintf("%#v", this.RequestHints)+",\n")
+	}
 	s = append(s, "StreamingChunksBatchSize: "+fmt.Sprintf("%#v", this.StreamingChunksBatchSize)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *SeriesRequestHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 7)
+	s = append(s, "&storepb.SeriesRequestHints{")
+	if this.BlockMatchers != nil {
+		vs := make([]LabelMatcher, len(this.BlockMatchers))
+		for i := range vs {
+			vs[i] = this.BlockMatchers[i]
+		}
+		s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "ProjectionInclude: "+fmt.Sprintf("%#v", this.ProjectionInclude)+",\n")
+	s = append(s, "ProjectionLabels: "+fmt.Sprintf("%#v", this.ProjectionLabels)+",\n")
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -935,7 +1519,7 @@ func (this *SeriesResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 11)
 	s = append(s, "&storepb.SeriesResponse{")
 	if this.Result != nil {
 		s = append(s, "Result: "+fmt.Sprintf("%#v", this.Result)+",\n")
@@ -991,11 +1575,45 @@ func (this *SeriesResponse_StreamingChunksEstimate) GoString() string {
 		`StreamingChunksEstimate:` + fmt.Sprintf("%#v", this.StreamingChunksEstimate) + `}`}, ", ")
 	return s
 }
+func (this *SeriesResponse_ResponseHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&storepb.SeriesResponse_ResponseHints{` +
+		`ResponseHints:` + fmt.Sprintf("%#v", this.ResponseHints) + `}`}, ", ")
+	return s
+}
+func (this *SeriesResponseHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.SeriesResponseHints{")
+	if this.QueriedBlocks != nil {
+		vs := make([]Block, len(this.QueriedBlocks))
+		for i := range vs {
+			vs[i] = this.QueriedBlocks[i]
+		}
+		s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *Block) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.Block{")
+	s = append(s, "Id: "+fmt.Sprintf("%#v", this.Id)+",\n")
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
 func (this *LabelNamesRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 9)
+	s := make([]string, 0, 10)
 	s = append(s, "&storepb.LabelNamesRequest{")
 	s = append(s, "Start: "+fmt.Sprintf("%#v", this.Start)+",\n")
 	s = append(s, "End: "+fmt.Sprintf("%#v", this.End)+",\n")
@@ -1010,6 +1628,25 @@ func (this *LabelNamesRequest) GoString() string {
 		s = append(s, "Matchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "Limit: "+fmt.Sprintf("%#v", this.Limit)+",\n")
+	if this.RequestHints != nil {
+		s = append(s, "RequestHints: "+fmt.Sprintf("%#v", this.RequestHints)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *LabelNamesRequestHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.LabelNamesRequestHints{")
+	if this.BlockMatchers != nil {
+		vs := make([]LabelMatcher, len(this.BlockMatchers))
+		for i := range vs {
+			vs[i] = this.BlockMatchers[i]
+		}
+		s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1017,12 +1654,31 @@ func (this *LabelNamesResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 8)
 	s = append(s, "&storepb.LabelNamesResponse{")
 	s = append(s, "Names: "+fmt.Sprintf("%#v", this.Names)+",\n")
 	s = append(s, "Warnings: "+fmt.Sprintf("%#v", this.Warnings)+",\n")
 	if this.Hints != nil {
 		s = append(s, "Hints: "+fmt.Sprintf("%#v", this.Hints)+",\n")
+	}
+	if this.ResponseHints != nil {
+		s = append(s, "ResponseHints: "+fmt.Sprintf("%#v", this.ResponseHints)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *LabelNamesResponseHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.LabelNamesResponseHints{")
+	if this.QueriedBlocks != nil {
+		vs := make([]Block, len(this.QueriedBlocks))
+		for i := range vs {
+			vs[i] = this.QueriedBlocks[i]
+		}
+		s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -1031,7 +1687,7 @@ func (this *LabelValuesRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 10)
+	s := make([]string, 0, 11)
 	s = append(s, "&storepb.LabelValuesRequest{")
 	s = append(s, "Label: "+fmt.Sprintf("%#v", this.Label)+",\n")
 	s = append(s, "Start: "+fmt.Sprintf("%#v", this.Start)+",\n")
@@ -1047,6 +1703,25 @@ func (this *LabelValuesRequest) GoString() string {
 		s = append(s, "Matchers: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "Limit: "+fmt.Sprintf("%#v", this.Limit)+",\n")
+	if this.RequestHints != nil {
+		s = append(s, "RequestHints: "+fmt.Sprintf("%#v", this.RequestHints)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *LabelValuesRequestHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.LabelValuesRequestHints{")
+	if this.BlockMatchers != nil {
+		vs := make([]LabelMatcher, len(this.BlockMatchers))
+		for i := range vs {
+			vs[i] = this.BlockMatchers[i]
+		}
+		s = append(s, "BlockMatchers: "+fmt.Sprintf("%#v", vs)+",\n")
+	}
 	s = append(s, "}")
 	return strings.Join(s, "")
 }
@@ -1054,12 +1729,31 @@ func (this *LabelValuesResponse) GoString() string {
 	if this == nil {
 		return "nil"
 	}
-	s := make([]string, 0, 7)
+	s := make([]string, 0, 8)
 	s = append(s, "&storepb.LabelValuesResponse{")
 	s = append(s, "Values: "+fmt.Sprintf("%#v", this.Values)+",\n")
 	s = append(s, "Warnings: "+fmt.Sprintf("%#v", this.Warnings)+",\n")
 	if this.Hints != nil {
 		s = append(s, "Hints: "+fmt.Sprintf("%#v", this.Hints)+",\n")
+	}
+	if this.ResponseHints != nil {
+		s = append(s, "ResponseHints: "+fmt.Sprintf("%#v", this.ResponseHints)+",\n")
+	}
+	s = append(s, "}")
+	return strings.Join(s, "")
+}
+func (this *LabelValuesResponseHints) GoString() string {
+	if this == nil {
+		return "nil"
+	}
+	s := make([]string, 0, 5)
+	s = append(s, "&storepb.LabelValuesResponseHints{")
+	if this.QueriedBlocks != nil {
+		vs := make([]Block, len(this.QueriedBlocks))
+		for i := range vs {
+			vs[i] = this.QueriedBlocks[i]
+		}
+		s = append(s, "QueriedBlocks: "+fmt.Sprintf("%#v", vs)+",\n")
 	}
 	s = append(s, "}")
 	return strings.Join(s, "")
@@ -1098,6 +1792,18 @@ func (m *SeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x6
 		i--
 		dAtA[i] = 0xa0
+	}
+	if m.RequestHints != nil {
+		{
+			size, err := m.RequestHints.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRpc(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x72
 	}
 	if m.Hints != nil {
 		{
@@ -1144,6 +1850,62 @@ func (m *SeriesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i = encodeVarintRpc(dAtA, i, uint64(m.MinTime))
 		i--
 		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SeriesRequestHints) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SeriesRequestHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SeriesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.ProjectionLabels) > 0 {
+		for iNdEx := len(m.ProjectionLabels) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.ProjectionLabels[iNdEx])
+			copy(dAtA[i:], m.ProjectionLabels[iNdEx])
+			i = encodeVarintRpc(dAtA, i, uint64(len(m.ProjectionLabels[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if m.ProjectionInclude {
+		i--
+		if m.ProjectionInclude {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x10
+	}
+	if len(m.BlockMatchers) > 0 {
+		for iNdEx := len(m.BlockMatchers) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.BlockMatchers[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintRpc(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
 	}
 	return len(dAtA) - i, nil
 }
@@ -1327,6 +2089,94 @@ func (m *SeriesResponse_StreamingChunksEstimate) MarshalToSizedBuffer(dAtA []byt
 	}
 	return len(dAtA) - i, nil
 }
+func (m *SeriesResponse_ResponseHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SeriesResponse_ResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	if m.ResponseHints != nil {
+		{
+			size, err := m.ResponseHints.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRpc(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x42
+	}
+	return len(dAtA) - i, nil
+}
+func (m *SeriesResponseHints) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SeriesResponseHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SeriesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.QueriedBlocks) > 0 {
+		for iNdEx := len(m.QueriedBlocks) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.QueriedBlocks[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintRpc(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *Block) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *Block) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *Block) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Id) > 0 {
+		i -= len(m.Id)
+		copy(dAtA[i:], m.Id)
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Id)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *LabelNamesRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1347,6 +2197,18 @@ func (m *LabelNamesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.RequestHints != nil {
+		{
+			size, err := m.RequestHints.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRpc(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x42
+	}
 	if m.Limit != 0 {
 		i = encodeVarintRpc(dAtA, i, uint64(m.Limit))
 		i--
@@ -1391,6 +2253,43 @@ func (m *LabelNamesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *LabelNamesRequestHints) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LabelNamesRequestHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LabelNamesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BlockMatchers) > 0 {
+		for iNdEx := len(m.BlockMatchers) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.BlockMatchers[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintRpc(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *LabelNamesResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1411,6 +2310,18 @@ func (m *LabelNamesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.ResponseHints != nil {
+		{
+			size, err := m.ResponseHints.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRpc(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
 	if m.Hints != nil {
 		{
 			size, err := m.Hints.MarshalToSizedBuffer(dAtA[:i])
@@ -1444,6 +2355,43 @@ func (m *LabelNamesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *LabelNamesResponseHints) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LabelNamesResponseHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LabelNamesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.QueriedBlocks) > 0 {
+		for iNdEx := len(m.QueriedBlocks) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.QueriedBlocks[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintRpc(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *LabelValuesRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1464,6 +2412,18 @@ func (m *LabelValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.RequestHints != nil {
+		{
+			size, err := m.RequestHints.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRpc(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x4a
+	}
 	if m.Limit != 0 {
 		i = encodeVarintRpc(dAtA, i, uint64(m.Limit))
 		i--
@@ -1515,6 +2475,43 @@ func (m *LabelValuesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *LabelValuesRequestHints) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LabelValuesRequestHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LabelValuesRequestHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.BlockMatchers) > 0 {
+		for iNdEx := len(m.BlockMatchers) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.BlockMatchers[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintRpc(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *LabelValuesResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -1535,6 +2532,18 @@ func (m *LabelValuesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.ResponseHints != nil {
+		{
+			size, err := m.ResponseHints.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRpc(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x22
+	}
 	if m.Hints != nil {
 		{
 			size, err := m.Hints.MarshalToSizedBuffer(dAtA[:i])
@@ -1561,6 +2570,43 @@ func (m *LabelValuesResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i -= len(m.Values[iNdEx])
 			copy(dAtA[i:], m.Values[iNdEx])
 			i = encodeVarintRpc(dAtA, i, uint64(len(m.Values[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *LabelValuesResponseHints) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *LabelValuesResponseHints) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *LabelValuesResponseHints) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.QueriedBlocks) > 0 {
+		for iNdEx := len(m.QueriedBlocks) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.QueriedBlocks[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintRpc(dAtA, i, uint64(size))
+			}
 			i--
 			dAtA[i] = 0xa
 		}
@@ -1604,8 +2650,36 @@ func (m *SeriesRequest) Size() (n int) {
 		l = m.Hints.Size()
 		n += 1 + l + sovRpc(uint64(l))
 	}
+	if m.RequestHints != nil {
+		l = m.RequestHints.Size()
+		n += 1 + l + sovRpc(uint64(l))
+	}
 	if m.StreamingChunksBatchSize != 0 {
 		n += 2 + sovRpc(uint64(m.StreamingChunksBatchSize))
+	}
+	return n
+}
+
+func (m *SeriesRequestHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.BlockMatchers) > 0 {
+		for _, e := range m.BlockMatchers {
+			l = e.Size()
+			n += 1 + l + sovRpc(uint64(l))
+		}
+	}
+	if m.ProjectionInclude {
+		n += 2
+	}
+	if len(m.ProjectionLabels) > 0 {
+		for _, s := range m.ProjectionLabels {
+			l = len(s)
+			n += 1 + l + sovRpc(uint64(l))
+		}
 	}
 	return n
 }
@@ -1704,6 +2778,46 @@ func (m *SeriesResponse_StreamingChunksEstimate) Size() (n int) {
 	}
 	return n
 }
+func (m *SeriesResponse_ResponseHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ResponseHints != nil {
+		l = m.ResponseHints.Size()
+		n += 1 + l + sovRpc(uint64(l))
+	}
+	return n
+}
+func (m *SeriesResponseHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.QueriedBlocks) > 0 {
+		for _, e := range m.QueriedBlocks {
+			l = e.Size()
+			n += 1 + l + sovRpc(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *Block) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Id)
+	if l > 0 {
+		n += 1 + l + sovRpc(uint64(l))
+	}
+	return n
+}
+
 func (m *LabelNamesRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -1729,6 +2843,25 @@ func (m *LabelNamesRequest) Size() (n int) {
 	if m.Limit != 0 {
 		n += 1 + sovRpc(uint64(m.Limit))
 	}
+	if m.RequestHints != nil {
+		l = m.RequestHints.Size()
+		n += 1 + l + sovRpc(uint64(l))
+	}
+	return n
+}
+
+func (m *LabelNamesRequestHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.BlockMatchers) > 0 {
+		for _, e := range m.BlockMatchers {
+			l = e.Size()
+			n += 1 + l + sovRpc(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -1753,6 +2886,25 @@ func (m *LabelNamesResponse) Size() (n int) {
 	if m.Hints != nil {
 		l = m.Hints.Size()
 		n += 1 + l + sovRpc(uint64(l))
+	}
+	if m.ResponseHints != nil {
+		l = m.ResponseHints.Size()
+		n += 1 + l + sovRpc(uint64(l))
+	}
+	return n
+}
+
+func (m *LabelNamesResponseHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.QueriedBlocks) > 0 {
+		for _, e := range m.QueriedBlocks {
+			l = e.Size()
+			n += 1 + l + sovRpc(uint64(l))
+		}
 	}
 	return n
 }
@@ -1786,6 +2938,25 @@ func (m *LabelValuesRequest) Size() (n int) {
 	if m.Limit != 0 {
 		n += 1 + sovRpc(uint64(m.Limit))
 	}
+	if m.RequestHints != nil {
+		l = m.RequestHints.Size()
+		n += 1 + l + sovRpc(uint64(l))
+	}
+	return n
+}
+
+func (m *LabelValuesRequestHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.BlockMatchers) > 0 {
+		for _, e := range m.BlockMatchers {
+			l = e.Size()
+			n += 1 + l + sovRpc(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -1811,6 +2982,25 @@ func (m *LabelValuesResponse) Size() (n int) {
 		l = m.Hints.Size()
 		n += 1 + l + sovRpc(uint64(l))
 	}
+	if m.ResponseHints != nil {
+		l = m.ResponseHints.Size()
+		n += 1 + l + sovRpc(uint64(l))
+	}
+	return n
+}
+
+func (m *LabelValuesResponseHints) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.QueriedBlocks) > 0 {
+		for _, e := range m.QueriedBlocks {
+			l = e.Size()
+			n += 1 + l + sovRpc(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -1835,7 +3025,25 @@ func (this *SeriesRequest) String() string {
 		`Matchers:` + repeatedStringForMatchers + `,`,
 		`SkipChunks:` + fmt.Sprintf("%v", this.SkipChunks) + `,`,
 		`Hints:` + strings.Replace(fmt.Sprintf("%v", this.Hints), "Any", "types.Any", 1) + `,`,
+		`RequestHints:` + strings.Replace(this.RequestHints.String(), "SeriesRequestHints", "SeriesRequestHints", 1) + `,`,
 		`StreamingChunksBatchSize:` + fmt.Sprintf("%v", this.StreamingChunksBatchSize) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SeriesRequestHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForBlockMatchers := "[]LabelMatcher{"
+	for _, f := range this.BlockMatchers {
+		repeatedStringForBlockMatchers += fmt.Sprintf("%v", f) + ","
+	}
+	repeatedStringForBlockMatchers += "}"
+	s := strings.Join([]string{`&SeriesRequestHints{`,
+		`BlockMatchers:` + repeatedStringForBlockMatchers + `,`,
+		`ProjectionInclude:` + fmt.Sprintf("%v", this.ProjectionInclude) + `,`,
+		`ProjectionLabels:` + fmt.Sprintf("%v", this.ProjectionLabels) + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1920,6 +3128,41 @@ func (this *SeriesResponse_StreamingChunksEstimate) String() string {
 	}, "")
 	return s
 }
+func (this *SeriesResponse_ResponseHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&SeriesResponse_ResponseHints{`,
+		`ResponseHints:` + strings.Replace(fmt.Sprintf("%v", this.ResponseHints), "SeriesResponseHints", "SeriesResponseHints", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *SeriesResponseHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForQueriedBlocks := "[]Block{"
+	for _, f := range this.QueriedBlocks {
+		repeatedStringForQueriedBlocks += strings.Replace(strings.Replace(f.String(), "Block", "Block", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForQueriedBlocks += "}"
+	s := strings.Join([]string{`&SeriesResponseHints{`,
+		`QueriedBlocks:` + repeatedStringForQueriedBlocks + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *Block) String() string {
+	if this == nil {
+		return "nil"
+	}
+	s := strings.Join([]string{`&Block{`,
+		`Id:` + fmt.Sprintf("%v", this.Id) + `,`,
+		`}`,
+	}, "")
+	return s
+}
 func (this *LabelNamesRequest) String() string {
 	if this == nil {
 		return "nil"
@@ -1935,6 +3178,22 @@ func (this *LabelNamesRequest) String() string {
 		`Hints:` + strings.Replace(fmt.Sprintf("%v", this.Hints), "Any", "types.Any", 1) + `,`,
 		`Matchers:` + repeatedStringForMatchers + `,`,
 		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`RequestHints:` + strings.Replace(this.RequestHints.String(), "LabelNamesRequestHints", "LabelNamesRequestHints", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *LabelNamesRequestHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForBlockMatchers := "[]LabelMatcher{"
+	for _, f := range this.BlockMatchers {
+		repeatedStringForBlockMatchers += fmt.Sprintf("%v", f) + ","
+	}
+	repeatedStringForBlockMatchers += "}"
+	s := strings.Join([]string{`&LabelNamesRequestHints{`,
+		`BlockMatchers:` + repeatedStringForBlockMatchers + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1947,6 +3206,22 @@ func (this *LabelNamesResponse) String() string {
 		`Names:` + fmt.Sprintf("%v", this.Names) + `,`,
 		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
 		`Hints:` + strings.Replace(fmt.Sprintf("%v", this.Hints), "Any", "types.Any", 1) + `,`,
+		`ResponseHints:` + strings.Replace(this.ResponseHints.String(), "LabelNamesResponseHints", "LabelNamesResponseHints", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *LabelNamesResponseHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForQueriedBlocks := "[]Block{"
+	for _, f := range this.QueriedBlocks {
+		repeatedStringForQueriedBlocks += strings.Replace(strings.Replace(f.String(), "Block", "Block", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForQueriedBlocks += "}"
+	s := strings.Join([]string{`&LabelNamesResponseHints{`,
+		`QueriedBlocks:` + repeatedStringForQueriedBlocks + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1967,6 +3242,22 @@ func (this *LabelValuesRequest) String() string {
 		`Hints:` + strings.Replace(fmt.Sprintf("%v", this.Hints), "Any", "types.Any", 1) + `,`,
 		`Matchers:` + repeatedStringForMatchers + `,`,
 		`Limit:` + fmt.Sprintf("%v", this.Limit) + `,`,
+		`RequestHints:` + strings.Replace(this.RequestHints.String(), "LabelValuesRequestHints", "LabelValuesRequestHints", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *LabelValuesRequestHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForBlockMatchers := "[]LabelMatcher{"
+	for _, f := range this.BlockMatchers {
+		repeatedStringForBlockMatchers += fmt.Sprintf("%v", f) + ","
+	}
+	repeatedStringForBlockMatchers += "}"
+	s := strings.Join([]string{`&LabelValuesRequestHints{`,
+		`BlockMatchers:` + repeatedStringForBlockMatchers + `,`,
 		`}`,
 	}, "")
 	return s
@@ -1979,6 +3270,22 @@ func (this *LabelValuesResponse) String() string {
 		`Values:` + fmt.Sprintf("%v", this.Values) + `,`,
 		`Warnings:` + fmt.Sprintf("%v", this.Warnings) + `,`,
 		`Hints:` + strings.Replace(fmt.Sprintf("%v", this.Hints), "Any", "types.Any", 1) + `,`,
+		`ResponseHints:` + strings.Replace(this.ResponseHints.String(), "LabelValuesResponseHints", "LabelValuesResponseHints", 1) + `,`,
+		`}`,
+	}, "")
+	return s
+}
+func (this *LabelValuesResponseHints) String() string {
+	if this == nil {
+		return "nil"
+	}
+	repeatedStringForQueriedBlocks := "[]Block{"
+	for _, f := range this.QueriedBlocks {
+		repeatedStringForQueriedBlocks += strings.Replace(strings.Replace(f.String(), "Block", "Block", 1), `&`, ``, 1) + ","
+	}
+	repeatedStringForQueriedBlocks += "}"
+	s := strings.Join([]string{`&LabelValuesResponseHints{`,
+		`QueriedBlocks:` + repeatedStringForQueriedBlocks + `,`,
 		`}`,
 	}, "")
 	return s
@@ -2148,6 +3455,42 @@ func (m *SeriesRequest) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 14:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RequestHints", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.RequestHints == nil {
+				m.RequestHints = &SeriesRequestHints{}
+			}
+			if err := m.RequestHints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		case 100:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field StreamingChunksBatchSize", wireType)
@@ -2167,6 +3510,142 @@ func (m *SeriesRequest) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SeriesRequestHints) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SeriesRequestHints: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SeriesRequestHints: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockMatchers", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BlockMatchers = append(m.BlockMatchers, LabelMatcher{})
+			if err := m.BlockMatchers[len(m.BlockMatchers)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProjectionInclude", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ProjectionInclude = bool(v != 0)
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProjectionLabels", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ProjectionLabels = append(m.ProjectionLabels, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipRpc(dAtA[iNdEx:])
@@ -2493,6 +3972,207 @@ func (m *SeriesResponse) Unmarshal(dAtA []byte) error {
 			}
 			m.Result = &SeriesResponse_StreamingChunksEstimate{v}
 			iNdEx = postIndex
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResponseHints", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			v := &SeriesResponseHints{}
+			if err := v.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			m.Result = &SeriesResponse_ResponseHints{v}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SeriesResponseHints) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SeriesResponseHints: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SeriesResponseHints: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field QueriedBlocks", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.QueriedBlocks = append(m.QueriedBlocks, Block{})
+			if err := m.QueriedBlocks[len(m.QueriedBlocks)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *Block) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: Block: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Block: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Id", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Id = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipRpc(dAtA[iNdEx:])
@@ -2670,6 +4350,126 @@ func (m *LabelNamesRequest) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 8:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RequestHints", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.RequestHints == nil {
+				m.RequestHints = &LabelNamesRequestHints{}
+			}
+			if err := m.RequestHints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *LabelNamesRequestHints) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LabelNamesRequestHints: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LabelNamesRequestHints: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockMatchers", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BlockMatchers = append(m.BlockMatchers, LabelMatcher{})
+			if err := m.BlockMatchers[len(m.BlockMatchers)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipRpc(dAtA[iNdEx:])
@@ -2817,6 +4617,126 @@ func (m *LabelNamesResponse) Unmarshal(dAtA []byte) error {
 				m.Hints = &types.Any{}
 			}
 			if err := m.Hints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResponseHints", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.ResponseHints == nil {
+				m.ResponseHints = &LabelNamesResponseHints{}
+			}
+			if err := m.ResponseHints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *LabelNamesResponseHints) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LabelNamesResponseHints: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LabelNamesResponseHints: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field QueriedBlocks", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.QueriedBlocks = append(m.QueriedBlocks, Block{})
+			if err := m.QueriedBlocks[len(m.QueriedBlocks)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -3029,6 +4949,126 @@ func (m *LabelValuesRequest) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 9:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field RequestHints", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.RequestHints == nil {
+				m.RequestHints = &LabelValuesRequestHints{}
+			}
+			if err := m.RequestHints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *LabelValuesRequestHints) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LabelValuesRequestHints: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LabelValuesRequestHints: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field BlockMatchers", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.BlockMatchers = append(m.BlockMatchers, LabelMatcher{})
+			if err := m.BlockMatchers[len(m.BlockMatchers)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipRpc(dAtA[iNdEx:])
@@ -3176,6 +5216,126 @@ func (m *LabelValuesResponse) Unmarshal(dAtA []byte) error {
 				m.Hints = &types.Any{}
 			}
 			if err := m.Hints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResponseHints", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.ResponseHints == nil {
+				m.ResponseHints = &LabelValuesResponseHints{}
+			}
+			if err := m.ResponseHints.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *LabelValuesResponseHints) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: LabelValuesResponseHints: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: LabelValuesResponseHints: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field QueriedBlocks", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.QueriedBlocks = append(m.QueriedBlocks, Block{})
+			if err := m.QueriedBlocks[len(m.QueriedBlocks)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex

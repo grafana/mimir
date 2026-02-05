@@ -595,7 +595,13 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
-	if req.Hints != nil {
+	if req.RequestHints != nil {
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+		if err != nil {
+			return status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	} else if req.Hints != nil {
+		// Note that we use a different but equivalent hints type for the opaque field.
 		reqHints := &hintspb.SeriesRequestHints{}
 		if err := types.UnmarshalAny(req.Hints, reqHints); err != nil {
 			return status.Error(codes.InvalidArgument, errors.Wrap(err, "unmarshal series request hints").Error())
@@ -631,7 +637,10 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storegatewaypb.Stor
 	}
 	defer done()
 
-	// Send hints about the blocks loaded for this query before sending series or stats.
+	// Send hints about the blocks loaded for this query before sending series or stats. Note that we
+	// only send the opaque hints type because we don't want to send the same information in two different
+	// messages (queriers don't expect to have to deduplicate the hints). We are rolling out support for
+	// reading both the opaque and non-opaque type in queriers before switching this.
 	resHints := buildSeriesResponseHints(blocks)
 	if err = s.sendHints(srv, resHints); err != nil {
 		return err
@@ -1279,15 +1288,21 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 	}
 
 	var (
-		stats    = newSafeQueryStats()
-		resHints = &hintspb.LabelNamesResponseHints{}
+		stats          = newSafeQueryStats()
+		resHints       = &storepb.LabelNamesResponseHints{}
+		opaqueResHints = &hintspb.LabelNamesResponseHints{}
 	)
 
 	defer s.recordLabelNamesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
 	var reqBlockMatchers []*labels.Matcher
-	if req.Hints != nil {
+	if req.RequestHints != nil {
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	} else if req.Hints != nil {
 		reqHints := &hintspb.LabelNamesRequestHints{}
 		err := types.UnmarshalAny(req.Hints, reqHints)
 		if err != nil {
@@ -1311,6 +1326,8 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
+		opaqueResHints.AddQueriedBlock(b.meta.ULID)
+
 		blocksQueriedByBlockMeta[newBlockQueriedMeta(b.meta)]++
 
 		// This indexReader is here to make sure its block is held open inside the goroutine below.
@@ -1351,7 +1368,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		}
 	})
 
-	anyHints, err := types.MarshalAny(resHints)
+	anyHints, err := types.MarshalAny(opaqueResHints)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label names response hints").Error())
 	}
@@ -1361,9 +1378,13 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 		names = names[:req.Limit]
 	}
 
+	// Send both opaque and non-opaque response hints. New queriers will prefer
+	// to use the non-opaque type and ignore the opaque one. Old queriers will
+	// ignore the unknown non-opaque type and use the opaque one instead.
 	return &storepb.LabelNamesResponse{
-		Names: names,
-		Hints: anyHints,
+		Names:         names,
+		Hints:         anyHints,
+		ResponseHints: resHints,
 	}, nil
 }
 
@@ -1477,12 +1498,18 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	defer s.recordLabelValuesCallResult(stats)
 	defer s.recordRequestAmbientTime(stats, time.Now())
 
-	resHints := &hintspb.LabelValuesResponseHints{}
+	resHints := &storepb.LabelValuesResponseHints{}
+	opaqueResHints := &hintspb.LabelValuesResponseHints{}
 
 	g, gctx := errgroup.WithContext(ctx)
 
 	var reqBlockMatchers []*labels.Matcher
-	if req.Hints != nil {
+	if req.RequestHints != nil {
+		reqBlockMatchers, err = storepb.MatchersToPromMatchers(req.RequestHints.BlockMatchers...)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, errors.Wrap(err, "translate request hints labels matchers").Error())
+		}
+	} else if req.Hints != nil {
 		reqHints := &hintspb.LabelValuesRequestHints{}
 		err := types.UnmarshalAny(req.Hints, reqHints)
 		if err != nil {
@@ -1501,6 +1528,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	var sets [][]string
 	s.blockSet.filter(req.Start, req.End, reqBlockMatchers, func(b *bucketBlock) {
 		resHints.AddQueriedBlock(b.meta.ULID)
+		opaqueResHints.AddQueriedBlock(b.meta.ULID)
 
 		// This index reader shouldn't be used for ExpandedPostings, since it doesn't have the correct strategy.
 		// It's here only to make sure the block is held open inside the goroutine below.
@@ -1534,7 +1562,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	anyHints, err := types.MarshalAny(resHints)
+	anyHints, err := types.MarshalAny(opaqueResHints)
 	if err != nil {
 		return nil, status.Error(codes.Unknown, errors.Wrap(err, "marshal label values response hints").Error())
 	}
@@ -1544,9 +1572,13 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		values = values[:req.Limit]
 	}
 
+	// Send both opaque and non-opaque response hints. New queriers will prefer
+	// to use the non-opaque type and ignore the opaque one. Old queriers will
+	// ignore the unknown non-opaque type and use the opaque one instead.
 	return &storepb.LabelValuesResponse{
-		Values: values,
-		Hints:  anyHints,
+		Values:        values,
+		Hints:         anyHints,
+		ResponseHints: resHints,
 	}, nil
 }
 
