@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/labelaccess"
 	"github.com/grafana/mimir/pkg/querier"
 	querierapi "github.com/grafana/mimir/pkg/querier/api"
 	"github.com/grafana/mimir/pkg/querier/engine"
@@ -99,6 +100,7 @@ const (
 	IngesterPartitionRing            string = "ingester-partitions-ring"
 	IngesterRing                     string = "ingester-ring"
 	IngesterService                  string = "ingester-service"
+	LabelAccess                      string = "label-access"
 	MemberlistKV                     string = "memberlist-kv"
 	Overrides                        string = "overrides"
 	OverridesExporter                string = "overrides-exporter"
@@ -806,11 +808,37 @@ func (t *Mimir) initIngester() (serv services.Service, err error) {
 	return nil, nil
 }
 
+// initLabelAccess initializes label-based access control queryable wrappers.
+// Note: The middleware is registered earlier in New() before routes are registered.
+func (t *Mimir) initLabelAccess() (services.Service, error) {
+	// Wrap queryable to enforce label policies on queries.
+	t.QuerierQueryable = labelaccess.WrapQueryable(t.QuerierQueryable, log.With(util_log.Logger, "component", "labelaccess-queryable"))
+
+	// Wrap exemplar queryable to enforce label policies on exemplar queries.
+	t.ExemplarQueryable = labelaccess.WrapExemplarQueryable(t.ExemplarQueryable, log.With(util_log.Logger, "component", "labelaccess-exemplar"))
+
+	// Wrap tripperware to inject policy hash into context for caching.
+	t.QueryFrontendTripperware = labelaccess.WrapTripperware(t.QueryFrontendTripperware)
+
+	// Wrap cache key generator to append policy hash to cache keys.
+	if t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator == nil {
+		// Create default cache key generator if none exists.
+		t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = querymiddleware.NewDefaultCacheKeyGenerator(t.QueryFrontendCodec, t.Cfg.Frontend.QueryMiddleware.SplitQueriesByInterval)
+	}
+	t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator = labelaccess.NewCacheKeyGenerator(t.Cfg.Frontend.QueryMiddleware.CacheKeyGenerator)
+
+	return nil, nil
+}
+
 // initQueryFrontendCodec initializes query frontend codec.
 // NOTE: Grafana Enterprise Metrics depends on this.
 func (t *Mimir) initQueryFrontendCodec() (services.Service, error) {
 	// Add our default injectors.
 	t.Injectors = append(t.Injectors, &querierapi.ConsistencyInjector{})
+
+	// Add label access extractors and injectors early so they're available for querier and query-frontend.
+	t.Extractors = append(t.Extractors, labelaccess.NewExtractor())
+	t.Injectors = append(t.Injectors, labelaccess.NewInjector())
 
 	t.QueryFrontendCodec = querymiddleware.NewCodec(
 		t.Registerer,
@@ -1455,6 +1483,7 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(IngesterPartitionRing, t.initIngesterPartitionRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterRing, t.initIngesterRing, modules.UserInvisibleModule)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
+	mm.RegisterModule(LabelAccess, t.initLabelAccess, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV)
 	mm.RegisterModule(Overrides, t.initOverrides, modules.UserInvisibleModule)
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
@@ -1501,14 +1530,15 @@ func (t *Mimir) setupModuleManager() error {
 		IngesterPartitionRing:            {MemberlistKV, IngesterRing, API},
 		IngesterRing:                     {API, RuntimeConfig, MemberlistKV, Vault},
 		IngesterService:                  {IngesterRing, IngesterPartitionRing, Overrides, RuntimeConfig, MemberlistKV, CostAttributionService},
+		LabelAccess:                      {API, QueryFrontendCodec, Queryable, QueryFrontendTripperware},
 		MemberlistKV:                     {API, Vault},
 		Overrides:                        {RuntimeConfig},
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
-		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
+		Querier:                          {TenantFederation, LabelAccess, Vault, QuerierLifecycler},
 		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
 		QuerierQueryPlanner:              {API, ActivityTracker},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
-		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
+		QueryFrontend:                    {QueryFrontendTripperware, LabelAccess, MemberlistKV, Vault},
 		QueryFrontendQueryPlanner:        {API, ActivityTracker, Overrides, QuerierRing},
 		QueryFrontendTopicOffsetsReaders: {IngesterPartitionRing},
 		QueryFrontendTripperware:         {API, Overrides, QueryFrontendCodec, QueryFrontendTopicOffsetsReaders, QueryFrontendQueryPlanner},
@@ -1520,7 +1550,7 @@ func (t *Mimir) setupModuleManager() error {
 		Server:                           {ActivityTracker, SanityCheck, UsageStats},
 		StoreGateway:                     {API, Overrides, MemberlistKV, Vault},
 		StoreQueryable:                   {Overrides, MemberlistKV},
-		TenantFederation:                 {Queryable},
+		TenantFederation:                 {Queryable, LabelAccess},
 		UsageTracker:                     {API, Overrides, UsageTrackerInstanceRing, UsageTrackerPartitionRing},
 		UsageTrackerInstanceRing:         {MemberlistKV},
 		UsageTrackerPartitionRing:        {MemberlistKV, UsageTrackerInstanceRing},
