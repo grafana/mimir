@@ -442,3 +442,76 @@ func TestMergeCustomTrackersConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestCustomTrackersConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		config        map[string]string
+		length        int
+		expectError   bool
+		errorContains string
+	}{
+		"within limit": {
+			config: map[string]string{
+				"tracker1": `{foo="bar"}`,
+				"tracker2": `{baz="qux"}`,
+			},
+			length:      5,
+			expectError: false,
+		},
+		"at limit": {
+			config: map[string]string{
+				"tracker1": `{foo="bar"}`,
+				"tracker2": `{baz="qux"}`,
+				"tracker3": `{hello="world"}`,
+			},
+			length:      3,
+			expectError: false,
+		},
+		"exceeds limit": {
+			config: map[string]string{
+				"tracker1": `{foo="bar"}`,
+				"tracker2": `{baz="qux"}`,
+				"tracker3": `{hello="world"}`,
+			},
+			length:        2,
+			expectError:   true,
+			errorContains: "the number of custom trackers [3] exceeds the configured limit [2]",
+		},
+		"unlimited (maxCardinality = 0)": {
+			config: map[string]string{
+				"tracker1": `{foo="bar"}`,
+				"tracker2": `{baz="qux"}`,
+				"tracker3": `{hello="world"}`,
+			},
+			length:      0,
+			expectError: false,
+		},
+		"invalid negative limit": {
+			config: map[string]string{
+				"tracker1": `{foo="bar"}`,
+			},
+			length:        -1,
+			expectError:   true,
+			errorContains: "invalid max custom trackers limit: -1",
+		},
+		"empty config with limit": {
+			config:      map[string]string{},
+			length:      5,
+			expectError: false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			config := mustNewCustomTrackersConfigFromMap(t, testData.config)
+			err := config.Validate(testData.length)
+
+			if testData.expectError {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), testData.errorContains)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

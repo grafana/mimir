@@ -190,6 +190,22 @@ func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err e
 	return c, nil
 }
 
+// Validate checks if the number of trackers exceeds the specified maximum.
+// If maxTrackers is 0, no validation is performed (unlimited).
+// Returns an error if maxTrackers is negative or if the limit is exceeded.
+func (c CustomTrackersConfig) Validate(maxTrackers int) error {
+	if maxTrackers < 0 {
+		return fmt.Errorf("invalid max custom trackers limit: %d", maxTrackers)
+	}
+	if maxTrackers == 0 {
+		return nil // 0 means unlimited
+	}
+	if len(c.config) > maxTrackers {
+		return fmt.Errorf("the number of custom trackers [%d] exceeds the configured limit [%d]", len(c.config), maxTrackers)
+	}
+	return nil
+}
+
 // MergeCustomTrackersConfig returns a new CustomTrackersConfig containing the merge of the two
 // CustomTrackersConfig in input. The two configs in input are not manipulated. If a key exists
 // in both configs, second config wins over first config.

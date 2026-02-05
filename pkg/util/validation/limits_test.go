@@ -27,6 +27,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/costattribution/costattributionmodel"
+	asmodel "github.com/grafana/mimir/pkg/ingester/activeseries/model"
 	"github.com/grafana/mimir/pkg/ruler/notifier"
 )
 
@@ -1904,6 +1905,135 @@ func TestLimits_Validate(t *testing.T) {
 
 			if testData.verify != nil {
 				testData.verify(t, testData.cfg)
+			}
+		})
+	}
+}
+
+func TestLimits_ValidateMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		cfg         Limits
+		expectedErr string
+	}{
+		"additional config within limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 5
+				additionalConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+				}
+				var err error
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+		"additional config exceeds limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
+				additionalConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+					"tracker3": `{hello="world"}`,
+				}
+				var err error
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+			expectedErr: "active_series_additional_custom_trackers validation failed: the number of custom trackers [3] exceeds the configured limit [2]",
+		},
+		"base config not affected by limit": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
+				baseConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+					"tracker3": `{hello="world"}`,
+					"tracker4": `{ping="pong"}`,
+					"tracker5": `{alpha="beta"}`,
+				}
+				var err error
+				cfg.ActiveSeriesBaseCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(baseConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+		"limit only applies to additional config not merged": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 2
+				baseConfig := map[string]string{
+					"tracker1": `{foo="bar"}`,
+					"tracker2": `{baz="qux"}`,
+					"tracker3": `{hello="world"}`,
+				}
+				additionalConfig := map[string]string{
+					"tracker4": `{ping="pong"}`,
+					"tracker5": `{alpha="beta"}`,
+				}
+				var err error
+				cfg.ActiveSeriesBaseCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(baseConfig)
+				if err != nil {
+					panic(err)
+				}
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+		"limit 0 means unlimited for additional config": {
+			cfg: func() Limits {
+				cfg := Limits{}
+				flagext.DefaultValues(&cfg)
+				cfg.MaxActiveSeriesAdditionalCustomTrackers = 0
+				additionalConfig := map[string]string{
+					"tracker1":  `{foo="bar"}`,
+					"tracker2":  `{baz="qux"}`,
+					"tracker3":  `{hello="world"}`,
+					"tracker4":  `{ping="pong"}`,
+					"tracker5":  `{alpha="beta"}`,
+					"tracker6":  `{gamma="delta"}`,
+					"tracker7":  `{epsilon="zeta"}`,
+					"tracker8":  `{eta="theta"}`,
+					"tracker9":  `{iota="kappa"}`,
+					"tracker10": `{lambda="mu"}`,
+				}
+				var err error
+				cfg.ActiveSeriesAdditionalCustomTrackersConfig, err = asmodel.NewCustomTrackersConfig(additionalConfig)
+				if err != nil {
+					panic(err)
+				}
+				return cfg
+			}(),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			err := testData.cfg.Validate()
+			if testData.expectedErr != "" {
+				require.EqualError(t, err, testData.expectedErr)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}

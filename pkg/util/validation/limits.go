@@ -35,45 +35,46 @@ import (
 )
 
 const (
-	MaxSeriesPerMetricFlag                    = "ingester.max-global-series-per-metric"
-	MaxMetadataPerMetricFlag                  = "ingester.max-global-metadata-per-metric"
-	MaxSeriesPerUserFlag                      = "ingester.max-global-series-per-user"
-	MaxMetadataPerUserFlag                    = "ingester.max-global-metadata-per-user"
-	MaxChunksPerQueryFlag                     = "querier.max-fetched-chunks-per-query"
-	MaxChunkBytesPerQueryFlag                 = "querier.max-fetched-chunk-bytes-per-query"
-	MaxSeriesPerQueryFlag                     = "querier.max-fetched-series-per-query"
-	MaxEstimatedChunksPerQueryMultiplierFlag  = "querier.max-estimated-fetched-chunks-per-query-multiplier"
-	MaxEstimatedMemoryConsumptionPerQueryFlag = "querier.max-estimated-memory-consumption-per-query"
-	MaxLabelNamesPerSeriesFlag                = "validation.max-label-names-per-series"
-	MaxLabelNamesPerInfoSeriesFlag            = "validation.max-label-names-per-info-series"
-	MaxLabelNameLengthFlag                    = "validation.max-length-label-name"
-	MaxLabelValueLengthFlag                   = "validation.max-length-label-value"
-	LabelValueLengthOverLimitStrategyFlag     = "validation.label-value-length-over-limit-strategy"
-	MaxMetadataLengthFlag                     = "validation.max-metadata-length"
-	maxNativeHistogramBucketsFlag             = "validation.max-native-histogram-buckets"
-	ReduceNativeHistogramOverMaxBucketsFlag   = "validation.reduce-native-histogram-over-max-buckets"
-	CreationGracePeriodFlag                   = "validation.create-grace-period"
-	PastGracePeriodFlag                       = "validation.past-grace-period"
-	MaxPartialQueryLengthFlag                 = "querier.max-partial-query-length"
-	MaxSeriesQueryLimitFlag                   = "querier.max-series-query-limit"
-	MaxLabelNamesLimitFlag                    = "querier.max-label-names-limit"
-	MaxLabelValuesLimitFlag                   = "querier.max-label-values-limit"
-	MaxTotalQueryLengthFlag                   = "query-frontend.max-total-query-length"
-	MaxQueryExpressionSizeBytesFlag           = "query-frontend.max-query-expression-size-bytes"
-	MaxActiveSeriesPerUserFlag                = "distributor.max-active-series-per-user"
-	RequestRateFlag                           = "distributor.request-rate-limit"
-	RequestBurstSizeFlag                      = "distributor.request-burst-size"
-	IngestionRateFlag                         = "distributor.ingestion-rate-limit"
-	IngestionBurstSizeFlag                    = "distributor.ingestion-burst-size"
-	IngestionBurstFactorFlag                  = "distributor.ingestion-burst-factor"
-	HATrackerMaxClustersFlag                  = "distributor.ha-tracker.max-clusters"
-	resultsCacheTTLFlag                       = "query-frontend.results-cache-ttl"
-	resultsCacheTTLForOutOfOrderWindowFlag    = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
-	alignQueriesWithStepFlag                  = "query-frontend.align-queries-with-step"
-	QueryIngestersWithinFlag                  = "querier.query-ingesters-within"
-	EnableDelayedNameRemovalFlag              = "querier.enable-delayed-name-removal"
-	AlertmanagerMaxGrafanaConfigSizeFlag      = "alertmanager.max-grafana-config-size-bytes"
-	AlertmanagerMaxGrafanaStateSizeFlag       = "alertmanager.max-grafana-state-size-bytes"
+	MaxSeriesPerMetricFlag                      = "ingester.max-global-series-per-metric"
+	MaxMetadataPerMetricFlag                    = "ingester.max-global-metadata-per-metric"
+	MaxSeriesPerUserFlag                        = "ingester.max-global-series-per-user"
+	MaxMetadataPerUserFlag                      = "ingester.max-global-metadata-per-user"
+	MaxChunksPerQueryFlag                       = "querier.max-fetched-chunks-per-query"
+	MaxChunkBytesPerQueryFlag                   = "querier.max-fetched-chunk-bytes-per-query"
+	MaxSeriesPerQueryFlag                       = "querier.max-fetched-series-per-query"
+	MaxEstimatedChunksPerQueryMultiplierFlag    = "querier.max-estimated-fetched-chunks-per-query-multiplier"
+	MaxEstimatedMemoryConsumptionPerQueryFlag   = "querier.max-estimated-memory-consumption-per-query"
+	MaxLabelNamesPerSeriesFlag                  = "validation.max-label-names-per-series"
+	MaxLabelNamesPerInfoSeriesFlag              = "validation.max-label-names-per-info-series"
+	MaxLabelNameLengthFlag                      = "validation.max-length-label-name"
+	MaxLabelValueLengthFlag                     = "validation.max-length-label-value"
+	LabelValueLengthOverLimitStrategyFlag       = "validation.label-value-length-over-limit-strategy"
+	MaxMetadataLengthFlag                       = "validation.max-metadata-length"
+	maxNativeHistogramBucketsFlag               = "validation.max-native-histogram-buckets"
+	ReduceNativeHistogramOverMaxBucketsFlag     = "validation.reduce-native-histogram-over-max-buckets"
+	CreationGracePeriodFlag                     = "validation.create-grace-period"
+	PastGracePeriodFlag                         = "validation.past-grace-period"
+	MaxActiveSeriesAdditionalCustomTrackersFlag = "validation.max-active-series-additional-custom-trackers"
+	MaxPartialQueryLengthFlag                   = "querier.max-partial-query-length"
+	MaxSeriesQueryLimitFlag                     = "querier.max-series-query-limit"
+	MaxLabelNamesLimitFlag                      = "querier.max-label-names-limit"
+	MaxLabelValuesLimitFlag                     = "querier.max-label-values-limit"
+	MaxTotalQueryLengthFlag                     = "query-frontend.max-total-query-length"
+	MaxQueryExpressionSizeBytesFlag             = "query-frontend.max-query-expression-size-bytes"
+	MaxActiveSeriesPerUserFlag                  = "distributor.max-active-series-per-user"
+	RequestRateFlag                             = "distributor.request-rate-limit"
+	RequestBurstSizeFlag                        = "distributor.request-burst-size"
+	IngestionRateFlag                           = "distributor.ingestion-rate-limit"
+	IngestionBurstSizeFlag                      = "distributor.ingestion-burst-size"
+	IngestionBurstFactorFlag                    = "distributor.ingestion-burst-factor"
+	HATrackerMaxClustersFlag                    = "distributor.ha-tracker.max-clusters"
+	resultsCacheTTLFlag                         = "query-frontend.results-cache-ttl"
+	resultsCacheTTLForOutOfOrderWindowFlag      = "query-frontend.results-cache-ttl-for-out-of-order-time-window"
+	alignQueriesWithStepFlag                    = "query-frontend.align-queries-with-step"
+	QueryIngestersWithinFlag                    = "querier.query-ingesters-within"
+	EnableDelayedNameRemovalFlag                = "querier.enable-delayed-name-removal"
+	AlertmanagerMaxGrafanaConfigSizeFlag        = "alertmanager.max-grafana-config-size-bytes"
+	AlertmanagerMaxGrafanaStateSizeFlag         = "alertmanager.max-grafana-state-size-bytes"
 
 	// MinCompactorPartialBlockDeletionDelay is the minimum partial blocks deletion delay that can be configured in Mimir.
 	MinCompactorPartialBlockDeletionDelay = 4 * time.Hour
@@ -185,6 +186,7 @@ type Limits struct {
 	ActiveSeriesBaseCustomTrackersConfig       asmodel.CustomTrackersConfig                  `yaml:"active_series_custom_trackers" json:"active_series_custom_trackers" doc:"description=Custom trackers for active metrics. If there are active series matching a provided matcher (map value), the count is exposed in the custom trackers metric labeled using the tracker name (map key). Zero-valued counts are not exposed and are removed when they go back to zero." category:"advanced"`
 	ActiveSeriesAdditionalCustomTrackersConfig asmodel.CustomTrackersConfig                  `yaml:"active_series_additional_custom_trackers" json:"active_series_additional_custom_trackers" doc:"description=Additional custom trackers for active metrics merged on top of the base custom trackers. You can use this configuration option to define the base custom trackers globally for all tenants, and then use the additional trackers to add extra trackers on a per-tenant basis." category:"advanced"`
 	activeSeriesMergedCustomTrackersConfig     *atomic.Pointer[asmodel.CustomTrackersConfig] `yaml:"-" json:"-"`
+	MaxActiveSeriesAdditionalCustomTrackers    int                                           `yaml:"max_active_series_additional_custom_trackers" json:"max_active_series_additional_custom_trackers" category:"experimental"`
 
 	// Max allowed time window for out-of-order samples.
 	OutOfOrderTimeWindow                 model.Duration `yaml:"out_of_order_time_window" json:"out_of_order_time_window"`
@@ -398,6 +400,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.IntVar(&l.MaxCostAttributionCardinality, "validation.max-cost-attribution-cardinality", 2000, "Maximum cardinality of cost attribution labels allowed per user.")
 	f.Var(&l.CostAttributionCooldown, "validation.cost-attribution-cooldown", "Defines how long cost attribution stays in overflow before attempting a reset, with received/discarded samples extending the cooldown if overflow persists, while active series reset and restart tracking after the cooldown.")
+	f.IntVar(&l.MaxActiveSeriesAdditionalCustomTrackers, MaxActiveSeriesAdditionalCustomTrackersFlag, 200, "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.")
 
 	f.IntVar(&l.MaxChunksPerQuery, MaxChunksPerQueryFlag, 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and store-gateways. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.Float64Var(&l.MaxEstimatedChunksPerQueryMultiplier, MaxEstimatedChunksPerQueryMultiplierFlag, 0, "Maximum number of chunks estimated to be fetched in a single query from ingesters and store-gateways, as a multiple of -"+MaxChunksPerQueryFlag+". This limit is enforced in the querier. Must be greater than or equal to 1, or 0 to disable.")
@@ -692,6 +695,11 @@ func (l *Limits) Validate() error {
 
 	if l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage < 0 || l.EarlyHeadCompactionMinEstimatedSeriesReductionPercentage > 100 {
 		return fmt.Errorf("early_head_compaction_min_estimated_series_reduction_percentage must be between 0 and 100")
+	}
+
+	// Validate additional custom tracker config doesn't exceed the limit.
+	if err := l.ActiveSeriesAdditionalCustomTrackersConfig.Validate(l.MaxActiveSeriesAdditionalCustomTrackers); err != nil {
+		return fmt.Errorf("active_series_additional_custom_trackers validation failed: %w", err)
 	}
 
 	return nil
