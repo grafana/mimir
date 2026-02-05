@@ -92,19 +92,24 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, emitAnnotat
 		// Copy to avoid sharing memory with ring buffer that may be reused across series
 		firstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H.Copy())
 		return RateIntermediate{
-			FirstHistogram:                 &firstHistProto,
-			LastHistogram:                  &firstHistProto,
-			FirstHistogramTimestamp:        firstPoint.T,
-			LastHistogramTimestamp:         firstPoint.T,
-			FirstHistogramCountBeforeReset: firstPoint.H.Count,
-			SampleCount:                    1,
-			IsHistogram:                    true,
+			FirstHistogram:          &firstHistProto,
+			LastHistogram:           &firstHistProto,
+			FirstHistogramTimestamp: firstPoint.T,
+			LastHistogramTimestamp:  firstPoint.T,
+			SampleCount:             1,
+			IsHistogram:             true,
 		}, nil
 	}
 
-	firstPoint, lastPoint, delta, fpHistCount, err := calculateHistogramDelta(hHead, hTail, emitAnnotation)
+	originalFirstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H.Copy())
+
+	// firstPoint and fpHistCount returned from calculateHistogramDelta() are ignored and instead use the original
+	// first point. calculateHistogramDelta() will return a first point that could be empty if the second point is a
+	// counter reset. This makes sense in the non-split case, but in the split case, in combine, we need to take the
+	// delta between the original first sample of a split range and the last sample of the previous range. Using the
+	// empty updated firstPoint would result in an incorrect delta calculation.
+	_, lastPoint, delta, _, err := calculateHistogramDelta(hHead, hTail, emitAnnotation)
 	if err != nil {
-		// Convert histogram errors to annotations and force empty result
 		err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 		if err == nil {
 			// Error was converted to annotation (e.g., mixed exponential/custom buckets)
@@ -118,19 +123,17 @@ func rateGenerateHistogram(hHead, hTail []promql.HPoint, hCount int, emitAnnotat
 	}
 
 	// Copy to avoid sharing memory with ring buffer that may be reused across series
-	firstHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, firstPoint.H.Copy())
 	lastHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, lastPoint.H.Copy())
 	deltaHistProto := mimirpb.FromFloatHistogramToHistogramProto(0, delta)
 
 	return RateIntermediate{
-		FirstHistogram:                 &firstHistProto,
-		LastHistogram:                  &lastHistProto,
-		FirstHistogramTimestamp:        firstPoint.T,
-		LastHistogramTimestamp:         lastPoint.T,
-		DeltaHistogram:                 &deltaHistProto,
-		FirstHistogramCountBeforeReset: fpHistCount,
-		SampleCount:                    int64(hCount),
-		IsHistogram:                    true,
+		FirstHistogram:          &originalFirstHistProto,
+		LastHistogram:           &lastHistProto,
+		FirstHistogramTimestamp: firstPoint.T,
+		LastHistogramTimestamp:  lastPoint.T,
+		DeltaHistogram:          &deltaHistProto,
+		SampleCount:             int64(hCount),
+		IsHistogram:             true,
 	}, nil
 }
 
@@ -154,37 +157,35 @@ func rateCombine(isRate bool) SplitCombineFunc[RateIntermediate] {
 			}
 		}
 
-		hasFloat := false
-		hasHistogram := false
+		var fCount, hCount int64
+		// The generate function ensures intermediate results only either have floats or histograms
 		for _, p := range pieces {
 			if p.SampleCount > 0 {
 				if p.IsHistogram {
-					hasHistogram = true
+					hCount += p.SampleCount
 				} else {
-					hasFloat = true
+					fCount += p.SampleCount
 				}
 			}
 		}
 
-		if hasFloat && hasHistogram {
+		if fCount > 0 && hCount > 0 {
 			emitAnnotation(annotations.NewMixedFloatsHistogramsWarning)
 			return 0, false, nil, nil
 		}
 
-		if hasHistogram {
+		if hCount > 0 {
 			h, err := rateCombineHistogram(pieces, rangeStart, rangeEnd, isRate, emitAnnotation)
 			if err != nil {
-				// Convert histogram errors to annotations
 				err = NativeHistogramErrorToAnnotation(err, emitAnnotation)
 				if err == nil {
-					// Error was converted to annotation, return empty result
 					return 0, false, nil, nil
 				}
 			}
 			return 0, false, h, err
 		}
 
-		if hasFloat {
+		if fCount > 0 {
 			f, hasFloat, err := rateCombineFloat(pieces, rangeStart, rangeEnd, isRate)
 			return f, hasFloat, nil, err
 		}
@@ -227,7 +228,7 @@ func rateCombineFloat(splits []RateIntermediate, rangeStart int64, rangeEnd int6
 			continue
 		}
 
-		if split.FirstSample.Value < splits[lastSplitIdx].LastSample.Value {
+		if split.FirstSample.Value < splits[lastSplitIdx].LastSample.Value { // Counter reset
 			totalDelta += split.FirstSample.Value
 		} else {
 			interSplitDelta := split.FirstSample.Value - splits[lastSplitIdx].LastSample.Value
@@ -283,7 +284,8 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 
 	firstPiece := splits[startIdx]
 
-	fpHistCountBeforeReset := firstPiece.FirstHistogramCountBeforeReset
+	firstHist := mimirpb.FromFloatHistogramProtoToFloatHistogram(firstPiece.FirstHistogram)
+	fpHistCountBeforeReset := firstHist.Count
 	totalCount := int(firstPiece.SampleCount)
 
 	var totalDelta *histogram.FloatHistogram
@@ -294,7 +296,7 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 
 	firstPoint := promql.HPoint{
 		T: firstPiece.FirstHistogramTimestamp,
-		H: mimirpb.FromFloatHistogramProtoToFloatHistogram(firstPiece.FirstHistogram),
+		H: firstHist,
 	}
 
 	lastPoint := promql.HPoint{
@@ -304,7 +306,7 @@ func rateCombineHistogram(splits []RateIntermediate, rangeStart int64, rangeEnd 
 
 	for i := startIdx + 1; i < len(splits); i++ {
 		split := splits[i]
-		if split.SampleCount == 0 || !split.IsHistogram {
+		if split.SampleCount == 0 {
 			continue
 		}
 

@@ -60,7 +60,6 @@ message RateIntermediate {
   cortexpb.Histogram first_histogram = 10;
   cortexpb.Histogram last_histogram = 11;
   cortexpb.Histogram delta_histogram = 12;
-  double first_histogram_count_before_reset = 13;
   int64 first_histogram_timestamp = 14;
   int64 last_histogram_timestamp = 15;
 

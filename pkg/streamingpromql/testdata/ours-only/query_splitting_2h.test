@@ -72,7 +72,20 @@ eval instant at 6h increase(test_counter_total[5h])
 
 clear
 
-# TODO: test histograms
+# Histogram counter reset at start of a middle split
+# Query at 4h with 3h range spans [1h, 4h]
+# Splits with 2h interval: Head (1h, 2h-1ms], Block (2h-1ms, 4h-1ms], Tail (4h-1ms, 4h]
+# Head has one histogram at 1h30m.
+# Block has a counter reset between its first (2h) and second (2h30m) points.
+# calculateHistogramDelta replaces Block's first histogram with an empty one internally.
+# The combine step must use the real first histogram to compute the inter-split delta.
+load 30m
+  hist_reset_mid{env="prod"} _ _ _ {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:20 count:20 buckets:[20]}} {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:15 count:15 buckets:[15]}}
+
+eval instant at 4h rate(hist_reset_mid[3h])
+  {env="prod"} {{schema:0 count:0.003472222222222222 sum:0.003472222222222222 counter_reset_hint:gauge buckets:[0.003472222222222222]}}
+
+clear
 
 # Mixed floats and histograms warning
 # Query at 6h with 5h range spans [1h, 6h]
