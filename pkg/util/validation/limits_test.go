@@ -1910,7 +1910,7 @@ func TestLimits_Validate(t *testing.T) {
 	}
 }
 
-func TestLimits_ValidateMaxMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {
+func TestLimits_ValidateMaxActiveSeriesAdditionalCustomTrackers(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {

@@ -195,7 +195,7 @@ func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err e
 // Returns an error if maxCardinality is negative or if the limit is exceeded.
 func (c CustomTrackersConfig) Validate(length int) error {
 	if length < 0 {
-		return fmt.Errorf("invalid number of custom trackers: %d", length)
+		return fmt.Errorf("invalid limit for custom trackers: %d", length)
 	}
 	if length == 0 {
 		return nil // 0 means unlimited
