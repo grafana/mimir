@@ -285,9 +285,8 @@ func queryRequestToString(sb *bytes.Buffer, req *client.QueryRequest) {
 	}
 	sb.WriteString("},")
 
-	b = b[:0]
 	sb.WriteString("ProjectionInclude:")
-	sb.Write(strconv.AppendBool(b, req.ProjectionInclude))
+	sb.WriteString(strconv.FormatBool(req.ProjectionInclude))
 	sb.WriteString(",")
 
 	sb.WriteString("ProjectionLabels:[")
