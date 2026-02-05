@@ -3,6 +3,7 @@
 package index
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -35,9 +36,9 @@ type InMemoryCacheKey interface {
 }
 
 type InMemoryPostingsOffsetCacheKey struct {
-	userID string
-	block  ulid.ULID
-	label  labels.Label
+	tenantID string
+	blockID  ulid.ULID
+	lbl      labels.Label
 }
 
 // Key implements CacheKey, specific to InMemoryCacheKey where it does not need to be pre-hashed.
@@ -47,7 +48,7 @@ func (k InMemoryPostingsOffsetCacheKey) Key() InMemoryPostingsOffsetCacheKey {
 
 // Size implements InMemoryCacheKey
 func (k InMemoryPostingsOffsetCacheKey) Size() uint64 {
-	return stringSize(k.userID) + ulidSize + stringSize(k.label.Name) + stringSize(k.label.Value)
+	return stringSize(k.tenantID) + ulidSize + stringSize(k.lbl.Name) + stringSize(k.lbl.Value)
 }
 
 type InMemoryPostingsOffsetTableCache struct {
@@ -93,30 +94,33 @@ func NewInMemoryPostingsOffsetTableCacheWithConfig(
 	return c, nil
 }
 
-func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration) {
-	key := InMemoryPostingsOffsetCacheKey{userID, blockID, lbl}
+func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration) {
+	key := InMemoryPostingsOffsetCacheKey{tenantID, blockID, lbl}
 	c.set(key, rng)
 }
 
-func (c *InMemoryPostingsOffsetTableCache) get(key InMemoryPostingsOffsetCacheKey) (index.Range, bool) {
-	k := key.Key()
+func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(_ context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label) (index.Range, bool) {
+	key := InMemoryPostingsOffsetCacheKey{tenantID, blockID, lbl}
+	return c.get(key)
+}
 
+func (c *InMemoryPostingsOffsetTableCache) get(key InMemoryCacheKey) (index.Range, bool) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
-	v, ok := c.lru.Get(k)
+	val, ok := c.lru.Get(key)
 	if !ok {
 		return index.Range{}, false
 	}
 
-	rng, err := c.valCodec.Decode(v)
+	rng, err := c.valCodec.Decode(val)
 	if err != nil {
 		level.Error(c.logger).Log(
 			"msg", "error decoding cache value to index.Range",
-			"key", k,
-			"value", v,
+			"key", key,
+			"value", val,
 		)
-		c.lru.Remove(k)
+		c.lru.Remove(key)
 		return index.Range{}, false
 	}
 
@@ -124,49 +128,51 @@ func (c *InMemoryPostingsOffsetTableCache) get(key InMemoryPostingsOffsetCacheKe
 }
 
 func (c *InMemoryPostingsOffsetTableCache) set(key InMemoryCacheKey, rng index.Range) {
-	v := c.valCodec.Encode(rng)
-	size := sliceSize(v)
-
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	if _, ok := c.lru.Get(key); ok {
 		return
 	}
+	val := c.valCodec.Encode(rng)
+	valSize := sliceSize(val)
 
-	if !c.ensureFits(size) {
-		return
-	}
-
-	c.lru.Add(key, v)
-	c.curSize = size
-	return
-}
-
-//func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(userID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, _ time.Duration) {
-//var key K
-//key := any(InMemoryPostingsOffsetCacheKey{userID, blockID, lbl}).(K)
-//c.set(key, rng)
-//}
-
-//func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(ctx context.Context, userID string, blockID ulid.ULID, k labels.Label) (index.Range, bool) {
-//     //TODO implement me
-//     panic("implement me")
-//}
-
-// ensureFits tries to make sure that the passed slice will fit into the LRU cache.
-// Returns true if it will fit.
-func (c *InMemoryPostingsOffsetTableCache) ensureFits(size uint64) bool {
-	if size > c.maxItemSizeBytes {
+	if valSize > c.maxItemSizeBytes {
 		level.Debug(c.logger).Log(
 			"msg", "item bigger than maxItemSizeBytes. Ignoring...",
 			"maxItemSizeBytes", c.maxItemSizeBytes,
 			"maxSizeBytes", c.maxCacheSizeBytes,
 			"curSize", c.curSize,
-			"itemSize", size,
+			"itemSize", valSize,
 		)
-		return false
+		return
 	}
+
+	for c.curSize+valSize > c.maxCacheSizeBytes {
+		// Evict to make room for new value;
+		// onEvict callback will subtract size of evicted item from curSize.
+		if _, _, ok := c.lru.RemoveOldest(); !ok {
+			// Tracked curSize does not have room for a new value, but there is nothing to evict.
+			// Accounting of curSize or configuration is broken; reset underlying cache and start over.
+			level.Error(c.logger).Log(
+				"msg", "LRU has nothing more to evict, but we still cannot allocate the item. Resetting cache.",
+				"maxItemSizeBytes", c.maxItemSizeBytes,
+				"maxSizeBytes", c.maxCacheSizeBytes,
+				"curSize", c.curSize,
+				"itemSize", valSize,
+			)
+			c.reset()
+		}
+	}
+
+	c.lru.Add(key, val)
+	c.curSize += valSize
+	return
+}
+
+// ensureFits tries to make sure that the passed slice will fit into the LRU cache.
+// Returns true if it will fit.
+func (c *InMemoryPostingsOffsetTableCache) ensureFits(size uint64) bool {
 
 	for c.curSize > c.maxCacheSizeBytes {
 		if _, _, ok := c.lru.RemoveOldest(); !ok {
