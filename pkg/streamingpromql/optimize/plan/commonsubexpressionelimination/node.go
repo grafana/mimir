@@ -237,3 +237,23 @@ func (f *DuplicateFilter) ExpressionPosition() (posrange.PositionRange, error) {
 func (f *DuplicateFilter) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
 	return planning.QueryPlanV6
 }
+
+func MaterializeDuplicateFilter(f *DuplicateFilter, materializer *planning.Materializer, timeRange types.QueryTimeRange, params *planning.OperatorParameters) (planning.OperatorFactory, error) {
+	operator, err := materializer.ConvertNodeToOperator(f.Inner, timeRange)
+	if err != nil {
+		return nil, err
+	}
+
+	filterable, ok := operator.(Filterable)
+	if !ok {
+		return nil, fmt.Errorf("expected operator that supports filtering as child of DuplicateFilter, got %T", operator)
+	}
+
+	filterable.SetFilters(f.Filters)
+
+	return planning.NewSingleUseOperatorFactory(operator), nil
+}
+
+type Filterable interface {
+	SetFilters(filters []*core.LabelMatcher)
+}
