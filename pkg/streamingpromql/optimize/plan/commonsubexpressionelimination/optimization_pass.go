@@ -180,8 +180,7 @@ func (e *OptimizationPass) groupPaths(paths []path, offset int) [][]path {
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
 	groups := make([][]path, 0)
 
-	// FIXME: find a better way to do this, this is currently O(n!) in the worst case (where n is the number of paths)
-	// Maybe generate some kind of key for each node and then sort and group by that? (use same key that we'd use for caching?)
+	// FIXME: is there a better way to do this? This is currently O(n!) in the worst case (where n is the number of paths)
 	for pathIdx, p := range paths {
 		if alreadyGrouped[pathIdx] {
 			continue
