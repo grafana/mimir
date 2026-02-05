@@ -5346,12 +5346,12 @@
         },
         {
           "kind": "field",
-          "name": "max_active_series_additional_custom_trackers_cardinality",
+          "name": "max_active_series_additional_custom_trackers",
           "required": false,
-          "desc": "Maximum number of additional custom trackers (usage groups) for active series that can be configured per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.",
+          "desc": "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.",
           "fieldValue": null,
           "fieldDefaultValue": 200,
-          "fieldFlag": "validation.max-active-series-additional-custom-trackers-cardinality",
+          "fieldFlag": "validation.max-active-series-additional-custom-trackers",
           "fieldType": "int",
           "fieldCategory": "experimental"
         },

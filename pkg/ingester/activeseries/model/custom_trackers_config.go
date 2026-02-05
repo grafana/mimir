@@ -190,18 +190,18 @@ func NewCustomTrackersConfig(m map[string]string) (c CustomTrackersConfig, err e
 	return c, nil
 }
 
-// ValidateCardinality checks if the number of trackers exceeds the specified maximum.
+// Validate checks if the number of trackers exceeds the specified maximum.
 // If maxCardinality is 0, no validation is performed (unlimited).
 // Returns an error if maxCardinality is negative or if the limit is exceeded.
-func (c CustomTrackersConfig) ValidateCardinality(maxCardinality int) error {
-	if maxCardinality < 0 {
-		return fmt.Errorf("invalid max cardinality: %d", maxCardinality)
+func (c CustomTrackersConfig) Validate(length int) error {
+	if length < 0 {
+		return fmt.Errorf("invalid number of custom trackers: %d", length)
 	}
-	if maxCardinality == 0 {
+	if length == 0 {
 		return nil // 0 means unlimited
 	}
-	if len(c.config) > maxCardinality {
-		return fmt.Errorf("the number of custom trackers [%d] exceeds the configured limit [%d]", len(c.config), maxCardinality)
+	if len(c.config) > length {
+		return fmt.Errorf("the number of custom trackers [%d] exceeds the configured limit [%d]", len(c.config), length)
 	}
 	return nil
 }

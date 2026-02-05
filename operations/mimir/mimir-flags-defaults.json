@@ -373,7 +373,7 @@
   "ingester.early-head-compaction-min-estimated-series-reduction-percentage": 15,
   "ingester.native-histograms-ingestion-enabled": true,
   "ingester.active-series-custom-trackers": {},
-  "validation.max-active-series-additional-custom-trackers-cardinality": 200,
+  "validation.max-active-series-additional-custom-trackers": 200,
   "ingester.out-of-order-time-window": 0,
   "validation.separate-metrics-group-label": "",
   "querier.max-fetched-chunks-per-query": 2000000,
