@@ -269,11 +269,11 @@ eval instant at 5m45s delta(metric[5m] smoothed)
 
 eval instant at 5m30s rate(metric[5m] smoothed)
   {id="1"} 0.3333333333333333
-  {id="2"} 0.405
+  {id="2"} 0.36833333333333335
 
 eval instant at 5m45s rate(metric[5m] smoothed)
   {id="1"} 0.3333333333333333
-  {id="2"} 0.4041666666666667
+  {id="2"} 0.3675
 
 clear
 load 1m
