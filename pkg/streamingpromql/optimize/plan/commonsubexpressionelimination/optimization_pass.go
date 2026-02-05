@@ -175,7 +175,7 @@ func (e *OptimizationPass) groupAndApplyDeduplication(paths []path, offset int) 
 
 // groupPaths returns paths grouped by the node at offset from the leaf.
 // offset 0 means group by the leaf, offset 1 means group by the leaf node's parent etc.
-// paths that have a unique grouping node are not returned.
+// Paths that don't match any other paths are not returned.
 func (e *OptimizationPass) groupPaths(paths []path, offset int) [][]path {
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
 	groups := make([][]path, 0)
