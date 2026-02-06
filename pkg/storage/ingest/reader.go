@@ -72,7 +72,6 @@ type PartitionReader struct {
 	partitionID                           int32
 	consumerGroup                         string
 	concurrentFetchersMinBytesMaxWaitTime time.Duration
-	maxReplayPeriod                       time.Duration
 
 	// client and fetcher are both start after PartitionReader creation. Fetcher could also be
 	// replaced during PartitionReader lifetime. To avoid concurrency issues with functions
@@ -120,7 +119,6 @@ func newPartitionReader(kafkaCfg KafkaConfig, partitionID int32, instanceID stri
 		consumerGroup:                         kafkaCfg.GetConsumerGroup(instanceID, partitionID),
 		consumedOffsetWatcher:                 NewPartitionOffsetWatcher(),
 		concurrentFetchersMinBytesMaxWaitTime: kafkaCfg.FetchMaxWait,
-		maxReplayPeriod:                       kafkaCfg.MaxReplayPeriod,
 		highestConsumedTimestampBeforePartitionEnd: atomic.NewTime(time.Time{}),
 		notifier:   notifier,
 		logger:     log.With(logger, "partition", partitionID),
@@ -749,6 +747,9 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 				return offset, lastConsumedOffset, nil
 			}
 		} else if r.kafkaCfg.ConsumerGroupOffsetCommitFileEnforced {
+			if r.kafkaCfg.MaxReplayPeriod <= 0 {
+				return 0, -1, fmt.Errorf("max replay period must be positive when file offset enforcement is enabled")
+			}
 			// File-based offset enforcement: use file offset only if it exists.
 			if fileOffset, exists := r.offsetFile.Read(); exists {
 				partitionStart, startExists, err := r.fetchPartitionStartOffset(ctx, cl)
@@ -765,17 +766,15 @@ func (r *PartitionReader) getStartOffset(ctx context.Context) (startOffset, last
 				level.Warn(r.logger).Log("msg", "file-stored offset no longer exists for partition, resolving from max replay period or partition start", "file_offset", fileOffset, "partition_start", partitionStart, "consumer_group", r.consumerGroup)
 			}
 			// No file or file offset stale: try maximum replay period, then partition start.
-			if r.maxReplayPeriod > 0 {
-				ts := time.Now().Add(-r.maxReplayPeriod)
-				offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
-				if err != nil {
-					return 0, -1, err
-				}
-				if exists {
-					lastConsumedOffset = offset - 1
-					level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, replaying from max period", "max_replay_period", r.maxReplayPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
-					return offset, lastConsumedOffset, nil
-				}
+			ts := time.Now().Add(-r.kafkaCfg.MaxReplayPeriod)
+			offset, exists, err := r.fetchFirstOffsetAfterTime(ctx, cl, ts)
+			if err != nil {
+				return 0, -1, err
+			}
+			if exists {
+				lastConsumedOffset = offset - 1
+				level.Warn(r.logger).Log("msg", "file-based offset enforcement enabled but file missing or stale, replaying from max period", "max_replay_period", r.kafkaCfg.MaxReplayPeriod, "last_consumed_offset", lastConsumedOffset, "start_offset", offset, "consumer_group", r.consumerGroup)
+				return offset, lastConsumedOffset, nil
 			}
 		} else {
 			// No file enforcement: use Kafka consumer group offset.

@@ -2694,7 +2694,7 @@ func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
 		assert.Equal(t, startOffset-1, lastConsumedOffset)
 	})
 
-	t.Run("falls back to partition start when retention period is zero", func(t *testing.T) {
+	t.Run("errors when retention period is zero", func(t *testing.T) {
 		clusterAddr, consumer, cleanup := setupTest(t)
 		defer cleanup()
 
@@ -2707,8 +2707,8 @@ func TestPartitionReader_getStartOffset_RetentionPeriodFallback(t *testing.T) {
 
 		startOffset, lastConsumedOffset, err := reader.getStartOffset(ctx)
 
-		require.NoError(t, err)
-		assert.Equal(t, kafkaOffsetStart, startOffset)
+		require.Error(t, err)
+		assert.Equal(t, int64(0), startOffset)
 		assert.Equal(t, int64(-1), lastConsumedOffset)
 	})
 

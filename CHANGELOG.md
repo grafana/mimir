@@ -122,7 +122,7 @@
 * [ENHANCEMENT] Memberlist: Add "Size" column to "KV Store" table in the memberlist web page. #14200
 * [ENHANCEMENT] Memberlist: Add experimental configuration option `-memberlist.rejoin-seed-nodes` to set custom seed nodes used by periodic rejoin (when enabled). #14208
 * [ENHANCEMENT] Ingester: Check labels order and uniqueness on ingestion to protect against corruption. #14089
-* [ENHANCEMENT] Ingester: Add experimental file based Kafka consumer group offset tracking via flag `ingest-storage.kafka.consumer-group-offset-commit-file-enforced`. #14110
+* [ENHANCEMENT] Ingester: Add experimental file based Kafka consumer group offset tracking via flag `-ingest-storage.kafka.consumer-group-offset-commit-file-enforced`. #14110
 * [BUGFIX] API: Fixed web UI links not respecting `-server.path-prefix` configuration. #14090
 * [BUGFIX] Distributor: Fix issue where distributors didn't send custom values of native histograms. #13849
 * [BUGFIX] Compactor: Fix potential concurrent map writes. #13053
