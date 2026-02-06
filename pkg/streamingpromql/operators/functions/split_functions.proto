@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package splitfunctions;
+package functions;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "gogoproto/gogo.proto";
