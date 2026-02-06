@@ -604,6 +604,12 @@ type UncachedSplit[T any] struct {
 
 	finalized    bool
 	resultGetter *ResultGetter[T]
+
+	// localMetricNames captures metric names for this split's local series ordering,
+	// used for correct annotation messages when buffering occurs.
+	localMetricNames *operators.MetricNames
+	// currentLocalSeriesIdx tracks which local series is currently being processed.
+	currentLocalSeriesIdx int
 }
 
 func (p *UncachedSplit[T]) RangeCount() int {
@@ -644,6 +650,14 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 	seriesMetadata, err := p.operator.SeriesMetadata(ctx, matchers)
 	if err != nil {
 		return nil, err
+	}
+
+	// Capture local metric names for this split if the parent needs them for annotations.
+	// This is necessary because when ResultGetter buffers series, annotations emitted during
+	// buffering need the metric name for the split's local series, not the parent's current series.
+	if p.parent.metricNames != nil {
+		p.localMetricNames = &operators.MetricNames{}
+		p.localMetricNames.CaptureMetricNames(seriesMetadata)
 	}
 
 	// Defensively serialize series metadata now for later caching. The label adapters created below share
@@ -702,13 +716,14 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 
 		p.rangeResults[rangeIdx] = append(p.rangeResults[rangeIdx], result)
 	}
+	p.currentLocalSeriesIdx++
 	return results, nil
 }
 
 func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, generator types.AnnotationGenerator) {
 	var metricName string
-	if p.parent.metricNames != nil {
-		metricName = p.parent.metricNames.GetMetricNameForSeries(p.parent.currentSeriesIdx)
+	if p.localMetricNames != nil {
+		metricName = p.localMetricNames.GetMetricNameForSeries(p.currentLocalSeriesIdx)
 	}
 	annotationErr := generator(metricName, p.parent.innerNodeExpressionPosition)
 	p.parent.Annotations.Add(annotationErr)
