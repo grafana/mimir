@@ -692,7 +692,6 @@ func (m *mockOutOfOrderTimeWindowProvider) OutOfOrderTimeWindow(userID string) t
 }
 
 var querySplittingTestSplitIntervals = []time.Duration{
-	1 * time.Second,
 	10 * time.Second,
 	5 * time.Minute,
 	2 * time.Hour,

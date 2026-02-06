@@ -21,7 +21,7 @@ message SplitFunctionCallDetails {
 // Start is exclusive (points with timestamp > Start are included).
 // End is inclusive (points with timestamp <= End are included).
 message SplitRange {
-  int64 start = 1;      // Start time in milliseconds since Unix epoch (exclusive)
-  int64 end = 2;        // End time in milliseconds since Unix epoch (inclusive)
-  bool cacheable = 3;   // Whether this range is cacheable (aligned to split interval)
+  int64 start = 1; // Start time in milliseconds since Unix epoch (exclusive)
+  int64 end = 2; // End time in milliseconds since Unix epoch (inclusive)
+  bool cacheable = 3; // Whether this range is cacheable (aligned to split interval)
 }

@@ -4,10 +4,8 @@
 # With whole-second timestamps and 2h split interval:
 # For query at 6h with [5h] range, splits are (left-open, right-closed):
 #   Head (1h, 2h-1ms], Block1 (2h-1ms, 4h-1ms], Block2 (4h-1ms, 6h-1ms], Tail (6h-1ms, 6h]
-#   Effectively: Head has t in (1h, 2h), Block1 has t in [2h, 4h), Block2 has t in [4h, 6h), Tail has t=6h
 # For query at 4h with [3h] range, splits are:
 #   Head (1h, 2h-1ms], Block (2h-1ms, 4h-1ms], Tail (4h-1ms, 4h]
-#   Effectively: Head has t in (1h, 2h), Block has t in [2h, 4h), Tail has t=4h
 
 # ===== min_over_time / max_over_time =====
 
