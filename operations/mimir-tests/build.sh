@@ -8,7 +8,18 @@ rm -rf jsonnet-tests && mkdir jsonnet-tests
 cd jsonnet-tests
 
 # Initialise the Tanka.
-tk init --k8s=1.29
+# Instead of relying on "tk init --k8s=1.29", this installs versions of k8s-libsonnet from an exact commit, that provided k8s v1.29.
+# See https://github.com/grafana/tanka/issues/1863
+K8S_VERSION=1.29
+tk init --k8s=false
+jb install \
+    github.com/jsonnet-libs/k8s-libsonnet/$K8S_VERSION@291653b2c17d03e855e7e00ce0e4ec25502b2ce2 \
+    github.com/grafana/jsonnet-libs/ksonnet-util \
+    github.com/jsonnet-libs/docsonnet/doc-util
+
+cat <<EOF > lib/k.libsonnet
+import 'github.com/jsonnet-libs/k8s-libsonnet/$K8S_VERSION/main.libsonnet'
+EOF
 
 # Install Mimir jsonnet from this branch.
 jb install ../operations/mimir
