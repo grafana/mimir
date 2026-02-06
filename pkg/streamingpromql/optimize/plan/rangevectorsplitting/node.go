@@ -59,7 +59,7 @@ func (s *SplitFunctionCall) ChildCount() int {
 
 func (s *SplitFunctionCall) ReplaceChild(idx int, child planning.Node) error {
 	if idx > 0 {
-		fmt.Errorf("SplitFunctionCall node has 1 child, but attempted to replace child at index %d", idx)
+		return fmt.Errorf("SplitFunctionCall node has 1 child, but attempted to replace child at index %d", idx)
 	}
 	s.Inner = child
 	return nil
@@ -163,8 +163,8 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		return nil, fmt.Errorf("function %v does not support range vector splitting", innerFunctionCall.Function.PromQLName())
 	}
 
-	ranges := make([]functions.Range, len(s.SplitFunctionCallDetails.SplitRanges))
-	for i, sr := range s.SplitFunctionCallDetails.SplitRanges {
+	ranges := make([]functions.Range, len(s.SplitRanges))
+	for i, sr := range s.SplitRanges {
 		ranges[i] = functions.Range{
 			Start:     sr.Start,
 			End:       sr.End,
@@ -186,7 +186,7 @@ func (m Materializer) Materialize(n planning.Node, materializer *planning.Materi
 		materializer,
 		timeRange,
 		ranges,
-		s.SplitFunctionCallDetails.InnerNodeCacheKey,
+		s.InnerNodeCacheKey,
 		m.cache,
 		expressionPos,
 		params.Annotations,

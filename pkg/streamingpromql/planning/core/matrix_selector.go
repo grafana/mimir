@@ -8,9 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/gogo/protobuf/proto"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -26,7 +25,7 @@ type MatrixSelector struct {
 
 func (m *MatrixSelector) IsSplittable() bool {
 	// TODO: it should be possible to add support for smoothed and anchored, but that will be left for later
-	return !(m.Smoothed || m.Anchored)
+	return !m.Smoothed && !m.Anchored
 }
 
 var _ planning.SplitNode = &MatrixSelector{}

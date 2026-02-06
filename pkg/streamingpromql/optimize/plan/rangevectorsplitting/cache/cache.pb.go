@@ -49,12 +49,6 @@ func (AnnotationType) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_5fca3b110c9bbf3a, []int{0}
 }
 
-// Annotation represents a cached PromQL annotation (warning or info).
-// We must store the type separately from the message because:
-// - Type is encoded via Go error wrapping (errors.Is), not string parsing
-// - String format ("PromQL info:") is an implementation detail that could change
-// - We need to reconstruct proper error chains with sentinel errors when replaying
-// - AsStrings() uses errors.Is() to separate warnings/infos into different lists
 type Annotation struct {
 	Type    AnnotationType `protobuf:"varint,1,opt,name=type,proto3,enum=thanos.AnnotationType" json:"type,omitempty"`
 	Message string         `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`

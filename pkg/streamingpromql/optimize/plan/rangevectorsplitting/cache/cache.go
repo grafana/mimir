@@ -9,14 +9,14 @@ import (
 	"hash/fnv"
 	"time"
 
-	"github.com/grafana/dskit/tenant"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/cache"
+	"github.com/grafana/dskit/tenant"
 	"github.com/grafana/dskit/user"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -187,12 +187,12 @@ func (c *Cache[T]) Set(
 	}
 
 	cached := &CachedSeries{
-		CacheKey:         cacheKey,
-		Start:            start,
-		End:              end,
+		CacheKey:       cacheKey,
+		Start:          start,
+		End:            end,
 		SeriesMetadata: serializedSeries,
-		Annotations:      annotations,
-		Results:          resultBytes,
+		Annotations:    annotations,
+		Results:        resultBytes,
 	}
 
 	data, err := cached.Marshal()

@@ -4,13 +4,14 @@ package functions
 
 import (
 	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
+
 	"github.com/grafana/mimir/pkg/streamingpromql/optimize/plan/rangevectorsplitting/cache"
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // Range represents a time range within a query split.
