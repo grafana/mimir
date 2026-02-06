@@ -253,6 +253,24 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 		return e.groupPathsForSubsequentIteration(paths, 0), nil
 	}
 
+	// Sort the list of paths so that the broadest selectors appear first.
+	// This ensures that we examine the broadest selectors first in the loop below, and only see possible subsets afterwards.
+	slices.SortFunc(paths, func(a, b path) int {
+		aSelector, _, err := a.Selector()
+		if err != nil {
+			// We'll capture and return the error in the loop below.
+			return 0
+		}
+
+		bSelector, _, err := b.Selector()
+		if err != nil {
+			// We'll capture and return the error in the loop below.
+			return 0
+		}
+
+		return len(aSelector.GetMatchers()) - len(bSelector.GetMatchers())
+	})
+
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
 	var groups []sharedSelectorGroup
 
@@ -297,8 +315,6 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 			group.add(otherPath, additionalMatchers)
 
 			alreadyGrouped[otherPathIdx] = true
-
-			// TODO: if otherSelector is broader, update filters for all other existing members of the group, then swap it into "selector" above
 		}
 
 		if group.len() > 0 {
@@ -434,17 +450,16 @@ func (e *OptimizationPass) introduceDuplicateNode(group sharedSelectorGroup, dup
 	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
 	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
 	// when searching from the "b" selectors.
-	firstPath := group.paths[0]
-	parentOfDuplicate, _ := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength)
-	expectedDuplicatedExpression := parentOfDuplicate.Child(firstPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength - 1)) // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
+	basisPath := group.paths[0] // The broadest selector always appears first in the group, so this is the node we must duplicate.
+	parentOfDuplicate, _ := basisPath.NodeAtOffsetFromLeaf(duplicatePathLength)
+	expectedDuplicatedExpression := parentOfDuplicate.Child(basisPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength - 1)) // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
 
-	// TODO: will need to check for DuplicateFilter here - add test cases for this
 	if isDuplicateNode(expectedDuplicatedExpression) {
 		return true, nil
 	}
 
 	duplicatedExpressionOffset := duplicatePathLength - 1
-	duplicatedExpression, _ := firstPath.NodeAtOffsetFromLeaf(duplicatedExpressionOffset)
+	duplicatedExpression, _ := basisPath.NodeAtOffsetFromLeaf(duplicatedExpressionOffset)
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
 
