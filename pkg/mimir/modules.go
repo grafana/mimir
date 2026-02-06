@@ -1505,7 +1505,7 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:                {Overrides, MemberlistKV, Vault},
 		Querier:                          {TenantFederation, Vault, QuerierLifecycler},
 		QuerierLifecycler:                {API, RuntimeConfig, MemberlistKV, Vault},
-		QuerierQueryPlanner:              {API, ActivityTracker},
+		QuerierQueryPlanner:              {API, ActivityTracker, Overrides},
 		QuerierRing:                      {API, RuntimeConfig, MemberlistKV, Vault},
 		QueryFrontend:                    {QueryFrontendTripperware, MemberlistKV, Vault},
 		QueryFrontendQueryPlanner:        {API, ActivityTracker, Overrides, QuerierRing},
