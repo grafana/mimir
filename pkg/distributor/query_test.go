@@ -123,7 +123,7 @@ func TestDistributor_QueryExemplars(t *testing.T) {
 
 					testConfig.configure = func(config *Config) {
 						if testData.shuffleShardingDisabled {
-							config.ShuffleShardingLookbackPeriod = 0
+							config.ShuffleShardingEnabled = false
 						}
 					}
 

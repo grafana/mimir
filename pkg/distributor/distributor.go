@@ -261,7 +261,8 @@ type Config struct {
 	SkipLabelCountValidation bool `yaml:"-"`
 
 	// This config is dynamically injected because it is defined in the querier config.
-	ShuffleShardingLookbackPeriod              time.Duration `yaml:"-"`
+	ShuffleShardingEnabled                     bool          `yaml:"-"`
+	IngestersLookbackPeriod                    time.Duration `yaml:"-"`
 	StreamingChunksPerIngesterSeriesBufferSize uint64        `yaml:"-"`
 	MinimizeIngesterRequests                   bool          `yaml:"-"`
 	MinimiseIngesterRequestsHedgingDelay       time.Duration `yaml:"-"`
