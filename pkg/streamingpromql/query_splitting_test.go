@@ -55,7 +55,6 @@ func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
 		},
 	}
 
-	// Run query twice, no cache actions expected
 	result := runInstantQuery(t, mimirEngine, storage, expr, ts)
 	require.Equal(t, expected, result)
 
@@ -70,7 +69,7 @@ func TestQuerySplitting_InstantQueryWith1hRange_NotCached(t *testing.T) {
 // Important: SplitRanges use PromQL notation (Start, End] (left-open, right-closed), but storage
 // queries use closed intervals [mint, maxt] on both sides. The conversion is:
 //   - PromQL range (Start, End] becomes storage query [Start+1, End]
-//   - Example: PromQL range (1h, 2h-1ms] becomes storage [1h+1ms, 2h-1ms]
+//   - Example: PromQL range (2h-1ms, 4h-1ms] becomes storage [2h, 4h-1ms]
 //   - Example: PromQL range (6h-1ms, 6h] becomes storage [6h, 6h]
 func TestQuerySplitting_InstantQueryWith5hRange_UsesCache(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
@@ -347,43 +346,6 @@ func TestQuerySplitting_MultipleSeriesWithGaps_UsesCache(t *testing.T) {
 	verifyCacheStats(t, testCache, 7, 4, 3) // Total: 7 gets, 4 hits, 3 sets
 }
 
-func TestQuerySplitting_VerifyStorageQueries(t *testing.T) {
-	_, mimirEngine := setupEngineAndCache(t)
-	promStorage := promqltest.LoadedStorage(t, `
-		load 10m
-			test_metric{env="prod"} 0+1x60
-	`)
-	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
-
-	baseT := timestamp.Time(0)
-	expr := "sum_over_time(test_metric[5h])"
-	ctx := user.InjectOrgID(context.Background(), "test-user")
-
-	//  Query 1 at 6h: all uncached, merges into single storage query
-	wrapped1, ranges1 := trackRanges(promStorage)
-	q1, err := mimirEngine.NewInstantQuery(ctx, wrapped1, nil, expr, baseT.Add(6*time.Hour))
-	require.NoError(t, err)
-	result1 := q1.Exec(ctx)
-	require.NoError(t, result1.Err)
-	q1.Close()
-	require.Equal(t, []storageQueryRange{
-		{mint: 1*hourInMs + 1, maxt: 6 * hourInMs},
-	}, *ranges1)
-
-	// Query 2 at 8h: (4h-6h] cached, queries (3h-4h] and (6h-8h]
-	// Uncached ranges are separate because there's a cached block in between
-	wrapped2, ranges2 := trackRanges(promStorage)
-	q2, err := mimirEngine.NewInstantQuery(ctx, wrapped2, nil, expr, baseT.Add(8*time.Hour))
-	require.NoError(t, err)
-	result2 := q2.Exec(ctx)
-	require.NoError(t, result2.Err)
-	q2.Close()
-	require.Equal(t, []storageQueryRange{
-		{mint: 3*hourInMs + 1, maxt: 4*hourInMs - 1}, // Head: (3h, 4h-1ms] -> storage [3h+1, 4h-1ms]
-		{mint: 6 * hourInMs, maxt: 8 * hourInMs},     // Tail: (6h-1ms, 8h] -> storage [6h, 8h]
-	}, *ranges2)
-}
-
 func TestQuerySplitting_WithCSE(t *testing.T) {
 	testCache, mimirEngine := setupEngineAndCache(t)
 
@@ -398,7 +360,6 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	ts := baseT.Add(6 * time.Hour)
 	ctx := user.InjectOrgID(context.Background(), "test-user")
 
-	// Create planner to capture plan structure
 	opts := NewTestEngineOpts()
 	opts.RangeVectorSplitting.Enabled = true
 	opts.RangeVectorSplitting.SplitInterval = 2 * time.Hour
@@ -423,7 +384,6 @@ func TestQuerySplitting_WithCSE(t *testing.T) {
 	`
 	require.Equal(t, testutils.TrimIndent(expectedPlan), plan.String())
 
-	// Execute the query end-to-end with storage query tracking
 	wrappedStorage, ranges := trackRanges(promStorage)
 
 	q, err := mimirEngine.NewInstantQuery(ctx, wrappedStorage, nil, expr, ts)
@@ -924,6 +884,76 @@ func skipUnsupportedTests(t *testing.T, testContent string, testFile string) str
 	return modified
 }
 
+func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	ts := baseT.Add(6 * time.Hour)
+
+	// Query sum_over_time — populates cache for sum_over_time's function key.
+	sumResult := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
+	require.NoError(t, sumResult.Err)
+	verifyCacheStats(t, testCache, 2, 0, 2)
+
+	// Query rate on the same metric — should NOT hit sum_over_time's cache entries.
+	rateResult := runInstantQuery(t, mimirEngine, promStorage, "rate(some_metric[5h])", ts)
+	require.NoError(t, rateResult.Err)
+	verifyCacheStats(t, testCache, 4, 0, 4) // 2 new gets (miss), 2 new sets
+
+	// Query sum_over_time again — should hit cache from the first query.
+	sumResult2 := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
+	require.NoError(t, sumResult2.Err)
+	require.Equal(t, sumResult.Value, sumResult2.Value)
+	verifyCacheStats(t, testCache, 6, 2, 4) // 2 hits for sum_over_time blocks
+
+	// Query rate again — should hit cache from the rate query, not sum_over_time's.
+	rateResult2 := runInstantQuery(t, mimirEngine, promStorage, "rate(some_metric[5h])", ts)
+	require.NoError(t, rateResult2.Err)
+	require.Equal(t, rateResult.Value, rateResult2.Value)
+	verifyCacheStats(t, testCache, 8, 4, 4) // 2 hits for rate blocks
+}
+
+func TestQuerySplitting_StorageError(t *testing.T) {
+	testCache, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := promqltest.LoadedStorage(t, `
+		load 10m
+			some_metric{env="1"} 0+1x60
+	`)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	baseT := timestamp.Time(0)
+	expr := "sum_over_time(some_metric[5h])"
+	ts := baseT.Add(6 * time.Hour)
+
+	// First query succeeds and populates the cache.
+	result := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	firstResult := result.Value
+	// 2 gets (cacheable blocks), 0 hits (empty cache), 2 sets (populate cache)
+	verifyCacheStats(t, testCache, 2, 0, 2)
+
+	// Second query uses error storage. Cached blocks hit, but uncached ranges fail.
+	errStorage := &errorStorage{Storage: promStorage}
+	result = runInstantQuery(t, mimirEngine, errStorage, expr, ts)
+	require.Error(t, result.Err)
+	// Cumulative: 4 gets (2 more), 2 hits (cached blocks found), still 2 sets (no new sets)
+	verifyCacheStats(t, testCache, 4, 2, 2)
+
+	// Third query with real storage. Cached blocks still work correctly.
+	result = runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result.Err)
+	require.Equal(t, firstResult, result.Value)
+	// Cumulative: 6 gets, 4 hits (2 more cache hits), still 2 sets
+	verifyCacheStats(t, testCache, 6, 4, 2)
+}
+
 func createSplittingEngineWithCache(t *testing.T, registry *prometheus.Registry, splitInterval time.Duration, enableDelayedNameRemoval bool, enableEliminateDeduplicateAndMerge bool) (promql.QueryEngine, *testCacheBackend) {
 	t.Helper()
 
@@ -1003,7 +1033,7 @@ func trackRanges(promStorage storage.Storage) (*wrappedQueryable, *[]storageQuer
 	ranges := &[]storageQueryRange{}
 	return &wrappedQueryable{
 		inner: promStorage,
-		onSelect: func(mint, maxt int64) {
+		onQuerier: func(mint, maxt int64) {
 			*ranges = append(*ranges, storageQueryRange{mint, maxt})
 		},
 	}, ranges
@@ -1053,15 +1083,23 @@ func (c *testCacheBackend) Reset() {
 }
 
 type wrappedQueryable struct {
-	inner    storage.Queryable
-	onSelect func(mint, maxt int64)
+	inner     storage.Queryable
+	onQuerier func(mint, maxt int64)
 }
 
 func (w *wrappedQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
-	if w.onSelect != nil {
-		w.onSelect(mint, maxt)
+	if w.onQuerier != nil {
+		w.onQuerier(mint, maxt)
 	}
 	return w.inner.Querier(mint, maxt)
+}
+
+type errorStorage struct {
+	storage.Storage
+}
+
+func (e *errorStorage) Querier(_, _ int64) (storage.Querier, error) {
+	return nil, fmt.Errorf("injected storage error")
 }
 
 type storageWithCloseCallback struct {

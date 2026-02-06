@@ -1,8 +1,21 @@
-# Tests for query splitting with 2-hour split intervals. The same tests should pass with and without splitting enabled.
+# Tests for query splitting with 2-hour split intervals.
+# All evals are run twice to verify caching works correctly.
 
-# min/max_over_time
+# With whole-second timestamps and 2h split interval:
+# For query at 6h with [5h] range, splits are (left-open, right-closed):
+#   Head (1h, 2h-1ms], Block1 (2h-1ms, 4h-1ms], Block2 (4h-1ms, 6h-1ms], Tail (6h-1ms, 6h]
+#   Effectively: Head has t in (1h, 2h), Block1 has t in [2h, 4h), Block2 has t in [4h, 6h), Tail has t=6h
+# For query at 4h with [3h] range, splits are:
+#   Head (1h, 2h-1ms], Block (2h-1ms, 4h-1ms], Tail (4h-1ms, 4h]
+#   Effectively: Head has t in (1h, 2h), Block has t in [2h, 4h), Tail has t=4h
+
+# ===== min_over_time / max_over_time =====
+
 load 1h
   test_metric{env="prod"} 1 3 5 124372145 -5 7 7
+
+eval instant at 6h min_over_time(test_metric[5h])
+  {env="prod"} -5
 
 eval instant at 6h min_over_time(test_metric[5h])
   {env="prod"} -5
@@ -10,32 +23,143 @@ eval instant at 6h min_over_time(test_metric[5h])
 eval instant at 6h max_over_time(test_metric[5h])
   {env="prod"} 124372145
 
+eval instant at 6h max_over_time(test_metric[5h])
+  {env="prod"} 124372145
+
 clear
 
-# count_over_time
+# min/max with mixed floats and histograms across splits
+# Floats in Block1 (2h, 3h), histogram in Block2 (5h)
+load 1h
+  mixed_minmax{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
+
+eval instant at 6h min_over_time(mixed_minmax[5h])
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  {env="prod"} 10
+
+eval instant at 6h min_over_time(mixed_minmax[5h])
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  {env="prod"} 10
+
+eval instant at 6h max_over_time(mixed_minmax[5h])
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  {env="prod"} 20
+
+eval instant at 6h max_over_time(mixed_minmax[5h])
+  expect info msg: PromQL info: ignored histograms in a range containing both floats and histograms for metric name "mixed_minmax"
+  {env="prod"} 20
+
+clear
+
+# ===== count_over_time =====
+
 load 10m
   test_metric{env="prod"} 0+1x60
 
 eval instant at 6h count_over_time(test_metric[5h])
   {env="prod"} 30
 
-# rate/increase
+eval instant at 6h count_over_time(test_metric[5h])
+  {env="prod"} 30
+
+clear
+
+load 30m
+  sparse_metric{env="prod"} _ _ _ 1 _ _ _ 2 _ _ _ 3
+
+eval instant at 6h count_over_time(sparse_metric[5h])
+  {env="prod"} 3
+
+eval instant at 6h count_over_time(sparse_metric[5h])
+  {env="prod"} 3
+
+clear
+
+# ===== sum_over_time =====
+
+load 1h
+  sum_metric{env="prod"} 10 20 30 40 50 60 70
+
+eval instant at 6h sum_over_time(sum_metric[5h])
+  {env="prod"} 250
+
+eval instant at 6h sum_over_time(sum_metric[5h])
+  {env="prod"} 250
+
+clear
+
+load 30m
+  sum_hist{env="prod"} _ _ _ {{schema:0 sum:10 count:10 buckets:[10]}} _ {{schema:0 sum:20 count:20 buckets:[20]}} _ {{schema:0 sum:30 count:30 buckets:[30]}} _ {{schema:0 sum:40 count:40 buckets:[40]}}
+
+eval instant at 6h sum_over_time(sum_hist[5h])
+  {env="prod"} {{schema:0 sum:100 count:100 buckets:[100]}}
+
+eval instant at 6h sum_over_time(sum_hist[5h])
+  {env="prod"} {{schema:0 sum:100 count:100 buckets:[100]}}
+
+clear
+
+# Floats in one split, histograms in another
+load 1h
+  mixed_sum{env="prod"} _ _ 10 20 _ {{schema:0 sum:100 count:10 buckets:[10]}} _
+
+eval instant at 6h sum_over_time(mixed_sum[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum"
+
+eval instant at 6h sum_over_time(mixed_sum[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum"
+
+clear
+
+# Mixed in one split, floats-only in another
+load 1h
+  mixed_sum_a{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ 20 _
+
+eval instant at 6h sum_over_time(mixed_sum_a[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_a"
+
+eval instant at 6h sum_over_time(mixed_sum_a[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_a"
+
+clear
+
+# Mixed in one split, histograms-only in another
+load 1h
+  mixed_sum_b{env="prod"} _ _ 10 {{schema:0 sum:100 count:10 buckets:[10]}} _ {{schema:0 sum:200 count:20 buckets:[20]}} _
+
+eval instant at 6h sum_over_time(mixed_sum_b[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_b"
+
+eval instant at 6h sum_over_time(mixed_sum_b[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_sum_b"
+
+clear
+
+# ===== rate / increase (floats) =====
+
 load 1m
   test_counter_total{env="prod"} 0+60x400
 
 eval instant at 6h rate(test_counter_total[5h])
   {env="prod"} 1.0
 
+eval instant at 6h rate(test_counter_total[5h])
+  {env="prod"} 1.0
+
+eval instant at 6h increase(test_counter_total[5h])
+  {env="prod"} 18000
+
 eval instant at 6h increase(test_counter_total[5h])
   {env="prod"} 18000
 
 clear
 
-# Counter reset within a split
-# Splits: Head (1h, 2h-1ms], Block 1 (2h-1ms, 4h-1ms], Block 2 (4h-1ms, 6h-1ms], Tail (6h-1ms, 6h]
-# The reset happens at t=3h (middle of Block 1)
+# Counter reset within a split (reset at t=3h, middle of Block1)
 load 1m
   test_counter_total{env="prod"} 0+60x179 60+60x220
+
+eval instant at 6h rate(test_counter_total[5h])
+  {env="prod"} 1.0
 
 eval instant at 6h rate(test_counter_total[5h])
   {env="prod"} 1.0
@@ -43,13 +167,17 @@ eval instant at 6h rate(test_counter_total[5h])
 eval instant at 6h increase(test_counter_total[5h])
   {env="prod"} 18000
 
+eval instant at 6h increase(test_counter_total[5h])
+  {env="prod"} 18000
+
 clear
 
-# Counter reset across splits
-# Splits: Head (1h, 2h-1ms], Block 1 (2h-1ms, 4h-1ms], Tail (4h-1ms, 4h]
-# The reset happens at t=2h (start of Block 1)
+# Counter reset across split boundary (reset at t=2h, start of Block1)
 load 1m
   test_counter_total{env="prod"} 0+60x119 60+60x120
+
+eval instant at 4h rate(test_counter_total[3h])
+  {env="prod"} 1.0
 
 eval instant at 4h rate(test_counter_total[3h])
   {env="prod"} 1.0
@@ -57,133 +185,204 @@ eval instant at 4h rate(test_counter_total[3h])
 eval instant at 4h increase(test_counter_total[3h])
   {env="prod"} 10800
 
+eval instant at 4h increase(test_counter_total[3h])
+  {env="prod"} 10800
+
 clear
 
-# Sparse splits plus zero extrapolation
-# Two samples at 1h30m and 2h30m
-load 30m
-  test_counter_total{env="prod"} _ _ _ 1800 _ 3600
+# Multiple counter resets across different splits
+# Reset at t=2h30m (in Block1) and t=4h30m (in Block2)
+load 1m
+  multi_reset_total{env="prod"} 0+60x149 60+60x119 60+60x150
 
-eval instant at 6h rate(test_counter_total[5h])
+eval instant at 6h rate(multi_reset_total[5h])
+  {env="prod"} 1.0
+
+eval instant at 6h rate(multi_reset_total[5h])
+  {env="prod"} 1.0
+
+eval instant at 6h increase(multi_reset_total[5h])
+  {env="prod"} 18000
+
+eval instant at 6h increase(multi_reset_total[5h])
+  {env="prod"} 18000
+
+clear
+
+# Sparse: two samples far apart across different splits
+load 30m
+  sparse_counter_total{env="prod"} _ _ _ 1800 _ 3600
+
+eval instant at 6h rate(sparse_counter_total[5h])
   {env="prod"} 0.2
 
-eval instant at 6h increase(test_counter_total[5h])
+eval instant at 6h rate(sparse_counter_total[5h])
+  {env="prod"} 0.2
+
+eval instant at 6h increase(sparse_counter_total[5h])
+  {env="prod"} 3600
+
+eval instant at 6h increase(sparse_counter_total[5h])
   {env="prod"} 3600
 
 clear
 
-# Histogram counter reset at start of a middle split
-# Query at 4h with 3h range spans [1h, 4h]
-# Splits with 2h interval: Head (1h, 2h-1ms], Block (2h-1ms, 4h-1ms], Tail (4h-1ms, 4h]
+# Mixed floats and histograms across splits
+load 1m
+  mixed_rate{env="prod"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+
+eval instant at 6h rate(mixed_rate[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_rate"
+
+eval instant at 6h rate(mixed_rate[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_rate"
+
+clear
+
+# Single sample: rate/increase need at least 2 samples
+load 1h
+  single_counter_total _ _ _ _ 1000 _ _
+
+eval instant at 6h rate(single_counter_total[5h])
+
+eval instant at 6h rate(single_counter_total[5h])
+
+eval instant at 6h increase(single_counter_total[5h])
+
+eval instant at 6h increase(single_counter_total[5h])
+
+clear
+
+# ===== rate / increase (histograms) =====
+
+# Basic histogram rate/increase (no resets, spans 3 splits)
+load 1h
+  hist_counter_total{env="prod"} _ _ {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:10800 count:10800 buckets:[10800]}} {{schema:0 sum:14400 count:14400 buckets:[14400]}} {{schema:0 sum:18000 count:18000 buckets:[18000]}}
+
+eval instant at 6h rate(hist_counter_total[5h])
+  {env="prod"} {{schema:0 count:1 sum:1 counter_reset_hint:gauge buckets:[1]}}
+
+eval instant at 6h rate(hist_counter_total[5h])
+  {env="prod"} {{schema:0 count:1 sum:1 counter_reset_hint:gauge buckets:[1]}}
+
+eval instant at 6h increase(hist_counter_total[5h])
+  {env="prod"} {{schema:0 count:18000 sum:18000 counter_reset_hint:gauge buckets:[18000]}}
+
+eval instant at 6h increase(hist_counter_total[5h])
+  {env="prod"} {{schema:0 count:18000 sum:18000 counter_reset_hint:gauge buckets:[18000]}}
+
+clear
+
+# Histogram counter reset within a middle split
 # Head has one histogram at 1h30m.
-# Block has a counter reset between its first (2h) and second (2h30m) points.
-# calculateHistogramDelta replaces Block's first histogram with an empty one internally.
-# The combine step must use the real first histogram to compute the inter-split delta.
+# Block has a counter reset between 2h and 2h30m.
 load 30m
-  hist_reset_mid{env="prod"} _ _ _ {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:20 count:20 buckets:[20]}} {{schema:0 sum:5 count:5 buckets:[5]}} {{schema:0 sum:10 count:10 buckets:[10]}} {{schema:0 sum:15 count:15 buckets:[15]}}
+  hist_reset_mid{env="prod"} _ _ _ {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:10800 count:10800 buckets:[10800]}}
 
 eval instant at 4h rate(hist_reset_mid[3h])
-  {env="prod"} {{schema:0 count:0.003472222222222222 sum:0.003472222222222222 counter_reset_hint:gauge buckets:[0.003472222222222222]}}
+  {env="prod"} {{schema:0 count:2 sum:2 counter_reset_hint:gauge buckets:[2]}}
+
+eval instant at 4h rate(hist_reset_mid[3h])
+  {env="prod"} {{schema:0 count:2 sum:2 counter_reset_hint:gauge buckets:[2]}}
+
+eval instant at 4h increase(hist_reset_mid[3h])
+  {env="prod"} {{schema:0 count:21600 sum:21600 counter_reset_hint:gauge buckets:[21600]}}
+
+eval instant at 4h increase(hist_reset_mid[3h])
+  {env="prod"} {{schema:0 count:21600 sum:21600 counter_reset_hint:gauge buckets:[21600]}}
 
 clear
 
-# Mixed floats and histograms warning
-# Query at 6h with 5h range spans [1h, 6h]
-# Splits: Head (1h, 2h] floats, Middle (2h, 4h] mixed, Middle2 (4h, 6h] floats
-# Mixed data (histogram at 3h) is ONLY in middle split (2h, 4h]
-load 1m
-  mixed_metric{env="prod"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+# Histogram counter reset between splits
+# Head has one histogram at 1h30m with high count.
+# Block starts at 2h30m with lower count.
+load 30m
+  hist_reset_boundary{env="prod"} _ _ _ {{schema:0 sum:7200 count:7200 buckets:[7200]}} _ {{schema:0 sum:3600 count:3600 buckets:[3600]}} {{schema:0 sum:7200 count:7200 buckets:[7200]}} {{schema:0 sum:10800 count:10800 buckets:[10800]}}
 
-# First run: uncached, middle split writes annotation to cache
-eval instant at 6h rate(mixed_metric[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+eval instant at 4h rate(hist_reset_boundary[3h])
+  {env="prod"} {{schema:0 count:1.5 sum:1.5 counter_reset_hint:gauge buckets:[1.5]}}
 
-# Second run: cached, middle split reads annotation from cache
-eval instant at 6h rate(mixed_metric[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+eval instant at 4h rate(hist_reset_boundary[3h])
+  {env="prod"} {{schema:0 count:1.5 sum:1.5 counter_reset_hint:gauge buckets:[1.5]}}
+
+eval instant at 4h increase(hist_reset_boundary[3h])
+  {env="prod"} {{schema:0 count:16200 sum:16200 counter_reset_hint:gauge buckets:[16200]}}
+
+eval instant at 4h increase(hist_reset_boundary[3h])
+  {env="prod"} {{schema:0 count:16200 sum:16200 counter_reset_hint:gauge buckets:[16200]}}
 
 clear
 
-# Native histogram counter detection
-# Query at 6h with 5h range spans [1h, 6h]
-# Splits: Head (1h, 2h] no data, Middle (2h, 4h] gauge histograms, Middle2 (4h, 6h] no data
-# Two gauge histograms at 3h and 3h30m are ONLY in middle split (2h, 4h]
+# Gauge histogram warning
 load 1m
   gauge_histogram{env="prod"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60
 
-# First run: uncached, middle split writes annotation to cache
 eval instant at 6h rate(gauge_histogram[5h])
   expect warn msg: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"
   {env="prod"} {{counter_reset_hint:gauge}}
 
-# Second run: cached, middle split reads annotation from cache
 eval instant at 6h rate(gauge_histogram[5h])
   expect warn msg: PromQL warning: this native histogram metric is not a counter: "gauge_histogram"
   {env="prod"} {{counter_reset_hint:gauge}}
 
 clear
 
-# Annotation deduplication across series
-# Query at 6h with 5h range spans [1h, 6h]
-# Splits: Head (1h, 2h] floats, Middle (2h, 4h] mixed, Middle2 (4h, 6h] floats
-# Mixed data (histogram at 3h) is ONLY in middle split (2h, 4h]
-# All three series emit the same annotation, should be deduplicated
+# ===== Annotation deduplication =====
+
+# Same annotation from multiple series is deduplicated
 load 1m
-  mixed_metric{series="1"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
-  mixed_metric{series="2"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
-  mixed_metric{series="3"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+  dedup_metric{series="1"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+  dedup_metric{series="2"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+  dedup_metric{series="3"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
 
-# First run: uncached, middle split writes annotation to cache (deduplicated from 3 series)
-eval instant at 6h rate(mixed_metric[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+eval instant at 6h rate(dedup_metric[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_metric"
 
-# Second run: cached, middle split reads annotation from cache
-eval instant at 6h rate(mixed_metric[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "mixed_metric"
+eval instant at 6h rate(dedup_metric[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_metric"
 
 clear
 
-# Multiple unique annotations
-# Query at 6h with 5h range spans [1h, 6h]
-# Splits: Head (1h, 2h] floats, Middle (2h, 4h] mixed data, Middle2 (4h, 6h] floats
-# Series 1 & 2: Mixed floats/histogram with histogram at 3h (middle split only)
-# Series 3: Two gauge histograms at 3h and 3h30m (middle split only)
+# Multiple unique annotations from different series
 load 1m
-  dedup_test{series="1"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
-  dedup_test{series="2"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
-  dedup_test{series="3"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60
+  multi_anno{series="1"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+  multi_anno{series="2"} 0+100x180 {{schema:0 sum:18000 count:180 buckets:[180]}} _ _ 18200+100x60
+  multi_anno{series="3"} _x180 {{schema:0 sum:4 count:4 buckets:[1] counter_reset_hint:gauge}}x60
 
-# First run: uncached, middle split writes both annotations to cache
-eval instant at 6h rate(dedup_test[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_test"
-  expect warn msg: PromQL warning: this native histogram metric is not a counter: "dedup_test"
+eval instant at 6h rate(multi_anno[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "multi_anno"
+  expect warn msg: PromQL warning: this native histogram metric is not a counter: "multi_anno"
   {series="3"} {{counter_reset_hint:gauge}}
 
-# Second run: cached, middle split reads both annotations from cache
-eval instant at 6h rate(dedup_test[5h])
-  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "dedup_test"
-  expect warn msg: PromQL warning: this native histogram metric is not a counter: "dedup_test"
+eval instant at 6h rate(multi_anno[5h])
+  expect warn msg: PromQL warning: encountered a mix of histograms and floats for metric name "multi_anno"
+  expect warn msg: PromQL warning: this native histogram metric is not a counter: "multi_anno"
   {series="3"} {{counter_reset_hint:gauge}}
 
 clear
 
-# Info annotation type preservation
-# Query at 5h with 4h range spans [1h, 5h]
-# Splits: Head (1h, 2h] floats, Middle (2h, 4h] floats, Tail (4h, 5h] floats
-# All splits contain data, info annotation emitted from middle cacheable split
+# ===== Split functions wrapped in binary operators =====
+
 load 1m
-  non_counter_metric 0+60x360
+  counter_a_total 0+60x400
+  counter_b_total 0+120x400
 
-# First run: uncached, middle split writes info annotation to cache
-eval instant at 5h rate(non_counter_metric[4h])
-  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "non_counter_metric"
-  {} 1.0
+eval instant at 6h rate(counter_a_total[5h]) * 2
+  {} 2.0
 
-# Second run: cached, middle split reads info annotation from cache
-eval instant at 5h rate(non_counter_metric[4h])
-  expect info msg: PromQL info: metric might not be a counter, name does not end in _total/_sum/_count/_bucket: "non_counter_metric"
-  {} 1.0
+eval instant at 6h rate(counter_a_total[5h]) * 2
+  {} 2.0
+
+eval instant at 6h rate(counter_a_total[5h]) + rate(counter_b_total[5h])
+  {} 3.0
+
+eval instant at 6h rate(counter_a_total[5h]) + rate(counter_b_total[5h])
+  {} 3.0
+
+eval instant at 6h increase(counter_b_total[5h]) - increase(counter_a_total[5h])
+  {} 18000
+
+eval instant at 6h increase(counter_b_total[5h]) - increase(counter_a_total[5h])
+  {} 18000
 
 clear
-
-#TODO: add tests for annotations across splits

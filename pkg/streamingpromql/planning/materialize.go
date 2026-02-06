@@ -4,7 +4,6 @@ package planning
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
@@ -21,7 +20,6 @@ type Materializer struct {
 type OperatorFactoryKey struct {
 	node               Node
 	timeRange          types.QueryTimeRange
-	subRange           time.Duration
 	overrideTimeParams RangeParams
 }
 
@@ -67,7 +65,6 @@ func (m *Materializer) ConvertNodeToOperator(node Node, timeRange types.QueryTim
 	return m.ConvertNodeToOperatorWithSubRange(node, timeRange, RangeParams{IsSet: false})
 }
 
-// ConvertNodeToOperatorWithSubRange will call materialize with the selected subrange.
 func (m *Materializer) ConvertNodeToOperatorWithSubRange(node Node, timeRange types.QueryTimeRange, overrideTimeParams RangeParams) (types.Operator, error) {
 	f, err := m.FactoryForNodeWithSubRange(node, timeRange, overrideTimeParams)
 	if err != nil {

@@ -15,7 +15,6 @@ const (
 	// resultsCacheVersion should be increased every time the cache format changes.
 	resultsCacheVersion = 1
 
-	// defaultTTL is the default TTL for intermediate results cache entries.
 	defaultTTL = 24 * time.Hour
 )
 
