@@ -863,6 +863,16 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "create_new_traces",
+          "required": false,
+          "desc": "Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.create-new-traces",
+          "fieldType": "boolean"
         }
       ],
       "fieldValue": null,
