@@ -2,7 +2,7 @@
 
 syntax = "proto3";
 
-package thanos;
+package rangevectorsplittingcache;
 
 import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "gogoproto/gogo.proto";

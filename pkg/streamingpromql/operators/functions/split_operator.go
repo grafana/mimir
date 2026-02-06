@@ -152,14 +152,11 @@ func (m *FunctionOverRangeVectorSplit[T]) Prepare(ctx context.Context, params *t
 
 	stats.FromContext(ctx).AddSplitRangeVectors(1)
 
-	var err error
-	m.splits, err = m.createSplits(ctx)
-	if err != nil {
+	if err := m.createSplits(ctx); err != nil {
 		return err
 	}
 	for _, split := range m.splits {
-		err = split.Prepare(ctx, params)
-		if err != nil {
+		if err := split.Prepare(ctx, params); err != nil {
 			return err
 		}
 	}
@@ -175,8 +172,7 @@ func (m *FunctionOverRangeVectorSplit[T]) AfterPrepare(ctx context.Context) erro
 	return nil
 }
 
-func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]Split[T], error) {
-	var splits []Split[T]
+func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) error {
 	var currentUncachedStart int64
 	var currentUncachedRanges []Range
 
@@ -184,7 +180,7 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 		if splitRange.Cacheable {
 			metadata, annotations, results, found, err := m.cache.Get(ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
 			if err != nil {
-				return nil, err
+				return err
 			}
 
 			if found {
@@ -192,19 +188,14 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 					lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
 					operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
 					if err != nil {
-						return nil, err
+						return err
 					}
 
-					split, err := NewUncachedSplit(ctx, currentUncachedRanges, operator, m)
-					if err != nil {
-						return nil, err
-					}
-
-					splits = append(splits, split)
+					m.splits = append(m.splits, NewUncachedSplit(currentUncachedRanges, operator, m))
 					currentUncachedRanges = nil
 				}
 
-				splits = append(splits, NewCachedSplit(metadata, annotations, results, m))
+				m.splits = append(m.splits, NewCachedSplit(metadata, annotations, results, m))
 				continue
 			}
 		}
@@ -221,18 +212,13 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 		lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
 		operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		split, err := NewUncachedSplit(ctx, currentUncachedRanges, operator, m)
-		if err != nil {
-			return nil, err
-		}
-
-		splits = append(splits, split)
+		m.splits = append(m.splits, NewUncachedSplit(currentUncachedRanges, operator, m))
 	}
 
-	return splits, nil
+	return nil
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) materializeOperatorForTimeRange(start int64, end int64) (types.RangeVectorOperator, error) {
@@ -624,11 +610,10 @@ func (p *UncachedSplit[T]) RangeCount() int {
 }
 
 func NewUncachedSplit[T any](
-	ctx context.Context,
 	ranges []Range,
 	operator types.RangeVectorOperator,
 	parent *FunctionOverRangeVectorSplit[T],
-) (*UncachedSplit[T], error) {
+) *UncachedSplit[T] {
 	rangeResults := make([][]T, len(ranges))
 	rangeAnnotations := make([]map[cache.Annotation]struct{}, len(ranges))
 	for i := range ranges {
@@ -642,7 +627,7 @@ func NewUncachedSplit[T any](
 		rangeResults:     rangeResults,
 		rangeAnnotations: rangeAnnotations,
 		finalized:        false,
-	}, nil
+	}
 }
 
 func (p *UncachedSplit[T]) Prepare(ctx context.Context, params *types.PrepareParams) error {
