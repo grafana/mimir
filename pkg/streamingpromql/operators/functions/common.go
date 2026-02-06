@@ -136,10 +136,6 @@ type FunctionOverRangeVectorDefinition struct {
 	// first argument, not the position of the inner expression.
 	// FIXME: we might need something more flexible in the future (eg. to accommodate other argument positions), but this is good enough for now.
 	UseFirstArgumentPositionForAnnotations bool
-
-	// SplitOperatorFactory defines how to create an operator for range vector splitting.
-	// If nil, the function does not support range vector splitting.
-	SplitOperatorFactory SplitOperatorFactory
 }
 
 type SeriesMetadataFunctionDefinition struct {
