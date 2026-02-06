@@ -6,6 +6,7 @@ import (
 	"context"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistBindPort: 0, // random port
 			partitionIDs:       "0",
 			partitionState:     "active",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -87,7 +88,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistBindPort: 0,
 			partitionIDs:       "0",
 			partitionState:     "active",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -119,7 +120,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistBindPort: 0,
 			partitionIDs:       "2",
 			partitionState:     "active",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -155,7 +156,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistBindPort: 0,
 			partitionIDs:       "0, 1, 2",
 			partitionState:     "active",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -200,7 +201,7 @@ func TestAddPartitionCommand(t *testing.T) {
 			memberlistBindPort: 0,
 			partitionIDs:       "0,1,2",
 			partitionState:     "active",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -241,7 +242,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0, // random port
 			partitionIDs:       "0",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -276,7 +277,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			partitionIDs:       "0",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -309,7 +310,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			partitionIDs:       "0",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -343,7 +344,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			partitionIDs:       "0,2",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 
@@ -390,7 +391,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 			memberlistJoin:     []string{seedAddr},
 			memberlistBindPort: 0,
 			partitionIDs:       "0,1,2",
-			skipConfirmation:   true,
+			stdin:              strings.NewReader("yes\n"),
 			logger:             log.NewNopLogger(),
 		}
 

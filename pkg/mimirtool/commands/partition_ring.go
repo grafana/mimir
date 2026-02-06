@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -35,9 +36,9 @@ type AddPartitionCommand struct {
 	memberlistBindPort     int
 	partitionIDs           string
 	partitionState         string
-	skipConfirmation       bool
 	verbose                bool
 	logger                 log.Logger
+	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
 }
 
 // RemovePartitionCommand handles the remove-partition subcommand.
@@ -46,9 +47,9 @@ type RemovePartitionCommand struct {
 	memberlistClusterLabel string
 	memberlistBindPort     int
 	partitionIDs           string
-	skipConfirmation       bool
 	verbose                bool
 	logger                 log.Logger
+	stdin                  io.Reader // For testing; defaults to os.Stdin if nil.
 }
 
 // Register is used to register the command to a parent command.
@@ -90,11 +91,10 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		memberlistJoin         *[]string
 		memberlistClusterLabel *string
 		memberlistBindPort     *int
-		skipConfirmation       *bool
 		verbose                *bool
 	}{
-		{addPartitionCmd, &addCmd.partitionIDs, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.skipConfirmation, &addCmd.verbose},
-		{removePartitionCmd, &removeCmd.partitionIDs, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.skipConfirmation, &removeCmd.verbose},
+		{addPartitionCmd, &addCmd.partitionIDs, &addCmd.memberlistJoin, &addCmd.memberlistClusterLabel, &addCmd.memberlistBindPort, &addCmd.verbose},
+		{removePartitionCmd, &removeCmd.partitionIDs, &removeCmd.memberlistJoin, &removeCmd.memberlistClusterLabel, &removeCmd.memberlistBindPort, &removeCmd.verbose},
 	} {
 		cfg.cmd.Flag("partition.id", "Comma-separated list of partition IDs (must be >= 0).").
 			Required().
@@ -111,10 +111,6 @@ func (c *PartitionRingCommand) Register(app *kingpin.Application, _ EnvVarNames,
 		cfg.cmd.Flag("memberlist.bind-port", "Port to listen on for memberlist gossip messages.").
 			Default("7946").
 			IntVar(cfg.memberlistBindPort)
-
-		cfg.cmd.Flag("yes", "Skip confirmation prompt.").
-			Default("false").
-			BoolVar(cfg.skipConfirmation)
 
 		cfg.cmd.Flag("verbose", "Enable verbose logging.").
 			Default("false").
@@ -135,14 +131,12 @@ func (c *AddPartitionCommand) run() error {
 		return err
 	}
 
-	// Ask for confirmation unless --yes is provided.
-	if !c.skipConfirmation {
-		message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
+	// Ask for confirmation.
+	message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
 Adding partitions directly to the ring bypasses normal ingester lifecycle.
 About to add partition(s) %v with state '%s' to the ring.`, partitionIDs, state.CleanName())
-		if err := askForConfirmation(message); err != nil {
-			return err
-		}
+	if err := askForConfirmation(message, c.getStdin()); err != nil {
+		return err
 	}
 
 	// Use a timeout to avoid hanging indefinitely if memberlist can't join.
@@ -174,14 +168,12 @@ func (c *RemovePartitionCommand) run() error {
 		return err
 	}
 
-	// Ask for confirmation unless --yes is provided.
-	if !c.skipConfirmation {
-		message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
+	// Ask for confirmation.
+	message := fmt.Sprintf(`WARNING: This is a dangerous operation NOT intended for production systems.
 Removing partitions directly from the ring bypasses normal ingester lifecycle.
 About to remove partition(s) %v from the ring.`, partitionIDs)
-		if err := askForConfirmation(message); err != nil {
-			return err
-		}
+	if err := askForConfirmation(message, c.getStdin()); err != nil {
+		return err
 	}
 
 	// Use a timeout to avoid hanging indefinitely if memberlist can't join.
@@ -242,13 +234,27 @@ func parsePartitionIDs(input string) ([]int32, error) {
 	return ids, nil
 }
 
+func (c *AddPartitionCommand) getStdin() io.Reader {
+	if c.stdin != nil {
+		return c.stdin
+	}
+	return os.Stdin
+}
+
+func (c *RemovePartitionCommand) getStdin() io.Reader {
+	if c.stdin != nil {
+		return c.stdin
+	}
+	return os.Stdin
+}
+
 // askForConfirmation prints the given message to stderr and asks the user to type 'yes' to confirm.
 // The message can be multiline and should not include a trailing newline.
-func askForConfirmation(message string) error {
+func askForConfirmation(message string, stdin io.Reader) error {
 	fmt.Fprintln(os.Stderr, message)
 	fmt.Fprint(os.Stderr, "Type 'yes' to confirm: ")
 
-	reader := bufio.NewReader(os.Stdin)
+	reader := bufio.NewReader(stdin)
 	input, err := reader.ReadString('\n')
 	if err != nil {
 		return errors.Wrap(err, "failed to read user input")
