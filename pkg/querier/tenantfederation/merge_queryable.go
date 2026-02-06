@@ -397,7 +397,11 @@ func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, selMergeQu
 	// We don't use the context passed to this function, since the context has to live longer
 	// than the call to ForEachJob (i.e. as long as seriesSets)
 	run := func(_ context.Context, idx int) error {
-		// For tenant federation we want to have deduplicator per federated tenant
+		// Create a per-tenant deduplicator for federated queries. Each federated tenant
+		// gets its own deduplicator to ensure memory consumption is accurately tracked
+		// per tenant. For example, with two federated tenants, there are two deduplicators,
+		// and results from queriers are wrapped by different MemoryTrackingSeriesSet
+		// instances for each tenant.
 		tenantCtx := limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
 		id := jobs[idx]
 		seriesSets[idx] = NewAddLabelsSeriesSet(
