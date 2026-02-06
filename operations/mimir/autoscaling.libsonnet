@@ -180,7 +180,7 @@
   // `weight` param can be used to control just a portion of the expected queriers with the generated scaled object.
   // For example, if you run multiple querier deployments on different node types, you can use the weight to control which portion of them runs on which nodes.
   // The weight is a number between 0 and 1, where 1 means 100% of the expected queriers.
-  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1, extra_matchers='')::
+  newQuerierScaledObject(name, query_scheduler_container_name, querier_container_name, querier_max_concurrent, min_replicas, max_replicas, target_utilization, weight=1, extra_matchers='', ignore_null_values=false)::
     local queryParams = {
       namespace: $._config.namespace,
       query_scheduler_container_name: query_scheduler_container_name,
@@ -205,6 +205,8 @@
             query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+
+            ignore_null_values: ignore_null_values,
           },
           {
             metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -216,6 +218,8 @@
             query: queryWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+
+            ignore_null_values: ignore_null_values,
           },
         ]
         + if !$._config.autoscaling_querier_predictive_scaling_enabled then [] else [
@@ -231,6 +235,7 @@
               }
             ), weight),
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+            ignore_null_values: ignore_null_values,
           },
         ],
     }) + {
