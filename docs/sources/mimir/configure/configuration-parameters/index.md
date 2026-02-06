@@ -4226,7 +4226,7 @@ The `limits` block configures default and per-tenant limits imposed by component
 # that you can configure per tenant. This limit only applies to additional
 # custom trackers. Set to 0 to disable the limit.
 # CLI flag: -validation.max-active-series-additional-custom-trackers
-[max_active_series_additional_custom_trackers: <int> | default = 200]
+[max_active_series_additional_custom_trackers: <int> | default = 0]
 
 # Non-zero value enables out-of-order support for most recent samples that are
 # within the time window in relation to the TSDB's maximum time, i.e., within
