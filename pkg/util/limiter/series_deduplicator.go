@@ -110,6 +110,9 @@ func (sd *seriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *M
 	return newLabels, nil
 }
 
+// seriesCount returns the total count of unique series tracked by this deduplicator while ensuring to get mutex lock
+// beforehand and unlock it after that.
+// This method exists for testing purposes only.
 func (sd *seriesDeduplicator) seriesCount() int {
 	sd.uniqueSeriesMx.Lock()
 	defer sd.uniqueSeriesMx.Unlock()
