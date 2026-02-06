@@ -17,6 +17,7 @@ import (
 	dskitcache "github.com/grafana/dskit/cache"
 	"github.com/grafana/dskit/user"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -1160,4 +1161,64 @@ func (q *testSplittingQuery) Exec(ctx context.Context) *promql.Result {
 	}
 
 	return result
+}
+
+func TestQuerySplitting_AnnotationMetricName(t *testing.T) {
+	backend, mimirEngine := setupEngineAndCache(t)
+
+	promStorage := teststorage.New(t)
+	t.Cleanup(func() { require.NoError(t, promStorage.Close()) })
+
+	ctx := context.Background()
+	app := promStorage.Appender(ctx)
+	baseT := timestamp.Time(0)
+
+	// zzz_total: float samples from 0h to 10h every 10 minutes
+	for i := 0; i <= 60; i++ {
+		ts := timestamp.FromTime(baseT.Add(time.Duration(i) * 10 * time.Minute))
+		_, err := app.Append(0, labels.FromStrings("__name__", "zzz_total", "env", "z"), ts, float64(i))
+		require.NoError(t, err)
+	}
+
+	// aaa_total: float samples from 4h to 6h10m every 10 minutes (absent from head range)
+	for i := 0; i <= 13; i++ {
+		ts := timestamp.FromTime(baseT.Add(4*time.Hour + time.Duration(i)*10*time.Minute))
+		_, err := app.Append(0, labels.FromStrings("__name__", "aaa_total", "env", "a"), ts, float64(i))
+		require.NoError(t, err)
+	}
+
+	// aaa_total: histogram at 6h30m → creates mixed float+hist in the tail range (6h-1ms, 7h]
+	_, err := app.AppendHistogram(0, labels.FromStrings("__name__", "aaa_total", "env", "a"),
+		timestamp.FromTime(baseT.Add(6*time.Hour+30*time.Minute)), nil, &histogram.FloatHistogram{
+			Schema: 0, Count: 10, Sum: 100, ZeroThreshold: 0.001, ZeroCount: 2,
+			PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []float64{3, 5},
+		})
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// rate({__name__=~"aaa_total|zzz_total"}[5h]) at t=7h
+	// Splits: head (2h, 4h-1ms], block (4h-1ms, 6h-1ms]*, tail (6h-1ms, 7h]
+	expr := `rate({__name__=~"aaa_total|zzz_total"}[5h])`
+	ts := baseT.Add(7 * time.Hour)
+
+	// Q1: populates cache for block (4h-1ms, 6h-1ms] with [aaa, zzz] in storage order
+	expectedWarning := `PromQL warning: encountered a mix of histograms and floats for metric name "aaa_total"`
+
+	// Q1: populates cache, no ordering mismatch yet
+	result1 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result1.Err)
+	require.Len(t, result1.Warnings.AsErrors(), 1)
+	require.EqualError(t, result1.Warnings.AsErrors()[0], expectedWarning)
+	verifyCacheStats(t, backend, 1, 0, 1)
+
+	// Q2: cache hit for the block
+	// - Head (2h, 4h-1ms]: only zzz (aaa starts at 4h) → merged starts as [zzz]
+	// - Cached (4h-1ms, 6h-1ms]: [aaa, zzz] → aaa is new → merged = [zzz, aaa]
+	// - Tail (6h-1ms, 7h]: storage returns [aaa, zzz] → differs from merged order
+	//   When processing merged 0 (zzz), first local 0 (aaa) is processed.
+	result2 := runInstantQuery(t, mimirEngine, promStorage, expr, ts)
+	require.NoError(t, result2.Err)
+	require.Len(t, result2.Warnings.AsErrors(), 1)
+	require.EqualError(t, result2.Warnings.AsErrors()[0], expectedWarning)
+	verifyCacheStats(t, backend, 2, 1, 1)
 }

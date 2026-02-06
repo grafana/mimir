@@ -313,6 +313,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 		// Storage guarantees unique series, so each label set appears only once.
 		seriesMap[key] = splitLocalIdx
 		seriesToSplits = append(seriesToSplits, []SplitSeries{{0, splitLocalIdx}})
+		m.splits[0].AppendMergedSeriesIndex(splitLocalIdx, splitLocalIdx)
 	}
 
 	for splitIdx := 1; splitIdx < len(m.splits); splitIdx++ {
@@ -343,6 +344,7 @@ func (m *FunctionOverRangeVectorSplit[T]) mergeSplitsMetadata(ctx context.Contex
 				SplitIdx:      splitIdx,
 				SplitLocalIdx: splitLocalIdx,
 			})
+			m.splits[splitIdx].AppendMergedSeriesIndex(splitLocalIdx, mergedIdx)
 
 			labelBytes = labelBytes[:0]
 		}
@@ -464,8 +466,8 @@ func (m *FunctionOverRangeVectorSplit[T]) Finalize(ctx context.Context) error {
 		"splits_total", len(m.splits),
 		"splits_cached", cachedSplitCount,
 		"splits_uncached", uncachedSplitCount,
-		"ranges_total", uncachedRangeCount+cachedSplitCount,
-		"ranges_cached", cachedSplitCount,
+		"ranges_total", uncachedRangeCount+cachedRangeCount,
+		"ranges_cached", cachedRangeCount,
 		"ranges_uncached", uncachedRangeCount,
 		"cache_entries_read", m.cacheStats.ReadEntries,
 		"cache_entries_written", m.cacheStats.WrittenEntries,
@@ -499,6 +501,10 @@ type Split[T any] interface {
 	// to put the metadata slice and metadata back in the pool.
 	SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error)
 	GetResultsAt(ctx context.Context, idx int) ([]T, error)
+	// AppendMergedSeriesIndex records the mapping from a split-local series index to the parent's merged series index.
+	// This is used to make sure annotations emitted when generating the result for an uncached split reference the
+	// correct metric name.
+	AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int)
 	Finalize(ctx context.Context) error
 	Close()
 	IsCached() bool
@@ -585,6 +591,8 @@ func (c *CachedSplit[T]) Finalize(ctx context.Context) error {
 func (c *CachedSplit[T]) Close() {
 }
 
+func (c *CachedSplit[T]) AppendMergedSeriesIndex(_, _ int) {}
+
 func (c *CachedSplit[T]) IsCached() bool {
 	return true
 }
@@ -601,6 +609,11 @@ type UncachedSplit[T any] struct {
 	rangeAnnotations    []map[cache.Annotation]struct{}
 	serializedMetadata  []byte
 	seriesMetadataCount int
+
+	// localToMergedIdx maps split-local series index to the parent's merged series index.
+	// Used by emitAndCaptureAnnotation to look up the correct metric name when generating results.
+	localToMergedIdx      []int
+	currentLocalSeriesIdx int
 
 	finalized    bool
 	resultGetter *ResultGetter[T]
@@ -662,6 +675,7 @@ func (p *UncachedSplit[T]) SeriesMetadata(ctx context.Context, matchers types.Ma
 		return nil, fmt.Errorf("marshaling series metadata for cache: %w", err)
 	}
 	p.seriesMetadataCount = len(seriesMetadata)
+	p.localToMergedIdx = make([]int, len(seriesMetadata))
 
 	p.resultGetter = NewResultGetter(p.NextSeries)
 
@@ -673,6 +687,9 @@ func (p *UncachedSplit[T]) GetResultsAt(ctx context.Context, idx int) ([]T, erro
 }
 
 func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
+	localIdx := p.currentLocalSeriesIdx
+	p.currentLocalSeriesIdx++
+
 	if err := p.operator.NextSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -691,7 +708,7 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 		previousSubStep = rangeStep
 
 		capturingEmitAnnotation := func(generator types.AnnotationGenerator) {
-			p.emitAndCaptureAnnotation(rangeIdx, generator)
+			p.emitAndCaptureAnnotation(rangeIdx, localIdx, generator)
 		}
 
 		result, err := p.parent.generateFunc(rangeStep, nil, capturingEmitAnnotation, p.parent.MemoryConsumptionTracker)
@@ -705,10 +722,11 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 	return results, nil
 }
 
-func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, generator types.AnnotationGenerator) {
+func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, localSeriesIdx int, generator types.AnnotationGenerator) {
 	var metricName string
 	if p.parent.metricNames != nil {
-		metricName = p.parent.metricNames.GetMetricNameForSeries(p.parent.currentSeriesIdx)
+		mergedIdx := p.localToMergedIdx[localSeriesIdx]
+		metricName = p.parent.metricNames.GetMetricNameForSeries(mergedIdx)
 	}
 	annotationErr := generator(metricName, p.parent.innerNodeExpressionPosition)
 	p.parent.Annotations.Add(annotationErr)
@@ -776,6 +794,10 @@ func (p *UncachedSplit[T]) Close() {
 	if p.operator != nil {
 		p.operator.Close()
 	}
+}
+
+func (p *UncachedSplit[T]) AppendMergedSeriesIndex(splitLocalIdx int, mergedIdx int) {
+	p.localToMergedIdx[splitLocalIdx] = mergedIdx
 }
 
 func (p *UncachedSplit[T]) IsCached() bool {
