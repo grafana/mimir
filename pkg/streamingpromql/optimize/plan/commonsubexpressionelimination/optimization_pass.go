@@ -197,6 +197,29 @@ type sharedSelectorGroup struct {
 	filters [][]*core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
 }
 
+func (g *sharedSelectorGroup) add(p path, additionalMatchers []*core.LabelMatcher) {
+	if len(g.paths) == 0 {
+		// First duplicate or subset selector we've seen, create the list of paths.
+		g.paths = make([]path, 0, 2)
+	}
+
+	g.paths = append(g.paths, p)
+
+	if g.filters == nil && len(additionalMatchers) > 0 {
+		// First subset selector we've seen, create a slice of filters for all the other existing nodes.
+		g.filters = make([][]*core.LabelMatcher, len(g.paths)-1, len(g.paths))
+	}
+
+	if g.filters != nil {
+		// If any part of this group has a subset selector, we need to keep track of the additional matchers that apply to this path.
+		g.filters = append(g.filters, additionalMatchers)
+	}
+}
+
+func (g *sharedSelectorGroup) len() int {
+	return len(g.paths)
+}
+
 func (g *sharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher {
 	if g.filters == nil {
 		return nil
@@ -267,28 +290,18 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 				continue
 			}
 
-			if len(group.paths) == 0 {
-				// First duplicate or subset selector we've seen, create the list of paths.
-				group.paths = make([]path, 0, 2)
-				group.paths = append(group.paths, p)
+			if group.len() == 0 {
+				group.add(p, nil)
 			}
 
-			if group.filters == nil && relationship == SubsetSelectors {
-				// First subset selector we've seen, create a slice of filters for all the other nodes.
-				group.filters = make([][]*core.LabelMatcher, len(group.paths))
-			}
-
-			group.paths = append(group.paths, otherPath)
-
-			if group.filters != nil {
-				// If any part of this group has a subset selector, we need to keep track of the additional matchers that apply to this path.
-				group.filters = append(group.filters, additionalMatchers)
-			}
+			group.add(otherPath, additionalMatchers)
 
 			alreadyGrouped[otherPathIdx] = true
+
+			// TODO: if otherSelector is broader, update filters for all other existing members of the group, then swap it into "selector" above
 		}
 
-		if len(group.paths) > 0 {
+		if group.len() > 0 {
 			groups = append(groups, group)
 		}
 	}
@@ -391,7 +404,7 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 		return stats, nil
 	}
 
-	if len(group.paths) <= 2 {
+	if group.len() <= 2 {
 		// Can't possibly have any more common subexpressions. We're done.
 		return stats, nil
 	}
