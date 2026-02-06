@@ -41,8 +41,8 @@
   local isZoneAEnabled = $._config.multi_zone_store_gateway_zone_a_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isZoneBEnabled = $._config.multi_zone_store_gateway_zone_b_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
   local isZoneCEnabled = $._config.multi_zone_store_gateway_zone_c_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 3,
-  local isMultiAZAEnabled = $._config.multi_zone_store_gateway_zone_a_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isMultiAZBEnabled = $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
+  local isBackupAMultiAZEnabled = $._config.multi_zone_store_gateway_zone_a_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
+  local isBackupBMultiAZEnabled = $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
 
   assert !isMultiAZEnabled || $._config.multi_zone_store_gateway_enabled : 'store-gateway multi-AZ deployment requires store-gateway multi-zone to be enabled',
   assert !isMultiAZEnabled || $._config.multi_zone_memcached_enabled : 'store-gateway multi-AZ deployment requires memcached multi-zone to be enabled',
@@ -83,11 +83,11 @@
       $.blocks_chunks_zone_a_caching_config + $.blocks_metadata_zone_a_caching_config
     else
       {},
-  store_gateway_zone_a_backup_args:: if !isMultiAZAEnabled then {} else
+  store_gateway_zone_a_backup_args:: if !isBackupAMultiAZEnabled then {} else
     $.blocks_chunks_zone_a_caching_config +
     $.blocks_metadata_zone_a_caching_config,
 
-  store_gateway_zone_b_backup_args:: if !isMultiAZBEnabled then {} else
+  store_gateway_zone_b_backup_args:: if !isBackupBMultiAZEnabled then {} else
     $.blocks_chunks_zone_b_caching_config +
     $.blocks_metadata_zone_b_caching_config,
 
@@ -100,8 +100,8 @@
   store_gateway_zone_a_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isZoneAEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])] else []),
   store_gateway_zone_b_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isZoneBEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])] else []),
   store_gateway_zone_c_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isZoneCEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[2])] else []),
-  store_gateway_zone_a_backup_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isMultiAZAEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])] else []),
-  store_gateway_zone_b_backup_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isMultiAZBEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])] else []),
+  store_gateway_zone_a_backup_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isBackupAMultiAZEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[0])] else []),
+  store_gateway_zone_b_backup_node_affinity_matchers:: $.store_gateway_node_affinity_matchers + (if isBackupBMultiAZEnabled then [$.newMimirNodeAffinityMatcherAZ($._config.multi_zone_availability_zones[1])] else []),
 
   newStoreGatewayZoneContainer(zone, zone_args, envmap={})::
     $.store_gateway_container +
@@ -182,13 +182,13 @@
 
   store_gateway_zone_a_backup_statefulset: if !$._config.multi_zone_store_gateway_zone_a_backup_enabled then null else
     $.newStoreGatewayZoneStatefulSet('a-backup', $.store_gateway_zone_a_backup_container, $.store_gateway_zone_a_backup_node_affinity_matchers) +
-    (if isMultiAZAEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}) +
+    (if isBackupAMultiAZEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}) +
     // Default to 0 replicas because we expect to use autoscaling and follow other zone replicas.
     statefulSet.mixin.spec.withReplicas(0),
 
   store_gateway_zone_b_backup_statefulset: if !$._config.multi_zone_store_gateway_zone_b_backup_enabled then null else
     $.newStoreGatewayZoneStatefulSet('b-backup', $.store_gateway_zone_b_backup_container, $.store_gateway_zone_b_backup_node_affinity_matchers) +
-    (if isMultiAZBEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}) +
+    (if isBackupBMultiAZEnabled then statefulSet.spec.template.spec.withTolerationsMixin($.newMimirMultiZoneToleration()) else {}) +
     // Default to 0 replicas because we expect to use autoscaling and follow other zone replicas.
     statefulSet.mixin.spec.withReplicas(0),
 
@@ -242,10 +242,10 @@
   local storeGatewayZoneCConfigError = if isZoneCEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_c_statefulset']) else null,
   assert storeGatewayZoneCConfigError == null : storeGatewayZoneCConfigError,
 
-  local storeGatewayZoneABackupConfigError = if isMultiAZAEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_a_backup_statefulset']) else null,
+  local storeGatewayZoneABackupConfigError = if isBackupAMultiAZEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_a_backup_statefulset']) else null,
   assert storeGatewayZoneABackupConfigError == null : storeGatewayZoneABackupConfigError,
 
-  local storeGatewayZoneBBackupConfigError = if isMultiAZBEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_b_backup_statefulset']) else null,
+  local storeGatewayZoneBBackupConfigError = if isBackupBMultiAZEnabled then $.validateMimirMultiZoneConfig(['store_gateway_zone_b_backup_statefulset']) else null,
   assert storeGatewayZoneBBackupConfigError == null : storeGatewayZoneBBackupConfigError,
 
   //

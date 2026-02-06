@@ -28,8 +28,6 @@
   local isZoneAEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 1,
   local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
   local isZoneCEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
-  local isMultiAZAEnabled = $._config.multi_zone_store_gateway_zone_a_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isMultiAZBEnabled = $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
 
   assert !$._config.memberlist_zone_aware_routing_enabled || $._config.multi_zone_memberlist_bridge_enabled : 'memberlist zone-aware routing requires memberlist-bridge multi-zone deployment',
 
@@ -204,8 +202,8 @@
   store_gateway_zone_a_args+:: $.memberlist_zone_a_args,
   store_gateway_zone_b_args+:: if $._config.multi_zone_store_gateway_zone_b_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
   store_gateway_zone_c_args+:: if $._config.multi_zone_store_gateway_zone_c_multi_az_enabled && isZoneCAvailable then $.memberlist_zone_c_args else $.memberlist_zone_a_args,
-  store_gateway_zone_a_backup_args+:: if !isMultiAZAEnabled then {} else $.memberlist_zone_a_args,
-  store_gateway_zone_b_backup_args+:: if !isMultiAZBEnabled then {} else $.memberlist_zone_b_args,
+  store_gateway_zone_a_backup_args+:: $.memberlist_zone_a_args,
+  store_gateway_zone_b_backup_args+:: if $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && isZoneBAvailable then $.memberlist_zone_b_args else $.memberlist_zone_a_args,
 
   // Other components only deployed to zone-a.
   compactor_args+:: $.memberlist_zone_a_args,
