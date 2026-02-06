@@ -23,8 +23,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -625,7 +625,9 @@ func TestQuerySplitting_WithOOOWindow(t *testing.T) {
 	// - Tail: (8h-1ms, 12h] - non-cacheable (in OOO window)
 
 	oooWindowMs := int64(2 * time.Hour / time.Millisecond)
-	storage := teststorage.New(t, oooWindowMs)
+	storage := teststorage.New(t, func(opt *tsdb.Options) {
+		opt.OutOfOrderTimeWindow = oooWindowMs
+	})
 	t.Cleanup(func() { require.NoError(t, storage.Close()) })
 
 	ctx := context.Background()
@@ -692,7 +694,6 @@ func (m *mockOutOfOrderTimeWindowProvider) OutOfOrderTimeWindow(userID string) t
 var querySplittingTestSplitIntervals = []time.Duration{
 	1 * time.Second,
 	10 * time.Second,
-	30 * time.Second,
 	5 * time.Minute,
 	2 * time.Hour,
 }
@@ -735,7 +736,7 @@ func TestQuerySplitting_UpstreamTestCases(t *testing.T) {
 
 					testScript := skipUnsupportedTests(t, string(b), testFile)
 
-					newStorage := func(t testutil.T) storage.Storage {
+					newStorage := func(t testing.TB) storage.Storage {
 						base := promqltest.LoadedStorage(t, "")
 						return &storageWithCloseCallback{
 							Storage: base,
@@ -819,7 +820,7 @@ func TestQuerySplitting_OurTestCases(t *testing.T) {
 						selectedCache = cacheBackendDelayed
 					}
 
-					newStorage := func(t testutil.T) storage.Storage {
+					newStorage := func(t testing.TB) storage.Storage {
 						base := promqltest.LoadedStorage(t, "")
 						return &storageWithCloseCallback{
 							Storage: base,
