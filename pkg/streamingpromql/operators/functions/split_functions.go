@@ -218,10 +218,12 @@ var SplitMinOverTime = NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 func minOverTimeGenerate(
 	step *types.RangeVectorStepData,
 	_ []types.ScalarData,
-	emitAnnotation types.EmitAnnotationFunc,
+	_ types.EmitAnnotationFunc,
 	_ *limiter.MemoryConsumptionTracker,
 ) (MinMaxOverTimeIntermediate, error) {
-	f, hasFloat, _, err := minOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
+	// Pass nil for emitAnnotation to avoid emitting the annotation twice: once here and again in combine.
+	// The combine function handles emitting the annotation when both floats and histograms are present.
+	f, hasFloat, _, err := minOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
 	if err != nil {
 		return MinMaxOverTimeIntermediate{}, err
 	}
@@ -270,8 +272,10 @@ var SplitMaxOverTime = NewSplitOperatorFactory[MinMaxOverTimeIntermediate](
 	FUNCTION_MAX_OVER_TIME,
 )
 
-func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, emitAnnotation types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, error) {
-	f, hasFloat, _, err := maxOverTime(step, nil, types.QueryTimeRange{}, emitAnnotation, nil)
+func maxOverTimeGenerate(step *types.RangeVectorStepData, _ []types.ScalarData, _ types.EmitAnnotationFunc, _ *limiter.MemoryConsumptionTracker) (MinMaxOverTimeIntermediate, error) {
+	// Pass nil for emitAnnotation to avoid emitting the annotation twice: once here and again in combine.
+	// The combine function handles emitting the annotation when both floats and histograms are present.
+	f, hasFloat, _, err := maxOverTime(step, nil, types.QueryTimeRange{}, nil, nil)
 	if err != nil {
 		return MinMaxOverTimeIntermediate{}, err
 	}
