@@ -7,6 +7,7 @@ import (
 	"flag"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/modules"
@@ -59,6 +60,10 @@ func (m *Manager) Run(ctx context.Context) error {
 			return err
 		}
 	}
+
+	assert.Reachable("continuous-test: manager run loop entered", map[string]any{
+		"num_tests": len(m.tests),
+	})
 
 	// Continuously run all tests. Each test is executed in a dedicated goroutine.
 	group, ctx := errgroup.WithContext(ctx)

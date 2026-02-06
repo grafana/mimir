@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/google/go-cmp/cmp"
@@ -370,6 +371,10 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	if err != nil {
 		return report.Error(fmt.Errorf("failed to serialize to v2: %w", err))
 	}
+	assert.Always(len(v2Records) == 1, "continuous-test: V1 record does not split into multiple V2 records", Details{
+		"count":  len(v2Records),
+		"tenant": tenantID,
+	})
 	if len(v2Records) == 0 {
 		return report.Error(fmt.Errorf("no records returned after v2 conversion"))
 	}
@@ -378,7 +383,12 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	}
 	v2Rec := v2Records[0]
 
-	if string(rec.Key) != string(v2Rec.Key) {
+	keyMatches := string(rec.Key) == string(v2Rec.Key)
+	assert.Always(keyMatches, "continuous-test: ingest record key survives V1-to-V2 roundtrip", Details{
+		"original": string(rec.Key),
+		"v2":       string(v2Rec.Key),
+	})
+	if !keyMatches {
 		return report.Error(fmt.Errorf("key did not match, got: %s, expected: %s", string(v2Rec.Key), string(rec.Key)))
 	}
 
@@ -389,12 +399,22 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		return report.Error(fmt.Errorf("failed to unmarshal V2 record: %w", err))
 	}
 
+	assert.Always(v2Req.SkipLabelValidation == req.SkipLabelValidation, "continuous-test: SkipLabelValidation matches after V2 roundtrip", Details{
+		"original": req.SkipLabelValidation,
+		"v2":       v2Req.SkipLabelValidation,
+		"tenant":   tenantID,
+	})
 	if v2Req.SkipLabelValidation != req.SkipLabelValidation {
 		return report.Error(fmt.Errorf("skipLabelValidation did not match, original: %t, v2: %t", req.SkipLabelValidation, v2Req.SkipLabelValidation))
 	}
 	if v2Req.SkipLabelCountValidation != req.SkipLabelCountValidation {
 		return report.Error(fmt.Errorf("skipLabelCountValidation did not match, original: %t, v2: %t", req.SkipLabelCountValidation, v2Req.SkipLabelCountValidation))
 	}
+	assert.Always(v2Req.Source == req.Source, "continuous-test: Source matches after V2 roundtrip", Details{
+		"original": req.Source,
+		"v2":       v2Req.Source,
+		"tenant":   tenantID,
+	})
 	if v2Req.Source != req.Source {
 		return report.Error(fmt.Errorf("source did not match, original: %d, v2: %d", req.Source, v2Req.Source))
 	}
@@ -404,6 +424,11 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 	if v2Req.TimeseriesRW2 != nil {
 		return report.Error(fmt.Errorf("v2 record had a TimeseriesRW2 unmarshalling field left populated"))
 	}
+
+	assert.Sometimes(len(req.Metadata) > 0, "continuous-test: ingest records containing metadata are processed", Details{
+		"tenant":        tenantID,
+		"metadata_count": len(req.Metadata),
+	})
 
 	if len(req.Metadata) != 0 || len(v2Req.Metadata) != 0 {
 		t.metrics.metadataProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Metadata)))
@@ -440,7 +465,12 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 			t.metrics.samplesProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Samples)))
 			t.metrics.exemplarsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Exemplars)))
 			t.metrics.histogramsProcessedTotal.WithLabelValues(tenantID).Add(float64(len(req.Timeseries[i].Histograms)))
-			if !TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries) {
+			tsEqual := TimeseriesEqual(req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries)
+			assert.Always(tsEqual, "continuous-test: timeseries data survives V1-to-V2 roundtrip", Details{
+				"index":  i,
+				"tenant": tenantID,
+			})
+			if !tsEqual {
 				return report.Error(fmt.Errorf("timeseries do not match. Index: %d, orig: %v, v2: %v", i, req.Timeseries[i].TimeSeries, v2Req.Timeseries[i].TimeSeries))
 			}
 		}
@@ -449,12 +479,15 @@ func (t *IngestStorageRecordTest) testRec(rec *kgo.Record, report batchReport) b
 		if extraTimeseriesCount > 0 {
 			extraTimeseries := v2Req.Timeseries[len(v2Req.Timeseries)-extraTimeseriesCount:]
 			for _, extra := range extraTimeseries {
+				assert.Always(len(extra.Samples) == 0, "continuous-test: metadata-carrier timeseries has no samples", Details{"tenant": tenantID})
 				if len(extra.Samples) > 0 {
 					return report.Error(fmt.Errorf("extra timeseries (that did not match to an input timeseries) contained samples: %v", extra))
 				}
+				assert.Always(len(extra.Exemplars) == 0, "continuous-test: metadata-carrier timeseries has no exemplars", Details{"tenant": tenantID})
 				if len(extra.Exemplars) > 0 {
 					return report.Error(fmt.Errorf("extra timeseries (that did not match to an input timeseries) contained exemplars: %v", extra))
 				}
+				assert.Always(len(extra.Histograms) == 0, "continuous-test: metadata-carrier timeseries has no histograms", Details{"tenant": tenantID})
 				if len(extra.Histograms) > 0 {
 					return report.Error(fmt.Errorf("extra timeseries (that did not match to an input timeseries) contained histograms: %v", extra))
 				}

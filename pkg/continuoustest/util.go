@@ -10,12 +10,16 @@ import (
 	"strings"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
+
+// Details is a convenience alias for Antithesis assertion detail maps.
+type Details = map[string]any
 
 const (
 	maxComparisonDeltaFloat     = 0.001
@@ -338,6 +342,7 @@ func generateHistogramFloatValue(t time.Time, gauge bool) float64 {
 // and the index of the last sample that matched the expectation or -1 if no sample matches.
 func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time.Duration, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc) (lastMatchingIdx int, err error) {
 	lastMatchingIdx = -1
+	assert.Always(len(matrix) == 1, "continuous-test: sum query returns exactly one series", Details{"actual": len(matrix)})
 	if len(matrix) != 1 {
 		return lastMatchingIdx, fmt.Errorf("expected 1 series in the result but got %d", len(matrix))
 	}
@@ -361,22 +366,33 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 			}
 			ts := time.UnixMilli(int64(histogram.Timestamp)).UTC()
 
-			// Assert on value.
-			expectedHistogram := generateSampleHistogram(ts, expectedSeries)
-			if !compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram) {
-				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
-			}
+		// Assert on value.
+		expectedHistogram := generateSampleHistogram(ts, expectedSeries)
+		histValuesMatch := compareHistogramValues(histogram.Histogram, expectedHistogram, maxComparisonDeltaHistogram)
+		assert.Always(histValuesMatch, "continuous-test: queried histogram matches expected value", Details{
+			"timestamp":    ts.UnixMilli(),
+			"actual_sum":   histogram.Histogram.Sum,
+			"expected_sum": expectedHistogram.Sum,
+		})
+		if !histValuesMatch {
+			return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) has sum %f while was expecting %f", histogram.Timestamp, ts.String(), histogram.Histogram.Sum, expectedHistogram.Sum)
+		}
 
-			// Assert on histogram timestamp. We expect no gaps.
-			if idx < len(histograms)-1 {
-				nextTs := time.UnixMilli(int64(histograms[idx+1].Timestamp)).UTC()
-				expectedTs := nextTs.Add(-expectedStep)
+		// Assert on histogram timestamp. We expect no gaps.
+		if idx < len(histograms)-1 {
+			nextTs := time.UnixMilli(int64(histograms[idx+1].Timestamp)).UTC()
+			expectedTs := nextTs.Add(-expectedStep)
 
-				if ts.UnixMilli() != expectedTs.UnixMilli() {
-					return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) was expected to have timestamp %d (%s) because next histogram has timestamp %d (%s)",
-						histogram.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String())
-				}
+			noGap := ts.UnixMilli() == expectedTs.UnixMilli()
+			assert.Always(noGap, "continuous-test: no gaps in returned histogram samples", Details{
+				"actual_ts":   ts.UnixMilli(),
+				"expected_ts": expectedTs.UnixMilli(),
+			})
+			if !noGap {
+				return lastMatchingIdx, fmt.Errorf("histogram at timestamp %d (%s) was expected to have timestamp %d (%s) because next histogram has timestamp %d (%s)",
+					histogram.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String())
 			}
+		}
 
 			lastMatchingIdx = idx
 		}
@@ -389,7 +405,13 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 
 		// Assert on value.
 		expectedValue := generateValue(ts) * float64(expectedSeries)
-		if !compareFloatValues(float64(sample.Value), expectedValue, maxComparisonDeltaFloat) {
+		floatValuesMatch := compareFloatValues(float64(sample.Value), expectedValue, maxComparisonDeltaFloat)
+		assert.Always(floatValuesMatch, "continuous-test: queried float sample matches expected value", Details{
+			"timestamp": ts.UnixMilli(),
+			"actual":    float64(sample.Value),
+			"expected":  expectedValue,
+		})
+		if !floatValuesMatch {
 			comparison := formatExpectedAndActualValuesComparison(matrix, expectedSeries, generateValue)
 			return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) has value %f while was expecting %f, full result comparison:\n%s", sample.Timestamp, ts.String(), sample.Value, expectedValue, comparison)
 		}
@@ -399,7 +421,12 @@ func verifySamplesSum(matrix model.Matrix, expectedSeries int, expectedStep time
 			nextTs := time.UnixMilli(int64(samples[idx+1].Timestamp)).UTC()
 			expectedTs := nextTs.Add(-expectedStep)
 
-			if ts.UnixMilli() != expectedTs.UnixMilli() {
+			noGap := ts.UnixMilli() == expectedTs.UnixMilli()
+			assert.Always(noGap, "continuous-test: no gaps in returned float samples", Details{
+				"actual_ts":   ts.UnixMilli(),
+				"expected_ts": expectedTs.UnixMilli(),
+			})
+			if !noGap {
 				return lastMatchingIdx, fmt.Errorf("sample at timestamp %d (%s) was expected to have timestamp %d (%s) because next sample has timestamp %d (%s)",
 					sample.Timestamp, ts.String(), expectedTs.UnixMilli(), expectedTs.String(), nextTs.UnixMilli(), nextTs.String())
 			}

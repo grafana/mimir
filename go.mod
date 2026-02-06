@@ -52,6 +52,7 @@ require (
 	cloud.google.com/go/storage v1.59.2
 	github.com/alecthomas/chroma/v2 v2.23.1
 	github.com/alecthomas/kingpin/v2 v2.4.0
+	github.com/antithesishq/antithesis-sdk-go v0.5.0
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.0
 	github.com/cortexproject/promqlsmith v0.0.0-20251018201159-9e00e5e62e4e
 	github.com/dennwc/varint v1.0.0

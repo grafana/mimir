@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/antithesishq/antithesis-sdk-go/assert"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/multierror"
@@ -109,6 +110,11 @@ func (t *WriteReadSeriesTest) Init(ctx context.Context, now time.Time) error {
 
 func (t *WriteReadSeriesTest) recoverPast(ctx context.Context, now time.Time, metricName string, querySum querySumFunc, generateValue generateValueFunc, generateSampleHistogram generateSampleHistogramFunc, records *MetricHistory) error {
 	from, to := t.findPreviouslyWrittenTimeRange(ctx, now, metricName, querySum, generateValue, generateSampleHistogram)
+	assert.Sometimes(!from.IsZero() && !to.IsZero(), "continuous-test: recovered previously written samples", Details{
+		"metric_name": metricName,
+		"from":        from.UnixMilli(),
+		"to":          to.UnixMilli(),
+	})
 	if from.IsZero() || to.IsZero() {
 		level.Info(t.logger).Log("msg", "No valid previously written samples time range found, will continue writing from the nearest interval-aligned timestamp", "metric_name", metricName)
 		return nil
@@ -196,6 +202,17 @@ func (t *WriteReadSeriesTest) writeSamples(ctx context.Context, typeLabel string
 	statusCode, err := t.client.WriteSeries(ctx, series, metadata)
 	t.metrics.writesLatency.WithLabelValues(typeLabel).Observe(time.Since(start).Seconds())
 	t.metrics.writesTotal.WithLabelValues(typeLabel).Inc()
+
+	assert.Always(statusCode/100 == 2, "continuous-test: write request succeeds", Details{
+		"status_code": statusCode,
+		"metric_name": metricName,
+		"timestamp":   timestamp.UnixMilli(),
+		"protocol":    t.client.Protocol(),
+	})
+	assert.Sometimes(statusCode/100 == 4, "continuous-test: write request receives a 4xx rejection", Details{
+		"status_code": statusCode,
+		"metric_name": metricName,
+	})
 
 	if statusCode/100 != 2 {
 		t.metrics.writesFailedTotal.WithLabelValues(strconv.Itoa(statusCode), typeLabel).Inc()
@@ -305,10 +322,19 @@ func (t *WriteReadSeriesTest) runRangeQueryAndVerifyResult(ctx context.Context, 
 	logger := log.With(sp, "query", metricSumQuery, "start", start.UnixMilli(), "end", end.UnixMilli(), "step", step, "results_cache", strconv.FormatBool(resultsCacheEnabled), "type", typeLabel, "protocol", t.client.Protocol())
 	level.Debug(logger).Log("msg", "Running range query")
 
+	assert.Sometimes(resultsCacheEnabled, "continuous-test: queries with results cache enabled are exercised", nil)
+	assert.Sometimes(!resultsCacheEnabled, "continuous-test: queries with results cache disabled are exercised", nil)
+
 	t.metrics.queriesTotal.WithLabelValues(typeLabel).Inc()
 	queryStart := time.Now()
 	matrix, err := t.client.QueryRange(ctx, metricSumQuery, start, end, step, WithResultsCacheEnabled(resultsCacheEnabled))
 	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
+	assert.Always(err == nil, "continuous-test: range query succeeds", Details{
+		"query":         metricSumQuery,
+		"start":         start.UnixMilli(),
+		"end":           end.UnixMilli(),
+		"results_cache": resultsCacheEnabled,
+	})
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute range query", "err", err)
@@ -346,6 +372,11 @@ func (t *WriteReadSeriesTest) runInstantQueryAndVerifyResult(ctx context.Context
 	queryStart := time.Now()
 	vector, err := t.client.Query(ctx, metricSumQuery, ts, WithResultsCacheEnabled(resultsCacheEnabled))
 	t.metrics.queriesLatency.WithLabelValues(typeLabel, strconv.FormatBool(resultsCacheEnabled)).Observe(time.Since(queryStart).Seconds())
+	assert.Always(err == nil, "continuous-test: instant query succeeds", Details{
+		"query":         metricSumQuery,
+		"ts":            ts.UnixMilli(),
+		"results_cache": resultsCacheEnabled,
+	})
 	if err != nil {
 		t.metrics.queriesFailedTotal.WithLabelValues(typeLabel).Inc()
 		level.Warn(logger).Log("msg", "Failed to execute instant query", "err", err)
