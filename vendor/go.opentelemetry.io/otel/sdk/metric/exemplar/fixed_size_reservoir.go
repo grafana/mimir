@@ -204,7 +204,7 @@ func (r *nextTracker) loadCountAndNext() (uint32, uint32) {
 	n := r.countAndNext.Load()
 	// Both count and next are stored in the upper and lower 32 bits, and thus
 	// can't overflow.
-	return uint32(n&((1<<32)-1) - 1), uint32(n >> 32) // nolint: gosec
+	return uint32(n & ((1 << 32) - 1)), uint32(n >> 32) // nolint: gosec
 }
 
 // advance updates the count at which the offered measurement will overwrite an
