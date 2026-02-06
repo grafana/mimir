@@ -400,7 +400,11 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 
 	// Validation after single step, won't work for range queries if we supported them for splitting.
 	if m.seriesValidationFunc != nil {
-		m.seriesValidationFunc(data, m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx), m.emitAnnotationFunc)
+		var metricName string
+		if m.metricNames != nil {
+			metricName = m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
+		}
+		m.seriesValidationFunc(data, metricName, m.emitAnnotationFunc)
 	}
 
 	if m.currentSeriesIdx == len(m.seriesToSplits)-1 {
@@ -412,7 +416,10 @@ func (m *FunctionOverRangeVectorSplit[T]) NextSeries(ctx context.Context) (types
 }
 
 func (m *FunctionOverRangeVectorSplit[T]) emitAnnotation(generator types.AnnotationGenerator) {
-	metricName := m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
+	var metricName string
+	if m.metricNames != nil {
+		metricName = m.metricNames.GetMetricNameForSeries(m.currentSeriesIdx)
+	}
 	m.Annotations.Add(generator(metricName, m.innerNodeExpressionPosition))
 }
 
@@ -699,7 +706,10 @@ func (p *UncachedSplit[T]) NextSeries(ctx context.Context) ([]T, error) {
 }
 
 func (p *UncachedSplit[T]) emitAndCaptureAnnotation(rangeIdx int, generator types.AnnotationGenerator) {
-	metricName := p.parent.metricNames.GetMetricNameForSeries(p.parent.currentSeriesIdx)
+	var metricName string
+	if p.parent.metricNames != nil {
+		metricName = p.parent.metricNames.GetMetricNameForSeries(p.parent.currentSeriesIdx)
+	}
 	annotationErr := generator(metricName, p.parent.innerNodeExpressionPosition)
 	p.parent.Annotations.Add(annotationErr)
 
