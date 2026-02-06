@@ -565,6 +565,22 @@ local filename = 'mimir-writes.json';
       .addPanel(
         $.ingestStorageIngesterEndToEndLatencyWhenStartingPanel(),
       )
+      .addPanel(
+        $.timeseriesPanel('Forced TSDB head compactions in progress') +
+        $.panelDescription(
+          'Forced TSDB head compactions in progress',
+          |||
+            The number of ingesters currently performing a forced TSDB head compaction. During a forced compaction,
+            Kafka consumption may be paused, which is a common cause of elevated — but temporary — end-to-end latency.
+          |||
+        ) +
+        $.queryPanel([
+          'sum(max_over_time(cortex_ingester_tsdb_forced_compactions_in_progress{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
+        ], [
+          'In progress',
+        ]) +
+        { fieldConfig+: { defaults+: { unit: 'short' } } },
+      )
     )
     .addRowIf(
       $._config.show_ingest_storage_panels,

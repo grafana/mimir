@@ -20,7 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid/v2"
 	"github.com/prometheus/prometheus/model/labels"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"

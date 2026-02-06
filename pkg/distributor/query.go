@@ -82,13 +82,14 @@ func (d *Distributor) QueryExemplars(ctx context.Context, from, to model.Time, m
 }
 
 // QueryStream queries multiple ingesters via the streaming interface and returns a big ol' set of chunks.
-func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
+func (d *Distributor) QueryStream(ctx context.Context, queryMetrics *stats.QueryMetrics, from, to model.Time, projectionInclude bool, projectionLabels []string, matchers ...*labels.Matcher) (ingester_client.CombinedQueryStreamResponse, error) {
 	var result ingester_client.CombinedQueryStreamResponse
 	err := instrument.CollectedRequest(ctx, "Distributor.QueryStream", d.queryDuration, instrument.ErrorCode, func(ctx context.Context) error {
-		req, err := ingester_client.ToQueryRequest(from, to, matchers)
+		req, err := ingester_client.ToQueryRequest(from, to, projectionInclude, projectionLabels, matchers)
 		if err != nil {
 			return err
 		}
+
 		req.StreamingChunksBatchSize = d.cfg.StreamingChunksPerIngesterSeriesBufferSize
 
 		replicationSets, err := d.getIngesterReplicationSetsForQuery(ctx)
@@ -120,15 +121,18 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	}
 
 	if d.cfg.IngestStorageConfig.Enabled {
-		shardSize := d.limits.IngestionPartitionsTenantShardSize(userID)
 		r := d.partitionsRing
 
-		// If tenant uses shuffle sharding, we should only query partitions which are part of the tenant's subring.
-		if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; shardSize > 0 && lookbackPeriod > 0 {
-			r, err = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
-			if err != nil {
-				return nil, err
-			}
+		// Build a subring to query. We use ShuffleShardWithLookback() to limit the partitions to query
+		// to the tenant's shard (when shuffle sharding is enabled) and to filter out inactive partitions
+		// that have been inactive for longer than the lookback period.
+		shardSize := 0
+		if d.cfg.ShuffleShardingEnabled {
+			shardSize = d.limits.IngestionPartitionsTenantShardSize(userID)
+		}
+		r, err = r.ShuffleShardWithLookback(userID, shardSize, d.cfg.IngestersLookbackPeriod, time.Now())
+		if err != nil {
+			return nil, err
 		}
 
 		return r.GetReplicationSetsForOperation(readNoExtend)
@@ -139,7 +143,7 @@ func (d *Distributor) getIngesterReplicationSetsForQuery(ctx context.Context) ([
 	r := d.ingestersRing
 
 	// If tenant uses shuffle sharding, we should only query ingesters which are part of the tenant's subring.
-	if lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod; lookbackPeriod > 0 {
+	if lookbackPeriod := d.cfg.IngestersLookbackPeriod; d.cfg.ShuffleShardingEnabled && lookbackPeriod > 0 {
 		r = r.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now())
 	}
 

@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -1128,7 +1129,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 			assert.Nil(t, err)
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, tc.matchers...)
+			resp, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, tc.matchers...)
 
 			if tc.expectedError == nil {
 				require.NoError(t, err)
@@ -2506,7 +2507,7 @@ func TestSlowQueries(t *testing.T) {
 			})
 
 			queryMetrics := stats.NewQueryMetrics(reg[0])
-			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, nameMatcher)
+			_, err := ds[0].QueryStream(ctx, queryMetrics, 0, 10, false, nil, nameMatcher)
 			assert.Equal(t, expectedErr, err)
 		})
 	}
@@ -5764,7 +5765,7 @@ func prepareIngesterZone(t testing.TB, zone string, state ingesterZoneState, cfg
 			kafkaCfg.LastProducedOffsetPollInterval = 100 * time.Millisecond
 			kafkaCfg.LastProducedOffsetRetryTimeout = 100 * time.Millisecond
 
-			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
+			ingester.partitionReader, err = ingest.NewPartitionReaderForPusher(kafkaCfg, ingester.partitionID(), ingester.instanceID(), filepath.Join(t.TempDir(), "test.json"), newMockIngesterPusherAdapter(ingester), log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// We start it async, and then we wait until running in a defer so that multiple partition
@@ -5950,7 +5951,8 @@ func prepare(t testing.TB, cfg prepConfig) ([]*Distributor, []*mockIngester, []*
 		distributorCfg.DistributorRing.Common.InstanceID = strconv.Itoa(i)
 		distributorCfg.DistributorRing.Common.KVStore.Mock = kvStore
 		distributorCfg.DistributorRing.Common.InstanceAddr = "127.0.0.1"
-		distributorCfg.ShuffleShardingLookbackPeriod = time.Hour
+		distributorCfg.ShuffleShardingEnabled = true
+		distributorCfg.IngestersLookbackPeriod = time.Hour
 		distributorCfg.StreamingChunksPerIngesterSeriesBufferSize = 128
 		distributorCfg.IngestStorageConfig = ingestCfg
 

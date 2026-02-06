@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/lookupplan"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/indexheader"
+	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
 )
 
 const (
@@ -421,20 +422,20 @@ func (cfg *TSDBConfig) IsBlocksShippingEnabled() bool {
 
 // BucketStoreConfig holds the config information for Bucket Stores used by the querier and store-gateway.
 type BucketStoreConfig struct {
-	SyncDir                                string              `yaml:"sync_dir"`
-	SyncInterval                           time.Duration       `yaml:"sync_interval" category:"advanced"`
-	MaxConcurrent                          int                 `yaml:"max_concurrent" category:"advanced"`
-	MaxConcurrentQueueTimeout              time.Duration       `yaml:"max_concurrent_queue_timeout" category:"advanced"`
-	TenantSyncConcurrency                  int                 `yaml:"tenant_sync_concurrency" category:"advanced"`
-	BlockSyncConcurrency                   int                 `yaml:"block_sync_concurrency" category:"advanced"`
-	MetaSyncConcurrency                    int                 `yaml:"meta_sync_concurrency" category:"advanced"`
-	IndexCache                             IndexCacheConfig    `yaml:"index_cache"`
-	ChunksCache                            ChunksCacheConfig   `yaml:"chunks_cache"`
-	MetadataCache                          MetadataCacheConfig `yaml:"metadata_cache"`
-	IgnoreDeletionMarksInStoreGatewayDelay time.Duration       `yaml:"ignore_deletion_mark_delay" category:"advanced"`
-	IgnoreDeletionMarksWhileQueryingDelay  time.Duration       `yaml:"ignore_deletion_mark_while_querying_delay" category:"experimental"`
-	BucketIndex                            BucketIndexConfig   `yaml:"bucket_index"`
-	IgnoreBlocksWithin                     time.Duration       `yaml:"ignore_blocks_within" category:"advanced"`
+	SyncDir                                string                      `yaml:"sync_dir"`
+	SyncInterval                           time.Duration               `yaml:"sync_interval" category:"advanced"`
+	MaxConcurrent                          int                         `yaml:"max_concurrent" category:"advanced"`
+	MaxConcurrentQueueTimeout              time.Duration               `yaml:"max_concurrent_queue_timeout" category:"advanced"`
+	TenantSyncConcurrency                  int                         `yaml:"tenant_sync_concurrency" category:"advanced"`
+	BlockSyncConcurrency                   int                         `yaml:"block_sync_concurrency" category:"advanced"`
+	MetaSyncConcurrency                    int                         `yaml:"meta_sync_concurrency" category:"advanced"`
+	IndexCache                             indexcache.IndexCacheConfig `yaml:"index_cache"`
+	ChunksCache                            ChunksCacheConfig           `yaml:"chunks_cache"`
+	MetadataCache                          MetadataCacheConfig         `yaml:"metadata_cache"`
+	IgnoreDeletionMarksInStoreGatewayDelay time.Duration               `yaml:"ignore_deletion_mark_delay" category:"advanced"`
+	IgnoreDeletionMarksWhileQueryingDelay  time.Duration               `yaml:"ignore_deletion_mark_while_querying_delay" category:"experimental"`
+	BucketIndex                            BucketIndexConfig           `yaml:"bucket_index"`
+	IgnoreBlocksWithin                     time.Duration               `yaml:"ignore_blocks_within" category:"advanced"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes" category:"advanced"`

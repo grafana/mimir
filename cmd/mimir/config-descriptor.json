@@ -863,6 +863,16 @@
           ],
           "fieldValue": null,
           "fieldDefaultValue": null
+        },
+        {
+          "kind": "field",
+          "name": "create_new_traces",
+          "required": false,
+          "desc": "Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.",
+          "fieldValue": null,
+          "fieldDefaultValue": false,
+          "fieldFlag": "server.create-new-traces",
+          "fieldType": "boolean"
         }
       ],
       "fieldValue": null,
@@ -2504,28 +2514,6 @@
               "fieldValue": null,
               "fieldDefaultValue": true,
               "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries",
-              "required": false,
-              "desc": "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries",
-              "fieldType": "boolean",
-              "fieldCategory": "experimental"
-            },
-            {
-              "kind": "field",
-              "name": "enable_skipping_histogram_decoding",
-              "required": false,
-              "desc": "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.",
-              "fieldValue": null,
-              "fieldDefaultValue": true,
-              "fieldFlag": "querier.mimir-query-engine.enable-skipping-histogram-decoding",
               "fieldType": "boolean",
               "fieldCategory": "experimental"
             },
@@ -5365,6 +5353,17 @@
           "fieldDefaultValue": {},
           "fieldType": "map of tracker name (string) to matcher (string)",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "max_active_series_additional_custom_trackers",
+          "required": false,
+          "desc": "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.",
+          "fieldValue": null,
+          "fieldDefaultValue": 0,
+          "fieldFlag": "validation.max-active-series-additional-custom-trackers",
+          "fieldType": "int",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",
@@ -8466,6 +8465,17 @@
               "fieldDefaultValue": 1000000000,
               "fieldFlag": "ingest-storage.kafka.consumer-group-offset-commit-interval",
               "fieldType": "duration"
+            },
+            {
+              "kind": "field",
+              "name": "consumer_group_offset_commit_file_enforced",
+              "required": false,
+              "desc": "When true, the file-based offset stored in the TSDB directory is enforced at startup, taking precedence over Kafka consumer group offset. When false, offsets are still written to the file (in the TSDB directory) but the Kafka consumer group offset is used at startup.",
+              "fieldValue": null,
+              "fieldDefaultValue": false,
+              "fieldFlag": "ingest-storage.kafka.consumer-group-offset-commit-file-enforced",
+              "fieldType": "boolean",
+              "fieldCategory": "experimental"
             },
             {
               "kind": "field",
@@ -18211,7 +18221,7 @@
           "kind": "field",
           "name": "join_members",
           "required": false,
-          "desc": "Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.",
+          "desc": "Other cluster members to join. Can be specified multiple times or as a comma-separated list. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.",
           "fieldValue": null,
           "fieldDefaultValue": [],
           "fieldFlag": "memberlist.join",
@@ -18263,6 +18273,17 @@
         },
         {
           "kind": "field",
+          "name": "abort_if_cluster_fast_join_fails_min_nodes",
+          "required": false,
+          "desc": "Minimum number of seed nodes that must be successfully joined during fast-join for it to succeed. Only applies when -memberlist.abort-if-fast-join-fails is enabled.",
+          "fieldValue": null,
+          "fieldDefaultValue": 1,
+          "fieldFlag": "memberlist.abort-if-fast-join-fails-min-nodes",
+          "fieldType": "int",
+          "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
           "name": "abort_if_cluster_join_fails",
           "required": false,
           "desc": "Abort if this node fails to join memberlist cluster at startup. When enabled, it's not guaranteed that other services are started only after the cluster state has been successfully updated; use 'abort-if-fast-join-fails' instead.",
@@ -18281,6 +18302,17 @@
           "fieldFlag": "memberlist.rejoin-interval",
           "fieldType": "duration",
           "fieldCategory": "advanced"
+        },
+        {
+          "kind": "field",
+          "name": "rejoin_seed_nodes",
+          "required": false,
+          "desc": "Seed nodes to use for periodic rejoin. Takes precedence over -memberlist.join for rejoining. If not specified, -memberlist.join is used. Can be specified multiple times or as a comma-separated list. Supports IP, hostname, or DNS Service Discovery format.",
+          "fieldValue": null,
+          "fieldDefaultValue": [],
+          "fieldFlag": "memberlist.rejoin-seed-nodes",
+          "fieldType": "list of strings",
+          "fieldCategory": "experimental"
         },
         {
           "kind": "field",

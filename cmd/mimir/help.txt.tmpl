@@ -531,8 +531,8 @@ Usage of ./cmd/mimir/mimir:
     	IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0
   -memberlist.bind-port int
     	Port to listen on for gossip messages. (default 7946)
-  -memberlist.join string
-    	Other cluster members to join. Can be specified multiple times. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
+  -memberlist.join value
+    	Other cluster members to join. Can be specified multiple times or as a comma-separated list. It can be an IP, hostname or an entry specified in the DNS Service Discovery format.
   -modules
     	List available values that can be used as target.
   -overrides-exporter.enabled-metrics comma-separated-list-of-strings
@@ -809,6 +809,8 @@ Usage of ./cmd/mimir/mimir:
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file comma-separated-list-of-strings
     	Comma separated list of yaml files with the configuration that can be updated at runtime. Runtime config files will be merged from left to right.
+  -server.create-new-traces
+    	Creates new traces for each call rather than continuing the existing trace. A span link is used to allow navigation to the parent trace. Only works when using Open-Telemetry tracing.
   -server.grpc-collect-max-streams-by-conn
     	If true, the max streams by connection gauge will be collected. (default true)
   -server.grpc-listen-address string

@@ -72,7 +72,7 @@ jobs:
         uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6
         with:
           # We only use this to run `go mod` commands, so it doesn't need to follow the version used in the Dockerfile.
-          go-version: "1.25.5"
+          go-version: "1.25.7"
 
       # This job uses "mimir-vendoring bot" instead of "github-actions bot" (secrets.GITHUB_TOKEN)
       # because any events triggered by the later don't spawn GitHub actions.

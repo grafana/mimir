@@ -548,6 +548,27 @@ func SortOperatorFactory(descending bool) FunctionOperatorFactory {
 	}
 }
 
+func InfoFunctionOperatorFactory(args []types.Operator, _ labels.Labels, opParams *planning.OperatorParameters, expressionPosition posrange.PositionRange, timeRange types.QueryTimeRange) (types.Operator, error) {
+	if len(args) != 2 {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected exactly 2 arguments for info, got %v", len(args))
+	}
+
+	inner, ok := args[0].(types.InstantVectorOperator)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected an instant vector for 1st argument for info, got %T", args[0])
+	}
+
+	info, ok := args[1].(*selectors.InstantVectorSelector)
+	if !ok {
+		// Should be caught by the PromQL parser, but we check here for safety.
+		return nil, fmt.Errorf("expected an instant vector selector for 2nd argument for info, got %T", args[1])
+	}
+
+	return NewInfoFunction(inner, info, opParams.MemoryConsumptionTracker, timeRange, expressionPosition), nil
+}
+
 // RegisteredFunctions contains information for each registered function.
 //
 // Do not modify this map directly. Instead, call RegisterFunction.
@@ -699,6 +720,7 @@ func init() {
 	must(RegisterFunction(FUNCTION_HOUR, "hour", parser.ValueTypeVector, TimeTransformationFunctionOperatorFactory("hour", Hour)))
 	must(RegisterFunction(FUNCTION_IDELTA, "idelta", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("idelta", Idelta)))
 	must(RegisterFunctionWithSplitFactory(FUNCTION_INCREASE, "increase", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("increase", Increase), SplitIncrease))
+	must(RegisterFunction(FUNCTION_INFO, "info", parser.ValueTypeVector, InfoFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_IRATE, "irate", parser.ValueTypeVector, FunctionOverRangeVectorOperatorFactory("irate", Irate)))
 	must(RegisterFunction(FUNCTION_LABEL_JOIN, "label_join", parser.ValueTypeVector, LabelJoinFunctionOperatorFactory))
 	must(RegisterFunction(FUNCTION_LABEL_REPLACE, "label_replace", parser.ValueTypeVector, LabelReplaceFunctionOperatorFactory))

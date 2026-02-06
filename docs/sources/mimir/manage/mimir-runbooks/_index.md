@@ -1691,18 +1691,19 @@ In this context, any reference to Kafka means a Kafka protocol-compatible backen
 
 ### MimirIngesterOffsetCommitFailed
 
-This alert fires when an ingester is failing to commit the last consumed offset to the Kafka backend.
+This alert fires when an ingester is failing to commit the last consumed offset to the Kafka backend or to the file-based offset storage.
 
 How it **works**:
 
-- The ingester ingests data (metrics, exemplars, ...) from Kafka and periodically commits the last consumed offset back to Kafka.
-- At startup, an ingester reads the last consumed offset committed to Kafka and resumes the consumption from there.
-- If the ingester fails to commit the last consumed offset to Kafka, the ingester keeps working correctly from the consumption perspective (assuming there's no other on-going issue in the cluster) but in case of a restart the ingester will resume the consumption from the last successfully committed offset. If the last offset was successfully committed several minutes ago, the ingester will re-ingest data which has already been ingested, potentially causing OOO errors, wasting resources and taking longer to startup.
+- The ingester ingests data (metrics, exemplars, ...) from Kafka and periodically commits the last consumed offset back to Kafka and, when configured, to a file in the TSDB directory (`kafka-offset.json`).
+- At startup, an ingester reads the last consumed offset (from Kafka consumer group metadata or from the file if file-based offset enforcement is enabled) and resumes the consumption from there.
+- If the ingester fails to commit the last consumed offset to Kafka or to the file, the ingester keeps working correctly from the consumption perspective (assuming there's no other on-going issue in the cluster) but in case of a restart the ingester will resume the consumption from the last successfully committed offset. If the last offset was successfully committed several minutes ago, the ingester will re-ingest data which has already been ingested, potentially causing OOO errors, wasting resources and taking longer to startup.
 
 How to **investigate**:
 
-- Check ingester logs to find details about the error.
+- Check ingester logs to find details about the error (Kafka commit failure, file write failure, or both).
 - Check Kafka logs and health.
+- When file-based offset enforcement is enabled, check that the TSDB directory is writable and has sufficient disk space for the offset file.
 
 ### MimirIngesterKafkaReadFailed
 

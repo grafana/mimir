@@ -1,6 +1,6 @@
 apiVersion: v2
-version: 6.1.0-weekly.379
-appVersion: r379-c8804b67
+version: 6.1.0-weekly.380
+appVersion: r380-1aef6d37
 description: "Grafana Mimir"
 home: https://grafana.com/docs/helm-charts/mimir-distributed/latest/
 icon: https://grafana.com/static/img/logos/logo-mimir.svg
@@ -20,5 +20,5 @@ dependencies:
   - name: rollout-operator
     alias: rollout_operator
     repository: https://grafana.github.io/helm-charts
-    version: 0.40.0
+    version: 0.41.0
     condition: rollout_operator.enabled

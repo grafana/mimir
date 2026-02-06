@@ -39,15 +39,13 @@ type EngineOpts struct {
 
 	Limits Limits `yaml:"-"`
 
-	EnablePruneToggles                                                            bool `yaml:"enable_prune_toggles" category:"experimental"`
-	EnableCommonSubexpressionElimination                                          bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
-	EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries bool `yaml:"enable_common_subexpression_elimination_for_range_vector_expressions_in_instant_queries" category:"experimental"`
-	EnableSkippingHistogramDecoding                                               bool `yaml:"enable_skipping_histogram_decoding" category:"experimental"`
-	EnableNarrowBinarySelectors                                                   bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
-	EnableEliminateDeduplicateAndMerge                                            bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
-	EnableReduceMatchers                                                          bool `yaml:"enable_reduce_matchers" category:"experimental"`
-	EnableProjectionPushdown                                                      bool `yaml:"enable_projection_pushdown" category:"experimental"`
-	EnableMultiAggregation                                                        bool `yaml:"enable_multi_aggregation" category:"experimental"`
+	EnablePruneToggles                   bool `yaml:"enable_prune_toggles" category:"experimental"`
+	EnableCommonSubexpressionElimination bool `yaml:"enable_common_subexpression_elimination" category:"experimental"`
+	EnableNarrowBinarySelectors          bool `yaml:"enable_narrow_binary_selectors" category:"experimental"`
+	EnableEliminateDeduplicateAndMerge   bool `yaml:"enable_eliminate_deduplicate_and_merge" category:"experimental"`
+	EnableReduceMatchers                 bool `yaml:"enable_reduce_matchers" category:"experimental"`
+	EnableProjectionPushdown             bool `yaml:"enable_projection_pushdown" category:"experimental"`
+	EnableMultiAggregation               bool `yaml:"enable_multi_aggregation" category:"experimental"`
 
 	RangeVectorSplitting RangeVectorSplittingConfig `yaml:"range_vector_splitting" category:"experimental"`
 }
@@ -70,8 +68,6 @@ type RangeVectorSplittingConfig struct {
 func (o *EngineOpts) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&o.EnablePruneToggles, "querier.mimir-query-engine.enable-prune-toggles", true, "Enable pruning query expressions that are toggled off with constants.")
 	f.BoolVar(&o.EnableCommonSubexpressionElimination, "querier.mimir-query-engine.enable-common-subexpression-elimination", true, "Enable common subexpression elimination when evaluating queries.")
-	f.BoolVar(&o.EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries, "querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries", true, "Enable common subexpression elimination for range vector expressions when evaluating instant queries. This has no effect if common subexpression elimination is disabled.")
-	f.BoolVar(&o.EnableSkippingHistogramDecoding, "querier.mimir-query-engine.enable-skipping-histogram-decoding", true, "Enable skipping decoding native histograms when evaluating queries that do not require full histograms.")
 	f.BoolVar(&o.EnableNarrowBinarySelectors, "querier.mimir-query-engine.enable-narrow-binary-selectors", false, "Enable generating selectors for one side of a binary expression based on results from the other side.")
 	f.BoolVar(&o.EnableEliminateDeduplicateAndMerge, "querier.mimir-query-engine.enable-eliminate-deduplicate-and-merge", true, "Enable eliminating redundant DeduplicateAndMerge nodes from the query plan when it can be proven that each input series produces a unique output series.")
 	f.BoolVar(&o.EnableReduceMatchers, "querier.mimir-query-engine.enable-reduce-matchers", true, "Enable eliminating duplicate or redundant matchers that are part of selector expressions.")
@@ -119,12 +115,10 @@ func NewTestEngineOpts() EngineOpts {
 
 		EnablePruneToggles:                   true,
 		EnableCommonSubexpressionElimination: true,
-		EnableCommonSubexpressionEliminationForRangeVectorExpressionsInInstantQueries: true,
-		EnableSkippingHistogramDecoding:                                               true,
-		EnableNarrowBinarySelectors:                                                   true,
-		EnableEliminateDeduplicateAndMerge:                                            true,
-		EnableReduceMatchers:                                                          true,
-		EnableProjectionPushdown:                                                      true,
-		EnableMultiAggregation:                                                        true,
+		EnableNarrowBinarySelectors:          true,
+		EnableEliminateDeduplicateAndMerge:   true,
+		EnableReduceMatchers:                 true,
+		EnableProjectionPushdown:             true,
+		EnableMultiAggregation:               true,
 	}
 }

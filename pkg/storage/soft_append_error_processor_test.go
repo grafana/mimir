@@ -24,6 +24,7 @@ func TestUnknownHistogramErrors(t *testing.T) {
 				return false
 			}
 		},
+		func([]mimirpb.LabelAdapter) {},
 	)
 
 	require.True(t, softErrProcessor.ProcessErr(histogram.ErrHistogramCountNotBigEnough, 0, []mimirpb.LabelAdapter{}))
