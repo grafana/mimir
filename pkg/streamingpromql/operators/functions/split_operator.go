@@ -180,10 +180,18 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 	var currentUncachedStart int64
 	var currentUncachedRanges []Range
 
+	// closeSplits is a helper to close all previously created splits in case of error.
+	closeSplits := func() {
+		for _, s := range splits {
+			s.Close()
+		}
+	}
+
 	for _, splitRange := range m.splitRanges {
 		if splitRange.Cacheable {
 			metadata, annotations, results, found, err := m.cache.Get(ctx, int32(m.FuncId), m.innerCacheKey, splitRange.Start, splitRange.End, m.cacheStats)
 			if err != nil {
+				closeSplits()
 				return nil, err
 			}
 
@@ -192,11 +200,14 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 					lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
 					operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
 					if err != nil {
+						closeSplits()
 						return nil, err
 					}
 
 					split, err := NewUncachedSplit(ctx, currentUncachedRanges, operator, m)
 					if err != nil {
+						operator.Close()
+						closeSplits()
 						return nil, err
 					}
 
@@ -221,11 +232,14 @@ func (m *FunctionOverRangeVectorSplit[T]) createSplits(ctx context.Context) ([]S
 		lastRange := currentUncachedRanges[len(currentUncachedRanges)-1]
 		operator, err := m.materializeOperatorForTimeRange(currentUncachedStart, lastRange.End)
 		if err != nil {
+			closeSplits()
 			return nil, err
 		}
 
 		split, err := NewUncachedSplit(ctx, currentUncachedRanges, operator, m)
 		if err != nil {
+			operator.Close()
+			closeSplits()
 			return nil, err
 		}
 
