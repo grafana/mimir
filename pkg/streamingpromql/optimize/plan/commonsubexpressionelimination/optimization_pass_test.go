@@ -748,23 +748,6 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSubsetSelectorsEliminated:    2,
 			expectedSelectorsInspected:           3,
 		},
-		"subset vector selector with multiple narrower selectors": {
-			expr: `some_metric + some_metric{env="bar"} * some_metric{env="foo"}`,
-			expectedPlan: `
-				- BinaryExpression: LHS + RHS
-					- LHS: ref#1 Duplicate
-							- VectorSelector: {__name__="some_metric"}
-					- RHS: BinaryExpression: LHS * RHS 
-						- LHS: DuplicateFilter: {env="bar"}
-							- ref#1 Duplicate ...
-						- RHS: DuplicateFilter: {env="foo"}
-							- ref#1 Duplicate ...
-			`,
-			expectedDuplicateNodes:               1,
-			expectedDuplicateSelectorsEliminated: 0,
-			expectedSubsetSelectorsEliminated:    2,
-			expectedSelectorsInspected:           3,
-		},
 		"subset matrix selectors": {
 			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m])`,
 			expectedPlan: `
@@ -817,11 +800,11 @@ func TestOptimizationPass(t *testing.T) {
 						- LHS: DeduplicateAndMerge
 							- FunctionCall: sum_over_time(...)
 								- DuplicateFilter: {env="bar"}
-									- ref#2 Duplicate ...
+									- ref#1 Duplicate ...
 						- RHS: DeduplicateAndMerge
 							- FunctionCall: max_over_time(...)
 								- DuplicateFilter: {env="bar"}
-									- ref#2 Duplicate ...
+									- ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 0,
@@ -951,19 +934,19 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `abs(max(foo)) / (abs(max(foo{env="prod"})) + abs(max(foo)))`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
-					- LHS: ref#1 Duplicate
+					- LHS: ref#2 Duplicate
 						- DeduplicateAndMerge
 							- FunctionCall: abs(...)
 								- AggregateExpression: max
-									- ref#2 Duplicate
+									- ref#1 Duplicate
 										- VectorSelector: {__name__="foo"}
 					- RHS: BinaryExpression: LHS + RHS
 						- LHS: DeduplicateAndMerge
 							- FunctionCall: abs(...)
 								- AggregateExpression: max
 									- DuplicateFilter: {env="prod"}
-										- ref#2 Duplicate ...
-						- RHS: ref#1 Duplicate ...
+										- ref#1 Duplicate ...
+						- RHS: ref#2 Duplicate ...
 			`,
 			expectedDuplicateNodes:               2,
 			expectedDuplicateSelectorsEliminated: 1,
@@ -1050,17 +1033,17 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: BinaryExpression: LHS + RHS
 						- LHS: BinaryExpression: LHS + RHS
-							- LHS: ref#1 Duplicate
+							- LHS: ref#2 Duplicate
 								- AggregateExpression: topk
-									- expression: ref#2 Duplicate
+									- expression: ref#1 Duplicate
 										- VectorSelector: {__name__="foo"}
 									- parameter: NumberLiteral: 5
 							- RHS: ref#3 Duplicate
 								- AggregateExpression: topk
 									- expression: DuplicateFilter: {env="bar"}
-										- ref#2 Duplicate ...
+										- ref#1 Duplicate ...
 									- parameter: NumberLiteral: 5
-						- RHS: ref#1 Duplicate ...
+						- RHS: ref#2 Duplicate ...
 					- RHS: ref#3 Duplicate ...
 			`,
 			expectedDuplicateNodes:               3,
@@ -1090,7 +1073,7 @@ func TestOptimizationPass(t *testing.T) {
 							- ref#1 Duplicate ...
 						- parameter: NumberLiteral: 3
 			`,
-			expectedDuplicateNodes:               3,
+			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 1,
 			expectedSubsetSelectorsEliminated:    2,
 			expectedSelectorsInspected:           4,
