@@ -144,7 +144,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 		setupBucket         func(objstore.Bucket)
 		expectedFinalStatus compactorschedulerpb.UpdateType
 	}{
-		"compaction_job_reassigns_when_block_not_found": {
+		"compaction_job_abandons_when_block_not_found": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
@@ -157,7 +157,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				}
 			},
 			setupBucket:         func(bkt objstore.Bucket) {},
-			expectedFinalStatus: compactorschedulerpb.REASSIGN,
+			expectedFinalStatus: compactorschedulerpb.ABANDON,
 		},
 		"successful_planning_job_no_status_update": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -200,7 +200,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
-			if tc.expectedFinalStatus == compactorschedulerpb.REASSIGN {
+			if tc.expectedFinalStatus == compactorschedulerpb.ABANDON {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
@@ -699,7 +699,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			expectNewBlocksCount:    splitShards,
 			expectUncompactedBlocks: 0,
 		},
-		"reassign_when_requested_blocks_not_in_obj_storage": {
+		"abandon_when_requested_blocks_not_in_obj_storage": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
 				block2 := ulid.MustNew(ulid.Timestamp(time.Unix(1600000002, 0)), rand.New(rand.NewSource(2)))
@@ -710,7 +710,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				}
 			},
 			split:                   false,
-			expectedStatus:          compactorschedulerpb.REASSIGN,
+			expectedStatus:          compactorschedulerpb.ABANDON,
 			expectNewBlocksCount:    0,
 			expectUncompactedBlocks: 1,
 			expectError:             true,
