@@ -39,6 +39,8 @@ type unlimitedMemoryTrackerQuerier struct {
 
 func (q *unlimitedMemoryTrackerQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	// Create a per-query deduplicator for operation that require custom Queryable such as ruler queries. Each Select() call gets its own
+	// deduplicator to ensure proper label deduplication and memory tracking for rule evaluation.
 	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }

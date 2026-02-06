@@ -62,6 +62,10 @@ type Selector struct {
 }
 
 func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
+	// Create a per-selector deduplicator for MQE queries. Each selector in a query
+	// independently tracks and deduplicates its series. For example, in `foo + foo`,
+	// each binary operand has its own deduplicator to ensure accurate per-selector
+	// memory accounting.
 	s.deduplicator = limiter.NewSeriesDeduplicator()
 	if s.EagerLoad {
 		return s.loadSeriesSet(ctx, s.Matchers)
@@ -171,6 +175,9 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 		return err
 	}
 
+	// Add the per-selector deduplicator to context before Select(). This ensures that
+	// as series are fetched from queriers, labels are deduplicated and memory is tracked
+	// at this selector's scope.
 	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, s.deduplicator)
 
 	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)

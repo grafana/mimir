@@ -36,6 +36,21 @@ func NewSeriesDeduplicator() SeriesDeduplicator {
 	}
 }
 
+// AddSeriesDeduplicatorToContext adds a SeriesDeduplicator to the context.
+//
+// The scope at which a SeriesDeduplicator is added to the context determines the level
+// at which label deduplication and memory tracking occurs. Different scopes are used
+// depending on the query execution path:
+//
+// 1. Per-selector scope (MQE streaming queries)
+// 2. Per-request scope (HTTP middleware)
+// 3. Per-tenant scope (federated queries)
+// 4. Per-query scope (remote read, ruler)
+//
+// The deduplicator must be added to the context before series selection begins, as it
+// tracks unique labels and increases memory consumption during the Select() operation.
+//
+// See the function usage for more documentation on different scopes of SeriesDeduplicator.
 func AddSeriesDeduplicatorToContext(ctx context.Context, deduplicator SeriesDeduplicator) context.Context {
 	return context.WithValue(ctx, sdCtxKey, deduplicator)
 }

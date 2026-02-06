@@ -108,7 +108,9 @@ func remoteReadSamples(
 		}
 		closers[idx] = querier
 
-		// Add SeriesDeduplicator to context to ensure proper memory tracking
+		// Create a per-query deduplicator for remote read queries. Each individual query
+		// in the batch gets its own deduplicator to ensure proper label deduplication
+		// and memory tracking at the query level.
 		queryCtx := limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
 		seriesSet := querier.Select(queryCtx, false, hints, matchers...)
 
@@ -183,7 +185,9 @@ func remoteReadStreamedXORChunks(
 		// The streaming API has to provide the series sorted.
 		// Use the original ctx instead of jobCtx because ForEachJob cancels jobCtx before returning,
 		// but we need the SeriesSet to remain valid for streaming later.
-		// Add SeriesDeduplicator to context to ensure proper memory tracking
+		// Create a per-query deduplicator for streaming remote read queries. Each individual
+		// query gets its own deduplicator to ensure proper label deduplication and memory
+		// tracking at the query level.
 		queryCtx := limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
 		seriesSet := querier.Select(queryCtx, true, hints, matchers...)
 		results[idx] = queryResult{series: seriesSet, querier: querier}
