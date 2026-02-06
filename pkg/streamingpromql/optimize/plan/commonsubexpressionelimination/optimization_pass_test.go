@@ -719,12 +719,11 @@ func TestOptimizationPass(t *testing.T) {
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
 					- LHS: ref#1 Duplicate
-						- ref#2 Duplicate
-							- VectorSelector: {__name__="some_metric"}
-					- RHS: BinaryExpression: LHS * RHS 
+						- VectorSelector: {__name__="some_metric"}
+					- RHS: BinaryExpression: LHS * RHS
 						- LHS: DuplicateFilter: {env="bar"}
-								- ref#2 Duplicate ...
-						- RHS: ref#2 Duplicate ...
+							- ref#1 Duplicate ...
+						- RHS: ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 1,
@@ -737,11 +736,11 @@ func TestOptimizationPass(t *testing.T) {
 				- BinaryExpression: LHS + RHS
 					- LHS: ref#1 Duplicate
 						- VectorSelector: {__name__="some_metric"}
-					- RHS: BinaryExpression: LHS * RHS 
-						- LHS: ref#2 Duplicate
-							- DuplicateFilter: {env="bar"}
-								- ref#1 Duplicate ...
-						- RHS: ref#2 Duplicate ...
+					- RHS: BinaryExpression: LHS * RHS
+						- LHS: DuplicateFilter: {env="bar"}
+							- ref#1 Duplicate ...
+						- RHS: DuplicateFilter: {env="bar"}
+							- ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 0,
@@ -778,10 +777,10 @@ func TestOptimizationPass(t *testing.T) {
 						- LHS: DeduplicateAndMerge
 							- FunctionCall: sum_over_time(...)
 								- DuplicateFilter: {env="bar"}
-									- ref#2 Duplicate ...
+									- ref#1 Duplicate ...
 						- RHS: DeduplicateAndMerge
 							- FunctionCall: max_over_time(...)
-								- ref#2 Duplicate ...
+								- ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 1,
@@ -815,13 +814,19 @@ func TestOptimizationPass(t *testing.T) {
 			expr: `count_over_time(some_metric[5m]) + sum_over_time(some_metric{env="bar"}[5m]) * max_over_time(some_metric{env="foo"}[5m])`,
 			expectedPlan: `
 				- BinaryExpression: LHS + RHS
-					- LHS: ref#1 Duplicate
-							- MatrixSelector: {__name__="some_metric"}[5m0s]
-					- RHS: BinaryExpression: LHS * RHS 
-						- LHS: DuplicateFilter: {env="bar"}
-							- ref#1 Duplicate ...
-						- RHS: DuplicateFilter: {env="foo"}
-							- ref#1 Duplicate ...
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: count_over_time(...)
+							- ref#1 Duplicate
+								- MatrixSelector: {__name__="some_metric"}[5m0s]
+					- RHS: BinaryExpression: LHS * RHS
+						- LHS: DeduplicateAndMerge
+							- FunctionCall: sum_over_time(...)
+								- DuplicateFilter: {env="bar"}
+									- ref#1 Duplicate ...
+						- RHS: DeduplicateAndMerge
+							- FunctionCall: max_over_time(...)
+								- DuplicateFilter: {env="foo"}
+									- ref#1 Duplicate ...
 			`,
 			expectedDuplicateNodes:               1,
 			expectedDuplicateSelectorsEliminated: 0,
