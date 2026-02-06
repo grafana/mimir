@@ -75,12 +75,19 @@ func (v *VectorSelector) EquivalentToIgnoringHintsAndChildren(other planning.Nod
 		v.EquivalentToIgnoringMatchersAndHints(otherVectorSelector)
 }
 
-func (v *VectorSelector) EquivalentToIgnoringMatchersAndHints(other *VectorSelector) bool {
-	return ((v.Timestamp == nil && other.Timestamp == nil) || (v.Timestamp != nil && other.Timestamp != nil && v.Timestamp.Equal(*other.Timestamp))) &&
-		v.Offset == other.Offset &&
-		v.ReturnSampleTimestamps == other.ReturnSampleTimestamps &&
-		v.ReturnSampleTimestampsPreserveHistograms == other.ReturnSampleTimestampsPreserveHistograms &&
-		v.Smoothed == other.Smoothed
+func (v *VectorSelector) EquivalentToIgnoringMatchersAndHints(other planning.Node) bool {
+	otherVectorSelector, ok := other.(*VectorSelector)
+
+	return ok &&
+		((v.Timestamp == nil && otherVectorSelector.Timestamp == nil) || (v.Timestamp != nil && otherVectorSelector.Timestamp != nil && v.Timestamp.Equal(*otherVectorSelector.Timestamp))) &&
+		v.Offset == otherVectorSelector.Offset &&
+		v.ReturnSampleTimestamps == otherVectorSelector.ReturnSampleTimestamps &&
+		v.ReturnSampleTimestampsPreserveHistograms == otherVectorSelector.ReturnSampleTimestampsPreserveHistograms &&
+		v.Smoothed == otherVectorSelector.Smoothed
+}
+
+func (v *VectorSelector) GetMatchers() []*LabelMatcher {
+	return v.Matchers
 }
 
 func (v *VectorSelector) MergeHints(other planning.Node) error {

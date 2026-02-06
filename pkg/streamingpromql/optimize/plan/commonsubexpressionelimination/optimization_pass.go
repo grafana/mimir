@@ -74,18 +74,28 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 	// Find all the paths to leaves
 	paths := e.accumulatePaths(plan)
 
-	// For each path: find all the other paths that terminate in the same selector, then inject a duplication node
-	selectorsEliminated, err := e.groupAndApplyDeduplication(paths, 0)
+	// For each path: find all the other paths that terminate in duplicate or subset selectors, then inject a duplication node
+	groups, err := e.groupPathsForFirstIteration(paths, maximumSupportedQueryPlanVersion >= planning.QueryPlanV6)
+	if err != nil {
+		return nil, err
+	}
+
+	stats, err := e.applyDeduplicationToGroups(groups, 0)
 	if err != nil {
 		return nil, err
 	}
 
 	e.selectorsInspected.Add(float64(len(paths)))
-	e.duplicateSelectorsEliminated.Add(float64(selectorsEliminated))
-	e.subsetSelectorsEliminated.Add(0) // TODO
+	e.duplicateSelectorsEliminated.Add(float64(stats.duplicateSelectorsEliminated))
+	e.subsetSelectorsEliminated.Add(float64(stats.subsetSelectorsEliminated))
 
 	spanLog := spanlogger.FromContext(ctx, e.logger)
-	spanLog.DebugLog("msg", "attempted common subexpression elimination", "selectors_inspected", len(paths), "selectors_eliminated", selectorsEliminated)
+	spanLog.DebugLog(
+		"msg", "attempted common subexpression elimination",
+		"selectors_inspected", len(paths),
+		"duplicate_selectors_eliminated", stats.duplicateSelectorsEliminated,
+		"subset_selectors_eliminated", stats.subsetSelectorsEliminated,
+	)
 
 	return plan, nil
 }
@@ -157,25 +167,34 @@ func (e *OptimizationPass) ShouldSkipChild(node planning.Node, childIdx int) boo
 	return false
 }
 
-func (e *OptimizationPass) groupAndApplyDeduplication(paths []path, offset int) (int, error) {
-	groups := e.groupPaths(paths, offset)
-	totalPathsEliminated := 0
+func (e *OptimizationPass) applyDeduplicationToGroups(groups []sharedSelectorGroup, offset int) (deduplicationStats, error) {
+	totalStats := deduplicationStats{}
 
 	for _, group := range groups {
-		pathsEliminated, err := e.applyDeduplication(group, offset)
+		groupStats, err := e.applyDeduplication(group, offset)
 		if err != nil {
-			return 0, err
+			return deduplicationStats{}, err
 		}
 
-		totalPathsEliminated += pathsEliminated
+		totalStats.add(groupStats)
 	}
 
-	return totalPathsEliminated, nil
+	return totalStats, nil
+}
+
+type deduplicationStats struct {
+	duplicateSelectorsEliminated int
+	subsetSelectorsEliminated    int
+}
+
+func (s *deduplicationStats) add(other deduplicationStats) {
+	s.duplicateSelectorsEliminated += other.duplicateSelectorsEliminated
+	s.subsetSelectorsEliminated += other.subsetSelectorsEliminated
 }
 
 type sharedSelectorGroup struct {
 	paths   []path
-	filters [][]*core.LabelMatcher
+	filters [][]*core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
 }
 
 func (g *sharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher {
@@ -186,12 +205,104 @@ func (g *sharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher
 	return g.filters[pathIdx]
 }
 
-// groupPaths returns paths grouped by the node at offset from the leaf.
+func (g *sharedSelectorGroup) computeStats() deduplicationStats {
+	stats := deduplicationStats{}
+
+	for idx := range g.paths {
+		if filters := g.getFilterForPath(idx); len(filters) > 0 {
+			stats.subsetSelectorsEliminated++
+		} else {
+			stats.duplicateSelectorsEliminated++
+		}
+	}
+
+	stats.duplicateSelectorsEliminated-- // Don't count the original selector.
+
+	return stats
+}
+
+// groupPathsForFirstIteration returns paths grouped by each path's leaf nodes.
+// Paths with leaf nodes that don't match any other leaf nodes are not returned.
+// It considers subset selectors, if SSE is enabled and supported.
+func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelectorEliminationSupported bool) ([]sharedSelectorGroup, error) {
+	// If SSE is disabled or not supported, we can just use groupPathsForSubsequentIteration.
+	if !e.subsetSelectorEliminationEnabled || !subsetSelectorEliminationSupported {
+		return e.groupPathsForSubsequentIteration(paths, 0), nil
+	}
+
+	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
+	var groups []sharedSelectorGroup
+
+	for pathIdx, p := range paths {
+		if alreadyGrouped[pathIdx] {
+			continue
+		}
+
+		alreadyGrouped[pathIdx] = true
+		selector, selectorTimeRange, err := p.Selector()
+		if err != nil {
+			return nil, err
+		}
+
+		group := sharedSelectorGroup{}
+
+		for otherPathOffset, otherPath := range paths[pathIdx+1:] {
+			otherPathIdx := otherPathOffset + pathIdx + 1
+
+			if alreadyGrouped[otherPathIdx] {
+				continue
+			}
+
+			otherSelector, otherTimeRange, err := otherPath.Selector()
+			if err != nil {
+				return nil, err
+			}
+
+			if !selectorTimeRange.Equal(otherTimeRange) || !selector.EquivalentToIgnoringMatchersAndHints(otherSelector) {
+				continue
+			}
+
+			relationship, additionalMatchers := SelectorsAreDuplicateOrSubset(selector.GetMatchers(), otherSelector.GetMatchers())
+			if relationship == NotDuplicateOrSubset {
+				continue
+			}
+
+			if len(group.paths) == 0 {
+				// First duplicate or subset selector we've seen, create the list of paths.
+				group.paths = make([]path, 0, 2)
+				group.paths = append(group.paths, p)
+			}
+
+			if group.filters == nil && relationship == SubsetSelectors {
+				// First subset selector we've seen, create a slice of filters for all the other nodes.
+				group.filters = make([][]*core.LabelMatcher, len(group.paths))
+			}
+
+			group.paths = append(group.paths, otherPath)
+
+			if group.filters != nil {
+				// If any part of this group has a subset selector, we need to keep track of the additional matchers that apply to this path.
+				group.filters = append(group.filters, additionalMatchers)
+			}
+
+			alreadyGrouped[otherPathIdx] = true
+		}
+
+		if len(group.paths) > 0 {
+			groups = append(groups, group)
+		}
+	}
+
+	return groups, nil
+}
+
+// groupPathsForSubsequentIteration returns paths grouped by the node at offset from the leaf.
 // offset 0 means group by the leaf, offset 1 means group by the leaf node's parent etc.
 // Paths that don't match any other paths are not returned.
-func (e *OptimizationPass) groupPaths(paths []path, offset int) []sharedSelectorGroup {
+// It does not consider subset selectors, as they are not relevant for subsequent iterations.
+func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset int) []sharedSelectorGroup {
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
-	groups := make([]sharedSelectorGroup, 0)
+	var groups []sharedSelectorGroup
 
 	// FIXME: is there a better way to do this? This is currently O(n!) in the worst case (where n is the number of paths)
 	for pathIdx, p := range paths {
@@ -242,7 +353,7 @@ func (e *OptimizationPass) groupPaths(paths []path, offset int) []sharedSelector
 
 // applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
-func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset int) (int, error) {
+func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset int) (deduplicationStats, error) {
 	duplicatePathLength := e.findCommonSubexpressionLength(group.paths, offset+1)
 
 	firstPath := group.paths[0]
@@ -250,11 +361,12 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 	resultType, err := duplicatedExpression.ResultType()
 
 	if err != nil {
-		return 0, err
+		return deduplicationStats{}, err
 	}
 
-	var skipLongerExpressions bool
-	pathsEliminated := len(group.paths) - 1
+	skipLongerExpressions := false
+	skippedBecauseRangeVectorSelectorInRangeQuery := false
+	stats := group.computeStats()
 
 	// We only want to deduplicate instant vectors, or range vectors in an instant query.
 	if resultType == parser.ValueTypeVector || (resultType == parser.ValueTypeMatrix && timeRange.IsInstant) {
@@ -267,20 +379,21 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 		skipLongerExpressions, err = e.introduceDuplicateNode(group, duplicatePathLength-1)
 	} else {
 		// Duplicated range vector selector in a range query, but the function that encloses each instance isn't the same (or isn't the same on all paths).
-		pathsEliminated = 0
+		skippedBecauseRangeVectorSelectorInRangeQuery = true
+		stats = deduplicationStats{}
 	}
 
 	if err != nil {
-		return 0, nil
+		return deduplicationStats{}, nil
 	}
 
 	if skipLongerExpressions {
-		return pathsEliminated, nil
+		return stats, nil
 	}
 
 	if len(group.paths) <= 2 {
 		// Can't possibly have any more common subexpressions. We're done.
-		return pathsEliminated, nil
+		return stats, nil
 	}
 
 	// Check if a subset of the paths we just examined share an even longer common subexpression.
@@ -289,15 +402,16 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 	// This applies even if we just saw a common subexpression that returned something other than an instant vector
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
-	if nextLevelPathsEliminated, err := e.groupAndApplyDeduplication(group.paths, duplicatePathLength); err != nil {
-		return 0, err
-	} else if pathsEliminated == 0 {
+	subsequentGroups := e.groupPathsForSubsequentIteration(group.paths, duplicatePathLength)
+	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength); err != nil {
+		return deduplicationStats{}, err
+	} else if skippedBecauseRangeVectorSelectorInRangeQuery {
 		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector),
 		// return the number returned by the next level.
-		pathsEliminated = nextLevelPathsEliminated
+		stats = nextLevelStats
 	}
 
-	return pathsEliminated, nil
+	return stats, nil
 }
 
 // introduceDuplicateNode introduces a Duplicate node for each path in the group and returns false.
@@ -438,6 +552,17 @@ func (p path) NodeAtOffsetFromLeaf(offset int) (planning.Node, types.QueryTimeRa
 	return e.node, e.timeRange
 }
 
+func (p path) Selector() (selector, types.QueryTimeRange, error) {
+	leaf, leafTimeRange := p.NodeAtOffsetFromLeaf(0)
+
+	selector, ok := leaf.(selector)
+	if !ok {
+		return nil, types.QueryTimeRange{}, fmt.Errorf("node at leaf position is not a selector: %T", leaf)
+	}
+
+	return selector, leafTimeRange, nil
+}
+
 func (p path) ChildIndexAtOffsetFromLeaf(offset int) int {
 	return p[len(p)-offset-1].childIndex
 }
@@ -563,4 +688,10 @@ func SelectorsAreDuplicateOrSubset(first, second []*core.LabelMatcher) (Selector
 	subsetMatchers = append(subsetMatchers, second[nextSecondIdx:]...)
 
 	return SubsetSelectors, subsetMatchers
+}
+
+type selector interface {
+	planning.Node
+	EquivalentToIgnoringMatchersAndHints(other planning.Node) bool
+	GetMatchers() []*core.LabelMatcher
 }
