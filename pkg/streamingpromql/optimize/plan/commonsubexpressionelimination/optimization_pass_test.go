@@ -857,7 +857,7 @@ func TestOptimizationPass(t *testing.T) {
 						- DuplicateFilter: {status="success"}
 							- ref#1 Duplicate
 								- FunctionCall: rate(...)
-									- param 0: MatrixSelector: {__name__="foo"}[5m0s]
+									- MatrixSelector: {__name__="foo"}[5m0s]
 					- RHS: DeduplicateAndMerge
 						- ref#1 Duplicate ...
 			`,
@@ -883,6 +883,8 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSelectorsInspected:           2,
 		},
 		"subset selectors wrapped in function ordinarily safe to run before filtering, but filter is on __name__": {
+			// This test case assumes delayed name removal is disabled.
+			// If delayed name removal is enabled, then we can run filtering after the rate() call given that it will return __name__ if delayed name removal is enabled.
 			expr: `rate({__name__=~"foo.*",__name__!="foo_2"}[5m]) / rate({__name__=~"foo.*"}[5m])`,
 			expectedPlan: `
 				- BinaryExpression: LHS / RHS
@@ -890,7 +892,7 @@ func TestOptimizationPass(t *testing.T) {
 						- FunctionCall: rate(...)
 							- DuplicateFilter: {__name__!="foo_2"}
 								- ref#1 Duplicate
-									- param 0: MatrixSelector: {__name__=~"foo.*"}[5m0s]
+									- MatrixSelector: {__name__=~"foo.*"}[5m0s]
 					- RHS: DeduplicateAndMerge
 						- FunctionCall: rate(...)
 							- ref#1 Duplicate ...
@@ -1612,4 +1614,275 @@ func parseSelector(t *testing.T, selector string) []*core.LabelMatcher {
 	})
 
 	return core.LabelMatchersFromPrometheusType(matchers)
+}
+
+func TestIsSafeToApplyFilteringAfterFunction(t *testing.T) {
+	groupWithNoFilters := commonsubexpressionelimination.SharedSelectorGroup{}
+
+	groupWithFilterOnEnvLabel := commonsubexpressionelimination.SharedSelectorGroup{
+		Filters: [][]*core.LabelMatcher{
+			{
+				&core.LabelMatcher{
+					Name:  "env",
+					Type:  labels.MatchEqual,
+					Value: "foo",
+				},
+			},
+		},
+	}
+
+	groupWithFilterOnMetricName := commonsubexpressionelimination.SharedSelectorGroup{
+		Filters: [][]*core.LabelMatcher{
+			{
+				&core.LabelMatcher{
+					Name:  "__name__",
+					Type:  labels.MatchEqual,
+					Value: "foo",
+				},
+			},
+		},
+	}
+
+	groupWithFilterOnBucketLabel := commonsubexpressionelimination.SharedSelectorGroup{
+		Filters: [][]*core.LabelMatcher{
+			{
+				&core.LabelMatcher{
+					Name:  "le",
+					Type:  labels.MatchEqual,
+					Value: "0.5",
+				},
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		function                                   functions.Function
+		args                                       []string
+		group                                      commonsubexpressionelimination.SharedSelectorGroup
+		expectedSafeWithDelayedNameRemovalDisabled bool
+		expectedSafeWithDelayedNameRemovalEnabled  bool
+	}{
+		"rate() with no filters": {
+			function: functions.FUNCTION_RATE,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"rate() with some filters, none for __name__": {
+			function: functions.FUNCTION_RATE,
+			group:    groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"rate() with some filters, some for __name__": {
+			function: functions.FUNCTION_RATE,
+			group:    groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+
+		"absent()": {
+			function: functions.FUNCTION_ABSENT,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"absent_over_time()": {
+			function: functions.FUNCTION_ABSENT_OVER_TIME,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+
+		"last_over_time()": {
+			function: functions.FUNCTION_LAST_OVER_TIME,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"first_over_time()": {
+			function: functions.FUNCTION_FIRST_OVER_TIME,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"sort()": {
+			function: functions.FUNCTION_SORT,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"sort_desc()": {
+			function: functions.FUNCTION_SORT_DESC,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"sort_by_label()": {
+			function: functions.FUNCTION_SORT_BY_LABEL,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"sort_by_label_desc()": {
+			function: functions.FUNCTION_SORT_BY_LABEL_DESC,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+
+		"scalar()": {
+			function: functions.FUNCTION_SCALAR,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"vector()": {
+			function: functions.FUNCTION_VECTOR,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"info()": {
+			function: functions.FUNCTION_INFO,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"pi()": {
+			function: functions.FUNCTION_SCALAR,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"time()": {
+			function: functions.FUNCTION_SCALAR,
+			group:    groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+
+		"label_join() where destination label isn't present in filters": {
+			function: functions.FUNCTION_LABEL_JOIN,
+			group:    groupWithNoFilters,
+			args:     []string{"env", "-", "region"},
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"label_join() where destination label is present in filters": {
+			function: functions.FUNCTION_LABEL_JOIN,
+			group:    groupWithFilterOnEnvLabel,
+			args:     []string{"env", "-", "region"},
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"label_replace() where destination label isn't present in filters": {
+			function: functions.FUNCTION_LABEL_REPLACE,
+			group:    groupWithNoFilters,
+			args:     []string{"env", "$1", "region", "(.*)"},
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"label_replace() where destination label is present in filters": {
+			function: functions.FUNCTION_LABEL_REPLACE,
+			group:    groupWithFilterOnEnvLabel,
+			args:     []string{"env", "$1", "region", "(.*)"},
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+
+		"histogram_fraction() with filter on le": {
+			function: functions.FUNCTION_HISTOGRAM_FRACTION,
+			group:    groupWithFilterOnBucketLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"histogram_fraction() with filter on __name__": {
+			function: functions.FUNCTION_HISTOGRAM_FRACTION,
+			group:    groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"histogram_fraction() with filtering on neither le nor __name__": {
+			function: functions.FUNCTION_HISTOGRAM_FRACTION,
+			group:    groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"histogram_quantile() with filter on le": {
+			function: functions.FUNCTION_HISTOGRAM_QUANTILE,
+			group:    groupWithFilterOnBucketLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"histogram_quantile() with filter on __name__": {
+			function: functions.FUNCTION_HISTOGRAM_QUANTILE,
+			group:    groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"histogram_quantile() with filtering on neither le nor __name__": {
+			function: functions.FUNCTION_HISTOGRAM_QUANTILE,
+			group:    groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			fn := &core.FunctionCall{
+				FunctionCallDetails: &core.FunctionCallDetails{
+					Function: testCase.function,
+				},
+			}
+
+			if len(testCase.args) > 0 {
+				args := make([]planning.Node, 0, len(testCase.args)+1)
+				args = append(args, &core.VectorSelector{})
+				for _, arg := range testCase.args {
+					args = append(args, &core.StringLiteral{
+						StringLiteralDetails: &core.StringLiteralDetails{
+							Value: arg,
+						},
+					})
+				}
+
+				fn.Args = args
+			}
+
+			t.Run("delayed name removal disabled", func(t *testing.T) {
+				safe, knownFunction := commonsubexpressionelimination.IsSafeToApplyFilteringAfterFunction(fn, testCase.group, false)
+				require.True(t, knownFunction)
+				require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalDisabled, safe)
+			})
+
+			t.Run("delayed name removal enabled", func(t *testing.T) {
+				safe, knownFunction := commonsubexpressionelimination.IsSafeToApplyFilteringAfterFunction(fn, testCase.group, true)
+				require.True(t, knownFunction)
+				require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalEnabled, safe)
+			})
+		})
+	}
+}
+
+func TestIsSafeToApplyFilteringAfterFunction_HandlesAllKnownFunctions(t *testing.T) {
+	group := commonsubexpressionelimination.SharedSelectorGroup{}
+
+	for name, function := range functions.Function_value {
+		if functions.Function(function) == functions.FUNCTION_UNKNOWN {
+			continue
+		}
+
+		t.Run(name, func(t *testing.T) {
+			fn := &core.FunctionCall{
+				FunctionCallDetails: &core.FunctionCallDetails{
+					Function: functions.Function(function),
+				},
+			}
+
+			_, knownFunction := commonsubexpressionelimination.IsSafeToApplyFilteringAfterFunction(fn, group, false)
+			require.True(t, knownFunction, "IsSafeToApplyFilteringAfterFunction does not know how to handle this function")
+		})
+	}
 }

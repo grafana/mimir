@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/operators/functions"
@@ -80,7 +81,7 @@ func (e *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 		return nil, err
 	}
 
-	stats, err := e.applyDeduplicationToGroups(groups, 0)
+	stats, err := e.applyDeduplicationToGroups(groups, 0, plan.Parameters.EnableDelayedNameRemoval)
 	if err != nil {
 		return nil, err
 	}
@@ -167,11 +168,11 @@ func (e *OptimizationPass) ShouldSkipChild(node planning.Node, childIdx int) boo
 	return false
 }
 
-func (e *OptimizationPass) applyDeduplicationToGroups(groups []sharedSelectorGroup, offset int) (deduplicationStats, error) {
+func (e *OptimizationPass) applyDeduplicationToGroups(groups []SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool) (deduplicationStats, error) {
 	totalStats := deduplicationStats{}
 
 	for _, group := range groups {
-		groupStats, err := e.applyDeduplication(group, offset)
+		groupStats, err := e.applyDeduplication(group, offset, delayedNameRemovalEnabled)
 		if err != nil {
 			return deduplicationStats{}, err
 		}
@@ -192,46 +193,50 @@ func (s *deduplicationStats) add(other deduplicationStats) {
 	s.subsetSelectorsEliminated += other.subsetSelectorsEliminated
 }
 
-type sharedSelectorGroup struct {
-	paths   []path
-	filters [][]*core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
+type SharedSelectorGroup struct {
+	Paths   []path
+	Filters [][]*core.LabelMatcher // Will be nil if all selectors are exact duplicates, and not nil if any selector is a subset of another.
 }
 
-func (g *sharedSelectorGroup) add(p path, additionalMatchers []*core.LabelMatcher) {
-	if len(g.paths) == 0 {
+func (g *SharedSelectorGroup) add(p path, additionalMatchers []*core.LabelMatcher) {
+	if len(g.Paths) == 0 {
 		// First duplicate or subset selector we've seen, create the list of paths.
-		g.paths = make([]path, 0, 2)
+		g.Paths = make([]path, 0, 2)
 	}
 
-	g.paths = append(g.paths, p)
+	g.Paths = append(g.Paths, p)
 
-	if g.filters == nil && len(additionalMatchers) > 0 {
+	if g.Filters == nil && len(additionalMatchers) > 0 {
 		// First subset selector we've seen, create a slice of filters for all the other existing nodes.
-		g.filters = make([][]*core.LabelMatcher, len(g.paths)-1, len(g.paths))
+		g.Filters = make([][]*core.LabelMatcher, len(g.Paths)-1, len(g.Paths))
 	}
 
-	if g.filters != nil {
+	if g.Filters != nil {
 		// If any part of this group has a subset selector, we need to keep track of the additional matchers that apply to this path.
-		g.filters = append(g.filters, additionalMatchers)
+		g.Filters = append(g.Filters, additionalMatchers)
 	}
 }
 
-func (g *sharedSelectorGroup) len() int {
-	return len(g.paths)
+func (g *SharedSelectorGroup) len() int {
+	return len(g.Paths)
 }
 
-func (g *sharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher {
-	if g.filters == nil {
+func (g *SharedSelectorGroup) hasSubsetSelectors() bool {
+	return g.Filters != nil
+}
+
+func (g *SharedSelectorGroup) getFilterForPath(pathIdx int) []*core.LabelMatcher {
+	if g.Filters == nil {
 		return nil
 	}
 
-	return g.filters[pathIdx]
+	return g.Filters[pathIdx]
 }
 
-func (g *sharedSelectorGroup) computeStats() deduplicationStats {
+func (g *SharedSelectorGroup) computeStats() deduplicationStats {
 	stats := deduplicationStats{}
 
-	for idx := range g.paths {
+	for idx := range g.Paths {
 		if filters := g.getFilterForPath(idx); len(filters) > 0 {
 			stats.subsetSelectorsEliminated++
 		} else {
@@ -244,10 +249,22 @@ func (g *sharedSelectorGroup) computeStats() deduplicationStats {
 	return stats
 }
 
+func (g *SharedSelectorGroup) haveAnyFiltersForLabel(name string) bool {
+	for _, filters := range g.Filters {
+		for _, filter := range filters {
+			if filter.Name == name {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // groupPathsForFirstIteration returns paths grouped by each path's leaf nodes.
 // Paths with leaf nodes that don't match any other leaf nodes are not returned.
 // It considers subset selectors, if SSE is enabled and supported.
-func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelectorEliminationSupported bool) ([]sharedSelectorGroup, error) {
+func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelectorEliminationSupported bool) ([]SharedSelectorGroup, error) {
 	// If SSE is disabled or not supported, we can just use groupPathsForSubsequentIteration.
 	if !e.subsetSelectorEliminationEnabled || !subsetSelectorEliminationSupported {
 		return e.groupPathsForSubsequentIteration(paths, 0), nil
@@ -272,7 +289,7 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 	})
 
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
-	var groups []sharedSelectorGroup
+	var groups []SharedSelectorGroup
 
 	for pathIdx, p := range paths {
 		if alreadyGrouped[pathIdx] {
@@ -285,7 +302,7 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 			return nil, err
 		}
 
-		group := sharedSelectorGroup{}
+		group := SharedSelectorGroup{}
 
 		for otherPathOffset, otherPath := range paths[pathIdx+1:] {
 			otherPathIdx := otherPathOffset + pathIdx + 1
@@ -329,9 +346,9 @@ func (e *OptimizationPass) groupPathsForFirstIteration(paths []path, subsetSelec
 // offset 0 means group by the leaf, offset 1 means group by the leaf node's parent etc.
 // Paths that don't match any other paths are not returned.
 // It does not consider subset selectors, as they are not relevant for subsequent iterations.
-func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset int) []sharedSelectorGroup {
+func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset int) []SharedSelectorGroup {
 	alreadyGrouped := make([]bool, len(paths)) // ignoreunpooledslice
-	var groups []sharedSelectorGroup
+	var groups []SharedSelectorGroup
 
 	// FIXME: is there a better way to do this? This is currently O(n!) in the worst case (where n is the number of paths)
 	for pathIdx, p := range paths {
@@ -341,7 +358,7 @@ func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset
 
 		alreadyGrouped[pathIdx] = true
 		leaf, leafTimeRange := p.NodeAtOffsetFromLeaf(offset)
-		group := sharedSelectorGroup{}
+		group := SharedSelectorGroup{}
 
 		for otherPathOffset, otherPath := range paths[pathIdx+1:] {
 			otherPathIdx := otherPathOffset + pathIdx + 1
@@ -359,20 +376,20 @@ func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset
 				continue
 			}
 
-			if !equivalentNodes(leaf, otherPathLeaf) || !leafTimeRange.Equal(otherPathTimeRange) {
+			if !equivalentNodes(leaf, otherPathLeaf, nil, nil) || !leafTimeRange.Equal(otherPathTimeRange) {
 				continue
 			}
 
-			if group.paths == nil {
-				group.paths = make([]path, 0, 2)
-				group.paths = append(group.paths, p)
+			if group.Paths == nil {
+				group.Paths = make([]path, 0, 2)
+				group.Paths = append(group.Paths, p)
 			}
 
-			group.paths = append(group.paths, otherPath)
+			group.Paths = append(group.Paths, otherPath)
 			alreadyGrouped[otherPathIdx] = true
 		}
 
-		if group.paths != nil {
+		if group.Paths != nil {
 			groups = append(groups, group)
 		}
 	}
@@ -382,10 +399,10 @@ func (e *OptimizationPass) groupPathsForSubsequentIteration(paths []path, offset
 
 // applyDeduplication replaces duplicate expressions at the tails of paths in group with a single expression.
 // It searches for duplicate expressions from offset, and returns the number of duplicates eliminated.
-func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset int) (deduplicationStats, error) {
-	duplicatePathLength := e.findCommonSubexpressionLength(group.paths, offset+1)
+func (e *OptimizationPass) applyDeduplication(group SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool) (deduplicationStats, error) {
+	duplicatePathLength := e.findCommonSubexpressionLength(group, offset+1, delayedNameRemovalEnabled)
 
-	firstPath := group.paths[0]
+	firstPath := group.Paths[0]
 	duplicatedExpression, timeRange := firstPath.NodeAtOffsetFromLeaf(duplicatePathLength - 1)
 	resultType, err := duplicatedExpression.ResultType()
 
@@ -431,8 +448,8 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 	// This applies even if we just saw a common subexpression that returned something other than an instant vector
 	// eg. in "rate(foo[5m]) + rate(foo[5m]) + increase(foo[5m])", we may have just identified the "foo[5m]" expression,
 	// but we can also deduplicate the "rate(foo[5m])" expressions.
-	subsequentGroups := e.groupPathsForSubsequentIteration(group.paths, duplicatePathLength)
-	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength); err != nil {
+	subsequentGroups := e.groupPathsForSubsequentIteration(group.Paths, duplicatePathLength)
+	if nextLevelStats, err := e.applyDeduplicationToGroups(subsequentGroups, duplicatePathLength, delayedNameRemovalEnabled); err != nil {
 		return deduplicationStats{}, err
 	} else if skippedBecauseRangeVectorSelectorInRangeQuery {
 		// If we didn't eliminate any paths at this level (because the duplicate expression was a range vector selector),
@@ -445,12 +462,12 @@ func (e *OptimizationPass) applyDeduplication(group sharedSelectorGroup, offset 
 
 // introduceDuplicateNode introduces a Duplicate node for each path in the group and returns false.
 // If a Duplicate node already exists at the expected location, then introduceDuplicateNode does not introduce a new node and returns true.
-func (e *OptimizationPass) introduceDuplicateNode(group sharedSelectorGroup, duplicatePathLength int) (skipLongerExpressions bool, err error) {
+func (e *OptimizationPass) introduceDuplicateNode(group SharedSelectorGroup, duplicatePathLength int) (skipLongerExpressions bool, err error) {
 	// Check that we haven't already applied deduplication here because we found this subexpression earlier.
 	// For example, if the original expression is "(a + b) + (a + b)", then we will have already found the
 	// duplicate "a + b" subexpression when searching from the "a" selectors, so we don't need to do this again
 	// when searching from the "b" selectors.
-	basisPath := group.paths[0] // The broadest selector always appears first in the group, so this is the node we must duplicate.
+	basisPath := group.Paths[0] // The broadest selector always appears first in the group, so this is the node we must duplicate.
 	parentOfDuplicate, _ := basisPath.NodeAtOffsetFromLeaf(duplicatePathLength)
 	expectedDuplicatedExpression := parentOfDuplicate.Child(basisPath.ChildIndexAtOffsetFromLeaf(duplicatePathLength - 1)) // Note that we can't take this from the path, as the path will not reflect any Duplicate nodes introduced previously.
 
@@ -463,7 +480,7 @@ func (e *OptimizationPass) introduceDuplicateNode(group sharedSelectorGroup, dup
 	duplicate := &Duplicate{Inner: duplicatedExpression, DuplicateDetails: &DuplicateDetails{}}
 	e.duplicationNodesIntroduced.Inc()
 
-	for pathIdx, path := range group.paths {
+	for pathIdx, path := range group.Paths {
 		parentOfDuplicate, _ := path.NodeAtOffsetFromLeaf(duplicatePathLength)
 		var newChild planning.Node = duplicate
 
@@ -492,14 +509,19 @@ func (e *OptimizationPass) introduceDuplicateNode(group sharedSelectorGroup, dup
 // in group, starting at offset.
 // offset 0 means start from leaf of all paths.
 // If a non-zero offset is provided, then it is assumed all paths in group already have a common subexpression of length offset.
-func (e *OptimizationPass) findCommonSubexpressionLength(group []path, offset int) int {
+func (e *OptimizationPass) findCommonSubexpressionLength(group SharedSelectorGroup, offset int, delayedNameRemovalEnabled bool) int {
 	length := offset
-	firstPath := group[0]
+	firstPath := group.Paths[0]
 
 	for length < len(firstPath)-1 { // -1 to exclude root node (otherwise the longest common subexpression for "a + a" would be 2, not 1)
 		firstNode, firstNodeTimeRange := firstPath.NodeAtOffsetFromLeaf(length)
+		firstSelector, _ := firstPath.NodeAtOffsetFromLeaf(0)
 
-		for _, path := range group[1:] {
+		if group.hasSubsetSelectors() && !IsSafeToApplyFilteringAfter(firstNode, group, delayedNameRemovalEnabled) {
+			return length
+		}
+
+		for _, path := range group.Paths[1:] {
 			if length >= len(path) {
 				// We've reached the end of this path, so the longest common subexpression is the length of this path.
 				return length
@@ -514,7 +536,9 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group []path, offset in
 				return length
 			}
 
-			if !equivalentNodes(firstNode, otherNode) || !firstNodeTimeRange.Equal(otherNodeTimeRange) {
+			otherSelector, _ := path.NodeAtOffsetFromLeaf(0)
+
+			if !equivalentNodes(firstNode, otherNode, firstSelector, otherSelector) || !firstNodeTimeRange.Equal(otherNodeTimeRange) {
 				// Nodes aren't the same, so the longest common subexpression is the length of the path not including the current node.
 				return length
 			}
@@ -524,6 +548,177 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group []path, offset in
 	}
 
 	return length
+}
+
+func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, delayedNameRemovalEnabled bool) bool {
+	switch node := node.(type) {
+	case *core.Subquery:
+		return true
+
+	case *core.FunctionCall:
+		safe, _ := IsSafeToApplyFilteringAfterFunction(node, group, delayedNameRemovalEnabled)
+		return safe
+
+	// TODO: UnaryExpression
+	// - delayed name removal enabled: always safe
+	// - delayed name removal disabled: safe if filtering not on __name__
+
+	// TODO: Aggregation
+	// safe to apply filtering afterwards if:
+	// - if aggregation is 'by': all filtered labels appear in 'by'
+	// - if aggregation is 'without': no filtered labels appear in 'without'
+
+	default:
+		return false
+	}
+}
+
+func IsSafeToApplyFilteringAfterFunction(functionCall *core.FunctionCall, group SharedSelectorGroup, delayedNameRemovalEnabled bool) (safe bool, knownFunction bool) {
+	switch functionCall.Function {
+
+	case functions.FUNCTION_ABS,
+		functions.FUNCTION_ACOS,
+		functions.FUNCTION_ACOSH,
+		functions.FUNCTION_ASIN,
+		functions.FUNCTION_ASINH,
+		functions.FUNCTION_ATAN,
+		functions.FUNCTION_ATANH,
+		functions.FUNCTION_AVG_OVER_TIME,
+		functions.FUNCTION_CEIL,
+		functions.FUNCTION_CHANGES,
+		functions.FUNCTION_CLAMP,
+		functions.FUNCTION_CLAMP_MAX,
+		functions.FUNCTION_CLAMP_MIN,
+		functions.FUNCTION_COS,
+		functions.FUNCTION_COSH,
+		functions.FUNCTION_COUNT_OVER_TIME,
+		functions.FUNCTION_DAY_OF_MONTH,
+		functions.FUNCTION_DAY_OF_WEEK,
+		functions.FUNCTION_DAY_OF_YEAR,
+		functions.FUNCTION_DAYS_IN_MONTH,
+		functions.FUNCTION_DEG,
+		functions.FUNCTION_DELTA,
+		functions.FUNCTION_DERIV,
+		functions.FUNCTION_DOUBLE_EXPONENTIAL_SMOOTHING,
+		functions.FUNCTION_EXP,
+		functions.FUNCTION_FLOOR,
+		functions.FUNCTION_HISTOGRAM_AVG,
+		functions.FUNCTION_HISTOGRAM_COUNT,
+		functions.FUNCTION_HISTOGRAM_STDDEV,
+		functions.FUNCTION_HISTOGRAM_STDVAR,
+		functions.FUNCTION_HISTOGRAM_SUM,
+		functions.FUNCTION_HOUR,
+		functions.FUNCTION_IDELTA,
+		functions.FUNCTION_INCREASE,
+		functions.FUNCTION_IRATE,
+		functions.FUNCTION_LN,
+		functions.FUNCTION_LOG2,
+		functions.FUNCTION_LOG10,
+		functions.FUNCTION_MAD_OVER_TIME,
+		functions.FUNCTION_MAX_OVER_TIME,
+		functions.FUNCTION_MIN_OVER_TIME,
+		functions.FUNCTION_MINUTE,
+		functions.FUNCTION_MONTH,
+		functions.FUNCTION_PREDICT_LINEAR,
+		functions.FUNCTION_PRESENT_OVER_TIME,
+		functions.FUNCTION_QUANTILE_OVER_TIME,
+		functions.FUNCTION_RAD,
+		functions.FUNCTION_RESETS,
+		functions.FUNCTION_ROUND,
+		functions.FUNCTION_SGN,
+		functions.FUNCTION_SIN,
+		functions.FUNCTION_SINH,
+		functions.FUNCTION_SQRT,
+		functions.FUNCTION_STDDEV_OVER_TIME,
+		functions.FUNCTION_STDVAR_OVER_TIME,
+		functions.FUNCTION_SUM_OVER_TIME,
+		functions.FUNCTION_TAN,
+		functions.FUNCTION_TANH,
+		functions.FUNCTION_TIMESTAMP,
+		functions.FUNCTION_TS_OF_FIRST_OVER_TIME,
+		functions.FUNCTION_TS_OF_LAST_OVER_TIME,
+		functions.FUNCTION_TS_OF_MAX_OVER_TIME,
+		functions.FUNCTION_TS_OF_MIN_OVER_TIME,
+		functions.FUNCTION_YEAR,
+		functions.FUNCTION_RATE:
+		// Functions that remove __name__ label if delayed name removal is disabled:
+		// - if delayed name removal is enabled: safe to apply filtering after the function call (as the function call will pass through all labels as-is)
+		// - if delayed name removal is disabled: safe if no filters on __name__
+		return delayedNameRemovalEnabled || !group.haveAnyFiltersForLabel(model.MetricNameLabel), true
+
+	case functions.FUNCTION_FIRST_OVER_TIME,
+		functions.FUNCTION_LAST_OVER_TIME,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_1,
+		functions.FUNCTION_ADAPTIVE_METRICS_RESERVED_2,
+		functions.FUNCTION_SORT,
+		functions.FUNCTION_SORT_DESC,
+		functions.FUNCTION_SORT_BY_LABEL,
+		functions.FUNCTION_SORT_BY_LABEL_DESC,
+		functions.FUNCTION_SHARDING_CONCAT:
+		// These functions return the labels as-is, so it's always safe to apply filtering after them.
+		return true, true
+
+	case functions.FUNCTION_SCALAR:
+		// It's never safe to apply filtering after scalar() as all labels are dropped in the transformation to
+		// a scalar value.
+		return false, true
+
+	case functions.FUNCTION_ABSENT, functions.FUNCTION_ABSENT_OVER_TIME:
+		// It's never safe to apply filtering after absent functions.
+		return false, true
+
+	case functions.FUNCTION_INFO:
+		// It's never safe to apply filtering after info() as we don't know if the labels from the data selector
+		// are overridden by the info selector.
+		return false, true
+
+	case functions.FUNCTION_LABEL_JOIN, functions.FUNCTION_LABEL_REPLACE:
+		// It's only safe to apply filtering after these functions if the destination label doesn't appear in the
+		// filters.
+		destinationLabelName, ok := extractDestinationLabel(functionCall)
+		if !ok {
+			return false, true
+		}
+
+		return !group.haveAnyFiltersForLabel(destinationLabelName), true
+
+	case functions.FUNCTION_HISTOGRAM_FRACTION, functions.FUNCTION_HISTOGRAM_QUANTILE:
+		// These functions drop the 'le' label on native histograms, so we can never apply filtering after the function
+		// if the filter is on that label.
+		if group.haveAnyFiltersForLabel(model.BucketLabel) {
+			return false, true
+		}
+
+		// These functions drop the __name__ label if delayed name removal is not enabled, so it's only safe to apply
+		// filtering after these functions if delayed name removal is enabled, or there is no filtering by __name__.
+		if delayedNameRemovalEnabled {
+			return true, true
+		}
+
+		return !group.haveAnyFiltersForLabel(model.MetricNameLabel), true
+
+	case functions.FUNCTION_PI, functions.FUNCTION_VECTOR, functions.FUNCTION_TIME:
+		// These functions should never directly contain a selector, so this method should never be called for
+		// these functions, but return false to be safe.
+		return false, true
+
+	default:
+		return false, false
+	}
+}
+
+// extractDestinationLabel returns the destination label name for a label_join() or label_replace() call.
+func extractDestinationLabel(functionCall *core.FunctionCall) (string, bool) {
+	if len(functionCall.Args) < 2 {
+		return "", false
+	}
+
+	destinationLabel, ok := functionCall.Args[1].(*core.StringLiteral)
+	if !ok {
+		return "", false
+	}
+
+	return destinationLabel.Value, true
 }
 
 func mergeHints(retainedNode planning.Node, eliminatedNode planning.Node) error {
@@ -623,7 +818,12 @@ func (p path) String() string {
 }
 
 // equivalentNodes returns true if a and b are equivalent, including their corresponding children.
-func equivalentNodes(a, b planning.Node) bool {
+// The provided selectors are assumed to be equivalent.
+func equivalentNodes(a, b planning.Node, aSelector, bSelector planning.Node) bool {
+	if aSelector != nil && bSelector != nil && a == aSelector && b == bSelector {
+		return true
+	}
+
 	if !a.EquivalentToIgnoringHintsAndChildren(b) {
 		return false
 	}
@@ -636,7 +836,7 @@ func equivalentNodes(a, b planning.Node) bool {
 	}
 
 	for idx := range aChildCount {
-		if !equivalentNodes(a.Child(idx), b.Child(idx)) {
+		if !equivalentNodes(a.Child(idx), b.Child(idx), aSelector, bSelector) {
 			return false
 		}
 	}
