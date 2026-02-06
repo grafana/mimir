@@ -5360,7 +5360,7 @@
           "required": false,
           "desc": "Maximum number of additional custom trackers for active series that you can configure per tenant. This limit only applies to additional custom trackers. Set to 0 to disable the limit.",
           "fieldValue": null,
-          "fieldDefaultValue": 200,
+          "fieldDefaultValue": 0,
           "fieldFlag": "validation.max-active-series-additional-custom-trackers",
           "fieldType": "int",
           "fieldCategory": "experimental"
