@@ -234,6 +234,7 @@
               }
             ), weight),
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
+            ignore_null_values: ignore_null_values,
           },
         ],
     }) + {
