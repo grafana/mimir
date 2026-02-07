@@ -23,7 +23,10 @@ import (
 )
 
 func TestAddPartitionCommand(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully adds a new partition", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -66,6 +69,7 @@ func TestAddPartitionCommand(t *testing.T) {
 	})
 
 	t.Run("fails if partition already exists", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -98,6 +102,7 @@ func TestAddPartitionCommand(t *testing.T) {
 	})
 
 	t.Run("successfully adds a non-sequential partition", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -142,6 +147,7 @@ func TestAddPartitionCommand(t *testing.T) {
 	})
 
 	t.Run("successfully adds multiple partitions", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -179,6 +185,7 @@ func TestAddPartitionCommand(t *testing.T) {
 	})
 
 	t.Run("fails if any partition already exists when adding multiple", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -220,7 +227,10 @@ func TestAddPartitionCommand(t *testing.T) {
 }
 
 func TestRemovePartitionCommand(t *testing.T) {
+	t.Parallel()
+
 	t.Run("successfully removes a partition with no owners", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -266,6 +276,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 	})
 
 	t.Run("fails if partition does not exist", func(t *testing.T) {
+		t.Parallel()
 		// Start a seed memberlist node.
 		seedKV, _ := startMemberlistKV(t)
 
@@ -287,6 +298,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 	})
 
 	t.Run("fails if partition has owners", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -320,6 +332,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 	})
 
 	t.Run("successfully removes multiple partitions", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
@@ -366,6 +379,7 @@ func TestRemovePartitionCommand(t *testing.T) {
 	})
 
 	t.Run("fails if any partition has owners when removing multiple", func(t *testing.T) {
+		t.Parallel()
 		ctx := context.Background()
 
 		// Start a seed memberlist node.
