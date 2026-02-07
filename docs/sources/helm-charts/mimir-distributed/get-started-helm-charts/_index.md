@@ -236,7 +236,7 @@ We will install [Grafana Alloy](https://grafana.com/docs/alloy/latest/), preconf
 
    # Disable ServiceMonitor for monitoring Alloy itself
    serviceMonitor:
-   enabled: false
+     enabled: false
    ```
 
    {{< admonition type="note" >}}
