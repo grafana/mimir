@@ -115,10 +115,9 @@ func (e *OptimizationPass) accumulatePaths(plan *planning.QueryPlan) []path {
 func (e *OptimizationPass) accumulatePath(soFar path) []path {
 	node, nodeTimeRange := soFar.NodeAtOffsetFromLeaf(0)
 
-	_, isVS := node.(*core.VectorSelector)
-	_, isMS := node.(*core.MatrixSelector)
+	_, isSelector := node.(selector)
 
-	if isVS || isMS {
+	if isSelector {
 		return []path{soFar}
 	}
 
