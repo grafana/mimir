@@ -34,12 +34,12 @@ The tool performs the following analyses:
 
 Some features are only available when analyzing a full index file:
 
-| Feature | Full Index | Index-Header |
-|---------|------------|--------------|
-| Symbols Analysis | Yes | Yes |
-| Label Cardinality Analysis | Yes | Yes |
-| Label Value Distribution | Yes | Yes |
-| Metric Name Statistics | Yes | No |
+| Feature                    | Full Index | Index-Header |
+| -------------------------- | ---------- | ------------ |
+| Symbols Analysis           | Yes        | Yes          |
+| Label Cardinality Analysis | Yes        | Yes          |
+| Label Value Distribution   | Yes        | Yes          |
+| Metric Name Statistics     | Yes        | No           |
 
 Metric name statistics require iterating over series postings, which are not available in index-header files.
 
