@@ -1085,6 +1085,16 @@ func TestOptimizationPass(t *testing.T) {
 			expectedSubsetSelectorsEliminated:    2,
 			expectedSelectorsInspected:           4,
 		},
+		"subset vector selectors with different time ranges": {
+			expr:                       `foo + foo{env="bar"} offset 10m`,
+			expectUnchanged:            true,
+			expectedSelectorsInspected: 2,
+		},
+		"subset matrix selectors with different time ranges": {
+			expr:                       `rate(foo[2m]) + rate(foo{env="bar"}[2m] offset 10m)`,
+			expectUnchanged:            true,
+			expectedSelectorsInspected: 2,
+		},
 	}
 
 	ctx := context.Background()
