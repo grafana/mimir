@@ -13,6 +13,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// seriesCount returns the total count of unique series tracked by this deduplicator while ensuring to get mutex lock
+// beforehand and unlock it after that.
+// This method exists for testing purposes only.
+func (sd *seriesDeduplicator) seriesCount() int {
+	sd.uniqueSeriesMx.Lock()
+	defer sd.uniqueSeriesMx.Unlock()
+
+	count := len(sd.uniqueSeries)
+	for _, conflicts := range sd.conflictSeries {
+		count += len(conflicts)
+	}
+	return count
+}
+
 func TestSeriesDeduplicator_Deduplicate_HashCollision(t *testing.T) {
 	// This test uses a custom hash function to force hash collisions and verify the collision handling code.
 	const collisionHash = uint64(12345)
