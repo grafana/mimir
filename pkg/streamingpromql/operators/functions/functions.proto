@@ -7,6 +7,9 @@ package functions;
 enum Function {
   FUNCTION_UNKNOWN = 0;
 
+  reserved 81, 82;
+  reserved "FUNCTION_LIMITK", "FUNCTION_LIMIT_RATIO";
+
   FUNCTION_ABS = 1;
   FUNCTION_ABSENT = 2;
   FUNCTION_ABSENT_OVER_TIME = 3;
