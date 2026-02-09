@@ -11,19 +11,22 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestPrintTOCInfo(t *testing.T) {
-	info := &TOCInfo{
-		IndexHeaderSize:         1048576, // 1 MB
-		IndexHeaderVersion:      1,
-		TSDBIndexVersion:        2,
-		SymbolsSize:             524288, // 0.5 MB
-		PostingsOffsetTableSize: 262144, // 0.25 MB
+func TestPrintIndexInfo_IndexHeader(t *testing.T) {
+	info := &IndexInfo{
+		Path:               "/path/to/index-header",
+		Size:               1048576, // 1 MB
+		IsIndexHeader:      true,
+		IndexVersion:       2,
+		IndexHeaderVersion: 1,
+		SymbolsSize:        524288, // 0.5 MB
+		PostingsTableSize:  262144, // 0.25 MB
 	}
 
 	var buf bytes.Buffer
-	printTOCInfo(context.Background(), &buf, info)
+	printIndexInfo(context.Background(), &buf, info, nil)
 
 	expected := `
+Index type:                Index-Header
 Index-header size:         1048576 (1.00 MB)
 Index-header version:      1
 TSDB index version:        2
@@ -31,6 +34,25 @@ Header size:               14
 Symbols size:              524288 (0.50 MB)
 Postings offset table:     262144 (0.25 MB)
 TOC + CRC32:               20
+`
+	assert.Equal(t, strings.TrimPrefix(expected, "\n"), buf.String())
+}
+
+func TestPrintIndexInfo_FullIndex(t *testing.T) {
+	info := &IndexInfo{
+		Path:          "/path/to/index",
+		Size:          10485760, // 10 MB
+		IsIndexHeader: false,
+		IndexVersion:  2,
+	}
+
+	var buf bytes.Buffer
+	printIndexInfo(context.Background(), &buf, info, nil)
+
+	expected := `
+Index type:                Full Index
+Index size:                10485760 (10.00 MB)
+TSDB index version:        2
 `
 	assert.Equal(t, strings.TrimPrefix(expected, "\n"), buf.String())
 }
@@ -133,4 +155,44 @@ Length distribution:
       3. [3 bytes] "baz"
 `
 	assert.Equal(t, strings.TrimPrefix(expected, "\n"), buf.String())
+}
+
+func TestPrintMetricNameStats(t *testing.T) {
+	stats := &MetricNameStats{
+		UniqueMetricNames: 156,
+		TopMetrics: []MetricCount{
+			{Name: "container_cpu_usage_seconds_total", SeriesCount: 45231},
+			{Name: "container_memory_working_set_bytes", SeriesCount: 38442},
+			{Name: "kube_pod_container_status_running", SeriesCount: 31205},
+		},
+	}
+
+	var buf bytes.Buffer
+	printMetricNameStats(context.Background(), &buf, stats)
+
+	// Output starts with newline to separate from previous section.
+	expected := `
+Metric names with this label: 156 unique
+Top 10 metric names by series count:
+   1. [   45231 series] container_cpu_usage_seconds_total
+   2. [   38442 series] container_memory_working_set_bytes
+   3. [   31205 series] kube_pod_container_status_running
+`
+	assert.Equal(t, expected, buf.String())
+}
+
+func TestPrintMetricNameStats_Empty(t *testing.T) {
+	stats := &MetricNameStats{
+		UniqueMetricNames: 0,
+		TopMetrics:        nil,
+	}
+
+	var buf bytes.Buffer
+	printMetricNameStats(context.Background(), &buf, stats)
+
+	// Output starts with newline to separate from previous section.
+	expected := `
+Metric names with this label: 0 unique
+`
+	assert.Equal(t, expected, buf.String())
 }
