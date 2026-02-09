@@ -27,6 +27,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/timeutil"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/thanos-io/objstore"
@@ -591,12 +592,16 @@ func (c *MultitenantCompactor) running(ctx context.Context) error {
 	// Run an initial compaction before starting the interval.
 	c.compactUsers(ctx)
 
-	ticker := time.NewTicker(util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05))
-	defer ticker.Stop()
+	// Apply 0-100% jitter to the first tick to spread compactions when multiple
+	// compactors start at the same time and the initial run completes quickly.
+	firstInterval := util.DurationWithNegativeJitter(c.compactorCfg.CompactionInterval, 1.0) + 1
+	standardInterval := util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05)
+	stopTicker, tickerChan := timeutil.NewVariableTicker(firstInterval, standardInterval)
+	defer stopTicker()
 
 	for {
 		select {
-		case <-ticker.C:
+		case <-tickerChan:
 			c.compactUsers(ctx)
 		case <-ctx.Done():
 			return nil
