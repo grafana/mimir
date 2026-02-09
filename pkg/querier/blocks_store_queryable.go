@@ -859,7 +859,10 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			myQueriedBlocks := []ulid.ULID(nil)
 			indexBytesFetched := uint64(0)
 
-			deduplicator := limiter.SeriesDeduplicatorFromContextWithFallback(ctx)
+			deduplicator, err := limiter.SeriesLabelsDeduplicatorFromContext(ctx)
+			if err != nil {
+				return err
+			}
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
