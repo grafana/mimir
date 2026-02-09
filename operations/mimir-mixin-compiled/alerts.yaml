@@ -1090,18 +1090,18 @@ groups:
             severity: critical
         - alert: MimirCompactorNotRunningCompaction
           annotations:
-            message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 24 hours.
+            message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 6 hours.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
+            (time() - max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * 6)
             and
-            (cortex_compactor_last_successful_run_timestamp_seconds > 0)
-          for: 1h
+            (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
+          for: 6h
           labels:
-            reason: in-last-24h
-            severity: critical
+            reason: in-last-6h
+            severity: warning
         - alert: MimirCompactorNotRunningCompaction
           annotations:
             message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 24 hours.
@@ -1109,8 +1109,34 @@ groups:
           expr: |
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
-            cortex_compactor_last_successful_run_timestamp_seconds == 0
-          for: 24h
+            (time() - max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * 24)
+            and
+            (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
+          for: 1h
+          labels:
+            reason: in-last-24h
+            severity: critical
+        - alert: MimirCompactorNotRunningCompaction
+          annotations:
+            message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction since startup.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
+          expr: |
+            # The "last successful run" metric is updated even if the compactor owns no tenants,
+            # so this alert correctly doesn't fire if compactor has nothing to do.
+            max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
+          for: 6h
+          labels:
+            reason: since-startup
+            severity: warning
+        - alert: MimirCompactorNotRunningCompaction
+          annotations:
+            message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction since startup.
+            runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
+          expr: |
+            # The "last successful run" metric is updated even if the compactor owns no tenants,
+            # so this alert correctly doesn't fire if compactor has nothing to do.
+            max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) == 0
+          for: 12h
           labels:
             reason: since-startup
             severity: critical
@@ -1119,7 +1145,7 @@ groups:
             message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} failed to run 2 consecutive compactions.
             runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactornotrunningcompaction
           expr: |
-            increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h]) >= 2
+            sum by(cluster, namespace, pod) (increase(cortex_compactor_runs_failed_total{reason!="shutdown"}[2h])) >= 2
           labels:
             reason: consecutive-failures
             severity: critical
