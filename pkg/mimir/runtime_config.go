@@ -9,10 +9,12 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/tenant"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.yaml.in/yaml/v3"
 
@@ -86,6 +88,8 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 		return nil, errMultipleDocuments
 	}
 
+	l.expandTenantMetadataLimits(overrides)
+
 	if l.validate != nil {
 		for _, limits := range overrides.TenantLimits {
 			if limits == nil {
@@ -98,6 +102,92 @@ func (l *runtimeConfigLoader) load(r io.Reader) (interface{}, error) {
 	}
 
 	return overrides, nil
+}
+
+// expandTenantMetadataLimits creates new tenant limits from metadata
+// placeholders that specify the source attribute. Any limits defined for a
+// placeholder of ":source=<val>" will be expanded to tenant limits
+// "123456:source=<val>" by merging the limits of the base tenant with the limits
+// of the placeholder. Limits defined for tenants with metadata, e.g.
+// "123456:source=<val>:test=<val>" inherit limits from "123456:source=<val>".
+func (l *runtimeConfigLoader) expandTenantMetadataLimits(cfg *runtimeConfigValues) {
+	if len(cfg.TenantLimits) == 0 {
+		return
+	}
+
+	tenantLimits := make(map[string]*validation.Limits, len(cfg.TenantLimits))
+	metadataLimits := make(map[string]*validation.Limits)
+	tenantWithMdLimits := make(map[string]*validation.Limits)
+	for key, limits := range cfg.TenantLimits {
+		idx := strings.IndexByte(key, ':')
+		switch idx {
+		case -1:
+			// 123456
+			tenantLimits[key] = limits
+		case 0:
+			// :source=a
+			metadataLimits[key[1:]] = limits
+		default:
+			// 123456:source=a
+			tenantWithMdLimits[key] = limits
+		}
+	}
+
+	for metadataString, mdLimit := range metadataLimits {
+		md, err := tenant.ParseMetadata(metadataString)
+		if err != nil {
+			continue
+		}
+		source, ok := md.Get(validation.TenantMetadataKeySource)
+		if !ok {
+			continue
+		}
+		sourceMd := tenant.NewMetadata()
+		sourceMd.Set(validation.TenantMetadataKeySource, source)
+		for tenantID, tenantLimit := range tenantLimits {
+			newKey := sourceMd.WithTenant(tenantID)
+			cfg.TenantLimits[newKey] = mergeLimits(tenantLimit, mdLimit)
+		}
+	}
+
+	for orgID, tenantLimit := range tenantWithMdLimits {
+		tenantID, md, err := tenant.ParseWithMetadata(orgID)
+		if err != nil {
+			continue
+		}
+		source, ok := md.Get(validation.TenantMetadataKeySource)
+		if !ok {
+			continue
+		}
+		sourceMd := tenant.NewMetadata()
+		sourceMd.Set(validation.TenantMetadataKeySource, source)
+		baseKey := sourceMd.WithTenant(tenantID)
+		baseLimits, ok := cfg.TenantLimits[baseKey]
+		if !ok {
+			// If the limits for this source don't exist, fallback to regular tenant limit.
+			baseLimits, ok = cfg.TenantLimits[tenantID]
+			if !ok {
+				continue
+			}
+		}
+		cfg.TenantLimits[orgID] = mergeLimits(baseLimits, tenantLimit)
+	}
+}
+
+func mergeLimits(base, overlay *validation.Limits) *validation.Limits {
+	result := copyLimits(base)
+	if overlay.MaxActiveSeriesPerUser > 0 {
+		result.MaxActiveSeriesPerUser = overlay.MaxActiveSeriesPerUser
+	}
+	if overlay.IngestionRate > 0 {
+		result.IngestionRate = overlay.IngestionRate
+	}
+	return result
+}
+
+func copyLimits(l *validation.Limits) *validation.Limits {
+	cp := *l
+	return &cp
 }
 
 func multiClientRuntimeConfigChannel(manager *runtimeconfig.Manager) func() <-chan kv.MultiRuntimeConfig {
