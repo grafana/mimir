@@ -302,8 +302,7 @@ func (w *memoryTrackingQuerier) Select(ctx context.Context, sortSeries bool, hin
 		return storage.ErrSeriesSet(err)
 	}
 
-	deduplicator := limiter.NewSeriesLabelsDeduplicator()
-	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, deduplicator)
+	ctx = limiter.AddNewSeriesDeduplicatorToContext(ctx)
 
 	return series.NewMemoryTrackingSeriesSet(w.inner.Select(ctx, sortSeries, hints, matchers...), memoryTracker)
 }
