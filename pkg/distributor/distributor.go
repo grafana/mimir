@@ -298,6 +298,10 @@ type Config struct {
 	// Change the implementation of OTel startTime from a real zero to a special NaN value.
 	EnableStartTimeQuietZero bool `yaml:"start_time_quiet_zero" category:"advanced" doc:"hidden"`
 
+	// EnableOTLPArenaAllocation enables arena-based allocation for OTLP ingestion,
+	// reducing sync.Pool mutex contention under high load.
+	EnableOTLPArenaAllocation bool `yaml:"enable_otlp_arena_allocation" category:"experimental"`
+
 	// Usage-tracker (optional).
 	UsageTrackerEnabled bool                      `yaml:"-"` // Injected internally.
 	UsageTrackerClient  usagetrackerclient.Config `yaml:"usage_tracker_client" doc:"hidden"`
@@ -354,6 +358,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&cfg.EnableInfluxEndpoint, "distributor.influx-endpoint-enabled", false, "Enable Influx endpoint.")
 	f.IntVar(&cfg.ReusableIngesterPushWorkers, "distributor.reusable-ingester-push-workers", 2000, "Number of pre-allocated workers used to forward push requests to the ingesters. If 0, no workers will be used and a new goroutine will be spawned for each ingester push request. If not enough workers available, new goroutine will be spawned. (Note: this is a performance optimization, not a limiting feature.)")
 	f.BoolVar(&cfg.EnableStartTimeQuietZero, "distributor.otel-start-time-quiet-zero", false, "Change the implementation of OTel startTime from a real zero to a special NaN value.")
+	f.BoolVar(&cfg.EnableOTLPArenaAllocation, "distributor.enable-otlp-arena-allocation", false, "Enable arena-based allocation for OTLP ingestion, reducing sync.Pool mutex contention under high load.")
 
 	cfg.DefaultLimits.RegisterFlags(f)
 }

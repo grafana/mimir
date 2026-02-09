@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -1116,6 +1117,12 @@ func BenchmarkOTLPHandler(b *testing.B) {
 	handler := OTLPHandler(
 		10000000, nil, nil, limits, nil, nil,
 		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		false, // enableArenaAllocation
+	)
+	handlerWithArena := OTLPHandler(
+		10000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		true, // enableArenaAllocation
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1137,6 +1144,30 @@ func BenchmarkOTLPHandler(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("protobuf-arena", func(b *testing.B) {
+		req := createOTLPProtoRequest(b, exportReq, "")
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handlerWithArena.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+
+	b.Run("JSON-arena", func(b *testing.B) {
+		req := createOTLPJSONRequest(b, exportReq, "")
+		b.ResetTimer()
+
+		for i := 0; i < b.N; i++ {
+			resp := httptest.NewRecorder()
+			handlerWithArena.ServeHTTP(resp, req)
 			require.Equal(b, http.StatusOK, resp.Code)
 			req.Body.(*reusableReader).Reset()
 		}
@@ -1207,6 +1238,12 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 	handler := OTLPHandler(
 		200000000, nil, nil, limits, nil, nil,
 		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		false, // enableArenaAllocation
+	)
+	handlerWithArena := OTLPHandler(
+		200000000, nil, nil, limits, nil, nil,
+		RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+		true, // enableArenaAllocation
 	)
 
 	b.Run("protobuf", func(b *testing.B) {
@@ -1223,6 +1260,130 @@ func BenchmarkOTLPHandlerWithLargeMessage(b *testing.B) {
 			req.Body.(*reusableReader).Reset()
 		}
 	})
+
+	b.Run("protobuf-arena", func(b *testing.B) {
+		md := pmetric.NewMetrics()
+		createResourceMetrics(md)
+		exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+		req := createOTLPProtoRequest(b, exportReq, "")
+
+		b.ResetTimer()
+		for range b.N {
+			resp := httptest.NewRecorder()
+			handlerWithArena.ServeHTTP(resp, req)
+			require.Equal(b, http.StatusOK, resp.Code)
+			req.Body.(*reusableReader).Reset()
+		}
+	})
+}
+
+func BenchmarkOTLPHandlerPeakMemory(b *testing.B) {
+	const numberOfMetrics = 150
+	const numberOfResourceMetrics = 300
+	const numberOfDatapoints = 4
+	const stepDuration = 10 * time.Second
+
+	startTime := time.Date(2020, time.October, 30, 23, 0, 0, 0, time.UTC)
+
+	createMetrics := func(mts pmetric.MetricSlice) {
+		mts.EnsureCapacity(numberOfMetrics)
+		for idx := range numberOfMetrics {
+			mt := mts.AppendEmpty()
+			mt.SetName(fmt.Sprintf("metric-%d", idx))
+			datapoints := mt.SetEmptyGauge().DataPoints()
+			datapoints.EnsureCapacity(numberOfDatapoints)
+
+			sampleTime := startTime
+			for j := range numberOfDatapoints {
+				datapoint := datapoints.AppendEmpty()
+				datapoint.SetTimestamp(pcommon.NewTimestampFromTime(sampleTime))
+				datapoint.SetIntValue(int64(j))
+				attrs := datapoint.Attributes()
+				attrs.PutStr("route", "/hello")
+				attrs.PutStr("status", "200")
+				sampleTime = sampleTime.Add(stepDuration)
+			}
+		}
+	}
+
+	createScopedMetrics := func(rm pmetric.ResourceMetrics) {
+		sms := rm.ScopeMetrics()
+		sm := sms.AppendEmpty()
+		scope := sm.Scope()
+		scope.SetName("scope")
+		metrics := sm.Metrics()
+		createMetrics(metrics)
+	}
+
+	createResourceMetrics := func(md pmetric.Metrics) {
+		rms := md.ResourceMetrics()
+		rms.EnsureCapacity(numberOfResourceMetrics)
+		for idx := range numberOfResourceMetrics {
+			rm := rms.AppendEmpty()
+			attrs := rm.Resource().Attributes()
+			attrs.PutStr("env", "dev")
+			attrs.PutStr("region", "us-east-1")
+			attrs.PutStr("pod", fmt.Sprintf("pod-%d", idx))
+			createScopedMetrics(rm)
+		}
+	}
+
+	pushFunc := func(_ context.Context, pushReq *Request) error {
+		if _, err := pushReq.WriteRequest(); err != nil {
+			return err
+		}
+		pushReq.CleanUp()
+		return nil
+	}
+
+	limits := validation.MockDefaultOverrides()
+
+	type testCase struct {
+		name        string
+		enableArena bool
+	}
+
+	testCases := []testCase{
+		{name: "default", enableArena: false},
+		{name: "arena", enableArena: true},
+	}
+
+	for _, tc := range testCases {
+		b.Run(tc.name, func(b *testing.B) {
+			handler := OTLPHandler(
+				200000000, nil, nil, limits, nil, nil,
+				RetryConfig{}, nil, pushFunc, nil, nil, log.NewNopLogger(),
+				tc.enableArena,
+			)
+
+			md := pmetric.NewMetrics()
+			createResourceMetrics(md)
+			exportReq := pmetricotlp.NewExportRequestFromMetrics(md)
+			req := createOTLPProtoRequest(b, exportReq, "")
+
+			// Force GC before measuring
+			runtime.GC()
+			var memStatsBefore runtime.MemStats
+			runtime.ReadMemStats(&memStatsBefore)
+
+			b.ResetTimer()
+			for range b.N {
+				resp := httptest.NewRecorder()
+				handler.ServeHTTP(resp, req)
+				require.Equal(b, http.StatusOK, resp.Code)
+				req.Body.(*reusableReader).Reset()
+			}
+			b.StopTimer()
+
+			// Force GC and measure heap growth
+			runtime.GC()
+			var memStatsAfter runtime.MemStats
+			runtime.ReadMemStats(&memStatsAfter)
+
+			heapGrowth := int64(memStatsAfter.HeapAlloc) - int64(memStatsBefore.HeapAlloc)
+			b.ReportMetric(float64(heapGrowth)/float64(b.N), "heap-growth-bytes/op")
+		})
+	}
 }
 
 func createOTLPProtoRequest(tb testing.TB, metricRequest pmetricotlp.ExportRequest, compression string) *http.Request {
@@ -1755,6 +1916,7 @@ func TestHandlerOTLPPush(t *testing.T) {
 				tt.resourceAttributePromotionConfig, tt.keepIdentifyingOTelResourceAttributesConfig,
 				retryConfig, nil, pusher, nil, nil,
 				util_log.MakeLeveledLogger(logs, "info"),
+				false, // enableArenaAllocation
 			)
 
 			resp := httptest.NewRecorder()
@@ -1855,6 +2017,7 @@ func TestHandler_otlpDroppedMetricsPanic(t *testing.T) {
 			pushReq.CleanUp()
 			return nil
 		}, nil, nil, log.NewNopLogger(),
+		false, // enableArenaAllocation
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
@@ -1900,6 +2063,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 			assert.False(t, request.SkipLabelValidation)
 			return nil
 		}, nil, nil, log.NewNopLogger(),
+		false, // enableArenaAllocation
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
@@ -1929,6 +2093,7 @@ func TestHandler_otlpDroppedMetricsPanic2(t *testing.T) {
 			assert.False(t, request.SkipLabelValidation)
 			return nil
 		}, nil, nil, log.NewNopLogger(),
+		false, // enableArenaAllocation
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusBadRequest, resp.Code)
@@ -1953,6 +2118,7 @@ func TestHandler_otlpWriteRequestTooBigWithCompression(t *testing.T) {
 	handler := OTLPHandler(
 		140, nil, nil, nil, nil, nil,
 		RetryConfig{}, nil, readBodyPushFunc(t), nil, nil, log.NewNopLogger(),
+		false, // enableArenaAllocation
 	)
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
@@ -2265,7 +2431,7 @@ func TestOTLPResponseContentType(t *testing.T) {
 			handler := OTLPHandler(100000, nil, nil, limits, nil, nil, RetryConfig{}, nil, func(_ context.Context, req *Request) error {
 				_, err := req.WriteRequest()
 				return err
-			}, nil, nil, log.NewNopLogger())
+			}, nil, nil, log.NewNopLogger(), false)
 			resp := httptest.NewRecorder()
 			handler.ServeHTTP(resp, tc.req)
 
