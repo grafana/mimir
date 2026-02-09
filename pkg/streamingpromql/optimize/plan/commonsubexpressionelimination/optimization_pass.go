@@ -552,20 +552,42 @@ func (e *OptimizationPass) findCommonSubexpressionLength(group SharedSelectorGro
 func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, delayedNameRemovalEnabled bool) bool {
 	switch node := node.(type) {
 	case *core.Subquery:
+		// Subqueries return the inner series' labels as-is, so it's always safe to apply filtering afterwards.
 		return true
 
 	case *core.FunctionCall:
 		safe, _ := IsSafeToApplyFilteringAfterFunction(node, group, delayedNameRemovalEnabled)
 		return safe
 
-	// TODO: UnaryExpression
-	// - delayed name removal enabled: always safe
-	// - delayed name removal disabled: safe if filtering not on __name__
+	case *core.UnaryExpression:
+		if delayedNameRemovalEnabled {
+			return true
+		}
 
-	// TODO: Aggregation
-	// safe to apply filtering afterwards if:
-	// - if aggregation is 'by': all filtered labels appear in 'by'
-	// - if aggregation is 'without': no filtered labels appear in 'without'
+		return !group.haveAnyFiltersForLabel(model.MetricNameLabel)
+
+	case *core.AggregateExpression:
+		if node.Without {
+			// Safe to apply filtering provided 'without' will remove none of the filter labels.
+			for _, label := range node.Grouping {
+				if group.haveAnyFiltersForLabel(label) {
+					return false
+				}
+			}
+
+			return true
+		}
+
+		// Aggregation with 'by': safe to apply filtering provided all the filter labels appear in 'by'.
+		for _, filters := range group.Filters {
+			for _, filter := range filters {
+				if !slices.Contains(node.Grouping, filter.Name) {
+					return false
+				}
+			}
+		}
+
+		return true
 
 	default:
 		return false
