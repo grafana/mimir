@@ -363,7 +363,7 @@ func newOTLPParser(
 		validateTranslationStrategy(translationStrategy, limits, tenantID)
 
 		pushMetrics.IncOTLPRequest(tenantID)
-		pushMetrics.ObserveUncompressedBodySize(tenantID, "otlp", float64(uncompressedBodySize))
+		pushMetrics.ObserveRequestBodySize(tenantID, "otlp", int64(uncompressedBodySize), r.ContentLength)
 		pushMetrics.IncOTLPContentType(contentType)
 		observeOTLPFieldsCount(pushMetrics, otlpReq)
 

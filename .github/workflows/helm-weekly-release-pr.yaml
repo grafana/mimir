@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
         with:
           persist-credentials: false
-      - uses: imjasonh/setup-crane@31b88efe9de28ae0ffa220711af4b60be9435f6e # v0.4
+      - uses: imjasonh/setup-crane@6da1ae018866400525525ce74ff892880c099987 # v0.5
       - name: Update/regenerate files
         id: update
         run: bash .github/workflows/scripts/helm-weekly-release.sh

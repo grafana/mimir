@@ -292,7 +292,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h])\n)\n",
+                        "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\n",
                         "format": "table",
                         "instant": true,
                         "interval": "",
@@ -494,6 +494,12 @@
                      "legend": {
                         "showLegend": true
                      },
+                     "sortBy": [
+                        {
+                           "desc": true,
+                           "displayName": "Last run"
+                        }
+                     ],
                      "tooltip": {
                         "mode": "multi",
                         "sort": "none"
@@ -502,7 +508,7 @@
                   "span": 3,
                   "targets": [
                      {
-                        "expr": "max by(pod)\n(\n  (time() * (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) !=bool 0))\n  -\n  max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h])\n)\n",
+                        "expr": "max by(pod) (time() - (max_over_time(cortex_compactor_last_successful_run_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]) > 0))\nor\nmax by(pod) (time() - max_over_time(process_start_time_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((compactor.*|cortex|mimir))\"}[1h]))\n",
                         "format": "table",
                         "instant": true,
                         "legendFormat": "Last run",

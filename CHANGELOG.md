@@ -30,6 +30,7 @@
 * [CHANGE] Ingester: Removed the `-target=flusher` mode. If you need to flush ingester data, use the `/ingester/flush` HTTP endpoint instead. #14032
 * [CHANGE] Limits: Add new limit `-validation.max-active-series-additional-custom-trackers` (default: 0) to control the maximum number of additional custom trackers per tenant. This limit only applies to `active_series_additional_custom_trackers`, not to `-ingester.active-series-custom-trackers`. Set to 0 (the default) to disable the limit. #14226 #14256
 * [CHANGE] Querier and query-frontend: The experimental `-querier.mimir-query-engine.enable-common-subexpression-elimination-for-range-vector-expressions-in-instant-queries` and `-querier.mimir-query-engine.enable-skipping-histogram-decoding` flags have been removed. Both were previously enabled by default and now cannot be disabled. #14237
+* [FEATURE] Distributor: add `cortex_distributor_request_body_compression_ratio` histogram that tracks the compression of write requests. #14232
 * [FEATURE] Distributor: add `-distributor.otel-label-name-underscore-sanitization` and `-distributor.otel-label-name-preserve-underscores` that control sanitization of underscores during OTLP translation. #13133
 * [FEATURE] Query-frontends: Automatically adjust features used in query plans generated for remote execution based on what the available queriers support. #13017 #13164 #13544
 * [FEATURE] Memberlist: Add experimental support for zone-aware routing in order to reduce memberlist cross-AZ data transfer. #13129 #13651 #13664
@@ -44,7 +45,11 @@
 * [FEATURE] Ingester: Added experimental per-tenant early head compaction. New per-tenant limits `-ingester.early-head-compaction-owned-series-threshold` and `-ingester.early-head-compaction-min-estimated-series-reduction-percentage` trigger compaction based on owned series count. #13980
 * [FEATURE] Ingester: Added experimental support to run ingesters with no tokens in the ring when ingest storage is enabled. You can set `-ingester.ring.num-tokens=0` to enable this feature. #14024
 * [FEATURE] Store-gateway: Add `-store-gateway.sharding-ring.excluded-zones` flag to exclude specific zones from the store-gateway ring. #14120
+<<<<<<< intermediate-cache-new
 * [FEATURE] MQE: Add experimental support for splitting and caching intermediate results for functions over range vectors in instant queries. #13472
+=======
+* [ENHANCEMENT] Compactor: Add 0-100% jitter to the first compaction interval to spread compactions when multiple compactors start simultaneously. #14280
+>>>>>>> main
 * [ENHANCEMENT] Compactor, Store-gateway: Remove experimental setting `-compactor.upload-sparse-index-headers` and always upload sparse index-headers. This improves lazy loading performance in the store-gateway. #13089 #13882
 * [ENHANCEMENT] Querier: Reduce memory consumption of queries samples for a single series are retrieved from multiple ingesters or store-gateways. #13806
 * [ENHANCEMENT] Store-gateway: Verify CRC32 checksums for 1 out of every 128 chunks read from object storage and the chunks cache to detect corruption. #13151
@@ -199,6 +204,7 @@
   * `MimirKafkaClientBufferedProduceBytesTooHigh` → `MimirKafkaClientProduceBufferHigh`
 * [CHANGE] Alerts: Replaced `MimirCompactorSkippedUnhealthyBlocks` with more generic `MimirCompactorSkippedBlocks`. #13876
 * [ENHANCEMENT] Alerts: Add more native histogram versions of alerts using classic histograms. #13814
+* [ENHANCEMENT] Alerts: Improve `MimirCompactorNotRunningCompaction` alert to be restart-resistant. Added warning severity alerts for early detection (6h threshold) and lowered the `since-startup` critical duration from 24h to 12h. #14282
 * [ENHANCEMENT] Dashboards: Support native histograms in the Alertmanager, Compactor, Queries, Rollout operator, Reads, RemoteRuler-Reads, Ruler, and Writes dashboards. #13556 #13621 #13629 #13673 #13690 #13678 #13633 #13672
 * [ENHANCEMENT] Alerts: Add `MimirFewerIngestersConsumingThanActivePartitions` alert. #13159
 * [ENHANCEMENT] Querier and query-frontend: Add alerts for querier ring, which is used when performing query planning in query-frontends and distributing portions of the plan to queriers for execution. #13165
@@ -220,6 +226,7 @@
 * [ENHANCEMENT] Dashboards: Add "By store-gateway disk utilization" panel to the Top Tenants dashboard showing per-tenant disk usage and their shard size. #13917
 * [ENHANCEMENT] Dashboards: Add panels showing the distribution of estimated query memory consumption and rate of fallback to Prometheus' query engine in query-frontends to the Queries dashboard. #14029
 * [ENHANCEMENT] Dashboards: Add "Forced TSDB head compactions in progress" panel to "Mimir / Writes" dashboard. #14248
+* [ENHANCEMENT] Dashboards: Improve "Last successful run per-compactor replica" table in the compactor dashboard to show time since process start for compactors that haven't completed their first run yet. #14285
 * [BUGFIX] Dashboards: Fix issue where throughput dashboard panels would group all gRPC requests that resulted in a status containing an underscore into one series with no name. #13184
 * [BUGFIX] Dashboards: Filter out 0s from `max_series` limit on Writes Resources > Ingester > In-memory series panel. #13419
 * [BUGFIX] Dashboards: Fix issue where the "Tenant gateway requests" panels on Tenants dashboard would show data from all components. #13940
@@ -269,6 +276,7 @@
   * `multi_zone_store_gateway_zone_a_multi_az_enabled`
   * `multi_zone_store_gateway_zone_b_multi_az_enabled`
   * `multi_zone_store_gateway_zone_c_multi_az_enabled`
+* [ENHANCEMENT] Querier: Add `autoscaling_querier_ignore_null_values` option to set KEDA `ignoreNullValues` for querier autoscaling metrics. #14101
 * [BUGFIX] Ingester: Fix `$._config.ingest_storage_ingester_autoscaling_max_owned_series_threshold` default value, to compute it based on the configured `$._config.ingester_instance_limits.max_series`. #13448
 
 ### Documentation
@@ -282,7 +290,7 @@
 ### Tools
 
 * [FEATURE] mimir-tool: Add `validate alerts-file` command that performs checks on alert files defined as YAML. #14043
-* [FEATURE] tsdb-index-header: Add tool to inspect the content of an index-header. #13738
+* [FEATURE] tsdb-index-header: Add tool to inspect the content of a block's index or index-header. #13738 #14279
 * [BUGFIX] mimir-tool-action: Fix base image of the Github action. #13303
 * [BUGFIX] mimir-tool: do not fail on `$latency_metrics` dashboard variable, documented for native histograms migrations. #13526
 * [BUGFIX] kafkatool: Fix `kafkatool dump print` to support RW2 records. #13848

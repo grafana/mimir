@@ -19,6 +19,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"runtime"
+	"time"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -117,10 +119,24 @@ func (a *initAppender) AppendSTZeroSample(ref storage.SeriesRef, lset labels.Lab
 // for a completely fresh head with an empty WAL.
 func (h *Head) initTime(t int64) {
 	if !h.minTime.CompareAndSwap(math.MaxInt64, t) {
+		// Concurrent appends that are initializing.
+		// Wait until h.maxTime is swapped to avoid minTime/maxTime races.
+		// This should complete in microseconds under normal operation.
+		antiDeadlockTimeout := time.After(100 * time.Millisecond)
+		for h.maxTime.Load() == math.MinInt64 {
+			select {
+			case <-antiDeadlockTimeout:
+				// This should never happen in normal operation.
+				// If it does, there may be a bug or the system is severely overloaded.
+				h.logger.Warn("initTime timeout waiting for maxTime initialization")
+				return
+			default:
+				runtime.Gosched() // Yield to allow the initializing goroutine to complete
+			}
+		}
 		return
 	}
 	// Ensure that max time is initialized to at least the min time we just set.
-	// Concurrent appenders may already have set it to a higher value.
 	h.maxTime.CompareAndSwap(math.MinInt64, t)
 }
 

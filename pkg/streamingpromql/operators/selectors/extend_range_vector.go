@@ -173,7 +173,7 @@ func (m *RevertibleExtendedPointsState) ApplyBoundaryMutations(rangeStart, range
 		boundaryValue := m.first.F
 		if m.mode != anchored {
 			pointAfterRangeStart := m.buff.PointAt(1)
-			boundaryValue = interpolate(m.first, pointAfterRangeStart, rangeStart, true, m.mode == smoothedCounter)
+			boundaryValue = interpolate(m.first, pointAfterRangeStart, rangeStart, m.mode == smoothedCounter)
 		}
 		if err := m.buff.ReplaceFirst(promql.FPoint{T: rangeStart, F: boundaryValue}); err != nil {
 			return err
@@ -192,7 +192,7 @@ func (m *RevertibleExtendedPointsState) ApplyBoundaryMutations(rangeStart, range
 		boundaryValue := m.last.F
 		if m.mode != anchored {
 			pointBeforeRangeEnd := m.buff.PointAt(m.buff.Count() - 2)
-			boundaryValue = interpolate(pointBeforeRangeEnd, m.last, rangeEnd, false, m.mode == smoothedCounter)
+			boundaryValue = interpolate(pointBeforeRangeEnd, m.last, rangeEnd, m.mode == smoothedCounter)
 		}
 		if err := m.buff.ReplaceLast(promql.FPoint{T: rangeEnd, F: boundaryValue}); err != nil {
 			return err
@@ -253,18 +253,15 @@ func (m *RevertibleExtendedPointsState) Reset() {
 	m.restoreExcludedFirst = false
 }
 
-func interpolate(p1, p2 promql.FPoint, t int64, leftEdge bool, isCounter bool) float64 {
-	// This has been adapted from interpolate() in promql/functions.go
+func interpolate(p1, p2 promql.FPoint, t int64, isCounter bool) float64 {
+	// This has been adapted from interpolate() in promql/functions.go.
 	y1 := p1.F
 	y2 := p2.F
 
 	if isCounter && y2 < y1 {
-		if leftEdge {
-			y1 = 0
-		} else {
-			y2 += y1
-		}
-		return y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)
+		// If isCounter is true and there is a counter reset, it models the counter
+		// as starting from 0 (post-reset) by setting y1 to 0.
+		y1 = 0
 	}
 
 	return y1 + (y2-y1)*float64(t-p1.T)/float64(p2.T-p1.T)

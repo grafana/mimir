@@ -804,7 +804,7 @@ github.com/grafana/alerting/receivers/wecom/v1
 github.com/grafana/alerting/templates
 github.com/grafana/alerting/templates/gomplate
 github.com/grafana/alerting/templates/mimir
-# github.com/grafana/dskit v0.0.0-20260206085714-a9a98074f1c9
+# github.com/grafana/dskit v0.0.0-20260207150213-d7b5e84e3d70
 ## explicit; go 1.24.0
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/ballast
@@ -1329,7 +1329,7 @@ github.com/prometheus/otlptranslator
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20260203033542-0d05c9113f4a
+# github.com/prometheus/prometheus v1.99.0 => github.com/grafana/mimir-prometheus v1.8.2-0.20260203153654-73a432a4c24e
 ## explicit; go 1.25.0
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1648,7 +1648,7 @@ go.opentelemetry.io/contrib/detectors/gcp
 # go.opentelemetry.io/contrib/exporters/autoexport v0.64.0
 ## explicit; go 1.24.0
 go.opentelemetry.io/contrib/exporters/autoexport
-# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.64.0
+# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.65.0
 ## explicit; go 1.24.0
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/internal
@@ -1656,12 +1656,12 @@ go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/inte
 ## explicit; go 1.24.0
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace
 go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace/internal/semconv
-# go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0
+# go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0
 ## explicit; go 1.24.0
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/request
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/semconv
-# go.opentelemetry.io/contrib/propagators/jaeger v1.39.0
+# go.opentelemetry.io/contrib/propagators/jaeger v1.40.0
 ## explicit; go 1.24.0
 go.opentelemetry.io/contrib/propagators/jaeger
 # go.opentelemetry.io/contrib/samplers/jaegerremote v0.33.0
@@ -1685,9 +1685,10 @@ go.opentelemetry.io/otel/semconv/v1.26.0
 go.opentelemetry.io/otel/semconv/v1.37.0
 go.opentelemetry.io/otel/semconv/v1.37.0/httpconv
 go.opentelemetry.io/otel/semconv/v1.37.0/otelconv
-go.opentelemetry.io/otel/semconv/v1.37.0/rpcconv
 go.opentelemetry.io/otel/semconv/v1.39.0
+go.opentelemetry.io/otel/semconv/v1.39.0/httpconv
 go.opentelemetry.io/otel/semconv/v1.39.0/otelconv
+go.opentelemetry.io/otel/semconv/v1.39.0/rpcconv
 # go.opentelemetry.io/otel/exporters/jaeger v1.17.0
 ## explicit; go 1.19
 go.opentelemetry.io/otel/exporters/jaeger
@@ -2018,7 +2019,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/api/label
 google.golang.org/genproto/googleapis/api/metric
 google.golang.org/genproto/googleapis/api/monitoredres
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20260122232226-8e98ce8d340d
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409
 ## explicit; go 1.24.0
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
@@ -2308,7 +2309,7 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260203033542-0d05c9113f4a
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260203153654-73a432a4c24e
 # github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
 # go.yaml.in/yaml/v3 => github.com/grafana/go-yaml/v3 v3.0.0-20260130164322-e3c24e8f4c87
 # github.com/grafana/regexp => github.com/grafana/regexp v0.0.0-20250905101755-5eb4f3acbf71

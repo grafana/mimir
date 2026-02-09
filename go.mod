@@ -17,7 +17,7 @@ require (
 	github.com/golang/snappy v1.0.0
 	github.com/google/gopacket v1.1.19
 	github.com/gorilla/mux v1.8.1
-	github.com/grafana/dskit v0.0.0-20260206085714-a9a98074f1c9
+	github.com/grafana/dskit v0.0.0-20260207150213-d7b5e84e3d70
 	github.com/grafana/e2e v0.1.2-0.20251205060319-9884d3ffb1bf
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/influxdata/influxdb/v2 v2.8.0
@@ -86,8 +86,8 @@ require (
 	github.com/tylertreat/BoomFilters v0.0.0-20251117164519-53813c36cc1b
 	github.com/xlab/treeprint v1.2.0
 	go.opentelemetry.io/collector/pdata v1.51.0
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.64.0
-	go.opentelemetry.io/contrib/propagators/jaeger v1.39.0
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.65.0
+	go.opentelemetry.io/contrib/propagators/jaeger v1.40.0
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/sdk v1.40.0
 	go.opentelemetry.io/otel/trace v1.40.0
@@ -346,7 +346,7 @@ require (
 	go.etcd.io/etcd/client/pkg/v3 v3.6.7 // indirect
 	go.etcd.io/etcd/client/v3 v3.6.7 // indirect
 	go.mongodb.org/mongo-driver v1.17.6 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.65.0
 	go.opentelemetry.io/otel/metric v1.40.0 // indirect
 	go.uber.org/zap v1.27.1 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96
@@ -357,13 +357,13 @@ require (
 	golang.org/x/tools v0.41.0
 	google.golang.org/genproto v0.0.0-20251202230838-ff82c1b0f217 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20251222181119-0a764e51fe1b // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260122232226-8e98ce8d340d
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260203033542-0d05c9113f4a
+replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260203153654-73a432a4c24e
 
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
