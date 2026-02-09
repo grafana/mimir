@@ -33,19 +33,16 @@ eval range from 0 to 5m step 1m metric{idx!="2"} * metric
 eval range from 0 to 5m step 1m metric{idx=~"2|3"} * metric * metric{idx="3"}
   {idx="3"} 27 216 729 1728 3375 5832
 
-eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"})
+eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"1|2|3|4"})
   {idx="3"} 6 12 18 24 30 36
   {idx="4"} 8 16 24 32 40 48
-  {idx="5"} 10 20 30 40 50 60
 
-eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"}) + topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"})
+eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"1|2|3|4"}) + topk(3, metric) + topk(3, metric{idx=~"1|2|3|4"})
   {idx="3"} 12 24 36 48 60 72
   {idx="4"} 16 32 48 64 80 96
-  {idx="5"} 20 40 60 80 100 120
 
-eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"}) + topk(2, metric) + topk(2, metric{idx=~"2|3|4|5"})
+eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"1|2|3|4"}) + topk(2, metric) + topk(2, metric{idx=~"1|2|3|4"})
   {idx="4"} 16 32 48 64 80 96
-  {idx="5"} 20 40 60 80 100 120
 
 # Range vector selectors - use instant query to ensure that CSE still applies
 eval instant at 2m rate(metric[2m]) * increase(metric{idx=~"2|3"}[2m])
