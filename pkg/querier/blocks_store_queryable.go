@@ -864,6 +864,13 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 				return err
 			}
 
+			// For series queries (skipChunks=true), don't track memory consumption since
+			// the result won't be wrapped in MemoryTrackingSeriesSet to decrease it.
+			memTrackerForReceiveMsg := memoryTracker
+			if skipChunks {
+				memTrackerForReceiveMsg = nil
+			}
+
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
 				// in another goroutine).
@@ -876,7 +883,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 				var shouldRetry bool
 
 				myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched, isEOS, shouldRetry, err = q.receiveMessage(
-					c, stream, queryLimiter, memoryTracker, deduplicator, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
+					c, stream, queryLimiter, memTrackerForReceiveMsg, deduplicator, myWarnings, myQueriedBlocks, myStreamingSeriesLabels, indexBytesFetched,
 				)
 				if errors.Is(err, io.EOF) {
 					util.CloseAndExhaust[*storepb.SeriesResponse](stream) //nolint:errcheck

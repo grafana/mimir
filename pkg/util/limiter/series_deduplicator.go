@@ -104,9 +104,11 @@ func (sd *seriesDeduplicator) Deduplicate(newLabels labels.Labels, tracker *Memo
 }
 
 func (sd *seriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error) {
-	err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
-	if err != nil {
-		return labels.EmptyLabels(), err
+	if tracker != nil {
+		err := tracker.IncreaseMemoryConsumptionForLabels(newLabels)
+		if err != nil {
+			return labels.EmptyLabels(), err
+		}
 	}
 	return newLabels, nil
 }
