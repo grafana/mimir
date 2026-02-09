@@ -18,8 +18,8 @@ func TestPrintIndexInfo_IndexHeader(t *testing.T) {
 		IsIndexHeader:      true,
 		IndexVersion:       2,
 		IndexHeaderVersion: 1,
-		SymbolsSize:        524288,  // 0.5 MB
-		PostingsTableSize:  262144,  // 0.25 MB
+		SymbolsSize:        524288, // 0.5 MB
+		PostingsTableSize:  262144, // 0.25 MB
 	}
 
 	var buf bytes.Buffer
