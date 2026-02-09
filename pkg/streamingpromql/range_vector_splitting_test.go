@@ -897,27 +897,34 @@ func TestQuerySplitting_CacheKeyIsolationAcrossFunctions(t *testing.T) {
 	baseT := timestamp.Time(0)
 	ts := baseT.Add(6 * time.Hour)
 
+	// sum_over_time: sum of values 7..36 = 645
+	// count_over_time: 30 samples in (1h, 6h]
+	expectedSumF := 645.0
+	expectedCountF := 30.0
+
 	// Query sum_over_time — populates cache for sum_over_time's function key.
 	sumResult := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
 	require.NoError(t, sumResult.Err)
+	require.Equal(t, expectedSumF, sumResult.Value.(promql.Vector)[0].F)
 	verifyCacheStats(t, testCache, 2, 0, 2)
 
-	// Query rate on the same metric — should NOT hit sum_over_time's cache entries.
-	rateResult := runInstantQuery(t, mimirEngine, promStorage, "rate(some_metric[5h])", ts)
-	require.NoError(t, rateResult.Err)
+	// Query count_over_time on the same metric — should NOT hit sum_over_time's cache entries.
+	countResult := runInstantQuery(t, mimirEngine, promStorage, "count_over_time(some_metric[5h])", ts)
+	require.NoError(t, countResult.Err)
+	require.Equal(t, expectedCountF, countResult.Value.(promql.Vector)[0].F)
 	verifyCacheStats(t, testCache, 4, 0, 4) // 2 new gets (miss), 2 new sets
 
 	// Query sum_over_time again — should hit cache from the first query.
 	sumResult2 := runInstantQuery(t, mimirEngine, promStorage, "sum_over_time(some_metric[5h])", ts)
 	require.NoError(t, sumResult2.Err)
-	require.Equal(t, sumResult.Value, sumResult2.Value)
+	require.Equal(t, expectedSumF, sumResult2.Value.(promql.Vector)[0].F)
 	verifyCacheStats(t, testCache, 6, 2, 4) // 2 hits for sum_over_time blocks
 
-	// Query rate again — should hit cache from the rate query, not sum_over_time's.
-	rateResult2 := runInstantQuery(t, mimirEngine, promStorage, "rate(some_metric[5h])", ts)
-	require.NoError(t, rateResult2.Err)
-	require.Equal(t, rateResult.Value, rateResult2.Value)
-	verifyCacheStats(t, testCache, 8, 4, 4) // 2 hits for rate blocks
+	// Query count_over_time again — should hit cache from the count query, not sum_over_time's.
+	countResult2 := runInstantQuery(t, mimirEngine, promStorage, "count_over_time(some_metric[5h])", ts)
+	require.NoError(t, countResult2.Err)
+	require.Equal(t, expectedCountF, countResult2.Value.(promql.Vector)[0].F)
+	verifyCacheStats(t, testCache, 8, 4, 4) // 2 hits for count_over_time blocks
 }
 
 func TestQuerySplitting_StorageError(t *testing.T) {
