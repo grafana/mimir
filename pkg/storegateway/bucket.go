@@ -51,6 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
+	indexheadercache "github.com/grafana/mimir/pkg/storage/tsdb/indexcache/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/hintspb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
@@ -85,16 +86,17 @@ type BucketStoreStats struct {
 type BucketStore struct {
 	services.Service
 
-	userID          string
-	logger          log.Logger
-	metrics         *BucketStoreMetrics
-	bkt             objstore.InstrumentedBucketReader
-	bucketIndexMeta BucketIndexMetadataReader
-	fetcher         block.MetadataFetcher
-	dir             string
-	indexCache      indexcache.IndexCache
-	indexReaderPool *indexheader.ReaderPool
-	seriesHashCache *hashcache.SeriesHashCache
+	userID           string
+	logger           log.Logger
+	metrics          *BucketStoreMetrics
+	bkt              objstore.InstrumentedBucketReader
+	bucketIndexMeta  BucketIndexMetadataReader
+	fetcher          block.MetadataFetcher
+	dir              string
+	indexCache       indexcache.IndexCache
+	indexHeaderCache indexheadercache.PostingsOffsetTableCache
+	indexReaderPool  *indexheader.ReaderPool
+	seriesHashCache  *hashcache.SeriesHashCache
 
 	snapshotter services.Service
 
@@ -183,6 +185,13 @@ func WithLogger(logger log.Logger) BucketStoreOption {
 func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.indexCache = cache
+	}
+}
+
+// WithIndexHeaderCache sets an index header cache to use instead of a noopCache.
+func WithIndexHeaderCache(cache indexheadercache.PostingsOffsetTableCache) BucketStoreOption {
+	return func(s *BucketStore) {
+		s.indexHeaderCache = cache
 	}
 }
 
