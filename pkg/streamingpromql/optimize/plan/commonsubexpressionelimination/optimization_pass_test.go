@@ -1616,10 +1616,10 @@ func parseSelector(t *testing.T, selector string) []*core.LabelMatcher {
 	return core.LabelMatchersFromPrometheusType(matchers)
 }
 
-func TestIsSafeToApplyFilteringAfterFunction(t *testing.T) {
-	groupWithNoFilters := commonsubexpressionelimination.SharedSelectorGroup{}
+var (
+	groupWithNoFilters = commonsubexpressionelimination.SharedSelectorGroup{}
 
-	groupWithFilterOnEnvLabel := commonsubexpressionelimination.SharedSelectorGroup{
+	groupWithFilterOnEnvLabel = commonsubexpressionelimination.SharedSelectorGroup{
 		Filters: [][]*core.LabelMatcher{
 			{
 				&core.LabelMatcher{
@@ -1631,7 +1631,7 @@ func TestIsSafeToApplyFilteringAfterFunction(t *testing.T) {
 		},
 	}
 
-	groupWithFilterOnMetricName := commonsubexpressionelimination.SharedSelectorGroup{
+	groupWithFilterOnMetricName = commonsubexpressionelimination.SharedSelectorGroup{
 		Filters: [][]*core.LabelMatcher{
 			{
 				&core.LabelMatcher{
@@ -1642,7 +1642,207 @@ func TestIsSafeToApplyFilteringAfterFunction(t *testing.T) {
 			},
 		},
 	}
+)
 
+func TestIsSafeToApplyFilteringAfter(t *testing.T) {
+	groupWithFilterOnManyLabels := commonsubexpressionelimination.SharedSelectorGroup{
+		Filters: [][]*core.LabelMatcher{
+			{
+				&core.LabelMatcher{
+					Name:  "env",
+					Type:  labels.MatchEqual,
+					Value: "foo",
+				},
+				&core.LabelMatcher{
+					Name:  "region",
+					Type:  labels.MatchEqual,
+					Value: "foo",
+				},
+			},
+			{
+				&core.LabelMatcher{
+					Name:  "cluster",
+					Type:  labels.MatchEqual,
+					Value: "foo",
+				},
+			},
+		},
+	}
+
+	testCases := map[string]struct {
+		node                                       planning.Node
+		group                                      commonsubexpressionelimination.SharedSelectorGroup
+		expectedSafeWithDelayedNameRemovalDisabled bool
+		expectedSafeWithDelayedNameRemovalEnabled  bool
+	}{
+		"unary expression with no filters": {
+			node: &core.UnaryExpression{
+				UnaryExpressionDetails: &core.UnaryExpressionDetails{
+					Op: core.UNARY_SUB,
+				},
+			},
+			group: groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"unary expression with filter on __name__": {
+			node: &core.UnaryExpression{
+				UnaryExpressionDetails: &core.UnaryExpressionDetails{
+					Op: core.UNARY_SUB,
+				},
+			},
+			group: groupWithFilterOnMetricName,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"unary expression with filter on other label": {
+			node: &core.UnaryExpression{
+				UnaryExpressionDetails: &core.UnaryExpressionDetails{
+					Op: core.UNARY_SUB,
+				},
+			},
+			group: groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+
+		"aggregation with 'by' and no filter": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op: core.AGGREGATION_SUM,
+				},
+			},
+			group: groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"aggregation with 'by' and sole filter label does not appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"app"},
+				},
+			},
+			group: groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"aggregation with 'by' and sole filter label does appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"env"},
+				},
+			},
+			group: groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"aggregation with 'by' and only some filter labels appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"env"},
+				},
+			},
+			group: groupWithFilterOnManyLabels,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"aggregation with 'by' and all filter labels appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"cluster", "env", "region"},
+				},
+			},
+			group: groupWithFilterOnManyLabels,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+
+		"aggregation with 'without' and no filter": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:      core.AGGREGATION_SUM,
+					Without: true,
+				},
+			},
+			group: groupWithNoFilters,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"aggregation with 'without' and sole filter label does not appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"app"},
+					Without:  true,
+				},
+			},
+			group: groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"aggregation with 'without' and sole filter label does appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"env"},
+					Without:  true,
+				},
+			},
+			group: groupWithFilterOnEnvLabel,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"aggregation with 'without' and no filter labels appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"app"},
+					Without:  true,
+				},
+			},
+			group: groupWithFilterOnManyLabels,
+			expectedSafeWithDelayedNameRemovalDisabled: true,
+			expectedSafeWithDelayedNameRemovalEnabled:  true,
+		},
+		"aggregation with 'without' and only some filter labels appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"env"},
+					Without:  true,
+				},
+			},
+			group: groupWithFilterOnManyLabels,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+		"aggregation with 'without' and all filter labels appear in grouping labels": {
+			node: &core.AggregateExpression{
+				AggregateExpressionDetails: &core.AggregateExpressionDetails{
+					Op:       core.AGGREGATION_SUM,
+					Grouping: []string{"cluster", "env", "region"},
+					Without:  true,
+				},
+			},
+			group: groupWithFilterOnManyLabels,
+			expectedSafeWithDelayedNameRemovalDisabled: false,
+			expectedSafeWithDelayedNameRemovalEnabled:  false,
+		},
+	}
+
+	for name, testCase := range testCases {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalDisabled, commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, false))
+			require.Equal(t, testCase.expectedSafeWithDelayedNameRemovalEnabled, commonsubexpressionelimination.IsSafeToApplyFilteringAfter(testCase.node, testCase.group, true))
+		})
+	}
+}
+
+func TestIsSafeToApplyFilteringAfterFunction(t *testing.T) {
 	groupWithFilterOnBucketLabel := commonsubexpressionelimination.SharedSelectorGroup{
 		Filters: [][]*core.LabelMatcher{
 			{
