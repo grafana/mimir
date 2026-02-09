@@ -30,10 +30,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/storage/indexheader/index"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	"github.com/grafana/mimir/pkg/storage/tsdb/indexcache"
+	indexheadercache "github.com/grafana/mimir/pkg/storage/tsdb/indexcache/indexheader"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/storegateway/storepb"
 	"github.com/grafana/mimir/pkg/util"
@@ -66,7 +66,7 @@ type BucketStores struct {
 	// Index cache shared across all tenants.
 	indexCache indexcache.IndexCache
 
-	indexHeaderCache index.PostingsOffsetTableCache
+	indexHeaderCache indexheadercache.PostingsOffsetTableCache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
@@ -179,6 +179,10 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	// Init the index cache.
 	if u.indexCache, err = indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
 		return nil, errors.Wrap(err, "create index cache")
+	}
+	if cfg.BucketStore.IndexHeader.BucketReader.Enabled {
+		// && cfg.BucketStore.IndexHeader.BucketReader.CacheEnabled
+		// TODO
 	}
 
 	if reg != nil {
