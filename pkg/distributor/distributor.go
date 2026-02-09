@@ -1597,10 +1597,12 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 			return next(ctx, pushReq)
 		}
 
-		userID, err := tenant.TenantID(ctx)
+		tenantID, metadata, err := tenant.ExtractWithMetadata(ctx)
 		if err != nil {
 			return err
 		}
+
+		fullTenantID := metadata.WithTenant(tenantID)
 
 		// Generate the stable hash of each series.
 		var (
@@ -1617,18 +1619,18 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 
 		// Track the series and check if anyone should be rejected because over the limit.
 		// For users that are far from their limits, we can do this asynchronously.
-		if d.usageTrackerClient.CanTrackAsync(userID) {
+		if d.usageTrackerClient.CanTrackAsync(fullTenantID) {
 			// User is far from limit.
 			// We can perform the track call in parallel with the metrics ingestion hoping that no series would be rejected.
 
-			d.asyncUsageTrackerCalls.WithLabelValues(userID).Inc()
+			d.asyncUsageTrackerCalls.WithLabelValues(fullTenantID).Inc()
 
 			if d.cfg.UsageTrackerClient.UseBatchedTracking {
-				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, userID, seriesHashes); err != nil {
-					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", userID, "series", len(seriesHashes))
+				if err := d.usageTrackerClient.TrackSeriesAsync(ctx, fullTenantID, seriesHashes); err != nil {
+					level.Error(d.log).Log("msg", "failed to track series asynchronously", "err", err, "user", fullTenantID, "series", len(seriesHashes))
 				}
 			} else {
-				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, userID, seriesHashes)
+				cleanup := d.parallelUsageTrackerClientTrackSeriesCall(ctx, fullTenantID, seriesHashes)
 				pushReq.AddCleanup(cleanup)
 			}
 
@@ -1636,19 +1638,19 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		// User is close to limit, track synchronously.
-		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, userID, seriesHashes)
+		rejectedHashes, err := d.usageTrackerClient.TrackSeries(ctx, fullTenantID, seriesHashes)
 		if err != nil {
 			return errors.Wrap(err, "failed to enforce max series limit")
 		}
 
 		if len(rejectedHashes) > 0 {
 			discardedSamples := filterOutRejectedSeries(req, seriesHashes, rejectedHashes)
-			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(userID, pushReq.group).Add(float64(discardedSamples))
+			d.discardedSamplesPerUserSeriesLimit.WithLabelValues(tenantID, pushReq.group).Add(float64(discardedSamples))
 		}
 
 		if len(req.Timeseries) == 0 {
 			// All series have been rejected, no need to talk to ingesters.
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(tenantID))
 		}
 
 		// If there's an error coming from the ingesters, prioritize that one.
@@ -1657,7 +1659,7 @@ func (d *Distributor) prePushMaxSeriesLimitMiddleware(next PushFunc) PushFunc {
 		}
 
 		if len(rejectedHashes) > 0 {
-			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(userID))
+			return newActiveSeriesLimitedError(totalTimeseries, len(rejectedHashes), d.limits.MaxActiveOrGlobalSeriesPerUser(tenantID))
 		}
 
 		return nil
