@@ -31,7 +31,7 @@ std.manifestYamlDoc({
 
     // If true, a secondary query path is started.
     enable_secondary_query_path: false,
-    secondary_query_path_extra_args: '',
+    secondary_query_path_extra_args: [],
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -63,14 +63,14 @@ std.manifestYamlDoc({
       name: 'distributor-1',
       target: 'distributor',
       httpPort: 8000,
-      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
+      extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
 
     'distributor-2': mimirService({
       name: 'distributor-2',
       target: 'distributor',
       httpPort: 8001,
-      extraArguments: '-distributor.ha-tracker.consul.hostname=consul:8500',
+      extraArguments: ['-distributor.ha-tracker.consul.hostname=consul:8500'],
     }),
   },
 
@@ -100,7 +100,7 @@ std.manifestYamlDoc({
     }),
   },
 
-  read_path(prefix='', portOffset=0, extraArgs=''):: {
+  read_path(prefix='', portOffset=0, extraArgs=[]):: {
     [prefix + 'querier']: mimirService({
       name: prefix + 'querier',
       target: 'querier',
@@ -131,7 +131,7 @@ std.manifestYamlDoc({
   secondary_read_components:: self.read_path(
     prefix='secondary-',
     portOffset=100,
-    extraArgs='-querier.ring.prefix=secondary-querier/ -query-scheduler.ring.prefix=secondary-scheduler/ ' + $._config.secondary_query_path_extra_args,
+    extraArgs=['-querier.ring.prefix=secondary-querier/', '-query-scheduler.ring.prefix=secondary-scheduler/'] + $._config.secondary_query_path_extra_args,
   ),
 
   compactor:: {
@@ -148,7 +148,7 @@ std.manifestYamlDoc({
       target: 'ruler',
       httpPort: 8021 + id,
       jaegerApp: 'ruler-%d' % id,
-      extraArguments: if $._config.ruler_use_remote_execution then '-ruler.query-frontend.address=dns:///query-frontend:9007' else '',
+      extraArguments: if $._config.ruler_use_remote_execution then ['-ruler.query-frontend.address=dns:///query-frontend:9007'] else [],
     })
     for id in std.range(1, count)
   },
@@ -158,8 +158,8 @@ std.manifestYamlDoc({
       name: 'alertmanager-' + id,
       target: 'alertmanager',
       httpPort: 8030 + id,
-      extraArguments: '-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8030 + id),
       jaegerApp: 'alertmanager-%d' % id,
+      extraArguments: ['-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8030 + id)],
     })
     for id in std.range(1, count)
   },
@@ -179,13 +179,14 @@ std.manifestYamlDoc({
       name: 'continuous-test',
       target: 'continuous-test',
       httpPort: 8090,
-      extraArguments:
-        ' -tests.run-interval=2m' +
-        ' -tests.read-endpoint=http://query-frontend:8007/prometheus' +
-        ' -tests.tenant-id=mimir-continuous-test' +
-        ' -tests.write-endpoint=http://distributor-1:8000' +
-        ' -tests.write-read-series-test.max-query-age=1h' +
-        ' -tests.write-read-series-test.num-series=100',
+      extraArguments: [
+        '-tests.run-interval=2m',
+        '-tests.read-endpoint=http://query-frontend:8007/prometheus',
+        '-tests.tenant-id=mimir-continuous-test',
+        '-tests.write-endpoint=http://distributor-1:8000',
+        '-tests.write-read-series-test.max-query-age=1h',
+        '-tests.write-read-series-test.num-series=100',
+      ],
     }),
   },
 
@@ -218,7 +219,7 @@ std.manifestYamlDoc({
       grpcPort: self.httpPort + 1000,
       debugPort: self.httpPort + 10000,
       // Extra arguments passed to Mimir command line.
-      extraArguments: '',
+      extraArguments: [],
       dependsOn: ['minio'] + (if s.target != 'distributor' then ['distributor-1'] else []),
       env: jaegerEnv(s.jaegerApp),
       extraVolumes: [],
@@ -241,8 +242,7 @@ std.manifestYamlDoc({
       '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
       '-memberlist.nodename=%(memberlistNodeName)s' % options,
       '-memberlist.bind-port=%(memberlistBindPort)d' % options,
-      '%(extraArguments)s' % options,
-    ],
+    ] + options.extraArguments,
 
     // If we're using a local image, assemble a string of the binary to execute and CLI flags to pass to
     // a shell. If this is a public Mimir image from dockerhub, pass an array of CLI flags as the command

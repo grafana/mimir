@@ -81,7 +81,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/tmp/activity/compactor-8006 -memberlist.nodename=compactor -memberlist.bind-port=10006 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/tmp/activity/compactor-8006 -memberlist.nodename=compactor -memberlist.bind-port=10006"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -116,7 +116,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=continuous-test -server.http-listen-port=8090 -server.grpc-listen-port=9090 -activity-tracker.filepath=/tmp/activity/continuous-test-8090 -memberlist.nodename=continuous-test -memberlist.bind-port=10090  -tests.run-interval=2m -tests.read-endpoint=http://query-frontend:8007/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-endpoint=http://distributor-1:8000 -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=continuous-test -server.http-listen-port=8090 -server.grpc-listen-port=9090 -activity-tracker.filepath=/tmp/activity/continuous-test-8090 -memberlist.nodename=continuous-test -memberlist.bind-port=10090 -tests.run-interval=2m -tests.read-endpoint=http://query-frontend:8007/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-endpoint=http://distributor-1:8000 -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -200,7 +200,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/tmp/activity/ingester-8002 -memberlist.nodename=ingester-1 -memberlist.bind-port=10002 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/tmp/activity/ingester-8002 -memberlist.nodename=ingester-1 -memberlist.bind-port=10002"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -226,7 +226,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/tmp/activity/ingester-8003 -memberlist.nodename=ingester-2 -memberlist.bind-port=10003 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/tmp/activity/ingester-8003 -memberlist.nodename=ingester-2 -memberlist.bind-port=10003"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -252,7 +252,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/tmp/activity/ingester-8004 -memberlist.nodename=ingester-3 -memberlist.bind-port=10004 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/tmp/activity/ingester-8004 -memberlist.nodename=ingester-3 -memberlist.bind-port=10004"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -354,7 +354,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=querier -server.http-listen-port=8005 -server.grpc-listen-port=9005 -activity-tracker.filepath=/tmp/activity/querier-8005 -memberlist.nodename=querier -memberlist.bind-port=10005 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=querier -server.http-listen-port=8005 -server.grpc-listen-port=9005 -activity-tracker.filepath=/tmp/activity/querier-8005 -memberlist.nodename=querier -memberlist.bind-port=10005"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -379,7 +379,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/tmp/activity/query-frontend-8007 -memberlist.nodename=query-frontend -memberlist.bind-port=10007 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/tmp/activity/query-frontend-8007 -memberlist.nodename=query-frontend -memberlist.bind-port=10007"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -404,7 +404,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-scheduler -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/tmp/activity/query-scheduler-8008 -memberlist.nodename=query-scheduler -memberlist.bind-port=10008 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-scheduler -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/tmp/activity/query-scheduler-8008 -memberlist.nodename=query-scheduler -memberlist.bind-port=10008"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -429,7 +429,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/tmp/activity/ruler-8022 -memberlist.nodename=ruler-1 -memberlist.bind-port=10022 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/tmp/activity/ruler-8022 -memberlist.nodename=ruler-1 -memberlist.bind-port=10022"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -454,7 +454,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8023 -server.grpc-listen-port=9023 -activity-tracker.filepath=/tmp/activity/ruler-8023 -memberlist.nodename=ruler-2 -memberlist.bind-port=10023 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8023 -server.grpc-listen-port=9023 -activity-tracker.filepath=/tmp/activity/ruler-8023 -memberlist.nodename=ruler-2 -memberlist.bind-port=10023"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -479,7 +479,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -504,7 +504,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/tmp/activity/store-gateway-8012 -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/tmp/activity/store-gateway-8012 -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -529,7 +529,7 @@
     "command":
       - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8013 -server.grpc-listen-port=9013 -activity-tracker.filepath=/tmp/activity/store-gateway-8013 -memberlist.nodename=store-gateway-3 -memberlist.bind-port=10013 "
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8013 -server.grpc-listen-port=9013 -activity-tracker.filepath=/tmp/activity/store-gateway-8013 -memberlist.nodename=store-gateway-3 -memberlist.bind-port=10013"
     "depends_on":
       - "minio"
       - "distributor-1"
