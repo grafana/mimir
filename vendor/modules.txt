@@ -364,7 +364,7 @@ github.com/coreos/go-semver/semver
 ## explicit; go 1.23
 github.com/coreos/go-systemd/v22/activation
 github.com/coreos/go-systemd/v22/journal
-# github.com/cortexproject/promqlsmith v0.0.0-20251018201159-9e00e5e62e4e
+# github.com/cortexproject/promqlsmith v0.0.0-20260205231645-0c8ef5fe46a5
 ## explicit; go 1.24.0
 github.com/cortexproject/promqlsmith
 # github.com/d4l3k/messagediff v1.2.1
