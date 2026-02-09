@@ -433,6 +433,7 @@
 
 ### Mixin
 
+* [FEATURE] Alerts: Add `MimirCompactorOOMKilled` alert. #14286
 * [CHANGE] Enable ingest storage panels by default in all compiled mixins. #13023
 * [CHANGE] Alerts: Removed `MimirFrontendQueriesStuck` alert given this is not relevant when the query-scheduler is running and the query-scheduler is now a required component. #12810
 * [CHANGE] Alerts: Make `MimirIngesterHasNotShippedBlocksSinceStart` weaker to account for block-builder restarts. The change only affects the block-builder version of the alert. #12319

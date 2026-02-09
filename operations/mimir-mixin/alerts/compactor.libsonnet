@@ -154,6 +154,34 @@
             message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s is failing to build sparse index headers' % $._config,
           },
         },
+      ] + [
+        // Alert if compactor pods are being OOMKilled.
+        {
+          alert: $.alertName('CompactorOOMKilled'),
+          'for': '15m',
+          expr: |||
+            (
+              sum by(%(alert_aggregation_labels)s, %(per_instance_label)s) (
+                increase(kube_pod_container_status_restarts_total{container=~"%(compactor)s"}[%(time_window)s])
+              )
+              > %(threshold)s
+            )
+            and on (%(alert_aggregation_labels)s, %(per_instance_label)s)
+            (
+              kube_pod_container_status_last_terminated_reason{container=~"%(compactor)s", reason="OOMKilled"} > 0
+            )
+          ||| % ($._config { compactor: $._config.container_names.compactor } + settings),
+          labels: {
+            severity: settings.severity,
+          },
+          annotations: {
+            message: '%(product)s Compactor %(alert_instance_variable)s in %(alert_aggregation_variables)s has been OOMKilled {{ printf "%%.2f" $value }} times in the last %(time_window)s.' % ($._config + settings),
+          },
+        }
+        for settings in [
+          { severity: 'warning', threshold: 2, time_window: '4h' },
+          { severity: 'critical', threshold: 5, time_window: '2h' },
+        ]
       ],
     },
   ],

@@ -809,6 +809,26 @@ How to **investigate**:
 - If the alert `MimirCompactorHasRunOutOfDiskSpace` has fired as well, then investigate that issue first. If there is no disk space available, the compactor will fail to write sparse headers to local disk prior to upload.
 - Look for any errors in the compactor logs, focusing on logs with `method=indexheader.NewStreamBinaryReader`.
 
+### MimirCompactorOOMKilled
+
+This alert fires when compactor pods have been terminated due to Out of Memory (OOM) conditions.
+
+Frequent OOM kills indicate that the compactor does not have enough memory to process the blocks it is compacting. This can lead to compaction falling behind, which negatively impacts query performance.
+
+How to **investigate**:
+
+- Check the compactor's memory usage in the `Mimir / Compactor Resources` dashboard to understand the memory consumption pattern.
+- Look for `OOMKilled` events in the Kubernetes events for the compactor pods:
+  ```
+  kubectl get events --field-selector reason=OOMKilling -n <namespace>
+  ```
+
+How to **fix** it:
+
+- Increase the memory request and limit for the compactor pods.
+- If specific tenants are causing OOMs due to high cardinality, consider increasing the `compactor_split_and_merge_shards` for those tenants to produce smaller blocks.
+- Reduce compactor concurrency (`-compactor.compaction-concurrency`) to lower peak memory usage, at the cost of slower compaction.
+
 ### MimirBucketIndexNotUpdated
 
 This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store.

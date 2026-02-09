@@ -1192,6 +1192,42 @@ spec:
             for: 30m
             labels:
               severity: warning
+          - alert: MimirCompactorOOMKilled
+            annotations:
+              message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has been OOMKilled {{ printf "%.2f" $value }} times in the last 4h.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactoroomkilled
+            expr: |
+              (
+                sum by(cluster, namespace, pod) (
+                  increase(kube_pod_container_status_restarts_total{container=~"compactor"}[4h])
+                )
+                > 2
+              )
+              and on (cluster, namespace, pod)
+              (
+                kube_pod_container_status_last_terminated_reason{container=~"compactor", reason="OOMKilled"} > 0
+              )
+            for: 15m
+            labels:
+              severity: warning
+          - alert: MimirCompactorOOMKilled
+            annotations:
+              message: Mimir Compactor {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} has been OOMKilled {{ printf "%.2f" $value }} times in the last 2h.
+              runbook_url: https://grafana.com/docs/mimir/latest/operators-guide/mimir-runbooks/#mimircompactoroomkilled
+            expr: |
+              (
+                sum by(cluster, namespace, pod) (
+                  increase(kube_pod_container_status_restarts_total{container=~"compactor"}[2h])
+                )
+                > 5
+              )
+              and on (cluster, namespace, pod)
+              (
+                kube_pod_container_status_last_terminated_reason{container=~"compactor", reason="OOMKilled"} > 0
+              )
+            for: 15m
+            labels:
+              severity: critical
       - name: mimir_distributor_alerts
         rules:
           - alert: MimirDistributorGcUsesTooMuchCpu
