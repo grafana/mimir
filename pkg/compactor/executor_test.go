@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -34,7 +35,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/compactor/scheduler/compactorschedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/block"
 	testutil "github.com/grafana/mimir/pkg/util/test"
 )
@@ -45,23 +45,13 @@ var (
 )
 
 func makeTestCompactorConfig(PlanningMode, schedulerAddress string) Config {
-	return Config{
-		PlanningMode:                        PlanningMode,
-		SchedulerEndpoint:                   schedulerAddress,
-		SchedulerUpdateInterval:             20 * time.Second,
-		CompactionJobsOrder:                 CompactionOrderOldestFirst,
-		SchedulerMinLeasingBackoff:          100 * time.Millisecond,
-		SchedulerMaxLeasingBackoff:          1 * time.Second,
-		MaxOpeningBlocksConcurrency:         1,
-		MaxClosingBlocksConcurrency:         1,
-		SymbolsFlushersConcurrency:          1,
-		MaxBlockUploadValidationConcurrency: 1,
-		BlockRanges:                         mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour},
-		MetaSyncConcurrency:                 1,
-		CompactionConcurrency:               1,
-		BlockSyncConcurrency:                1,
-		DataDir:                             "/tmp/compactor-test",
-	}
+	cfg := Config{}
+	flagext.DefaultValues(&cfg)
+	cfg.PlanningMode = PlanningMode
+	cfg.SchedulerEndpoint = schedulerAddress
+	cfg.DataDir = "/tmp/compactor-test"
+	cfg.SparseIndexHeadersSamplingRate = 32
+	return cfg
 }
 
 // mockCompactorSchedulerClient implements CompactorSchedulerClient
@@ -144,7 +134,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 		setupBucket         func(objstore.Bucket)
 		expectedFinalStatus compactorschedulerpb.UpdateType
 	}{
-		"compaction_job_reassigns_when_block_not_found": {
+		"compaction_job_abandons_when_block_not_found": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
 				mock.LeaseJobFunc = func(_ context.Context, _ *compactorschedulerpb.LeaseJobRequest) (*compactorschedulerpb.LeaseJobResponse, error) {
 					return &compactorschedulerpb.LeaseJobResponse{
@@ -157,7 +147,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 				}
 			},
 			setupBucket:         func(bkt objstore.Bucket) {},
-			expectedFinalStatus: compactorschedulerpb.REASSIGN,
+			expectedFinalStatus: compactorschedulerpb.ABANDON,
 		},
 		"successful_planning_job_no_status_update": {
 			setupMock: func(mock *mockCompactorSchedulerClient) {
@@ -200,7 +190,7 @@ func TestSchedulerExecutor_JobStatusUpdates(t *testing.T) {
 			c.shardingStrategy = newSplitAndMergeShardingStrategy(nil, nil, nil, c.cfgProvider)
 
 			gotWork, err := schedulerExec.leaseAndExecuteJob(context.Background(), c, "compactor-1")
-			if tc.expectedFinalStatus == compactorschedulerpb.REASSIGN {
+			if tc.expectedFinalStatus == compactorschedulerpb.ABANDON {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
@@ -699,7 +689,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 			expectNewBlocksCount:    splitShards,
 			expectUncompactedBlocks: 0,
 		},
-		"reassign_when_requested_blocks_not_in_obj_storage": {
+		"abandon_when_requested_blocks_not_in_obj_storage": {
 			setupBucket: func(t *testing.T, bkt objstore.Bucket) setupResult {
 				block1 := createTSDBBlock(t, bkt, "test-tenant", 10, 20, 2, nil)
 				block2 := ulid.MustNew(ulid.Timestamp(time.Unix(1600000002, 0)), rand.New(rand.NewSource(2)))
@@ -710,7 +700,7 @@ func TestSchedulerExecutor_ExecuteCompactionJob_Compaction(t *testing.T) {
 				}
 			},
 			split:                   false,
-			expectedStatus:          compactorschedulerpb.REASSIGN,
+			expectedStatus:          compactorschedulerpb.ABANDON,
 			expectNewBlocksCount:    0,
 			expectUncompactedBlocks: 1,
 			expectError:             true,
