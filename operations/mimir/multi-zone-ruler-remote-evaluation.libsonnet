@@ -16,9 +16,6 @@
   local isZoneBEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 2,
   local isZoneCEnabled = isMultiZoneEnabled && std.length($._config.multi_zone_availability_zones) >= 3,
 
-  local isBackupAMultiAZEnabled = $._config.multi_zone_store_gateway_zone_a_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isBackupBMultiAZEnabled = $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
-
   assert !isMultiZoneEnabled || $._config.query_scheduler_service_discovery_mode == 'ring' : 'ruler-query-scheduler multi-zone deployment requires service discovery mode to be set to "ring"',
   assert !isMultiZoneEnabled || $._config.multi_zone_memcached_enabled : 'ruler remote evaluation multi-zone deployment requires memcached multi-zone to be enabled',
 
@@ -33,10 +30,7 @@
 
   local rulerQuerierZoneArgs(zone) = {
     // Prefer querying ingesters and store-gateways in the same zone, to reduce cross-AZ data transfer.
-    'querier.prefer-availability-zones': 'zone-%s' % zone +
-                                         if zone == 'a' && isBackupAMultiAZEnabled then ',zone-a-backup'
-                                         else if zone == 'b' && isBackupBMultiAZEnabled then ',zone-b-backup'
-                                         else '',
+    'querier.prefer-availability-zones': 'zone-%s,zone-%s-backup' % [zone, zone],
   },
 
   rulerQuerierClientZoneArgs(zone):: {

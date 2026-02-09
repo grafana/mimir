@@ -20,17 +20,11 @@
   local isAutoscalingZoneBEnabled = isZoneBEnabled && $._config.autoscaling_querier_enabled,
   local isAutoscalingZoneCEnabled = isZoneCEnabled && $._config.autoscaling_querier_enabled,
 
-  local isBackupAMultiAZEnabled = $._config.multi_zone_store_gateway_zone_a_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 1,
-  local isBackupBMultiAZEnabled = $._config.multi_zone_store_gateway_zone_b_backup_multi_az_enabled && std.length($._config.multi_zone_availability_zones) >= 2,
-
   assert !isMultiZoneEnabled || $._config.multi_zone_memcached_enabled : 'querier multi-zone deployment requires memcached multi-zone to be enabled',
 
   local querierZoneArgs(zone) = {
     // Prefer querying ingesters and store-gateways in the same zone, to reduce cross-AZ data transfer.
-    'querier.prefer-availability-zones': 'zone-%s' % zone +
-                                         if zone == 'a' && isBackupAMultiAZEnabled then ',zone-a-backup'
-                                         else if zone == 'b' && isBackupBMultiAZEnabled then ',zone-b-backup'
-                                         else '',
+    'querier.prefer-availability-zones': 'zone-%s,zone-%s-backup' % [zone, zone],
   },
 
   querierClientZoneArgs(zone):: {
