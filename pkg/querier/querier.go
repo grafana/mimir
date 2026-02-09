@@ -504,7 +504,7 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	if sp != nil && sp.Func == "series" {
 		return mergeResult
 	}
-	return series.NewMemoryTrackingSeriesSet(mq.mergeSeriesSets(result), memoryTracker)
+	return series.NewMemoryTrackingSeriesSet(mergeResult, memoryTracker)
 }
 
 func clampToMaxLabelQueryLength(spanLog *spanlogger.SpanLogger, startMs, endMs, nowMs, maxLabelQueryLengthMs int64) int64 {
