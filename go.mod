@@ -365,6 +365,8 @@ require (
 
 replace github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v1.8.2-0.20260211071438-9d5b90571a98
 
+replace github.com/grafana/dskit => github.com/grafana/dskit v0.0.0-20260211162703-f4b3e4904638
+
 // Replace memberlist with our fork which includes some changes that haven't been
 // merged upstream yet for years and we don't expect to change anytime soon.
 replace github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20251126142931-6f9f62ab6f86
