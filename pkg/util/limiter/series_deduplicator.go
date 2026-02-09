@@ -110,9 +110,3 @@ func (sd *seriesDeduplicator) trackNewLabels(newLabels labels.Labels, tracker *M
 	}
 	return newLabels, nil
 }
-
-type noopSeriesDeduplicator struct{}
-
-func (n noopSeriesDeduplicator) Deduplicate(newLabels labels.Labels, _ *MemoryConsumptionTracker) (labels.Labels, error) {
-	return newLabels, nil
-}
