@@ -80,3 +80,27 @@ Run `go build` in this directory to build the program. Then, use an example belo
   --s3.endpoint <endpoint> \
   --dry-run
 ```
+
+### Example for Amazon S3 with AWS Profile Authentication
+
+If you want to use AWS profile-based authentication instead of access keys, you can use the native AWS authentication method. This uses the default authentication methods of the AWS SDK for Go, which includes environment variables and AWS config files.
+
+```bash
+export AWS_PROFILE=<your-aws-profile>
+
+./mark-blocks \
+  --tenant <tenant> \
+  --blocks <blocks> \
+  --mark-type <mark-type> \
+  --backend s3 \
+  --s3.bucket-name <bucket name> \
+  --s3.region <region> \
+  --s3.native-aws-auth-enabled=true \
+  --dry-run
+```
+
+When using `--s3.native-aws-auth-enabled=true`, the `--s3.access-key-id` and `--s3.secret-access-key` flags are not required. The tool will use the AWS SDK's default credential chain, which checks:
+
+1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
+2. Shared credentials file (`~/.aws/credentials`) with the profile specified by `AWS_PROFILE` environment variable
+3. IAM role for Amazon EC2/ECS
