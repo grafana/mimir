@@ -58,6 +58,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/promtest"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1899,4 +1900,81 @@ func promToMimirHistogram(h *prompb.Histogram) mimirpb.Histogram {
 		Timestamp:      h.Timestamp,
 		ResetHint:      mimirpb.Histogram_ResetHint(h.ResetHint),
 	}
+}
+
+func TestHandler_CompressionRatioMetric(t *testing.T) {
+	protobuf := createPrometheusRemoteWriteProtobuf(t)
+	compressedBody := snappy.Encode(nil, protobuf)
+
+	reg := prometheus.NewRegistry()
+	pushMetrics := newPushMetrics(reg)
+	pushFunc := func(ctx context.Context, pushReq *Request) error {
+		_, err := pushReq.WriteRequest()
+		return err
+	}
+	handler := Handler(100000, nil, nil, false, false, validation.MockDefaultOverrides(), RetryConfig{}, pushFunc, pushMetrics, log.NewNopLogger())
+
+	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(compressedBody))
+	require.NoError(t, err)
+	req.Header.Add("Content-Encoding", "snappy")
+	req.Header.Set("Content-Type", "application/x-protobuf")
+	req.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req = req.WithContext(ctx)
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	require.Equal(t, http.StatusOK, resp.Code)
+
+	count, err := testutil.GatherAndCount(reg, "cortex_distributor_request_body_compression_ratio")
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "expected cortex_distributor_request_body_compression_ratio metric to exist")
+	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_distributor_request_body_compression_ratio"))
+	require.NoError(t, promtest.HasSampleCount(reg, "cortex_distributor_request_body_compression_ratio", 1))
+}
+
+func TestOTLPHandler_CompressionRatioMetric(t *testing.T) {
+	otelMetrics := pmetric.NewMetrics()
+	rs := otelMetrics.ResourceMetrics().AppendEmpty()
+	metrics := rs.ScopeMetrics().AppendEmpty().Metrics()
+	metricOne := metrics.AppendEmpty()
+	metricOne.SetName("test_metric")
+	gaugeMetricOne := metricOne.SetEmptyGauge()
+	gaugeDatapoint := gaugeMetricOne.DataPoints().AppendEmpty()
+	gaugeDatapoint.SetTimestamp(1679912463340000000)
+	gaugeDatapoint.SetDoubleValue(10.66)
+
+	marshaller := &pmetric.ProtoMarshaler{}
+	body, err := marshaller.MarshalMetrics(otelMetrics)
+	require.NoError(t, err)
+
+	reg := prometheus.NewRegistry()
+	pushMetrics := newPushMetrics(reg)
+	pushFunc := func(ctx context.Context, pushReq *Request) error {
+		_, err := pushReq.WriteRequest()
+		return err
+	}
+	handler := OTLPHandler(
+		100000, util.NewBufferPool(0), nil, otlpLimitsMock{},
+		nil, nil, RetryConfig{}, nil,
+		pushFunc, pushMetrics, reg, log.NewNopLogger(),
+	)
+
+	req, err := http.NewRequest("POST", "http://localhost/otlp", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/x-protobuf")
+
+	ctx := user.InjectOrgID(context.Background(), "test")
+	req = req.WithContext(ctx)
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+	require.Equal(t, http.StatusOK, resp.Code)
+
+	count, err := testutil.GatherAndCount(reg, "cortex_distributor_request_body_compression_ratio")
+	require.NoError(t, err)
+	require.Equal(t, 1, count, "expected cortex_distributor_request_body_compression_ratio metric to exist")
+	require.NoError(t, promtest.HasNativeHistogram(reg, "cortex_distributor_request_body_compression_ratio"))
+	require.NoError(t, promtest.HasSampleCount(reg, "cortex_distributor_request_body_compression_ratio", 1))
 }
