@@ -13,7 +13,7 @@ import (
 // consumption as series are consumed from the wrapped SeriesSet.
 //
 // The memory for each series' labels must be increased beforehand, typically via
-// SeriesDeduplicator during series selection from queriers (ingesters and store-gateways) or
+// SeriesLabelsDeduplicator during series selection from queriers (ingesters and store-gateways) or
 // just by increase manually using MemoryConsumptionTracker.IncreaseMemoryConsumptionForLabels.
 //
 // The wrapped SeriesSet should contain unique series that have already been deduplicated
