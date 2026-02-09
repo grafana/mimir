@@ -145,8 +145,6 @@ func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyze
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create filesystem bucket: %w", err)
 	}
-	// Note: We don't close ubkt here as it's needed by the reader.
-	// The reader will be closed by the caller.
 	bkt := objstore.WithNoopInstr(ubkt)
 
 	// Create metrics (nil registry since we don't need metrics for the CLI tool).
@@ -175,7 +173,7 @@ func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyze
 	}
 
 	// Get TOC info for index-header specific details.
-	adapter := newIndexHeaderAnalyzer(reader).(*indexHeaderAnalyzer)
+	adapter := newIndexHeaderAnalyzer(reader, ubkt).(*indexHeaderAnalyzer)
 	toc := adapter.TOC()
 
 	info := &IndexInfo{

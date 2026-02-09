@@ -4,6 +4,9 @@ package main
 
 import (
 	"context"
+	"errors"
+
+	"github.com/thanos-io/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/indexheader"
 	streamindex "github.com/grafana/mimir/pkg/storage/indexheader/index"
@@ -12,15 +15,21 @@ import (
 // indexHeaderAnalyzer adapts *indexheader.StreamBinaryReader to IndexAnalyzer.
 type indexHeaderAnalyzer struct {
 	reader *indexheader.StreamBinaryReader
+	bucket objstore.Bucket
 }
 
 // newIndexHeaderAnalyzer creates an IndexAnalyzer from a StreamBinaryReader.
-func newIndexHeaderAnalyzer(reader *indexheader.StreamBinaryReader) IndexAnalyzer {
-	return &indexHeaderAnalyzer{reader: reader}
+func newIndexHeaderAnalyzer(reader *indexheader.StreamBinaryReader, bucket objstore.Bucket) IndexAnalyzer {
+	return &indexHeaderAnalyzer{reader: reader, bucket: bucket}
 }
 
 func (a *indexHeaderAnalyzer) Close() error {
-	return a.reader.Close()
+	readerErr := a.reader.Close()
+	bucketErr := a.bucket.Close()
+	if readerErr != nil {
+		return readerErr
+	}
+	return bucketErr
 }
 
 func (a *indexHeaderAnalyzer) IndexVersion(ctx context.Context) (int, error) {
@@ -87,7 +96,11 @@ func (it *indexHeaderSymbolIterator) Next() bool {
 
 	sym, err := it.reader.Read(it.idx)
 	if err != nil {
-		// End of symbols or error.
+		// ErrSymbolNotFound indicates normal end of iteration.
+		// Other errors are real failures that should be reported.
+		if !errors.Is(err, streamindex.ErrSymbolNotFound) {
+			it.err = err
+		}
 		it.done = true
 		return false
 	}

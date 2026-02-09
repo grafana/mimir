@@ -265,7 +265,7 @@ func (r *SymbolsTableReaderV2) Read(o uint32) (string, error) {
 		return "", fmt.Errorf("%w: at %d requesting %d", errReverseSymbolsReader, r.atSymbol, o)
 	}
 	if o > r.lastSymbolRef {
-		return "", fmt.Errorf("unknown symbol offset %d", o)
+		return "", fmt.Errorf("%w: %d", ErrSymbolNotFound, o)
 	}
 
 	if targetOffsetIdx, currentOffsetIdx := o/symbolFactor, r.atSymbol/symbolFactor; targetOffsetIdx > currentOffsetIdx {
