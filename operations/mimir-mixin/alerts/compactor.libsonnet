@@ -22,7 +22,7 @@
         {
           // Alert (warning) if the compactor has not successfully run compaction in the last 6h.
           alert: $.alertName('CompactorNotRunningCompaction'),
-          'for': '6h',
+          'for': '15m',
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.
@@ -41,7 +41,7 @@
         {
           // Alert (critical) if the compactor has not successfully run compaction in the last 24h.
           alert: $.alertName('CompactorNotRunningCompaction'),
-          'for': '1h',
+          'for': '15m',
           expr: |||
             # The "last successful run" metric is updated even if the compactor owns no tenants,
             # so this alert correctly doesn't fire if compactor has nothing to do.

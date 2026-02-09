@@ -1098,7 +1098,7 @@ groups:
             (time() - max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * 6)
             and
             (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
-          for: 6h
+          for: 15m
           labels:
             reason: in-last-6h
             severity: warning
@@ -1112,7 +1112,7 @@ groups:
             (time() - max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 60 * 60 * 24)
             and
             (max by(cluster, namespace, pod) (cortex_compactor_last_successful_run_timestamp_seconds) > 0)
-          for: 1h
+          for: 15m
           labels:
             reason: in-last-24h
             severity: critical
