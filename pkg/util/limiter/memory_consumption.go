@@ -232,15 +232,6 @@ func (l *MemoryConsumptionTracker) DecreaseMemoryConsumptionForLabels(lbls label
 	l.DecreaseMemoryConsumption(uint64(lbls.ByteSize()), Labels)
 }
 
-// ResetMemoryConsumption resets all memory consumption tracking to zero.
-func (l *MemoryConsumptionTracker) ResetMemoryConsumption() {
-	l.mtx.Lock()
-	defer l.mtx.Unlock()
-
-	l.currentEstimatedMemoryConsumptionBytes = 0
-	l.currentEstimatedMemoryConsumptionBySource = [memoryConsumptionSourceCount]uint64{}
-}
-
 func (l *MemoryConsumptionTracker) DescribeCurrentMemoryConsumption() string {
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
