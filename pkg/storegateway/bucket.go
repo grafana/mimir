@@ -455,7 +455,7 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *block.Meta) (err error
 			}
 			level.Error(s.logger).Log("msg", "loading block failed", "elapsed", time.Since(start), "id", meta.ULID, "err", err)
 		} else {
-			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID, "level", meta.Compaction.Level, "numSeries", meta.BlockMeta.Stats.NumSeries, "ooo", meta.BlockMeta.OutOfOrder, "from", meta.BlockMeta.MinTime, "to", meta.BlockMeta.MaxTime)
+			level.Info(s.logger).Log("msg", "loaded new block", "elapsed", time.Since(start), "id", meta.ULID, "level", meta.Compaction.Level, "numSeries", meta.Stats.NumSeries, "ooo", meta.IsOutOfOrder(), "from", meta.MinTime, "to", meta.MaxTime)
 		}
 	}()
 	s.metrics.blockLoads.Inc()
