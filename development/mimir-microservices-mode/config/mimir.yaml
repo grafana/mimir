@@ -107,7 +107,7 @@ ruler_storage:
     insecure:          true
 
 alertmanager:
-  fallback_config_file: './config/alertmanager.yaml'
+  fallback_config_file: '/etc/mimir/alertmanager.yaml'
   sharding_ring:
     replication_factor: 3
     heartbeat_period: 5s
