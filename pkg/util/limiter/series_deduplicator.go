@@ -15,8 +15,8 @@ var (
 	sdCtxKey = seriesDeduplicatorCtxKey{}
 )
 
-// SeriesDeduplicator is used to deduplicate series and track the unique series memory consumption.
-type SeriesDeduplicator interface {
+// SeriesLabelsDeduplicator is used to deduplicate series and track the unique series memory consumption.
+type SeriesLabelsDeduplicator interface {
 	Deduplicate(newLabels labels.Labels, tracker *MemoryConsumptionTracker) (labels.Labels, error)
 }
 type seriesDeduplicator struct {
@@ -28,7 +28,7 @@ type seriesDeduplicator struct {
 	hashFunc func(labels.Labels) uint64
 }
 
-func NewSeriesDeduplicator() SeriesDeduplicator {
+func NewSeriesLabelsDeduplicator() SeriesLabelsDeduplicator {
 	return &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
@@ -36,9 +36,9 @@ func NewSeriesDeduplicator() SeriesDeduplicator {
 	}
 }
 
-// AddSeriesDeduplicatorToContext adds a SeriesDeduplicator to the context.
+// AddSeriesDeduplicatorToContext adds a SeriesLabelsDeduplicator to the context.
 //
-// The scope at which a SeriesDeduplicator is added to the context determines the level
+// The scope at which a SeriesLabelsDeduplicator is added to the context determines the level
 // at which label deduplication and memory tracking occurs. Different scopes are used
 // depending on the query execution path:
 //
@@ -50,13 +50,13 @@ func NewSeriesDeduplicator() SeriesDeduplicator {
 // The deduplicator must be added to the context before series selection begins, as it
 // tracks unique labels and increases memory consumption during the Select() operation.
 //
-// See the function usage for more documentation on different scopes of SeriesDeduplicator.
-func AddSeriesDeduplicatorToContext(ctx context.Context, deduplicator SeriesDeduplicator) context.Context {
+// See the function usage for more documentation on different scopes of SeriesLabelsDeduplicator.
+func AddSeriesDeduplicatorToContext(ctx context.Context, deduplicator SeriesLabelsDeduplicator) context.Context {
 	return context.WithValue(ctx, sdCtxKey, deduplicator)
 }
 
-func SeriesDeduplicatorFromContextWithFallback(ctx context.Context) SeriesDeduplicator {
-	sd, ok := ctx.Value(sdCtxKey).(SeriesDeduplicator)
+func SeriesDeduplicatorFromContextWithFallback(ctx context.Context) SeriesLabelsDeduplicator {
+	sd, ok := ctx.Value(sdCtxKey).(SeriesLabelsDeduplicator)
 	if !ok {
 		return &noopSeriesDeduplicator{}
 	}

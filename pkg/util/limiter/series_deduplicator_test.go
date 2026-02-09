@@ -149,7 +149,7 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 
 func TestSeriesDeduplicator_Deduplicate_MemoryTrackingWithDuplicates(t *testing.T) {
 	// Test that memory tracking correctly avoids double-counting for duplicate series
-	deduplicator := NewSeriesDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator()
 
 	ctx := context.Background()
 	memoryTracker := NewMemoryConsumptionTracker(ctx, 1000000, nil, "test")
@@ -208,7 +208,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_NoDuplicates(b *tes
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator()
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
@@ -243,7 +243,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_90pct(b *testing.B)
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator()
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {
@@ -277,7 +277,7 @@ func BenchmarkSeriesDeduplicator_Deduplicate_WithCallerDedup_50pct(b *testing.B)
 
 	b.ReportAllocs()
 
-	deduplicator := NewSeriesDeduplicator()
+	deduplicator := NewSeriesLabelsDeduplicator()
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
 	for b.Loop() {

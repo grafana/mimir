@@ -53,7 +53,7 @@ type Selector struct {
 
 	MemoryConsumptionTracker *limiter.MemoryConsumptionTracker
 
-	deduplicator limiter.SeriesDeduplicator
+	deduplicator limiter.SeriesLabelsDeduplicator
 	querier      storage.Querier
 	seriesSet    storage.SeriesSet
 	series       *seriesList
@@ -66,7 +66,7 @@ func (s *Selector) Prepare(ctx context.Context, _ *types.PrepareParams) error {
 	// independently tracks and deduplicates its series. For example, in `foo + foo`,
 	// each binary operand has its own deduplicator to ensure accurate per-selector
 	// memory accounting.
-	s.deduplicator = limiter.NewSeriesDeduplicator()
+	s.deduplicator = limiter.NewSeriesLabelsDeduplicator()
 	if s.EagerLoad {
 		return s.loadSeriesSet(ctx, s.Matchers)
 	}

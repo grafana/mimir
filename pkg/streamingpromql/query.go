@@ -254,6 +254,13 @@ func (q *Query) Close() {
 	q.evaluator.Close()
 	q.returnResultToPool()
 
+	// If the query did not succeed (cancelled, error, etc.), reset memory tracking.
+	// This prevents inaccurate memory accounting for unconsumed series.
+	// See PR #14148 for details.
+	if !q.succeeded {
+		q.memoryConsumptionTracker.ResetMemoryConsumption()
+	}
+
 	if q.engine.pedantic && q.succeeded {
 		// Only bother checking memory consumption if the query succeeded: it's not expected that all memory
 		// will be returned if the query failed.

@@ -13,7 +13,7 @@ import (
 )
 
 // NewUnlimitedMemoryTrackerQueryable wraps a storage.Queryable to inject an unlimited MemoryConsumptionTracker
-// and SeriesDeduplicator into the context.
+// and SeriesLabelsDeduplicator into the context.
 func NewUnlimitedMemoryTrackerQueryable(inner storage.Queryable) storage.Queryable {
 	return &unlimitedMemoryTrackerQueryable{inner: inner}
 }
@@ -41,7 +41,7 @@ func (q *unlimitedMemoryTrackerQuerier) Select(ctx context.Context, sortSeries b
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	// Create a per-query deduplicator for operation that require custom Queryable such as ruler queries. Each Select() call gets its own
 	// deduplicator to ensure proper label deduplication and memory tracking for rule evaluation.
-	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesDeduplicator())
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesLabelsDeduplicator())
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 

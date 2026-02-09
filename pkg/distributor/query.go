@@ -345,7 +345,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 
 // receiveResponse receives a response from stream returns the label sets of each series.
 // A bool is also returned to indicate whether the end of the stream has been reached.
-func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, deduplicator limiter.SeriesDeduplicator) ([]labels.Labels, bool, error) {
+func (r *ingesterQueryResult) receiveResponse(stream ingester_client.Ingester_QueryStreamClient, queryLimiter *limiter.QueryLimiter, memoryConsumptionTracker *limiter.MemoryConsumptionTracker, deduplicator limiter.SeriesLabelsDeduplicator) ([]labels.Labels, bool, error) {
 	resp, err := stream.Recv()
 	if err != nil {
 		return nil, false, err
