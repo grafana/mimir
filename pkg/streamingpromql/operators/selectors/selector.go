@@ -173,7 +173,7 @@ func (s *Selector) loadSeriesSet(ctx context.Context, matchers types.Matchers) e
 	// independently tracks and deduplicates its series. For example, in `foo + foo`,
 	// each binary operand has its own deduplicator to ensure accurate per-selector
 	// memory accounting.
-	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesLabelsDeduplicator())
+	ctx = limiter.AddNewSeriesDeduplicatorToContext(ctx)
 
 	s.seriesSet = s.querier.Select(ctx, true, hints, promMatchers...)
 	return nil

@@ -111,7 +111,7 @@ func remoteReadSamples(
 		// Create a per-query deduplicator for remote read queries. Each individual query
 		// in the batch gets its own deduplicator to ensure proper label deduplication
 		// and memory tracking at the query level.
-		ctx := limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesLabelsDeduplicator())
+		ctx := limiter.AddNewSeriesDeduplicatorToContext(ctx)
 		seriesSet := querier.Select(ctx, false, hints, matchers...)
 
 		// We can over-read when querying, but we don't need to return samples
@@ -188,7 +188,7 @@ func remoteReadStreamedXORChunks(
 		// Create a per-query deduplicator for streaming remote read queries. Each individual
 		// query gets its own deduplicator to ensure proper label deduplication and memory
 		// tracking at the query level.
-		ctx := limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesLabelsDeduplicator())
+		ctx := limiter.AddNewSeriesDeduplicatorToContext(ctx)
 		seriesSet := querier.Select(ctx, true, hints, matchers...)
 		results[idx] = queryResult{series: seriesSet, querier: querier}
 		return nil
