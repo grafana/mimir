@@ -41,7 +41,7 @@ func (q *unlimitedMemoryTrackerQuerier) Select(ctx context.Context, sortSeries b
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
 	// Create a per-query deduplicator for operation that require custom Queryable such as ruler queries. Each Select() call gets its own
 	// deduplicator to ensure proper label deduplication and memory tracking for rule evaluation.
-	ctx = limiter.AddNewSeriesDeduplicatorToContext(ctx)
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 	return q.inner.Select(ctx, sortSeries, hints, matchers...)
 }
 
