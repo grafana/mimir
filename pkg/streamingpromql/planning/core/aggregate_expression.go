@@ -26,11 +26,12 @@ type AggregateExpression struct {
 }
 
 func (a *AggregateExpression) Describe() string {
-	return a.AggregateExpressionDetails.Describe()
+	builder := &strings.Builder{}
+	a.DescribeTo(builder)
+	return builder.String()
 }
 
-func (a *AggregateExpressionDetails) Describe() string {
-	builder := &strings.Builder{}
+func (a *AggregateExpressionDetails) DescribeTo(builder *strings.Builder) {
 	builder.WriteString(a.Op.Describe())
 
 	if a.Without || len(a.Grouping) > 0 {
@@ -50,8 +51,6 @@ func (a *AggregateExpressionDetails) Describe() string {
 
 		builder.WriteString(")")
 	}
-
-	return builder.String()
 }
 
 func (a *AggregateExpression) ChildrenTimeRange(timeRange types.QueryTimeRange) types.QueryTimeRange {

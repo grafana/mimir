@@ -4,6 +4,8 @@ package multiaggregation
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -11,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/planning"
+	"github.com/grafana/mimir/pkg/streamingpromql/planning/core"
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
 )
 
@@ -159,7 +162,12 @@ func (a *MultiAggregationInstance) ReplaceChild(idx int, node planning.Node) err
 func (a *MultiAggregationInstance) EquivalentToIgnoringHintsAndChildren(other planning.Node) bool {
 	otherInstance, ok := other.(*MultiAggregationInstance)
 
-	return ok && a.Aggregation.EquivalentTo(otherInstance.Aggregation)
+	return ok &&
+		a.Aggregation.EquivalentTo(otherInstance.Aggregation) &&
+		slices.EqualFunc(a.Filters, otherInstance.Filters, func(a *core.LabelMatcher, b *core.LabelMatcher) bool {
+			return a.Equal(b)
+		})
+
 }
 
 func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {
@@ -172,7 +180,15 @@ func (a *MultiAggregationInstance) MergeHints(other planning.Node) error {
 }
 
 func (a *MultiAggregationInstance) Describe() string {
-	return a.Aggregation.Describe()
+	builder := &strings.Builder{}
+	a.Aggregation.DescribeTo(builder)
+
+	if len(a.Filters) > 0 {
+		builder.WriteString(", filters: ")
+		core.FormatMatchers(builder, a.Filters)
+	}
+
+	return builder.String()
 }
 
 func (a *MultiAggregationInstance) ChildrenLabels() []string {
@@ -196,6 +212,10 @@ func (a *MultiAggregationInstance) ExpressionPosition() (posrange.PositionRange,
 }
 
 func (a *MultiAggregationInstance) MinimumRequiredPlanVersion() planning.QueryPlanVersion {
+	if len(a.Filters) > 0 {
+		return planning.QueryPlanV6
+	}
+
 	return planning.QueryPlanV5
 }
 
@@ -234,7 +254,23 @@ func MaterializeMultiAggregationInstance(node *MultiAggregationInstance, materia
 		return nil, fmt.Errorf("unknown aggregation operation %s", node.Aggregation.Op.String())
 	}
 
-	if err := instance.Configure(op, node.Aggregation.Grouping, node.Aggregation.Without, params.MemoryConsumptionTracker, params.Annotations, timeRange, node.Aggregation.ExpressionPosition.ToPrometheusType()); err != nil {
+	matchers, err := core.LabelMatchersToPrometheusType(node.Filters)
+	if err != nil {
+		return nil, err
+	}
+
+	err = instance.Configure(
+		op,
+		node.Aggregation.Grouping,
+		node.Aggregation.Without,
+		matchers,
+		params.MemoryConsumptionTracker,
+		params.Annotations,
+		timeRange,
+		node.Aggregation.ExpressionPosition.ToPrometheusType(),
+	)
+
+	if err != nil {
 		return nil, err
 	}
 
