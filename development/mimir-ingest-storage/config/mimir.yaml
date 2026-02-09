@@ -89,6 +89,16 @@ ruler_storage:
     memcached:
       addresses: dns+memcached:11211
 
+querier:
+  mimir_query_engine:
+    range_vector_splitting:
+      enabled: true
+      split_interval: 2h
+      intermediate_results_cache:
+        backend: memcached
+        memcached:
+          addresses: dns+memcached:11211
+
 query_scheduler:
   service_discovery_mode: "ring"
 
