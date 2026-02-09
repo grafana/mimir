@@ -99,8 +99,8 @@ export AWS_PROFILE=<your-aws-profile>
   --dry-run
 ```
 
-When using `--s3.native-aws-auth-enabled=true`, the `--s3.access-key-id` and `--s3.secret-access-key` flags are not required. The tool will use the AWS SDK's default credential chain, which checks:
+When using `--s3.native-aws-auth-enabled=true`, the `--s3.access-key-id` and `--s3.secret-access-key` flags are not required. The tool uses the AWS SDK's default credential chain, which checks:
 
-1. Environment variables (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`)
-2. Shared credentials file (`~/.aws/credentials`) with the profile specified by `AWS_PROFILE` environment variable
+1. The `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables
+2. The `~/.aws/credentials` shared credentials file, with the profile specified by the `AWS_PROFILE` environment variable
 3. IAM role for Amazon EC2/ECS
