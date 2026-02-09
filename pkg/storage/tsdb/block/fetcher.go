@@ -550,7 +550,7 @@ func (f *MetaFetcher) countCached() int {
 }
 
 // FetchRequestedMetas fetches metadata for specific block IDs without iterating through the bucket.
-// Returns an error if any of the requested block metadata fail to load.
+// Returns an error if any of the requested block metadata fails to load.
 func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.ULID) (map[ulid.ULID]*Meta, error) {
 	if len(blockIDs) == 0 {
 		return nil, errNoBlocksProvided
@@ -562,7 +562,11 @@ func (f *MetaFetcher) FetchRequestedMetas(ctx context.Context, blockIDs []ulid.U
 	}
 
 	if len(partial) > 0 {
-		return nil, errors.Errorf("failed to sync %d requested blocks' metas", len(partial))
+		merr := multierror.New()
+		for _, err := range partial {
+			merr.Add(err)
+		}
+		return nil, errors.Wrap(merr.Err(), "failed to sync requested blocks' metas")
 	}
 
 	return metas, nil
