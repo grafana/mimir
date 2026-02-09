@@ -1,0 +1,91 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+
+# The goal of these tests is not to ensure that subset selectors are correctly identified
+# (this is tested in the tests for the optimization pass), but to ensure that expressions containing
+# subset selectors are correctly evaluated.
+
+load 1m
+  metric{idx="1"} 1+1x5
+  metric{idx="2"} 2+2x5
+  metric{idx="3"} 3+3x5
+  metric{idx="4"} 4+4x5
+  metric{idx="5"} 5+5x5
+
+# Instant vector selectors
+eval range from 0 to 5m step 1m metric{idx=~"2|3"} * metric
+  {idx="2"} 4 16 36 64 100 144
+  {idx="3"} 9 36 81 144 225 324
+
+eval range from 0 to 5m step 1m metric{idx="2"} * metric
+  {idx="2"} 4 16 36 64 100 144
+
+eval range from 0 to 5m step 1m metric{idx!~"2|3"} * metric
+  {idx="1"} 1 4 9 16 25 36
+  {idx="4"} 16 64 144 256 400 576
+  {idx="5"} 25 100 225 400 625 900
+
+eval range from 0 to 5m step 1m metric{idx!="2"} * metric
+  {idx="1"} 1 4 9 16 25 36
+  {idx="3"} 9 36 81 144 225 324
+  {idx="4"} 16 64 144 256 400 576
+  {idx="5"} 25 100 225 400 625 900
+
+eval range from 0 to 5m step 1m metric{idx=~"2|3"} * metric * metric{idx="3"}
+  {idx="3"} 27 216 729 1728 3375 5832
+
+eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"})
+  {idx="3"} 6 12 18 24 30 36
+  {idx="4"} 8 16 24 32 40 48
+  {idx="5"} 10 20 30 40 50 60
+
+eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"}) + topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"})
+  {idx="3"} 12 24 36 48 60 72
+  {idx="4"} 16 32 48 64 80 96
+  {idx="5"} 20 40 60 80 100 120
+
+eval range from 0 to 5m step 1m topk(3, metric) + topk(3, metric{idx=~"2|3|4|5"}) + topk(2, metric) + topk(2, metric{idx=~"2|3|4|5"})
+  {idx="4"} 16 32 48 64 80 96
+  {idx="5"} 20 40 60 80 100 120
+
+# Range vector selectors - use instant query to ensure that CSE still applies
+eval instant at 2m rate(metric[2m]) * increase(metric{idx=~"2|3"}[2m])
+  {idx="2"} 0.13333333333333333
+  {idx="3"} 0.30000000000000004
+
+# Multi-aggregation
+eval range from 0 to 5m step 1m sum(metric{idx=~"2|3"}) * count(metric)
+  {} 25 50 75 100 125 150
+
+eval range from 0 to 5m step 1m (sum(metric{idx="2"}) + sum(metric{idx="3"})) * count(metric)
+  {} 25 50 75 100 125 150
+
+eval range from 0 to 5m step 1m sum by (idx) (metric{idx=~"2|3"}) * count by (idx) (metric)
+  {idx="2"} 2 4 6 8 10 12
+  {idx="3"} 3 6 9 12 15 18
+
+# Test cases where filtering can / can't be lifted higher than the selector
+eval range from 0 to 5m step 1m sum(rate(metric{idx=~"2|3"}[2m])) / sum(rate(metric[2m]))
+  {} _ 0.33333333333333337 0.33333333333333337 0.33333333333333337 0.33333333333333337 0.33333333333333337
+
+eval range from 0 to 5m step 1m cos(metric{idx=~"2|3"}) * cos(metric)
+  {idx="2"} 0.17317818956819406 0.4272499830956933 0.9219269793662461 0.021170259838307684 0.704041030906696 0.7120895036684985
+  {idx="3"} 0.9800851433251829 0.9219269793662461 0.83015835412204 0.7120895036684985 0.5771257249437919 0.4360181551862977
+
+eval range from 0 to 5m step 1m absent(metric{idx=~"2|3"}) + absent(metric)
+  # Should return no results.
+
+eval instant at 2m absent_over_time(metric{idx=~"2|3"}[2m]) + absent_over_time(metric[2m])
+  # Should return no results.
+
+eval range from 0 to 5m step 1m absent(does_not_exist{idx=~"2|3"}) + absent(does_not_exist)
+  {} 2 2 2 2 2 2
+
+eval instant at 2m absent_over_time(does_not_exist{idx=~"2|3"}[2m]) + absent_over_time(does_not_exist[2m])
+  {} 2
+
+# Multiple levels of duplication
+eval range from 0 to 5m step 1m sum(metric) / (sum(metric) + sum(metric{idx=~"2|3"}))
+  {} 0.75x5
+
+eval range from 0 to 5m step 1m sum(metric{idx=~"2|3"}) / (sum(metric) + sum(metric{idx=~"2|3"}))
+  {} 0.25x5
