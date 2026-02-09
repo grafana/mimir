@@ -92,4 +92,15 @@ func TestQuerySplittingWithRangeVectorFunction(t *testing.T) {
 	assert.Equal(t, expectedSum, vec[0].Value)
 
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1), "cortex_mimir_query_engine_range_vector_splitting_nodes_introduced_total"))
+
+	// Run the same query again to verify cached intermediate results are read back correctly.
+	result2, err := queryClient.Query("sum_over_time(test_metric[15m])", now)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result2.Type())
+
+	vec2 := result2.(model.Vector)
+	require.Len(t, vec2, 1)
+	assert.Equal(t, expectedSum, vec2[0].Value)
+
+	require.NoError(t, querier.WaitSumMetrics(e2e.Greater(0), "mimir_query_engine_intermediate_result_cache_hits_total"))
 }
