@@ -475,9 +475,6 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 
 	if len(queriers) == 1 {
 		result := queriers[0].Select(ctx, true, sp, matchers...)
-		if sp != nil && sp.Func == "series" {
-			return result
-		}
 		return series.NewMemoryTrackingSeriesSet(result, memoryTracker)
 	}
 
@@ -501,9 +498,6 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	// We have all the sets from different sources (chunk from store, chunks from ingesters).
 	// mergeSeriesSets will return sorted set.
 	mergeResult := mq.mergeSeriesSets(result)
-	if sp != nil && sp.Func == "series" {
-		return mergeResult
-	}
 	return series.NewMemoryTrackingSeriesSet(mergeResult, memoryTracker)
 }
 
