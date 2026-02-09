@@ -1,6 +1,6 @@
 # Changelog
 
-## 3.0.3
+## 3.0.3-rc0
 
 ### Grafana Mimir
 
