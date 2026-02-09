@@ -423,6 +423,72 @@ func TestRemovePartitionCommand(t *testing.T) {
 	})
 }
 
+func TestParsePartitionIDs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		input       string
+		expected    []int32
+		expectedErr string
+	}{
+		{
+			name:     "single partition ID",
+			input:    "0",
+			expected: []int32{0},
+		},
+		{
+			name:     "multiple partition IDs",
+			input:    "0,1,2",
+			expected: []int32{0, 1, 2},
+		},
+		{
+			name:     "multiple partition IDs with spaces",
+			input:    "0, 1, 2",
+			expected: []int32{0, 1, 2},
+		},
+		{
+			name:        "duplicate partition IDs",
+			input:       "0,1,0",
+			expectedErr: "duplicate partition ID 0",
+		},
+		{
+			name:        "duplicate partition IDs adjacent",
+			input:       "1,1",
+			expectedErr: "duplicate partition ID 1",
+		},
+		{
+			name:        "negative partition ID",
+			input:       "-1",
+			expectedErr: "partition ID must be >= 0",
+		},
+		{
+			name:        "invalid partition ID",
+			input:       "abc",
+			expectedErr: "invalid partition ID",
+		},
+		{
+			name:        "empty input",
+			input:       "",
+			expectedErr: "at least one partition ID is required",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ids, err := parsePartitionIDs(tc.input)
+			if tc.expectedErr != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedErr)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tc.expected, ids)
+			}
+		})
+	}
+}
+
 // startMemberlistKV starts a memberlist KV node for testing and returns both the KV and a client.
 // The KV is automatically stopped when the test completes.
 func startMemberlistKV(t *testing.T) (*memberlist.KV, *memberlist.Client) {

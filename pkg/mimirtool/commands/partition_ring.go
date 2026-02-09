@@ -213,6 +213,7 @@ func parsePartitionState(stateStr string) (ring.PartitionState, error) {
 
 // parsePartitionIDs parses a comma-separated list of partition IDs.
 func parsePartitionIDs(input string) ([]int32, error) {
+	seen := map[int32]struct{}{}
 	var ids []int32
 	for _, s := range strings.Split(input, ",") {
 		s = strings.TrimSpace(s)
@@ -226,7 +227,12 @@ func parsePartitionIDs(input string) ([]int32, error) {
 		if id < 0 {
 			return nil, fmt.Errorf("partition ID must be >= 0, got %d", id)
 		}
-		ids = append(ids, int32(id))
+		id32 := int32(id)
+		if _, ok := seen[id32]; ok {
+			return nil, fmt.Errorf("duplicate partition ID %d", id32)
+		}
+		seen[id32] = struct{}{}
+		ids = append(ids, id32)
 	}
 	if len(ids) == 0 {
 		return nil, errors.New("at least one partition ID is required")
