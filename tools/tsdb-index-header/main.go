@@ -14,6 +14,7 @@ import (
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid/v2"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/objstore"
 	"github.com/thanos-io/objstore/providers/filesystem"
 
@@ -35,33 +36,117 @@ func main() {
 	}
 
 	if len(args) != 1 {
-		log.Fatalf("Usage: %s [-analyze-labels=label1,label2,...] <path-to-index-header>\n", os.Args[0])
+		log.Fatalf("Usage: %s [-analyze-labels=label1,label2,...] <block-directory>\n", os.Args[0])
 	}
 
-	indexHeaderPath := args[0]
+	blockDir := args[0]
 
-	finfo, err := os.Stat(indexHeaderPath)
+	// Auto-detect whether we have an index or index-header file.
+	indexPath := filepath.Join(blockDir, block.IndexFilename)
+	indexHeaderPath := filepath.Join(blockDir, block.IndexHeaderFilename)
+
+	var analyzer IndexAnalyzer
+	var info *IndexInfo
+
+	// Prefer full index if available (more complete data).
+	if finfo, err := os.Stat(indexPath); err == nil {
+		analyzer, info, err = openFullIndex(indexPath, finfo.Size())
+		if err != nil {
+			log.Fatalf("Failed to open full index: %v\n", err)
+		}
+	} else if finfo, err := os.Stat(indexHeaderPath); err == nil {
+		analyzer, info, err = openIndexHeader(blockDir, indexHeaderPath, finfo.Size())
+		if err != nil {
+			log.Fatalf("Failed to open index-header: %v\n", err)
+		}
+	} else {
+		log.Fatalf("No index or index-header found in block directory %q\n", blockDir)
+	}
+	defer analyzer.Close()
+
+	ctx := context.Background()
+
+	// Check TSDB index version - only V2+ is supported for symbol iteration.
+	indexVersion, err := analyzer.IndexVersion(ctx)
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatalf("Failed to get index version: %v\n", err)
 	}
-	indexHeaderSize := finfo.Size()
+	if indexVersion == 1 {
+		log.Fatalln("TSDB index V1 format is not supported")
+	}
 
+	info.IndexVersion = indexVersion
+
+	printIndexInfo(ctx, os.Stdout, info, analyzer)
+
+	fmt.Println()
+	fmt.Println("=== Symbols Analysis ===")
+	symbolStats := analyzeSymbols(ctx, analyzer)
+	printSymbolStats(ctx, os.Stdout, symbolStats)
+
+	fmt.Println()
+	fmt.Println("=== Label Cardinality Analysis ===")
+	labelStats := analyzeLabelCardinality(ctx, analyzer)
+	printLabelStats(ctx, os.Stdout, labelStats)
+
+	// Analyze specific labels if requested.
+	if *analyzeLabels != "" {
+		labelNames := strings.Split(*analyzeLabels, ",")
+		for _, labelName := range labelNames {
+			labelName = strings.TrimSpace(labelName)
+			if labelName == "" {
+				continue
+			}
+			fmt.Println()
+			fmt.Printf("=== Label Value Distribution: %s ===\n", labelName)
+			labelValueStats := analyzeLabelValues(ctx, analyzer, labelName)
+			if labelValueStats != nil {
+				printLabelValueStats(ctx, os.Stdout, labelValueStats)
+			}
+
+			// Analyze metric names that have this label (only works with full index).
+			metricStats := analyzeMetricNamesForLabel(ctx, analyzer, labelName)
+			if metricStats != nil {
+				printMetricNameStats(ctx, os.Stdout, metricStats)
+			}
+		}
+	}
+}
+
+// openFullIndex opens a full TSDB index file and returns an analyzer.
+func openFullIndex(indexPath string, size int64) (IndexAnalyzer, *IndexInfo, error) {
+	reader, err := index.NewFileReader(indexPath, index.DecodePostingsRaw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read index: %w", err)
+	}
+
+	info := &IndexInfo{
+		Path:          indexPath,
+		Size:          size,
+		IsIndexHeader: false,
+	}
+
+	return newFullIndexAnalyzer(reader), info, nil
+}
+
+// openIndexHeader opens an index-header file and returns an analyzer.
+func openIndexHeader(blockDir, indexHeaderPath string, size int64) (IndexAnalyzer, *IndexInfo, error) {
 	// The index-header file is expected to be at <dir>/<block-id>/index-header
 	// We need to extract the block ID from the path.
-	blockDir := filepath.Dir(indexHeaderPath)
 	blockIDStr := filepath.Base(blockDir)
 	blockID, err := ulid.Parse(blockIDStr)
 	if err != nil {
-		log.Fatalf("Failed to parse block ID from path %q: %v\n", blockDir, err)
+		return nil, nil, fmt.Errorf("failed to parse block ID from path %q: %w", blockDir, err)
 	}
 
 	// Create a filesystem bucket pointing to the parent of the block directory.
 	bucketDir := filepath.Dir(blockDir)
 	ubkt, err := filesystem.NewBucket(bucketDir)
 	if err != nil {
-		log.Fatalf("Failed to create filesystem bucket: %v\n", err)
+		return nil, nil, fmt.Errorf("failed to create filesystem bucket: %w", err)
 	}
-	defer ubkt.Close()
+	// Note: We don't close ubkt here as it's needed by the reader.
+	// The reader will be closed by the caller.
 	bkt := objstore.WithNoopInstr(ubkt)
 
 	// Create metrics (nil registry since we don't need metrics for the CLI tool).
@@ -85,46 +170,22 @@ func main() {
 		indexheader.Config{},
 	)
 	if err != nil {
-		log.Fatalf("Failed to read index-header: %v\n", err)
-	}
-	defer reader.Close()
-
-	// Check TSDB index version - only V2 is supported for symbol iteration.
-	indexVersion, err := reader.IndexVersion(ctx)
-	if err != nil {
-		log.Fatalf("Failed to get index version: %v\n", err)
-	}
-	if indexVersion == 1 {
-		log.Fatalln("TSDB index V1 format is not supported")
+		ubkt.Close()
+		return nil, nil, fmt.Errorf("failed to read index-header: %w", err)
 	}
 
-	tocInfo := analyzeTOC(ctx, reader, indexHeaderSize)
-	printTOCInfo(ctx, os.Stdout, tocInfo)
+	// Get TOC info for index-header specific details.
+	adapter := newIndexHeaderAnalyzer(reader).(*indexHeaderAnalyzer)
+	toc := adapter.TOC()
 
-	fmt.Println()
-	fmt.Println("=== Symbols Analysis ===")
-	symbolStats := analyzeSymbols(ctx, reader)
-	printSymbolStats(ctx, os.Stdout, symbolStats)
-
-	fmt.Println()
-	fmt.Println("=== Label Cardinality Analysis ===")
-	labelStats := analyzeLabelCardinality(ctx, reader)
-	printLabelStats(ctx, os.Stdout, labelStats)
-
-	// Analyze specific labels if requested.
-	if *analyzeLabels != "" {
-		labelNames := strings.Split(*analyzeLabels, ",")
-		for _, labelName := range labelNames {
-			labelName = strings.TrimSpace(labelName)
-			if labelName == "" {
-				continue
-			}
-			fmt.Println()
-			fmt.Printf("=== Label Value Distribution: %s ===\n", labelName)
-			labelValueStats := analyzeLabelValues(ctx, reader, labelName)
-			if labelValueStats != nil {
-				printLabelValueStats(ctx, os.Stdout, labelValueStats)
-			}
-		}
+	info := &IndexInfo{
+		Path:               indexHeaderPath,
+		Size:               size,
+		IsIndexHeader:      true,
+		IndexHeaderVersion: adapter.IndexHeaderVersion(),
+		SymbolsSize:        toc.PostingsOffsetTable - toc.Symbols,
+		PostingsTableSize:  uint64(size) - indexheader.BinaryTOCLen - toc.PostingsOffsetTable,
 	}
+
+	return adapter, info, nil
 }

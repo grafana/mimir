@@ -15,15 +15,22 @@ const (
 	displayTruncateLen = 80
 )
 
-// printTOCInfo prints the table of contents information.
-func printTOCInfo(_ context.Context, w io.Writer, info *TOCInfo) {
-	fmt.Fprintf(w, "Index-header size:         %s\n", formatBytes(info.IndexHeaderSize))
-	fmt.Fprintln(w, "Index-header version:     ", info.IndexHeaderVersion)
-	fmt.Fprintln(w, "TSDB index version:       ", info.TSDBIndexVersion)
-	fmt.Fprintln(w, "Header size:              ", indexheader.HeaderLen)
-	fmt.Fprintf(w, "Symbols size:              %s\n", formatBytes(int64(info.SymbolsSize)))
-	fmt.Fprintf(w, "Postings offset table:     %s\n", formatBytes(int64(info.PostingsOffsetTableSize)))
-	fmt.Fprintln(w, "TOC + CRC32:              ", indexheader.BinaryTOCLen)
+// printIndexInfo prints information about the index.
+func printIndexInfo(_ context.Context, w io.Writer, info *IndexInfo, _ IndexAnalyzer) {
+	if info.IsIndexHeader {
+		fmt.Fprintf(w, "Index type:                Index-Header\n")
+		fmt.Fprintf(w, "Index-header size:         %s\n", formatBytes(info.Size))
+		fmt.Fprintln(w, "Index-header version:     ", info.IndexHeaderVersion)
+		fmt.Fprintln(w, "TSDB index version:       ", info.IndexVersion)
+		fmt.Fprintln(w, "Header size:              ", indexheader.HeaderLen)
+		fmt.Fprintf(w, "Symbols size:              %s\n", formatBytes(int64(info.SymbolsSize)))
+		fmt.Fprintf(w, "Postings offset table:     %s\n", formatBytes(int64(info.PostingsTableSize)))
+		fmt.Fprintln(w, "TOC + CRC32:              ", indexheader.BinaryTOCLen)
+	} else {
+		fmt.Fprintf(w, "Index type:                Full Index\n")
+		fmt.Fprintf(w, "Index size:                %s\n", formatBytes(info.Size))
+		fmt.Fprintln(w, "TSDB index version:       ", info.IndexVersion)
+	}
 }
 
 // printSymbolStats prints the collected symbol statistics.
@@ -133,6 +140,17 @@ func printLabelValueStats(_ context.Context, w io.Writer, stats *LabelValueStats
 			for i, sample := range b.Samples {
 				fmt.Fprintf(w, "      %d. [%d bytes] %q\n", i+1, len(sample), truncateString(sample, displayTruncateLen))
 			}
+		}
+	}
+}
+
+// printMetricNameStats prints statistics about metric names that have a specific label.
+func printMetricNameStats(_ context.Context, w io.Writer, stats *MetricNameStats) {
+	fmt.Fprintf(w, "\nMetric names with this label: %d unique\n", stats.UniqueMetricNames)
+	if len(stats.TopMetrics) > 0 {
+		fmt.Fprintln(w, "Top 10 metric names by series count:")
+		for i, m := range stats.TopMetrics {
+			fmt.Fprintf(w, "  %2d. [%8d series] %s\n", i+1, m.SeriesCount, m.Name)
 		}
 	}
 }
