@@ -46,6 +46,7 @@ type aggregateOverDuplicate struct {
 	aggregate                *core.AggregateExpression
 	aggregateParent          planning.Node
 	indexOfAggregateInParent int
+	filters                  []*core.LabelMatcher
 }
 
 func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, maximumSupportedQueryPlanVersion planning.QueryPlanVersion) (*planning.QueryPlan, error) {
@@ -68,6 +69,12 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			}
 
 			parent := path[len(path)-1]
+
+			// If the parent is a DuplicateFilter, we need to look at the grandparent.
+			if _, isDuplicateFilter := parent.(*commonsubexpressionelimination.DuplicateFilter); isDuplicateFilter {
+				parent = path[len(path)-2]
+			}
+
 			aggregate, isAggregate := parent.(*core.AggregateExpression)
 			if !isAggregate {
 				ineligibleDuplicateNodes[duplicate] = struct{}{}
@@ -90,8 +97,17 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 			}
 
 			duplicate, isDuplicate := aggregate.Inner.(*commonsubexpressionelimination.Duplicate)
+			var filters []*core.LabelMatcher
+
 			if !isDuplicate {
-				continue
+				duplicateFilter, isDuplicateFilter := aggregate.Inner.(*commonsubexpressionelimination.DuplicateFilter)
+
+				if !isDuplicateFilter {
+					continue
+				}
+
+				filters = duplicateFilter.Filters
+				duplicate = duplicateFilter.Inner
 			}
 
 			if _, isIneligible := ineligibleDuplicateNodes[duplicate]; isIneligible {
@@ -102,6 +118,7 @@ func (o *OptimizationPass) Apply(ctx context.Context, plan *planning.QueryPlan, 
 				aggregate:                aggregate,
 				aggregateParent:          node,
 				indexOfAggregateInParent: idx,
+				filters:                  filters,
 			})
 		}
 
@@ -143,6 +160,7 @@ func (o *OptimizationPass) replaceWithMultiAggregation(duplicate *commonsubexpre
 		consumer := &MultiAggregationInstance{
 			MultiAggregationInstanceDetails: &MultiAggregationInstanceDetails{
 				Aggregation: aggregateOverDuplicate.aggregate.AggregateExpressionDetails,
+				Filters:     aggregateOverDuplicate.filters,
 			},
 			Group: group,
 		}
