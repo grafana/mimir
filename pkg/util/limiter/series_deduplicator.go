@@ -4,6 +4,7 @@ package limiter
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -55,12 +56,12 @@ func AddSeriesDeduplicatorToContext(ctx context.Context, deduplicator SeriesLabe
 	return context.WithValue(ctx, sdCtxKey, deduplicator)
 }
 
-func SeriesDeduplicatorFromContextWithFallback(ctx context.Context) SeriesLabelsDeduplicator {
+func SeriesLabelsDeduplicatorFromContext(ctx context.Context) (SeriesLabelsDeduplicator, error) {
 	sd, ok := ctx.Value(sdCtxKey).(SeriesLabelsDeduplicator)
 	if !ok {
-		return &noopSeriesDeduplicator{}
+		return nil, errors.New("no series deduplicator in context")
 	}
-	return sd
+	return sd, nil
 }
 
 // Deduplicate checks if the given series has been seen before in this deduplicator's scope.

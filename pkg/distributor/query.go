@@ -272,7 +272,10 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSets [
 			return result, err
 		}
 
-		deduplicator := limiter.SeriesDeduplicatorFromContextWithFallback(ctx)
+		deduplicator, err := limiter.SeriesLabelsDeduplicatorFromContext(ctx)
+		if err != nil {
+			return result, err
+		}
 
 		for {
 			labelsBatch, isEOS, err := result.receiveResponse(stream, queryLimiter, memoryConsumptionTracker, deduplicator)
