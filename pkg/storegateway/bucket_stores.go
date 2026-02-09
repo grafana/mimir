@@ -7,6 +7,7 @@ package storegateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,10 +22,8 @@ import (
 	"github.com/grafana/dskit/gate"
 	"github.com/grafana/dskit/multierror"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/objstore"
 	"google.golang.org/grpc/metadata"
@@ -98,12 +97,12 @@ type BucketStores struct {
 func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStrategy, bucketClient objstore.Bucket, allowedTenants *util.AllowList, limits *validation.Overrides, logger log.Logger, reg prometheus.Registerer) (*BucketStores, error) {
 	chunksCacheClient, err := cache.CreateClient("chunks-cache", cfg.BucketStore.ChunksCache.BackendConfig, logger, prometheus.WrapRegistererWithPrefix("thanos_", reg))
 	if err != nil {
-		return nil, errors.Wrapf(err, "chunks-cache")
+		return nil, fmt.Errorf("chunks-cache: %w", err)
 	}
 
 	cachingBucket, err := tsdb.CreateCachingBucket(chunksCacheClient, cfg.BucketStore.ChunksCache, cfg.BucketStore.MetadataCache, bucketClient, logger, reg)
 	if err != nil {
-		return nil, errors.Wrapf(err, "create caching bucket")
+		return nil, fmt.Errorf("create caching bucket: %w", err)
 	}
 
 	gateReg := prometheus.WrapRegistererWithPrefix("cortex_bucket_stores_", reg)
@@ -176,7 +175,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 
 	// Init the index cache.
 	if u.indexCache, err = indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
-		return nil, errors.Wrap(err, "create index cache")
+		return nil, fmt.Errorf("create index cache: %w", err)
 	}
 
 	if reg != nil {
@@ -262,7 +261,7 @@ func (u *BucketStores) ownedUsers(ctx context.Context) ([]string, error) {
 
 	ownedUserIDs, err := u.shardingStrategy.FilterUsers(ctx, userIDs)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to check tenants owned by this store-gateway instance")
+		return nil, fmt.Errorf("unable to check tenants owned by this store-gateway instance: %w", err)
 	}
 
 	return ownedUserIDs, nil
@@ -283,7 +282,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 	wg := &sync.WaitGroup{}
 	jobs := make(chan job)
-	errs := tsdb_errors.NewMulti()
+	var errs []error
 	errsMx := sync.Mutex{}
 
 	u.tenantsSynced.Set(float64(len(includeUserIDs)))
@@ -299,7 +298,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 			for job := range jobs {
 				if err := f(ctx, job.store); err != nil {
 					errsMx.Lock()
-					errs.Add(errors.Wrapf(err, "failed to synchronize TSDB blocks for user %s", job.userID))
+					errs = append(errs, fmt.Errorf("failed to synchronize TSDB blocks for user %s: %w", job.userID, err))
 					errsMx.Unlock()
 				}
 			}
@@ -312,7 +311,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 		bs, err := u.getOrCreateStore(ctx, userID)
 		if err != nil {
 			errsMx.Lock()
-			errs.Add(err)
+			errs = append(errs, err)
 			errsMx.Unlock()
 
 			continue
@@ -338,7 +337,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, includeUserIDs []str
 
 	u.closeBucketStoreAndDeleteLocalFilesForExcludedTenants(includeUserIDs)
 
-	return errs.Err()
+	return errors.Join(errs...)
 }
 
 // Series implements the storegatewaypb.StoreGatewayServer interface, making a series request to the underlying user bucket store.
