@@ -1311,6 +1311,65 @@ func TestOptimizationPass_HintsHandling(t *testing.T) {
 							- ref#1 Duplicate ...
 			`,
 		},
+		"subset vector selector not eligible for skipping histogram decoding due to nesting": {
+			expr: `histogram_sum(some_metric * histogram_quantile(0.5, some_metric{env="bar"}))`,
+			expectedPlan: `
+				- DeduplicateAndMerge
+					- FunctionCall: histogram_sum(...)
+						- BinaryExpression: LHS * RHS
+							- LHS: ref#1 Duplicate
+								- VectorSelector: {__name__="some_metric"}
+							- RHS: DeduplicateAndMerge
+								- FunctionCall: histogram_quantile(...)
+									- param 0: NumberLiteral: 0.5
+									- param 1: DuplicateFilter: {env="bar"}
+										- ref#1 Duplicate ...
+			`,
+		},
+		"subset vector selectors, both eligible for skipping histogram decoding": {
+			expr: `histogram_sum(some_metric) * histogram_count(some_metric{env="bar"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="some_metric"}, skip histogram buckets
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_count(...)
+							- DuplicateFilter: {env="bar"}
+								- ref#1 Duplicate ...
+			`,
+		},
+		"subset vector selectors, only broader instance eligible for skipping histogram decoding": {
+			expr: `histogram_sum(some_metric) * histogram_quantile(0.5, some_metric{env="bar"})`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- ref#1 Duplicate
+								- VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.5
+							- param 1: DuplicateFilter: {env="bar"}
+								- ref#1 Duplicate ...
+			`,
+		},
+		"subset vector selectors, only narrower instance eligible for skipping histogram decoding": {
+			expr: `histogram_sum(some_metric{env="bar"}) * histogram_quantile(0.5, some_metric)`,
+			expectedPlan: `
+				- BinaryExpression: LHS * RHS
+					- LHS: DeduplicateAndMerge
+						- FunctionCall: histogram_sum(...)
+							- DuplicateFilter: {env="bar"}
+								- ref#1 Duplicate
+									- VectorSelector: {__name__="some_metric"}
+					- RHS: DeduplicateAndMerge
+						- FunctionCall: histogram_quantile(...)
+							- param 0: NumberLiteral: 0.5
+							- param 1: ref#1 Duplicate ...
+			`,
+		},
 	}
 
 	ctx := context.Background()
