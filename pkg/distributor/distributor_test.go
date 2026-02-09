@@ -1006,6 +1006,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 	const metricName = "foo"
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesLabelsDeduplicator())
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, metricName)
 	barMatcher := mustEqualMatcher("bar", "baz")
 
@@ -2489,6 +2490,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 func TestSlowQueries(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	ctx = limiter.ContextWithNewUnlimitedMemoryConsumptionTracker(ctx)
+	ctx = limiter.AddSeriesDeduplicatorToContext(ctx, limiter.NewSeriesLabelsDeduplicator())
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	nIngesters := 3
 	for happy := 0; happy <= nIngesters; happy++ {
