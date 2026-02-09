@@ -84,6 +84,9 @@ func (c *RangeVectorSplittingConfig) RegisterFlags(f *flag.FlagSet) {
 }
 
 func (c *RangeVectorSplittingConfig) Validate() error {
+	if c.Enabled && c.SplitInterval <= 0 {
+		return fmt.Errorf("range vector splitting is enabled but split interval is not greater than 0")
+	}
 	if c.Enabled && c.IntermediateResultsCache.Backend == "" {
 		return fmt.Errorf("range vector splitting is enabled but intermediate results cache backend is not configured")
 	}
