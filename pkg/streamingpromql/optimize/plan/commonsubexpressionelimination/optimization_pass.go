@@ -589,6 +589,9 @@ func IsSafeToApplyFilteringAfter(node planning.Node, group SharedSelectorGroup, 
 
 		return true
 
+	// FIXME: we can apply filtering later for some binary operations (eg. vector/scalar combinations like foo{env="bar"} * 2)
+	// but these have been omitted for now in the interests of simplicity, as they're not common scenarios.
+
 	default:
 		return false
 	}
