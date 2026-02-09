@@ -37,7 +37,7 @@ func NewSeriesLabelsDeduplicator() SeriesLabelsDeduplicator {
 	}
 }
 
-// AddNewSeriesDeduplicatorToContext adds a new SeriesLabelsDeduplicator to the context.
+// ContextWithNewSeriesLabelsDeduplicator adds a new SeriesLabelsDeduplicator to the context.
 //
 // The scope at which a SeriesLabelsDeduplicator is added to the context determines the level
 // at which label deduplication and memory tracking occurs. Different scopes are used
@@ -52,7 +52,7 @@ func NewSeriesLabelsDeduplicator() SeriesLabelsDeduplicator {
 // tracks unique labels and increases memory consumption during the Select() operation.
 //
 // See the function usage for more documentation on different scopes of SeriesLabelsDeduplicator.
-func AddNewSeriesDeduplicatorToContext(ctx context.Context) context.Context {
+func ContextWithNewSeriesLabelsDeduplicator(ctx context.Context) context.Context {
 	return context.WithValue(ctx, sdCtxKey, NewSeriesLabelsDeduplicator())
 }
 

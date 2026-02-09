@@ -402,7 +402,7 @@ func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, selMergeQu
 		// per tenant. For example, with two federated tenants, there are two deduplicators,
 		// and results from queriers are wrapped by different MemoryTrackingSeriesSet
 		// instances for each tenant.
-		tenantCtx := limiter.AddNewSeriesDeduplicatorToContext(ctx)
+		tenantCtx := limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 		id := jobs[idx]
 		seriesSets[idx] = NewAddLabelsSeriesSet(
 			selMergeQuerier.Select(tenantCtx, id, sortSeries, hints, matchers...),
