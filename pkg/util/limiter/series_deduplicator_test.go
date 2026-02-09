@@ -34,7 +34,6 @@ func TestSeriesDeduplicator_Deduplicate_HashCollision(t *testing.T) {
 	deduplicator := &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
-		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
 	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
@@ -103,7 +102,6 @@ func TestSeriesDeduplicator_Deduplicate_HashCollisionWithThreeCollidingSeries(t 
 	deduplicator := &seriesDeduplicator{
 		uniqueSeriesMx: sync.Mutex{},
 		uniqueSeries:   make(map[uint64]labels.Labels),
-		hashFunc:       func(l labels.Labels) uint64 { return l.Hash() },
 	}
 	memoryTracker := NewUnlimitedMemoryConsumptionTracker(context.Background())
 
