@@ -233,6 +233,11 @@ std.manifestYamlDoc({
     // and has `/bin/mimir` set as an entrypoint. That requires passing CLI flags in 'command' instead
     // of a string that will be passed to a shell.
     local isLocalImage = options.image == 'mimir',
+    // Split extraArguments into individual flags to handle multi-flag strings correctly
+    // for distroless images where flags array is used directly as docker-compose command.
+    local extraFlagsList = if std.length(options.extraArguments) > 0
+      then std.filter(function(s) std.length(s) > 0, std.split(options.extraArguments, ' '))
+      else [],
     local flags = [
       '-config.file=/etc/mimir/mimir.yaml',
       '-target=%(target)s' % options,
@@ -241,8 +246,7 @@ std.manifestYamlDoc({
       '-activity-tracker.filepath=/tmp/activity/%(target)s-%(httpPort)d' % options,
       '-memberlist.nodename=%(memberlistNodeName)s' % options,
       '-memberlist.bind-port=%(memberlistBindPort)d' % options,
-      '%(extraArguments)s' % options,
-    ],
+    ] + extraFlagsList,
 
     // If we're using a local image, assemble a string of the binary to execute and CLI flags to pass to
     // a shell. If this is a public Mimir image from dockerhub, pass an array of CLI flags as the command
