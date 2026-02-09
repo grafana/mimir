@@ -4,9 +4,9 @@
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filepath=/activity/alertmanager-8031 -alertmanager.web.external-url=http://localhost:8031/alertmanager -memberlist.nodename=alertmanager-1 -memberlist.bind-port=10031 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filepath=/tmp/activity/alertmanager-8031 -memberlist.nodename=alertmanager-1 -memberlist.bind-port=10031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -22,16 +22,16 @@
       - "8031:8031"
       - "10031:10031"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "alertmanager-2":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filepath=/activity/alertmanager-8032 -alertmanager.web.external-url=http://localhost:8032/alertmanager -memberlist.nodename=alertmanager-2 -memberlist.bind-port=10032 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filepath=/tmp/activity/alertmanager-8032 -memberlist.nodename=alertmanager-2 -memberlist.bind-port=10032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -47,16 +47,16 @@
       - "8032:8032"
       - "10032:10032"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "alertmanager-3":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filepath=/activity/alertmanager-8033 -alertmanager.web.external-url=http://localhost:8033/alertmanager -memberlist.nodename=alertmanager-3 -memberlist.bind-port=10033 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filepath=/tmp/activity/alertmanager-8033 -memberlist.nodename=alertmanager-3 -memberlist.bind-port=10033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -72,16 +72,16 @@
       - "8033:8033"
       - "10033:10033"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "compactor":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/activity/compactor-8006  -memberlist.nodename=compactor -memberlist.bind-port=10006 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/tmp/activity/compactor-8006 -memberlist.nodename=compactor -memberlist.bind-port=10006 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -97,8 +97,8 @@
       - "8006:8006"
       - "10006:10006"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "consul":
     "command":
       - "agent"
@@ -114,9 +114,9 @@
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=continuous-test -server.http-listen-port=8090 -server.grpc-listen-port=9090 -activity-tracker.filepath=/activity/continuous-test-8090  -tests.run-interval=2m -tests.read-endpoint=http://query-frontend:8007/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-endpoint=http://distributor-1:8000 -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100 -memberlist.nodename=continuous-test -memberlist.bind-port=10090 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=continuous-test -server.http-listen-port=8090 -server.grpc-listen-port=9090 -activity-tracker.filepath=/tmp/activity/continuous-test-8090 -memberlist.nodename=continuous-test -memberlist.bind-port=10090  -tests.run-interval=2m -tests.read-endpoint=http://query-frontend:8007/prometheus -tests.tenant-id=mimir-continuous-test -tests.write-endpoint=http://distributor-1:8000 -tests.write-read-series-test.max-query-age=1h -tests.write-read-series-test.num-series=100"
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -132,16 +132,16 @@
       - "8090:8090"
       - "10090:10090"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "distributor-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/activity/distributor-8000 -distributor.ha-tracker.consul.hostname=consul:8500 -memberlist.nodename=distributor -memberlist.bind-port=10000 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8000 -server.grpc-listen-port=9000 -activity-tracker.filepath=/tmp/activity/distributor-8000 -memberlist.nodename=distributor -memberlist.bind-port=10000 -distributor.ha-tracker.consul.hostname=consul:8500"
     "depends_on":
       - "minio"
     "environment":
@@ -156,16 +156,16 @@
       - "8000:8000"
       - "10000:10000"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "distributor-2":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/activity/distributor-8001 -distributor.ha-tracker.consul.hostname=consul:8500 -memberlist.nodename=distributor -memberlist.bind-port=10001 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/tmp/activity/distributor-8001 -memberlist.nodename=distributor -memberlist.bind-port=10001 -distributor.ha-tracker.consul.hostname=consul:8500"
     "depends_on":
       - "minio"
     "environment":
@@ -180,8 +180,8 @@
       - "8001:8001"
       - "10001:10001"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "grafana":
     "environment":
       - "GF_AUTH_ANONYMOUS_ENABLED=true"
@@ -198,9 +198,9 @@
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/activity/ingester-8002  -memberlist.nodename=ingester-1 -memberlist.bind-port=10002 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/tmp/activity/ingester-8002 -memberlist.nodename=ingester-1 -memberlist.bind-port=10002 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -216,17 +216,17 @@
       - "8002:8002"
       - "10002:10002"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
       - ".data-ingester-1:/tmp/mimir-tsdb-ingester:delegated"
   "ingester-2":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/activity/ingester-8003  -memberlist.nodename=ingester-2 -memberlist.bind-port=10003 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/tmp/activity/ingester-8003 -memberlist.nodename=ingester-2 -memberlist.bind-port=10003 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -242,17 +242,17 @@
       - "8003:8003"
       - "10003:10003"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
       - ".data-ingester-2:/tmp/mimir-tsdb-ingester:delegated"
   "ingester-3":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/ingester-8004  -memberlist.nodename=ingester-3 -memberlist.bind-port=10004 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ingester -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/tmp/activity/ingester-8004 -memberlist.nodename=ingester-3 -memberlist.bind-port=10004 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -268,8 +268,8 @@
       - "8004:8004"
       - "10004:10004"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
       - ".data-ingester-3:/tmp/mimir-tsdb-ingester:delegated"
   "jaeger":
     "image": "jaegertracing/all-in-one:1.62.0"
@@ -352,9 +352,9 @@
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8005 -server.grpc-listen-port=9005 -activity-tracker.filepath=/activity/querier-8005  -memberlist.nodename=querier -memberlist.bind-port=10005 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=querier -server.http-listen-port=8005 -server.grpc-listen-port=9005 -activity-tracker.filepath=/tmp/activity/querier-8005 -memberlist.nodename=querier -memberlist.bind-port=10005 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -370,16 +370,16 @@
       - "8005:8005"
       - "10005:10005"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "query-frontend":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/activity/query-frontend-8007  -memberlist.nodename=query-frontend -memberlist.bind-port=10007 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/tmp/activity/query-frontend-8007 -memberlist.nodename=query-frontend -memberlist.bind-port=10007 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -395,16 +395,16 @@
       - "8007:8007"
       - "10007:10007"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "query-scheduler":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/activity/query-scheduler-8008  -memberlist.nodename=query-scheduler -memberlist.bind-port=10008 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=query-scheduler -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/tmp/activity/query-scheduler-8008 -memberlist.nodename=query-scheduler -memberlist.bind-port=10008 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -420,16 +420,16 @@
       - "8008:8008"
       - "10008:10008"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "ruler-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/activity/ruler-8022  -memberlist.nodename=ruler-1 -memberlist.bind-port=10022 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/tmp/activity/ruler-8022 -memberlist.nodename=ruler-1 -memberlist.bind-port=10022 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -445,16 +445,16 @@
       - "8022:8022"
       - "10022:10022"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "ruler-2":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8023 -server.grpc-listen-port=9023 -activity-tracker.filepath=/activity/ruler-8023  -memberlist.nodename=ruler-2 -memberlist.bind-port=10023 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=ruler -server.http-listen-port=8023 -server.grpc-listen-port=9023 -activity-tracker.filepath=/tmp/activity/ruler-8023 -memberlist.nodename=ruler-2 -memberlist.bind-port=10023 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -470,16 +470,16 @@
       - "8023:8023"
       - "10023:10023"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "store-gateway-1":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/activity/store-gateway-8011  -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/tmp/activity/store-gateway-8011 -memberlist.nodename=store-gateway-1 -memberlist.bind-port=10011 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -495,16 +495,16 @@
       - "8011:8011"
       - "10011:10011"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "store-gateway-2":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/activity/store-gateway-8012  -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8012 -server.grpc-listen-port=9012 -activity-tracker.filepath=/tmp/activity/store-gateway-8012 -memberlist.nodename=store-gateway-2 -memberlist.bind-port=10012 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -520,16 +520,16 @@
       - "8012:8012"
       - "10012:10012"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
   "store-gateway-3":
     "build":
       "context": "."
       "dockerfile": "dev.dockerfile"
     "command":
-      - "sh"
+      - "/bin/sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8013 -server.grpc-listen-port=9013 -activity-tracker.filepath=/activity/store-gateway-8013  -memberlist.nodename=store-gateway-3 -memberlist.bind-port=10013 -ingester.ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist -alertmanager.sharding-ring.store=memberlist"
+      - "sleep 3 && exec /bin/mimir -config.file=/etc/mimir/mimir.yaml -target=store-gateway -server.http-listen-port=8013 -server.grpc-listen-port=9013 -activity-tracker.filepath=/tmp/activity/store-gateway-8013 -memberlist.nodename=store-gateway-3 -memberlist.bind-port=10013 "
     "depends_on":
       - "minio"
       - "distributor-1"
@@ -545,5 +545,5 @@
       - "8013:8013"
       - "10013:10013"
     "volumes":
-      - "./config:/mimir/config"
-      - "./activity:/activity"
+      - "./config:/etc/mimir"
+      - "./activity:/tmp/activity"
