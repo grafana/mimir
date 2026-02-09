@@ -18,4 +18,6 @@ message MultiAggregationInstanceDetails {
   // Why do this, and not just use AggregateExpressionDetails?
   // This gives us more flexibility to change how multi-aggregations work in the future.
   core.AggregateExpressionDetails aggregation = 1;
+
+  repeated core.LabelMatcher filters = 2;
 }

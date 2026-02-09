@@ -5,6 +5,7 @@ package multiaggregation
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -75,6 +76,8 @@ func (m *MultiAggregatorGroupEvaluator) ComputeOutputSeriesForAllInstances(ctx c
 			continue
 		}
 
+		// TODO: apply filtering
+
 		groups, err := instance.aggregator.ComputeGroups(innerSeries)
 		if err != nil {
 			return err
@@ -94,6 +97,8 @@ func (m *MultiAggregatorGroupEvaluator) ReadNextSeries(ctx context.Context) erro
 
 	lastIndex := len(m.instances) - 1
 	for idx, instance := range m.instances {
+		// TODO: apply filtering
+
 		isLastInstance := idx == lastIndex
 
 		if instance.aggregator == nil {
@@ -152,6 +157,7 @@ func (m *MultiAggregatorInstanceOperator) Configure(
 	op parser.ItemType,
 	grouping []string,
 	without bool,
+	filters []*labels.Matcher,
 	memoryConsumptionTracker *limiter.MemoryConsumptionTracker,
 	annotations *annotations.Annotations,
 	timeRange types.QueryTimeRange,
@@ -177,6 +183,9 @@ func (m *MultiAggregatorInstanceOperator) AfterPrepare(ctx context.Context) erro
 }
 
 func (m *MultiAggregatorInstanceOperator) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
+	// Note that we deliberately ignore the matchers passed here as we can't use them: there's no
+	// guarantee that they apply to other instances in the same group.
+
 	if !m.group.haveComputedSeriesMetadata {
 		if err := m.group.ComputeOutputSeriesForAllInstances(ctx); err != nil {
 			return nil, err
