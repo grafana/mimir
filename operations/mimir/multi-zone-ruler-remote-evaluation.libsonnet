@@ -30,7 +30,7 @@
 
   local rulerQuerierZoneArgs(zone) = {
     // Prefer querying ingesters and store-gateways in the same zone, to reduce cross-AZ data transfer.
-    'querier.prefer-availability-zones': 'zone-%s' % zone,
+    'querier.prefer-availability-zones': 'zone-%s,zone-%s-backup' % [zone, zone],
   },
 
   rulerQuerierClientZoneArgs(zone):: {

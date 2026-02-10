@@ -2288,7 +2288,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-a
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
         - -querier.ring.prefix=querier-zone-a/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=query-scheduler-zone-a/
@@ -2408,7 +2408,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-b
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
         - -querier.ring.prefix=querier-zone-b/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=query-scheduler-zone-b/
@@ -3334,7 +3334,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-a
+        - -querier.prefer-availability-zones=zone-a,zone-a-backup
         - -querier.ring.prefix=ruler-querier-zone-a/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-a/
@@ -3452,7 +3452,7 @@ spec:
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
         - -querier.max-concurrent=8
         - -querier.max-partial-query-length=768h
-        - -querier.prefer-availability-zones=zone-b
+        - -querier.prefer-availability-zones=zone-b,zone-b-backup
         - -querier.ring.prefix=ruler-querier-zone-b/
         - -querier.store-gateway-client.grpc-max-recv-msg-size=209715200
         - -query-scheduler.ring.prefix=ruler-query-scheduler-zone-b/
