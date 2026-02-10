@@ -493,7 +493,7 @@ jobs:
       id-token: write
     steps:
       - name: Send Slack message for successful PR
-        if: success()
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
         uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
         with:
           channel-id: C04AF91LPFX #mimir-ci-notifications
@@ -502,7 +502,7 @@ jobs:
               "text": ":happy-mac: *Automated vendoring of mimir-prometheus into Mimir has succeeded and is awaiting approval.*\n<!subteam^S03C2P8659U> please review <${{ github.event.pull_request.html_url }}|the PR>, then approve and merge it."
             }
       - name: Send Slack message for failed PR
-        if: failure()
+        if: ${{ contains(needs.*.result, 'failure') }}
         uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
         with:
           channel-id: C04AF91LPFX #mimir-ci-notifications
