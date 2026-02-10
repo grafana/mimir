@@ -3005,9 +3005,9 @@ minio:
   mode: standalone
   rootUser: grafana-mimir
   image:
-    tag: latest
+    tag: RELEASE.2024-12-18T13-15-44Z
   mcImage:
-    tag: latest
+    tag: RELEASE.2024-11-21T17-21-54Z
   buckets:
     - name: mimir-tsdb
       policy: none
