@@ -193,8 +193,8 @@ func (p *ProxyEndpoint) executeBackendRequests(ctx context.Context, req *http.Re
 			var bodyToSend []byte
 
 			if len(body) > 0 {
-				// Amplify the request body for amplified backends
-				if b.BackendType() == BackendTypeAmplified && p.amplificationFactor > 1.0 {
+				// Amplify or sample the request body for amplified backends
+				if b.BackendType() == BackendTypeAmplified && p.amplificationFactor != 1.0 {
 					result, err := AmplifyWriteRequest(body, p.amplificationFactor, p.amplificationTracker)
 					if err != nil {
 						level.Error(logger).Log("msg", "Failed to amplify write request", "backend", b.Name(), "err", err)
