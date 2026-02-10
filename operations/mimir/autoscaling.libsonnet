@@ -206,7 +206,8 @@
             query: queryWithWeight('sum(max_over_time(cortex_query_scheduler_inflight_requests{container="%(query_scheduler_container_name)s",namespace="%(namespace)s",quantile="0.5"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-            ignore_null_values: ignore_null_values,
+            // We only need to pass ignore_null_values if it's false
+            [if !ignore_null_values then 'ignore_null_values']: ignore_null_values,
           },
           {
             metric_name: 'cortex_%s_hpa_%s_requests_duration' % [std.strReplace(name, '-', '_'), $._config.namespace],
@@ -218,7 +219,8 @@
             query: queryWithWeight('sum(rate(cortex_querier_request_duration_seconds_sum{container="%(querier_container_name)s",namespace="%(namespace)s"%(extra_matchers)s}[1m]))' % queryParams, weight),
 
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-            ignore_null_values: ignore_null_values,
+            // We only need to pass ignore_null_values if it's false
+            [if !ignore_null_values then 'ignore_null_values']: ignore_null_values,
           },
         ]
         + if !$._config.autoscaling_querier_predictive_scaling_enabled then [] else [
@@ -234,7 +236,8 @@
               }
             ), weight),
             threshold: '%d' % std.floor(querier_max_concurrent * target_utilization),
-            ignore_null_values: ignore_null_values,
+            // We only need to pass ignore_null_values if it's false
+            [if !ignore_null_values then 'ignore_null_values']: ignore_null_values,
           },
         ],
     }) + {

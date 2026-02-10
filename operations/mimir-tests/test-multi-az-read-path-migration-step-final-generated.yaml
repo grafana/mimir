@@ -4984,7 +4984,6 @@ spec:
     name: querier-zone-a
   triggers:
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_a_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -4992,7 +4991,6 @@ spec:
     name: cortex_querier_zone_a_hpa_default
     type: prometheus
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_a_hpa_default_requests_duration
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-a.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -5031,7 +5029,6 @@ spec:
     name: querier-zone-b
   triggers:
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_b_hpa_default
       query: sum(max_over_time(cortex_query_scheduler_inflight_requests{container="query-scheduler",namespace="default",quantile="0.5",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
@@ -5039,7 +5036,6 @@ spec:
     name: cortex_querier_zone_b_hpa_default
     type: prometheus
   - metadata:
-      ignoreNullValues: "true"
       metricName: cortex_querier_zone_b_hpa_default_requests_duration
       query: sum(rate(cortex_querier_request_duration_seconds_sum{container="querier",namespace="default",pod=~"(querier|query-scheduler)-zone-b.*"}[1m]))
       serverAddress: http://prometheus.default:9090/prometheus
