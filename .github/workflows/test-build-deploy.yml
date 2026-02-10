@@ -488,7 +488,7 @@ jobs:
       - integration
       - deploy
     runs-on: ubuntu-latest
-    if:  github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+    if: always() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
     permissions:
       id-token: write
     steps:
