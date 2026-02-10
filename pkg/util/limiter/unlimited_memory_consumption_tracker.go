@@ -21,7 +21,12 @@ type UnlimitedMemoryTrackingQuery struct {
 
 func (u *UnlimitedMemoryTrackingQuery) Exec(ctx context.Context) *promql.Result {
 	ctx = AddMemoryTrackerToContext(ctx, u.memoryConsumptionTracker)
-	ctx = ContextWithNewSeriesLabelsDeduplicator(ctx)
+	// Note: We intentionally do NOT add a SeriesLabelsDeduplicator here.
+	// The deduplicator is added per-Select in multiQuerier.Select to ensure
+	// each selector in a query (e.g., both sides of `foo + foo`) independently
+	// tracks memory. A query-level deduplicator would cause panics because
+	// the second selector would not increase memory (series already seen)
+	// but would still try to decrease it via MemoryTrackingSeriesSet.
 	return u.inner.Exec(ctx)
 }
 

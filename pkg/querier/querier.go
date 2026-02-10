@@ -393,6 +393,14 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 	spanLog, ctx := spanlogger.New(ctx, mq.logger, tracer, "multiQuerier.Select")
 	defer spanLog.Finish()
 
+	// Create a per-Select deduplicator. Each Select call in a query independently
+	// tracks and deduplicates its series. For example, in `foo + foo`, each binary
+	// operand has its own deduplicator to ensure accurate per-selector memory
+	// accounting. This prevents panics when the same series appears in multiple
+	// selectors - each selector's MemoryTrackingSeriesSet will correctly track
+	// memory for its own series.
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+
 	ctx, queriers, minT, maxT, err := mq.getQueriers(ctx, mq.minT, mq.maxT, matchers...)
 	if errors.Is(err, errEmptyTimeRange) {
 		return storage.EmptySeriesSet()
