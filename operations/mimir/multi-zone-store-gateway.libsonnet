@@ -65,7 +65,7 @@
       'store-gateway.sharding-ring.zone-awareness-enabled': 'true',
       'store-gateway.sharding-ring.prefix': 'multi-zone/',
     }
-  ),
+  ) + $.store_dynamic_replication_override,
 
   querier_args+:: (
     // During the migration, if read path switch is enabled we need to apply changes directly to queriers instead of queryBlocksStorageConfig.
