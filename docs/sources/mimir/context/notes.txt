@@ -1,0 +1,155 @@
+Notes from trying to deploy Mimir v3.x
+
+Searching “deploy Mimir v3” sends me here https://grafana.com/docs/mimir/latest/references/architecture/deployment-modes/
+
+Which says:
+To deploy Grafana Mimir in microservices mode, use Kubernetes and the mimir-distributed Helm chart.
+
+Loading the 2nd link sends you here https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed
+
+Which says: For the full documentation, visit Grafana mimir-distributed Helm chart documentation.
+
+So we go from Grafana docs->GitHub->Grafana Docs in rapid succession, maybe not ideal.
+
+https://github.com/grafana/mimir/tree/main/operations/helm/charts/mimir-distributed
+
+The embedded minio chart defaults to trying to pull releases that no longer exist, which are:
+
+
+image:
+  repository: quay.io/minio/minio
+  tag: RELEASE.2024-12-18T13-15-44Z
+
+
+and
+
+
+mcImage:
+  repository: quay.io/minio/mc
+  tag: RELEASE.2024-11-21T17-21-54Z
+
+There are newer ones, and “latest” also works, but MinIO has dropped OSS Support, so this should probably be changed to something else entirely, as was raised in this Slack thread.
+
+
+
+kubectl create namespace mimir-test
+
+Now create a values file that actually has a valid release of the MinIO chart, because the defaults (as shown above) are incorrect:
+
+
+minio:
+  image:
+    tag: latest
+  mcImage:
+    tag: latest
+
+
+When deploying Alloy, there is a problem with the last line of the config, which is not indented and therefore the deployment fails. Here’s a complete working config:
+
+alloy:
+  clustering:
+    enabled: false
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+  serviceAccount:
+    create: true
+    name: ""
+  rbac:
+    create: true
+
+  configMap:
+    content: |
+      // Kubernetes service discovery for pods in test-mimir namespace
+      discovery.kubernetes "pods" {
+        role = "pod"
+        namespaces {
+          names = ["mimir-test"]
+        }
+      }
+      // Relabel pods to extract metrics endpoints
+      discovery.relabel "pod_relabel" {
+        targets = discovery.kubernetes.pods.targets
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_name"]
+          regex = ""
+          action = "drop"
+        }
+        rule {
+            source_labels = ["__meta_kubernetes_pod_container_port_name"]
+            regex = ".*-metrics"
+            action = "keep"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_phase"]
+          regex = "Succeeded|Failed"
+          action = "drop"
+        }
+        // Add pod metadata as labels
+        rule {
+          source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_label_name"]
+          replacement = "$1"
+          separator = "/"
+          action = "replace"
+          target_label = "job"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          action        = "replace"
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          action        = "replace"
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          action        = "replace"
+          target_label  = "container"
+        }
+      }
+      // Scrape metrics from discovered targets
+      prometheus.scrape "kubernetes_pods" {
+        targets    = discovery.relabel.pod_relabel.output
+        forward_to = [prometheus.remote_write.test_mimir.receiver]
+        scrape_interval = "15s"
+        scrape_timeout  = "10s"
+      }
+      // Remote write to Mimir
+      prometheus.remote_write "test_mimir" {
+        endpoint {
+          url = "http://mimir-gateway.mimir-test.svc.cluster.local/api/v1/push"
+          send_native_histograms = true
+        }
+      }
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    fsGroup: 472
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    fsGroup: 472
+
+# Disable ServiceMonitor for monitoring Alloy itself
+serviceMonitor:
+  enabled: false
+
+
+
+
+You’ll need to change the default service for the data source from the documented:
+
+http://mimir-nginx.mimir-test.svc:80/prometheus
+
+to:
+
+http://mimir-gateway.mimir-test.svc:80/prometheus
+

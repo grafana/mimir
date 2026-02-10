@@ -40,7 +40,7 @@ spec:
       serviceAccountName: minio-sa
       containers:
         - name: minio
-          image: "quay.io/minio/minio:RELEASE.2024-12-18T13-15-44Z"
+          image: "quay.io/minio/minio:latest"
           imagePullPolicy: IfNotPresent
           command:
             - "/bin/sh"

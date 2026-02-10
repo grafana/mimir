@@ -1,0 +1,11 @@
+@eamonryan and @hedss ran into some issues trying to deploy Mimir 3. See smenotes.md.
+
+These are the relevant pages to update for each of the three issues outlined:
+
+1. https://grafana.com/docs/mimir/latest/references/architecture/deployment-modes/
+The link at the bottom to the helm chart documentation should link to https://grafana.com/docs/helm-charts/mimir-distributed/latest/, not the github repo.
+
+2. Do nothing yet. Skip this for now. Need to confirm location with SME.
+
+3. https://grafana.com/docs/helm-charts/mimir-distributed/latest/get-started-helm-charts/
+Under "Generate test metrics" step 1 code block, very last line. Indent `enabled: false` two spaces to be correct yaml.
