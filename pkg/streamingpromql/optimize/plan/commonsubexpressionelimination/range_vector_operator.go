@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/grafana/mimir/pkg/streamingpromql/types"
@@ -332,10 +333,19 @@ func (d bufferedRangeVectorStepData) Close() {
 type RangeVectorDuplicationConsumer struct {
 	Buffer *RangeVectorDuplicationBuffer
 
-	consumerIndex int
+	filters []*labels.Matcher
+
+	// unfilteredSeriesBitmap contains one entry per unfiltered input series, where true indicates that it passes this consumer's filters.
+	// If this consumer has no filters, this is nil.
+	unfilteredSeriesBitmap []bool
+	consumerIndex          int
 }
 
 var _ types.RangeVectorOperator = &RangeVectorDuplicationConsumer{}
+
+func (d *RangeVectorDuplicationConsumer) SetFilters(filters []*labels.Matcher) {
+	d.filters = filters
+}
 
 func (d *RangeVectorDuplicationConsumer) SeriesMetadata(ctx context.Context, matchers types.Matchers) ([]types.SeriesMetadata, error) {
 	return d.Buffer.SeriesMetadata(ctx, matchers)
