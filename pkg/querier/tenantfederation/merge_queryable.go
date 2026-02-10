@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -397,15 +396,9 @@ func defaultMultiTenantSelectFunc(ctx context.Context, jobs []string, selMergeQu
 	// We don't use the context passed to this function, since the context has to live longer
 	// than the call to ForEachJob (i.e. as long as seriesSets)
 	run := func(_ context.Context, idx int) error {
-		// Create a per-tenant deduplicator for federated queries. Each federated tenant
-		// gets its own deduplicator to ensure memory consumption is accurately tracked
-		// per tenant. For example, with two federated tenants, there are two deduplicators,
-		// and results from queriers are wrapped by different MemoryTrackingSeriesSet
-		// instances for each tenant.
-		tenantCtx := limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
 		id := jobs[idx]
 		seriesSets[idx] = NewAddLabelsSeriesSet(
-			selMergeQuerier.Select(tenantCtx, id, sortSeries, hints, matchers...),
+			selMergeQuerier.Select(ctx, id, sortSeries, hints, matchers...),
 			[]labels.Label{
 				{
 					Name:  idLabelName,

@@ -473,6 +473,13 @@ func (mq *multiQuerier) Select(ctx context.Context, _ bool, sp *storage.SelectHi
 		return storage.ErrSeriesSet(err)
 	}
 
+	// Create one SeriesLabelsDeduplicator for each multiQuerier Select call in the context. This to be passed further
+	// in different Queriers call chain. SeriesLabelsDeduplicator will deduplicate Labels and
+	// IncreaseMemoryConsumptionForLabels.
+	// The Select result then will be wrapped by MemoryTrackingSeriesSet which
+	// will DecreaseMemoryConsumptionForLabels as it passes the Series to the query engine.
+	ctx = limiter.ContextWithNewSeriesLabelsDeduplicator(ctx)
+
 	if len(queriers) == 1 {
 		result := queriers[0].Select(ctx, true, sp, matchers...)
 		if sp != nil && sp.Func == "series" {

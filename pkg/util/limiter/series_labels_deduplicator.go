@@ -43,10 +43,9 @@ func NewSeriesLabelsDeduplicator() SeriesLabelsDeduplicator {
 // at which label deduplication and memory tracking occurs. Different scopes are used
 // depending on the query execution path:
 //
-// 1. Per-selector scope (MQE streaming queries)
+// 1. Per-selector scope (MQE streaming queries, including federated queries)
 // 2. Per-request scope (HTTP middleware)
-// 3. Per-tenant scope (federated queries)
-// 4. Per-query scope (remote read, ruler)
+// 3. Per-query scope (remote read, ruler)
 //
 // The deduplicator must be added to the context before series selection begins, as it
 // tracks unique labels and increases memory consumption during the Select() operation.
