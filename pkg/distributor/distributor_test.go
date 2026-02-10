@@ -12,6 +12,7 @@ import (
 	"io"
 	"math"
 	"math/rand"
+	"net/http"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -2216,7 +2217,7 @@ func mkLabels(n int, extra ...string) []mimirpb.LabelAdapter {
 
 func BenchmarkDistributor_Push(b *testing.B) {
 	const (
-		numSeriesPerRequest = 1000
+		numSeriesPerRequest = 1024
 	)
 	ctx := user.InjectOrgID(context.Background(), "user")
 
@@ -2364,6 +2365,83 @@ func BenchmarkDistributor_Push(b *testing.B) {
 
 				for i := 0; i < numSeriesPerRequest; i++ {
 					metrics[i] = mkLabels(10, "team", strconv.Itoa(i%4))
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			expectedErr: "",
+		},
+		"HA dedup; no HA samples in the request": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.AcceptHASamples = true
+			},
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					metrics[i] = mkLabels(25, "team", strconv.Itoa(i%4))
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			expectedErr: "",
+		},
+		"HA dedup; all samples same replica": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.AcceptHASamples = true
+				limits.HAMaxClusters = 100
+			},
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
+					for i := 0; i < 25; i++ {
+						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+					}
+					lbls.Set("cluster", "c1")
+					lbls.Set("__replica__", "r1")
+
+					metrics[i] = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
+					samples[i] = mimirpb.Sample{
+						Value:       float64(i),
+						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
+					}
+				}
+
+				return metrics, samples
+			},
+			expectedErr: "",
+		},
+		"HA dedup; 4 clusters 8 replicas evenly split": {
+			prepareConfig: func(limits *validation.Limits) {
+				limits.AcceptHASamples = true
+				limits.HAMaxClusters = 100
+			},
+			prepareSeries: func() ([][]mimirpb.LabelAdapter, []mimirpb.Sample) {
+				metrics := make([][]mimirpb.LabelAdapter, numSeriesPerRequest)
+				samples := make([]mimirpb.Sample, numSeriesPerRequest)
+
+				for i := 0; i < numSeriesPerRequest; i++ {
+					lbls := labels.NewBuilder(labels.FromStrings(model.MetricNameLabel, "foo"))
+					for i := 0; i < 25; i++ {
+						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+					}
+					cluster, replica := i/2+1, i%2+1
+					lbls.Set("cluster", strconv.Itoa(cluster))
+					lbls.Set("__replica__", strconv.Itoa(replica))
+
+					metrics[i] = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
 					samples[i] = mimirpb.Sample{
 						Value:       float64(i),
 						TimestampMs: time.Now().UnixNano() / int64(time.Millisecond),
@@ -5065,6 +5143,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 		ctx               context.Context
 		enableHaTracker   bool
 		acceptHaSamples   bool
+		haMaxClusters     int
 		reqs              []*mimirpb.WriteRequest
 		expectedReqs      []*mimirpb.WriteRequest
 		expectedNextCalls int
@@ -5120,13 +5199,17 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			},
 			expectedReqs:      []*mimirpb.WriteRequest{makeWriteRequestForGenerators(5, labelSetGenWithCluster(cluster1), nil, nil)},
 			expectedNextCalls: 1,
-			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
-			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
+			expectErrs: []*status.Status{
+				nil,
+				status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error()),
+			},
+			expectDetails: []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
 		}, {
 			name:            "exceed max ha clusters limit",
 			ctx:             ctxWithUser,
 			enableHaTracker: true,
 			acceptHaSamples: true,
+			haMaxClusters:   1,
 			reqs: []*mimirpb.WriteRequest{
 				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil),
 				makeWriteRequestForGenerators(5, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil),
@@ -5142,6 +5225,145 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				status.New(codes.FailedPrecondition, newTooManyClustersError(1).Error()),
 			},
 			expectDetails: []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails, tooManyClusterDetails, tooManyClusterDetails},
+		}, {
+			name:            "perform partial HA deduplication",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				r1 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+
+				r2 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+				r3 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica1, cluster2), nil, nil)
+				r2.Timeseries = append(r2.Timeseries, r3.Timeseries...)
+
+				return []*mimirpb.WriteRequest{r1, r2}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(1, labelSetGenWithCluster(cluster1), nil, nil)
+				c2 := makeWriteRequestForGenerators(1, labelSetGenWithCluster(cluster2), nil, nil)
+
+				return []*mimirpb.WriteRequest{c1, c2}
+			}(),
+			expectedNextCalls: 2,
+			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
+			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
+		}, {
+			name:            "mixed series from multiple primary replicas in single request",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// Both replicas are primary for their respective clusters
+				r1 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+				r2 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica1, cluster2), nil, nil)
+				r1.Timeseries = append(r1.Timeseries, r2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{r1}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+				c2 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster2), nil, nil)
+				c1.Timeseries = append(c1.Timeseries, c2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1,
+			expectErrs:        []*status.Status{nil},
+		}, {
+			name:            "mixed series with and without cluster labels in single request",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				r1 := makeWriteRequestForGenerators(2, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+				// Series without cluster/replica labels
+				r2 := makeWriteRequestForGenerators(2, labelSetGenForStringPairs(t, "__name__", "metric_%d", "label", "value"), nil, nil)
+				r1.Timeseries = append(r1.Timeseries, r2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{r1}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+				c2 := makeWriteRequestForGenerators(2, labelSetGenForStringPairs(t, "__name__", "metric_%d", "label", "value"), nil, nil)
+				c1.Timeseries = append(c1.Timeseries, c2.Timeseries...)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1,
+			expectErrs:        []*status.Status{nil},
+		}, {
+			name:            "mixed primary and non-primary replicas with non-HA series in single request",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// First establish replica1 as primary for cluster1
+				r1 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+
+				// Then send mixed request: primary replica, non-primary replica, and non-HA series
+				r2 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+				r3 := makeWriteRequestForGenerators(1, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+				r4 := makeWriteRequestForGenerators(1, labelSetGenForStringPairs(t, "__name__", "no_ha_metric", "label", "value"), nil, nil)
+				r2.Timeseries = append(r2.Timeseries, r3.Timeseries...)
+				r2.Timeseries = append(r2.Timeseries, r4.Timeseries...)
+
+				return []*mimirpb.WriteRequest{r1, r2}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(1, labelSetGenWithCluster(cluster1), nil, nil)
+				c2 := makeWriteRequestForGenerators(1, labelSetGenWithCluster(cluster1), nil, nil)
+				c3 := makeWriteRequestForGenerators(1, labelSetGenForStringPairs(t, "__name__", "no_ha_metric", "label", "value"), nil, nil)
+				c2.Timeseries = append(c2.Timeseries, c3.Timeseries...)
+
+				return []*mimirpb.WriteRequest{c1, c2}
+			}(),
+			expectedNextCalls: 2,
+			expectErrs:        []*status.Status{nil, status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error())},
+			expectDetails:     []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
+		}, {
+			name:            "series with only cluster label (no replica label)",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// Series with cluster but no replica - should be treated as non-HA
+				r1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{r1}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(2, labelSetGenWithCluster(cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1,
+			expectErrs:        []*status.Status{nil},
+		}, {
+			name:            "empty timeseries after deduplication - all samples from non-primary replica",
+			ctx:             ctxWithUser,
+			enableHaTracker: true,
+			acceptHaSamples: true,
+			reqs: func() []*mimirpb.WriteRequest {
+				// First establish replica1 as primary
+				r1 := makeWriteRequestForGenerators(3, labelSetGenWithReplicaAndCluster(replica1, cluster1), nil, nil)
+
+				// Then send request with only non-primary replica - all should be deduplicated
+				r2 := makeWriteRequestForGenerators(3, labelSetGenWithReplicaAndCluster(replica2, cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{r1, r2}
+			}(),
+			expectedReqs: func() []*mimirpb.WriteRequest {
+				c1 := makeWriteRequestForGenerators(3, labelSetGenWithCluster(cluster1), nil, nil)
+
+				return []*mimirpb.WriteRequest{c1}
+			}(),
+			expectedNextCalls: 1, // next() should not be called for the second request since all samples are deduplicated
+			expectErrs: []*status.Status{
+				nil,
+				status.New(codes.AlreadyExists, newReplicasDidNotMatchError(replica2, replica1).Error()),
+			},
+			expectDetails: []*mimirpb.ErrorDetails{nil, replicasDidNotMatchDetails},
 		},
 	}
 
@@ -5164,7 +5386,8 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				nextCallCount++
 				req, err := pushReq.WriteRequest()
 				require.NoError(t, err)
-				gotReqs = append(gotReqs, req)
+				reqCopy := *req // make a copy of the request to retain the slices as they were at the time of the request
+				gotReqs = append(gotReqs, &reqCopy)
 				pushReq.CleanUp()
 				pushReq.AddCleanup(duplicateCleanup)
 				return nil
@@ -5174,7 +5397,7 @@ func TestHaDedupeMiddleware(t *testing.T) {
 			flagext.DefaultValues(&limits)
 			limits.AcceptHASamples = tc.acceptHaSamples
 			limits.MaxLabelValueLength = 15
-			limits.HAMaxClusters = 1
+			limits.HAMaxClusters = tc.haMaxClusters
 
 			ds, _, _, _ := prepare(t, prepConfig{
 				numDistributors: 1,
@@ -5196,13 +5419,20 @@ func TestHaDedupeMiddleware(t *testing.T) {
 				gotErrs = append(gotErrs, handledErr)
 			}
 
-			assert.Equal(t, tc.expectedReqs, gotReqs)
+			assert.Len(t, gotReqs, len(tc.expectedReqs))
+			for i := range gotReqs {
+				assert.ElementsMatch(t, tc.expectedReqs[i].Timeseries, gotReqs[i].Timeseries)
+				assert.ElementsMatch(t, tc.expectedReqs[i].Metadata, gotReqs[i].Metadata)
+				assert.Equal(t, tc.expectedReqs[i].Source, gotReqs[i].Source)
+			}
 			assert.Len(t, gotErrs, len(tc.expectErrs))
 			for errIdx, expectErr := range tc.expectErrs {
-				if expectErr == nil {
-					assert.NoError(t, gotErrs[errIdx])
-				} else {
+				if expectErr != nil {
+					// Expect a gRPC error.
 					checkGRPCError(t, expectErr, tc.expectDetails[errIdx], gotErrs[errIdx])
+				} else {
+					// Expect no error.
+					assert.Nil(t, gotErrs[errIdx])
 				}
 			}
 
@@ -5502,6 +5732,87 @@ func TestSortAndFilterMiddleware(t *testing.T) {
 
 			// Cleanup must have been called once per request.
 			assert.Equal(t, len(tc.reqs), cleanupCallCount)
+		})
+	}
+}
+
+func TestSortByAccepted(t *testing.T) {
+	tests := []struct {
+		name             string
+		states           []replicaState
+		expectedAccepted int
+	}{
+		{
+			name:             "empty request",
+			states:           []replicaState{},
+			expectedAccepted: 0,
+		},
+		{
+			name:             "all accepted (primary)",
+			states:           []replicaState{replicaIsPrimary, replicaIsPrimary, replicaIsPrimary},
+			expectedAccepted: 3,
+		},
+		{
+			name:             "all accepted (not HA)",
+			states:           []replicaState{replicaNotHA, replicaNotHA},
+			expectedAccepted: 2,
+		},
+		{
+			name:             "all rejected (deduped)",
+			states:           []replicaState{replicaDeduped, replicaDeduped},
+			expectedAccepted: 0,
+		},
+		{
+			name:             "mixed: accept, reject, accept",
+			states:           []replicaState{replicaIsPrimary, replicaDeduped, replicaIsPrimary},
+			expectedAccepted: 2,
+		},
+		{
+			name:             "mixed: reject, accept, reject",
+			states:           []replicaState{replicaDeduped, replicaIsPrimary, replicaDeduped},
+			expectedAccepted: 1,
+		},
+		{
+			name:             "mixed: reject, reject, accept",
+			states:           []replicaState{replicaDeduped, replicaDeduped, replicaIsPrimary},
+			expectedAccepted: 1,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			count := len(tc.states)
+			req := &mimirpb.WriteRequest{
+				Timeseries: make([]mimirpb.PreallocTimeseries, count),
+			}
+			replicas := make([]haReplica, count)
+			replicaInfos := make(map[haReplica]*replicaInfo)
+
+			for i, state := range tc.states {
+				req.Timeseries[i] = mimirpb.PreallocTimeseries{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{{Name: "id", Value: fmt.Sprintf("%d", i)}},
+					},
+				}
+				r := haReplica{cluster: "c", replica: fmt.Sprintf("%d", i)}
+				replicas[i] = r
+				replicaInfos[r] = &replicaInfo{state: state}
+			}
+
+			lastAcceptedIdx := sortByAccepted(req, replicaInfos, replicas)
+			require.Equal(t, tc.expectedAccepted-1, lastAcceptedIdx)
+
+			for i := 0; i < count; i++ {
+				r := replicas[i]
+				info := replicaInfos[r]
+				isAccepted := info.state.equals(replicaAccepted)
+
+				if i <= lastAcceptedIdx {
+					require.True(t, isAccepted, "index %d should be accepted, state: %v", i, info.state)
+				} else {
+					require.False(t, isAccepted, "index %d should be rejected, state: %v", i, info.state)
+				}
+			}
 		})
 	}
 }
@@ -7196,6 +7507,12 @@ func (i *noopIngester) Close() error {
 
 func (i *noopIngester) Push(context.Context, *mimirpb.WriteRequest, ...grpc.CallOption) (*mimirpb.WriteResponse, error) {
 	return nil, nil
+}
+
+func (*noopIngester) Check(ctx context.Context, in *grpc_health_v1.HealthCheckRequest, opts ...grpc.CallOption) (*grpc_health_v1.HealthCheckResponse, error) {
+	return &grpc_health_v1.HealthCheckResponse{
+		Status: grpc_health_v1.HealthCheckResponse_SERVING,
+	}, nil
 }
 
 type stream struct {
@@ -9267,4 +9584,170 @@ func (m *MockTimeSource) Sleep(d time.Duration) {
 
 func (m *MockTimeSource) Add(d time.Duration) {
 	m.CurrentTime = m.CurrentTime.Add(d)
+}
+
+func BenchmarkDistributor_HaDedupMiddleware(b *testing.B) {
+	var (
+		now                 = time.Now()
+		userID              = "user-1"
+		ctx                 = user.InjectOrgID(context.Background(), userID)
+		numSeriesPerRequest = 1024
+
+		testConfig = prepConfig{
+			numDistributors: 1,
+		}
+	)
+
+	testCases := map[string]struct {
+		rejectedSeriesPercentage float64
+	}{
+		"no series rejected": {
+			rejectedSeriesPercentage: 0,
+		},
+	}
+
+	for testName, _ := range testCases {
+		b.Run(testName, func(b *testing.B) {
+			// Pre-generate all write requests that will be used in this test.
+			reqs := make([]*mimirpb.WriteRequest, 0, b.N)
+			for r := 0; r < b.N; r++ {
+				req := &mimirpb.WriteRequest{
+					Timeseries: make([]mimirpb.PreallocTimeseries, 0, numSeriesPerRequest),
+				}
+
+				for s := 0; s < numSeriesPerRequest; s++ {
+					req.Timeseries = append(req.Timeseries, makeTimeseries([]string{model.MetricNameLabel, fmt.Sprintf("series_%d", s)}, makeSamples(now.UnixMilli(), float64(s)), nil, nil))
+				}
+
+				reqs = append(reqs, req)
+			}
+
+			// Create a distributor.
+			distributors, _, _, _ := prepare(b, testConfig)
+			require.Len(b, distributors, 1)
+
+			distributors[0].cfg.HATrackerConfig.EnableHATracker = true
+
+			// Get the middleware function.
+			noop := func(_ context.Context, _ *Request) error { return nil }
+			fn := distributors[0].prePushHaDedupeMiddleware(noop)
+
+			b.ResetTimer()
+
+			for n := 0; n < b.N; n++ {
+				err := fn(ctx, newRequest(func() (req *mimirpb.WriteRequest, cleanup func(), err error) { return reqs[n], func() {}, nil }))
+				require.NoError(b, err)
+			}
+		})
+	}
+}
+
+// mockHATracker is a mock implementation of haTracker for testing
+type mockHATracker struct {
+	services.Service
+	http.Handler
+	errToReturn error
+}
+
+func (m *mockHATracker) checkReplica(ctx context.Context, userID, cluster, replica string, _ time.Time, _ time.Time) error {
+	return m.errToReturn
+}
+
+func (m *mockHATracker) cleanupHATrackerMetricsForUser(userID string) {
+	// No-op for mock
+}
+
+func TestDistributor_replicaObserved(t *testing.T) {
+	//limits := &validation.Overrides{}
+	userID := "test-user"
+	cluster := "c1"
+	replica := "r1"
+	now := time.Now()
+	ts := now.Unix()
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	testConfig := prepConfig{numDistributors: 1, enableTracker: true}
+
+	replicasDidNotMatch := &replicasDidNotMatchError{}
+	tooManyClusters := &tooManyClustersError{}
+	unknownErr := errors.New("unknown")
+
+	tests := []struct {
+		name         string
+		cluster      string
+		replica      string
+		haTrackerErr error
+		wantState    replicaState
+		wantErr      error
+	}{
+		{
+			name:         "primary replica",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: nil,
+			wantState:    replicaIsPrimary,
+			wantErr:      nil,
+		},
+		{
+			name:         "deduped replica",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: replicasDidNotMatch,
+			wantState:    replicaDeduped,
+			wantErr:      replicasDidNotMatch,
+		},
+		{
+			name:         "too many clusters",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: tooManyClusters,
+			wantState:    replicaRejectedTooManyClusters,
+			wantErr:      tooManyClusters,
+		},
+		{
+			name:         "unknown error",
+			cluster:      cluster,
+			replica:      replica,
+			haTrackerErr: unknownErr,
+			wantState:    replicaRejectedUnknown,
+			wantErr:      unknownErr,
+		},
+		{
+			name:         "missing cluster label",
+			cluster:      "",
+			replica:      replica,
+			haTrackerErr: nil,
+			wantState:    replicaNotHA,
+			wantErr:      nil,
+		},
+		{
+			name:         "missing replica label",
+			cluster:      cluster,
+			replica:      "",
+			haTrackerErr: nil,
+			wantState:    replicaNotHA,
+			wantErr:      nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			d, _, _, _ := prepare(t, testConfig)
+			require.Len(t, d, 1)
+
+			// Mock HA tracker behavior
+			mockHATracker := &mockHATracker{
+				errToReturn: tc.haTrackerErr,
+			}
+			d[0].HATracker = mockHATracker
+
+			state, err := d[0].replicaObserved(ctx, userID, haReplica{cluster: tc.cluster, replica: tc.replica}, ts)
+			assert.Equal(t, tc.wantState, state)
+			if tc.wantErr != nil {
+				assert.ErrorIs(t, err, tc.wantErr)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
