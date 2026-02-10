@@ -469,7 +469,7 @@ jobs:
         run: |
           ./.github/workflows/scripts/push-images.sh /tmp/images grafana/ $(make image-tag)
 
-  send-slack-notification-on-failed-automated-vendoring:
+  send-slack-notification-on-automated-vendoring:
     needs:
       - prepare
       - goversion
@@ -488,11 +488,21 @@ jobs:
       - integration
       - deploy
     runs-on: ubuntu-latest
-    if: failure() && github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
+    if:  github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'vendored-mimir-prometheus-update')
     permissions:
       id-token: write
     steps:
-      - name: Send Slack message for PR
+      - name: Send Slack message for successful PR
+        if: success()
+        uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
+        with:
+          channel-id: C04AF91LPFX #mimir-ci-notifications
+          payload: |
+            {
+              "text": ":happy-mac: *Automated vendoring of mimir-prometheus into Mimir has succeeded and is awaiting approval.*\n<!subteam^S03C2P8659U> please review <${{ github.event.pull_request.html_url }}|the PR>, then approve and merge it."
+            }
+      - name: Send Slack message for failed PR
+        if: failure()
         uses: grafana/shared-workflows/actions/send-slack-message@7b628e7352c2dea057c565cc4fcd5564d5f396c0 #v1.0.0
         with:
           channel-id: C04AF91LPFX #mimir-ci-notifications
