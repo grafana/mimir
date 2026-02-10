@@ -3004,6 +3004,10 @@ minio:
   enabled: true
   mode: standalone
   rootUser: grafana-mimir
+  image:
+    tag: latest
+  mcImage:
+    tag: latest
   buckets:
     - name: mimir-tsdb
       policy: none
