@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 
-FROM grafana/mimirtool:2.17.6-rc.0
+FROM grafana/mimirtool:2.17.6
 
 COPY entrypoint.sh /entrypoint.sh
 
