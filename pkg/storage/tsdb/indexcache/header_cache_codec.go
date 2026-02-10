@@ -15,25 +15,33 @@ import (
 // such as the length of Postings entries or relation between consecutive Postings entries -
 // This logic is left for the implementations of the PostingOffsetTable interface.
 type PostingsOffsetCacheCodec interface {
-	//EncodeRange(index.Range) []byte
-	//DecodeRange([]byte) (index.Range, error)
-	EncodeRanges([]index.Range) []byte
-	DecodeRanges([]byte) ([]index.Range, error)
+	EncodeSingleRange(index.Range) []byte
+	DecodeSingleRange([]byte) (index.Range, error)
+	EncodeMultiRange([]index.Range) []byte
+	DecodeMultiRange([]byte) ([]index.Range, error)
 }
 
 type BigEndianPostingsOffsetCodec struct{}
 
-//func (c BigEndianPostingsOffsetCodec) EncodeRange(rng index.Range) []byte {
-//	buf := make([]byte, 0, 2*binary.MaxVarintLen64)
-//	buf = binary.AppendUvarint(buf, uint64(rng.Start))
-//	buf = binary.AppendUvarint(buf, uint64(rng.End))
-//	return buf
-//}
+func (c BigEndianPostingsOffsetCodec) EncodeSingleRange(rng index.Range) []byte {
+	buflen := binary.MaxVarintLen64 + // Leading len field for number of entries - always 1 in this case
+		2*binary.MaxVarintLen64 // start + end integers for one entry
 
-func (c BigEndianPostingsOffsetCodec) EncodeRanges(rngs []index.Range) []byte {
-	buflen := binary.MaxVarintLen64 + // Leading len field for number of entries
-		2*binary.MaxVarintLen64*len(rngs) // start-end for each entry
 	buf := make([]byte, 0, buflen)
+	buf = binary.AppendUvarint(buf, uint64(1))
+
+	buf = binary.AppendUvarint(buf, uint64(rng.Start))
+	buf = binary.AppendUvarint(buf, uint64(rng.End))
+	return buf
+}
+
+func (c BigEndianPostingsOffsetCodec) EncodeMultiRange(rngs []index.Range) []byte {
+	buflen := binary.MaxVarintLen64 + // Leading len field for number of entries
+		2*binary.MaxVarintLen64*len(rngs) // start + end integers for each entry
+
+	buf := make([]byte, 0, buflen)
+	buf = binary.AppendUvarint(buf, uint64(len(rngs)))
+
 	for _, rng := range rngs {
 		buf = binary.AppendUvarint(buf, uint64(rng.Start))
 		buf = binary.AppendUvarint(buf, uint64(rng.End))
@@ -41,19 +49,26 @@ func (c BigEndianPostingsOffsetCodec) EncodeRanges(rngs []index.Range) []byte {
 	return buf
 }
 
-//func (c BigEndianPostingsOffsetCodec) DecodeRange(b []byte) (index.Range, error) {
-//	rng, _, err := decodeRange(b)
-//	return rng, err
-//}
+func (c BigEndianPostingsOffsetCodec) DecodeSingleRange(b []byte) (index.Range, error) {
+	decLen, n := binary.Uvarint(b)
+	if n <= 0 || decLen != 1 {
+		// Number of entries should always be 1 for encodings from EncodeSingleRange
+		return index.Range{}, errors.New("invalid single postings offsets encoding")
+	}
 
-func (c BigEndianPostingsOffsetCodec) DecodeRanges(b []byte) ([]index.Range, error) {
+	startIdx := n
+	rng, _, err := decodeRange(b[startIdx:])
+	return rng, err
+}
+
+func (c BigEndianPostingsOffsetCodec) DecodeMultiRange(b []byte) ([]index.Range, error) {
 	decLen, n := binary.Uvarint(b)
 	if n <= 0 {
 		return nil, errors.New("invalid multi postings offsets encoding")
 	}
 
-	rngs := make([]index.Range, decLen)
 	startIdx := n
+	rngs := make([]index.Range, decLen)
 
 	for i := 0; i < int(decLen); i++ {
 		rng, read, err := decodeRange(b[startIdx:])
@@ -67,6 +82,10 @@ func (c BigEndianPostingsOffsetCodec) DecodeRanges(b []byte) ([]index.Range, err
 	return rngs, nil
 }
 
+// decodeRange decodes a single start + end integer pair to an index.Range.
+// This should only be called after decoding the leading integer
+// used to indicate the number of entries in the full list.
+// DecodeSingleRange and DecodeMultiRange handle this before calling.
 func decodeRange(b []byte) (index.Range, int, error) {
 	rng := index.Range{}
 	read := 0

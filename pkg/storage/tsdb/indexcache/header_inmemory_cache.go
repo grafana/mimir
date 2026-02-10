@@ -75,7 +75,7 @@ func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffset(
 	_ time.Duration,
 ) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	c.setRanges(key, []index.Range{rng})
+	c.setSingle(key, rng)
 }
 
 func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(
@@ -85,7 +85,7 @@ func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffset(
 	lbl labels.Label,
 ) (index.Range, bool) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	return c.getRange(key)
+	return c.getSingle(key)
 }
 
 func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
@@ -102,7 +102,7 @@ func (c *InMemoryPostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
 		matcherStr: m.String(),
 		isSubtract: isSubtract,
 	}
-	c.setRanges(key, rngs)
+	c.setMulti(key, rngs)
 }
 
 func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
@@ -118,28 +118,30 @@ func (c *InMemoryPostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
 		matcherStr: m.String(),
 		isSubtract: isSubtract,
 	}
-	return c.getRanges(key)
+	return c.getMulti(key)
 }
 
-func (c *InMemoryPostingsOffsetTableCache) getRange(key InMemoryCacheKey) (index.Range, bool) {
-	rngs, ok := c.getRanges(key)
+func (c *InMemoryPostingsOffsetTableCache) getSingle(key InMemoryCacheKey) (index.Range, bool) {
+	val, ok := c.lru.Get(key)
 	if !ok {
-		// error for this case logging handled by getRanges
 		return index.Range{}, false
 	}
-	if len(rngs) != 1 {
+
+	rng, err := c.valCodec.DecodeSingleRange(val)
+	if err != nil {
 		level.Error(c.logger).Log(
-			"msg", "unexpected cache value for index.Range slice, expected single value",
+			"msg", "error decoding cache value to index.Range",
 			"key", key,
-			"len", len(rngs),
+			"value", val,
 		)
 		c.lru.Remove(key)
 		return index.Range{}, false
 	}
-	return rngs[0], true
+
+	return rng, true
 }
 
-func (c *InMemoryPostingsOffsetTableCache) getRanges(key InMemoryCacheKey) ([]index.Range, bool) {
+func (c *InMemoryPostingsOffsetTableCache) getMulti(key InMemoryCacheKey) ([]index.Range, bool) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
@@ -148,7 +150,7 @@ func (c *InMemoryPostingsOffsetTableCache) getRanges(key InMemoryCacheKey) ([]in
 		return nil, false
 	}
 
-	rngs, err := c.valCodec.DecodeRanges(val)
+	rngs, err := c.valCodec.DecodeMultiRange(val)
 	if err != nil {
 		level.Error(c.logger).Log(
 			"msg", "error decoding cache value to index.Range slice",
@@ -162,14 +164,14 @@ func (c *InMemoryPostingsOffsetTableCache) getRanges(key InMemoryCacheKey) ([]in
 	return rngs, true
 }
 
-func (c *InMemoryPostingsOffsetTableCache) setRanges(key InMemoryCacheKey, rngs []index.Range) {
+func (c *InMemoryPostingsOffsetTableCache) setSingle(key InMemoryCacheKey, rng index.Range) {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
 
 	if _, ok := c.lru.Get(key); ok {
 		return
 	}
-	val := c.valCodec.EncodeRanges(rngs)
+	val := c.valCodec.EncodeSingleRange(rng)
 	valSize := sliceSize(val)
 
 	if valSize > c.maxItemSizeBytes {
@@ -183,6 +185,40 @@ func (c *InMemoryPostingsOffsetTableCache) setRanges(key InMemoryCacheKey, rngs 
 		return
 	}
 
+	c.ensureCacheSpace(valSize)
+
+	c.lru.Add(key, val)
+	c.curSize += valSize
+}
+
+func (c *InMemoryPostingsOffsetTableCache) setMulti(key InMemoryCacheKey, rngs []index.Range) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	if _, ok := c.lru.Get(key); ok {
+		return
+	}
+	val := c.valCodec.EncodeMultiRange(rngs)
+	valSize := sliceSize(val)
+
+	if valSize > c.maxItemSizeBytes {
+		level.Debug(c.logger).Log(
+			"msg", "item bigger than maxItemSizeBytes. Ignoring...",
+			"maxItemSizeBytes", c.maxItemSizeBytes,
+			"maxSizeBytes", c.maxCacheSizeBytes,
+			"curSize", c.curSize,
+			"itemSize", valSize,
+		)
+		return
+	}
+
+	c.ensureCacheSpace(valSize)
+
+	c.lru.Add(key, val)
+	c.curSize += valSize
+}
+
+func (c *InMemoryPostingsOffsetTableCache) ensureCacheSpace(valSize uint64) {
 	for c.curSize+valSize > c.maxCacheSizeBytes {
 		// Evict to make room for new value;
 		// onEvict callback will subtract size of evicted item from curSize.
@@ -199,9 +235,6 @@ func (c *InMemoryPostingsOffsetTableCache) setRanges(key InMemoryCacheKey, rngs 
 			c.reset()
 		}
 	}
-
-	c.lru.Add(key, val)
-	c.curSize += valSize
 }
 
 func (c *InMemoryPostingsOffsetTableCache) reset() {

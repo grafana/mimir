@@ -41,17 +41,50 @@ func (c *RemotePostingsOffsetTableCache) StorePostingsOffset(
 	tenantID string, blockID ulid.ULID, lbl labels.Label, rng index.Range, ttl time.Duration,
 ) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	c.setAsync(key, rng, ttl)
+	c.setAsyncSingle(key, rng, ttl)
 }
 
 func (c *RemotePostingsOffsetTableCache) FetchPostingsOffset(
 	ctx context.Context, tenantID string, blockID ulid.ULID, lbl labels.Label,
 ) (index.Range, bool) {
 	key := PostingsOffsetCacheKey{tenantID, blockID, lbl}
-	return c.get(ctx, key)
+	return c.getSingle(ctx, key)
 }
 
-func (c *RemotePostingsOffsetTableCache) get(ctx context.Context, key RemoteCacheKey) (index.Range, bool) {
+func (c *RemotePostingsOffsetTableCache) StorePostingsOffsetsForMatcher(
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	isSubtract bool,
+	rngs []index.Range,
+	ttl time.Duration,
+) {
+	key := PostingsOffsetsForMatcherCacheKey{
+		tenantID:   tenantID,
+		blockID:    blockID,
+		matcherStr: m.String(),
+		isSubtract: isSubtract,
+	}
+	c.setAsyncMulti(key, rngs, ttl)
+}
+
+func (c *RemotePostingsOffsetTableCache) FetchPostingsOffsetsForMatcher(
+	ctx context.Context,
+	tenantID string,
+	blockID ulid.ULID,
+	m *labels.Matcher,
+	isSubtract bool,
+) ([]index.Range, bool) {
+	key := PostingsOffsetsForMatcherCacheKey{
+		tenantID:   tenantID,
+		blockID:    blockID,
+		matcherStr: m.String(),
+		isSubtract: isSubtract,
+	}
+	return c.getMulti(ctx, key)
+}
+
+func (c *RemotePostingsOffsetTableCache) getSingle(ctx context.Context, key RemoteCacheKey) (index.Range, bool) {
 	k := key.Key()
 	results := c.remote.GetMulti(ctx, []string{k})
 	val, ok := results[k]
@@ -59,7 +92,7 @@ func (c *RemotePostingsOffsetTableCache) get(ctx context.Context, key RemoteCach
 		return index.Range{}, false
 	}
 
-	rng, err := c.valCodec.DecodeRange(val)
+	rng, err := c.valCodec.DecodeSingleRange(val)
 	if err != nil {
 		level.Error(c.logger).Log(
 			"msg", "error decoding cache value to index.Range",
@@ -79,8 +112,42 @@ func (c *RemotePostingsOffsetTableCache) get(ctx context.Context, key RemoteCach
 	return rng, true
 }
 
-func (c *RemotePostingsOffsetTableCache) setAsync(key RemoteCacheKey, rng index.Range, ttl time.Duration) {
+func (c *RemotePostingsOffsetTableCache) getMulti(ctx context.Context, key RemoteCacheKey) ([]index.Range, bool) {
 	k := key.Key()
-	val := c.valCodec.EncodeRange(rng)
+	results := c.remote.GetMulti(ctx, []string{k})
+	val, ok := results[k]
+	if !ok {
+		return nil, false
+	}
+
+	rng, err := c.valCodec.DecodeMultiRange(val)
+	if err != nil {
+		level.Error(c.logger).Log(
+			"msg", "error decoding cache value to index.Range",
+			"key", key,
+			"value", val,
+		)
+		if err := c.remote.Delete(ctx, k); err != nil {
+			level.Error(c.logger).Log(
+				"msg", "error deleting malformed index.Range value from cache",
+				"key", key,
+				"value", val,
+			)
+		}
+		return nil, false
+	}
+
+	return rng, true
+}
+
+func (c *RemotePostingsOffsetTableCache) setAsyncSingle(key RemoteCacheKey, rng index.Range, ttl time.Duration) {
+	k := key.Key()
+	val := c.valCodec.EncodeSingleRange(rng)
+	c.remote.SetAsync(k, val, ttl)
+}
+
+func (c *RemotePostingsOffsetTableCache) setAsyncMulti(key RemoteCacheKey, rngs []index.Range, ttl time.Duration) {
+	k := key.Key()
+	val := c.valCodec.EncodeMultiRange(rngs)
 	c.remote.SetAsync(k, val, ttl)
 }
