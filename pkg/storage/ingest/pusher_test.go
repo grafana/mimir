@@ -1151,55 +1151,51 @@ func TestParallelStoragePusher(t *testing.T) {
 		},
 	}
 
-	for _, sequentialPusherEnabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("sequentialPusherEnabled=%v", sequentialPusherEnabled), func(t *testing.T) {
-			for name, tc := range testCases {
-				t.Run(name, func(t *testing.T) {
-					pusher := &mockPusher{}
-					logger := log.NewNopLogger()
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			pusher := &mockPusher{}
+			logger := log.NewNopLogger()
 
-					receivedPushes := make(map[string]map[mimirpb.WriteRequest_SourceEnum]int)
-					var receivedPushesMu sync.Mutex
+			receivedPushes := make(map[string]map[mimirpb.WriteRequest_SourceEnum]int)
+			var receivedPushesMu sync.Mutex
 
-					pusher.On("PushToStorageAndReleaseRequest", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-						tenantID, err := tenant.TenantID(args.Get(0).(context.Context))
-						require.NoError(t, err)
-						req := args.Get(1).(*mimirpb.WriteRequest)
+			pusher.On("PushToStorageAndReleaseRequest", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+				tenantID, err := tenant.TenantID(args.Get(0).(context.Context))
+				require.NoError(t, err)
+				req := args.Get(1).(*mimirpb.WriteRequest)
 
-						receivedPushesMu.Lock()
-						defer receivedPushesMu.Unlock()
+				receivedPushesMu.Lock()
+				defer receivedPushesMu.Unlock()
 
-						if receivedPushes[tenantID] == nil {
-							receivedPushes[tenantID] = make(map[mimirpb.WriteRequest_SourceEnum]int)
-						}
-						receivedPushes[tenantID][req.Source]++
-					}).Return(nil)
+				if receivedPushes[tenantID] == nil {
+					receivedPushes[tenantID] = make(map[mimirpb.WriteRequest_SourceEnum]int)
+				}
+				receivedPushes[tenantID][req.Source]++
+			}).Return(nil)
 
-					samplesPerTenant := make(map[string]int)
-					for _, req := range tc.requests {
-						samplesPerTenant[req.tenantID] += len(req.Timeseries)
-					}
-
-					metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-					psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 5, 500, 80, sequentialPusherEnabled, logger)
-
-					// Process requests
-					for _, req := range tc.requests {
-						ctx := user.InjectOrgID(context.Background(), req.tenantID)
-						err := psp.PushToStorageAndReleaseRequest(ctx, req.WriteRequest)
-						require.NoError(t, err)
-					}
-
-					// Close the pusher to flush any remaining data
-					errs := psp.Close()
-					require.Empty(t, errs)
-
-					// Verify the received pushes
-					assert.Equal(t, tc.expectedUpstreamPushes, receivedPushes, "Mismatch in upstream pushes")
-
-					pusher.AssertExpectations(t)
-				})
+			samplesPerTenant := make(map[string]int)
+			for _, req := range tc.requests {
+				samplesPerTenant[req.tenantID] += len(req.Timeseries)
 			}
+
+			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
+			psp := newParallelStoragePusher(metrics, pusher, samplesPerTenant, 0, 1, 1, 5, 500, 80, logger)
+
+			// Process requests
+			for _, req := range tc.requests {
+				ctx := user.InjectOrgID(context.Background(), req.tenantID)
+				err := psp.PushToStorageAndReleaseRequest(ctx, req.WriteRequest)
+				require.NoError(t, err)
+			}
+
+			// Close the pusher to flush any remaining data
+			errs := psp.Close()
+			require.Empty(t, errs)
+
+			// Verify the received pushes
+			assert.Equal(t, tc.expectedUpstreamPushes, receivedPushes, "Mismatch in upstream pushes")
+
+			pusher.AssertExpectations(t)
 		})
 	}
 }
@@ -1281,115 +1277,111 @@ func TestParallelStoragePusher_idealShardsFor(t *testing.T) {
 func TestParallelStoragePusher_Fuzzy(t *testing.T) {
 	test.VerifyNoLeak(t)
 
-	for _, sequentialPusherEnabled := range []bool{true, false} {
-		t.Run(fmt.Sprintf("sequentialPusherEnabled=%v", sequentialPusherEnabled), func(t *testing.T) {
-			const (
-				numTenants               = 10
-				numWriteRequests         = 100
-				numSeriesPerWriteRequest = 100
-			)
+	const (
+		numTenants               = 10
+		numWriteRequests         = 100
+		numSeriesPerWriteRequest = 100
+	)
 
-			var (
-				serverErr                   = errors.New("mocked server error")
-				serverErrsCount             = atomic.NewInt64(0)
-				enqueuedTimeSeriesReqs      = 0
-				enqueuedTimeSeriesPerTenant = map[string][]string{}
-				pushedTimeSeriesPerTenant   = map[string][]string{}
-				pushedTimeSeriesPerTenantMx = sync.Mutex{}
-			)
+	var (
+		serverErr                   = errors.New("mocked server error")
+		serverErrsCount             = atomic.NewInt64(0)
+		enqueuedTimeSeriesReqs      = 0
+		enqueuedTimeSeriesPerTenant = map[string][]string{}
+		pushedTimeSeriesPerTenant   = map[string][]string{}
+		pushedTimeSeriesPerTenantMx = sync.Mutex{}
+	)
 
-			generateWriteRequest := func(batchID, numSeries int) *mimirpb.WriteRequest {
-				timeseries := make([]mimirpb.PreallocTimeseries, 0, numSeries)
-				for i := 0; i < numSeries; i++ {
-					timeseries = append(timeseries, mockPreallocTimeseries(fmt.Sprintf("series_%d_%d", batchID, i)))
-				}
+	generateWriteRequest := func(batchID, numSeries int) *mimirpb.WriteRequest {
+		timeseries := make([]mimirpb.PreallocTimeseries, 0, numSeries)
+		for i := 0; i < numSeries; i++ {
+			timeseries = append(timeseries, mockPreallocTimeseries(fmt.Sprintf("series_%d_%d", batchID, i)))
+		}
 
-				return &mimirpb.WriteRequest{Timeseries: timeseries, Source: mimirpb.API}
-			}
+		return &mimirpb.WriteRequest{Timeseries: timeseries, Source: mimirpb.API}
+	}
 
-			pusher := pusherFunc(func(ctx context.Context, req *mimirpb.WriteRequest) error {
-				tenantID, err := user.ExtractOrgID(ctx)
-				require.NoError(t, err)
+	pusher := pusherFunc(func(ctx context.Context, req *mimirpb.WriteRequest) error {
+		tenantID, err := user.ExtractOrgID(ctx)
+		require.NoError(t, err)
 
-				// Keep track of the received series.
-				pushedTimeSeriesPerTenantMx.Lock()
-				for _, series := range req.Timeseries {
-					pushedTimeSeriesPerTenant[tenantID] = append(pushedTimeSeriesPerTenant[tenantID], series.Labels[0].Value)
-				}
-				pushedTimeSeriesPerTenantMx.Unlock()
+		// Keep track of the received series.
+		pushedTimeSeriesPerTenantMx.Lock()
+		for _, series := range req.Timeseries {
+			pushedTimeSeriesPerTenant[tenantID] = append(pushedTimeSeriesPerTenant[tenantID], series.Labels[0].Value)
+		}
+		pushedTimeSeriesPerTenantMx.Unlock()
 
-				// Simulate some slowdown.
-				time.Sleep(time.Millisecond)
+		// Simulate some slowdown.
+		time.Sleep(time.Millisecond)
 
-				// Simulate a 0.1% failure rate.
-				if rand.Intn(1000) == 0 {
-					serverErrsCount.Inc()
-					return serverErr
-				}
+		// Simulate a 0.1% failure rate.
+		if rand.Intn(1000) == 0 {
+			serverErrsCount.Inc()
+			return serverErr
+		}
 
-				return nil
-			})
+		return nil
+	})
 
-			// Configure the pusher so that it uses multiple shards per tenant.
-			const maxShards = 10
-			const batchSize = 1
-			const queueCapacity = 5
-			const bytesPerSample = 1
-			const targetFlushes = 1
-			bytesPerTenant := map[string]int{}
-			for tenantID := 0; tenantID < numTenants; tenantID++ {
-				bytesPerTenant[fmt.Sprintf("tenant-%d", tenantID)] = 5
-			}
+	// Configure the pusher so that it uses multiple shards per tenant.
+	const maxShards = 10
+	const batchSize = 1
+	const queueCapacity = 5
+	const bytesPerSample = 1
+	const targetFlushes = 1
+	bytesPerTenant := map[string]int{}
+	for tenantID := 0; tenantID < numTenants; tenantID++ {
+		bytesPerTenant[fmt.Sprintf("tenant-%d", tenantID)] = 5
+	}
 
-			metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
-			psp := newParallelStoragePusher(metrics, pusher, bytesPerTenant, 0, maxShards, batchSize, queueCapacity, bytesPerSample, targetFlushes, sequentialPusherEnabled, nil)
+	metrics := newStoragePusherMetrics(prometheus.NewPedanticRegistry())
+	psp := newParallelStoragePusher(metrics, pusher, bytesPerTenant, 0, maxShards, batchSize, queueCapacity, bytesPerSample, targetFlushes, nil)
 
-			// Keep pushing batches of write requests until we hit an error.
-			for batchID := 0; batchID < numWriteRequests; batchID++ {
-				// Generate the tenant owning this batch.
-				tenantID := fmt.Sprintf("tenant-%d", batchID%numTenants)
-				ctx := user.InjectOrgID(context.Background(), tenantID)
+	// Keep pushing batches of write requests until we hit an error.
+	for batchID := 0; batchID < numWriteRequests; batchID++ {
+		// Generate the tenant owning this batch.
+		tenantID := fmt.Sprintf("tenant-%d", batchID%numTenants)
+		ctx := user.InjectOrgID(context.Background(), tenantID)
 
-				// Ensure the tenant will use more than 1 shard.
-				require.Greater(t, psp.idealShardsFor(tenantID), 1)
+		// Ensure the tenant will use more than 1 shard.
+		require.Greater(t, psp.idealShardsFor(tenantID), 1)
 
-				req := generateWriteRequest(batchID, numSeriesPerWriteRequest)
+		req := generateWriteRequest(batchID, numSeriesPerWriteRequest)
 
-				// We need this for later, but psp's PushToStorage destroys the request by freeing resources.
-				requestSeriesLabelValues := []string{}
-				for _, series := range req.Timeseries {
-					requestSeriesLabelValues = append(requestSeriesLabelValues, series.Labels[0].Value)
-				}
-				if err := psp.PushToStorageAndReleaseRequest(ctx, req); err == nil {
-					enqueuedTimeSeriesReqs++
+		// We need this for later, but psp's PushToStorage destroys the request by freeing resources.
+		requestSeriesLabelValues := []string{}
+		for _, series := range req.Timeseries {
+			requestSeriesLabelValues = append(requestSeriesLabelValues, series.Labels[0].Value)
+		}
+		if err := psp.PushToStorageAndReleaseRequest(ctx, req); err == nil {
+			enqueuedTimeSeriesReqs++
 
-					// Keep track of the enqueued series. We don't keep track of it if there was an error because, in case
-					// of an error, only some series may been added to a batch (it breaks on the first failed "append to batch").
-					enqueuedTimeSeriesPerTenant[tenantID] = append(enqueuedTimeSeriesPerTenant[tenantID], requestSeriesLabelValues...)
-				} else {
-					// We received an error. Make sure a server error was reported by the upstream pusher.
-					require.Greater(t, serverErrsCount.Load(), int64(0))
+			// Keep track of the enqueued series. We don't keep track of it if there was an error because, in case
+			// of an error, only some series may been added to a batch (it breaks on the first failed "append to batch").
+			enqueuedTimeSeriesPerTenant[tenantID] = append(enqueuedTimeSeriesPerTenant[tenantID], requestSeriesLabelValues...)
+		} else {
+			// We received an error. Make sure a server error was reported by the upstream pusher.
+			require.Greater(t, serverErrsCount.Load(), int64(0))
 
-					// Break on first error.
-					break
-				}
-			}
+			// Break on first error.
+			break
+		}
+	}
 
-			t.Logf("enqueued time series requests: %d", enqueuedTimeSeriesReqs)
+	t.Logf("enqueued time series requests: %d", enqueuedTimeSeriesReqs)
 
-			// Close the parallel pusher.
-			if errs := psp.Close(); len(errs) > 0 {
-				// We received an error. Make sure a server error was reported by the upstream pusher.
-				require.Greater(t, serverErrsCount.Load(), int64(0))
-			}
+	// Close the parallel pusher.
+	if errs := psp.Close(); len(errs) > 0 {
+		// We received an error. Make sure a server error was reported by the upstream pusher.
+		require.Greater(t, serverErrsCount.Load(), int64(0))
+	}
 
-			// Ensure all enqueued series have been pushed.
-			for tenantID, tenantSeries := range enqueuedTimeSeriesPerTenant {
-				for _, series := range tenantSeries {
-					require.Contains(t, pushedTimeSeriesPerTenant[tenantID], series)
-				}
-			}
-		})
+	// Ensure all enqueued series have been pushed.
+	for tenantID, tenantSeries := range enqueuedTimeSeriesPerTenant {
+		for _, series := range tenantSeries {
+			require.Contains(t, pushedTimeSeriesPerTenant[tenantID], series)
+		}
 	}
 }
 
@@ -1747,7 +1739,6 @@ func BenchmarkPusherConsumer_ParallelPusher_MultiTenant(b *testing.B) {
 	kcfg.IngestionConcurrencyEstimatedBytesPerSample = 200
 	kcfg.IngestionConcurrencyQueueCapacity = 3
 	kcfg.IngestionConcurrencyTargetFlushesPerShard = 40
-	kcfg.IngestionConcurrencySequentialPusherEnabled = false
 
 	for _, numRecords := range []int{1, 10, 100, 1000} {
 		for _, numTenants := range []int{1, 10, 100, 1000} {
