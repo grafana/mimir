@@ -55,7 +55,7 @@
   // reduce the dynamic-replication factors from the default (i.e., 5) to 4 when we run
   // multi-az with backup. This increase the replication factor from 3 to 4, so overall,
   // the replication factor is similar.
-  store_dynamic_replication_override:: if !(isBackupAMultiAZEnabled && isBackupBMultiAZEnabled) then {} else {
+  store_dynamic_replication_override:: if !(isBackupAMultiAZEnabled && isBackupBMultiAZEnabled && $._config.multi_zone_store_gateway_zone_a_backup_enabled && $._config.multi_zone_store_gateway_zone_b_backup_enabled) then {} else {
     'store-gateway.dynamic-replication.multiple': 4,
   },
 
