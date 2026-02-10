@@ -4009,6 +4009,20 @@ zone_aware_routing:
   # bridge.
   # CLI flag: -memberlist.zone-aware-routing.role
   [role: <string> | default = "member"]
+
+propagation_delay_tracker:
+  # (experimental) Enable the propagation delay tracker to measure gossip
+  # propagation delay.
+  # CLI flag: -memberlist.propagation-delay-tracker.enabled
+  [enabled: <boolean> | default = false]
+
+  # (experimental) How often to publish beacons for propagation tracking.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-interval
+  [beacon_interval: <duration> | default = 1m]
+
+  # (experimental) How long a beacon lives before being garbage collected.
+  # CLI flag: -memberlist.propagation-delay-tracker.beacon-lifetime
+  [beacon_lifetime: <duration> | default = 10m]
 ```
 
 ### limits
