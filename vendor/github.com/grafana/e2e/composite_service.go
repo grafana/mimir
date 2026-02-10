@@ -2,11 +2,11 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/grafana/dskit/backoff"
-	"github.com/pkg/errors"
 )
 
 // CompositeHTTPService abstract an higher-level service composed, under the hood,
