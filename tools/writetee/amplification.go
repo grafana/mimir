@@ -99,22 +99,27 @@ type AmplificationResult struct {
 	WasAmplified      bool
 }
 
-// AmplifyWriteRequest takes a Prometheus remote write request body and amplifies it
-// by duplicating time series based on the amplification factor.
-// The amplification factor determines how many copies of each time series to create:
-//   - factor = 1.0: no amplification (returns original)
-//   - factor = 2.0: each time series is duplicated once (2x total)
-//   - factor = 3.5: each time series gets 3 full copies + 50% chance of a 4th copy
+// AmplifyWriteRequest takes a Prometheus remote write request body and amplifies or samples it
+// based on the amplification factor.
+// The amplification factor determines how to transform the time series:
+//   - factor = 1.0: no change (returns original)
+//   - factor > 1.0: amplification (duplication)
+//     - factor = 2.0: each time series is duplicated once (2x total)
+//     - factor = 3.5: each time series gets 3 full copies + 50% chance of a 4th copy
+//   - factor < 1.0: sampling (reduction)
+//     - factor = 0.1: each time series has 10% chance of being kept
+//     - factor = 0.5: each time series has 50% chance of being kept
 //
-// Each amplified copy gets an additional label: __amplified__="<replica_num>"
+// Amplified copies (factor > 1.0) get an additional label: __amplified__="<replica_num>"
+// Sampled series (factor < 1.0) do not get additional labels.
 // The body is expected to be Snappy-compressed Prometheus remote write protobuf.
 //
-// Both RW 1.0 and RW 2.0 requests are amplified using the same amplification factor.
+// Both RW 1.0 and RW 2.0 requests are processed using the same amplification factor.
 // RW 2.0 requests are converted to RW 1.0 format before amplification (memory intensive).
 // If tracker is provided, series counts are recorded for observability.
 // Returns AmplificationResult with metadata about what was done.
 func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *AmplificationTracker) (AmplificationResult, error) {
-	if amplificationFactor <= 1.0 {
+	if amplificationFactor == 1.0 {
 		return AmplificationResult{
 			Body:                 body,
 			OriginalSeriesCount:  0, // Unknown without unmarshaling
@@ -156,6 +161,35 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 			tracker.RecordRW2Series(originalSeriesCount)
 		}
 
+		// Handle sampling (factor < 1.0) for RW 2.0
+		if amplificationFactor < 1.0 {
+			sampledSeries := make([]mimirpb.TimeSeriesRW2, 0, int(float64(len(rw2Req.Timeseries))*amplificationFactor))
+			for _, ts := range rw2Req.Timeseries {
+				if rand.Float64() < amplificationFactor {
+					sampledSeries = append(sampledSeries, ts)
+				}
+			}
+
+			rw2Req.Timeseries = sampledSeries
+
+			// Marshal back to protobuf
+			sampledProto, err := proto.Marshal(rw2Req)
+			if err != nil {
+				return AmplificationResult{}, fmt.Errorf("failed to marshal sampled RW 2.0 write request: %w", err)
+			}
+
+			// Compress back with snappy
+			sampledBody := snappy.Encode(nil, sampledProto)
+
+			return AmplificationResult{
+				Body:                 sampledBody,
+				OriginalSeriesCount:  originalSeriesCount,
+				AmplifiedSeriesCount: len(sampledSeries) - originalSeriesCount, // Negative for sampling
+				IsRW2:                true,
+				WasAmplified:         true,
+			}, nil
+		}
+
 		// Amplify RW 2.0 data in native format (avoids 12.5x memory expansion)
 		amplifiedRW2 := amplifyRW2Request(rw2Req, amplificationFactor)
 
@@ -185,7 +219,36 @@ func AmplifyWriteRequest(body []byte, amplificationFactor float64, tracker *Ampl
 		tracker.RecordRW1Series(originalSeriesCount)
 	}
 
-	// Calculate copies based on amplification factor
+	// Handle sampling (factor < 1.0) - randomly keep a subset of series
+	if amplificationFactor < 1.0 {
+		sampledSeries := make([]mimirpb.PreallocTimeseries, 0, int(float64(len(req.Timeseries))*amplificationFactor))
+		for _, ts := range req.Timeseries {
+			if rand.Float64() < amplificationFactor {
+				sampledSeries = append(sampledSeries, ts)
+			}
+		}
+
+		req.Timeseries = sampledSeries
+
+		// Marshal back to protobuf
+		sampledProto, err := proto.Marshal(&req)
+		if err != nil {
+			return AmplificationResult{}, fmt.Errorf("failed to marshal sampled write request: %w", err)
+		}
+
+		// Compress back with snappy
+		sampledBody := snappy.Encode(nil, sampledProto)
+
+		return AmplificationResult{
+			Body:                 sampledBody,
+			OriginalSeriesCount:  originalSeriesCount,
+			AmplifiedSeriesCount: len(sampledSeries) - originalSeriesCount, // Negative for sampling
+			IsRW2:                false,
+			WasAmplified:         true,
+		}, nil
+	}
+
+	// Calculate copies based on amplification factor (factor > 1.0)
 	fullCopies := int(math.Floor(amplificationFactor))
 	fractionalPart := amplificationFactor - float64(fullCopies)
 
@@ -370,7 +433,7 @@ func amplifyTimeSeries(original *mimirpb.PreallocTimeseries, replicaNum int) mim
 
 // amplifyRequestBody is a helper that wraps AmplifyWriteRequest for use with io.ReadCloser
 func amplifyRequestBody(body io.ReadCloser, amplificationFactor float64, tracker *AmplificationTracker) (io.ReadCloser, AmplificationResult, error) {
-	if amplificationFactor <= 1.0 {
+	if amplificationFactor == 1.0 {
 		return body, AmplificationResult{WasAmplified: false}, nil
 	}
 
