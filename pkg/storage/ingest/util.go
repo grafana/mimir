@@ -127,7 +127,7 @@ func commonKafkaClientOptions(cfg KafkaConfig, metrics *kprom.Metrics, logger lo
 				}, nil
 			})
 		default:
-			panic(fmt.Errorf("unknown SASL mechansim: %v", cfg.SASLMechanism))
+			panic(fmt.Errorf("unknown SASL mechanism: %v", cfg.SASLMechanism))
 		}
 		opts = append(opts, kgo.SASL(m))
 	}
